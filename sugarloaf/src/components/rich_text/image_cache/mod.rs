@@ -2,8 +2,8 @@ mod atlas;
 mod cache;
 pub mod glyph;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum PixelFormat {
@@ -107,7 +107,9 @@ impl<'a> AddImage<'a> {
 pub enum ImageData<'a> {
     // None,
     Borrowed(&'a [u8]),
+    #[allow(unused)]
     Owned(Vec<u8>),
+    #[allow(unused)]
     Shared(Arc<Vec<u8>>),
 }
 
@@ -118,7 +120,7 @@ impl<'a> ImageData<'a> {
             // Self::Borrowed(data) => *data,
             Self::Borrowed(data) => data,
             Self::Owned(data) => data,
-            Self::Shared(data) => &*data,
+            Self::Shared(data) => data,
         })
     }
 }

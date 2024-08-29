@@ -158,7 +158,6 @@ impl Compositor {
     }
 
     /// Removes the image from the compositor.
-    #[allow(unused)]
     pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
         images.deallocate(image).is_some()
     }

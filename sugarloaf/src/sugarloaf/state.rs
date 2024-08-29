@@ -4,7 +4,6 @@
 // LICENSE file in the root directory of this source tree.
 
 use super::compositors::SugarCompositors;
-use super::graphics::Graphics;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{Content, Object};
@@ -27,8 +26,6 @@ pub struct SugarState {
     pub current: SugarTree,
     latest_change: SugarTreeDiff,
     pub compositors: SugarCompositors,
-    // TODO: Decide if graphics should be in SugarTree or SugarState
-    pub graphics: Graphics,
 }
 
 impl SugarState {
@@ -39,7 +36,6 @@ impl SugarState {
     ) -> SugarState {
         let mut state = SugarState {
             compositors: SugarCompositors::new(font_library),
-            graphics: Graphics::default(),
             // First time computing changes should obtain dimensions
             current: SugarTree {
                 layout: initial_layout,

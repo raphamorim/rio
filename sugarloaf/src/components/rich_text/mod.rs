@@ -9,7 +9,7 @@ use crate::components::rich_text::image_cache::{GlyphCache, ImageCache, ImageId}
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
-use crate::GraphicId;
+use crate::{GraphicData, GraphicId};
 use compositor::{
     CachedRun, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -58,13 +58,12 @@ pub struct RichTextBrush {
     supported_vertex_buffer: usize,
     images: ImageCache,
     glyphs: GlyphCache,
-    graphics_map: FxHashMap<GraphicId, GraphicsDataBrush>,
+    graphics: FxHashMap<GraphicId, GraphicsDataBrush>,
 }
 
 #[derive(Copy, Clone)]
 pub struct GraphicsDataBrush {
     texture_id: TextureId,
-    #[allow(dead_code)]
     image_id: ImageId,
     coords: [f32; 4],
     has_alpha: bool,
@@ -305,13 +304,45 @@ impl RichTextBrush {
             bind_group_needs_update: true,
             supported_vertex_buffer,
             current_transform,
-            graphics_map: FxHashMap::default(),
+            graphics: FxHashMap::default(),
         }
     }
 
     #[inline]
     pub fn clean_cache(&mut self) {
         self.draw_layout_cache.clear();
+    }
+
+    #[inline]
+    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
+        if self.graphics.contains_key(&graphic_data.id) {
+            return;
+        }
+
+        if let Some(image_id) = self.comp.add_image(&mut self.images, &graphic_data) {
+            if let Some(img) = self.images.get(&image_id) {
+                self.graphics.insert(
+                    graphic_data.id,
+                    GraphicsDataBrush {
+                        image_id,
+                        width: graphic_data.width,
+                        height: graphic_data.height,
+                        texture_id: img.texture_id,
+                        coords: [img.min.0, img.min.1, img.max.0, img.max.1],
+                        has_alpha: graphic_data.is_opaque,
+                    },
+                );
+            }
+        }
+    }
+
+    #[inline]
+    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
+        if let Some(graphic_data) = self.graphics.get(graphic_id) {
+            self.comp
+                .remove_image(&mut self.images, graphic_data.image_id);
+            self.graphics.remove(graphic_id);
+        }
     }
 
     #[inline]
@@ -333,33 +364,14 @@ impl RichTextBrush {
         let library = state.compositors.advanced.font_library();
         let font_library = { &library.inner.read().unwrap() };
 
-        if !&state.compositors.advanced.render_data.graphics.is_empty() {
-            for graphic_id in &state.compositors.advanced.render_data.graphics {
-                // If graphic id already exist in the image cache then skip
-                if self.graphics_map.contains_key(graphic_id) {
-                    continue;
-                }
-                if let Some(graphic_data) = state.graphics.get(graphic_id) {
-                    if let Some(image_id) =
-                        self.comp.add_image(&mut self.images, graphic_data)
-                    {
-                        if let Some(img) = self.images.get(&image_id) {
-                            self.graphics_map.insert(
-                                *graphic_id,
-                                GraphicsDataBrush {
-                                    image_id,
-                                    width: graphic_data.width,
-                                    height: graphic_data.height,
-                                    texture_id: img.texture_id,
-                                    coords: [img.min.0, img.min.1, img.max.0, img.max.1],
-                                    has_alpha: graphic_data.is_opaque,
-                                },
-                            );
-                        }
-                    }
-                }
-            }
-        }
+        // if !&state.compositors.advanced.render_data.graphics.is_empty() {
+        //     for graphic_id in &state.compositors.advanced.render_data.graphics {
+        //         // If graphic id already exist in the image cache then skip
+        //         if self.graphics.contains_key(graphic_id) {
+        //             continue;
+        //         }
+        //     }
+        // }
 
         draw_layout(
             &mut self.comp,
@@ -372,7 +384,7 @@ impl RichTextBrush {
             state.current.layout.style.screen_position,
             font_library,
             &state.current.layout.dimensions,
-            &self.graphics_map,
+            &self.graphics,
         );
         self.draw_layout_cache.clear_on_demand();
         // let duration = start.elapsed();
