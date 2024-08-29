@@ -9,6 +9,7 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+- Macos: remove grab cursor when dragging and use default instead.
 - Fix `tabs-active-highlight` config key [#618](https://github.com/raphamorim/rio/pull/618).
 - Add `tabs-active-foreground` config key [#619](https://github.com/raphamorim/rio/pull/619).
 - `use-kitty-keyboard-protocol` is now `true` as default.
