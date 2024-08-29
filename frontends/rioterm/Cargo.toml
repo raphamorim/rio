@@ -35,7 +35,6 @@ libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
 teletypewriter = { workspace = true }
-tokio = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 url = "2.5.2"

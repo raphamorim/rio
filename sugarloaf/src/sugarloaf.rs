@@ -109,14 +109,14 @@ unsafe impl Send for SugarloafWindow {}
 unsafe impl Sync for SugarloafWindow {}
 
 impl Sugarloaf<'_> {
-    pub async fn new<'a>(
+    pub fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
         layout: SugarloafLayout,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
         let font_features = renderer.font_features.to_owned();
-        let ctx = Context::new(window, renderer).await;
+        let ctx = Context::new(window, renderer);
 
         let text_brush = {
             let data = { &font_library.inner.read().unwrap().main };

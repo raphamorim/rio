@@ -1,4 +1,3 @@
-extern crate tokio;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::{
     layout::SugarloafLayout, ContentBuilder, FragmentStyle, FragmentStyleDecoration,
@@ -13,8 +12,7 @@ use winit::{
     window::WindowAttributes,
 };
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let mut event_loop = EventLoop::new().unwrap();
     let width = 400.0;
     let height = 400.0;
@@ -55,7 +53,6 @@ async fn main() {
         &sugarloaf::font::FontLibrary::default(),
         sugarloaf_layout,
     )
-    .await
     .expect("Sugarloaf instance should be created");
 
     #[allow(deprecated)]

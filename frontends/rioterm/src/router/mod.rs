@@ -294,7 +294,7 @@ pub struct RouteWindow {
 }
 
 impl RouteWindow {
-    pub async fn new(
+    pub fn new(
         event_loop: &EventLoop<EventPayload>,
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
@@ -320,7 +320,7 @@ impl RouteWindow {
         };
 
         let screen =
-            Screen::new(properties, config, event_proxy, font_library, open_url).await?;
+            Screen::new(properties, config, event_proxy, font_library, open_url)?;
 
         Ok(Self {
             is_focused: false,
@@ -367,14 +367,8 @@ impl RouteWindow {
             theme: winit_window.theme(),
         };
 
-        let screen = futures::executor::block_on(Screen::new(
-            properties,
-            config,
-            event_proxy,
-            font_library,
-            open_url,
-        ))
-        .expect("Screen not created");
+        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
+            .expect("Screen not created");
 
         Self {
             is_focused: false,

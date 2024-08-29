@@ -12,6 +12,7 @@ language: 'en'
 - Fix `tabs-active-highlight` config key [#618](https://github.com/raphamorim/rio/pull/618).
 - Add `tabs-active-foreground` config key [#619](https://github.com/raphamorim/rio/pull/619).
 - `use-kitty-keyboard-protocol` is now `true` as default.
+- Remove tokio runtime.
 
 ## 0.1.10
 

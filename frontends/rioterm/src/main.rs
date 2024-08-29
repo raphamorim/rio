@@ -91,8 +91,7 @@ fn setup_logs_by_filter_level(log_level: &str) -> Result<(), SetLoggerError> {
     log::set_logger(&LOGGER).map(|()| log::set_max_level(filter_level))
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     panic::attach_handler();
 
@@ -108,9 +107,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = cli::Cli::parse();
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
-    if write_config_path.is_some() {
+    if let Some(config_path) = write_config_path {
         let _ = setup_logs_by_filter_level("TRACE");
-        rio_backend::config::create_config_file(write_config_path.unwrap());
+        rio_backend::config::create_config_file(config_path);
         return Ok(());
     }
 
@@ -152,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let mut sequencer = crate::sequencer::Sequencer::new(config, config_error);
-        let _ = sequencer.run(window_event_loop).await;
+        let _ = sequencer.run(window_event_loop);
     }
 
     #[cfg(use_wa)]
