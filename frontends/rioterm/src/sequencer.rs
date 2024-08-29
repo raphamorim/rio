@@ -109,12 +109,13 @@ impl Sequencer {
                                         return;
                                     }
 
-                                    if route_id == route.window.screen.ctx().current_route() {
+                                    if route_id
+                                        == route.window.screen.ctx().current_route()
+                                    {
                                         route.window.has_updates = true;
-                                    
+
                                         route.window.screen.update_content();
-                                        if route.window.has_frame
-                                        {
+                                        if route.window.has_frame {
                                             route.request_redraw();
                                         }
                                     }
@@ -279,7 +280,8 @@ impl Sequencer {
                                 millis,
                                 route_id,
                             )) => {
-                                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                                let timer_id =
+                                    TimerId::new(Topic::RenderRoute, window_id);
                                 let event = EventPayload::new(
                                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                                     window_id,
@@ -1070,7 +1072,10 @@ impl Sequencer {
                                     && key_event.state == ElementState::Released
                                 {
                                     // Scheduler must be cleaned after leave the terminal route
-                                    scheduler.unschedule(TimerId::new(Topic::Render, window_id));
+                                    scheduler.unschedule(TimerId::new(
+                                        Topic::Render,
+                                        window_id,
+                                    ));
                                 }
                                 return;
                             }

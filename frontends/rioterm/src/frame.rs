@@ -18,7 +18,11 @@ pub struct FrameTimer {
 impl FrameTimer {
     pub fn new() -> Self {
         let now = Instant::now();
-        Self { base: now, last_synced_timestamp: now, refresh_interval: Duration::ZERO }
+        Self {
+            base: now,
+            last_synced_timestamp: now,
+            refresh_interval: Duration::ZERO,
+        }
     }
 
     /// Compute the delay that we should use to achieve the target frame

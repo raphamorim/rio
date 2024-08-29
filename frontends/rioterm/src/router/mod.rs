@@ -1,19 +1,19 @@
 mod window;
-use crate::frame::FrameTimer;
-use rio_backend::event::RioEventType;
-use crate::scheduler::TimerId;
-use std::time::Duration;
-use crate::scheduler::{Topic, Scheduler};
 use crate::event::{EventPayload, EventProxy};
+use crate::frame::FrameTimer;
 use crate::router::window::{configure_window, create_window_builder};
 use crate::routes::{assistant, RoutePath};
+use crate::scheduler::TimerId;
+use crate::scheduler::{Scheduler, Topic};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_backend::event::RioEventType;
 use std::collections::HashMap;
 use std::error::Error;
+use std::time::Duration;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -59,7 +59,8 @@ impl Route {
         let monitor_vblank_interval = 1_000_000.
             / self
                 .window
-                .winit_window.current_monitor()
+                .winit_window
+                .current_monitor()
                 .and_then(|monitor| monitor.refresh_rate_millihertz())
                 .unwrap_or(60_000) as f64;
 
@@ -67,16 +68,15 @@ impl Route {
         let monitor_vblank_interval =
             Duration::from_micros((1000. * monitor_vblank_interval) as u64);
 
-        let swap_timeout = self.window.frame_timer.compute_timeout(monitor_vblank_interval);
+        let swap_timeout = self
+            .window
+            .frame_timer
+            .compute_timeout(monitor_vblank_interval);
 
-        if swap_timeout > Duration::from_nanos(0)
-         && !cfg!(feature = "wayland") {
+        if swap_timeout > Duration::from_nanos(0) && !cfg!(feature = "wayland") {
             let window_id = self.window.winit_window.id();
             let timer_id = TimerId::new(Topic::Frame, window_id);
-            let event = EventPayload::new(
-                RioEventType::Frame,
-                window_id,
-            );
+            let event = EventPayload::new(RioEventType::Frame, window_id);
             scheduler.schedule(event, swap_timeout, false, timer_id);
         } else {
             self.window.has_frame = true;
