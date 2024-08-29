@@ -19,9 +19,10 @@ pub struct ImageCache {
 
 impl ImageCache {
     /// Creates a new image cache.
-    pub fn new(context: &Context, max_texture_size: u16) -> Self {
+    pub fn new(context: &Context) -> Self {
         let device = &context.device;
-        let max_texture_size = max_texture_size.clamp(1024, 8192);
+        // let max_texture_size = max_texture_size.clamp(1024, 8192);
+        let max_texture_size = 1024;
 
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create color_texture"),
