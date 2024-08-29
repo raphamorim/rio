@@ -10,10 +10,10 @@ mod bindings;
 mod cli;
 mod constants;
 mod context;
+mod frame;
 mod ime;
 mod logger;
 mod messenger;
-mod frame;
 mod mouse;
 #[cfg(windows)]
 mod panic;
