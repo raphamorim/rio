@@ -39,12 +39,12 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 
 pub struct RichTextBrush {
     vertex_buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-    sampler: wgpu::Sampler,
+    constant_bind_group: wgpu::BindGroup,
+    layout_bind_group: wgpu::BindGroup,
+    layout_bind_group_layout: wgpu::BindGroupLayout,
     color_texture_view: wgpu::TextureView,
     mask_texture_view: wgpu::TextureView,
     transform: wgpu::Buffer,
-    bind_group_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     textures: FxHashMap<TextureId, Texture>,
     index_buffer: wgpu::Buffer,
@@ -86,7 +86,7 @@ impl RichTextBrush {
         });
 
         // Create pipeline layout
-        let bind_group_layout =
+        let constant_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[
@@ -117,21 +117,24 @@ impl RichTextBrush {
                         },
                         count: None,
                     },
+                ],
+            });
+
+            let layout_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
                     wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::VERTEX
-                            | wgpu::ShaderStages::FRAGMENT,
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: true,
-                            },
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        binding: 3,
+                        binding: 1,
                         visibility: wgpu::ShaderStages::VERTEX
                             | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(
@@ -146,7 +149,7 @@ impl RichTextBrush {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
                 push_constant_ranges: &[],
-                bind_group_layouts: &[&bind_group_layout],
+                bind_group_layouts: &[&constant_bind_group_layout, &layout_bind_group_layout],
             });
 
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -196,9 +199,8 @@ impl RichTextBrush {
             ..Default::default()
         });
 
-        // Create bind group
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
+        let constant_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &constant_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -210,18 +212,25 @@ impl RichTextBrush {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("rich_text::constant_bind_group"),
+        });
+
+        let layout_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &layout_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&color_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::TextureView(&mask_texture_view),
                 },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
             ],
-            label: Some("rich_text::Pipeline uniforms"),
+            label: Some("rich_text::layout_bind_group"),
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -283,19 +292,20 @@ impl RichTextBrush {
         });
 
         RichTextBrush {
-            bind_group_layout,
+            layout_bind_group,
+            layout_bind_group_layout,
+            constant_bind_group,
             index_buffer_size,
             index_buffer,
             color_texture_view,
             mask_texture_view,
-            sampler,
             textures: FxHashMap::default(),
             comp: Compositor::new(),
-            images: ImageCache::new(8192),
+            // 4096 2048
+            images: ImageCache::new(1024),
             glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
-            bind_group,
             transform,
             pipeline,
             vertex_buffer,
@@ -525,7 +535,7 @@ impl RichTextBrush {
         if self.first_run && mask_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(color_texture_updated.unwrap_or(&TextureId(0)))
+                .get(color_texture_updated.unwrap_or(&TextureId(1)))
             {
                 self.mask_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -534,7 +544,7 @@ impl RichTextBrush {
         if self.first_run && color_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(mask_texture_updated.unwrap_or(&TextureId(0)))
+                .get(mask_texture_updated.unwrap_or(&TextureId(1)))
             {
                 self.color_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -542,17 +552,9 @@ impl RichTextBrush {
         }
 
         if self.bind_group_needs_update {
-            self.bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.bind_group_layout,
+            self.layout_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.layout_bind_group_layout,
                 entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                            buffer: &self.transform,
-                            offset: 0,
-                            size: None,
-                        }),
-                    },
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(
@@ -565,17 +567,14 @@ impl RichTextBrush {
                             &self.mask_texture_view,
                         ),
                     },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
                 ],
                 label: Some("rich_text::Pipeline uniforms"),
             });
         }
 
         rpass.set_pipeline(&self.pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_bind_group(0, &self.constant_bind_group, &[]);
+        rpass.set_bind_group(1, &self.layout_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
@@ -603,6 +602,7 @@ impl RichTextBrush {
                         height,
                         data,
                     } => {
+                        println!("CreateTexture {:?}", id);
                         log::info!(
                             "rich_text::CreateTexture with id ({:?}) and format {:?}",
                             id,
@@ -673,6 +673,7 @@ impl RichTextBrush {
                         height,
                         data,
                     } => {
+                        println!("UpdateTexture {:?} {:?}", id, data.len());
                         log::info!("rich_text::UpdateTexture id ({:?})", id);
                         if let Some(texture) = self.textures.get(&id) {
                             self.bind_group_needs_update = true;

@@ -135,16 +135,15 @@ impl Compositor {
         } else {
             PixelFormat::A8
         };
-        let request = AddImage {
+
+        images.allocate(AddImage {
             format,
             width: graphic.width as u16,
             height: graphic.height as u16,
             has_alpha: graphic.is_opaque,
             evictable: true,
             data: ImageData::Borrowed(&graphic.pixels),
-        };
-
-        images.allocate(request)
+        })
     }
 
     /// Returns the image associated with the specified identifier.
