@@ -51,6 +51,13 @@ pub fn tabs_active() -> ColorArray {
 }
 
 #[inline]
+pub fn tabs_active_foreground() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#ffffff"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
 pub fn tabs_active_highlight() -> ColorArray {
     ColorBuilder::from_hex(String::from("#ff00ff"), Format::SRGB0_1)
         .unwrap()
