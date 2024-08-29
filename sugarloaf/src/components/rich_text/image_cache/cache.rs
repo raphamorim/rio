@@ -1,7 +1,7 @@
+use crate::context::Context;
 use super::atlas::*;
 use super::*;
 
-#[derive(Default)]
 pub struct ImageCache {
     entries: Vec<Entry>,
     atlases: Vec<Atlas>,
@@ -11,13 +11,58 @@ pub struct ImageCache {
     free_entries: u32,
     free_images: u32,
     max_texture_size: u16,
+    color_texture: wgpu::Texture,
+    mask_texture: wgpu::Texture,
+    pub color_texture_view: wgpu::TextureView,
+    pub mask_texture_view: wgpu::TextureView,
 }
 
 impl ImageCache {
     /// Creates a new image cache.
-    #[inline]
-    pub fn new(max_texture_size: u16) -> Self {
+    pub fn new(context: &Context, max_texture_size: u16) -> Self {
+        let device = &context.device;
         let max_texture_size = max_texture_size.clamp(1024, 8192);
+
+        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rich_text create color_texture"),
+            size: wgpu::Extent3d {
+                width: context.size.width as u32,
+                height: context.size.height as u32,
+                depth_or_array_layers: 1,
+            },
+            view_formats: &[],
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            mip_level_count: 1,
+            sample_count: 1,
+        });
+        let color_texture_view =
+            color_texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+
+        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rich_text create mask_texture"),
+            size: wgpu::Extent3d {
+                width: context.size.width as u32,
+                height: context.size.height as u32,
+                depth_or_array_layers: 1,
+            },
+            view_formats: &[],
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            mip_level_count: 1,
+            sample_count: 1,
+        });
+        let mask_texture_view =
+            mask_texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            });
+
         Self {
             entries: Vec::new(),
             atlases: Vec::new(),
@@ -27,6 +72,10 @@ impl ImageCache {
             free_entries: END_OF_LIST,
             free_images: END_OF_LIST,
             max_texture_size,
+            color_texture_view,
+            mask_texture_view,
+            color_texture,
+            mask_texture,
         }
     }
 
