@@ -94,7 +94,7 @@ pub struct ScreenWindowProperties {
 }
 
 impl Screen<'_> {
-    pub async fn new<'screen>(
+    pub fn new<'screen>(
         window_properties: ScreenWindowProperties,
         config: &rio_backend::config::Config,
         event_proxy: EventProxy,
@@ -165,9 +165,7 @@ impl Screen<'_> {
             sugarloaf_renderer,
             font_library,
             sugarloaf_layout,
-        )
-        .await
-        {
+        ) {
             Ok(instance) => instance,
             Err(instance_with_errors) => {
                 sugarloaf_errors = Some(instance_with_errors.errors);

@@ -48,12 +48,12 @@ fn bench_sugar_pile(c: &mut Criterion) {
     );
 
     let font_library = sugarloaf::font::FontLibrary::default();
-    let mut sugarloaf = futures::executor::block_on(Sugarloaf::new(
+    let mut sugarloaf = Sugarloaf::new(
         sugarloaf_window,
         sugarloaf::SugarloafRenderer::default(),
         &font_library,
         sugarloaf_layout,
-    ))
+    )
     .expect("Sugarloaf instance should be created");
 
     sugarloaf.set_background_color(wgpu::Color::RED);

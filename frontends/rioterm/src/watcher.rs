@@ -21,7 +21,7 @@ pub fn configuration_file_updates<
         Config::default().with_poll_interval(POLLING_TIMEOUT),
     )?;
 
-    tokio::spawn(async move {
+    std::thread::spawn(move || {
         // Add a path to be watched. All files and directories at that path and
         // below will be monitored for changes.
         if let Err(err_message) =

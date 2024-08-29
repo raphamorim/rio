@@ -52,7 +52,7 @@ fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureF
 }
 
 impl Context<'_> {
-    pub async fn new<'a>(
+    pub fn new<'a>(
         sugarloaf_window: SugarloafWindow,
         renderer_config: SugarloafRenderer,
     ) -> Context<'a> {
@@ -90,14 +90,14 @@ impl Context<'_> {
 
         let surface: wgpu::Surface<'a> =
             instance.create_surface(sugarloaf_window).unwrap();
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
+        let adapter = futures::executor::block_on(instance.request_adapter(
+            &wgpu::RequestAdapterOptions {
                 power_preference: renderer_config.power_preference,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            })
-            .await
-            .expect("Request adapter");
+            },
+        ))
+        .expect("Request adapter");
 
         log::info!("Selected adapter: {:?}", adapter.get_info());
 
@@ -108,32 +108,27 @@ impl Context<'_> {
         #[cfg(not(target_os = "macos"))]
         let format = find_best_texture_format(caps.formats);
 
-        let (device, queue) = (async {
+        let (device, queue) = {
             {
-                if let Ok(result) = adapter
-                    .request_device(&wgpu::DeviceDescriptor::default(), None)
-                    .await
-                {
+                if let Ok(result) = futures::executor::block_on(
+                    adapter.request_device(&wgpu::DeviceDescriptor::default(), None),
+                ) {
                     result
                 } else {
                     // These downlevel limits will allow the code to run on all possible hardware
-                    adapter
-                        .request_device(
-                            &wgpu::DeviceDescriptor {
-                                memory_hints: wgpu::MemoryHints::Performance,
-                                label: None,
-                                required_features: wgpu::Features::empty(),
-                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
-                                ),
-                            },
-                            None,
-                        )
-                        .await
-                        .expect("Request device")
+                    futures::executor::block_on(adapter.request_device(
+                        &wgpu::DeviceDescriptor {
+                            memory_hints: wgpu::MemoryHints::Performance,
+                            label: None,
+                            required_features: wgpu::Features::empty(),
+                            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                        },
+                        None,
+                    ))
+                    .expect("Request device")
                 }
             }
-        })
-        .await;
+        };
 
         let alpha_mode = if caps
             .alpha_modes

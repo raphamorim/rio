@@ -1,5 +1,4 @@
 extern crate png;
-extern crate tokio;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use sugarloaf::components::rect::Rect;
@@ -14,8 +13,7 @@ use winit::{
     window::WindowAttributes,
 };
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let mut event_loop = EventLoop::new().unwrap();
     let width = 1200.0;
     let height = 800.0;
@@ -58,7 +56,6 @@ async fn main() {
         &font_library,
         sugarloaf_layout,
     )
-    .await
     .expect("Sugarloaf instance should be created");
 
     #[allow(deprecated)]

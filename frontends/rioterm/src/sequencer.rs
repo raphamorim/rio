@@ -45,7 +45,7 @@ impl Sequencer {
         }
     }
 
-    pub async fn run(
+    pub fn run(
         &mut self,
         event_loop: EventLoop<EventPayload>,
     ) -> Result<(), Box<dyn Error>> {
@@ -58,8 +58,7 @@ impl Sequencer {
         let mut scheduler = Scheduler::new(proxy);
 
         let mut window =
-            RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)
-                .await?;
+            RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)?;
         window.is_focused = true;
         self.router.create_route_from_window(window);
 
