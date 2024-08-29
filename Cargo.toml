@@ -36,7 +36,7 @@ rio-backend = { path = "rio-backend", version = "0.1.10" }
 wa = { path = "wa", version = "0.1.7" }
 
 raw-window-handle = "0.6.2"
-parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision", "deadlock_detection"] }
+parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.0.0"
 unicode-width = "0.1.13"
 image = { version = "0.24.9", default-features = false, features = ["ico"] }
