@@ -255,12 +255,12 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn add_graphic(&mut self, graphic: GraphicData) {
-        self.state.graphics.add(graphic);
+        self.rich_text_brush.add_graphic(graphic);
     }
 
     #[inline]
     pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
-        self.state.graphics.remove(graphic_id);
+        self.rich_text_brush.remove_graphic(graphic_id);
     }
 
     #[inline]
