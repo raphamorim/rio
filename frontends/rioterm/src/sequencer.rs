@@ -83,17 +83,6 @@ impl Sequencer {
                                     }
                                 }
                             }
-                            RioEventType::Rio(RioEvent::Wakeup) => {
-                                // Emitted when the application has been resumed.
-                                if let Some(route) =
-                                    self.router.routes.get_mut(&window_id)
-                                {
-                                    route.window.has_updates = true;
-                                    if route.window.has_frame {
-                                        route.request_redraw();
-                                    }
-                                }
-                            }
                             RioEventType::Rio(RioEvent::Render) => {
                                 if let Some(route) =
                                     self.router.routes.get_mut(&window_id)
