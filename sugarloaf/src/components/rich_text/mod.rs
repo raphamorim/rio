@@ -148,7 +148,7 @@ impl RichTextBrush {
                 bind_group_layouts: &[&constant_bind_group_layout, &layout_bind_group_layout],
             });
 
-        let images = ImageCache::new(context, 1024);
+        let images = ImageCache::new(context);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
