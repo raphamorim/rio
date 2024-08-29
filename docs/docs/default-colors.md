@@ -20,9 +20,24 @@ red = '#ED203D'
 white = '#F1F1F1'
 yellow = '#FCBA28'
 
-# UI colors
+# Cursor
+cursor = '#F712FF'
+vi-cursor = '#12d0ff'
+
+# Navigation
 tabs = '#12B5E5'
 tabs-active = '#FCBA28'
+tabs-active-highlight = '#ff00ff'
+tabs-active-foreground = '#FFFFFF'
+bar = '#1b1a1a'
+
+# Search
+search-match-background = '#44C9F0'
+search-match-foreground = '#FFFFFF'
+search-focused-match-background = '#E6A003'
+search-focused-match-foreground = '#FFFFFF'
+
+# Selection
 selection-foreground = '#0F0D0E'
 selection-background = '#44C9F0'
 

@@ -61,6 +61,7 @@ selection-foreground = ""
 # Navigation
 tabs-active = ""
 tabs-active-highlight = ""
+tabs-active-foreground = ""
 bar = ""
 cursor = ""
 vi-cursor = ""
