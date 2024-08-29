@@ -2,6 +2,7 @@ mod atlas;
 mod cache;
 pub mod glyph;
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -79,7 +80,7 @@ pub struct ImageLocation {
 }
 
 /// Data describing a request for caching an image.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct AddImage<'a> {
     /// Format of the image data.
     pub format: PixelFormat,
@@ -102,12 +103,12 @@ impl<'a> AddImage<'a> {
 }
 
 /// Representations of image data for submission to a cache.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub enum ImageData<'a> {
     // None,
     Borrowed(&'a [u8]),
-    // Owned(Vec<u8>),
-    // Shared(Arc<Vec<u8>>),
+    Owned(Vec<u8>),
+    Shared(Arc<Vec<u8>>),
 }
 
 impl<'a> ImageData<'a> {
@@ -116,8 +117,8 @@ impl<'a> ImageData<'a> {
             // Self::None => return None,
             // Self::Borrowed(data) => *data,
             Self::Borrowed(data) => data,
-            // Self::Owned(data) => data,
-            // Self::Shared(data) => &*data,
+            Self::Owned(data) => data,
+            Self::Shared(data) => &*data,
         })
     }
 }

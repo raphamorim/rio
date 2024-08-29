@@ -9,7 +9,7 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use crate::{Graphic, sugarloaf::primitives::SugarCursor};
+use crate::{sugarloaf::primitives::SugarCursor, Graphic};
 use std::hash::{Hash, Hasher};
 use swash::text::cluster::CharInfo;
 use swash::Setting;
@@ -308,5 +308,7 @@ impl Hash for FragmentStyle {
                 color[3].to_bits().hash(state);
             }
         };
+
+        self.media.hash(state);
     }
 }

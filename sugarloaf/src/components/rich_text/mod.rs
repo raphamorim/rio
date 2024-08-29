@@ -4,12 +4,12 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
-use crate::GraphicId;
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::image_cache::{ImageId, GlyphCache, ImageCache};
+use crate::components::rich_text::image_cache::{GlyphCache, ImageCache, ImageId};
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
+use crate::GraphicId;
 use compositor::{
     CachedRun, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
 };
@@ -61,8 +61,10 @@ pub struct RichTextBrush {
     graphics_map: FxHashMap<GraphicId, GraphicsDataBrush>,
 }
 
+#[derive(Copy, Clone)]
 pub struct GraphicsDataBrush {
     texture_id: TextureId,
+    #[allow(dead_code)]
     image_id: ImageId,
     coords: [f32; 4],
     has_alpha: bool,
@@ -334,20 +336,25 @@ impl RichTextBrush {
         if !&state.compositors.advanced.render_data.graphics.is_empty() {
             for graphic_id in &state.compositors.advanced.render_data.graphics {
                 // If graphic id already exist in the image cache then skip
-                if self.graphics_map.contains_key(&graphic_id) {
+                if self.graphics_map.contains_key(graphic_id) {
                     continue;
                 }
-                if let Some(graphic_data) = state.graphics.get(&graphic_id) {
-                    if let Some(image_id) = self.comp.add_image(&mut self.images, graphic_data) {
+                if let Some(graphic_data) = state.graphics.get(graphic_id) {
+                    if let Some(image_id) =
+                        self.comp.add_image(&mut self.images, graphic_data)
+                    {
                         if let Some(img) = self.images.get(&image_id) {
-                            self.graphics_map.insert(*graphic_id, GraphicsDataBrush {
-                                image_id,
-                                width: graphic_data.width,
-                                height: graphic_data.height,
-                                texture_id: img.texture_id,
-                                coords: [img.min.0, img.min.1, img.max.0, img.max.1],
-                                has_alpha: graphic_data.is_opaque,
-                            });
+                            self.graphics_map.insert(
+                                *graphic_id,
+                                GraphicsDataBrush {
+                                    image_id,
+                                    width: graphic_data.width,
+                                    height: graphic_data.height,
+                                    texture_id: img.texture_id,
+                                    coords: [img.min.0, img.min.1, img.max.0, img.max.1],
+                                    has_alpha: graphic_data.is_opaque,
+                                },
+                            );
                         }
                     }
                 }
@@ -755,34 +762,42 @@ fn draw_layout(
     // let start = std::time::Instant::now();
     let (x, y) = pos;
     let (image_cache, glyphs_cache, draw_layout_cache) = caches;
-    let depth = 0.0;
+    let depth = 2.0;
     let mut glyphs = Vec::new();
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let mut current_font_coords: Vec<i16> = Vec::with_capacity(0);
+    let mut current_font_coords: &[i16] = &[0, 0, 0, 0];
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
             current_font_size = run.font_size();
-            current_font_coords = run.normalized_coords().to_vec();
+            current_font_coords = run.normalized_coords();
         }
     }
 
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
-        &current_font_coords,
+        current_font_coords,
         current_font_size,
     );
 
     let mut last_rendered_graphic = None;
-
     for line in render_data.lines() {
         let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
         if let Some(data) = draw_layout_cache.get(&hash) {
-            comp.draw_cached_run(data, px, py, depth, rect, line);
+            comp.draw_cached_run(
+                data,
+                px,
+                py,
+                depth,
+                rect,
+                line,
+                &mut last_rendered_graphic,
+                graphics,
+            );
             continue;
         }
 
@@ -835,28 +850,32 @@ fn draw_layout(
                 );
 
                 current_font = font;
-                current_font_coords = style.font_coords.to_vec();
+                current_font_coords = style.font_coords;
                 current_font_size = style.font_size;
             }
 
             if let Some(graphic) = run.media() {
-                if last_rendered_graphic != Some(graphic) {
+                if last_rendered_graphic != Some(graphic.id) {
                     if let Some(image_data) = graphics.get(&graphic.id) {
+                        let offset_x = graphic.offset_x as f32;
+                        let offset_y = graphic.offset_y as f32;
                         comp.draw_image_from_data(
-                            Rect::new(run_x - (graphic.offset_x as f32), style.topline - (graphic.offset_y as f32), image_data.width as f32, image_data.height as f32),
-                            0.0,
-                            &[1.0, 1.0, 1.0, 1.0],
+                            Rect::new(
+                                run_x - offset_x,
+                                style.topline - offset_y,
+                                image_data.width as f32,
+                                image_data.height as f32,
+                            ),
                             &image_data.coords,
                             image_data.texture_id,
-                            image_data.has_alpha
+                            image_data.has_alpha,
                         );
 
-                        cached_run.push_graphic(
-
-                        );
-                        last_rendered_graphic = Some(graphic);
+                        last_rendered_graphic = Some(graphic.id);
                     }
                 }
+
+                cached_run.graphics.insert(graphic);
             }
 
             comp.draw_run(
@@ -893,7 +912,7 @@ fn fetch_dimensions(
     let (image_cache, glyphs_cache) = caches;
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let mut current_font_coords: Vec<i16> = Vec::with_capacity(0);
+    let mut current_font_coords: Vec<i16> = Vec::with_capacity(4);
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
