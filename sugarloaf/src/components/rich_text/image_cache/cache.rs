@@ -17,7 +17,7 @@ impl ImageCache {
     /// Creates a new image cache.
     #[inline]
     pub fn new(max_texture_size: u16) -> Self {
-        let max_texture_size = max_texture_size.clamp(1024, 4096);
+        let max_texture_size = max_texture_size.clamp(1024, 8192);
         Self {
             entries: Vec::new(),
             atlases: Vec::new(),
