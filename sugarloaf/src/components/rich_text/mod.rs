@@ -42,8 +42,6 @@ pub struct RichTextBrush {
     constant_bind_group: wgpu::BindGroup,
     layout_bind_group: wgpu::BindGroup,
     layout_bind_group_layout: wgpu::BindGroupLayout,
-    color_texture_view: wgpu::TextureView,
-    mask_texture_view: wgpu::TextureView,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     textures: FxHashMap<TextureId, Texture>,
@@ -152,39 +150,7 @@ impl RichTextBrush {
                 bind_group_layouts: &[&constant_bind_group_layout, &layout_bind_group_layout],
             });
 
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text create color_texture"),
-            size: wgpu::Extent3d {
-                width: context.size.width as u32,
-                height: context.size.height as u32,
-                depth_or_array_layers: 1,
-            },
-            view_formats: &[],
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            mip_level_count: 1,
-            sample_count: 1,
-        });
-        let color_texture_view =
-            color_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text create mask_texture"),
-            size: wgpu::Extent3d {
-                width: context.size.width as u32,
-                height: context.size.height as u32,
-                depth_or_array_layers: 1,
-            },
-            view_formats: &[],
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            mip_level_count: 1,
-            sample_count: 1,
-        });
-        let mask_texture_view =
-            mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let images = ImageCache::new(context, 1024);
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -223,11 +189,11 @@ impl RichTextBrush {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&color_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&images.color_texture_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&mask_texture_view),
+                    resource: wgpu::BindingResource::TextureView(&images.mask_texture_view),
                 },
             ],
             label: Some("rich_text::layout_bind_group"),
@@ -297,12 +263,10 @@ impl RichTextBrush {
             constant_bind_group,
             index_buffer_size,
             index_buffer,
-            color_texture_view,
-            mask_texture_view,
             textures: FxHashMap::default(),
             comp: Compositor::new(),
             // 4096 2048
-            images: ImageCache::new(1024),
+            images,
             glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
@@ -503,7 +467,7 @@ impl RichTextBrush {
                                 // if color_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
                                     log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                    self.color_texture_view = texture.create_view(
+                                    self.images.color_texture_view = texture.create_view(
                                         &wgpu::TextureViewDescriptor::default(),
                                     );
                                     color_texture_updated = Some(id);
@@ -515,7 +479,7 @@ impl RichTextBrush {
                                 // if mask_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
                                     log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                    self.mask_texture_view = texture.create_view(
+                                    self.images.mask_texture_view = texture.create_view(
                                         &wgpu::TextureViewDescriptor::default(),
                                     );
                                     mask_texture_updated = Some(id);
@@ -537,7 +501,7 @@ impl RichTextBrush {
                 .textures
                 .get(color_texture_updated.unwrap_or(&TextureId(1)))
             {
-                self.mask_texture_view =
+                self.images.mask_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
             }
         }
@@ -546,7 +510,7 @@ impl RichTextBrush {
                 .textures
                 .get(mask_texture_updated.unwrap_or(&TextureId(1)))
             {
-                self.color_texture_view =
+                self.images.color_texture_view =
                     texture.create_view(&wgpu::TextureViewDescriptor::default());
             }
         }
@@ -558,13 +522,13 @@ impl RichTextBrush {
                     wgpu::BindGroupEntry {
                         binding: 1,
                         resource: wgpu::BindingResource::TextureView(
-                            &self.color_texture_view,
+                            &self.images.color_texture_view,
                         ),
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
                         resource: wgpu::BindingResource::TextureView(
-                            &self.mask_texture_view,
+                            &self.images.mask_texture_view,
                         ),
                     },
                 ],
