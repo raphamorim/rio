@@ -210,7 +210,7 @@ impl ScreenNavigation {
 
             let is_current = i == self.current;
             if is_current {
-                foreground_color = colors.foreground;
+                foreground_color = colors.tabs_active_foreground;
                 background_color = colors.tabs_active;
             }
 
