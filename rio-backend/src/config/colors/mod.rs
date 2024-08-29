@@ -102,7 +102,7 @@ pub struct Colors {
     pub bar: ColorArray,
     #[serde(
         default = "defaults::tabs_active_highlight",
-        rename = "tabs-active-highligh",
+        rename = "tabs-active-highlight",
         deserialize_with = "deserialize_to_arr"
     )]
     pub tabs_active_highlight: ColorArray,
