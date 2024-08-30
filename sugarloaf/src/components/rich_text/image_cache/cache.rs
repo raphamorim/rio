@@ -8,9 +8,9 @@ use super::atlas::*;
 use super::*;
 
 pub struct ImageCache {
-    entries: Vec<Entry>,
-    atlases: Vec<Atlas>,
-    pub images: Vec<Standalone>,
+    pub entries: Vec<Entry>,
+    pub atlases: Vec<Atlas>,
+    images: Vec<Standalone>,
     buffered_data: Vec<u8>,
     events: Vec<Event>,
     free_entries: u32,
@@ -651,7 +651,7 @@ impl ImageCache {
 }
 
 #[derive(Default)]
-struct Entry {
+pub struct Entry {
     /// Zero if the entry is free.
     flags: u8,
     /// Generation of this entry. Used to detect stale handles.
@@ -669,7 +669,7 @@ struct Entry {
     height: u16,
 }
 
-struct Atlas {
+pub struct Atlas {
     format: PixelFormat,
     alloc: AtlasAllocator,
     buffer: Vec<u8>,
@@ -678,7 +678,7 @@ struct Atlas {
     texture_id: TextureId,
 }
 
-pub struct Standalone {
+struct Standalone {
     texture_id: TextureId,
     used: bool,
     next: u32,

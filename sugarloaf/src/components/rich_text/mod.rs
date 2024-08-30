@@ -445,8 +445,8 @@ impl RichTextBrush {
             self.index_buffer_size = size;
         }
 
-        // if self.textures_version != self.images.images.len() {
-            // println!("oi");
+        if self.textures_version != self.images.entries.len() {
+            self.textures_version = self.images.entries.len();
             self.layout_bind_group =
                 ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.layout_bind_group_layout,
@@ -460,7 +460,7 @@ impl RichTextBrush {
                     ],
                     label: Some("rich_text::Pipeline uniforms"),
                 });
-        // }
+        }
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.constant_bind_group, &[]);
