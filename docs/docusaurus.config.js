@@ -131,7 +131,7 @@ const config = {
         items: [
           { to: '/docs/install', label: 'Install', position: 'left' },
           {
-            to: '/docs/configuration-file',
+            to: '/docs/config',
             label: 'Config',
             position: 'left',
           },
@@ -173,7 +173,7 @@ const config = {
               },
               {
                 label: 'Config',
-                to: '/docs/configuration-file',
+                to: '/docs/config',
               },
               {
                 label: 'Features',
