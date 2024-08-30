@@ -12,16 +12,15 @@ struct VertexInput {
     @location(0) v_pos: vec4<f32>,
     @location(1) v_color: vec4<f32>,
     @location(2) v_uv: vec2<f32>,
-    @location(3) layer: u32,
+    @location(3) layers: vec2<i32>,
 }
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) f_color: vec4<f32>,
     @location(1) f_uv: vec2<f32>,
-    @location(2) f_use_tex: i32,
-    @location(3) f_use_mask: i32,
-    @location(4) layer: f32, // this should be an i32, but naga currently reads that as requiring interpolation.
+    @location(2) texture_layer: i32,
+    @location(3) mask_layer: i32,
 }
 
 @vertex
@@ -29,46 +28,24 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.f_color = input.v_color;
     out.f_uv = input.v_uv;
-    out.layer = f32(input.layer);
+    out.texture_layer = input.layers.x;
+    out.mask_layer = input.layers.y;
 
-    var use_tex: i32 = 0;
-    var use_mask: i32 = 0;
-
-    var flags: i32 = i32(input.v_pos.w);
-    if (flags == 1) {
-        use_tex = 1;
-    } else if (flags == 2) {
-        use_mask = 1;
-    } else if (flags == 3) {
-        use_tex = 1;
-        use_mask = 1;
-    }
-
-    out.f_use_tex = use_tex;
-    out.f_use_mask = use_mask;
     out.position = globals.transform * vec4<f32>(input.v_pos.xy, 0.0, 1.0);
     return out;
 }
-
-//@fragment
-//fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-//   return textureSample(u_texture, u_sampler, input.uv, i32(input.layer));
-// }
-
-// TODO: Refactor f_use_tex and f_use_mask to actually be the layer id
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // return vec4<f32>(input.f_color.xyz, 1.0);
     var out: vec4<f32> = input.f_color;
 
-    if input.f_use_tex > 0 {
-        // return textureSample(u_texture, u_sampler, input.uv, i32(input.layer));
-        out = textureSample(font_color_tex, font_sampler, input.f_uv, i32(input.layer));
+    if input.texture_layer > 0 {
+        out = textureSample(font_color_tex, font_sampler, input.f_uv, input.texture_layer);
     }
 
-    if input.f_use_mask > 0 {
-        out = vec4<f32>(out.xyz, textureSample(font_mask_tex, font_sampler, input.f_uv, i32(input.layer)).x);
+    if input.mask_layer > 0 {
+        out = vec4<f32>(out.xyz, textureSample(font_mask_tex, font_sampler, input.f_uv, input.mask_layer).x);
     }
 
     return out;
