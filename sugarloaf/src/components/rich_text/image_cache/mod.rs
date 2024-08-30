@@ -2,7 +2,7 @@ mod atlas;
 mod cache;
 pub mod glyph;
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -28,16 +28,16 @@ pub use glyph::GlyphCache;
 
 /// Identifier for a texture in GPU memory.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
-pub struct TextureId(pub u32);
+pub struct TextureId(pub i32);
 
 impl TextureId {
     fn allocate() -> Self {
-        static COUNTER: AtomicU32 = AtomicU32::new(1);
+        static COUNTER: AtomicI32 = AtomicI32::new(1);
         Self(COUNTER.fetch_add(1, Ordering::Relaxed))
     }
 
     #[inline]
-    pub fn inner(&self) -> u32 {
+    pub fn val(&self) -> i32 {
         self.0
     }
 }

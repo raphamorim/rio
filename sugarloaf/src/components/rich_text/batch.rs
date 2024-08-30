@@ -16,10 +16,10 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct Vertex {
-    pub pos: [f32; 4],
+    pub pos: [f32; 3],
     pub color: [f32; 4],
     pub uv: [f32; 2],
-    pub layer: u32,
+    pub layers: [i32; 2],
 }
 
 /// Rectangle with floating point coordinates.
@@ -53,6 +53,8 @@ impl From<[f32; 4]> for Rect {
 struct Batch {
     image: Option<TextureId>,
     mask: Option<TextureId>,
+    current_image: i32,
+    current_mask: i32,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     subpix: bool,
@@ -62,6 +64,8 @@ impl Batch {
     fn clear(&mut self) {
         self.image = None;
         self.mask = None;
+        self.current_image = 0;
+        self.current_mask = 0;
         self.vertices.clear();
         self.indices.clear();
         self.subpix = false;
@@ -91,23 +95,15 @@ impl Batch {
             return false;
         }
         self.subpix = subpix;
-        let flags = match (has_image, has_mask) {
-            (true, true) => {
-                self.image = image;
-                self.mask = mask;
-                3.
-            }
-            (true, false) => {
-                self.image = image;
-                1.
-            }
-            (false, true) => {
-                self.mask = mask;
-                2.
-            }
-            _ => 0.,
-        };
-        self.push_rect(rect, depth, flags, color, coords, self.image);
+        self.image = image;
+        self.mask = mask;
+        if let Some(image) = self.image {
+            self.current_image = image.val();
+        }
+        if let Some(mask) = self.mask {
+            self.current_mask = mask.val();
+        }
+        self.push_rect(rect, depth, color, coords);
         true
     }
 
@@ -116,10 +112,8 @@ impl Batch {
         &mut self,
         rect: &Rect,
         depth: f32,
-        flags: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
-        layer: Option<TextureId>,
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -131,31 +125,34 @@ impl Batch {
         let t = coords[1];
         let r = coords[2];
         let b = coords[3];
-        let layer = layer.unwrap_or(TextureId(1)).inner();
+        let layers = [
+            self.current_image,
+            self.current_mask,
+        ];
         let verts = [
             Vertex {
-                pos: [x, y, depth, flags],
+                pos: [x, y, depth],
                 color: *color,
                 uv: [l, t],
-                layer,
+                layers,
             },
             Vertex {
-                pos: [x, y + h, depth, flags],
+                pos: [x, y + h, depth],
                 color: *color,
                 uv: [l, b],
-                layer,
+                layers,
             },
             Vertex {
-                pos: [x + w, y + h, depth, flags],
+                pos: [x + w, y + h, depth],
                 color: *color,
                 uv: [r, b],
-                layer,
+                layers,
             },
             Vertex {
-                pos: [x + w, y, depth, flags],
+                pos: [x + w, y, depth],
                 color: *color,
                 uv: [r, t],
-                layer,
+                layers,
             },
         ];
         let base = self.vertices.len() as u32;
