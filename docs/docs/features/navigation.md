@@ -15,4 +15,4 @@ Rio support different types of navigation modes:
 <img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="48%"/>
 </p>
 
-See more about it [here](/docs/navigation).
+See more about it [here](/docs/config/navigation).

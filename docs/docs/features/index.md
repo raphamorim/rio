@@ -14,7 +14,7 @@ Short introduction of Rio terminal features.
 - [Rio is fast](/docs/features/rio-is-fast)
 - [Adaptive theme](/docs/features/adaptive-theme)
 - [Multi windows](/docs/features/multi-windows)
-- [Navigation](/docs/features/navigation)
+- [Navigation](/docs/config/navigation)
 - [Color automation for navigation](/docs/features/color-automation-for-navigation)
 - [Spawn or Fork](/docs/features/spawn-or-fork)
 
