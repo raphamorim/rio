@@ -220,6 +220,7 @@ impl RichTextBrush {
                         0 => Float32x4,
                         1 => Float32x4,
                         2 => Float32x2,
+                        3 => Uint32,
                     ),
                 }],
             },
@@ -465,9 +466,10 @@ impl RichTextBrush {
                                 // if color_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
                                     log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                    self.images.color_texture_view = texture.create_view(
-                                        &wgpu::TextureViewDescriptor::default(),
-                                    );
+                                    self.images.color_texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                        ..Default::default()
+                                    });
                                     color_texture_updated = Some(id);
                                 }
                                 // }
@@ -477,9 +479,10 @@ impl RichTextBrush {
                                 // if mask_texture_updated.is_none() {
                                 if let Some(texture) = self.textures.get(id) {
                                     log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                    self.images.mask_texture_view = texture.create_view(
-                                        &wgpu::TextureViewDescriptor::default(),
-                                    );
+                                    self.images.mask_texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                        ..Default::default()
+                                    });
                                     mask_texture_updated = Some(id);
                                 }
                                 // }
@@ -497,19 +500,25 @@ impl RichTextBrush {
         if self.first_run && mask_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(color_texture_updated.unwrap_or(&TextureId(1)))
+                .get(color_texture_updated.unwrap_or(&TextureId(0)))
             {
                 self.images.mask_texture_view =
-                    texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    texture.create_view(&wgpu::TextureViewDescriptor {
+                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                        ..Default::default()
+                                    });
             }
         }
         if self.first_run && color_texture_updated.is_none() {
             if let Some(texture) = self
                 .textures
-                .get(mask_texture_updated.unwrap_or(&TextureId(1)))
+                .get(mask_texture_updated.unwrap_or(&TextureId(0)))
             {
                 self.images.color_texture_view =
-                    texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    texture.create_view(&wgpu::TextureViewDescriptor {
+                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                                        ..Default::default()
+                                    });
             }
         }
 
@@ -518,13 +527,13 @@ impl RichTextBrush {
                 layout: &self.layout_bind_group_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
-                        binding: 1,
+                        binding: 0,
                         resource: wgpu::BindingResource::TextureView(
                             &self.images.color_texture_view,
                         ),
                     },
                     wgpu::BindGroupEntry {
-                        binding: 2,
+                        binding: 1,
                         resource: wgpu::BindingResource::TextureView(
                             &self.images.mask_texture_view,
                         ),

@@ -12,6 +12,7 @@ struct VertexInput {
     @location(0) v_pos: vec4<f32>,
     @location(1) v_color: vec4<f32>,
     @location(2) v_uv: vec2<f32>,
+    @location(3) layer: u32,
 }
 
 struct VertexOutput {
@@ -20,6 +21,7 @@ struct VertexOutput {
     @location(1) f_uv: vec2<f32>,
     @location(2) f_use_tex: i32,
     @location(3) f_use_mask: i32,
+    @location(4) layer: f32, // this should be an i32, but naga currently reads that as requiring interpolation.
 }
 
 @vertex
@@ -27,6 +29,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.f_color = input.v_color;
     out.f_uv = input.v_uv;
+    out.layer = f32(input.layer);
 
     var use_tex: i32 = 0;
     var use_mask: i32 = 0;
@@ -47,17 +50,25 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
+//@fragment
+//fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+//   return textureSample(u_texture, u_sampler, input.uv, i32(input.layer));
+// }
+
+// TODO: Refactor f_use_tex and f_use_mask to actually be the layer id
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // return vec4<f32>(input.f_color.xyz, 1.0);
     var out: vec4<f32> = input.f_color;
 
     if input.f_use_tex > 0 {
-        out = textureSampleLevel(font_color_tex, font_sampler, input.f_uv, 0.0);
+        // return textureSample(u_texture, u_sampler, input.uv, i32(input.layer));
+        out = textureSample(font_color_tex, font_sampler, input.f_uv, i32(input.layer));
     }
 
     if input.f_use_mask > 0 {
-        out = vec4<f32>(out.xyz, textureSampleLevel(font_mask_tex, font_sampler, input.f_uv, 0.0).x);
+        out = vec4<f32>(out.xyz, textureSample(font_mask_tex, font_sampler, input.f_uv, i32(input.layer)).x);
     }
 
     return out;
