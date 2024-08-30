@@ -307,7 +307,6 @@ impl RichTextBrush {
     #[inline]
     pub fn prepare(
         &mut self,
-        ctx: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
     ) {
         // let start = std::time::Instant::now();
