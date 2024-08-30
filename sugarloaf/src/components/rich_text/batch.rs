@@ -53,8 +53,6 @@ impl From<[f32; 4]> for Rect {
 struct Batch {
     image: Option<TextureId>,
     mask: Option<TextureId>,
-    current_image: i32,
-    current_mask: i32,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     subpix: bool,
@@ -64,8 +62,6 @@ impl Batch {
     fn clear(&mut self) {
         self.image = None;
         self.mask = None;
-        self.current_image = 0;
-        self.current_mask = 0;
         self.vertices.clear();
         self.indices.clear();
         self.subpix = false;
@@ -97,13 +93,11 @@ impl Batch {
         self.subpix = subpix;
         self.image = image;
         self.mask = mask;
-        if let Some(image) = self.image {
-            self.current_image = image.val();
-        }
-        if let Some(mask) = self.mask {
-            self.current_mask = mask.val();
-        }
-        self.push_rect(rect, depth, color, coords);
+        let layers = [
+            self.image.unwrap_or(TextureId(0)).val(),
+            self.mask.unwrap_or(TextureId(0)).val(),
+        ];
+        self.push_rect(rect, depth, color, coords, layers);
         true
     }
 
@@ -114,6 +108,7 @@ impl Batch {
         depth: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
+        layers: [i32; 2],
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -125,10 +120,6 @@ impl Batch {
         let t = coords[1];
         let r = coords[2];
         let b = coords[3];
-        let layers = [
-            self.current_image,
-            self.current_mask,
-        ];
         let verts = [
             Vertex {
                 pos: [x, y, depth],
