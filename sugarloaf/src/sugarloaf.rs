@@ -301,6 +301,8 @@ impl Sugarloaf<'_> {
                     );
                 }
 
+                self.rich_text_brush.finish_prepare(&mut self.ctx, &mut encoder);
+
                 {
                     let mut rpass =
                         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
