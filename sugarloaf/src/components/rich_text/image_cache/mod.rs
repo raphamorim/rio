@@ -130,32 +130,6 @@ impl<'a> ImageData<'a> {
     }
 }
 
-/// Event that describes a change in an image cache.
-#[derive(Copy, Clone)]
-#[allow(clippy::enum_variant_names)]
-pub enum TextureEvent<'a> {
-    /// Texture creation event.
-    CreateTexture {
-        id: TextureId,
-        format: PixelFormat,
-        width: u16,
-        height: u16,
-        data: Option<&'a [u8]>,
-    },
-    /// Texture update event.
-    UpdateTexture {
-        id: TextureId,
-        format: PixelFormat,
-        x: u16,
-        y: u16,
-        width: u16,
-        height: u16,
-        data: &'a [u8],
-    },
-    /// Texture destruction event.
-    DestroyTexture(TextureId),
-}
-
 /// Limit on number of atlases before image allocation fails.
 const MAX_ATLASES: u16 = 256;
 

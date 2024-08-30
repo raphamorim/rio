@@ -37,7 +37,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // return vec4<f32>(input.f_color.xyz, 1.0);
     var out: vec4<f32> = input.f_color;
 
     if input.texture_layer > 0 {
