@@ -359,11 +359,16 @@ impl RichTextBrush {
         // let duration = start.elapsed();
         // println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
 
-        self.dlist.clear();
-        self.finish_composition(ctx);
-
         // let duration = start.elapsed();
         // println!(" - rich_text::prepare() is: {:?}", duration);
+    }
+
+    #[inline]
+    pub fn finish_prepare(&mut self, ctx: &mut Context, encoder: &mut wgpu::CommandEncoder) {
+        self.dlist.clear();
+        self.images.process_events(ctx, encoder);
+        self.images.process_atlases(ctx, encoder);
+        self.comp.finish(&mut self.dlist);
     }
 
     #[inline]
@@ -459,7 +464,8 @@ impl RichTextBrush {
             self.index_buffer_size = size;
         }
 
-        if self.textures_version != self.images.images.len() {
+        // if self.textures_version != self.images.images.len() {
+            // println!("oi");
             self.layout_bind_group =
                 ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.layout_bind_group_layout,
@@ -479,7 +485,7 @@ impl RichTextBrush {
                     ],
                     label: Some("rich_text::Pipeline uniforms"),
                 });
-        }
+        // }
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.constant_bind_group, &[]);
@@ -487,6 +493,15 @@ impl RichTextBrush {
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
+        // if let Some(bounds) = rect_bounds {
+        //     rpass.set_scissor_rect(
+        //         bounds.x,
+        //         bounds.y,
+        //         bounds.width,
+        //         bounds.height,
+        //     );
+        // }
+        
         // Draw the specified range of indexed triangles.
         for items in self.dlist.indices_to_draw() {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
@@ -494,13 +509,6 @@ impl RichTextBrush {
 
         // let duration = start.elapsed();
         // println!(" - rich_text::render() is: {:?}", duration);
-    }
-
-    #[inline]
-    fn finish_composition(&mut self, ctx: &mut Context) {
-        self.images.process_events(ctx);
-        self.images.process_atlases(ctx);
-        self.comp.finish(&mut self.dlist);
     }
 }
 
@@ -546,7 +554,7 @@ fn draw_layout(
     // let start = std::time::Instant::now();
     let (x, y) = pos;
     let (image_cache, glyphs_cache, draw_layout_cache) = caches;
-    let depth = 2.0;
+    let depth = 0.0;
     let mut glyphs = Vec::new();
     let mut current_font = 0;
     let mut current_font_size = 0.0;
