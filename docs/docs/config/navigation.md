@@ -5,7 +5,7 @@ language: 'en'
 
 - `hide-if-single` - Hide navigation UI if there is only one tab. It does not work for `NativeTab`. 
 - `clickable` - Enable click on tabs to switch.
-- `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/configuration-file/#use-fork) to be set to false).
+- `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/config/use-fork) to be set to false).
 - `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 
 ```toml
