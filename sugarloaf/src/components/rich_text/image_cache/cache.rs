@@ -514,9 +514,7 @@ impl ImageCache {
                 });
 
                 let texture = match atlas.format {
-                    // Mask
                     PixelFormat::A8 => &self.mask_texture,
-                    // Color
                     PixelFormat::Rgba8 => &self.color_texture,
                 };
 
