@@ -19,6 +19,7 @@ pub struct Vertex {
     pub pos: [f32; 4],
     pub color: [f32; 4],
     pub uv: [f32; 2],
+    pub layer: u32,
 }
 
 /// Rectangle with floating point coordinates.
@@ -106,7 +107,7 @@ impl Batch {
             }
             _ => 0.,
         };
-        self.push_rect(rect, depth, flags, color, coords);
+        self.push_rect(rect, depth, flags, color, coords, self.image);
         true
     }
 
@@ -118,6 +119,7 @@ impl Batch {
         flags: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
+        layer: Option<TextureId>,
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -129,26 +131,31 @@ impl Batch {
         let t = coords[1];
         let r = coords[2];
         let b = coords[3];
+        let layer = layer.unwrap_or(TextureId(1)).inner();
         let verts = [
             Vertex {
                 pos: [x, y, depth, flags],
                 color: *color,
                 uv: [l, t],
+                layer,
             },
             Vertex {
                 pos: [x, y + h, depth, flags],
                 color: *color,
                 uv: [l, b],
+                layer,
             },
             Vertex {
                 pos: [x + w, y + h, depth, flags],
                 color: *color,
                 uv: [r, b],
+                layer,
             },
             Vertex {
                 pos: [x + w, y, depth, flags],
                 color: *color,
                 uv: [r, t],
+                layer,
             },
         ];
         let base = self.vertices.len() as u32;
