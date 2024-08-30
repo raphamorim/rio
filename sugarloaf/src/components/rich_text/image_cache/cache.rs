@@ -17,24 +17,30 @@ pub struct ImageCache {
     pub mask_texture_view: wgpu::TextureView,
 }
 
+pub const SIZE: u32 = 2048;
+
+// TODO: Refatorar esse events
+
 impl ImageCache {
     /// Creates a new image cache.
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         // let max_texture_size = max_texture_size.clamp(1024, 8192);
-        let max_texture_size = 1024;
+        let max_texture_size = SIZE;
 
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create color_texture"),
             size: wgpu::Extent3d {
-                width: context.size.width as u32,
-                height: context.size.height as u32,
+                width: SIZE,
+                height: SIZE,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
         });
@@ -47,14 +53,16 @@ impl ImageCache {
         let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create mask_texture"),
             size: wgpu::Extent3d {
-                width: context.size.width as u32,
-                height: context.size.height as u32,
+                width: SIZE,
+                height: SIZE,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
         });
@@ -72,7 +80,7 @@ impl ImageCache {
             events: Vec::new(),
             free_entries: END_OF_LIST,
             free_images: END_OF_LIST,
-            max_texture_size,
+            max_texture_size: max_texture_size.try_into().unwrap(),
             color_texture_view,
             mask_texture_view,
             color_texture,
