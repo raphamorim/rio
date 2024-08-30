@@ -11,13 +11,12 @@ use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::{GraphicData, GraphicId};
 use compositor::{
-    CachedRun, Command, Compositor, DisplayList, Rect, TextureEvent, TextureId, Vertex,
+    CachedRun, Compositor, DisplayList, Rect, TextureId, Vertex,
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
-use wgpu::Texture;
 
 // Note: currently it's using Indexed drawing instead of Instance drawing could be worth to
 // evaluate if would make sense move to instance drawing instead
@@ -44,16 +43,14 @@ pub struct RichTextBrush {
     layout_bind_group_layout: wgpu::BindGroupLayout,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
-    textures: FxHashMap<TextureId, Texture>,
     index_buffer: wgpu::Buffer,
     index_buffer_size: u64,
     current_transform: [f32; 16],
     comp: Compositor,
     draw_layout_cache: DrawLayoutCache,
     dlist: DisplayList,
-    bind_group_needs_update: bool,
-    first_run: bool,
     supported_vertex_buffer: usize,
+    textures_version: usize,
     images: ImageCache,
     glyphs: GlyphCache,
     graphics: FxHashMap<GraphicId, GraphicsDataBrush>,
@@ -114,7 +111,8 @@ impl RichTextBrush {
                 ],
             });
 
-            let layout_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let layout_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
@@ -122,7 +120,9 @@ impl RichTextBrush {
                         visibility: wgpu::ShaderStages::VERTEX
                             | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
                             view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         },
@@ -132,7 +132,9 @@ impl RichTextBrush {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
                             view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         },
@@ -145,7 +147,10 @@ impl RichTextBrush {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
                 push_constant_ranges: &[],
-                bind_group_layouts: &[&constant_bind_group_layout, &layout_bind_group_layout],
+                bind_group_layouts: &[
+                    &constant_bind_group_layout,
+                    &layout_bind_group_layout,
+                ],
             });
 
         let images = ImageCache::new(context);
@@ -187,11 +192,15 @@ impl RichTextBrush {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&images.color_texture_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &images.color_texture_view,
+                    ),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&images.mask_texture_view),
+                    resource: wgpu::BindingResource::TextureView(
+                        &images.mask_texture_view,
+                    ),
                 },
             ],
             label: Some("rich_text::layout_bind_group"),
@@ -262,18 +271,15 @@ impl RichTextBrush {
             constant_bind_group,
             index_buffer_size,
             index_buffer,
-            textures: FxHashMap::default(),
             comp: Compositor::new(),
-            // 4096 2048
             images,
+            textures_version: 0,
             glyphs: GlyphCache::new(),
             draw_layout_cache: DrawLayoutCache::default(),
             dlist,
             transform,
             pipeline,
             vertex_buffer,
-            first_run: true,
-            bind_group_needs_update: true,
             supported_vertex_buffer,
             current_transform,
             graphics: FxHashMap::default(),
@@ -453,94 +459,26 @@ impl RichTextBrush {
             self.index_buffer_size = size;
         }
 
-        let mut color_texture_updated: Option<&TextureId> = None;
-        let mut mask_texture_updated: Option<&TextureId> = None;
-
-        for command in self.dlist.commands() {
-            match command {
-                Command::BindTexture(unit, id) => {
-                    if self.bind_group_needs_update {
-                        match unit {
-                            // color_texture
-                            0 => {
-                                // if color_texture_updated.is_none() {
-                                if let Some(texture) = self.textures.get(id) {
-                                    log::info!("rich_text::BindTexture, set color_texture_view {:?} {:?}", unit, id);
-                                    self.images.color_texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
-                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                        ..Default::default()
-                                    });
-                                    color_texture_updated = Some(id);
-                                }
-                                // }
-                            }
-                            // mask_texture
-                            1 => {
-                                // if mask_texture_updated.is_none() {
-                                if let Some(texture) = self.textures.get(id) {
-                                    log::info!("rich_text::BindTexture, set mask_texture_view {:?} {:?}", unit, id);
-                                    self.images.mask_texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
-                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                        ..Default::default()
-                                    });
-                                    mask_texture_updated = Some(id);
-                                }
-                                // }
-                            }
-                            _ => {
-                                // Noop
-                            }
-                        }
-                    };
-                }
-            }
-        }
-
-        // Ensure texture views are not empty in the first run
-        if self.first_run && mask_texture_updated.is_none() {
-            if let Some(texture) = self
-                .textures
-                .get(color_texture_updated.unwrap_or(&TextureId(0)))
-            {
-                self.images.mask_texture_view =
-                    texture.create_view(&wgpu::TextureViewDescriptor {
-                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                        ..Default::default()
-                                    });
-            }
-        }
-        if self.first_run && color_texture_updated.is_none() {
-            if let Some(texture) = self
-                .textures
-                .get(mask_texture_updated.unwrap_or(&TextureId(0)))
-            {
-                self.images.color_texture_view =
-                    texture.create_view(&wgpu::TextureViewDescriptor {
-                                        dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                        ..Default::default()
-                                    });
-            }
-        }
-
-        if self.bind_group_needs_update {
-            self.layout_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.layout_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.images.color_texture_view,
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.images.mask_texture_view,
-                        ),
-                    },
-                ],
-                label: Some("rich_text::Pipeline uniforms"),
-            });
+        if self.textures_version != self.images.images.len() {
+            self.layout_bind_group =
+                ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &self.layout_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.images.color_texture_view,
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.images.mask_texture_view,
+                            ),
+                        },
+                    ],
+                    label: Some("rich_text::Pipeline uniforms"),
+                });
         }
 
         rpass.set_pipeline(&self.pipeline);
@@ -554,143 +492,15 @@ impl RichTextBrush {
             rpass.draw_indexed(items.0..items.1, 0, 0..1);
         }
 
-        self.bind_group_needs_update = false;
-        self.first_run = false;
-
         // let duration = start.elapsed();
         // println!(" - rich_text::render() is: {:?}", duration);
     }
 
     #[inline]
     fn finish_composition(&mut self, ctx: &mut Context) {
-        self.comp
-            .finish(&mut self.dlist, &mut self.images, |event| {
-                match event {
-                    TextureEvent::CreateTexture {
-                        id,
-                        format,
-                        width,
-                        height,
-                        data,
-                    } => {
-                        println!("CreateTexture {:?}", id);
-                        log::info!(
-                            "rich_text::CreateTexture with id ({:?}) and format {:?}",
-                            id,
-                            format
-                        );
-                        let texture_size = wgpu::Extent3d {
-                            width: width.into(),
-                            height: height.into(),
-                            depth_or_array_layers: 1,
-                        };
-                        let texture =
-                            ctx.device.create_texture(&wgpu::TextureDescriptor {
-                                size: texture_size,
-                                mip_level_count: 1,
-                                sample_count: 1,
-                                dimension: wgpu::TextureDimension::D2,
-                                format: match format {
-                                    image_cache::PixelFormat::A8 => {
-                                        wgpu::TextureFormat::R8Unorm
-                                    }
-                                    image_cache::PixelFormat::Rgba8 => {
-                                        wgpu::TextureFormat::Rgba8Unorm
-                                    }
-                                },
-                                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                                    | wgpu::TextureUsages::COPY_DST,
-                                label: Some("rich_text::Cache"),
-                                view_formats: &[],
-                            });
-
-                        if let Some(data) = data {
-                            self.bind_group_needs_update = true;
-                            let channels = match format {
-                                // Mask
-                                image_cache::PixelFormat::A8 => 1,
-                                // Color
-                                image_cache::PixelFormat::Rgba8 => 4,
-                            };
-
-                            ctx.queue.write_texture(
-                                // Tells wgpu where to copy the pixel data
-                                wgpu::ImageCopyTexture {
-                                    texture: &texture,
-                                    mip_level: 0,
-                                    origin: wgpu::Origin3d::ZERO,
-                                    aspect: wgpu::TextureAspect::All,
-                                },
-                                // The actual pixel data
-                                data,
-                                // The layout of the texture
-                                wgpu::ImageDataLayout {
-                                    offset: 0,
-                                    bytes_per_row: Some((width * channels).into()),
-                                    rows_per_image: Some(height.into()),
-                                },
-                                texture_size,
-                            );
-                        }
-
-                        self.textures.insert(id, texture);
-                    }
-                    TextureEvent::UpdateTexture {
-                        id,
-                        format,
-                        x,
-                        y,
-                        width,
-                        height,
-                        data,
-                    } => {
-                        println!("UpdateTexture {:?} {:?}", id, data.len());
-                        log::info!("rich_text::UpdateTexture id ({:?})", id);
-                        if let Some(texture) = self.textures.get(&id) {
-                            self.bind_group_needs_update = true;
-                            let texture_size = wgpu::Extent3d {
-                                width: width.into(),
-                                height: height.into(),
-                                depth_or_array_layers: 1,
-                            };
-
-                            let channels = match format {
-                                // Mask
-                                image_cache::PixelFormat::A8 => 1,
-                                // Color
-                                image_cache::PixelFormat::Rgba8 => 4,
-                            };
-
-                            ctx.queue.write_texture(
-                                // Tells wgpu where to copy the pixel data
-                                wgpu::ImageCopyTexture {
-                                    texture,
-                                    mip_level: 0,
-                                    origin: wgpu::Origin3d {
-                                        x: u32::from(x),
-                                        y: u32::from(y),
-                                        z: 0,
-                                    },
-                                    aspect: wgpu::TextureAspect::All,
-                                },
-                                // The actual pixel data
-                                data,
-                                // The layout of the texture
-                                wgpu::ImageDataLayout {
-                                    offset: 0,
-                                    bytes_per_row: Some((width * channels).into()),
-                                    rows_per_image: Some(height.into()),
-                                },
-                                texture_size,
-                            );
-                        }
-                    }
-                    TextureEvent::DestroyTexture(id) => {
-                        log::info!("rich_text::DestroyTexture id ({:?})", id);
-                        self.textures.remove(&id);
-                    }
-                }
-            });
+        self.images.process_events(ctx);
+        self.images.process_atlases(ctx);
+        self.comp.finish(&mut self.dlist);
     }
 }
 

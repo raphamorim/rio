@@ -11,8 +11,6 @@
 
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{
-    // Command, DisplayList, Pipeline, Rect, Vertex,
-    Command,
     DisplayList,
     Rect,
     Vertex,
@@ -22,9 +20,7 @@ pub use crate::components::rich_text::image_cache::{
     AddImage,
     ImageId,
     ImageLocation,
-    TextureEvent,
     TextureId,
-    // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
 };
 use crate::components::rich_text::image_cache::{ImageCache, ImageData, PixelFormat};
 use crate::components::rich_text::text::*;
@@ -114,13 +110,7 @@ impl Compositor {
 
     /// Builds a display list for the current batched geometry and enumerates
     /// all texture events with the specified closure.
-    pub fn finish(
-        &mut self,
-        list: &mut DisplayList,
-        images: &mut ImageCache,
-        events: impl FnMut(TextureEvent),
-    ) {
-        images.drain_events(events);
+    pub fn finish(&mut self, list: &mut DisplayList) {
         self.batches.build_display_list(list);
     }
 

@@ -165,12 +165,6 @@ impl Batch {
         list.vertices.extend_from_slice(&self.vertices);
         list.indices
             .extend(self.indices.iter().map(|i| *i + first_vertex));
-        if let Some(tex) = self.mask {
-            list.commands.push(Command::BindTexture(0, tex));
-        }
-        if let Some(tex) = self.image {
-            list.commands.push(Command::BindTexture(1, tex));
-        }
         list.indices_to_draw
             .push((first_index, first_index + self.indices.len() as u32));
     }
@@ -333,7 +327,6 @@ pub struct DisplayList {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     indices_to_draw: Vec<(u32, u32)>,
-    commands: Vec<Command>,
 }
 
 impl DisplayList {
@@ -361,25 +354,11 @@ impl DisplayList {
         &self.indices
     }
 
-    /// Returns the sequence of display commands.
-    #[inline]
-    pub fn commands(&self) -> &[Command] {
-        &self.commands
-    }
-
     /// Clears the display list.
     #[inline]
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
-        self.commands.clear();
         self.indices_to_draw.clear();
     }
-}
-
-/// Command in a display list.
-#[derive(Copy, Clone, Debug)]
-pub enum Command {
-    /// Bind a texture at the specified slot.
-    BindTexture(u32, TextureId),
 }
