@@ -16,10 +16,8 @@ pub struct ImageCache {
     free_entries: u32,
     free_images: u32,
     max_texture_size: u16,
-    color_texture: wgpu::Texture,
-    mask_texture: wgpu::Texture,
-    pub color_texture_view: wgpu::TextureView,
-    pub mask_texture_view: wgpu::TextureView,
+    texture: wgpu::Texture,
+    pub texture_view: wgpu::TextureView,
 }
 
 pub const SIZE: u32 = 2048;
@@ -31,8 +29,8 @@ impl ImageCache {
         // let max_texture_size = max_texture_size.clamp(1024, 8192);
         let max_texture_size = SIZE;
 
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text create color_texture"),
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rich_text create texture"),
             size: wgpu::Extent3d {
                 width: SIZE,
                 height: SIZE,
@@ -47,32 +45,11 @@ impl ImageCache {
             mip_level_count: 1,
             sample_count: 1,
         });
-        let color_texture_view =
-            color_texture.create_view(&wgpu::TextureViewDescriptor {
+        let texture_view =
+            texture.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 ..Default::default()
             });
-
-        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text create mask_texture"),
-            size: wgpu::Extent3d {
-                width: SIZE,
-                height: SIZE,
-                depth_or_array_layers: 1,
-            },
-            view_formats: &[],
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC
-                | wgpu::TextureUsages::TEXTURE_BINDING,
-            mip_level_count: 1,
-            sample_count: 1,
-        });
-        let mask_texture_view = mask_texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
 
         Self {
             entries: Vec::new(),
@@ -83,10 +60,8 @@ impl ImageCache {
             free_entries: END_OF_LIST,
             free_images: END_OF_LIST,
             max_texture_size: max_texture_size.try_into().unwrap(),
-            color_texture_view,
-            mask_texture_view,
-            color_texture,
-            mask_texture,
+            texture_view,
+            texture,
         }
     }
 
@@ -296,13 +271,6 @@ impl ImageCache {
                             view_formats: &[],
                         });
 
-                    let texture = match format {
-                        // Mask
-                        PixelFormat::A8 => &self.mask_texture,
-                        // Color
-                        PixelFormat::Rgba8 => &self.color_texture,
-                    };
-
                     // if let Some(data) = data {
                     //     let channels = match format {
                     //         // Mask
@@ -333,7 +301,7 @@ impl ImageCache {
 
                     encoder.copy_texture_to_texture(
                         wgpu::ImageCopyTexture {
-                            texture: &texture,
+                            texture: &self.texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d {
                                 x: 0,
@@ -359,24 +327,11 @@ impl ImageCache {
                         },
                     );
 
-                    match format {
-                        // Mask
-                        PixelFormat::A8 => {
-                            self.mask_texture = new_texture;
-                            self.mask_texture_view = self.mask_texture.create_view(&wgpu::TextureViewDescriptor {
-                                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                ..Default::default()
-                            });
-                        },
-                        // Color
-                        PixelFormat::Rgba8 => {
-                            self.color_texture = new_texture;
-                            self.color_texture_view = self.color_texture.create_view(&wgpu::TextureViewDescriptor {
-                                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                ..Default::default()
-                            });
-                        },
-                    };
+                    self.texture = new_texture;
+                    self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
+                        dimension: Some(wgpu::TextureViewDimension::D2Array),
+                        ..Default::default()
+                    });
                 }
                 Event::UpdateTexture(id, format, region, data) => {
                     println!("bbb UpdateTexture {:?}", id);
@@ -408,13 +363,6 @@ impl ImageCache {
                         PixelFormat::Rgba8 => 4,
                     };
 
-                    let texture = match format {
-                        // Mask
-                        PixelFormat::A8 => &self.mask_texture,
-                        // Color
-                        PixelFormat::Rgba8 => &self.color_texture,
-                    };
-
                     encoder.copy_buffer_to_texture(
                         wgpu::ImageCopyBuffer {
                             buffer: &buffer,
@@ -425,7 +373,7 @@ impl ImageCache {
                             },
                         },
                         wgpu::ImageCopyTexture {
-                            texture: &texture,
+                            texture: &self.texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d {
                                 x: u32::from(*x),
@@ -513,11 +461,6 @@ impl ImageCache {
                     view_formats: &[],
                 });
 
-                let texture = match atlas.format {
-                    PixelFormat::A8 => &self.mask_texture,
-                    PixelFormat::Rgba8 => &self.color_texture,
-                };
-
                 println!("aaa CreateTexture {:?} {:?}", atlas.texture_id, atlas.format);
 
                 if let Some(data) = data {
@@ -578,24 +521,12 @@ impl ImageCache {
                 //     },
                 // );
 
-                match atlas.format {
-                    // Mask
-                    PixelFormat::A8 => {
-                        self.mask_texture = new_texture;
-                        self.mask_texture_view = self.mask_texture.create_view(&wgpu::TextureViewDescriptor {
-                            dimension: Some(wgpu::TextureViewDimension::D2Array),
-                            ..Default::default()
-                        });
-                    },
-                    // Color
-                    PixelFormat::Rgba8 => {
-                        self.color_texture = new_texture;
-                        self.color_texture_view = self.color_texture.create_view(&wgpu::TextureViewDescriptor {
-                            dimension: Some(wgpu::TextureViewDimension::D2Array),
-                            ..Default::default()
-                        });
-                    },
-                };
+
+                self.texture = new_texture;
+                self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                });
 
                 // self.textures.insert(atlas.texture_id, texture);
             } else {
@@ -615,17 +546,10 @@ impl ImageCache {
                         PixelFormat::Rgba8 => 4,
                     };
 
-                    let texture = match atlas.format {
-                        // Mask
-                        PixelFormat::A8 => &self.mask_texture,
-                        // Color
-                        PixelFormat::Rgba8 => &self.color_texture,
-                    };
-
                     context.queue.write_texture(
                         // Tells wgpu where to copy the pixel data
                         wgpu::ImageCopyTexture {
-                            texture,
+                            texture: &self.texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d {
                                 x: 0,
@@ -644,23 +568,6 @@ impl ImageCache {
                         },
                         texture_size,
                     );
-
-                    match atlas.format {
-                        // Mask
-                        PixelFormat::A8 => {
-                            self.mask_texture_view = self.mask_texture.create_view(&wgpu::TextureViewDescriptor {
-                                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                ..Default::default()
-                            });
-                        },
-                        // Color
-                        PixelFormat::Rgba8 => {
-                            self.color_texture_view = self.color_texture.create_view(&wgpu::TextureViewDescriptor {
-                                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                                ..Default::default()
-                            });
-                        },
-                    };
                 // }
             }
             atlas.fresh = false;

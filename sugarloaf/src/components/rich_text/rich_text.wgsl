@@ -4,8 +4,7 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var font_sampler: sampler;
-@group(1) @binding(0) var font_color_tex: texture_2d_array<f32>;
-@group(1) @binding(1) var font_mask_tex: texture_2d_array<f32>;
+@group(1) @binding(0) var font_texture: texture_2d_array<f32>;
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
@@ -40,11 +39,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var out: vec4<f32> = input.f_color;
 
     if input.color_layer > 0 {
-        out = textureSample(font_color_tex, font_sampler, input.f_uv, input.color_layer);
+        out = textureSample(font_texture, font_sampler, input.f_uv, input.color_layer);
     }
 
     if input.mask_layer > 0 {
-        out = vec4<f32>(out.xyz, textureSample(font_mask_tex, font_sampler, input.f_uv, input.mask_layer).x);
+        out = vec4<f32>(out.xyz, textureSample(font_texture, font_sampler, input.f_uv, input.mask_layer).x);
     }
 
     return out;
