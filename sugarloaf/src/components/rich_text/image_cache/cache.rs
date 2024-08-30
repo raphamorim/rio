@@ -1,8 +1,6 @@
 use wgpu::util::DeviceExt;
 use crate::components::rich_text::image_cache::PixelFormat;
 use crate::context::Context;
-use rustc_hash::FxHashMap;
-use wgpu::Texture;
 
 use super::atlas::*;
 use super::*;
