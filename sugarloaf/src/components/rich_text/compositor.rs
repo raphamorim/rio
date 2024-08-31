@@ -22,7 +22,7 @@ pub use crate::components::rich_text::image_cache::{
     ImageLocation,
     TextureId,
 };
-use crate::components::rich_text::image_cache::{ImageCache, ImageData, PixelFormat};
+use crate::components::rich_text::image_cache::{ImageCache, ImageData};
 use crate::components::rich_text::text::*;
 use crate::components::rich_text::GraphicsDataBrush;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
@@ -120,14 +120,7 @@ impl Compositor {
         images: &mut ImageCache,
         graphic: &GraphicData,
     ) -> Option<ImageId> {
-        let format = if graphic.is_opaque {
-            PixelFormat::Rgba8
-        } else {
-            PixelFormat::A8
-        };
-
         images.allocate(AddImage {
-            format,
             width: graphic.width as u16,
             height: graphic.height as u16,
             has_alpha: graphic.is_opaque,
