@@ -26,7 +26,7 @@
         lib,
         ...
       }: let
-        rust-toolchain = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+        rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = ["rust-src" "rust-analyzer"];
         };
 
