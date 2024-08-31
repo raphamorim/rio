@@ -35,6 +35,7 @@ impl AtlasAllocator {
     /// coordinates of the allocated slot.
     pub fn allocate(&mut self, width: u16, height: u16) -> Option<(u16, u16)> {
         // Width is a hard constraint; make sure it fits.
+        println!("{} {}", width, self.width);
         if width > self.width {
             return None;
         }

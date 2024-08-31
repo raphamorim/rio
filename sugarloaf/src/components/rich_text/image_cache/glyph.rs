@@ -1,5 +1,4 @@
 use super::cache::ImageCache;
-use super::PixelFormat;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
@@ -144,7 +143,6 @@ impl<'a> GlyphCacheSession<'a> {
             let w = p.width as u16;
             let h = p.height as u16;
             let req = AddImage {
-                format: PixelFormat::Rgba8,
                 width: w,
                 height: h,
                 has_alpha: true,

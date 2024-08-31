@@ -5,24 +5,6 @@ pub mod glyph;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum PixelFormat {
-    A8,
-    Rgba8,
-}
-
-impl PixelFormat {
-    pub fn buffer_size(&self, width: u32, height: u32) -> Option<usize> {
-        let mult = match self {
-            Self::A8 => 1,
-            Self::Rgba8 => 4,
-        };
-        (width as usize)
-            .checked_add(height as usize)?
-            .checked_add(mult)
-    }
-}
-
 pub use cache::ImageCache;
 pub use glyph::GlyphCache;
 
@@ -87,8 +69,6 @@ pub struct ImageLocation {
 /// Data describing a request for caching an image.
 #[derive(Clone)]
 pub struct AddImage<'a> {
-    /// Format of the image data.
-    pub format: PixelFormat,
     /// Width of the image.
     pub width: u16,
     /// Height of the image.
