@@ -20,7 +20,6 @@ pub use crate::components::rich_text::image_cache::{
     AddImage,
     ImageId,
     ImageLocation,
-    TextureId,
 };
 use crate::components::rich_text::image_cache::{ImageCache, ImageData};
 use crate::components::rich_text::text::*;
@@ -36,7 +35,6 @@ pub struct ComposedRect {
     coords: [f32; 4],
     color: [f32; 4],
     has_alpha: bool,
-    image: TextureId,
 }
 
 pub enum Instruction {
@@ -166,7 +164,6 @@ impl Compositor {
                 depth,
                 color,
                 &[img.min.0, img.min.1, img.max.0, img.max.1],
-                img.texture_id,
                 image.has_alpha(),
             );
         }
@@ -178,7 +175,6 @@ impl Compositor {
         &mut self,
         rect: impl Into<Rect>,
         coords: &[f32; 4],
-        texture_id: TextureId,
         has_alpha: bool,
     ) {
         self.batches.add_image_rect(
@@ -186,7 +182,6 @@ impl Compositor {
             0.0,
             &[0.0, 0.0, 0.0, 0.0],
             coords,
-            texture_id,
             has_alpha,
         );
     }
@@ -237,7 +232,6 @@ impl Compositor {
                                 image_data.height as f32,
                             ),
                             &image_data.coords,
-                            image_data.texture_id,
                             image_data.has_alpha,
                         );
                         *last_rendered_graphic = Some(graphic.id);
@@ -268,7 +262,6 @@ impl Compositor {
                                     depth,
                                     &data.color,
                                     &data.coords,
-                                    data.image,
                                     data.has_alpha,
                                 );
                             }
@@ -283,7 +276,6 @@ impl Compositor {
                                     depth,
                                     &data.color,
                                     &data.coords,
-                                    data.image,
                                     data.has_alpha,
                                 );
                             }
@@ -392,7 +384,6 @@ impl Compositor {
                             depth,
                             &color,
                             &coords,
-                            img.texture_id,
                             entry.image.has_alpha(),
                         );
                         cached_run_instructions
@@ -400,7 +391,6 @@ impl Compositor {
                             .push(Instruction::Image(ComposedRect {
                                 color,
                                 coords,
-                                image: img.texture_id,
                                 has_alpha: entry.image.has_alpha(),
                             }));
                     } else {
@@ -410,14 +400,12 @@ impl Compositor {
                             depth,
                             &color,
                             &coords,
-                            img.texture_id,
                             true,
                         );
                         cached_run_instructions.instructions.push(Instruction::Mask(
                             ComposedRect {
                                 color,
                                 coords,
-                                image: img.texture_id,
                                 has_alpha: true,
                             },
                         ));
