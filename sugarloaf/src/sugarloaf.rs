@@ -337,7 +337,12 @@ impl Sugarloaf<'_> {
                         .render(&mut self.ctx, &self.state, &mut rpass);
 
                     if self.graphics.has_graphics_on_top_layer() {
-                        for request in 1..(self.graphics.top_layer.len() + 1) {
+                        let range_request = if self.graphics.bottom_layer.is_some() {
+                            1..(self.graphics.top_layer.len() + 1)
+                        } else {
+                            0..self.graphics.top_layer.len()
+                        };
+                        for request in range_request {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
