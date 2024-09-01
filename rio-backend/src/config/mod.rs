@@ -69,6 +69,7 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default)]
     pub cursor: CursorConfig,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
