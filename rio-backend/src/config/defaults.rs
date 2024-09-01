@@ -110,19 +110,6 @@ pub fn default_disable_ctlseqs_alt() -> bool {
 
 pub fn default_config_file_content() -> String {
     r#"
-# Cursor
-#
-# Default cursor is Block
-# Other available options are: '_' and '|'
-#
-cursor = '▇'
-
-# Blinking Cursor
-#
-# Default is true
-#
-blinking-cursor = false
-
 # Hide the cursor while typing
 #
 # Default is `false`
@@ -135,6 +122,19 @@ blinking-cursor = false
 #
 # Example:
 # ignore-selection-foreground-color = false
+
+# Cursor
+#
+# [cursor]
+#
+# Default cursor is Block
+# Other available options are: '_' and '|'
+#
+# style = '▇'
+#
+# Whether the cursor blinks. The default is true
+#
+# blinking = false
 
 # Theme
 #

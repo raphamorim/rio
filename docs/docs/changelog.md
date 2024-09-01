@@ -15,6 +15,22 @@ language: 'en'
 - `use-kitty-keyboard-protocol` is now `true` as default.
 - Remove tokio runtime.
 - Allow configuring with lowercase values for enums
+- **breaking:** Revamp the cursor configuration
+
+Before:
+
+```toml
+cursor = '▇'
+blinking-cursor = false
+```
+
+After:
+
+```toml
+[cursor]
+style = '▇'
+blinking = false
+```
 
 ## 0.1.10
 

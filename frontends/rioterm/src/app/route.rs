@@ -169,7 +169,7 @@ impl Route {
         };
 
         let context_manager = context::ContextManager::start(
-            (&state.get_cursor_state(), config.blinking_cursor),
+            (&state.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             id,
             context_manager_config,
@@ -1078,7 +1078,7 @@ impl Route {
             let cursor = self.state.get_cursor_state_from_ref().content;
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
-            terminal.blinking_cursor = config.blinking_cursor;
+            terminal.blinking_cursor = config.cursor.blinking;
         }
 
         self.mouse

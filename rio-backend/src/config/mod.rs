@@ -69,8 +69,7 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
-    #[serde(default = "bool::default", rename = "blinking-cursor")]
-    pub blinking_cursor: bool,
+    pub cursor: CursorConfig,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
@@ -103,8 +102,6 @@ pub struct Config {
     pub padding_x: f32,
     #[serde(rename = "padding-y", default = "default_padding_y")]
     pub padding_y: [f32; 2],
-    #[serde(default = "default_cursor")]
-    pub cursor: char,
     #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -128,6 +125,14 @@ pub struct Config {
     pub hide_cursor_when_typing: bool,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CursorConfig {
+    #[serde(default = "default_cursor")]
+    pub style: char,
+    #[serde(default = "bool::default")]
+    pub blinking: bool,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -388,13 +393,12 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            blinking_cursor: false,
+            cursor: CursorConfig::default(),
             editor: default_editor(),
             adaptive_theme: None,
             adaptive_colors: None,
             bindings: Bindings::default(),
             colors: Colors::default(),
-            cursor: default_cursor(),
             scroll: Scroll::default(),
             keyboard: Keyboard::default(),
             developer: Developer::default(),
@@ -414,6 +418,15 @@ impl Default for Config {
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
             hide_cursor_when_typing: false,
+        }
+    }
+}
+
+impl Default for CursorConfig {
+    fn default() -> Self {
+        Self {
+            style: default_cursor(),
+            blinking: false,
         }
     }
 }
@@ -457,7 +470,7 @@ mod tests {
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path(&tmp_dir().join("it-should-never-exist"));
         assert_eq!(config.theme, String::default());
-        assert_eq!(config.cursor, default_cursor());
+        assert_eq!(config.cursor.style, default_cursor());
     }
 
     #[test]
