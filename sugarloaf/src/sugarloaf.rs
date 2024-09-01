@@ -10,7 +10,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
-use crate::sugarloaf::graphics::{GraphicData, GraphicId, Graphics, BottomLayer};
+use crate::sugarloaf::graphics::{BottomLayer, GraphicData, GraphicId, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::{context::Context, Content, Object};
 use ab_glyph::{self, PxScale};
@@ -199,7 +199,7 @@ impl Sugarloaf<'_> {
                     x: image.x,
                     y: image.y,
                 },
-            }
+            },
         });
         self
     }
@@ -290,11 +290,8 @@ impl Sugarloaf<'_> {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 if let Some(layer) = &self.graphics.bottom_layer {
-                    self.layer_brush.prepare(
-                        &mut encoder,
-                        &mut self.ctx,
-                        &[&layer.data],
-                    );
+                    self.layer_brush
+                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
                 }
 
                 if self.graphics.has_graphics_on_top_layer() {
@@ -351,8 +348,9 @@ impl Sugarloaf<'_> {
                     self.text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
-                if self.graphics.bottom_layer.is_some() 
-                    || self.graphics.has_graphics_on_top_layer() {
+                if self.graphics.bottom_layer.is_some()
+                    || self.graphics.has_graphics_on_top_layer()
+                {
                     self.layer_brush.end_frame();
                     self.graphics.clear_top_layer();
                 }
