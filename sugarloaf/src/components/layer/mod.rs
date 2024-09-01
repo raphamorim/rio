@@ -307,7 +307,7 @@ impl LayerBrush {
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         ctx: &mut Context,
-        images: &[types::Image],
+        images: &[&types::Raster],
     ) {
         let transformation: [f32; 16] =
             orthographic_projection(ctx.size.width, ctx.size.height);
@@ -318,22 +318,19 @@ impl LayerBrush {
         let mut raster_cache = self.raster_cache.borrow_mut();
 
         for image in images {
-            match &image {
-                types::Image::Raster { handle, bounds } => {
-                    if let Some(atlas_entry) = raster_cache.upload(
-                        device,
-                        encoder,
-                        handle,
-                        &mut self.texture_atlas,
-                    ) {
-                        add_instances(
-                            [bounds.x, bounds.y],
-                            [bounds.width, bounds.height],
-                            atlas_entry,
-                            instances,
-                        );
-                    }
-                }
+            let bounds = image.bounds;
+            if let Some(atlas_entry) = raster_cache.upload(
+                device,
+                encoder,
+                &image.handle,
+                &mut self.texture_atlas,
+            ) {
+                add_instances(
+                    [bounds.x, bounds.y],
+                    [bounds.width, bounds.height],
+                    atlas_entry,
+                    instances,
+                );
             }
         }
 

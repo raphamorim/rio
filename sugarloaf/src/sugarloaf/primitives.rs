@@ -24,10 +24,10 @@ pub struct SugarloafStyle {
 pub struct ImageProperties {
     #[serde(default = "String::default")]
     pub path: String,
-    #[serde(default = "f32::default")]
-    pub width: f32,
-    #[serde(default = "f32::default")]
-    pub height: f32,
+    #[serde(default = "Option::default")]
+    pub width: Option<f32>,
+    #[serde(default = "Option::default")]
+    pub height: Option<f32>,
     #[serde(default = "f32::default")]
     pub x: f32,
     #[serde(default = "f32::default")]
