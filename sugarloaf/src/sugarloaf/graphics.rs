@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::sugarloaf::types;
 use crate::sugarloaf::Handle;
 use rustc_hash::FxHashMap;
 
@@ -21,23 +22,27 @@ pub struct GraphicRenderRequest {
     pub height: Option<f32>,
 }
 
+pub struct BottomLayer {
+    pub data: types::Raster,
+    pub should_fit: bool,
+}
+
 #[derive(Default)]
 pub struct Graphics {
     inner: FxHashMap<GraphicId, GraphicDataEntry>,
-    pub bottom_layer: Vec<GraphicRenderRequest>,
+    pub bottom_layer: Option<BottomLayer>,
     pub top_layer: Vec<GraphicRenderRequest>,
 }
 
 impl Graphics {
     #[inline]
-    pub fn has_graphics(&self) -> bool {
-        !self.top_layer.is_empty() || !self.bottom_layer.is_empty()
+    pub fn has_graphics_on_top_layer(&self) -> bool {
+        !self.top_layer.is_empty()
     }
 
     #[inline]
-    pub fn clear(&mut self) {
+    pub fn clear_top_layer(&mut self) {
         self.top_layer.clear();
-        self.bottom_layer.clear();
     }
 
     #[inline]
