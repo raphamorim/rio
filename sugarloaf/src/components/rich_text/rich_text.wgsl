@@ -39,11 +39,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var out: vec4<f32> = input.f_color;
 
     if input.color_layer > 0 {
-        out = textureSample(font_texture, font_sampler, input.f_uv, input.color_layer);
+        out = textureSampleLevel(font_texture, font_sampler, input.f_uv, input.color_layer, 0.0);
     }
 
     if input.mask_layer > 0 {
-        out = vec4<f32>(out.xyz, textureSample(font_texture, font_sampler, input.f_uv, input.mask_layer).x);
+        out = vec4<f32>(out.xyz, textureSampleLevel(font_texture, font_sampler, input.f_uv, input.mask_layer, 0.0).x);
     }
 
     return out;

@@ -110,7 +110,7 @@ impl ImageCache {
         //     atlas_data = self.alloc_from_atlases(format, width, height);
         // }
 
-        let mut atlas_data = self.atlas.alloc.allocate(width, height);
+        let atlas_data = self.atlas.alloc.allocate(width, height);
 
         if atlas_data.is_none() {
             println!("should try to grow or reset atlas");
@@ -192,7 +192,6 @@ impl ImageCache {
             return None;
         }
         Some(if entry.flags & ENTRY_STANDALONE != 0 {
-            let image = self.images.get(entry.owner as usize)?;
             ImageLocation {
                 min: (0., 0.),
                 max: (1., 1.),
