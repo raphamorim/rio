@@ -236,7 +236,7 @@ impl RichTextBrush {
             mapped_at_creation: false,
         });
 
-        let index_buffer_size: &[u32] = bytemuck::cast_slice(dlist.indices());
+        let index_buffer_size: &[u32] = bytemuck::cast_slice(&dlist.indices);
         let index_buffer_size = index_buffer_size.len() as u64;
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Indices Buffer"),
@@ -378,11 +378,8 @@ impl RichTextBrush {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // let start = std::time::Instant::now();
-        let vertices: &[Vertex] = self.dlist.vertices();
-        let indices: &[u32] = self.dlist.indices();
-
         // There's nothing to render
-        if vertices.is_empty() {
+        if self.dlist.vertices.is_empty() {
             return;
         }
 
@@ -399,10 +396,10 @@ impl RichTextBrush {
             self.current_transform = transform;
         }
 
-        if vertices.len() > self.supported_vertex_buffer {
+        if self.dlist.vertices.len() > self.supported_vertex_buffer {
             self.vertex_buffer.destroy();
 
-            self.supported_vertex_buffer = vertices.len();
+            self.supported_vertex_buffer = self.dlist.vertices.len();
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rich_text::Pipeline instances"),
                 size: mem::size_of::<Vertex>() as u64
@@ -412,12 +409,12 @@ impl RichTextBrush {
             });
         }
 
-        let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
+        let vertices_bytes: &[u8] = bytemuck::cast_slice(&self.dlist.vertices);
         if !vertices_bytes.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
         }
 
-        let indices_raw: &[u8] = bytemuck::cast_slice(indices);
+        let indices_raw: &[u8] = bytemuck::cast_slice(&self.dlist.indices);
         let indices_raw_size = indices_raw.len() as u64;
 
         if self.index_buffer_size >= indices_raw_size {
@@ -474,7 +471,10 @@ impl RichTextBrush {
         
         // Draw the specified range of indexed triangles.
 
-        rpass.draw_indexed(0..self.dlist.indices_len(), 0, 0..1);
+        // println!("{:?}", self.dlist.vertices().len());
+        // println!("{:?}", self.dlist.indices_len());
+
+        rpass.draw_indexed(0..(self.dlist.indices.len() as u32), 0, 0..1);
 
         // let duration = start.elapsed();
         // println!(" - rich_text::render() is: {:?}", duration);
