@@ -473,9 +473,8 @@ impl RichTextBrush {
         // }
         
         // Draw the specified range of indexed triangles.
-        for items in self.dlist.indices_to_draw() {
-            rpass.draw_indexed(items.0..items.1, 0, 0..1);
-        }
+
+        rpass.draw_indexed(0..self.dlist.indices_len(), 0, 0..1);
 
         // let duration = start.elapsed();
         // println!(" - rich_text::render() is: {:?}", duration);
