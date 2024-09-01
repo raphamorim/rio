@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::Graphics;
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
@@ -144,6 +145,7 @@ impl SugarState {
         elementary_brush: &mut text::GlyphBrush<()>,
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
+        graphics: &mut Graphics,
     ) -> bool {
         #[cfg(not(feature = "always_dirty"))]
         if self.latest_change == SugarTreeDiff::Equal {
@@ -151,7 +153,7 @@ impl SugarState {
             return false;
         }
 
-        advance_brush.prepare(context, self);
+        advance_brush.prepare(context, self, graphics);
         rect_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf

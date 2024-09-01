@@ -4,6 +4,8 @@ mod image_cache;
 pub mod text;
 pub mod util;
 
+use crate::sugarloaf::graphics::GraphicRenderRequest;
+use crate::Graphics;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache, ImageId};
 use crate::context::Context;
@@ -35,15 +37,6 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
-#[derive(Debug)]
-pub struct RenderMediaRequest {
-    pub id: GraphicId,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-}
-
 pub struct RichTextBrush {
     vertex_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
@@ -61,16 +54,6 @@ pub struct RichTextBrush {
     textures_version: usize,
     images: ImageCache,
     glyphs: GlyphCache,
-    pub render_media_requests: Vec<RenderMediaRequest>,
-}
-
-#[derive(Copy, Clone)]
-pub struct GraphicsDataBrush {
-    image_id: ImageId,
-    coords: [f32; 4],
-    has_alpha: bool,
-    width: usize,
-    height: usize,
 }
 
 impl RichTextBrush {
@@ -246,7 +229,6 @@ impl RichTextBrush {
         });
 
         RichTextBrush {
-            render_media_requests: Vec::new(),
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
@@ -276,6 +258,7 @@ impl RichTextBrush {
         &mut self,
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
+        graphics: &mut Graphics,
     ) {
         // let start = std::time::Instant::now();
 
@@ -284,7 +267,6 @@ impl RichTextBrush {
             return;
         }
 
-        self.render_media_requests.clear();
         // Render
         self.comp.begin();
 
@@ -302,7 +284,7 @@ impl RichTextBrush {
             state.current.layout.style.screen_position,
             font_library,
             &state.current.layout.dimensions,
-            &mut self.render_media_requests,
+            graphics,
         );
         self.draw_layout_cache.clear_on_demand();
 
@@ -485,7 +467,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: &SugarDimensions,
-    render_media_requests: &mut Vec<RenderMediaRequest>,
+    graphics: &mut Graphics,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
@@ -524,8 +506,7 @@ fn draw_layout(
                 rect,
                 line,
                 &mut last_rendered_graphic,
-                render_media_requests,
-                // graphics,
+                graphics,
             );
             continue;
         }
@@ -585,30 +566,17 @@ fn draw_layout(
 
             if let Some(graphic) = run.media() {
                 if last_rendered_graphic != Some(graphic.id) {
-                    // if let Some(image_data) = graphics.get(&graphic.id) {
                     let offset_x = graphic.offset_x as f32;
                     let offset_y = graphic.offset_y as f32;
 
-                    render_media_requests.push(RenderMediaRequest {
+                    graphics.top_layer.push(GraphicRenderRequest {
                         id: graphic.id,
                         pos_x: run_x - offset_x,
                         pos_y: style.topline - offset_y,
                         width: None,
                         height: None,
                     });
-                    // comp.draw_image_from_data(
-                    //     Rect::new(
-                    //         run_x - offset_x,
-                    //         style.topline - offset_y,
-                    //         image_data.width as f32,
-                    //         image_data.height as f32,
-                    //     ),
-                    //     &image_data.coords,
-                    //     image_data.has_alpha,
-                    // );
-
                     last_rendered_graphic = Some(graphic.id);
-                    // }
                 }
 
                 cached_run.graphics.insert(graphic);
