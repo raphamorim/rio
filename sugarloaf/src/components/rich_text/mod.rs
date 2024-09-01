@@ -5,16 +5,14 @@ pub mod text;
 pub mod util;
 
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::image_cache::{GlyphCache, ImageCache, ImageId};
+use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
-use crate::{GraphicData, GraphicId};
 use compositor::{CachedRun, Compositor, DisplayList, Rect, Vertex};
 use rustc_hash::FxHashMap;
-use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -132,8 +130,7 @@ impl RichTextBrush {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            // mag_filter: wgpu::FilterMode::Nearest,
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             lod_min_clamp: 0f32,
@@ -206,7 +203,15 @@ impl RichTextBrush {
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
-            primitive: wgpu::PrimitiveState::default(),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
