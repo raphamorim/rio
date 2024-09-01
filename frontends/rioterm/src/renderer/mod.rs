@@ -636,10 +636,10 @@ impl Renderer {
                 has_underline_cursor = true;
             }
             CursorShape::Block => {
-                style.cursor = SugarCursor::Block(cursor_color);
+                style.cursor = Some(SugarCursor::Block(cursor_color));
             }
             CursorShape::Beam => {
-                style.cursor = SugarCursor::Caret(cursor_color);
+                style.cursor = Some(SugarCursor::Caret(cursor_color));
             }
             CursorShape::Hidden => {}
         }
