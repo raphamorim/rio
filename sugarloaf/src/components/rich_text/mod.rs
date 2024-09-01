@@ -414,21 +414,6 @@ impl RichTextBrush {
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-        // if let Some(bounds) = rect_bounds {
-        //     rpass.set_scissor_rect(
-        //         bounds.x,
-        //         bounds.y,
-        //         bounds.width,
-        //         bounds.height,
-        //     );
-        // }
-
-        // Draw the specified range of indexed triangles.
-
-        // println!("{:?}", self.dlist.vertices().len());
-        // println!("{:?}", self.dlist.indices_len());
-
         rpass.draw_indexed(0..(self.dlist.indices.len() as u32), 0, 0..1);
 
         // let duration = start.elapsed();
@@ -454,7 +439,7 @@ impl DrawLayoutCache {
 
     #[inline]
     fn clear_on_demand(&mut self) {
-        if self.inner.len() > 1024 {
+        if self.inner.len() > 128 {
             self.inner.clear();
         }
     }
