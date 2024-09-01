@@ -1205,7 +1205,6 @@ impl Sequencer {
 
                         if let Some(route) = self.router.routes.get_mut(&window_id) {
                             route.window.screen.resize(new_size);
-                            route.window.screen.context_manager.schedule_render(60);
                         }
                     }
 
@@ -1224,8 +1223,6 @@ impl Sequencer {
                                 .window
                                 .screen
                                 .set_scale(scale, route.window.winit_window.inner_size());
-                            route.window.screen.update_content();
-                            route.request_redraw();
                         }
                     }
 
