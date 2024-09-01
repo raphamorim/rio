@@ -10,20 +10,13 @@
 // text color, underline color and etc.
 
 use crate::components::rich_text::batch::BatchManager;
-pub use crate::components::rich_text::batch::{
-    DisplayList,
-    Rect,
-    Vertex,
-};
+pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
-pub use crate::components::rich_text::image_cache::{
-    AddImage,
-    ImageId,
-    ImageLocation,
-};
+pub use crate::components::rich_text::image_cache::{AddImage, ImageId, ImageLocation};
 use crate::components::rich_text::image_cache::{ImageCache, ImageData};
 use crate::components::rich_text::text::*;
 use crate::components::rich_text::GraphicsDataBrush;
+use crate::components::rich_text::RenderMediaRequest;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
 use crate::SugarCursor;
 use crate::{Graphic, GraphicData, GraphicId};
@@ -197,7 +190,7 @@ impl Compositor {
         rect: &SugarDimensions,
         line: Line,
         last_rendered_graphic: &mut Option<GraphicId>,
-        graphics: &FxHashMap<GraphicId, GraphicsDataBrush>,
+        render_media_requests: &mut Vec<RenderMediaRequest>,
     ) {
         let mut px = px;
         let subpx_bias = (0.125, 0.);
@@ -223,19 +216,14 @@ impl Compositor {
 
             for graphic in &cached_run.graphics {
                 if *last_rendered_graphic != Some(graphic.id) {
-                    if let Some(image_data) = graphics.get(&graphic.id) {
-                        self.draw_image_from_data(
-                            Rect::new(
-                                run_x - (graphic.offset_x as f32),
-                                topline - (graphic.offset_y as f32),
-                                image_data.width as f32,
-                                image_data.height as f32,
-                            ),
-                            &image_data.coords,
-                            image_data.has_alpha,
-                        );
-                        *last_rendered_graphic = Some(graphic.id);
-                    }
+                    render_media_requests.push(RenderMediaRequest {
+                        id: graphic.id,
+                        pos_x: run_x - (graphic.offset_x as f32),
+                        pos_y: topline - (graphic.offset_y as f32),
+                        width: None,
+                        height: None,
+                    });
+                    *last_rendered_graphic = Some(graphic.id);
                 }
             }
 

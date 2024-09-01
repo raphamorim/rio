@@ -1,7 +1,6 @@
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
 use crate::components::layer::image::{Data, Handle};
-use image_rs;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -107,7 +106,6 @@ impl Cache {
         atlas: &mut Atlas,
     ) -> Option<&atlas::Entry> {
         let memory = self.load(handle);
-        println!("{:?}", memory);
 
         if let Memory::Host(image) = memory {
             let (width, height) = image.dimensions();

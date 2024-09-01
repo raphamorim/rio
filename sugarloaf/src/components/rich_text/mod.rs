@@ -10,10 +10,9 @@ use crate::context::Context;
 use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::{GraphicData, GraphicId};
-use compositor::{
-    CachedRun, Compositor, DisplayList, Rect, Vertex,
-};
+use compositor::{CachedRun, Compositor, DisplayList, Rect, Vertex};
 use rustc_hash::FxHashMap;
+use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -36,6 +35,15 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     },
 });
 
+#[derive(Debug)]
+pub struct RenderMediaRequest {
+    pub id: GraphicId,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+}
+
 pub struct RichTextBrush {
     vertex_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
@@ -53,7 +61,7 @@ pub struct RichTextBrush {
     textures_version: usize,
     images: ImageCache,
     glyphs: GlyphCache,
-    graphics: FxHashMap<GraphicId, GraphicsDataBrush>,
+    pub render_media_requests: Vec<RenderMediaRequest>,
 }
 
 #[derive(Copy, Clone)]
@@ -113,20 +121,16 @@ impl RichTextBrush {
         let layout_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: true,
-                            },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                ],
+                    count: None,
+                }],
             });
 
         let pipeline_layout =
@@ -175,14 +179,10 @@ impl RichTextBrush {
 
         let layout_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &layout_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &images.texture_view,
-                    ),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&images.texture_view),
+            }],
             label: Some("rich_text::layout_bind_group"),
         });
 
@@ -246,6 +246,7 @@ impl RichTextBrush {
         });
 
         RichTextBrush {
+            render_media_requests: Vec::new(),
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
@@ -262,44 +263,12 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
-            graphics: FxHashMap::default(),
         }
     }
 
     #[inline]
     pub fn clean_cache(&mut self) {
         self.draw_layout_cache.clear();
-    }
-
-    #[inline]
-    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
-        if self.graphics.contains_key(&graphic_data.id) {
-            return;
-        }
-
-        if let Some(image_id) = self.comp.add_image(&mut self.images, &graphic_data) {
-            if let Some(img) = self.images.get(&image_id) {
-                self.graphics.insert(
-                    graphic_data.id,
-                    GraphicsDataBrush {
-                        image_id,
-                        width: graphic_data.width,
-                        height: graphic_data.height,
-                        coords: [img.min.0, img.min.1, img.max.0, img.max.1],
-                        has_alpha: graphic_data.is_opaque,
-                    },
-                );
-            }
-        }
-    }
-
-    #[inline]
-    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
-        if let Some(graphic_data) = self.graphics.get(graphic_id) {
-            self.comp
-                .remove_image(&mut self.images, graphic_data.image_id);
-            self.graphics.remove(graphic_id);
-        }
     }
 
     #[inline]
@@ -315,6 +284,7 @@ impl RichTextBrush {
             return;
         }
 
+        self.render_media_requests.clear();
         // Render
         self.comp.begin();
 
@@ -332,7 +302,7 @@ impl RichTextBrush {
             state.current.layout.style.screen_position,
             font_library,
             &state.current.layout.dimensions,
-            &self.graphics,
+            &mut self.render_media_requests,
         );
         self.draw_layout_cache.clear_on_demand();
 
@@ -442,14 +412,12 @@ impl RichTextBrush {
             self.layout_bind_group =
                 ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.layout_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(
-                                &self.images.texture_view,
-                            ),
-                        },
-                    ],
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(
+                            &self.images.texture_view,
+                        ),
+                    }],
                     label: Some("rich_text::Pipeline uniforms"),
                 });
         }
@@ -468,7 +436,7 @@ impl RichTextBrush {
         //         bounds.height,
         //     );
         // }
-        
+
         // Draw the specified range of indexed triangles.
 
         // println!("{:?}", self.dlist.vertices().len());
@@ -510,7 +478,6 @@ impl DrawLayoutCache {
     }
 }
 
-#[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
     caches: (&mut ImageCache, &mut GlyphCache, &mut DrawLayoutCache),
@@ -518,7 +485,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: &SugarDimensions,
-    graphics: &FxHashMap<GraphicId, GraphicsDataBrush>,
+    render_media_requests: &mut Vec<RenderMediaRequest>,
 ) {
     // let start = std::time::Instant::now();
     let (x, y) = pos;
@@ -557,7 +524,8 @@ fn draw_layout(
                 rect,
                 line,
                 &mut last_rendered_graphic,
-                graphics,
+                render_media_requests,
+                // graphics,
             );
             continue;
         }
@@ -617,22 +585,30 @@ fn draw_layout(
 
             if let Some(graphic) = run.media() {
                 if last_rendered_graphic != Some(graphic.id) {
-                    if let Some(image_data) = graphics.get(&graphic.id) {
-                        let offset_x = graphic.offset_x as f32;
-                        let offset_y = graphic.offset_y as f32;
-                        comp.draw_image_from_data(
-                            Rect::new(
-                                run_x - offset_x,
-                                style.topline - offset_y,
-                                image_data.width as f32,
-                                image_data.height as f32,
-                            ),
-                            &image_data.coords,
-                            image_data.has_alpha,
-                        );
+                    // if let Some(image_data) = graphics.get(&graphic.id) {
+                    let offset_x = graphic.offset_x as f32;
+                    let offset_y = graphic.offset_y as f32;
 
-                        last_rendered_graphic = Some(graphic.id);
-                    }
+                    render_media_requests.push(RenderMediaRequest {
+                        id: graphic.id,
+                        pos_x: run_x - offset_x,
+                        pos_y: style.topline - offset_y,
+                        width: None,
+                        height: None,
+                    });
+                    // comp.draw_image_from_data(
+                    //     Rect::new(
+                    //         run_x - offset_x,
+                    //         style.topline - offset_y,
+                    //         image_data.width as f32,
+                    //         image_data.height as f32,
+                    //     ),
+                    //     &image_data.coords,
+                    //     image_data.has_alpha,
+                    // );
+
+                    last_rendered_graphic = Some(graphic.id);
+                    // }
                 }
 
                 cached_run.graphics.insert(graphic);
