@@ -329,6 +329,7 @@ impl Screen<'_> {
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
             terminal.blinking_cursor = config.blinking_cursor;
+            drop(terminal);
         }
 
         self.mouse
@@ -1052,6 +1053,7 @@ impl Screen<'_> {
             };
 
             terminal.scroll_to_pos(new_origin);
+            drop(terminal);
 
             self.search_state.display_offset_delta = 0;
             self.search_state.origin = new_origin;
@@ -1087,6 +1089,7 @@ impl Screen<'_> {
 
         // Store origin and scroll back to the match.
         terminal.scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
+        drop(terminal);
         self.search_state.origin = new_origin;
     }
 
@@ -1575,6 +1578,7 @@ impl Screen<'_> {
             terminal.vi_mode_cursor.pos = self.search_state.origin;
             terminal
                 .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
+            drop(terminal);
         }
         self.search_state.display_offset_delta = 0;
         self.sugarloaf.mark_dirty();
@@ -1640,6 +1644,7 @@ impl Screen<'_> {
                     self.search_state.focused_match = None;
                 }
             }
+            drop(terminal);
         }
 
         if should_reset_search_state {
