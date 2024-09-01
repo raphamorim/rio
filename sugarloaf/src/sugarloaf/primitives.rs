@@ -6,13 +6,11 @@
 use crate::sugarloaf::Rect;
 use serde::Deserialize;
 
-#[derive(Debug, Default, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SugarCursor {
     Block([f32; 4]),
     Caret([f32; 4]),
     Underline([f32; 4]),
-    #[default]
-    Disabled,
 }
 
 #[derive(Copy, PartialEq, Default, Debug, Clone)]

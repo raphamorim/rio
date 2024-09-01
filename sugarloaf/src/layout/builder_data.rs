@@ -215,7 +215,7 @@ pub struct FragmentStyle {
     /// Decoration color.
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
-    pub cursor: SugarCursor,
+    pub cursor: Option<SugarCursor>,
     /// Media
     pub media: Option<Graphic>,
 }
@@ -231,7 +231,7 @@ impl Default for FragmentStyle {
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
-            cursor: SugarCursor::Disabled,
+            cursor: None,
             decoration: None,
             decoration_color: None,
             media: None,
@@ -283,24 +283,24 @@ impl Hash for FragmentStyle {
             }
         }
         match self.cursor {
-            SugarCursor::Disabled => {
+            None => {
                 0.hash(state);
             }
-            SugarCursor::Block(color) => {
+            Some(SugarCursor::Block(color)) => {
                 1.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);
                 color[2].to_bits().hash(state);
                 color[3].to_bits().hash(state);
             }
-            SugarCursor::Caret(color) => {
+            Some(SugarCursor::Caret(color)) => {
                 2.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);
                 color[2].to_bits().hash(state);
                 color[3].to_bits().hash(state);
             }
-            SugarCursor::Underline(color) => {
+            Some(SugarCursor::Underline(color)) => {
                 3.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);

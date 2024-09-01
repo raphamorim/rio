@@ -39,7 +39,7 @@ pub struct TextRunStyle<'a> {
     /// Underline style.
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
-    pub cursor: SugarCursor,
+    pub cursor: Option<SugarCursor>,
 }
 
 /// Positioned glyph in a text run.

@@ -490,7 +490,7 @@ impl<'a> Run<'a> {
 
     /// Returns the cursor
     #[inline]
-    pub fn cursor(&self) -> SugarCursor {
+    pub fn cursor(&self) -> Option<SugarCursor> {
         self.run.span.cursor
     }
 

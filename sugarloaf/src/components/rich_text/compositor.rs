@@ -430,7 +430,7 @@ impl Compositor {
         }
 
         match style.cursor {
-            SugarCursor::Block(cursor_color) => {
+            Some(SugarCursor::Block(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, rect.width, style.line_height),
                     depth,
@@ -440,7 +440,7 @@ impl Compositor {
                     .instruction_set_callback
                     .push(InstructionCallback::BlockCursor(cursor_color));
             }
-            SugarCursor::Caret(cursor_color) => {
+            Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, 3.0, style.line_height),
                     depth,
