@@ -16,6 +16,7 @@ Short introduction of Rio terminal features.
 - [Multi windows](/docs/features/multi-windows)
 - [Navigation](/docs/config/navigation)
 - [Color automation for navigation](/docs/features/color-automation-for-navigation)
+- [Sixel protocol](/docs/features/sixel-protocol)
 - [Spawn or Fork](/docs/features/spawn-or-fork)
 
 Note: Many other features are in development.
