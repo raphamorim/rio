@@ -4,12 +4,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
+    #[serde(alias = "plain")]
     Plain,
+    #[serde(alias = "toptab")]
     TopTab,
     #[cfg(target_os = "macos")]
+    #[serde(alias = "nativetab")]
     NativeTab,
+    #[serde(alias = "bottomtab")]
     BottomTab,
     #[default]
+    #[serde(alias = "collapsedtab")]
     CollapsedTab,
 }
 
