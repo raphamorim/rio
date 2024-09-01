@@ -15,6 +15,7 @@ language: 'en'
 - `use-kitty-keyboard-protocol` is now `true` as default.
 - Remove tokio runtime.
 - Allow configuring with lowercase values for enums
+- Rename `hide-cursor-when-typing` to `hide-mouse-cursor-when-typing`
 
 ## 0.1.10
 

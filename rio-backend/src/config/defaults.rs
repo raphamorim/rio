@@ -123,7 +123,7 @@ cursor = '▇'
 #
 blinking-cursor = false
 
-# Hide the cursor while typing
+# Hide the mouse cursor while typing
 #
 # Default is `false`
 #

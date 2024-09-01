@@ -8,5 +8,5 @@ language: 'en'
 Default is `false`
 
 ```toml
-hide-cursor-when-typing = false
+hide-mouse-cursor-when-typing = false
 ```
