@@ -121,7 +121,7 @@ impl RichTextBrush {
                             sample_type: wgpu::TextureSampleType::Float {
                                 filterable: true,
                             },
-                            view_dimension: wgpu::TextureViewDimension::D2Array,
+                            view_dimension: wgpu::TextureViewDimension::D2,
                             multisampled: false,
                         },
                         count: None,

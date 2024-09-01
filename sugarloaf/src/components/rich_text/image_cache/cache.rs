@@ -43,16 +43,12 @@ impl ImageCache {
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::COPY_SRC
                 | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
         });
         let texture_view =
-            texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            });
+            texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let max_texture_size_u16 = max_texture_size as u16;
         let alloc = AtlasAllocator::new(max_texture_size_u16, max_texture_size_u16);
@@ -299,10 +295,7 @@ impl ImageCache {
                     }
 
                     self.texture = new_texture;
-                    self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
-                        dimension: Some(wgpu::TextureViewDimension::D2Array),
-                        ..Default::default()
-                    });
+                    self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
                 }
                 Event::UpdateTexture(region, data) => {
                     println!("bbb UpdateTexture");
@@ -400,10 +393,7 @@ impl ImageCache {
             );
 
             self.texture = new_texture;
-            self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            });
+            self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
             // self.textures.insert(atlas.texture_id, texture);
         } else {
