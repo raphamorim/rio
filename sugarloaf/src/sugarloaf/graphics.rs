@@ -3,37 +3,66 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::sugarloaf::Handle;
 use rustc_hash::FxHashMap;
+
+pub struct GraphicDataEntry {
+    pub handle: Handle,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug)]
+pub struct GraphicRenderRequest {
+    pub id: GraphicId,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+}
 
 #[derive(Default)]
 pub struct Graphics {
-    inner: FxHashMap<GraphicId, GraphicData>,
+    inner: FxHashMap<GraphicId, GraphicDataEntry>,
+    pub bottom_layer: Vec<GraphicRenderRequest>,
+    pub top_layer: Vec<GraphicRenderRequest>,
 }
 
 impl Graphics {
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+    pub fn has_graphics(&self) -> bool {
+        !self.top_layer.is_empty() || !self.bottom_layer.is_empty()
     }
 
     #[inline]
-    pub fn get_mut(&mut self, id: &GraphicId) -> Option<&mut GraphicData> {
-        self.inner.get_mut(id)
+    pub fn clear(&mut self) {
+        self.top_layer.clear();
+        self.bottom_layer.clear();
     }
 
     #[inline]
-    pub fn get(&self, id: &GraphicId) -> Option<&GraphicData> {
+    pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
         self.inner.get(id)
     }
 
     #[inline]
-    pub fn keys(&self) -> Vec<GraphicId> {
-        self.inner.keys().cloned().collect::<Vec<_>>()
-    }
+    pub fn insert(&mut self, graphic_data: GraphicData) {
+        if self.inner.contains_key(&graphic_data.id) {
+            return;
+        }
 
-    #[inline]
-    pub fn add(&mut self, graphic_data: GraphicData) {
-        self.inner.entry(graphic_data.id).or_insert(graphic_data);
+        self.inner.insert(
+            graphic_data.id,
+            GraphicDataEntry {
+                handle: Handle::from_pixels(
+                    graphic_data.width as u32,
+                    graphic_data.height as u32,
+                    graphic_data.pixels,
+                ),
+                width: graphic_data.width as f32,
+                height: graphic_data.height as f32,
+            },
+        );
     }
 
     #[inline]

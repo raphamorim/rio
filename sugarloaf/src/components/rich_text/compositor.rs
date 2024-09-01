@@ -9,14 +9,14 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::Graphics;
+use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
 pub use crate::components::rich_text::image_cache::{AddImage, ImageId, ImageLocation};
 use crate::components::rich_text::image_cache::{ImageCache, ImageData};
 use crate::components::rich_text::text::*;
-use crate::components::rich_text::GraphicsDataBrush;
-use crate::components::rich_text::RenderMediaRequest;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
 use crate::SugarCursor;
 use crate::{Graphic, GraphicData, GraphicId};
@@ -190,7 +190,7 @@ impl Compositor {
         rect: &SugarDimensions,
         line: Line,
         last_rendered_graphic: &mut Option<GraphicId>,
-        render_media_requests: &mut Vec<RenderMediaRequest>,
+        graphics: &mut Graphics,
     ) {
         let mut px = px;
         let subpx_bias = (0.125, 0.);
@@ -216,7 +216,7 @@ impl Compositor {
 
             for graphic in &cached_run.graphics {
                 if *last_rendered_graphic != Some(graphic.id) {
-                    render_media_requests.push(RenderMediaRequest {
+                    graphics.top_layer.push(GraphicRenderRequest {
                         id: graphic.id,
                         pos_x: run_x - (graphic.offset_x as f32),
                         pos_y: topline - (graphic.offset_y as f32),
