@@ -2,27 +2,10 @@ mod atlas;
 mod cache;
 pub mod glyph;
 
-use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
 pub use cache::ImageCache;
 pub use glyph::GlyphCache;
-
-/// Identifier for a texture in GPU memory.
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
-pub struct TextureId(pub i32);
-
-impl TextureId {
-    fn allocate() -> Self {
-        static COUNTER: AtomicI32 = AtomicI32::new(1);
-        Self(COUNTER.fetch_add(1, Ordering::Relaxed))
-    }
-
-    #[inline]
-    pub fn val(&self) -> i32 {
-        self.0
-    }
-}
 
 /// Identifier for an image in a cache.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -58,8 +41,6 @@ impl ImageId {
 /// Location of an image in a texture.
 #[derive(Copy, Clone)]
 pub struct ImageLocation {
-    /// Texture that contains the image.
-    pub texture_id: TextureId,
     /// Minimum x and y texture coordinates.
     pub min: (f32, f32),
     /// Maximum x and y texture coordinates.

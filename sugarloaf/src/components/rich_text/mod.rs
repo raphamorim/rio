@@ -11,7 +11,7 @@ use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::{GraphicData, GraphicId};
 use compositor::{
-    CachedRun, Compositor, DisplayList, Rect, TextureId, Vertex,
+    CachedRun, Compositor, DisplayList, Rect, Vertex,
 };
 use rustc_hash::FxHashMap;
 use std::{borrow::Cow, mem};
@@ -58,7 +58,6 @@ pub struct RichTextBrush {
 
 #[derive(Copy, Clone)]
 pub struct GraphicsDataBrush {
-    texture_id: TextureId,
     image_id: ImageId,
     coords: [f32; 4],
     has_alpha: bool,
@@ -286,7 +285,6 @@ impl RichTextBrush {
                         image_id,
                         width: graphic_data.width,
                         height: graphic_data.height,
-                        texture_id: img.texture_id,
                         coords: [img.min.0, img.min.1, img.max.0, img.max.1],
                         has_alpha: graphic_data.is_opaque,
                     },
@@ -631,7 +629,6 @@ fn draw_layout(
                                 image_data.height as f32,
                             ),
                             &image_data.coords,
-                            image_data.texture_id,
                             image_data.has_alpha,
                         );
 

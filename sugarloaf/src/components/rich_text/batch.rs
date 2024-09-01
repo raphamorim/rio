@@ -9,7 +9,6 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::components::rich_text::image_cache::TextureId;
 use bytemuck::{Pod, Zeroable};
 
 /// Batch geometry vertex.
@@ -51,8 +50,8 @@ impl From<[f32; 4]> for Rect {
 
 #[derive(Default, Debug)]
 struct Batch {
-    image: Option<TextureId>,
-    mask: Option<TextureId>,
+    image: Option<i32>,
+    mask: Option<i32>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     subpix: bool,
@@ -75,8 +74,8 @@ impl Batch {
         depth: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
-        image: Option<TextureId>,
-        mask: Option<TextureId>,
+        image: Option<i32>,
+        mask: Option<i32>,
         subpix: bool,
     ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
@@ -94,8 +93,8 @@ impl Batch {
         self.image = image;
         self.mask = mask;
         let layers = [
-            self.image.unwrap_or(TextureId(0)).val(),
-            self.mask.unwrap_or(TextureId(0)).val(),
+            self.image.unwrap_or(0),
+            self.mask.unwrap_or(0),
         ];
         self.push_rect(rect, depth, color, coords, layers);
         true
@@ -201,11 +200,10 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         coords: &[f32; 4],
-        mask: TextureId,
         subpix: bool,
     ) {
         for batch in &mut self.transparent {
-            if batch.add_rect(rect, depth, color, Some(coords), None, Some(mask), subpix)
+            if batch.add_rect(rect, depth, color, Some(coords), None, Some(1), subpix)
             {
                 return;
             }
@@ -216,7 +214,7 @@ impl BatchManager {
             color,
             Some(coords),
             None,
-            Some(mask),
+            Some(1),
             subpix,
         );
     }
@@ -228,7 +226,6 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         coords: &[f32; 4],
-        image: TextureId,
         has_alpha: bool,
     ) {
         let transparent = has_alpha || color[3] != 1.0;
@@ -239,7 +236,7 @@ impl BatchManager {
                     depth,
                     color,
                     Some(coords),
-                    Some(image),
+                    Some(1),
                     None,
                     false,
                 ) {
@@ -253,7 +250,7 @@ impl BatchManager {
                     depth,
                     color,
                     Some(coords),
-                    Some(image),
+                    Some(1),
                     None,
                     false,
                 ) {
@@ -266,7 +263,7 @@ impl BatchManager {
             depth,
             color,
             Some(coords),
-            Some(image),
+            Some(1),
             None,
             false,
         );

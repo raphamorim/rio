@@ -60,7 +60,6 @@ impl ImageCache {
         Self {
             entries: Vec::new(),
             atlas: Atlas {
-                texture_id: TextureId::allocate(),
                 alloc,
                 buffer: vec![0u8; max_texture_size as usize * max_texture_size as usize * 4],
                 fresh: true,
@@ -177,7 +176,7 @@ impl ImageCache {
             standalone.next = self.free_images;
             self.free_images = entry.owner as u32;
             self.events
-                .push(Event::DestroyTexture(standalone.texture_id));
+                .push(Event::DestroyTexture);
         } else {
             self.atlas.alloc.deallocate(entry.x, entry.y, entry.width);
         }
@@ -194,17 +193,13 @@ impl ImageCache {
         }
         Some(if entry.flags & ENTRY_STANDALONE != 0 {
             let image = self.images.get(entry.owner as usize)?;
-            let texture_id = image.texture_id;
             ImageLocation {
-                texture_id,
                 min: (0., 0.),
                 max: (1., 1.),
             }
         } else {
-            let texture_id = self.atlas.texture_id;
             let s = 1. / self.max_texture_size as f32;
             ImageLocation {
-                texture_id,
                 min: (entry.x as f32 * s, entry.y as f32 * s),
                 max: (
                     (entry.x + entry.width) as f32 * s,
@@ -254,8 +249,8 @@ impl ImageCache {
     pub fn process_events(&mut self, context: &mut Context) {
         for event in &self.events {
             match event {
-                Event::CreateTexture(id, width, height, data) => {
-                    println!("bbb CreateTexture {:?}", id);
+                Event::CreateTexture(width, height, data) => {
+                    println!("bbb CreateTexture");
                     let data = match &data {
                         Some(PendingData::Inline(data)) => data.data(),
                         Some(PendingData::Buffered(start, end)) => {
@@ -310,8 +305,8 @@ impl ImageCache {
                         ..Default::default()
                     });
                 }
-                Event::UpdateTexture(id, region, data) => {
-                    println!("bbb UpdateTexture {:?}", id);
+                Event::UpdateTexture(region, data) => {
+                    println!("bbb UpdateTexture");
                     let [x, y, width, height] = region;
                     let data = match &data {
                         Some(PendingData::Inline(data)) => data.data().unwrap_or(&[]),
@@ -350,7 +345,7 @@ impl ImageCache {
                         texture_size,
                     );
                 }
-                Event::DestroyTexture(_id) => {
+                Event::DestroyTexture => {
                     // self.textures.remove(&id);
                 }
             }
@@ -382,7 +377,7 @@ impl ImageCache {
                 view_formats: &[],
             });
 
-            println!("aaa CreateTexture {:?}", self.atlas.texture_id);
+            println!("aaa CreateTexture");
 
             context.queue.write_texture(
                 // Tells wgpu where to copy the pixel data
@@ -413,7 +408,7 @@ impl ImageCache {
 
             // self.textures.insert(atlas.texture_id, texture);
         } else {
-            println!("aaa UpdateTexture {:?}", self.atlas.texture_id);
+            println!("aaa UpdateTexture");
             // if let Some(texture) = self.textures.get(&atlas.texture_id) {
                 // self.bind_group_needs_update = true;
                 let texture_size = wgpu::Extent3d {
@@ -475,13 +470,11 @@ impl ImageCache {
         } else {
             let index = self.images.len();
             self.images.push(Standalone {
-                texture_id: TextureId(0),
                 used: false,
                 next: 0,
             });
             index
         };
-        let texture_id = TextureId::allocate();
         let pending_data = match request.data {
             // ImageData::None => None,
             ImageData::Owned(data) => Some(PendingData::Inline(ImageData::Owned(data))),
@@ -494,10 +487,8 @@ impl ImageCache {
             }
         };
         let image = self.images.get_mut(index)?;
-        image.texture_id = texture_id;
         image.used = true;
         self.events.push(Event::CreateTexture(
-            texture_id,
             width,
             height,
             pending_data,
@@ -530,21 +521,19 @@ pub struct Atlas {
     buffer: Vec<u8>,
     fresh: bool,
     dirty: bool,
-    texture_id: TextureId,
 }
 
 struct Standalone {
-    texture_id: TextureId,
     used: bool,
     next: u32,
 }
 
 #[allow(clippy::enum_variant_names)]
 enum Event {
-    CreateTexture(TextureId, u16, u16, Option<PendingData>),
+    CreateTexture(u16, u16, Option<PendingData>),
     #[allow(unused)]
-    UpdateTexture(TextureId, [u16; 4], Option<PendingData>),
-    DestroyTexture(TextureId),
+    UpdateTexture([u16; 4], Option<PendingData>),
+    DestroyTexture,
 }
 
 enum PendingData {
