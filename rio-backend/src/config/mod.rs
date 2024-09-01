@@ -611,7 +611,8 @@ mod tests {
         let result = create_temporary_config(
             "change-cursor",
             r#"
-            cursor = '_'
+            [cursor]
+            style = '_'
         "#,
         );
 
