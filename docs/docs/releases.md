@@ -1,9 +1,9 @@
 ---
-title: 'Changelog'
+title: 'Releases'
 language: 'en'
 ---
 
-# Changelog
+# Releases
 
 ## Unreleased
 
