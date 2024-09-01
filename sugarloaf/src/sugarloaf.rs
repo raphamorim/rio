@@ -255,6 +255,17 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn add_graphic(&mut self, graphic: GraphicData) {
+        // let mut image = if sixel.background_is_transparent {
+        //     RgbaImage::new(width, height)
+        // } else {
+        //     let background_color = color_map
+        //         .get(&0)
+        //         .cloned()
+        //         .unwrap_or(RgbColor::new_8bpc(0, 0, 0));
+        //     let (red, green, blue) = background_color.to_tuple_rgb8();
+        //     RgbaImage::from_pixel(width, height, [red, green, blue, 0xffu8].into())
+        // };
+
         self.rich_text_brush.add_graphic(graphic);
     }
 
@@ -294,14 +305,22 @@ impl Sugarloaf<'_> {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 if let Some(bg_image) = &self.background_image {
+                    let handle = Handle::from_path("/Users/hugoamor/Downloads/profile-pic.jpg");
+                    let image2 = layer::types::Image::Raster {
+                        handle,
+                        bounds: Rectangle {
+                            width: 200.,
+                            height: 200.,
+                            x: 0.,
+                            y: 0.,
+                        },
+                    };
                     self.layer_brush.prepare_ref(
                         &mut encoder,
                         &mut self.ctx,
-                        &[bg_image],
+                        &[bg_image, &image2],
                     );
                 }
-
-                self.rich_text_brush.finish_prepare(&mut self.ctx, &mut encoder);
 
                 {
                     let mut rpass =
@@ -322,6 +341,7 @@ impl Sugarloaf<'_> {
 
                     if self.background_image.is_some() {
                         self.layer_brush.render(0, &mut rpass, None);
+                        self.layer_brush.render(1, &mut rpass, None);
                     }
 
                     self.rich_text_brush

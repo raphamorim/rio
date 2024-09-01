@@ -110,9 +110,6 @@ impl<'a> ImageData<'a> {
     }
 }
 
-/// Limit on number of atlases before image allocation fails.
-const MAX_ATLASES: u16 = 256;
-
 /// Limit on total number of images.
 const MAX_ENTRIES: u32 = 0x007FFFFF;
 

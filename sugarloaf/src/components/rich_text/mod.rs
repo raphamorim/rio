@@ -307,6 +307,7 @@ impl RichTextBrush {
     #[inline]
     pub fn prepare(
         &mut self,
+        context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
     ) {
         // let start = std::time::Instant::now();
@@ -336,19 +337,16 @@ impl RichTextBrush {
             &self.graphics,
         );
         self.draw_layout_cache.clear_on_demand();
+
+        self.dlist.clear();
+        self.images.process_events(context);
+        self.images.process_atlases(context);
+        self.comp.finish(&mut self.dlist);
         // let duration = start.elapsed();
         // println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
 
         // let duration = start.elapsed();
         // println!(" - rich_text::prepare() is: {:?}", duration);
-    }
-
-    #[inline]
-    pub fn finish_prepare(&mut self, ctx: &mut Context, encoder: &mut wgpu::CommandEncoder) {
-        self.dlist.clear();
-        self.images.process_events(ctx, encoder);
-        self.images.process_atlases(ctx, encoder);
-        self.comp.finish(&mut self.dlist);
     }
 
     #[inline]

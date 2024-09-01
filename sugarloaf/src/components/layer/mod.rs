@@ -390,14 +390,12 @@ impl LayerBrush {
         for image in images {
             match &image {
                 types::Image::Raster { handle, bounds } => {
-                    println!("oi? {}", images.len());
                     if let Some(atlas_entry) = raster_cache.upload(
                         device,
                         encoder,
                         handle,
                         &mut self.texture_atlas,
                     ) {
-                        println!("aaaaaa {}", images.len());
                         add_instances(
                             [bounds.x, bounds.y],
                             [bounds.width, bounds.height],

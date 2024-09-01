@@ -18,7 +18,7 @@ pub fn create_window_builder(
     config: &Config,
     #[allow(unused)] tab_id: Option<String>,
 ) -> WindowAttributes {
-    let image_icon = image::load_from_memory(LOGO_ICON).unwrap();
+    let image_icon = image_rs::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
         image_icon.to_rgba8().into_raw(),
         image_icon.width(),
