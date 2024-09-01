@@ -509,9 +509,9 @@ mod tests {
         );
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.style, default_cursor());
         assert_eq!(result.theme, String::default());
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.style, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
         assert!(!result.renderer.disable_unfocused_render);
@@ -587,7 +587,7 @@ mod tests {
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.style, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -616,7 +616,7 @@ mod tests {
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
-        assert_eq!(result.cursor, '_');
+        assert_eq!(result.cursor.style, '_');
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
