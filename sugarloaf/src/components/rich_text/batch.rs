@@ -318,8 +318,8 @@ impl BatchManager {
 /// Resources and commands for drawing a composition.
 #[derive(Default, Debug, Clone)]
 pub struct DisplayList {
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
 }
 
 impl DisplayList {
@@ -327,24 +327,6 @@ impl DisplayList {
     #[inline]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Returns the buffered vertices for the display list.
-    #[inline]
-    pub fn vertices(&self) -> &[Vertex] {
-        &self.vertices
-    }
-
-    /// Returns the buffered indices for the display list.
-    #[inline]
-    pub fn indices(&self) -> &[u32] {
-        &self.indices
-    }
-
-    /// Returns the buffered indices for the display list.
-    #[inline]
-    pub fn indices_len(&self) -> u32 {
-        self.indices.len() as u32
     }
 
     /// Clears the display list.
