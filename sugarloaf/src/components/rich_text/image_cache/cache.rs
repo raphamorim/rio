@@ -1,4 +1,3 @@
-use wgpu::util::DeviceExt;
 use crate::context::Context;
 
 use super::atlas::*;
@@ -252,7 +251,7 @@ impl ImageCache {
     // }
 
     #[inline]
-    pub fn process_events(&mut self, context: &mut Context, encoder: &mut wgpu::CommandEncoder) {
+    pub fn process_events(&mut self, context: &mut Context) {
         for event in &self.events {
             match event {
                 Event::CreateTexture(id, width, height, data) => {
@@ -361,7 +360,7 @@ impl ImageCache {
     }
 
     #[inline]
-    pub fn process_atlases(&mut self, context: &mut Context, _encoder: &mut wgpu::CommandEncoder) {
+    pub fn process_atlases(&mut self, context: &mut Context) {
         if !self.atlas.dirty {
             return;
         }

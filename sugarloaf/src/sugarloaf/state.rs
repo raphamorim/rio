@@ -151,7 +151,7 @@ impl SugarState {
             return false;
         }
 
-        advance_brush.prepare(self);
+        advance_brush.prepare(context, self);
         rect_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf

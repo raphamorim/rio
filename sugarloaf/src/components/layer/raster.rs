@@ -1,7 +1,7 @@
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
 use crate::components::layer::image::{Data, Handle};
-use image as image_rs;
+use image_rs;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -51,11 +51,11 @@ pub struct Cache {
 pub fn load_image(handle: &Handle) -> image_rs::ImageResult<image_rs::DynamicImage> {
     match handle.data() {
         Data::Path(path) => {
-            let image = ::image::open(path)?;
+            let image = image_rs::ImageReader::open(path)?.decode()?;
             Ok(image)
         }
         Data::Bytes(bytes) => {
-            let image = ::image::load_from_memory(bytes)?;
+            let image = image_rs::load_from_memory(bytes)?;
             Ok(image)
         }
         Data::Rgba {
@@ -107,6 +107,7 @@ impl Cache {
         atlas: &mut Atlas,
     ) -> Option<&atlas::Entry> {
         let memory = self.load(handle);
+        println!("{:?}", memory);
 
         if let Memory::Host(image) = memory {
             let (width, height) = image.dimensions();

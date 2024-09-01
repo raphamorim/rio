@@ -39,7 +39,7 @@ raw-window-handle = "0.6.2"
 parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.0.0"
 unicode-width = "0.1.13"
-image = { version = "0.24.9", default-features = false, features = ["ico"] }
+image_rs = { package = "image", version = "0.25.2", default-features = false, features = ["ico"] }
 regex = "1.10.5"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
 log = "0.4.22"
