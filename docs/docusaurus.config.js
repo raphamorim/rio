@@ -130,25 +130,15 @@ const config = {
         },
         items: [
           { to: '/docs/install', label: 'Install', position: 'left' },
-          {
-            to: '/docs/config',
-            label: 'Config',
-            position: 'left',
-          },
+          { to: '/docs/config', label: 'Config', position: 'left', },
           { to: '/docs/features', label: 'Features', position: 'left' },
+          { to: '/docs/releases', label: 'Releases', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
-          { to: '/docs/changelog', label: 'Changelog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
             label: 'Discord',
             position: 'left',
           },
-          // {
-          //   type: 'docsVersionDropdown',
-          //   position: 'right',
-          //   // dropdownItemsAfter: [{to: '/versions', label: 'All versions'}],
-          //   dropdownActiveClassDisabled: true,
-          // },
           {
             type: 'localeDropdown',
             position: 'right',
