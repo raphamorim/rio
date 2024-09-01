@@ -160,12 +160,9 @@ impl Batch {
     #[inline]
     fn build_display_list(&self, list: &mut DisplayList) {
         let first_vertex = list.vertices.len() as u32;
-        let first_index = list.indices.len() as u32;
         list.vertices.extend_from_slice(&self.vertices);
         list.indices
             .extend(self.indices.iter().map(|i| *i + first_vertex));
-        list.indices_to_draw
-            .push((first_index, first_index + self.indices.len() as u32));
     }
 }
 
@@ -323,7 +320,6 @@ impl BatchManager {
 pub struct DisplayList {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
-    indices_to_draw: Vec<(u32, u32)>,
 }
 
 impl DisplayList {
@@ -339,16 +335,16 @@ impl DisplayList {
         &self.vertices
     }
 
-    /// Returns the buffered indices to draw.
-    #[inline]
-    pub fn indices_to_draw(&self) -> &[(u32, u32)] {
-        &self.indices_to_draw
-    }
-
     /// Returns the buffered indices for the display list.
     #[inline]
     pub fn indices(&self) -> &[u32] {
         &self.indices
+    }
+
+    /// Returns the buffered indices for the display list.
+    #[inline]
+    pub fn indices_len(&self) -> u32 {
+        self.indices.len() as u32
     }
 
     /// Clears the display list.
@@ -356,6 +352,5 @@ impl DisplayList {
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
-        self.indices_to_draw.clear();
     }
 }
