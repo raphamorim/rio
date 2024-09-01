@@ -92,10 +92,7 @@ impl Batch {
         self.subpix = subpix;
         self.image = image;
         self.mask = mask;
-        let layers = [
-            self.image.unwrap_or(0),
-            self.mask.unwrap_or(0),
-        ];
+        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
         self.push_rect(rect, depth, color, coords, layers);
         true
     }
@@ -200,8 +197,7 @@ impl BatchManager {
         subpix: bool,
     ) {
         for batch in &mut self.transparent {
-            if batch.add_rect(rect, depth, color, Some(coords), None, Some(1), subpix)
-            {
+            if batch.add_rect(rect, depth, color, Some(coords), None, Some(1), subpix) {
                 return;
             }
         }
@@ -228,29 +224,15 @@ impl BatchManager {
         let transparent = has_alpha || color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
-                if batch.add_rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(1),
-                    None,
-                    false,
-                ) {
+                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                {
                     return;
                 }
             }
         } else {
             for batch in &mut self.opaque {
-                if batch.add_rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(1),
-                    None,
-                    false,
-                ) {
+                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                {
                     return;
                 }
             }

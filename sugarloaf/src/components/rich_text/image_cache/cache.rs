@@ -42,13 +42,11 @@ impl ImageCache {
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
         });
-        let texture_view =
-            texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let max_texture_size_u16 = max_texture_size as u16;
         let alloc = AtlasAllocator::new(max_texture_size_u16, max_texture_size_u16);
@@ -57,7 +55,10 @@ impl ImageCache {
             entries: Vec::new(),
             atlas: Atlas {
                 alloc,
-                buffer: vec![0u8; max_texture_size as usize * max_texture_size as usize * 4],
+                buffer: vec![
+                    0u8;
+                    max_texture_size as usize * max_texture_size as usize * 4
+                ],
                 fresh: true,
                 dirty: true,
             },
@@ -77,8 +78,8 @@ impl ImageCache {
         let width = request.width;
         let height = request.height;
         let _req_data_size = buffer_size(width as u32, height as u32)?;
-        let use_atlas = width <= self.max_texture_size
-            && height <= (self.max_texture_size / 4);
+        let use_atlas =
+            width <= self.max_texture_size && height <= (self.max_texture_size / 4);
         let base_flags = if request.evictable {
             ENTRY_EVICTABLE
         } else {
@@ -171,8 +172,7 @@ impl ImageCache {
             let standalone = self.images.get_mut(entry.owner as usize)?;
             standalone.next = self.free_images;
             self.free_images = entry.owner as u32;
-            self.events
-                .push(Event::DestroyTexture);
+            self.events.push(Event::DestroyTexture);
         } else {
             self.atlas.alloc.deallocate(entry.x, entry.y, entry.width);
         }
@@ -285,9 +285,7 @@ impl ImageCache {
                             // The layout of the texture
                             wgpu::ImageDataLayout {
                                 offset: 0,
-                                bytes_per_row: Some(
-                                    (self.max_texture_size * 4).into(),
-                                ),
+                                bytes_per_row: Some((self.max_texture_size * 4).into()),
                                 rows_per_image: Some((self.max_texture_size).into()),
                             },
                             texture_size,
@@ -295,7 +293,9 @@ impl ImageCache {
                     }
 
                     self.texture = new_texture;
-                    self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    self.texture_view = self
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
                 }
                 Event::UpdateTexture(region, data) => {
                     println!("bbb UpdateTexture");
@@ -384,50 +384,46 @@ impl ImageCache {
                 // The layout of the texture
                 wgpu::ImageDataLayout {
                     offset: 0,
-                    bytes_per_row: Some(
-                        (self.max_texture_size * 4).into(),
-                    ),
+                    bytes_per_row: Some((self.max_texture_size * 4).into()),
                     rows_per_image: Some((self.max_texture_size).into()),
                 },
                 texture_size,
             );
 
             self.texture = new_texture;
-            self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.texture_view = self
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
 
             // self.textures.insert(atlas.texture_id, texture);
         } else {
             println!("aaa UpdateTexture");
             // if let Some(texture) = self.textures.get(&atlas.texture_id) {
-                // self.bind_group_needs_update = true;
-                let texture_size = wgpu::Extent3d {
-                    width: (self.max_texture_size).into(),
-                    height: (self.max_texture_size).into(),
-                    depth_or_array_layers: 1,
-                };
+            // self.bind_group_needs_update = true;
+            let texture_size = wgpu::Extent3d {
+                width: (self.max_texture_size).into(),
+                height: (self.max_texture_size).into(),
+                depth_or_array_layers: 1,
+            };
 
-                context.queue.write_texture(
-                    // Tells wgpu where to copy the pixel data
-                    wgpu::ImageCopyTexture {
-                        texture: &self.texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: 0,
-                        },
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    // The actual pixel data
-                    &self.atlas.buffer,
-                    // The layout of the texture
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some((self.max_texture_size * 4).into()),
-                        rows_per_image: Some((self.max_texture_size).into()),
-                    },
-                    texture_size,
-                );
+            context.queue.write_texture(
+                // Tells wgpu where to copy the pixel data
+                wgpu::ImageCopyTexture {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                // The actual pixel data
+                &self.atlas.buffer,
+                // The layout of the texture
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some((self.max_texture_size * 4).into()),
+                    rows_per_image: Some((self.max_texture_size).into()),
+                },
+                texture_size,
+            );
             // }
         }
         self.atlas.fresh = false;
@@ -477,11 +473,8 @@ impl ImageCache {
         };
         let image = self.images.get_mut(index)?;
         image.used = true;
-        self.events.push(Event::CreateTexture(
-            width,
-            height,
-            pending_data,
-        ));
+        self.events
+            .push(Event::CreateTexture(width, height, pending_data));
         Some(index)
     }
 }

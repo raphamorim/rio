@@ -308,10 +308,9 @@ impl LayerBrush {
         encoder: &mut wgpu::CommandEncoder,
         ctx: &mut Context,
         images: &[types::Image],
-        // transformation: [f32; 16],
-        // _scale: f32,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
+        let transformation: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
@@ -372,39 +371,30 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
-    pub fn prepare_ref(
+    pub fn prepare_with_handle(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         ctx: &mut Context,
-        images: &[&types::Image],
-        // transformation: [f32; 16],
-        // _scale: f32,
+        handle: &image::Handle,
+        bounds: &Rectangle,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300.0, 300.0);
+        let transformation: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
         let instances: &mut Vec<Instance> = &mut Vec::new();
         let mut raster_cache = self.raster_cache.borrow_mut();
 
-        for image in images {
-            match &image {
-                types::Image::Raster { handle, bounds } => {
-                    if let Some(atlas_entry) = raster_cache.upload(
-                        device,
-                        encoder,
-                        handle,
-                        &mut self.texture_atlas,
-                    ) {
-                        add_instances(
-                            [bounds.x, bounds.y],
-                            [bounds.width, bounds.height],
-                            atlas_entry,
-                            instances,
-                        );
-                    }
-                }
-            }
+        if let Some(atlas_entry) =
+            raster_cache.upload(device, encoder, handle, &mut self.texture_atlas)
+        {
+            add_instances(
+                [bounds.x, bounds.y],
+                [bounds.width, bounds.height],
+                atlas_entry,
+                instances,
+            );
         }
 
         if instances.is_empty() {

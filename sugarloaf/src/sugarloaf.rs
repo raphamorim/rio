@@ -19,7 +19,14 @@ use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
+use rustc_hash::FxHashMap;
 use state::SugarState;
+
+pub struct GraphicDataEntry {
+    handle: Handle,
+    width: f32,
+    height: f32,
+}
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -30,6 +37,7 @@ pub struct Sugarloaf<'a> {
     state: state::SugarState,
     pub background_color: wgpu::Color,
     pub background_image: Option<types::Image>,
+    graphics: FxHashMap<GraphicId, GraphicDataEntry>,
 }
 
 #[derive(Debug)]
@@ -139,6 +147,7 @@ impl Sugarloaf<'_> {
             rect_brush,
             rich_text_brush,
             text_brush,
+            graphics: FxHashMap::default(),
         };
 
         Ok(instance)
@@ -214,28 +223,6 @@ impl Sugarloaf<'_> {
         self.state.clean_screen();
     }
 
-    // #[inline]
-    // pub fn text(
-    //     &mut self,
-    //     position: (f32, f32),
-    //     content: String,
-    //     font_size: f32,
-    //     color: [f32; 4],
-    //     single_line: bool,
-    // ) {
-    //     self.state.compute_block(SugarBlock {
-    //         rects: vec![],
-    //         text: Some(SugarText {
-    //             position,
-    //             content,
-    //             font_id: 0,
-    //             font_size,
-    //             color,
-    //             single_line,
-    //         }),
-    //     });
-    // }
-
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
@@ -254,24 +241,28 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn add_graphic(&mut self, graphic: GraphicData) {
-        // let mut image = if sixel.background_is_transparent {
-        //     RgbaImage::new(width, height)
-        // } else {
-        //     let background_color = color_map
-        //         .get(&0)
-        //         .cloned()
-        //         .unwrap_or(RgbColor::new_8bpc(0, 0, 0));
-        //     let (red, green, blue) = background_color.to_tuple_rgb8();
-        //     RgbaImage::from_pixel(width, height, [red, green, blue, 0xffu8].into())
-        // };
+    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
+        if self.graphics.contains_key(&graphic_data.id) {
+            return;
+        }
 
-        self.rich_text_brush.add_graphic(graphic);
+        self.graphics.insert(
+            graphic_data.id,
+            GraphicDataEntry {
+                handle: Handle::from_pixels(
+                    graphic_data.width as u32,
+                    graphic_data.height as u32,
+                    graphic_data.pixels,
+                ),
+                width: graphic_data.width as f32,
+                height: graphic_data.height as f32,
+            },
+        );
     }
 
     #[inline]
     pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
-        self.rich_text_brush.remove_graphic(graphic_id);
+        self.graphics.remove(graphic_id);
     }
 
     #[inline]
@@ -304,22 +295,31 @@ impl Sugarloaf<'_> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                if let Some(bg_image) = &self.background_image {
-                    let handle = Handle::from_path("/Users/hugoamor/Downloads/profile-pic.jpg");
-                    let image2 = layer::types::Image::Raster {
-                        handle,
-                        bounds: Rectangle {
-                            width: 200.,
-                            height: 200.,
-                            x: 0.,
-                            y: 0.,
-                        },
-                    };
-                    self.layer_brush.prepare_ref(
-                        &mut encoder,
-                        &mut self.ctx,
-                        &[bg_image, &image2],
-                    );
+                // if let Some(bg_image) = &self.background_image {
+                //     self.layer_brush.prepare_ref(
+                //         &mut encoder,
+                //         &mut self.ctx,
+                //         &[bg_image],
+                //     );
+                // }
+
+                let graphic_requests = self.rich_text_brush.render_media_requests.len();
+                if graphic_requests > 0 {
+                    for request in &self.rich_text_brush.render_media_requests {
+                        if let Some(entry) = self.graphics.get(&request.id) {
+                            self.layer_brush.prepare_with_handle(
+                                &mut encoder,
+                                &mut self.ctx,
+                                &entry.handle,
+                                &Rectangle {
+                                    width: request.width.unwrap_or(entry.width),
+                                    height: request.height.unwrap_or(entry.height),
+                                    x: request.pos_x,
+                                    y: request.pos_y,
+                                },
+                            );
+                        }
+                    }
                 }
 
                 {
@@ -339,13 +339,12 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    if self.background_image.is_some() {
-                        self.layer_brush.render(0, &mut rpass, None);
-                        self.layer_brush.render(1, &mut rpass, None);
-                    }
-
                     self.rich_text_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
+
+                    for request in 0..graphic_requests {
+                        self.layer_brush.render(request, &mut rpass, None);
+                    }
 
                     self.rect_brush
                         .render(&mut rpass, &self.state, &mut self.ctx);
@@ -353,9 +352,11 @@ impl Sugarloaf<'_> {
                     self.text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
-                if self.background_image.is_some() {
+                // if self.background_image.is_some() {
+                if !self.rich_text_brush.render_media_requests.is_empty() {
                     self.layer_brush.end_frame();
                 }
+                // }
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
