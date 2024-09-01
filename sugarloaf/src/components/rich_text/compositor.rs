@@ -9,8 +9,6 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::Graphics;
-use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
@@ -18,6 +16,8 @@ pub use crate::components::rich_text::image_cache::{AddImage, ImageId, ImageLoca
 use crate::components::rich_text::image_cache::{ImageCache, ImageData};
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
+use crate::sugarloaf::graphics::GraphicRenderRequest;
+use crate::Graphics;
 use crate::SugarCursor;
 use crate::{Graphic, GraphicData, GraphicId};
 use rustc_hash::FxHashMap;
