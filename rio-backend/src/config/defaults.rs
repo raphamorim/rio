@@ -238,10 +238,10 @@ blinking-cursor = false
 # [window]
 # width = 600
 # height = 400
-# mode = "Windowed"
+# mode = "windowed"
 # opacity = 1.0
 # blur = false
-# decorations = "Enabled"
+# decorations = "enabled"
 
 # Renderer
 #
@@ -266,8 +266,8 @@ blinking-cursor = false
 #
 # Example:
 # [renderer]
-# performance = "High"
-# backend = "Automatic"
+# performance = "high"
+# backend = "automatic"
 # disable-unfocused-render = false
 # level = 1
 
@@ -361,7 +361,7 @@ blinking-cursor = false
 #
 # Example:
 # [navigation]
-# mode = "CollapsedTab"
+# mode = "collapsedtab"
 # clickable = false
 # hide-if-single = true
 # use-current-path = false

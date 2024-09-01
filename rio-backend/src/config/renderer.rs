@@ -14,7 +14,9 @@ pub struct Renderer {
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum Performance {
     #[default]
+    #[serde(alias = "high")]
     High,
+    #[serde(alias = "low")]
     Low,
 }
 
@@ -35,14 +37,19 @@ impl Display for Performance {
 pub enum Backend {
     // Leave Sugarloaf/WGPU to decide
     #[default]
+    #[serde(alias = "automatic")]
     Automatic,
     // Supported on Linux/Android, the web through webassembly via WebGL, and Windows and macOS/iOS via ANGLE
+    #[serde(alias = "gl")]
     GL,
     // Supported on Windows, Linux/Android, and macOS/iOS via Vulkan Portability (with the Vulkan feature enabled)
+    #[serde(alias = "vulkan")]
     Vulkan,
     // Supported on Windows 10
+    #[serde(alias = "dx12")]
     DX12,
     // Supported on macOS/iOS
+    #[serde(alias = "metal")]
     Metal,
 }
 
