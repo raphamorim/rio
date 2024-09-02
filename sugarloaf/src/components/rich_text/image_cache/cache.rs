@@ -88,35 +88,34 @@ impl ImageCache {
         let height = request.height;
 
         // Check buffer size
-        if buffer_size(width as u32, height as u32).is_none() {
-            return None;
-        }
+        buffer_size(width as u32, height as u32)?;
+
         // Too big to allocate
         if !(width <= self.max_texture_size && height <= (self.max_texture_size / 4)) {
             return None;
         }
 
         let atlas_data = self.atlas.alloc.allocate(width, height);
-        if atlas_data.is_none() {
-            return None;
-            // Grow atlas to fit
-            // self.max_texture_size += SIZE;
-            // self.atlas.fresh = true;
-            // self.atlas.dirty = true;
-            // self.entries.clear();
-            // println!("{:?}", self.max_texture_size);
-            // self.atlas.alloc = AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
-            // self.atlas.buffer = vec![
-            //     0u8;
-            //     self.max_texture_size as usize * self.max_texture_size as usize * 4
-            // ];
-            // atlas_data = self.atlas.alloc.allocate(width, height);
-            // println!("{:?}", atlas_data);
+        // if atlas_data.is_none() {
+        // return None;
+        // Grow atlas to fit
+        // self.max_texture_size += SIZE;
+        // self.atlas.fresh = true;
+        // self.atlas.dirty = true;
+        // self.entries.clear();
+        // println!("{:?}", self.max_texture_size);
+        // self.atlas.alloc = AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
+        // self.atlas.buffer = vec![
+        //     0u8;
+        //     self.max_texture_size as usize * self.max_texture_size as usize * 4
+        // ];
+        // atlas_data = self.atlas.alloc.allocate(width, height);
+        // println!("{:?}", atlas_data);
 
-            // if self.max_texture_size > MAX_SIZE {
-            //     println!("should try to grow or reset atlas");
-            // }
-        }
+        // if self.max_texture_size > MAX_SIZE {
+        //     println!("should try to grow or reset atlas");
+        // }
+        // }
         let (x, y) = atlas_data?;
         let entry_index = self.entries.len();
         self.entries.push(Entry {

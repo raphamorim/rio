@@ -277,24 +277,23 @@ impl AtlasAllocator {
         None
     }
 
-    #[allow(unused)]
-    pub fn dump_lines(&self) {
-        for (i, line) in self.lines.iter().enumerate() {
-            print!("[{}]", i);
-            let low_bits = line.state & LOW_BITS;
-            if line.state & FRAGMENTED_BIT == 0 {
-                println!(" offset {}", low_bits);
-            } else {
-                let mut itr = low_bits;
-                while itr != !0 {
-                    let slot = self.slots[itr as usize];
-                    print!(" ({}..={})", slot.x, slot.x + slot.width);
-                    itr = slot.next;
-                }
-                println!("");
-            }
-        }
-    }
+    // pub fn dump_lines(&self) {
+    //     for (i, line) in self.lines.iter().enumerate() {
+    //         print!("[{}]", i);
+    //         let low_bits = line.state & LOW_BITS;
+    //         if line.state & FRAGMENTED_BIT == 0 {
+    //             println!(" offset {}", low_bits);
+    //         } else {
+    //             let mut itr = low_bits;
+    //             while itr != !0 {
+    //                 let slot = self.slots[itr as usize];
+    //                 print!(" ({}..={})", slot.x, slot.x + slot.width);
+    //                 itr = slot.next;
+    //             }
+    //             println!("");
+    //         }
+    //     }
+    // }
 }
 
 const FRAGMENTED_BIT: u32 = 0x80000000;
