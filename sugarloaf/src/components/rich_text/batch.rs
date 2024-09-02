@@ -53,7 +53,6 @@ struct Batch {
     image: Option<TextureId>,
     mask: Option<TextureId>,
     vertices: Vec<Vertex>,
-    indices: Vec<u32>,
     subpix: bool,
 }
 
@@ -62,7 +61,6 @@ impl Batch {
         self.image = None;
         self.mask = None;
         self.vertices.clear();
-        self.indices.clear();
         self.subpix = false;
     }
 
@@ -151,33 +149,18 @@ impl Batch {
                 uv: [r, t],
             },
         ];
-        let base = self.vertices.len() as u32;
         self.vertices.extend_from_slice(&verts);
-        self.indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 2,
-            base + 2,
-            base,
-            base + 3,
-        ]);
     }
 
     #[inline]
     fn build_display_list(&self, list: &mut DisplayList) {
-        let first_vertex = list.vertices.len() as u32;
-        let first_index = list.indices.len() as u32;
         list.vertices.extend_from_slice(&self.vertices);
-        list.indices
-            .extend(self.indices.iter().map(|i| *i + first_vertex));
         if let Some(tex) = self.mask {
             list.commands.push(Command::BindTexture(0, tex));
         }
         if let Some(tex) = self.image {
             list.commands.push(Command::BindTexture(1, tex));
         }
-        list.indices_to_draw
-            .push((first_index, first_index + self.indices.len() as u32));
     }
 }
 
@@ -336,8 +319,6 @@ impl BatchManager {
 #[derive(Default, Debug, Clone)]
 pub struct DisplayList {
     vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-    indices_to_draw: Vec<(u32, u32)>,
     commands: Vec<Command>,
 }
 
@@ -354,18 +335,6 @@ impl DisplayList {
         &self.vertices
     }
 
-    /// Returns the buffered indices to draw.
-    #[inline]
-    pub fn indices_to_draw(&self) -> &[(u32, u32)] {
-        &self.indices_to_draw
-    }
-
-    /// Returns the buffered indices for the display list.
-    #[inline]
-    pub fn indices(&self) -> &[u32] {
-        &self.indices
-    }
-
     /// Returns the sequence of display commands.
     #[inline]
     pub fn commands(&self) -> &[Command] {
@@ -376,9 +345,7 @@ impl DisplayList {
     #[inline]
     pub fn clear(&mut self) {
         self.vertices.clear();
-        self.indices.clear();
         self.commands.clear();
-        self.indices_to_draw.clear();
     }
 }
 
