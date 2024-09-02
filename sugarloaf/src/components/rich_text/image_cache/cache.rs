@@ -6,11 +6,9 @@ use super::*;
 pub struct ImageCache {
     pub entries: Vec<Entry>,
     atlas: Atlas,
-    images: Vec<Standalone>,
     buffered_data: Vec<u8>,
     events: Vec<Event>,
     free_entries: u32,
-    free_images: u32,
     max_texture_size: u16,
     texture: wgpu::Texture,
     pub texture_view: wgpu::TextureView,
@@ -62,11 +60,9 @@ impl ImageCache {
                 fresh: true,
                 dirty: true,
             },
-            images: Vec::new(),
             buffered_data: Vec::new(),
             events: Vec::new(),
             free_entries: END_OF_LIST,
-            free_images: END_OF_LIST,
             max_texture_size: max_texture_size_u16,
             texture_view,
             texture,
@@ -88,19 +84,7 @@ impl ImageCache {
         if !use_atlas {
             println!("should not use atlas");
 
-            // Simply allocate a new texture.
-            let has_alpha = request.has_alpha;
-            let entry_index = self.alloc_entry()?;
-            let image_index = self.alloc_standalone(request)?;
-            let entry = self.entries.get_mut(entry_index)?;
-            entry.generation = entry.generation.wrapping_add(1);
-            entry.flags = base_flags | ENTRY_ALLOCATED | ENTRY_STANDALONE;
-            entry.owner = image_index as u16;
-            entry.x = 0;
-            entry.y = 0;
-            entry.width = width;
-            entry.height = height;
-            return ImageId::new(entry.generation, entry_index as u32, has_alpha);
+            
         }
         // let mut atlas_data = self.alloc_from_atlases(format, width, height);
         // if atlas_data.is_none() {
@@ -138,7 +122,6 @@ impl ImageCache {
         let entry = self.entries.get_mut(entry_index)?;
         entry.generation = entry.generation.wrapping_add(1);
         entry.flags = base_flags | ENTRY_ALLOCATED;
-        entry.owner = 0;
         entry.x = x;
         entry.y = y;
         entry.width = width;
@@ -168,14 +151,8 @@ impl ImageCache {
         if entry.flags & ENTRY_ALLOCATED == 0 || entry.generation != image.generation() {
             return None;
         }
-        if entry.flags & ENTRY_STANDALONE != 0 {
-            let standalone = self.images.get_mut(entry.owner as usize)?;
-            standalone.next = self.free_images;
-            self.free_images = entry.owner as u32;
-            self.events.push(Event::DestroyTexture);
-        } else {
-            self.atlas.alloc.deallocate(entry.x, entry.y, entry.width);
-        }
+        
+        self.atlas.alloc.deallocate(entry.x, entry.y, entry.width);
         entry.flags = 0;
         self.free_entries = image.index() as u32;
         Some(())
@@ -187,13 +164,8 @@ impl ImageCache {
         if entry.flags & ENTRY_ALLOCATED == 0 || entry.generation != handle.generation() {
             return None;
         }
-        Some(if entry.flags & ENTRY_STANDALONE != 0 {
-            ImageLocation {
-                min: (0., 0.),
-                max: (1., 1.),
-            }
-        } else {
-            let s = 1. / self.max_texture_size as f32;
+        let s = 1. / self.max_texture_size as f32;
+        Some(
             ImageLocation {
                 min: (entry.x as f32 * s, entry.y as f32 * s),
                 max: (
@@ -201,7 +173,7 @@ impl ImageCache {
                     (entry.y + entry.height) as f32 * s,
                 ),
             }
-        })
+        )
     }
 
     /// Returns true if the image is valid.
@@ -444,39 +416,6 @@ impl ImageCache {
             index
         })
     }
-
-    fn alloc_standalone(&mut self, request: AddImage) -> Option<usize> {
-        let width = request.width;
-        let height = request.height;
-        let index = if self.free_images != END_OF_LIST {
-            let index = self.free_images as usize;
-            self.free_images = self.images.get(index)?.next;
-            index
-        } else {
-            let index = self.images.len();
-            self.images.push(Standalone {
-                used: false,
-                next: 0,
-            });
-            index
-        };
-        let pending_data = match request.data {
-            // ImageData::None => None,
-            ImageData::Owned(data) => Some(PendingData::Inline(ImageData::Owned(data))),
-            ImageData::Shared(data) => Some(PendingData::Inline(ImageData::Shared(data))),
-            ImageData::Borrowed(data) => {
-                let start = self.buffered_data.len();
-                self.buffered_data.extend_from_slice(data);
-                let end = self.buffered_data.len();
-                Some(PendingData::Buffered(start, end))
-            }
-        };
-        let image = self.images.get_mut(index)?;
-        image.used = true;
-        self.events
-            .push(Event::CreateTexture(width, height, pending_data));
-        Some(index)
-    }
 }
 
 #[derive(Default)]
@@ -485,9 +424,6 @@ pub struct Entry {
     flags: u8,
     /// Generation of this entry. Used to detect stale handles.
     generation: u8,
-    /// Owner of the entry. Index into atlases or images depending
-    /// on the ENTRY_STANDALONE flag.
-    owner: u16,
     /// X coordinate of the image in an atlas.
     x: u16,
     /// Y coordinate of the image in an atlas.
