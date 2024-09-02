@@ -12,14 +12,14 @@
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
-pub use crate::components::rich_text::image_cache::{AddImage, ImageId, ImageLocation};
-use crate::components::rich_text::image_cache::{ImageCache, ImageData};
+use crate::components::rich_text::image_cache::ImageCache;
+pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use crate::SugarCursor;
-use crate::{Graphic, GraphicData, GraphicId};
+use crate::{Graphic, GraphicId};
 use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
 use std::collections::HashSet;
@@ -105,35 +105,34 @@ impl Compositor {
         self.batches.build_display_list(list);
     }
 
-    /// Adds an image to the compositor.
-    pub fn add_image(
-        &mut self,
-        images: &mut ImageCache,
-        graphic: &GraphicData,
-    ) -> Option<ImageId> {
-        images.allocate(AddImage {
-            width: graphic.width as u16,
-            height: graphic.height as u16,
-            has_alpha: graphic.is_opaque,
-            evictable: true,
-            data: ImageData::Borrowed(&graphic.pixels),
-        })
-    }
+    // Adds an image to the compositor.
+    // pub fn add_image(
+    //     &mut self,
+    //     images: &mut ImageCache,
+    //     graphic: &GraphicData,
+    // ) -> Option<ImageId> {
+    //     images.allocate(AddImage {
+    //         width: graphic.width as u16,
+    //         height: graphic.height as u16,
+    //         has_alpha: graphic.is_opaque,
+    //         data: ImageData::Borrowed(&graphic.pixels),
+    //     })
+    // }
 
-    /// Returns the image associated with the specified identifier.
-    #[allow(unused)]
-    pub fn get_image(
-        &mut self,
-        images: &mut ImageCache,
-        image: ImageId,
-    ) -> Option<ImageLocation> {
-        images.get(&image)
-    }
+    // Returns the image associated with the specified identifier.
+    // #[allow(unused)]
+    // pub fn get_image(
+    //     &mut self,
+    //     images: &mut ImageCache,
+    //     image: ImageId,
+    // ) -> Option<ImageLocation> {
+    //     images.get(&image)
+    // }
 
-    /// Removes the image from the compositor.
-    pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
-        images.deallocate(image).is_some()
-    }
+    // Removes the image from the compositor.
+    // pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
+    // images.deallocate(image).is_some()
+    // }
 
     /// Draws a rectangle with the specified depth and color.
     #[allow(unused)]
@@ -162,22 +161,22 @@ impl Compositor {
         }
     }
 
-    /// Draws an image with the specified rectangle, depth and color.
-    #[inline]
-    pub fn draw_image_from_data(
-        &mut self,
-        rect: impl Into<Rect>,
-        coords: &[f32; 4],
-        has_alpha: bool,
-    ) {
-        self.batches.add_image_rect(
-            &rect.into(),
-            0.0,
-            &[0.0, 0.0, 0.0, 0.0],
-            coords,
-            has_alpha,
-        );
-    }
+    // Draws an image with the specified rectangle, depth and color.
+    // #[inline]
+    // pub fn draw_image_from_data(
+    //     &mut self,
+    //     rect: impl Into<Rect>,
+    //     coords: &[f32; 4],
+    //     has_alpha: bool,
+    // ) {
+    //     self.batches.add_image_rect(
+    //         &rect.into(),
+    //         0.0,
+    //         &[0.0, 0.0, 0.0, 0.0],
+    //         coords,
+    //         has_alpha,
+    //     );
+    // }
 
     #[inline]
     #[allow(clippy::too_many_arguments)]

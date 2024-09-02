@@ -294,7 +294,6 @@ impl RichTextBrush {
         self.draw_layout_cache.clear_on_demand();
 
         self.dlist.clear();
-        self.images.process_events(context);
         self.images.process_atlases(context);
         self.comp.finish(&mut self.dlist);
         // let duration = start.elapsed();

@@ -146,7 +146,6 @@ impl<'a> GlyphCacheSession<'a> {
                 width: w,
                 height: h,
                 has_alpha: true,
-                evictable: true,
                 data: ImageData::Borrowed(&self.scaled_image.data),
             };
             let image = self.images.allocate(req)?;
@@ -158,6 +157,7 @@ impl<'a> GlyphCacheSession<'a> {
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
             };
+
             self.entry.glyphs.insert(key, entry);
             return Some(entry);
         }
