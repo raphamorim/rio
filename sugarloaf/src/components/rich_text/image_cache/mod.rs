@@ -12,20 +12,15 @@ pub use glyph::GlyphCache;
 pub struct ImageId(u32);
 
 impl ImageId {
-    fn new(generation: u8, index: u32, alpha: bool) -> Option<Self> {
+    fn new(index: u32, alpha: bool) -> Option<Self> {
         if index & ID_INDEX_MASK != index {
             return None;
         }
         let mut handle = index & ID_INDEX_MASK;
-        handle |= (generation as u32) << 24;
         if alpha {
             handle |= ID_ALPHA_BIT
         }
         Some(Self(handle))
-    }
-
-    fn generation(self) -> u8 {
-        (self.0 >> 24) as u8
     }
 
     fn index(self) -> usize {
@@ -56,8 +51,6 @@ pub struct AddImage<'a> {
     pub height: u16,
     /// True if the image makes use of an alpha channel.
     pub has_alpha: bool,
-    /// True if the cache can evict this image.
-    pub evictable: bool,
     /// The actual image data.
     pub data: ImageData<'a>,
 }
@@ -91,15 +84,5 @@ impl<'a> ImageData<'a> {
     }
 }
 
-/// Limit on total number of images.
-const MAX_ENTRIES: u32 = 0x007FFFFF;
-
-/// Sentinel for end of free list.
-const END_OF_LIST: u32 = !0;
-
-const ID_INDEX_MASK: u32 = MAX_ENTRIES;
+const ID_INDEX_MASK: u32 = 0x007FFFFF;
 const ID_ALPHA_BIT: u32 = 0x00800000;
-
-const ENTRY_ALLOCATED: u8 = 1;
-const ENTRY_STANDALONE: u8 = 2;
-const ENTRY_EVICTABLE: u8 = 4;

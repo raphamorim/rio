@@ -21,16 +21,6 @@ impl AtlasAllocator {
         }
     }
 
-    /// Returns the width of the atlas.
-    pub fn width(&self) -> u16 {
-        self.width
-    }
-
-    /// Returns the height of the atlas.
-    // pub fn height(&self) -> u16 {
-    // self.height
-    // }
-
     /// Allocates a rectangle in the atlas if possible. Returns the x and y
     /// coordinates of the allocated slot.
     pub fn allocate(&mut self, width: u16, height: u16) -> Option<(u16, u16)> {
@@ -106,6 +96,7 @@ impl AtlasAllocator {
     }
 
     /// Deallocates the slot with the specified coordinates and width.
+    #[allow(unused)]
     pub fn deallocate(&mut self, x: u16, y: u16, width: u16) -> bool {
         let res = self.deallocate_impl(x, y, width).is_some();
         while self.lines.last().map(|l| l.state) == Some(0) {
@@ -115,6 +106,7 @@ impl AtlasAllocator {
         res
     }
 
+    #[allow(unused)]
     fn deallocate_impl(&mut self, x: u16, y: u16, width: u16) -> Option<()> {
         let (line_index, &line) = if y == 0 {
             self.lines
@@ -140,7 +132,7 @@ impl AtlasAllocator {
             // Otherwise, add a new free slot for the evicted rect and an
             // additional slot for the remaining space if any.
             let slot_index = self.allocate_slot(x, actual_width)?;
-            let remaining = self.width() - offset as u16;
+            let remaining = self.width - offset as u16;
             if remaining != 0 {
                 let remaining_slot_index =
                     self.allocate_slot(offset as u16, remaining)?;
@@ -227,6 +219,7 @@ impl AtlasAllocator {
         Some(line_index)
     }
 
+    #[allow(unused)]
     fn allocate_slot(&mut self, x: u16, width: u16) -> Option<u32> {
         let slot = Slot { x, width, next: !0 };
         if self.free_slot != !0 {
@@ -284,23 +277,24 @@ impl AtlasAllocator {
         None
     }
 
-    // pub fn dump_lines(&self) {
-    //     for (i, line) in self.lines.iter().enumerate() {
-    //         print!("[{}]", i);
-    //         let low_bits = line.state & LOW_BITS;
-    //         if line.state & FRAGMENTED_BIT == 0 {
-    //             println!(" offset {}", low_bits);
-    //         } else {
-    //             let mut itr = low_bits;
-    //             while itr != !0 {
-    //                 let slot = self.slots[itr as usize];
-    //                 print!(" ({}..={})", slot.x, slot.x + slot.width);
-    //                 itr = slot.next;
-    //             }
-    //             println!("");
-    //         }
-    //     }
-    // }
+    #[allow(unused)]
+    pub fn dump_lines(&self) {
+        for (i, line) in self.lines.iter().enumerate() {
+            print!("[{}]", i);
+            let low_bits = line.state & LOW_BITS;
+            if line.state & FRAGMENTED_BIT == 0 {
+                println!(" offset {}", low_bits);
+            } else {
+                let mut itr = low_bits;
+                while itr != !0 {
+                    let slot = self.slots[itr as usize];
+                    print!(" ({}..={})", slot.x, slot.x + slot.width);
+                    itr = slot.next;
+                }
+                println!("");
+            }
+        }
+    }
 }
 
 const FRAGMENTED_BIT: u32 = 0x80000000;
@@ -318,12 +312,6 @@ struct Line {
     /// list.    
     state: u32,
 }
-
-// impl Line {
-//     fn is_empty(&self) -> bool {
-//         self.state == 0
-//     }
-// }
 
 enum FreeSlot {
     Direct(u16),
