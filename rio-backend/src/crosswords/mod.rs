@@ -103,9 +103,9 @@ bitflags! {
                                 | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
                                 | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
                                 | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
-        const SIXEL_DISPLAY       = 0b1000_0000_0000_0000_0000;
-        const SIXEL_PRIV_PALETTE  = 0b1000_0000_0000_0000_0001;
-        const SIXEL_CURSOR_TO_THE_RIGHT  = 0b1000_0000_0000_0000_0010;
+        const SIXEL_DISPLAY             = 1 << 28;
+        const SIXEL_PRIV_PALETTE        = 1 << 29;
+        const SIXEL_CURSOR_TO_THE_RIGHT = 1 << 31;
         const ANY                 = u32::MAX;
     }
 }
@@ -1886,7 +1886,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match intermediate {
             None => {
                 log::trace!("Reporting primary device attributes");
-                let text = String::from("\x1b[?6c");
+                let text = String::from("\x1b[?62;4;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
