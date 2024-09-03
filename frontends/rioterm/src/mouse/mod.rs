@@ -6,9 +6,9 @@ use rio_backend::crosswords::pos::Pos;
 use std::time::Instant;
 
 #[cfg(not(use_wa))]
-use winit::event::ElementState;
+use rio_window::event::ElementState;
 #[cfg(not(use_wa))]
-use winit::event::MouseButton;
+use rio_window::event::MouseButton;
 
 #[cfg(use_wa)]
 use wa::MouseButton;

@@ -6,7 +6,7 @@ use std::collections::hash_map::RandomState;
 use std::time::Instant;
 use std::{collections::HashSet, mem};
 
-use winit::event::{ElementState, MouseButton, Touch, TouchPhase};
+use rio_window::event::{ElementState, MouseButton, Touch, TouchPhase};
 
 use crate::bindings::FontSizeAction;
 use crate::event::ClickState;

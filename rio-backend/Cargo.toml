@@ -46,7 +46,7 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(use_wa)'] }
 wa = { workspace = true }
 
 [target.'cfg(not(use_wa))'.dependencies]
-winit = { workspace = true }
+rio-window = { workspace = true }
 
 [features]
 default = ["wayland", "x11"]
