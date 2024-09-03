@@ -418,8 +418,9 @@ impl ActiveEventLoop {
         &self,
         custom_cursor: CustomCursorSource,
     ) -> CustomCursor {
-        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::create_custom_cursor",)
-            .entered();
+        let _span =
+            tracing::debug_span!("rio_window::ActiveEventLoop::create_custom_cursor",)
+                .entered();
 
         self.p.create_custom_cursor(custom_cursor)
     }
@@ -428,7 +429,8 @@ impl ActiveEventLoop {
     #[inline]
     pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
         let _span =
-            tracing::debug_span!("rio_window::ActiveEventLoop::available_monitors",).entered();
+            tracing::debug_span!("rio_window::ActiveEventLoop::available_monitors",)
+                .entered();
 
         #[allow(clippy::useless_conversion)] // false positive on some platforms
         self.p
@@ -446,8 +448,8 @@ impl ActiveEventLoop {
     /// **Wayland / Web:** Always returns `None`.
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        let _span =
-            tracing::debug_span!("rio_window::ActiveEventLoop::primary_monitor",).entered();
+        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::primary_monitor",)
+            .entered();
 
         self.p
             .primary_monitor()
@@ -584,7 +586,8 @@ impl<T: 'static> EventLoopProxy<T> {
     ///
     /// [`UserEvent(event)`]: Event::UserEvent
     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
-        let _span = tracing::debug_span!("rio_window::EventLoopProxy::send_event",).entered();
+        let _span =
+            tracing::debug_span!("rio_window::EventLoopProxy::send_event",).entered();
 
         self.event_loop_proxy.send_event(event)
     }
