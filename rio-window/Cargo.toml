@@ -12,9 +12,8 @@ keywords.workspace = true
 
 # Features are documented in either `lib.rs` or under `winit::platform`.
 [features]
-default = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
+default = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
 x11 = ["x11-dl", "bytemuck", "percent-encoding", "xkbcommon-dl/x11", "x11rb"]
-rwh_06 = ["dep:rwh_06"]
 wayland = [
     "wayland-client",
     "wayland-backend",
@@ -36,7 +35,7 @@ cfg_aliases = "0.2.0"
 bitflags = { workspace = true }
 cursor-icon = "1.1.0"
 dpi = { version = "0.1.1" }
-rwh_06 = { package = "raw-window-handle", version = "0.6", features = ["std"], optional = true }
+raw-window-handle = { workspace = true }
 smol_str = { workspace = true }
 tracing = { version = "0.1.40", default-features = false }
 
@@ -286,8 +285,6 @@ tracing-web = "0.1"
 [[example]]
 doc-scrape-examples = true
 name = "window"
-required-features = ["rwh_06"]
 
 [[example]]
 name = "child_window"
-required-features = ["rwh_06"]

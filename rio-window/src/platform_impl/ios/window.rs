@@ -422,15 +422,14 @@ impl Inner {
         self.window.id()
     }
 
-    #[cfg(feature = "rwh_06")]
-    pub fn raw_window_handle_rwh_06(&self) -> rwh_06::RawWindowHandle {
-        let mut window_handle = rwh_06::UiKitWindowHandle::new({
+    pub fn raw_window_handle_rwh_06(&self) -> raw_window_handle::RawWindowHandle {
+        let mut window_handle = raw_window_handle::UiKitWindowHandle::new({
             let ui_view = Retained::as_ptr(&self.view) as _;
             std::ptr::NonNull::new(ui_view).expect("Retained<T> should never be null")
         });
         window_handle.ui_view_controller =
             std::ptr::NonNull::new(Retained::as_ptr(&self.view_controller) as _);
-        rwh_06::RawWindowHandle::UiKit(window_handle)
+        raw_window_handle::RawWindowHandle::UiKit(window_handle)
     }
 
     pub fn theme(&self) -> Option<Theme> {
@@ -572,25 +571,23 @@ impl Window {
         self.inner.get_on_main(|inner| f(inner))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub(crate) fn raw_window_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         if let Some(mtm) = MainThreadMarker::new() {
             Ok(self.inner.get(mtm).raw_window_handle_rwh_06())
         } else {
-            Err(rwh_06::HandleError::Unavailable)
+            Err(raw_window_handle::HandleError::Unavailable)
         }
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub(crate) fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::UiKit(
-            rwh_06::UiKitDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::UiKit(
+            raw_window_handle::UiKitDisplayHandle::new(),
         ))
     }
 }

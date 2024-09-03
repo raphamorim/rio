@@ -141,9 +141,6 @@
 //!
 //! * `x11` (enabled by default): On Unix platforms, enables the X11 backend.
 //! * `wayland` (enabled by default): On Unix platforms, enables the Wayland backend.
-//! * `rwh_06`: Implement `raw-window-handle v0.6` traits.
-//! * `serde`: Enables serialization/deserialization of certain types with [Serde](https://crates.io/crates/serde).
-//! * `mint`: Enables mint (math interoperability standard types) conversions.
 //!
 //! See the [`platform`] module for documentation on platform-specific cargo
 //! features.
@@ -170,8 +167,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::missing_safety_doc)]
 
-#[cfg(feature = "rwh_06")]
-pub use rwh_06 as raw_window_handle;
+pub use raw_window_handle;
 
 // Re-export DPI types so that users don't have to put it in Cargo.toml.
 #[doc(inline)]
