@@ -11,13 +11,16 @@ language: 'en'
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 - Initial support to Sixel protocol.
 - Support CSI_t 16 (Report Cell Size in Pixels).
-- Support CSI_t 18 (Report Terminal Size).
+- Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
+- *breaking change*: collapsed tabs use now `tabs-active-highlight` instead of `tabs-active`.
+- Default font for UI has changed to [DepartureMono](https://departuremono.com/).
 - Performance: drop extra texture creation and manipulation.
 - Improvements on `window.background-image` as respect width and height properties if were used.
 - Macos: remove grab cursor when dragging and use default instead.
 - Fix `tabs-active-highlight` config key [#618](https://github.com/raphamorim/rio/pull/618).
 - Add `tabs-active-foreground` config key [#619](https://github.com/raphamorim/rio/pull/619).
+- Add `tabs-foreground` config key.
 - `use-kitty-keyboard-protocol` is now `true` as default.
 - Remove tokio runtime.
 - Allow configuring with lowercase values for enums.
