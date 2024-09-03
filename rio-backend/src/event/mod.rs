@@ -14,13 +14,13 @@ use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
 #[cfg(not(use_wa))]
-use winit::event_loop::EventLoopProxy;
+use rio_window::event_loop::EventLoopProxy;
 
 #[cfg(use_wa)]
 use wa::event_loop::EventLoopProxy;
 
 #[cfg(not(use_wa))]
-pub type WindowId = winit::window::WindowId;
+pub type WindowId = rio_window::window::WindowId;
 
 #[cfg(use_wa)]
 pub type WindowId = u16;

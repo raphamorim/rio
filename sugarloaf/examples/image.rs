@@ -1,9 +1,9 @@
 extern crate png;
 
-use winit::event::WindowEvent;
-use winit::event_loop::ControlFlow;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::{
+use rio_window::event::WindowEvent;
+use rio_window::event_loop::ControlFlow;
+use rio_window::platform::run_on_demand::EventLoopExtRunOnDemand;
+use rio_window::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 

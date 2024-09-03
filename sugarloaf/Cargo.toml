@@ -62,7 +62,7 @@ ttf-parser = { version = "0.21.1", default-features = false, features = ["openty
 fontconfig-parser = { version = "0.5.3", default-features = false }
 
 [dev-dependencies]
-winit = { workspace = true }
+rio-window = { workspace = true }
 image = "0.24.6"
 png = "0.17.8"
 deflate = "1.0.0"

@@ -19,11 +19,11 @@ use rio_backend::sugarloaf::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
+#[cfg(not(use_wa))]
+use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
-#[cfg(not(use_wa))]
-use winit::window::Theme;
 
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;

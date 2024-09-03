@@ -4,14 +4,14 @@ extern crate sugarloaf;
 use crate::layout::SugarloafLayout;
 use criterion::{criterion_group, criterion_main, Criterion};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use rio_window::dpi::LogicalSize;
+use rio_window::event::Event;
+use rio_window::event::WindowEvent;
+use rio_window::event_loop::ControlFlow;
+use rio_window::event_loop::EventLoop;
+use rio_window::platform::run_on_demand::EventLoopExtRunOnDemand;
+use rio_window::window::WindowAttributes;
 use sugarloaf::*;
-use winit::dpi::LogicalSize;
-use winit::event::Event;
-use winit::event::WindowEvent;
-use winit::event_loop::ControlFlow;
-use winit::event_loop::EventLoop;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::window::WindowAttributes;
 
 fn bench_sugar_pile_with_screen(c: &mut Criterion) {
     const NUM: usize = 10_000;
