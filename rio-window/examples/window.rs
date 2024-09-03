@@ -11,7 +11,7 @@ use std::{fmt, mem};
 use ::tracing::{error, info};
 use cursor_icon::CursorIcon;
 #[cfg(not(any(android_platform, ios_platform)))]
-use rwh_06::{DisplayHandle, HasDisplayHandle};
+use raw_window_handle::{DisplayHandle, HasDisplayHandle};
 #[cfg(not(any(android_platform, ios_platform)))]
 use softbuffer::{Context, Surface};
 
