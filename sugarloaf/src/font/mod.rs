@@ -249,7 +249,7 @@ impl Default for FontLibraryData {
         db.load_system_fonts();
         Self {
             db,
-            main: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+            main: FontArc::try_from_slice(FONT_DEPARTURE_MONO).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
         }
