@@ -223,7 +223,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(target_os = "windows")]
         {
             if let Err(resize_error) =
-                messenger.send_resize(width as u16, height as u16, cols, rows)
+                messenger.send_resize(teletypewriter::WinsizeBuilder {
+                    width: width as u16,
+                    height: height as u16,
+                    cols,
+                    rows,
+                })
             {
                 log::error!("{resize_error:?}");
             }
