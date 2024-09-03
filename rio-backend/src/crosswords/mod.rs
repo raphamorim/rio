@@ -2276,9 +2276,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn cells_size_pixels(&mut self) {
+        // https://terminalguide.namepad.de/seq/csi_st-16/
         let text = format!(
-            "\x1b[4;{};{}t",
-            self.graphics.cell_width, self.graphics.cell_height
+            "\x1b[6;{};{}t",
+            self.graphics.cell_height, self.graphics.cell_width
         );
         debug!("cells_size_pixels {:?}", text);
         self.event_proxy
