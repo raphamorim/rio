@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 #[cfg(not(use_wa))]
-use winit::event_loop::EventLoopProxy;
+use rio_window::event_loop::EventLoopProxy;
 
 #[cfg(use_wa)]
 use wa::event_loop::EventLoopProxy;

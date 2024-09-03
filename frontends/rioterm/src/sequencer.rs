@@ -7,20 +7,20 @@ use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::colors::ColorRgb;
-use std::error::Error;
-use std::time::{Duration, Instant};
-use winit::event::{
+use rio_window::event::{
     ElementState, Event, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
     WindowEvent,
 };
-use winit::event_loop::ActiveEventLoop;
-use winit::event_loop::ControlFlow;
-use winit::event_loop::{DeviceEvents, EventLoop};
+use rio_window::event_loop::ActiveEventLoop;
+use rio_window::event_loop::ControlFlow;
+use rio_window::event_loop::{DeviceEvents, EventLoop};
 #[cfg(target_os = "macos")]
-use winit::platform::macos::ActiveEventLoopExtMacOS;
+use rio_window::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
-use winit::platform::macos::WindowExtMacOS;
-use winit::window::{CursorIcon, Fullscreen};
+use rio_window::platform::macos::WindowExtMacOS;
+use rio_window::window::{CursorIcon, Fullscreen};
+use std::error::Error;
+use std::time::{Duration, Instant};
 
 pub struct Sequencer {
     config: rio_backend::config::Config,
@@ -663,7 +663,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::CloseRequested,
+                        event: rio_window::event::WindowEvent::CloseRequested,
                         window_id,
                         ..
                     } => {
@@ -675,7 +675,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::ModifiersChanged(modifiers),
+                        event: rio_window::event::WindowEvent::ModifiersChanged(modifiers),
                         window_id,
                         ..
                     } => {
@@ -1061,7 +1061,7 @@ impl Sequencer {
 
                     Event::WindowEvent {
                         event:
-                            winit::event::WindowEvent::KeyboardInput {
+                            rio_window::event::WindowEvent::KeyboardInput {
                                 is_synthetic: false,
                                 event: key_event,
                                 ..
@@ -1143,7 +1143,7 @@ impl Sequencer {
                         }
                     }
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::Touch(touch),
+                        event: rio_window::event::WindowEvent::Touch(touch),
                         window_id,
                         ..
                     } => {
@@ -1153,7 +1153,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::Focused(focused),
+                        event: rio_window::event::WindowEvent::Focused(focused),
                         window_id,
                         ..
                     } => {
@@ -1175,7 +1175,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::Occluded(occluded),
+                        event: rio_window::event::WindowEvent::Occluded(occluded),
                         window_id,
                         ..
                     } => {
@@ -1185,7 +1185,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::ThemeChanged(new_theme),
+                        event: rio_window::event::WindowEvent::ThemeChanged(new_theme),
                         window_id,
                         ..
                     } => {
@@ -1199,7 +1199,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::DroppedFile(path),
+                        event: rio_window::event::WindowEvent::DroppedFile(path),
                         window_id,
                         ..
                     } => {
@@ -1214,7 +1214,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::Resized(new_size),
+                        event: rio_window::event::WindowEvent::Resized(new_size),
                         window_id,
                         ..
                     } => {
@@ -1229,7 +1229,7 @@ impl Sequencer {
 
                     Event::WindowEvent {
                         event:
-                            winit::event::WindowEvent::ScaleFactorChanged {
+                            rio_window::event::WindowEvent::ScaleFactorChanged {
                                 inner_size_writer: _,
                                 scale_factor,
                             },
@@ -1266,7 +1266,7 @@ impl Sequencer {
                     }
 
                     Event::WindowEvent {
-                        event: winit::event::WindowEvent::RedrawRequested,
+                        event: rio_window::event::WindowEvent::RedrawRequested,
                         window_id,
                         ..
                     } => {

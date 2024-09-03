@@ -174,6 +174,7 @@ test:
 
 publish-crates:
 	cargo build --release
+	cargo publish -p rio-window
 	cargo publish -p rio-proc-macros
 	cargo publish -p copa
 	cargo publish -p corcovado

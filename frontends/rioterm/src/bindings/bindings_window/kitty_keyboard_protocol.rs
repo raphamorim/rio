@@ -2,13 +2,13 @@
 // which is licensed under Apache 2.0 license.
 
 use rio_backend::crosswords::Mode;
+use rio_window::event::{ElementState, KeyEvent};
+use rio_window::keyboard::Key;
+use rio_window::keyboard::KeyLocation;
+use rio_window::keyboard::ModifiersState;
+use rio_window::keyboard::NamedKey;
+use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
-use winit::event::{ElementState, KeyEvent};
-use winit::keyboard::Key;
-use winit::keyboard::KeyLocation;
-use winit::keyboard::ModifiersState;
-use winit::keyboard::NamedKey;
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 #[inline(never)]
 pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
