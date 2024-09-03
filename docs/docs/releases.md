@@ -11,7 +11,7 @@ language: 'en'
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 - Initial support to Sixel protocol.
 - Support CSI_t 16 (Report Cell Size in Pixels).
-- Support CSI_t 18 (Report Terminal Size).
+- Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
 - Performance: drop extra texture creation and manipulation.
 - Improvements on `window.background-image` as respect width and height properties if were used.
