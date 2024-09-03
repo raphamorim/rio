@@ -595,19 +595,17 @@ impl Window {
         )
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_window_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         x11_or_wayland!(match self; Window(window) => window.raw_window_handle_rwh_06())
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         x11_or_wayland!(match self; Window(window) => window.raw_display_handle_rwh_06())
     }
 
@@ -902,11 +900,10 @@ impl ActiveEventLoop {
         x11_or_wayland!(match self; Self(evlp) => evlp.listen_device_events(allowed))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         x11_or_wayland!(match self; Self(evlp) => evlp.raw_display_handle_rwh_06())
     }
 
@@ -960,16 +957,15 @@ pub(crate) enum OwnedDisplayHandle {
 }
 
 impl OwnedDisplayHandle {
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         use std::ptr::NonNull;
 
         match self {
             #[cfg(x11_platform)]
-            Self::X(xconn) => Ok(rwh_06::XlibDisplayHandle::new(
+            Self::X(xconn) => Ok(raw_window_handle::XlibDisplayHandle::new(
                 NonNull::new(xconn.display.cast()),
                 xconn.default_screen_index() as _,
             )
@@ -979,7 +975,7 @@ impl OwnedDisplayHandle {
             Self::Wayland(conn) => {
                 use sctk::reexports::client::Proxy;
 
-                Ok(rwh_06::WaylandDisplayHandle::new(
+                Ok(raw_window_handle::WaylandDisplayHandle::new(
                     NonNull::new(conn.display().id().as_ptr().cast()).unwrap(),
                 )
                 .into())

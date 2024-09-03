@@ -1,6 +1,4 @@
 //! # X11
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::event_loop::{ActiveEventLoop, EventLoopBuilder};
 use crate::monitor::MonitorHandle;
@@ -11,7 +9,6 @@ use crate::dpi::Size;
 /// X window type. Maps directly to
 /// [`_NET_WM_WINDOW_TYPE`](https://specifications.freedesktop.org/wm-spec/wm-spec-1.5.html).
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum WindowType {
     /// A desktop feature. This can include a single window containing desktop icons with the same
     /// dimensions as the screen, allowing the desktop environment to have full control of the

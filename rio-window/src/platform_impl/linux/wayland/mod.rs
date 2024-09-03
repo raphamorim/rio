@@ -1,5 +1,3 @@
-#![cfg(wayland_platform)]
-
 //! Winit's Wayland backend.
 
 use std::fmt::Display;

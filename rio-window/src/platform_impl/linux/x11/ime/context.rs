@@ -172,7 +172,10 @@ struct PreeditCallbacks {
 impl PreeditCallbacks {
     pub fn new(client_data: ffi::XPointer) -> PreeditCallbacks {
         let start_callback = create_xim_callback(client_data, unsafe {
-            mem::transmute(preedit_start_callback as usize)
+            mem::transmute::<
+                usize,
+                unsafe extern "C" fn(*mut x11_dl::xlib::_XIM, *mut i8, *mut i8),
+            >(preedit_start_callback as usize)
         });
         let done_callback = create_xim_callback(client_data, preedit_done_callback);
         let caret_callback = create_xim_callback(client_data, preedit_caret_callback);
