@@ -161,8 +161,6 @@ impl UnownedWindow {
             Some(raw) => unreachable!("Invalid raw window handle {raw:?} on X11"),
             None => event_loop.root,
         };
-        #[cfg(not(feature = "rwh_06"))]
-        let root = event_loop.root;
 
         let mut monitors = leap!(xconn.available_monitors());
         let guessed_monitor = if monitors.is_empty() {
