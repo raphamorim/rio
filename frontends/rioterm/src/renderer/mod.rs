@@ -16,14 +16,14 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
+#[cfg(not(use_wa))]
+use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
-#[cfg(not(use_wa))]
-use winit::window::Theme;
 
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
@@ -325,17 +325,32 @@ impl Renderer {
                 continue;
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                // &self.create_graphic_sugar(square);
-                continue;
-            }
-
             let (mut style, square_content) =
                 if has_cursor && column == self.cursor.state.pos.col {
                     self.create_cursor_style(square)
                 } else {
                     self.create_style(square)
                 };
+
+            if square.flags.contains(Flags::GRAPHICS) {
+                // let graphics = square.graphics().map(|graphics| {
+                //     graphics
+                //         .iter()
+                //         .map(|graphic| Graphic {
+                //             id: graphic.texture.id,
+                //             offset_x: graphic.offset_x,
+                //             offset_y: graphic.offset_y,
+                //         })
+                //         .collect::<_>()
+                // });
+                // style.media = Some(graphics);
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(Graphic {
+                    id: graphic.texture.id,
+                    offset_x: graphic.offset_x,
+                    offset_y: graphic.offset_y,
+                });
+            }
 
             if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
@@ -621,10 +636,10 @@ impl Renderer {
                 has_underline_cursor = true;
             }
             CursorShape::Block => {
-                style.cursor = SugarCursor::Block(cursor_color);
+                style.cursor = Some(SugarCursor::Block(cursor_color));
             }
             CursorShape::Beam => {
-                style.cursor = SugarCursor::Caret(cursor_color);
+                style.cursor = Some(SugarCursor::Caret(cursor_color));
             }
             CursorShape::Hidden => {}
         }

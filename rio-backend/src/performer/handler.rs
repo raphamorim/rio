@@ -8,7 +8,7 @@ use log::{debug, warn};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
-use sugarloaf::SugarGraphicData;
+use sugarloaf::GraphicData;
 
 use crate::crosswords::attr::Attr;
 
@@ -332,6 +332,9 @@ pub trait Handler {
     /// Report text area size in pixels.
     fn text_area_size_pixels(&mut self) {}
 
+    /// Report cell size in pixels.
+    fn cells_size_pixels(&mut self) {}
+
     /// Report text area size in characters.
     fn text_area_size_chars(&mut self) {}
 
@@ -344,12 +347,7 @@ pub trait Handler {
     }
 
     /// Insert a new graphic item.
-    fn insert_graphic(
-        &mut self,
-        _data: SugarGraphicData,
-        _palette: Option<Vec<ColorRgb>>,
-    ) {
-    }
+    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
@@ -1016,6 +1014,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
             ('T', []) => handler.scroll_down(next_param_or(1) as usize),
             ('t', []) => match next_param_or(1) as usize {
                 14 => handler.text_area_size_pixels(),
+                16 => handler.cells_size_pixels(),
                 18 => handler.text_area_size_chars(),
                 22 => handler.push_title(),
                 23 => handler.pop_title(),

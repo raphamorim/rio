@@ -1,5 +1,4 @@
 use super::cache::ImageCache;
-use super::PixelFormat;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
@@ -108,7 +107,7 @@ pub struct GlyphCacheSession<'a> {
 
 impl<'a> GlyphCacheSession<'a> {
     pub fn get_image(&mut self, image: ImageId) -> Option<ImageLocation> {
-        self.images.get(image)
+        self.images.get(&image)
     }
 
     #[inline]
@@ -144,11 +143,9 @@ impl<'a> GlyphCacheSession<'a> {
             let w = p.width as u16;
             let h = p.height as u16;
             let req = AddImage {
-                format: PixelFormat::Rgba8,
                 width: w,
                 height: h,
                 has_alpha: true,
-                evictable: true,
                 data: ImageData::Borrowed(&self.scaled_image.data),
             };
             let image = self.images.allocate(req)?;
@@ -160,6 +157,7 @@ impl<'a> GlyphCacheSession<'a> {
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
             };
+
             self.entry.glyphs.insert(key, entry);
             return Some(entry);
         }

@@ -10,6 +10,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
+use crate::sugarloaf::graphics::{BottomLayer, GraphicData, GraphicId, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::{context::Context, Content, Object};
 use ab_glyph::{self, PxScale};
@@ -28,7 +29,8 @@ pub struct Sugarloaf<'a> {
     rich_text_brush: RichTextBrush,
     state: state::SugarState,
     pub background_color: wgpu::Color,
-    pub background_image: Option<types::Image>,
+    pub background_image: Option<ImageProperties>,
+    graphics: Graphics,
 }
 
 #[derive(Debug)]
@@ -138,6 +140,7 @@ impl Sugarloaf<'_> {
             rect_brush,
             rich_text_brush,
             text_brush,
+            graphics: Graphics::default(),
         };
 
         Ok(instance)
@@ -186,13 +189,16 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
         let handle = Handle::from_path(image.path.to_owned());
-        self.background_image = Some(layer::types::Image::Raster {
-            handle,
-            bounds: Rectangle {
-                width: image.width,
-                height: image.height,
-                x: image.x,
-                y: image.y,
+        self.graphics.bottom_layer = Some(BottomLayer {
+            should_fit: image.width.is_none() && image.height.is_none(),
+            data: types::Raster {
+                handle,
+                bounds: Rectangle {
+                    width: image.width.unwrap_or(self.ctx.size.width),
+                    height: image.height.unwrap_or(self.ctx.size.height),
+                    x: image.x,
+                    y: image.y,
+                },
             },
         });
         self
@@ -213,38 +219,28 @@ impl Sugarloaf<'_> {
         self.state.clean_screen();
     }
 
-    // #[inline]
-    // pub fn text(
-    //     &mut self,
-    //     position: (f32, f32),
-    //     content: String,
-    //     font_size: f32,
-    //     color: [f32; 4],
-    //     single_line: bool,
-    // ) {
-    //     self.state.compute_block(SugarBlock {
-    //         rects: vec![],
-    //         text: Some(SugarText {
-    //             position,
-    //             content,
-    //             font_id: 0,
-    //             font_size,
-    //             color,
-    //             single_line,
-    //         }),
-    //     });
-    // }
-
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
         self.state.compute_layout_resize(width, height);
+        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+            if bottom_layer.should_fit {
+                bottom_layer.data.bounds.width = self.ctx.size.width;
+                bottom_layer.data.bounds.height = self.ctx.size.height;
+            }
+        }
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.scale = scale;
         self.state.compute_layout_rescale(scale);
+        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+            if bottom_layer.should_fit {
+                bottom_layer.data.bounds.width = self.ctx.size.width;
+                bottom_layer.data.bounds.height = self.ctx.size.height;
+            }
+        }
     }
 
     #[inline]
@@ -253,13 +249,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn add_graphic(&mut self, graphic: crate::SugarGraphicData) {
-        self.state.graphics.add(graphic);
+    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
+        self.graphics.insert(graphic_data);
     }
 
     #[inline]
-    pub fn remove_graphic(&mut self, graphic_id: &crate::SugarGraphicId) {
-        self.state.graphics.remove(graphic_id);
+    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
+        self.graphics.remove(graphic_id);
     }
 
     #[inline]
@@ -277,6 +273,7 @@ impl Sugarloaf<'_> {
             &mut self.text_brush,
             &mut self.rect_brush,
             &mut self.ctx,
+            &mut self.graphics,
         ) {
             self.clean_state();
             return;
@@ -292,12 +289,27 @@ impl Sugarloaf<'_> {
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                if let Some(bg_image) = &self.background_image {
-                    self.layer_brush.prepare_ref(
-                        &mut encoder,
-                        &mut self.ctx,
-                        &[bg_image],
-                    );
+                if let Some(layer) = &self.graphics.bottom_layer {
+                    self.layer_brush
+                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
+                }
+
+                if self.graphics.has_graphics_on_top_layer() {
+                    for request in &self.graphics.top_layer {
+                        if let Some(entry) = self.graphics.get(&request.id) {
+                            self.layer_brush.prepare_with_handle(
+                                &mut encoder,
+                                &mut self.ctx,
+                                &entry.handle,
+                                &Rectangle {
+                                    width: request.width.unwrap_or(entry.width),
+                                    height: request.height.unwrap_or(entry.height),
+                                    x: request.pos_x,
+                                    y: request.pos_y,
+                                },
+                            );
+                        }
+                    }
                 }
 
                 {
@@ -317,12 +329,23 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    if self.background_image.is_some() {
+                    if self.graphics.bottom_layer.is_some() {
                         self.layer_brush.render(0, &mut rpass, None);
                     }
 
                     self.rich_text_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
+
+                    if self.graphics.has_graphics_on_top_layer() {
+                        let range_request = if self.graphics.bottom_layer.is_some() {
+                            1..(self.graphics.top_layer.len() + 1)
+                        } else {
+                            0..self.graphics.top_layer.len()
+                        };
+                        for request in range_request {
+                            self.layer_brush.render(request, &mut rpass, None);
+                        }
+                    }
 
                     self.rect_brush
                         .render(&mut rpass, &self.state, &mut self.ctx);
@@ -330,8 +353,11 @@ impl Sugarloaf<'_> {
                     self.text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
-                if self.background_image.is_some() {
+                if self.graphics.bottom_layer.is_some()
+                    || self.graphics.has_graphics_on_top_layer()
+                {
                     self.layer_brush.end_frame();
+                    self.graphics.clear_top_layer();
                 }
 
                 self.ctx.queue.submit(Some(encoder.finish()));

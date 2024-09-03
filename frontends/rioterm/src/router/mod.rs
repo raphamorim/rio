@@ -11,16 +11,16 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::RioEventType;
+use rio_window::event_loop::{ActiveEventLoop, EventLoop};
+use rio_window::keyboard::{Key, NamedKey};
+#[cfg(not(any(target_os = "macos", windows)))]
+use rio_window::platform::startup_notify::{
+    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
+};
+use rio_window::window::{Window, WindowId};
 use std::collections::HashMap;
 use std::error::Error;
 use std::time::Duration;
-use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, NamedKey};
-#[cfg(not(any(target_os = "macos", windows)))]
-use winit::platform::startup_notify::{
-    self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
-};
-use winit::window::{Window, WindowId};
 
 pub struct Route {
     pub assistant: assistant::Assistant,
@@ -134,7 +134,7 @@ impl Route {
     }
 
     #[inline]
-    pub fn has_key_wait(&mut self, key_event: &winit::event::KeyEvent) -> bool {
+    pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
         if self.path == RoutePath::Terminal {
             return false;
         }

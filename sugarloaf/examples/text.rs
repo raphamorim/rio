@@ -1,15 +1,15 @@
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
-use sugarloaf::{
-    layout::SugarloafLayout, ContentBuilder, FragmentStyle, FragmentStyleDecoration,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
-};
-use winit::event_loop::ControlFlow;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::{
+use rio_window::event_loop::ControlFlow;
+use rio_window::platform::run_on_demand::EventLoopExtRunOnDemand;
+use rio_window::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::WindowAttributes,
+};
+use sugarloaf::{
+    layout::SugarloafLayout, ContentBuilder, FragmentStyle, FragmentStyleDecoration,
+    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
@@ -77,11 +77,11 @@ fn main() {
                     sugarloaf.resize(new_inner_size.width, new_inner_size.height);
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::Resized(new_size) => {
+                rio_window::event::WindowEvent::Resized(new_size) => {
                     sugarloaf.resize(new_size.width, new_size.height);
                     window.request_redraw();
                 }
-                winit::event::WindowEvent::RedrawRequested { .. } => {
+                rio_window::event::WindowEvent::RedrawRequested { .. } => {
                     let mut content = ContentBuilder::default();
                     content.add_text(
                         "Sugarloaf",

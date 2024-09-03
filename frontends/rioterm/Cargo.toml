@@ -30,7 +30,7 @@ clap = { version = "4.5.9", features = ["derive"] }
 dirs = "5.0.1"
 notify = "6.1.1"
 rustc-hash = { workspace = true }
-image = { workspace = true }
+image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
@@ -40,7 +40,7 @@ copa = { workspace = true }
 url = "2.5.2"
 
 [target.'cfg(not(use_wa))'.dependencies]
-winit = { workspace = true }
+rio-window = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.7"
@@ -73,13 +73,13 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(use_wa)'] }
 default = ["wayland", "x11"]
 x11 = [
     "rio-backend/x11",
-    "winit/x11"
+    "rio-window/x11"
 ]
 wayland = [
     "rio-backend/wayland",
-    "winit/wayland",
-    "winit/wayland-dlopen",
-    "winit/wayland-csd-adwaita-crossfont",
+    "rio-window/wayland",
+    "rio-window/wayland-dlopen",
+    "rio-window/wayland-csd-adwaita-crossfont",
 ]
 
 [package.metadata.deb]

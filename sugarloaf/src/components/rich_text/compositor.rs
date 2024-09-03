@@ -10,35 +10,24 @@
 // text color, underline color and etc.
 
 use crate::components::rich_text::batch::BatchManager;
-pub use crate::components::rich_text::batch::{
-    // Command, DisplayList, Pipeline, Rect, Vertex,
-    Command,
-    DisplayList,
-    Rect,
-    Vertex,
-};
-use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
-use crate::components::rich_text::image_cache::glyph::GlyphEntry;
+pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
+use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
 use crate::components::rich_text::image_cache::ImageCache;
-pub use crate::components::rich_text::image_cache::{
-    AddImage,
-    ImageId,
-    ImageLocation,
-    TextureEvent,
-    TextureId,
-    // AddImage, Epoch, ImageData, ImageId, ImageLocation, TextureEvent, TextureId,
-};
+pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
+use crate::sugarloaf::graphics::GraphicRenderRequest;
+use crate::Graphics;
 use crate::SugarCursor;
+use crate::{Graphic, GraphicId};
 use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
+use std::collections::HashSet;
 
 pub struct ComposedRect {
     coords: [f32; 4],
     color: [f32; 4],
     has_alpha: bool,
-    image: TextureId,
 }
 
 pub enum Instruction {
@@ -70,6 +59,7 @@ pub struct CachedRunUnderline {
 
 pub struct CachedRun {
     pub glyphs_ids: Vec<u16>,
+    pub graphics: HashSet<Graphic>,
     instruction_set: FxHashMap<usize, CachedRunInstructions>,
     instruction_set_callback: Vec<InstructionCallback>,
     underline: CachedRunUnderline,
@@ -82,6 +72,7 @@ impl CachedRun {
             underline: CachedRunUnderline::default(),
             char_width,
             glyphs_ids: Vec::new(),
+            graphics: HashSet::new(),
             instruction_set_callback: Vec::new(),
             instruction_set: FxHashMap::default(),
         }
@@ -110,48 +101,39 @@ impl Compositor {
 
     /// Builds a display list for the current batched geometry and enumerates
     /// all texture events with the specified closure.
-    pub fn finish(
-        &mut self,
-        list: &mut DisplayList,
-        images: &mut ImageCache,
-        events: impl FnMut(TextureEvent),
-    ) {
-        images.drain_events(events);
+    pub fn finish(&mut self, list: &mut DisplayList) {
         self.batches.build_display_list(list);
     }
-}
 
-/// Image management.
-impl Compositor {
-    /// Adds an image to the compositor.
-    #[allow(unused)]
-    pub fn add_image(
-        &mut self,
-        images: &mut ImageCache,
-        request: AddImage,
-    ) -> Option<ImageId> {
-        images.allocate(request)
-    }
+    // Adds an image to the compositor.
+    // pub fn add_image(
+    //     &mut self,
+    //     images: &mut ImageCache,
+    //     graphic: &GraphicData,
+    // ) -> Option<ImageId> {
+    //     images.allocate(AddImage {
+    //         width: graphic.width as u16,
+    //         height: graphic.height as u16,
+    //         has_alpha: graphic.is_opaque,
+    //         data: ImageData::Borrowed(&graphic.pixels),
+    //     })
+    // }
 
-    /// Returns the image associated with the specified identifier.
-    #[allow(unused)]
-    pub fn get_image(
-        &mut self,
-        images: &mut ImageCache,
-        image: ImageId,
-    ) -> Option<ImageLocation> {
-        images.get(image)
-    }
+    // Returns the image associated with the specified identifier.
+    // #[allow(unused)]
+    // pub fn get_image(
+    //     &mut self,
+    //     images: &mut ImageCache,
+    //     image: ImageId,
+    // ) -> Option<ImageLocation> {
+    //     images.get(&image)
+    // }
 
-    /// Removes the image from the compositor.
-    #[allow(unused)]
-    pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
-        images.deallocate(image).is_some()
-    }
-}
+    // Removes the image from the compositor.
+    // pub fn remove_image(&mut self, images: &mut ImageCache, image: ImageId) -> bool {
+    // images.deallocate(image).is_some()
+    // }
 
-/// Drawing.
-impl Compositor {
     /// Draws a rectangle with the specified depth and color.
     #[allow(unused)]
     pub fn draw_rect(&mut self, rect: impl Into<Rect>, depth: f32, color: &[f32; 4]) {
@@ -162,11 +144,11 @@ impl Compositor {
     #[allow(unused)]
     pub fn draw_image(
         &mut self,
-        images: &mut ImageCache,
+        images: &ImageCache,
         rect: impl Into<Rect>,
         depth: f32,
         color: &[f32; 4],
-        image: ImageId,
+        image: &ImageId,
     ) {
         if let Some(img) = images.get(image) {
             self.batches.add_image_rect(
@@ -174,21 +156,40 @@ impl Compositor {
                 depth,
                 color,
                 &[img.min.0, img.min.1, img.max.0, img.max.1],
-                img.texture_id,
                 image.has_alpha(),
             );
         }
     }
 
+    // Draws an image with the specified rectangle, depth and color.
+    // #[inline]
+    // pub fn draw_image_from_data(
+    //     &mut self,
+    //     rect: impl Into<Rect>,
+    //     coords: &[f32; 4],
+    //     has_alpha: bool,
+    // ) {
+    //     self.batches.add_image_rect(
+    //         &rect.into(),
+    //         0.0,
+    //         &[0.0, 0.0, 0.0, 0.0],
+    //         coords,
+    //         has_alpha,
+    //     );
+    // }
+
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_cached_run(
         &mut self,
         cache_line: &Vec<CachedRun>,
         px: f32,
         py: f32,
         depth: f32,
-        rect: SugarDimensions,
+        rect: &SugarDimensions,
         line: Line,
+        last_rendered_graphic: &mut Option<GraphicId>,
+        graphics: &mut Graphics,
     ) {
         let mut px = px;
         let subpx_bias = (0.125, 0.);
@@ -210,8 +211,20 @@ impl Compositor {
             }
 
             let advance = px - run_x;
-
             let mut index = 0;
+
+            for graphic in &cached_run.graphics {
+                if *last_rendered_graphic != Some(graphic.id) {
+                    graphics.top_layer.push(GraphicRenderRequest {
+                        id: graphic.id,
+                        pos_x: run_x - (graphic.offset_x as f32),
+                        pos_y: topline - (graphic.offset_y as f32),
+                        width: None,
+                        height: None,
+                    });
+                    *last_rendered_graphic = Some(graphic.id);
+                }
+            }
 
             for glyph in &glyphs {
                 if let Some(set) = cached_run.instruction_set.get(&index) {
@@ -236,7 +249,6 @@ impl Compositor {
                                     depth,
                                     &data.color,
                                     &data.coords,
-                                    data.image,
                                     data.has_alpha,
                                 );
                             }
@@ -251,7 +263,6 @@ impl Compositor {
                                     depth,
                                     &data.color,
                                     &data.coords,
-                                    data.image,
                                     data.has_alpha,
                                 );
                             }
@@ -360,7 +371,6 @@ impl Compositor {
                             depth,
                             &color,
                             &coords,
-                            img.texture_id,
                             entry.image.has_alpha(),
                         );
                         cached_run_instructions
@@ -368,7 +378,6 @@ impl Compositor {
                             .push(Instruction::Image(ComposedRect {
                                 color,
                                 coords,
-                                image: img.texture_id,
                                 has_alpha: entry.image.has_alpha(),
                             }));
                     } else {
@@ -378,14 +387,12 @@ impl Compositor {
                             depth,
                             &color,
                             &coords,
-                            img.texture_id,
                             true,
                         );
                         cached_run_instructions.instructions.push(Instruction::Mask(
                             ComposedRect {
                                 color,
                                 coords,
-                                image: img.texture_id,
                                 has_alpha: true,
                             },
                         ));
@@ -410,7 +417,7 @@ impl Compositor {
         }
 
         match style.cursor {
-            SugarCursor::Block(cursor_color) => {
+            Some(SugarCursor::Block(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, rect.width, style.line_height),
                     depth,
@@ -420,7 +427,7 @@ impl Compositor {
                     .instruction_set_callback
                     .push(InstructionCallback::BlockCursor(cursor_color));
             }
-            SugarCursor::Caret(cursor_color) => {
+            Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, 3.0, style.line_height),
                     depth,

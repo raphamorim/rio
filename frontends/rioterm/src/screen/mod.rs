@@ -45,18 +45,18 @@ use rio_backend::sugarloaf::{
     layout::SugarloafLayout, Sugarloaf, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
+use rio_window::event::ElementState;
+use rio_window::event::Modifiers;
+use rio_window::event::MouseButton;
+#[cfg(target_os = "macos")]
+use rio_window::keyboard::ModifiersKeyState;
+use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
+use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
 use touch::TouchPurpose;
-use winit::event::ElementState;
-use winit::event::Modifiers;
-use winit::event::MouseButton;
-#[cfg(target_os = "macos")]
-use winit::keyboard::ModifiersKeyState;
-use winit::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
 const MIN_SELECTION_SCROLLING_HEIGHT: f32 = 5.;
@@ -85,12 +85,12 @@ pub struct Screen<'screen> {
 }
 
 pub struct ScreenWindowProperties {
-    pub size: winit::dpi::PhysicalSize<u32>,
+    pub size: rio_window::dpi::PhysicalSize<u32>,
     pub scale: f64,
     pub raw_window_handle: RawWindowHandle,
     pub raw_display_handle: RawDisplayHandle,
-    pub window_id: winit::window::WindowId,
-    pub theme: Option<winit::window::Theme>,
+    pub window_id: rio_window::window::WindowId,
+    pub theme: Option<rio_window::window::Theme>,
 }
 
 impl Screen<'_> {
@@ -298,7 +298,7 @@ impl Screen<'_> {
     pub fn update_config(
         &mut self,
         config: &rio_backend::config::Config,
-        current_theme: Option<winit::window::Theme>,
+        current_theme: Option<rio_window::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
         let num_tabs = self.ctx().len();
@@ -329,6 +329,7 @@ impl Screen<'_> {
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
             terminal.blinking_cursor = config.cursor.blinking;
+            drop(terminal);
         }
 
         self.mouse
@@ -359,7 +360,10 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
+    pub fn resize(&mut self, new_size: rio_window::dpi::PhysicalSize<u32>) -> &mut Self {
+        if self.renderer.selection_range.is_some() {
+            self.clear_selection();
+        }
         self.sugarloaf.resize(new_size.width, new_size.height);
         self.resize_all_contexts();
         self
@@ -369,7 +373,7 @@ impl Screen<'_> {
     pub fn set_scale(
         &mut self,
         new_scale: f32,
-        new_size: winit::dpi::PhysicalSize<u32>,
+        new_size: rio_window::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
@@ -393,12 +397,8 @@ impl Screen<'_> {
             let mut terminal = context.terminal.lock();
             terminal.resize::<SugarloafLayout>(layout);
             drop(terminal);
-            let _ = context.messenger.send_resize(
-                layout.width as u16,
-                layout.height as u16,
-                layout.columns as u16,
-                layout.lines as u16,
-            );
+            let winsize = crate::renderer::utils::terminal_dimensions(&layout);
+            let _ = context.messenger.send_resize(winsize);
         }
     }
 
@@ -453,7 +453,7 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn process_key_event(&mut self, key: &winit::event::KeyEvent) {
+    pub fn process_key_event(&mut self, key: &rio_window::event::KeyEvent) {
         // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
         // then should return drop the key processing
         // 2. In case IME has preedit then also should drop the key processing
@@ -609,7 +609,7 @@ impl Screen<'_> {
 
     pub fn process_key_bindings(
         &mut self,
-        key: &winit::event::KeyEvent,
+        key: &rio_window::event::KeyEvent,
         mode: &Mode,
         mods: ModifiersState,
     ) -> bool {
@@ -1052,6 +1052,7 @@ impl Screen<'_> {
             };
 
             terminal.scroll_to_pos(new_origin);
+            drop(terminal);
 
             self.search_state.display_offset_delta = 0;
             self.search_state.origin = new_origin;
@@ -1087,11 +1088,12 @@ impl Screen<'_> {
 
         // Store origin and scroll back to the match.
         terminal.scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
+        drop(terminal);
         self.search_state.origin = new_origin;
     }
 
     /// Whether we should send `ESC` due to `Alt` being pressed.
-    fn alt_send_esc(&mut self, key: &winit::event::KeyEvent, text: &str) -> bool {
+    fn alt_send_esc(&mut self, key: &rio_window::event::KeyEvent, text: &str) -> bool {
         #[cfg(not(target_os = "macos"))]
         let alt_send_esc = self.modifiers.state().alt_key();
 
@@ -1575,6 +1577,7 @@ impl Screen<'_> {
             terminal.vi_mode_cursor.pos = self.search_state.origin;
             terminal
                 .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
+            drop(terminal);
         }
         self.search_state.display_offset_delta = 0;
         self.sugarloaf.mark_dirty();
@@ -1640,6 +1643,7 @@ impl Screen<'_> {
                     self.search_state.focused_match = None;
                 }
             }
+            drop(terminal);
         }
 
         if should_reset_search_state {

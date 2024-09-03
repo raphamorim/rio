@@ -149,7 +149,7 @@ impl ScreenNavigation {
             let mut color = colors.tabs;
             let mut size = INACTIVE_TAB_WIDTH_SIZE;
             if i == self.current {
-                color = colors.tabs_active;
+                color = colors.tabs_active_highlight;
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
 
@@ -206,7 +206,7 @@ impl ScreenNavigation {
         let text_pos_mod = 11.;
         for i in tabs {
             let mut background_color = colors.bar;
-            let mut foreground_color = colors.tabs_active;
+            let mut foreground_color = colors.tabs_foreground;
 
             let is_current = i == self.current;
             if is_current {

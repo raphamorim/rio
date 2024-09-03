@@ -28,20 +28,7 @@ impl Messenger {
     }
 
     #[inline]
-    pub fn send_resize(
-        &self,
-        width: u16,
-        height: u16,
-        cols: u16,
-        rows: u16,
-    ) -> Result<&str, String> {
-        let new_size = WinsizeBuilder {
-            rows,
-            cols,
-            width,
-            height,
-        };
-
+    pub fn send_resize(&self, new_size: WinsizeBuilder) -> Result<&str, String> {
         match self.channel.send(Msg::Resize(new_size)) {
             Ok(..) => Ok("Resized"),
             Err(..) => Err("Error sending message".to_string()),

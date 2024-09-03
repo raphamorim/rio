@@ -58,7 +58,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use sugarloaf::SugarGraphicData;
+use sugarloaf::GraphicData;
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -103,9 +103,9 @@ bitflags! {
                                 | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
                                 | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
                                 | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
-        const SIXEL_DISPLAY       = 0b1000_0000_0000_0000_0000;
-        const SIXEL_PRIV_PALETTE  = 0b1000_0000_0000_0000_0001;
-        const SIXEL_CURSOR_TO_THE_RIGHT  = 0b1000_0000_0000_0000_0010;
+        const SIXEL_DISPLAY             = 1 << 28;
+        const SIXEL_PRIV_PALETTE        = 1 << 29;
+        const SIXEL_CURSOR_TO_THE_RIGHT = 1 << 31;
         const ANY                 = u32::MAX;
     }
 }
@@ -1886,7 +1886,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match intermediate {
             None => {
                 log::trace!("Reporting primary device attributes");
-                let text = String::from("\x1b[?6c");
+                let text = String::from("\x1b[?62;4;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
@@ -2275,6 +2275,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn cells_size_pixels(&mut self) {
+        // https://terminalguide.namepad.de/seq/csi_st-16/
+        let text = format!(
+            "\x1b[6;{};{}t",
+            self.graphics.cell_height, self.graphics.cell_width
+        );
+        debug!("cells_size_pixels {:?}", text);
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
     fn text_area_size_chars(&mut self) {
         let text = format!(
             "\x1b[8;{};{}t",
@@ -2393,11 +2405,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_graphic(
-        &mut self,
-        graphic: SugarGraphicData,
-        palette: Option<Vec<ColorRgb>>,
-    ) {
+    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -2571,7 +2579,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // Add the graphic data to the pending queue.
-        self.graphics.pending.push(SugarGraphicData {
+        self.graphics.pending.push(GraphicData {
             id: graphic_id,
             ..graphic
         });

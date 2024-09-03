@@ -61,14 +61,28 @@ blur = true
 
 ### Using image as background:
 
+If both properties `width` and `height` are occluded then background image will use the terminal width/height.
+
 ```toml
 [window.background-image]
 path = "/Users/hugoamor/Desktop/musashi.png"
 opacity = 0.5
-width = 400.0
-height = 400.0
 x = 0.0
 y = -100.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image.png)
+
+If any property `width` or `height` are used then background image will be respected.
+
+```toml
+[window.background-image]
+path = "/Users/hugoamor/Desktop/harvest-moon.png"
+width = 1200
+height = 800
+opacity = 0.5
+x = 0.0
+y = 0.0
+```
+
+![Demo image as background](/assets/demos/demo-background-image-partial.png)

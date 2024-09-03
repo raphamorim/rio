@@ -27,7 +27,7 @@ use std::{fmt, mem};
 
 use crate::ansi::graphics::MAX_GRAPHIC_DIMENSIONS;
 use crate::config::colors::ColorRgb;
-use sugarloaf::{ColorType, SugarGraphicData, SugarGraphicId};
+use sugarloaf::{ColorType, GraphicData, GraphicId};
 
 use copa::Params;
 use log::trace;
@@ -506,7 +506,7 @@ impl Parser {
 
     /// Returns the final graphic to append to the grid, with the palette
     /// built in the process.
-    pub fn finish(mut self) -> Result<(SugarGraphicData, Vec<ColorRgb>), Error> {
+    pub fn finish(mut self) -> Result<(GraphicData, Vec<ColorRgb>), Error> {
         self.finish_command()?;
 
         trace!(
@@ -536,8 +536,8 @@ impl Parser {
             rgba_pixels.extend_from_slice(&pixel);
         }
 
-        let data = SugarGraphicData {
-            id: SugarGraphicId(0),
+        let data = GraphicData {
+            id: GraphicId(0),
             height: self.height,
             width: self.width,
             color_type: ColorType::Rgba,
@@ -876,7 +876,7 @@ mod tests {
                 sixel.truncate(pos);
             }
 
-            // Parse the data and get the SugarGraphicData item.
+            // Parse the data and get the GraphicData item.
             let mut parser = Parser::default();
             for byte in sixel {
                 parser.put(byte).unwrap();

@@ -3,71 +3,89 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::components::core::image::Handle;
+use crate::sugarloaf::types;
+use crate::sugarloaf::Handle;
 use rustc_hash::FxHashMap;
 
-pub struct SugarGraphicEntry {
-    pub id: SugarGraphicId,
+pub struct GraphicDataEntry {
     pub handle: Handle,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug)]
+pub struct GraphicRenderRequest {
+    pub id: GraphicId,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+}
+
+pub struct BottomLayer {
+    pub data: types::Raster,
+    pub should_fit: bool,
 }
 
 #[derive(Default)]
-pub struct SugarloafGraphics {
-    inner: FxHashMap<SugarGraphicId, SugarGraphicEntry>,
+pub struct Graphics {
+    inner: FxHashMap<GraphicId, GraphicDataEntry>,
+    pub bottom_layer: Option<BottomLayer>,
+    pub top_layer: Vec<GraphicRenderRequest>,
 }
 
-impl SugarloafGraphics {
+impl Graphics {
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
+    pub fn has_graphics_on_top_layer(&self) -> bool {
+        !self.top_layer.is_empty()
     }
 
     #[inline]
-    pub fn get_mut(&mut self, id: &SugarGraphicId) -> Option<&mut SugarGraphicEntry> {
-        self.inner.get_mut(id)
+    pub fn clear_top_layer(&mut self) {
+        self.top_layer.clear();
     }
 
     #[inline]
-    pub fn get(&mut self, id: &SugarGraphicId) -> Option<&SugarGraphicEntry> {
+    pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
         self.inner.get(id)
     }
 
     #[inline]
-    pub fn keys(&self) -> Vec<SugarGraphicId> {
-        self.inner.keys().cloned().collect::<Vec<_>>()
-    }
+    pub fn insert(&mut self, graphic_data: GraphicData) {
+        if self.inner.contains_key(&graphic_data.id) {
+            return;
+        }
 
-    #[inline]
-    pub fn add(&mut self, graphic_data: SugarGraphicData) {
-        let handle = Handle::from_pixels(
-            graphic_data.width as u32,
-            graphic_data.height as u32,
-            graphic_data.pixels.clone(),
+        self.inner.insert(
+            graphic_data.id,
+            GraphicDataEntry {
+                handle: Handle::from_pixels(
+                    graphic_data.width as u32,
+                    graphic_data.height as u32,
+                    graphic_data.pixels,
+                ),
+                width: graphic_data.width as f32,
+                height: graphic_data.height as f32,
+            },
         );
-        self.inner
-            .entry(graphic_data.id)
-            .or_insert(SugarGraphicEntry {
-                id: graphic_data.id,
-                handle,
-            });
     }
 
     #[inline]
-    pub fn remove(&mut self, graphic_id: &SugarGraphicId) {
+    pub fn remove(&mut self, graphic_id: &GraphicId) {
         self.inner.remove(graphic_id);
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct SugarGraphic {
-    pub id: SugarGraphicId,
-    pub width: u16,
-    pub height: u16,
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
+pub struct Graphic {
+    pub id: GraphicId,
+    pub offset_x: u16,
+    pub offset_y: u16,
 }
 
 /// Unique identifier for every graphic added to a grid.
 #[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
-pub struct SugarGraphicId(pub u64);
+pub struct GraphicId(pub u64);
 
 /// Specifies the format of the pixel data.
 #[derive(Eq, PartialEq, Clone, Debug, Copy)]
@@ -81,9 +99,9 @@ pub enum ColorType {
 
 /// Defines a single graphic read from the PTY.
 #[derive(Eq, PartialEq, Clone, Debug)]
-pub struct SugarGraphicData {
+pub struct GraphicData {
     /// Graphics identifier.
-    pub id: SugarGraphicId,
+    pub id: GraphicId,
 
     /// Width, in pixels, of the graphic.
     pub width: usize,
@@ -101,7 +119,7 @@ pub struct SugarGraphicData {
     pub is_opaque: bool,
 }
 
-impl SugarGraphicData {
+impl GraphicData {
     /// Check if the image may contain transparent pixels. If it returns
     /// `false`, it is guaranteed that there are no transparent pixels.
     #[inline]

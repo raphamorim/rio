@@ -4,9 +4,9 @@
 // LICENSE file in the root directory of this source tree.
 
 use super::compositors::SugarCompositors;
-use super::graphics::SugarloafGraphics;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
+use crate::Graphics;
 use crate::{Content, Object};
 
 #[derive(Debug, PartialEq)]
@@ -27,8 +27,6 @@ pub struct SugarState {
     pub current: SugarTree,
     latest_change: SugarTreeDiff,
     pub compositors: SugarCompositors,
-    // TODO: Decide if graphics should be in SugarTree or SugarState
-    pub graphics: SugarloafGraphics,
 }
 
 impl SugarState {
@@ -39,7 +37,6 @@ impl SugarState {
     ) -> SugarState {
         let mut state = SugarState {
             compositors: SugarCompositors::new(font_library),
-            graphics: SugarloafGraphics::default(),
             // First time computing changes should obtain dimensions
             current: SugarTree {
                 layout: initial_layout,
@@ -148,6 +145,7 @@ impl SugarState {
         elementary_brush: &mut text::GlyphBrush<()>,
         rect_brush: &mut RectBrush,
         context: &mut super::Context,
+        graphics: &mut Graphics,
     ) -> bool {
         #[cfg(not(feature = "always_dirty"))]
         if self.latest_change == SugarTreeDiff::Equal {
@@ -155,7 +153,7 @@ impl SugarState {
             return false;
         }
 
-        advance_brush.prepare(context, self);
+        advance_brush.prepare(context, self, graphics);
         rect_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf

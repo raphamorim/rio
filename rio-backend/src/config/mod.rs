@@ -122,7 +122,11 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
-    #[serde(default = "bool::default", rename = "hide-cursor-when-typing")]
+    #[serde(
+        default = "bool::default",
+        rename = "hide-mouse-cursor-when-typing",
+        alias = "hide-cursor-when-typing"
+    )]
     pub hide_cursor_when_typing: bool,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,

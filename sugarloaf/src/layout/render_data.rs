@@ -14,6 +14,7 @@ use super::layout_data::*;
 use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
+use crate::{Graphic, GraphicId};
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
 use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
@@ -25,6 +26,7 @@ use swash::{GlyphId, NormalizedCoord};
 pub struct RenderData {
     pub data: LayoutData,
     last_line: u32,
+    pub graphics: std::collections::HashSet<GraphicId>,
     pub last_cached_run: RunCacheEntry,
     pub line_data: LineLayoutData,
 }
@@ -151,6 +153,10 @@ impl RenderData {
             }
             let clusters_end = self.data.clusters.len() as u32;
 
+            if let Some(graphic) = cached_run.span.media {
+                self.graphics.insert(graphic.id);
+            }
+
             self.data.runs.push(RunData {
                 coords: (coords_start, coords_end),
                 clusters: (clusters_start, clusters_end),
@@ -258,6 +264,11 @@ impl RenderData {
                             details: detailed_clusters,
                         });
                     }
+
+                    if let Some(graphic) = styles[last_span].media {
+                        self.graphics.insert(graphic.id);
+                    }
+
                     self.last_cached_run.runs.push(CachedRunData {
                         span: styles[last_span],
                         line,
@@ -347,6 +358,11 @@ impl RenderData {
             return;
         }
         self.data.last_span = last_span;
+
+        if let Some(graphic) = styles[last_span].media {
+            self.graphics.insert(graphic.id);
+        }
+
         let run_data = RunData {
             span: styles[last_span],
             line,
@@ -444,6 +460,11 @@ impl<'a> Run<'a> {
         self.run.span
     }
 
+    #[inline]
+    pub fn media(&self) -> Option<Graphic> {
+        self.run.span.media
+    }
+
     /// Returns the font for the run.
     #[inline]
     pub fn font(&self) -> &usize {
@@ -469,7 +490,7 @@ impl<'a> Run<'a> {
 
     /// Returns the cursor
     #[inline]
-    pub fn cursor(&self) -> SugarCursor {
+    pub fn cursor(&self) -> Option<SugarCursor> {
         self.run.span.cursor
     }
 

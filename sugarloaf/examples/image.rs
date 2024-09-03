@@ -1,9 +1,9 @@
 extern crate png;
 
-use winit::event::WindowEvent;
-use winit::event_loop::ControlFlow;
-use winit::platform::run_on_demand::EventLoopExtRunOnDemand;
-use winit::{
+use rio_window::event::WindowEvent;
+use rio_window::event_loop::ControlFlow;
+use rio_window::platform::run_on_demand::EventLoopExtRunOnDemand;
+use rio_window::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 
@@ -57,8 +57,8 @@ fn main() {
 
     sugarloaf.set_background_image(&sugarloaf::ImageProperties {
         path: String::from("resources/rio-colors.png"),
-        width: 400.,
-        height: 400.,
+        width: Some(400.),
+        height: Some(400.),
         x: 0.,
         y: 0.,
     });

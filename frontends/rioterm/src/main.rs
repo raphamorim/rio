@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(not(use_wa))]
     {
-        let window_event_loop = winit::event_loop::EventLoop::with_user_event()
+        let window_event_loop = rio_window::event_loop::EventLoop::with_user_event()
             .build()
             .unwrap();
 

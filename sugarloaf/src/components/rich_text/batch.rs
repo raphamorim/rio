@@ -9,16 +9,16 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::components::rich_text::image_cache::TextureId;
 use bytemuck::{Pod, Zeroable};
 
 /// Batch geometry vertex.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct Vertex {
-    pub pos: [f32; 4],
+    pub pos: [f32; 3],
     pub color: [f32; 4],
     pub uv: [f32; 2],
+    pub layers: [i32; 2],
 }
 
 /// Rectangle with floating point coordinates.
@@ -50,8 +50,8 @@ impl From<[f32; 4]> for Rect {
 
 #[derive(Default, Debug)]
 struct Batch {
-    image: Option<TextureId>,
-    mask: Option<TextureId>,
+    image: Option<i32>,
+    mask: Option<i32>,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     subpix: bool,
@@ -74,8 +74,8 @@ impl Batch {
         depth: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
-        image: Option<TextureId>,
-        mask: Option<TextureId>,
+        image: Option<i32>,
+        mask: Option<i32>,
         subpix: bool,
     ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
@@ -90,23 +90,10 @@ impl Batch {
             return false;
         }
         self.subpix = subpix;
-        let flags = match (has_image, has_mask) {
-            (true, true) => {
-                self.image = image;
-                self.mask = mask;
-                3.
-            }
-            (true, false) => {
-                self.image = image;
-                1.
-            }
-            (false, true) => {
-                self.mask = mask;
-                2.
-            }
-            _ => 0.,
-        };
-        self.push_rect(rect, depth, flags, color, coords);
+        self.image = image;
+        self.mask = mask;
+        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+        self.push_rect(rect, depth, color, coords, layers);
         true
     }
 
@@ -115,9 +102,9 @@ impl Batch {
         &mut self,
         rect: &Rect,
         depth: f32,
-        flags: f32,
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
+        layers: [i32; 2],
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -131,24 +118,28 @@ impl Batch {
         let b = coords[3];
         let verts = [
             Vertex {
-                pos: [x, y, depth, flags],
+                pos: [x, y, depth],
                 color: *color,
                 uv: [l, t],
+                layers,
             },
             Vertex {
-                pos: [x, y + h, depth, flags],
+                pos: [x, y + h, depth],
                 color: *color,
                 uv: [l, b],
+                layers,
             },
             Vertex {
-                pos: [x + w, y + h, depth, flags],
+                pos: [x + w, y + h, depth],
                 color: *color,
                 uv: [r, b],
+                layers,
             },
             Vertex {
-                pos: [x + w, y, depth, flags],
+                pos: [x + w, y, depth],
                 color: *color,
                 uv: [r, t],
+                layers,
             },
         ];
         let base = self.vertices.len() as u32;
@@ -166,18 +157,9 @@ impl Batch {
     #[inline]
     fn build_display_list(&self, list: &mut DisplayList) {
         let first_vertex = list.vertices.len() as u32;
-        let first_index = list.indices.len() as u32;
         list.vertices.extend_from_slice(&self.vertices);
         list.indices
             .extend(self.indices.iter().map(|i| *i + first_vertex));
-        if let Some(tex) = self.mask {
-            list.commands.push(Command::BindTexture(0, tex));
-        }
-        if let Some(tex) = self.image {
-            list.commands.push(Command::BindTexture(1, tex));
-        }
-        list.indices_to_draw
-            .push((first_index, first_index + self.indices.len() as u32));
     }
 }
 
@@ -212,12 +194,10 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         coords: &[f32; 4],
-        mask: TextureId,
         subpix: bool,
     ) {
         for batch in &mut self.transparent {
-            if batch.add_rect(rect, depth, color, Some(coords), None, Some(mask), subpix)
-            {
+            if batch.add_rect(rect, depth, color, Some(coords), None, Some(1), subpix) {
                 return;
             }
         }
@@ -227,7 +207,7 @@ impl BatchManager {
             color,
             Some(coords),
             None,
-            Some(mask),
+            Some(1),
             subpix,
         );
     }
@@ -239,35 +219,20 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         coords: &[f32; 4],
-        image: TextureId,
         has_alpha: bool,
     ) {
         let transparent = has_alpha || color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
-                if batch.add_rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(image),
-                    None,
-                    false,
-                ) {
+                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                {
                     return;
                 }
             }
         } else {
             for batch in &mut self.opaque {
-                if batch.add_rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(image),
-                    None,
-                    false,
-                ) {
+                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                {
                     return;
                 }
             }
@@ -277,7 +242,7 @@ impl BatchManager {
             depth,
             color,
             Some(coords),
-            Some(image),
+            Some(1),
             None,
             false,
         );
@@ -335,10 +300,8 @@ impl BatchManager {
 /// Resources and commands for drawing a composition.
 #[derive(Default, Debug, Clone)]
 pub struct DisplayList {
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-    indices_to_draw: Vec<(u32, u32)>,
-    commands: Vec<Command>,
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
 }
 
 impl DisplayList {
@@ -348,43 +311,10 @@ impl DisplayList {
         Self::default()
     }
 
-    /// Returns the buffered vertices for the display list.
-    #[inline]
-    pub fn vertices(&self) -> &[Vertex] {
-        &self.vertices
-    }
-
-    /// Returns the buffered indices to draw.
-    #[inline]
-    pub fn indices_to_draw(&self) -> &[(u32, u32)] {
-        &self.indices_to_draw
-    }
-
-    /// Returns the buffered indices for the display list.
-    #[inline]
-    pub fn indices(&self) -> &[u32] {
-        &self.indices
-    }
-
-    /// Returns the sequence of display commands.
-    #[inline]
-    pub fn commands(&self) -> &[Command] {
-        &self.commands
-    }
-
     /// Clears the display list.
     #[inline]
     pub fn clear(&mut self) {
         self.vertices.clear();
         self.indices.clear();
-        self.commands.clear();
-        self.indices_to_draw.clear();
     }
-}
-
-/// Command in a display list.
-#[derive(Copy, Clone, Debug)]
-pub enum Command {
-    /// Bind a texture at the specified slot.
-    BindTexture(u32, TextureId),
 }

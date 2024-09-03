@@ -9,7 +9,7 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::{sugarloaf::primitives::SugarCursor, Graphic};
 use std::hash::{Hash, Hasher};
 use swash::text::cluster::CharInfo;
 use swash::Setting;
@@ -33,10 +33,6 @@ pub struct FragmentData {
 /// Data that describes an item.
 #[derive(Copy, Debug, Clone)]
 pub struct ItemData {
-    // Script of the item.
-    // pub script: Script,
-    // Bidi level of the item.
-    // pub level: u8,
     /// Offset of the text.
     pub start: usize,
     /// End of the text.
@@ -219,7 +215,9 @@ pub struct FragmentStyle {
     /// Decoration color.
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
-    pub cursor: SugarCursor,
+    pub cursor: Option<SugarCursor>,
+    /// Media
+    pub media: Option<Graphic>,
 }
 
 impl Default for FragmentStyle {
@@ -233,9 +231,10 @@ impl Default for FragmentStyle {
             line_spacing: 1.,
             color: [1.0, 1.0, 1.0, 1.0],
             background_color: None,
-            cursor: SugarCursor::Disabled,
+            cursor: None,
             decoration: None,
             decoration_color: None,
+            media: None,
         }
     }
 }
@@ -284,24 +283,24 @@ impl Hash for FragmentStyle {
             }
         }
         match self.cursor {
-            SugarCursor::Disabled => {
+            None => {
                 0.hash(state);
             }
-            SugarCursor::Block(color) => {
+            Some(SugarCursor::Block(color)) => {
                 1.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);
                 color[2].to_bits().hash(state);
                 color[3].to_bits().hash(state);
             }
-            SugarCursor::Caret(color) => {
+            Some(SugarCursor::Caret(color)) => {
                 2.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);
                 color[2].to_bits().hash(state);
                 color[3].to_bits().hash(state);
             }
-            SugarCursor::Underline(color) => {
+            Some(SugarCursor::Underline(color)) => {
                 3.hash(state);
                 color[0].to_bits().hash(state);
                 color[1].to_bits().hash(state);
@@ -309,5 +308,7 @@ impl Hash for FragmentStyle {
                 color[3].to_bits().hash(state);
             }
         };
+
+        self.media.hash(state);
     }
 }

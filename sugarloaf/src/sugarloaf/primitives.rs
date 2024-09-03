@@ -6,13 +6,11 @@
 use crate::sugarloaf::Rect;
 use serde::Deserialize;
 
-#[derive(Debug, Default, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SugarCursor {
     Block([f32; 4]),
     Caret([f32; 4]),
     Underline([f32; 4]),
-    #[default]
-    Disabled,
 }
 
 #[derive(Copy, PartialEq, Default, Debug, Clone)]
@@ -26,10 +24,10 @@ pub struct SugarloafStyle {
 pub struct ImageProperties {
     #[serde(default = "String::default")]
     pub path: String,
-    #[serde(default = "f32::default")]
-    pub width: f32,
-    #[serde(default = "f32::default")]
-    pub height: f32,
+    #[serde(default = "Option::default")]
+    pub width: Option<f32>,
+    #[serde(default = "Option::default")]
+    pub height: Option<f32>,
     #[serde(default = "f32::default")]
     pub x: f32,
     #[serde(default = "f32::default")]
