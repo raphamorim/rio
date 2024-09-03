@@ -361,6 +361,9 @@ impl Screen<'_> {
 
     #[inline]
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) -> &mut Self {
+        if self.renderer.selection_range.is_some() {
+            self.clear_selection();
+        }
         self.sugarloaf.resize(new_size.width, new_size.height);
         self.resize_all_contexts();
         self
