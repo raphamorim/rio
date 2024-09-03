@@ -1421,9 +1421,6 @@ unsafe fn init(
         None => fallback_parent(),
     };
 
-    #[cfg(not(feature = "rwh_06"))]
-    let parent = fallback_parent();
-
     let menu = attributes.platform_specific.menu;
     let fullscreen = attributes.fullscreen.clone();
     let maximized = attributes.maximized;
