@@ -55,6 +55,7 @@ jobs:
           freetype:p
           python:p
           fontconfig:p
+          ${{ matrix.sys == 'CLANG64' && 'gcc-compat:p' || '' }}
 
     - name: Run cargo 
       shell: msys2 {0}
