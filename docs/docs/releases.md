@@ -20,6 +20,7 @@ language: 'en'
 - Remove tokio runtime.
 - Allow configuring with lowercase values for enums.
 - Rename `hide-cursor-when-typing` to `hide-mouse-cursor-when-typing`.
+- Cleanup selection once happens a resize.
 
 ## 0.1.10
 
