@@ -23,7 +23,7 @@ pub struct VideoModeHandle {
     pub(crate) bit_depth: u16,
     pub(crate) refresh_rate_millihertz: u32,
     pub(crate) monitor: MonitorHandle,
-    // DEVMODEW is huge so we box it to avoid blowing up the size of winit::window::Fullscreen
+    // DEVMODEW is huge so we box it to avoid blowing up the size of rio_window::window::Fullscreen
     pub(crate) native_video_mode: Box<DEVMODEW>,
 }
 
