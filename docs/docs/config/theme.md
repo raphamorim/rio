@@ -60,6 +60,7 @@ selection-foreground = ""
 
 # Navigation
 tabs-active = ""
+tabs-active-foreground = ""
 tabs-active-highlight = ""
 tabs-active-foreground = ""
 bar = ""
