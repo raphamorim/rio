@@ -391,6 +391,26 @@ impl Sequencer {
                                         .send_bytes(text.into_bytes());
                                 }
                             }
+                            RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
+                                if let Some(route) =
+                                    self.router.routes.get_mut(&window_id)
+                                {
+                                    let layout = route.window.screen.sugarloaf.layout();
+                                    let text = format(teletypewriter::WinsizeBuilder {
+                                        width: layout.width as u16,
+                                        height: layout.height as u16,
+                                        cols: layout.columns as u16,
+                                        rows: layout.lines as u16,
+                                    });
+                                    route
+                                        .window
+                                        .screen
+                                        .ctx_mut()
+                                        .current_mut()
+                                        .messenger
+                                        .send_bytes(text.into_bytes());
+                                }
+                            }
                             RioEventType::Rio(RioEvent::ColorRequest(index, format)) => {
                                 // TODO: colors could be coming terminal as well
                                 // if colors has been declaratively changed
