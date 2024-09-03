@@ -396,12 +396,11 @@ impl Sequencer {
                                     self.router.routes.get_mut(&window_id)
                                 {
                                     let layout = route.window.screen.sugarloaf.layout();
-                                    let text = format(teletypewriter::WinsizeBuilder {
-                                        width: layout.width as u16,
-                                        height: layout.height as u16,
-                                        cols: layout.columns as u16,
-                                        rows: layout.lines as u16,
-                                    });
+                                    let text = format(
+                                        crate::renderer::utils::terminal_dimensions(
+                                            &layout,
+                                        ),
+                                    );
                                     route
                                         .window
                                         .screen

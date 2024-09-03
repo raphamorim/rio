@@ -660,8 +660,8 @@ fn fetch_dimensions(
             };
 
             if style.advance > 0. && line_height > 0. {
-                dimension.width = style.advance;
-                dimension.height = line_height;
+                dimension.width = style.advance.round();
+                dimension.height = line_height.round();
             }
 
             if font != &current_font

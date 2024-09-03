@@ -2275,6 +2275,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn cells_size_pixels(&mut self) {
+        let text = format!(
+            "\x1b[4;{};{}t",
+            self.graphics.cell_width, self.graphics.cell_height
+        );
+        debug!("cells_size_pixels {:?}", text);
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
     fn text_area_size_chars(&mut self) {
         let text = format!(
             "\x1b[8;{};{}t",

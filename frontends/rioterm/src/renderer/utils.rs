@@ -53,3 +53,17 @@ pub fn padding_bottom_from_config(
 
     default_padding
 }
+
+#[inline]
+pub fn terminal_dimensions(
+    layout: &rio_backend::sugarloaf::layout::SugarloafLayout,
+) -> teletypewriter::WinsizeBuilder {
+    let width = layout.width - (layout.margin.x * 2.);
+    let height = (layout.height - layout.margin.top_y) - layout.margin.bottom_y;
+    teletypewriter::WinsizeBuilder {
+        width: width as u16,
+        height: height as u16,
+        cols: layout.columns as u16,
+        rows: layout.lines as u16,
+    }
+}
