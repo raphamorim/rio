@@ -79,7 +79,7 @@ brevity.
 | `CSI S`    | IMPLEMENTED |                                                |
 | `CSI s`    | IMPLEMENTED |                                                |
 | `CSI T`    | IMPLEMENTED |                                                |
-| `CSI t`    | PARTIAL     | Only parameters `22` and `23` are supported    |
+| `CSI t`    | PARTIAL     | Only parameters `14`, `18`, `22` and `23` are supported    |
 |            | REJECTED    | `1`-`13`, `15`, `19`-`21`, `24`                |
 | `CSI u`    | IMPLEMENTED |                                                |
 | `CSI ? u`  | IMPLEMENTED |                                                |
