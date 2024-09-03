@@ -10,7 +10,6 @@ edition.workspace = true
 license.workspace = true
 keywords.workspace = true
 
-# Features are documented in either `lib.rs` or under `winit::platform`.
 [features]
 default = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
 x11 = ["x11-dl", "bytemuck", "percent-encoding", "xkbcommon-dl/x11", "x11rb"]

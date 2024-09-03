@@ -113,7 +113,7 @@ impl<T> EventLoopBuilder<T> {
     )]
     #[inline]
     pub fn build(&mut self) -> Result<EventLoop<T>, EventLoopError> {
-        let _span = tracing::debug_span!("winit::EventLoopBuilder::build").entered();
+        let _span = tracing::debug_span!("rio_window::EventLoopBuilder::build").entered();
 
         if EVENT_LOOP_CREATED.swap(true, Ordering::Relaxed) {
             return Err(EventLoopError::RecreationAttempt);
@@ -229,7 +229,7 @@ impl<T> EventLoop<T> {
     where
         F: FnMut(Event<T>, &ActiveEventLoop),
     {
-        let _span = tracing::debug_span!("winit::EventLoop::run").entered();
+        let _span = tracing::debug_span!("rio_window::EventLoop::run").entered();
 
         self.event_loop.run(event_handler)
     }
@@ -296,7 +296,7 @@ impl<T> EventLoop<T> {
     /// [`DeviceEvent`]: crate::event::DeviceEvent
     pub fn listen_device_events(&self, allowed: DeviceEvents) {
         let _span = tracing::debug_span!(
-            "winit::EventLoop::listen_device_events",
+            "rio_window::EventLoop::listen_device_events",
             allowed = ?allowed
         )
         .entered();
@@ -326,7 +326,7 @@ impl<T> EventLoop<T> {
         window_attributes: WindowAttributes,
     ) -> Result<Window, OsError> {
         let _span = tracing::debug_span!(
-            "winit::EventLoop::create_window",
+            "rio_window::EventLoop::create_window",
             window_attributes = ?window_attributes
         )
         .entered();
@@ -404,7 +404,7 @@ impl ActiveEventLoop {
         window_attributes: WindowAttributes,
     ) -> Result<Window, OsError> {
         let _span = tracing::debug_span!(
-            "winit::ActiveEventLoop::create_window",
+            "rio_window::ActiveEventLoop::create_window",
             window_attributes = ?window_attributes
         )
         .entered();
@@ -418,7 +418,7 @@ impl ActiveEventLoop {
         &self,
         custom_cursor: CustomCursorSource,
     ) -> CustomCursor {
-        let _span = tracing::debug_span!("winit::ActiveEventLoop::create_custom_cursor",)
+        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::create_custom_cursor",)
             .entered();
 
         self.p.create_custom_cursor(custom_cursor)
@@ -428,7 +428,7 @@ impl ActiveEventLoop {
     #[inline]
     pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
         let _span =
-            tracing::debug_span!("winit::ActiveEventLoop::available_monitors",).entered();
+            tracing::debug_span!("rio_window::ActiveEventLoop::available_monitors",).entered();
 
         #[allow(clippy::useless_conversion)] // false positive on some platforms
         self.p
@@ -447,7 +447,7 @@ impl ActiveEventLoop {
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         let _span =
-            tracing::debug_span!("winit::ActiveEventLoop::primary_monitor",).entered();
+            tracing::debug_span!("rio_window::ActiveEventLoop::primary_monitor",).entered();
 
         self.p
             .primary_monitor()
@@ -467,7 +467,7 @@ impl ActiveEventLoop {
     /// [`DeviceEvent`]: crate::event::DeviceEvent
     pub fn listen_device_events(&self, allowed: DeviceEvents) {
         let _span = tracing::debug_span!(
-            "winit::ActiveEventLoop::listen_device_events",
+            "rio_window::ActiveEventLoop::listen_device_events",
             allowed = ?allowed
         )
         .entered();
@@ -489,7 +489,7 @@ impl ActiveEventLoop {
     ///
     /// See [`LoopExiting`][Event::LoopExiting].
     pub fn exit(&self) {
-        let _span = tracing::debug_span!("winit::ActiveEventLoop::exit",).entered();
+        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::exit",).entered();
 
         self.p.exit()
     }
@@ -584,7 +584,7 @@ impl<T: 'static> EventLoopProxy<T> {
     ///
     /// [`UserEvent(event)`]: Event::UserEvent
     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
-        let _span = tracing::debug_span!("winit::EventLoopProxy::send_event",).entered();
+        let _span = tracing::debug_span!("rio_window::EventLoopProxy::send_event",).entered();
 
         self.event_loop_proxy.send_event(event)
     }
