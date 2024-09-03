@@ -7,6 +7,7 @@ pub mod renderer;
 pub mod theme;
 pub mod window;
 
+use crate::ansi::CursorShape;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::keyboard::Keyboard;
@@ -135,7 +136,7 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CursorConfig {
     #[serde(default = "default_cursor")]
-    pub style: char,
+    pub shape: CursorShape,
     #[serde(default = "bool::default")]
     pub blinking: bool,
 }
@@ -430,7 +431,7 @@ impl Default for Config {
 impl Default for CursorConfig {
     fn default() -> Self {
         Self {
-            style: default_cursor(),
+            shape: default_cursor(),
             blinking: false,
         }
     }
@@ -475,7 +476,7 @@ mod tests {
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path(&tmp_dir().join("it-should-never-exist"));
         assert_eq!(config.theme, String::default());
-        assert_eq!(config.cursor.style, default_cursor());
+        assert_eq!(config.cursor.shape, default_cursor());
     }
 
     #[test]
@@ -514,9 +515,9 @@ mod tests {
         );
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
-        assert_eq!(result.cursor.style, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.theme, String::default());
-        assert_eq!(result.cursor.style, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
         assert!(!result.renderer.disable_unfocused_render);
@@ -592,7 +593,7 @@ mod tests {
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
-        assert_eq!(result.cursor.style, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -616,13 +617,13 @@ mod tests {
             "change-cursor",
             r#"
             [cursor]
-            style = '_'
+            shape = 'underline'
         "#,
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
-        assert_eq!(result.cursor.style, '_');
+        assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors

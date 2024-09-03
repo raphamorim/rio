@@ -1,4 +1,4 @@
-use crate::config::Shell;
+use crate::{ansi::CursorShape, config::Shell};
 
 #[inline]
 pub fn default_bool_true() -> bool {
@@ -68,8 +68,8 @@ pub fn default_log_level() -> String {
 }
 
 #[inline]
-pub fn default_cursor() -> char {
-    '▇'
+pub fn default_cursor() -> CursorShape {
+    CursorShape::default()
 }
 
 #[inline]
@@ -127,10 +127,10 @@ pub fn default_config_file_content() -> String {
 #
 # [cursor]
 #
-# Default cursor is Block
-# Other available options are: '_' and '|'
+# Default cursor shape is 'block'
+# Other available options are: 'underline', 'beam' or 'hidden'
 #
-# style = '▇'
+# shape = 'block'
 #
 # Whether the cursor blinks. The default is true
 #

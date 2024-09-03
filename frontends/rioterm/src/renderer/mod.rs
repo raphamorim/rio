@@ -146,9 +146,9 @@ impl Renderer {
             dynamic_background,
             active_search: None,
             cursor: Cursor {
-                content: config.cursor.style,
-                content_ref: config.cursor.style,
-                state: CursorState::new(config.cursor.style),
+                content: config.cursor.shape.into(),
+                content_ref: config.cursor.shape.into(),
+                state: CursorState::new(config.cursor.shape.into()),
             },
             width_cache: FxHashMap::default(),
         }

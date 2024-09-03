@@ -39,7 +39,7 @@ After:
 
 ```toml
 [cursor]
-style = '▇'
+shape = 'block'
 blinking = false
 ```
 
