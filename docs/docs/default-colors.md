@@ -26,8 +26,9 @@ vi-cursor = '#12d0ff'
 
 # Navigation
 tabs = '#12B5E5'
-tabs-active = '#FCBA28'
-tabs-active-highlight = '#ff00ff'
+tabs-foreground = '#7d7d7d'
+tabs-active = '#303030'
+tabs-active-highlight = '#ffa133'
 tabs-active-foreground = '#FFFFFF'
 bar = '#1b1a1a'
 
