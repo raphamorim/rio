@@ -60,7 +60,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
 
     objects.push(Object::Text(Text::single_line(
         (70., layout.margin.top_y + 80.),
-        String::from("(press enter to continue)"),
+        String::from("⟩ press enter to continue"),
         18.,
         yellow,
     )));
