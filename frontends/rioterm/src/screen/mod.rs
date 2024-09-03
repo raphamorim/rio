@@ -397,12 +397,8 @@ impl Screen<'_> {
             let mut terminal = context.terminal.lock();
             terminal.resize::<SugarloafLayout>(layout);
             drop(terminal);
-            let _ = context.messenger.send_resize(
-                layout.width as u16,
-                layout.height as u16,
-                layout.columns as u16,
-                layout.lines as u16,
-            );
+            let winsize = crate::renderer::utils::terminal_dimensions(&layout);
+            let _ = context.messenger.send_resize(winsize);
         }
     }
 
