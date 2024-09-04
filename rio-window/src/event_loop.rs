@@ -113,7 +113,7 @@ impl<T> EventLoopBuilder<T> {
     )]
     #[inline]
     pub fn build(&mut self) -> Result<EventLoop<T>, EventLoopError> {
-        let _span = tracing::debug_span!("winit::EventLoopBuilder::build").entered();
+        let _span = tracing::debug_span!("rio_window::EventLoopBuilder::build").entered();
 
         if EVENT_LOOP_CREATED.swap(true, Ordering::Relaxed) {
             return Err(EventLoopError::RecreationAttempt);
@@ -229,7 +229,7 @@ impl<T> EventLoop<T> {
     where
         F: FnMut(Event<T>, &ActiveEventLoop),
     {
-        let _span = tracing::debug_span!("winit::EventLoop::run").entered();
+        let _span = tracing::debug_span!("rio_window::EventLoop::run").entered();
 
         self.event_loop.run(event_handler)
     }
@@ -296,7 +296,7 @@ impl<T> EventLoop<T> {
     /// [`DeviceEvent`]: crate::event::DeviceEvent
     pub fn listen_device_events(&self, allowed: DeviceEvents) {
         let _span = tracing::debug_span!(
-            "winit::EventLoop::listen_device_events",
+            "rio_window::EventLoop::listen_device_events",
             allowed = ?allowed
         )
         .entered();
@@ -326,7 +326,7 @@ impl<T> EventLoop<T> {
         window_attributes: WindowAttributes,
     ) -> Result<Window, OsError> {
         let _span = tracing::debug_span!(
-            "winit::EventLoop::create_window",
+            "rio_window::EventLoop::create_window",
             window_attributes = ?window_attributes
         )
         .entered();
@@ -350,10 +350,14 @@ impl<T> EventLoop<T> {
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl<T> rwh_06::HasDisplayHandle for EventLoop<T> {
-    fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
-        rwh_06::HasDisplayHandle::display_handle(self.event_loop.window_target())
+impl<T> raw_window_handle::HasDisplayHandle for EventLoop<T> {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
+        raw_window_handle::HasDisplayHandle::display_handle(
+            self.event_loop.window_target(),
+        )
     }
 }
 
@@ -400,7 +404,7 @@ impl ActiveEventLoop {
         window_attributes: WindowAttributes,
     ) -> Result<Window, OsError> {
         let _span = tracing::debug_span!(
-            "winit::ActiveEventLoop::create_window",
+            "rio_window::ActiveEventLoop::create_window",
             window_attributes = ?window_attributes
         )
         .entered();
@@ -414,8 +418,9 @@ impl ActiveEventLoop {
         &self,
         custom_cursor: CustomCursorSource,
     ) -> CustomCursor {
-        let _span = tracing::debug_span!("winit::ActiveEventLoop::create_custom_cursor",)
-            .entered();
+        let _span =
+            tracing::debug_span!("rio_window::ActiveEventLoop::create_custom_cursor",)
+                .entered();
 
         self.p.create_custom_cursor(custom_cursor)
     }
@@ -424,7 +429,8 @@ impl ActiveEventLoop {
     #[inline]
     pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
         let _span =
-            tracing::debug_span!("winit::ActiveEventLoop::available_monitors",).entered();
+            tracing::debug_span!("rio_window::ActiveEventLoop::available_monitors",)
+                .entered();
 
         #[allow(clippy::useless_conversion)] // false positive on some platforms
         self.p
@@ -442,8 +448,8 @@ impl ActiveEventLoop {
     /// **Wayland / Web:** Always returns `None`.
     #[inline]
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        let _span =
-            tracing::debug_span!("winit::ActiveEventLoop::primary_monitor",).entered();
+        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::primary_monitor",)
+            .entered();
 
         self.p
             .primary_monitor()
@@ -463,7 +469,7 @@ impl ActiveEventLoop {
     /// [`DeviceEvent`]: crate::event::DeviceEvent
     pub fn listen_device_events(&self, allowed: DeviceEvents) {
         let _span = tracing::debug_span!(
-            "winit::ActiveEventLoop::listen_device_events",
+            "rio_window::ActiveEventLoop::listen_device_events",
             allowed = ?allowed
         )
         .entered();
@@ -485,7 +491,7 @@ impl ActiveEventLoop {
     ///
     /// See [`LoopExiting`][Event::LoopExiting].
     pub fn exit(&self) {
-        let _span = tracing::debug_span!("winit::ActiveEventLoop::exit",).entered();
+        let _span = tracing::debug_span!("rio_window::ActiveEventLoop::exit",).entered();
 
         self.p.exit()
     }
@@ -507,12 +513,14 @@ impl ActiveEventLoop {
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl rwh_06::HasDisplayHandle for ActiveEventLoop {
-    fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
+impl raw_window_handle::HasDisplayHandle for ActiveEventLoop {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
         let raw = self.p.raw_display_handle_rwh_06()?;
         // SAFETY: The display will never be deallocated while the event loop is alive.
-        Ok(unsafe { rwh_06::DisplayHandle::borrow_raw(raw) })
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(raw) })
     }
 }
 
@@ -530,7 +538,7 @@ impl rwh_06::HasDisplayHandle for ActiveEventLoop {
 /// - A reference-counted pointer to the underlying type.
 #[derive(Clone)]
 pub struct OwnedDisplayHandle {
-    #[cfg_attr(not(feature = "rwh_06"), allow(dead_code))]
+    #[allow(dead_code)]
     platform: platform_impl::OwnedDisplayHandle,
 }
 
@@ -541,14 +549,16 @@ impl fmt::Debug for OwnedDisplayHandle {
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl rwh_06::HasDisplayHandle for OwnedDisplayHandle {
+impl raw_window_handle::HasDisplayHandle for OwnedDisplayHandle {
     #[inline]
-    fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
         let raw = self.platform.raw_display_handle_rwh_06()?;
 
         // SAFETY: The underlying display handle should be safe.
-        let handle = unsafe { rwh_06::DisplayHandle::borrow_raw(raw) };
+        let handle = unsafe { raw_window_handle::DisplayHandle::borrow_raw(raw) };
 
         Ok(handle)
     }
@@ -576,7 +586,8 @@ impl<T: 'static> EventLoopProxy<T> {
     ///
     /// [`UserEvent(event)`]: Event::UserEvent
     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
-        let _span = tracing::debug_span!("winit::EventLoopProxy::send_event",).entered();
+        let _span =
+            tracing::debug_span!("rio_window::EventLoopProxy::send_event",).entered();
 
         self.event_loop_proxy.send_event(event)
     }

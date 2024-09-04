@@ -733,14 +733,13 @@ impl ActiveEventLoop {
         }
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         use sctk::reexports::client::Proxy;
 
-        Ok(rwh_06::WaylandDisplayHandle::new({
+        Ok(raw_window_handle::WaylandDisplayHandle::new({
             let ptr = self.connection.display().id().as_ptr();
             std::ptr::NonNull::new(ptr as *mut _)
                 .expect("wl_display should never be null")

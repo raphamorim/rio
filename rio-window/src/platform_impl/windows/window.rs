@@ -363,43 +363,40 @@ impl Window {
         self.window
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub unsafe fn rwh_06_no_thread_check(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-        let mut window_handle = rwh_06::Win32WindowHandle::new(unsafe {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
+        let mut window_handle = raw_window_handle::Win32WindowHandle::new(unsafe {
             // SAFETY: Handle will never be zero.
             std::num::NonZeroIsize::new_unchecked(self.window)
         });
         let hinstance = unsafe { super::get_window_long(self.hwnd(), GWLP_HINSTANCE) };
         window_handle.hinstance = std::num::NonZeroIsize::new(hinstance);
-        Ok(rwh_06::RawWindowHandle::Win32(window_handle))
+        Ok(raw_window_handle::RawWindowHandle::Win32(window_handle))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_window_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         // TODO: Write a test once integration framework is ready to ensure that it holds.
         // If we aren't in the GUI thread, we can't return the window.
         if !self.thread_executor.in_event_loop_thread() {
             tracing::error!("tried to access window handle outside of the main thread");
-            return Err(rwh_06::HandleError::Unavailable);
+            return Err(raw_window_handle::HandleError::Unavailable);
         }
 
         // SAFETY: We are on the correct thread.
         unsafe { self.rwh_06_no_thread_check() }
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Windows(
-            rwh_06::WindowsDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::Windows(
+            raw_window_handle::WindowsDisplayHandle::new(),
         ))
     }
 
@@ -1412,9 +1409,8 @@ unsafe fn init(
         }
     };
 
-    #[cfg(feature = "rwh_06")]
     let parent = match attributes.parent_window.as_ref().map(|handle| handle.0) {
-        Some(rwh_06::RawWindowHandle::Win32(handle)) => {
+        Some(raw_window_handle::RawWindowHandle::Win32(handle)) => {
             window_flags.set(WindowFlags::CHILD, true);
             if attributes.platform_specific.menu.is_some() {
                 warn!("Setting a menu on a child window is unsupported");
@@ -1424,9 +1420,6 @@ unsafe fn init(
         Some(raw) => unreachable!("Invalid raw window handle {raw:?} on Windows"),
         None => fallback_parent(),
     };
-
-    #[cfg(not(feature = "rwh_06"))]
-    let parent = fallback_parent();
 
     let menu = attributes.platform_specific.menu;
     let fullscreen = attributes.fullscreen.clone();

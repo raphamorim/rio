@@ -153,17 +153,14 @@ impl UnownedWindow {
     ) -> Result<UnownedWindow, RootOsError> {
         let xconn = &event_loop.xconn;
         let atoms = xconn.atoms();
-        #[cfg(feature = "rwh_06")]
         let root = match window_attrs.parent_window.as_ref().map(|handle| handle.0) {
-            Some(rwh_06::RawWindowHandle::Xlib(handle)) => {
+            Some(raw_window_handle::RawWindowHandle::Xlib(handle)) => {
                 handle.window as xproto::Window
             }
-            Some(rwh_06::RawWindowHandle::Xcb(handle)) => handle.window.get(),
+            Some(raw_window_handle::RawWindowHandle::Xcb(handle)) => handle.window.get(),
             Some(raw) => unreachable!("Invalid raw window handle {raw:?} on X11"),
             None => event_loop.root,
         };
-        #[cfg(not(feature = "rwh_06"))]
-        let root = event_loop.root;
 
         let mut monitors = leap!(xconn.available_monitors());
         let guessed_monitor = if monitors.is_empty() {
@@ -1998,22 +1995,21 @@ impl UnownedWindow {
         // TODO timer
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_window_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-        let mut window_handle = rwh_06::XlibWindowHandle::new(self.xlib_window());
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
+        let mut window_handle =
+            raw_window_handle::XlibWindowHandle::new(self.xlib_window());
         window_handle.visual_id = self.visual as c_ulong;
         Ok(window_handle.into())
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub fn raw_display_handle_rwh_06(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::XlibDisplayHandle::new(
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::XlibDisplayHandle::new(
             Some(
                 std::ptr::NonNull::new(self.xlib_display())
                     .expect("display pointer should never be null"),
