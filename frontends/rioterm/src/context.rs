@@ -197,13 +197,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            pty = create_pty(
+            pty = match create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
                 2,
                 1,
-            );
+            ) {
+                Ok(created_pty) => created_pty,
+                Err(err) => {
+                    log::error!("{err:?}");
+                    return Err(Box::new(err));
+                }
+            }
         }
 
         let machine = Machine::new(
