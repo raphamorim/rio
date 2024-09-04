@@ -5,7 +5,8 @@ use crate::routes::RoutePath;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
-use rio_backend::clipboard::ClipboardType;
+use raw_window_handle::HasDisplayHandle;
+use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::ColorRgb;
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
@@ -36,7 +37,12 @@ impl Application {
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
     ) -> Application {
-        let mut router = Router::new(config.fonts.to_owned());
+        // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
+        // which is done in `loop_exiting`.
+        let clipboard =
+            unsafe { Clipboard::new(event_loop.display_handle().unwrap().as_raw()) };
+
+        let mut router = Router::new(config.fonts.to_owned(), clipboard);
         if let Some(error) = config_error {
             router.propagate_error_to_next_route(error.into());
         }
@@ -118,6 +124,7 @@ impl ApplicationHandler<EventPayload> for Application {
             &self.config,
             &self.router.font_library,
             None,
+            &self.router.clipboard,
         )
         .unwrap();
         window.is_focused = true;
@@ -333,7 +340,11 @@ impl ApplicationHandler<EventPayload> for Application {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route.window.is_focused {
                         let text = format(
-                            route.window.screen.clipboard_get(clipboard_type).as_str(),
+                            self.router
+                                .clipboard
+                                .borrow_mut()
+                                .get(clipboard_type)
+                                .as_str(),
                         );
                         route
                             .window
@@ -348,7 +359,10 @@ impl ApplicationHandler<EventPayload> for Application {
             RioEventType::Rio(RioEvent::ClipboardStore(clipboard_type, content)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route.window.is_focused {
-                        route.window.screen.clipboard_store(clipboard_type, content);
+                        self.router
+                            .clipboard
+                            .borrow_mut()
+                            .set(clipboard_type, content);
                     }
                 }
             }
@@ -1062,7 +1076,13 @@ impl ApplicationHandler<EventPayload> for Application {
         // Renderer and contexts ran.
         self.router.routes.clear();
 
-        // std::mem::swap(&mut self.clipboard, &mut Clipboard::new_nop());
+        // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
+        // as a safe placeholder.
+        std::mem::swap(
+            &mut self.router.clipboard,
+            &mut std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop())),
+        );
+
         std::process::exit(0);
     }
 }
