@@ -6,6 +6,7 @@ use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
 use crate::error::RioError;
+use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Debug;
@@ -13,17 +14,9 @@ use std::fmt::Formatter;
 use std::sync::Arc;
 use teletypewriter::WinsizeBuilder;
 
-#[cfg(not(use_wa))]
 use rio_window::event_loop::EventLoopProxy;
 
-#[cfg(use_wa)]
-use wa::event_loop::EventLoopProxy;
-
-#[cfg(not(use_wa))]
 pub type WindowId = rio_window::window::WindowId;
-
-#[cfg(use_wa)]
-pub type WindowId = u16;
 
 #[derive(Debug, Clone)]
 pub enum RioEventType {
@@ -209,6 +202,12 @@ pub struct EventPayload {
 impl EventPayload {
     pub fn new(payload: RioEventType, window_id: WindowId) -> Self {
         Self { payload, window_id }
+    }
+}
+
+impl From<EventPayload> for RioWindowEvent<EventPayload> {
+    fn from(event: EventPayload) -> Self {
+        RioWindowEvent::UserEvent(event)
     }
 }
 

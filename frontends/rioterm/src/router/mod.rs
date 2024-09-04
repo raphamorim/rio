@@ -11,7 +11,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::RioEventType;
-use rio_window::event_loop::{ActiveEventLoop, EventLoop};
+use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
 use rio_window::platform::startup_notify::{
@@ -336,13 +336,12 @@ pub struct RouteWindow {
 
 impl RouteWindow {
     pub fn new(
-        event_loop: &EventLoop<EventPayload>,
+        event_loop: &ActiveEventLoop,
+        event_proxy: &EventProxy,
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
-        let proxy = event_loop.create_proxy();
-        let event_proxy = EventProxy::new(proxy.clone());
 
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder("Rio", config, None);
@@ -361,7 +360,7 @@ impl RouteWindow {
         };
 
         let screen =
-            Screen::new(properties, config, event_proxy, font_library, open_url)?;
+            Screen::new(properties, config, event_proxy.clone(), font_library, open_url)?;
 
         Ok(Self {
             is_focused: false,
