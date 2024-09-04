@@ -10,6 +10,9 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 - Initial support to Sixel protocol.
+
+## 0.1.11
+
 - Support CSI_t 16 (Report Cell Size in Pixels).
 - Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
