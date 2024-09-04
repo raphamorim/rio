@@ -13,6 +13,9 @@ language: 'en'
 
 ## 0.1.11
 
+- Experimental support to Sixel protocol.
+- Clipboard has been moved to Application level and shared to all windows.
+- Replace `run` with `run_app`.
 - Support CSI_t 16 (Report Cell Size in Pixels).
 - Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
