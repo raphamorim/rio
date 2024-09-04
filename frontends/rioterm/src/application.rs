@@ -42,10 +42,10 @@ impl Application {
         }
 
         let proxy = event_loop.create_proxy();
-        let event_proxy = Some(EventProxy::new(proxy.clone()));
+        let event_proxy = EventProxy::new(proxy.clone());
         let _ = configuration_file_updates(
             rio_backend::config::config_dir_path(),
-            event_proxy.clone().unwrap(),
+            event_proxy.clone(),
         );
         let scheduler = Scheduler::new(proxy);
 
@@ -53,7 +53,7 @@ impl Application {
 
         Application {
             config,
-            event_proxy: event_proxy.unwrap(),
+            event_proxy,
             router,
             scheduler,
         }
