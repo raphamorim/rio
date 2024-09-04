@@ -1,9 +1,9 @@
 // Single-producer single-consumer buffer for Rust
 
-use std::rc::Rc;
 use std::cell::UnsafeCell;
 use std::io::{self, Read, Write};
 use std::mem;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct SpscBuffer {
