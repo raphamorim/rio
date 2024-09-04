@@ -16,6 +16,7 @@ language: 'en'
 - *breaking change*: collapsed tabs use now `tabs-active-highlight` instead of `tabs-active`.
 - Default font for UI has changed to [DepartureMono](https://departuremono.com/).
 - Performance: drop extra texture creation and manipulation.
+- Fix on windows: If editor is not found, the app panics [#641](https://github.com/raphamorim/rio/issues/641).
 - Improvements on `window.background-image` as respect width and height properties if were used.
 - Macos: remove grab cursor when dragging and use default instead.
 - Fix `tabs-active-highlight` config key [#618](https://github.com/raphamorim/rio/pull/618).
