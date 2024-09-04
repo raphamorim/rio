@@ -19,7 +19,6 @@ use rio_backend::sugarloaf::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-#[cfg(not(use_wa))]
 use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -60,45 +59,20 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(
-        #[cfg(not(use_wa))] config: &Config,
-        #[cfg(use_wa)] config: &Config,
-        #[cfg(not(use_wa))] current_theme: Option<Theme>,
-        #[cfg(use_wa)] appearance: wa::Appearance,
-    ) -> Renderer {
+    pub fn new(config: &Config, current_theme: Option<Theme>) -> Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        #[cfg(not(use_wa))]
-        {
-            if let Some(theme) = current_theme {
-                if let Some(adaptive_colors) = &config.adaptive_colors {
-                    match theme {
-                        Theme::Light => {
-                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                        }
-                        Theme::Dark => {
-                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                        }
-                    }
-                }
-            }
-        }
-
-        #[cfg(use_wa)]
-        {
+        if let Some(theme) = current_theme {
             if let Some(adaptive_colors) = &config.adaptive_colors {
-                match appearance {
-                    wa::Appearance::Light => {
+                match theme {
+                    Theme::Light => {
                         named_colors = adaptive_colors.light.unwrap_or(named_colors);
                     }
-                    wa::Appearance::Dark => {
+                    Theme::Dark => {
                         named_colors = adaptive_colors.dark.unwrap_or(named_colors);
                     }
-                    // TODO
-                    wa::Appearance::LightHighContrast => {}
-                    wa::Appearance::DarkHighContrast => {}
                 }
             }
         }
@@ -419,18 +393,6 @@ impl Renderer {
         }
 
         content_builder.finish_line();
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn decrease_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity -= acc;
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn increase_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity += acc;
     }
 
     #[inline]

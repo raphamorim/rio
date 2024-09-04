@@ -421,10 +421,7 @@ mod tests {
             size,
             CursorShape::Underline,
             VoidListener,
-            #[cfg(not(use_wa))]
             crate::event::WindowId::from(0),
-            #[cfg(use_wa)]
-            0,
             0,
         )
     }

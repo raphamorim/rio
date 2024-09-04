@@ -38,17 +38,10 @@ teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 url = "2.5.2"
-
-[target.'cfg(not(use_wa))'.dependencies]
 rio-window = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = "0.2.7"
-
-[target.'cfg(use_wa)'.dependencies]
-objc = "0.2.7"
-smol_str = { workspace = true }
-wa = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }
@@ -65,9 +58,6 @@ windows-sys = { version = "0.52", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ]}
-
-[lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(use_wa)'] }
 
 [features]
 default = ["wayland", "x11"]

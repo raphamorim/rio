@@ -2373,7 +2373,6 @@ dependencies = [
  "teletypewriter",
  "toml",
  "unicode-width",
- "wa",
  "wgpu",
 ]
 
@@ -2459,12 +2458,10 @@ dependencies = [
  "rio-window",
  "rustc-hash 2.0.0",
  "serde",
- "smol_str",
  "teletypewriter",
  "tinyvec",
  "unicode-width",
  "url",
- "wa",
  "wgpu",
  "windows-sys 0.52.0",
 ]
