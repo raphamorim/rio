@@ -54,18 +54,18 @@ impl Window {
     }
 
     #[inline]
-    pub(crate) fn raw_window_handle_rwh_06(
+    pub(crate) fn raw_window_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         if let Some(mtm) = MainThreadMarker::new() {
-            Ok(self.delegate.get(mtm).raw_window_handle_rwh_06())
+            Ok(self.delegate.get(mtm).raw_window_handle_raw_window_handle())
         } else {
             Err(raw_window_handle::HandleError::Unavailable)
         }
     }
 
     #[inline]
-    pub(crate) fn raw_display_handle_rwh_06(
+    pub(crate) fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::RawDisplayHandle::AppKit(

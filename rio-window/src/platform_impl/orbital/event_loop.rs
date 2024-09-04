@@ -850,7 +850,7 @@ impl ActiveEventLoop {
     pub fn listen_device_events(&self, _allowed: DeviceEvents) {}
 
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::RawDisplayHandle::Orbital(
@@ -884,7 +884,7 @@ pub(crate) struct OwnedDisplayHandle;
 
 impl OwnedDisplayHandle {
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::OrbitalDisplayHandle::new().into())

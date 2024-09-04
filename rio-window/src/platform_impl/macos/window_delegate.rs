@@ -1603,7 +1603,9 @@ impl WindowDelegate {
     }
 
     #[inline]
-    pub fn raw_window_handle_rwh_06(&self) -> raw_window_handle::RawWindowHandle {
+    pub fn raw_window_handle_raw_window_handle(
+        &self,
+    ) -> raw_window_handle::RawWindowHandle {
         let window_handle = raw_window_handle::AppKitWindowHandle::new({
             let ptr = Retained::as_ptr(&self.view()) as *mut _;
             std::ptr::NonNull::new(ptr).expect("Retained<T> should never be null")
