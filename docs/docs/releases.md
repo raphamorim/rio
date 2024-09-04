@@ -27,6 +27,7 @@ language: 'en'
 - Allow configuring with lowercase values for enums.
 - Rename `hide-cursor-when-typing` to `hide-mouse-cursor-when-typing`.
 - Cleanup selection once happens a resize.
+- Windows: Reduce WM_PAINT messages of thread target window.
 
 ## 0.1.10
 
