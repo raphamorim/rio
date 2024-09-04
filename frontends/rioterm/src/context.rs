@@ -137,12 +137,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        #[cfg(target_os = "windows")]
-        let width = size.width;
-
-        #[cfg(target_os = "windows")]
-        let height = size.height;
-
         let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
 
@@ -201,8 +195,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                2,
-                1,
+                cols,
+                rows,
             ) {
                 Ok(created_pty) => created_pty,
                 Err(err) => {
@@ -225,20 +219,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let messenger = Messenger::new(channel);
-
-        #[cfg(target_os = "windows")]
-        {
-            if let Err(resize_error) =
-                messenger.send_resize(teletypewriter::WinsizeBuilder {
-                    width: width as u16,
-                    height: height as u16,
-                    cols,
-                    rows,
-                })
-            {
-                log::error!("{resize_error:?}");
-            }
-        };
 
         Ok(Context {
             route_id,
