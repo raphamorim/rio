@@ -773,10 +773,7 @@ mod tests {
             .unwrap_or(0);
 
         // Create terminal with the appropriate dimensions.
-        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(use_wa)]
-        let window_id = 0;
         let size = CrosswordsSize::new(num_cols, lines.len());
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
@@ -1269,10 +1266,7 @@ mod tests {
 
     #[test]
     fn wide_without_spacer() {
-        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(use_wa)]
-        let window_id = 0;
         let size = CrosswordsSize::new(2, 2);
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);

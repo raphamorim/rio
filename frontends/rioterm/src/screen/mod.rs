@@ -480,10 +480,8 @@ impl Screen<'_> {
                 // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
                 // the keys below.
                 _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
-                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key, mods, mode,
-                    )
-                    .into()
+                    crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                        .into()
                 }
                 // Winit uses different keys for `Backspace` so we explicitly specify the
                 // values, instead of using what was passed to us from it.
@@ -491,10 +489,8 @@ impl Screen<'_> {
                 Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                 Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
                 Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
-                .into(),
+                _ => crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                    .into(),
             };
 
             self.sugarloaf.mark_dirty();
@@ -560,9 +556,7 @@ impl Screen<'_> {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
+                crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
             }
         };
 

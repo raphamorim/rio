@@ -535,13 +535,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        #[cfg(any(use_wa, target_os = "macos"))]
-                        self.event_proxy.send_event(
-                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
-                            self.window_id,
-                        );
-
-                        #[cfg(not(any(use_wa, target_os = "macos")))]
                         self.event_proxy
                             .send_event(RioEvent::Title(window_title), self.window_id);
                     }
@@ -785,10 +778,6 @@ pub mod test {
 
     #[test]
     fn test_capacity() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let context_manager =
@@ -803,10 +792,6 @@ pub mod test {
 
     #[test]
     fn test_add_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -835,10 +820,6 @@ pub mod test {
 
     #[test]
     fn test_add_context_start_with_capacity_limit() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -873,10 +854,6 @@ pub mod test {
 
     #[test]
     fn test_set_current() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -914,10 +891,6 @@ pub mod test {
 
     #[test]
     fn test_close_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -949,10 +922,6 @@ pub mod test {
 
     #[test]
     fn test_close_context_upcoming_ids() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -1004,10 +973,6 @@ pub mod test {
 
     #[test]
     fn test_close_last_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -1037,10 +1002,6 @@ pub mod test {
 
     #[test]
     fn test_switch_to_next() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
