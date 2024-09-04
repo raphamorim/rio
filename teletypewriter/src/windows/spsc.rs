@@ -1,10 +1,10 @@
 // Single-producer single-consumer buffer for Rust
 
+use std::rc::Rc;
 use std::cell::UnsafeCell;
 use std::io::{self, Read, Write};
 use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 struct SpscBuffer {
     buf: UnsafeCell<Box<[u8]>>,
@@ -39,7 +39,7 @@ impl SpscBuffer {
 /// Consumer of the ringbuffer.
 pub struct SpscBufferReader {
     start: usize,
-    buffer: Arc<SpscBuffer>,
+    buffer: Rc<SpscBuffer>,
 }
 
 impl SpscBufferReader {
@@ -62,6 +62,7 @@ impl SpscBufferReader {
     }
 
     /// Check whether the buffer is currently empty
+    #[allow(unused)]
     pub fn is_full(&self) -> bool {
         self.buffer.is_full()
     }
@@ -70,6 +71,7 @@ impl SpscBufferReader {
     pub fn read_to_slice(&mut self, buf: &mut [u8]) -> usize {
         use std::cmp::min;
 
+        #[allow(clippy::transmute_ptr_to_ref)]
         let ringbuf: &mut Box<[u8]> = unsafe { mem::transmute(self.buffer.buf.get()) };
 
         let ringbuf_capacity = ringbuf.len();
@@ -100,7 +102,7 @@ unsafe impl Send for SpscBufferReader {}
 /// Producer for the ringbuffer
 pub struct SpscBufferWriter {
     end: usize,
-    buffer: Arc<SpscBuffer>,
+    buffer: Rc<SpscBuffer>,
 }
 
 impl SpscBufferWriter {
@@ -131,6 +133,7 @@ impl SpscBufferWriter {
     pub fn write_from_slice(&mut self, buf: &[u8]) -> usize {
         use std::cmp::min;
 
+        #[allow(clippy::transmute_ptr_to_ref)]
         let ringbuf: &mut Box<[u8]> = unsafe { mem::transmute(self.buffer.buf.get()) };
 
         let ringbuf_capacity = ringbuf.len();
@@ -174,7 +177,7 @@ impl Write for SpscBufferWriter {
 ///
 /// See the mio-anonymous-pipes crate for example usage.
 pub fn spsc_buffer(size: usize) -> (SpscBufferWriter, SpscBufferReader) {
-    let buffer = Arc::new(SpscBuffer::new(size));
+    let buffer = Rc::new(SpscBuffer::new(size));
 
     let producer = SpscBufferWriter {
         end: 0,

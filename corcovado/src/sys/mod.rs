@@ -10,7 +10,7 @@ pub mod unix;
 
 #[cfg(windows)]
 pub use self::windows::{
-    Awakener, Binding, Events, Overlapped, Selector, TcpListener, TcpStream, UdpSocket,
+    Awakener, Binding, Events, Overlapped, Selector,
 };
 
 #[cfg(windows)]

@@ -200,6 +200,7 @@ impl Screen<'_> {
             shell,
             working_dir,
             spawn_performer: true,
+            #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
             // When navigation is collapsed and does not contain any color rule
