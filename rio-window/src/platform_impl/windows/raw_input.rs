@@ -309,6 +309,7 @@ pub fn get_keyboard_physical_key(keyboard: RAWKEYBOARD) -> Option<PhysicalKey> {
         scancode_to_physicalkey(scancode as u32)
     };
     if keyboard.VKey == VK_SHIFT {
+        #[allow(clippy::collapsible_match)]
         if let PhysicalKey::Code(code) = physical_key {
             match code {
                 KeyCode::NumpadDecimal

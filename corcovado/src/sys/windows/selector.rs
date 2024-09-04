@@ -506,10 +506,9 @@ macro_rules! overlapped2arc {
     })
 }
 
-#[allow(deref_nullptr)]
 macro_rules! offset_of {
     ($t:ty, $($field:ident).+) => (
-        &(*(0 as *const $t)).$($field).+ as *const _ as usize
+        &(*(std::ptr::null::<$t>())).$($field).+ as *const _ as usize
     )
 }
 

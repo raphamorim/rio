@@ -45,6 +45,7 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: Shell,
+    #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
@@ -313,6 +314,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
         let config = ContextManagerConfig {
+            #[cfg(not(target_os = "windows"))]
             use_fork: true,
             working_dir: None,
             shell: Shell {
@@ -557,7 +559,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
-                for (i, context) in self.contexts.iter_mut().enumerate() {
+                for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
                     let empty_string = String::from("");
 
@@ -686,10 +688,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     ) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
-            let current_context = self.current();
 
             #[cfg(not(target_os = "windows"))]
             {
+                let current_context = self.current();
                 if let Ok(path) = teletypewriter::foreground_process_path(
                     *current_context.main_fd,
                     current_context.shell_pid,
