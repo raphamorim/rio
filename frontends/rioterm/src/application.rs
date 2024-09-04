@@ -9,8 +9,7 @@ use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::colors::ColorRgb;
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
-    ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
-    WindowEvent,
+    ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
 };
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::event_loop::ControlFlow;
@@ -89,48 +88,40 @@ impl Application {
         let result = event_loop.run_app(self);
         result.map_err(Into::into)
     }
-
-    // pub fn run(
-    //     &mut self,
-    //     event_loop: EventLoop<EventPayload>,
-    // ) -> Result<(), Box<dyn Error>> {
-    //     let mut window =
-    //         RouteWindow::new(&event_loop, &self.config, &self.router.font_library, None)?;
-    //     window.is_focused = true;
-    //     self.router.create_route_from_window(window);
-
-    //     event_loop.listen_device_events(DeviceEvents::Never);
-    //     #[allow(deprecated)]
-    //     let _ = event_loop.run(
-    //         move |event: Event<EventPayload>,
-    //               event_loop_window_target: &ActiveEventLoop| {
-    //
-    //         },
-    //     );
-
-    //     Ok(())
-    // }
 }
 
 impl ApplicationHandler<EventPayload> for Application {
-    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {}
+    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            // This is a hacky solution to force an update to the window on linux
+            // Fix is only for windows with opacity that aren't being computed at all
+            if self.config.window.opacity < 1. || self.config.window.blur {
+                for (_id, route) in self.router.routes.iter_mut() {
+                    route.update_config(&self.config, &self.router.font_library);
+
+                    route.window.screen.update_content();
+                    route.request_redraw();
+                }
+            }
+        }
+    }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init {
             return;
         }
 
-        let mut window =
-            RouteWindow::new(event_loop, &self.event_proxy, &self.config, &self.router.font_library, None)
-                .unwrap();
+        let mut window = RouteWindow::new(
+            event_loop,
+            &self.event_proxy,
+            &self.config,
+            &self.router.font_library,
+            None,
+        )
+        .unwrap();
         window.is_focused = true;
         self.router.create_route_from_window(window);
-
-        // if let Err(err) = self.create_initial_window(event_loop, initial_window_options) {
-        //     self.initial_window_error = Some(err);
-        //     event_loop.exit();
-        //     return;
-        // }
 
         log::info!("Initialisation complete");
     }
@@ -537,6 +528,49 @@ impl ApplicationHandler<EventPayload> for Application {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    fn open_urls(&mut self, active_event_loop: &ActiveEventLoop, urls: Vec<String>) {
+        if !self.config.navigation.is_native() {
+            let config = &self.config;
+            for url in urls {
+                self.router.create_window(
+                    active_event_loop,
+                    self.event_proxy.clone(),
+                    config,
+                    Some(url),
+                );
+            }
+            return;
+        }
+
+        let mut tab_id = None;
+
+        // In case only have one window
+        for (_, route) in self.router.routes.iter() {
+            if tab_id.is_none() {
+                tab_id = Some(route.window.winit_window.tabbing_identifier());
+            }
+
+            if route.window.is_focused {
+                tab_id = Some(route.window.winit_window.tabbing_identifier());
+                break;
+            }
+        }
+
+        if tab_id.is_some() {
+            let config = &self.config;
+            for url in urls {
+                self.router.create_native_tab(
+                    active_event_loop,
+                    self.event_proxy.clone(),
+                    config,
+                    tab_id.clone(),
+                    Some(url),
+                );
+            }
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -554,75 +588,11 @@ impl ApplicationHandler<EventPayload> for Application {
         };
 
         match event {
-            // #[cfg(target_os = "macos")]
-            // Event::Opened { urls } => {
-            //     if !self.config.navigation.is_native() {
-            //         let config = &self.config;
-            //         for url in urls {
-            //             self.router.create_window(
-            //                 event_loop_window_target,
-            //                 self.event_proxy.clone(),
-            //                 config,
-            //                 Some(url),
-            //             );
-            //         }
-            //         return;
-            //     }
-
-            //     let mut tab_id = None;
-
-            //     // In case only have one window
-            //     for (_, route) in self.router.routes.iter() {
-            //         if tab_id.is_none() {
-            //             tab_id =
-            //                 Some(route.window.winit_window.tabbing_identifier());
-            //         }
-
-            //         if route.window.is_focused {
-            //             tab_id =
-            //                 Some(route.window.winit_window.tabbing_identifier());
-            //             break;
-            //         }
-            //     }
-
-            //     if tab_id.is_some() {
-            //         let config = &self.config;
-            //         for url in urls {
-            //             self.router.create_native_tab(
-            //                 event_loop_window_target,
-            //                 self.event_proxy.clone(),
-            //                 config,
-            //                 tab_id.clone(),
-            //                 Some(url),
-            //             );
-            //         }
-            //     }
-            // }
-
-            // Event::Resumed => {
-            //     #[cfg(not(any(target_os = "macos", windows)))]
-            //     {
-            //         // This is a hacky solution to force an update to the window on linux
-            //         // Fix is only for windows with opacity that aren't being computed at all
-            //         if self.config.window.opacity < 1. || self.config.window.blur
-            //         {
-            //             for (_id, route) in self.router.routes.iter_mut() {
-            //                 route.update_config(
-            //                     &self.config,
-            //                     &self.router.font_library,
-            //                 );
-
-            //                 route.window.screen.update_content();
-            //                 route.request_redraw();
-            //             }
-            //         }
-            //     }
-            // }
             WindowEvent::CloseRequested => {
                 self.router.routes.remove(&window_id);
 
                 if self.router.routes.is_empty() {
-                    // event_loop_window_target.exit();
+                    event_loop.exit();
                 }
             }
 
@@ -1067,7 +1037,6 @@ impl ApplicationHandler<EventPayload> for Application {
                 }
 
                 route.request_frame(&mut self.scheduler);
-                // route.window.screen.render();
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }

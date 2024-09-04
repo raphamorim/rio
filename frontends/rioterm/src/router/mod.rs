@@ -342,7 +342,6 @@ impl RouteWindow {
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
-
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder("Rio", config, None);
 
@@ -359,8 +358,13 @@ impl RouteWindow {
             theme: winit_window.theme(),
         };
 
-        let screen =
-            Screen::new(properties, config, event_proxy.clone(), font_library, open_url)?;
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy.clone(),
+            font_library,
+            open_url,
+        )?;
 
         Ok(Self {
             is_focused: false,
