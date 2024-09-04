@@ -727,7 +727,7 @@ impl ActiveEventLoop {
             .expect_then_ignore_error("Failed to update device event filter");
     }
 
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         let display_handle = raw_window_handle::XlibDisplayHandle::new(

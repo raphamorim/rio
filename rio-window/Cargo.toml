@@ -42,8 +42,6 @@ tracing = { version = "0.1.40", default-features = false }
 image = { version = "0.25.0", default-features = false, features = ["png"] }
 tracing = { version = "0.1.40", default-features = false, features = ["log"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-
-[target.'cfg(not(any(target_os = "ios")))'.dev-dependencies]
 softbuffer = { version = "0.4.0", default-features = false, features = [
     "x11",
     "x11-dlopen",
@@ -51,11 +49,9 @@ softbuffer = { version = "0.4.0", default-features = false, features = [
     "wayland-dlopen",
 ] }
 
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9.3"
 objc2 = "0.5.2"
-
-[target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.23.1"
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
@@ -109,43 +105,6 @@ features = [
     "NSWindowTabGroup",
 ]
 
-[target.'cfg(target_os = "ios")'.dependencies.objc2-foundation]
-version = "0.2.2"
-features = [
-    "dispatch",
-    "NSArray",
-    "NSEnumerator",
-    "NSGeometry",
-    "NSObjCRuntime",
-    "NSString",
-    "NSProcessInfo",
-    "NSThread",
-    "NSSet",
-]
-
-[target.'cfg(target_os = "ios")'.dependencies.objc2-ui-kit]
-version = "0.2.2"
-features = [
-    "UIApplication",
-    "UIDevice",
-    "UIEvent",
-    "UIGeometry",
-    "UIGestureRecognizer",
-    "UIOrientation",
-    "UIPanGestureRecognizer",
-    "UIPinchGestureRecognizer",
-    "UIResponder",
-    "UIRotationGestureRecognizer",
-    "UIScreen",
-    "UIScreenMode",
-    "UITapGestureRecognizer",
-    "UITouch",
-    "UITraitCollection",
-    "UIView",
-    "UIViewController",
-    "UIWindow",
-]
-
 [target.'cfg(target_os = "windows")'.dependencies]
 unicode-segmentation = "1.7.1"
 
@@ -178,7 +137,7 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
-[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "ios", target_os = "macos"))))'.dependencies]
+[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
 ahash = { version = "0.8.7", features = ["no-rng"], optional = true }
 bytemuck = { version = "1.13.1", default-features = false, optional = true }
 calloop = "0.13.0"

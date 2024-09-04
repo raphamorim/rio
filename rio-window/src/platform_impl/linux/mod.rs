@@ -596,17 +596,17 @@ impl Window {
     }
 
     #[inline]
-    pub fn raw_window_handle_rwh_06(
+    pub fn raw_window_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
-        x11_or_wayland!(match self; Window(window) => window.raw_window_handle_rwh_06())
+        x11_or_wayland!(match self; Window(window) => window.raw_window_handle_raw_window_handle())
     }
 
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
-        x11_or_wayland!(match self; Window(window) => window.raw_display_handle_rwh_06())
+        x11_or_wayland!(match self; Window(window) => window.raw_display_handle_raw_window_handle())
     }
 
     #[inline]
@@ -901,10 +901,10 @@ impl ActiveEventLoop {
     }
 
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
-        x11_or_wayland!(match self; Self(evlp) => evlp.raw_display_handle_rwh_06())
+        x11_or_wayland!(match self; Self(evlp) => evlp.raw_display_handle_raw_window_handle())
     }
 
     pub(crate) fn set_control_flow(&self, control_flow: ControlFlow) {
@@ -958,7 +958,7 @@ pub(crate) enum OwnedDisplayHandle {
 
 impl OwnedDisplayHandle {
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         use std::ptr::NonNull;

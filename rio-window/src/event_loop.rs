@@ -518,7 +518,7 @@ impl raw_window_handle::HasDisplayHandle for ActiveEventLoop {
         &self,
     ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
     {
-        let raw = self.p.raw_display_handle_rwh_06()?;
+        let raw = self.p.raw_display_handle_raw_window_handle()?;
         // SAFETY: The display will never be deallocated while the event loop is alive.
         Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(raw) })
     }
@@ -555,7 +555,7 @@ impl raw_window_handle::HasDisplayHandle for OwnedDisplayHandle {
         &self,
     ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
     {
-        let raw = self.platform.raw_display_handle_rwh_06()?;
+        let raw = self.platform.raw_display_handle_raw_window_handle()?;
 
         // SAFETY: The underlying display handle should be safe.
         let handle = unsafe { raw_window_handle::DisplayHandle::borrow_raw(raw) };

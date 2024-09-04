@@ -1996,7 +1996,7 @@ impl UnownedWindow {
     }
 
     #[inline]
-    pub fn raw_window_handle_rwh_06(
+    pub fn raw_window_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         let mut window_handle =
@@ -2006,7 +2006,7 @@ impl UnownedWindow {
     }
 
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::XlibDisplayHandle::new(
