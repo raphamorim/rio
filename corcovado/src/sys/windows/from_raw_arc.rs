@@ -43,7 +43,9 @@ impl<T> FromRawArc<T> {
             cnt: AtomicUsize::new(1),
         });
         FromRawArc {
-            _inner: unsafe { mem::transmute::<std::boxed::Box<Inner<T>>, *mut Inner<T>>(x) },
+            _inner: unsafe {
+                mem::transmute::<std::boxed::Box<Inner<T>>, *mut Inner<T>>(x)
+            },
         }
     }
 

@@ -688,7 +688,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     ) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
-
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
