@@ -405,24 +405,24 @@ mod layout_test {
         BuiltInLineBreaker::*, FontId, SectionText,
     };
     use approx::assert_relative_eq;
-    use once_cell::sync::Lazy;
     use ordered_float::OrderedFloat;
+    use std::sync::LazyLock;
     use std::{collections::*, f32};
 
-    static A_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
+    static A_FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
         FontRef::try_from_slice(include_bytes!(
             "../../../../../resources/test-fonts/DejaVuSansMono.ttf"
         ))
         .unwrap()
     });
-    static CJK_FONT: Lazy<FontRef<'static>> = Lazy::new(|| {
+    static CJK_FONT: LazyLock<FontRef<'static>> = LazyLock::new(|| {
         FontRef::try_from_slice(include_bytes!(
             "../../../../../resources/test-fonts/WenQuanYiMicroHei.ttf"
         ))
         .unwrap()
     });
-    static FONT_MAP: Lazy<[&'static FontRef<'static>; 2]> =
-        Lazy::new(|| [&*A_FONT, &*CJK_FONT]);
+    static FONT_MAP: LazyLock<[&'static FontRef<'static>; 2]> =
+        LazyLock::new(|| [&*A_FONT, &*CJK_FONT]);
 
     /// All the chars used in testing, so we can reverse lookup the glyph-ids
     const TEST_CHARS: &[char] = &[
