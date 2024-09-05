@@ -68,6 +68,11 @@ pub fn default_log_level() -> String {
 }
 
 #[inline]
+pub fn default_log_file() -> String {
+    String::from("rio.log")
+}
+
+#[inline]
 pub fn default_cursor() -> char {
     '▇'
 }
@@ -433,10 +438,11 @@ blinking-cursor = false
 
 # Log level
 #
-# This property enables log level filter. Default is "OFF".
+# This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default.
 #
 # Example:
 # [developer]
 # log-level = "OFF"
+# # log-file = "rio.log"
 "#.to_string()
 }

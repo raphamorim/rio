@@ -30,7 +30,7 @@ use crate::config::colors::ColorRgb;
 use sugarloaf::{ColorType, GraphicData, GraphicId};
 
 use copa::Params;
-use log::trace;
+use tracing::trace;
 
 /// Type for color registers.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]

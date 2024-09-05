@@ -70,7 +70,7 @@ mod wasm {
 
     #[wasm_bindgen(start)]
     pub fn run() {
-        console_log::init_with_level(log::Level::Debug)
+        console_tracing::init_with_level(tracing::Level::Debug)
             .expect("error initializing logger");
 
         #[allow(clippy::main_recursion)]
@@ -112,7 +112,7 @@ mod wasm {
     }
 
     pub fn log_event(log_list: &web_sys::Element, event: &Event<()>) {
-        log::debug!("{:?}", event);
+        tracing::debug!("{:?}", event);
 
         // Getting access to browser logs requires a lot of setup on mobile devices.
         // So we implement this basic logging system into the page to give developers an easy alternative.

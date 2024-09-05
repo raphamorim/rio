@@ -27,7 +27,7 @@ pub fn configuration_file_updates<
         if let Err(err_message) =
             watcher.watch(path.as_ref(), RecursiveMode::NonRecursive)
         {
-            log::warn!("unable to watch config directory {err_message:?}");
+            tracing::warn!("unable to watch config directory {err_message:?}");
         };
 
         for res in rx {
@@ -37,7 +37,9 @@ pub fn configuration_file_updates<
                     | EventKind::Create(_)
                     | EventKind::Modify(_)
                     | EventKind::Other => {
-                        log::info!("config directory has dispatched an event {event:?}");
+                        tracing::info!(
+                            "config directory has dispatched an event {event:?}"
+                        );
                         event_proxy.send_event(
                             RioEvent::UpdateConfig,
                             rio_backend::event::WindowId::from(0),
@@ -46,7 +48,7 @@ pub fn configuration_file_updates<
                     _ => (),
                 },
                 Err(err_message) => {
-                    log::error!("unable to watch config directory: {err_message:?}")
+                    tracing::error!("unable to watch config directory: {err_message:?}")
                 }
             }
         }

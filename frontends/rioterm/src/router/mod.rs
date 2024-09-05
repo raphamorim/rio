@@ -411,7 +411,7 @@ impl RouteWindow {
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
-            log::debug!("Activating window with token: {token:?}");
+            tracing::debug!("Activating window with token: {token:?}");
             window_builder = window_builder.with_activation_token(token);
 
             // Remove the token from the env.

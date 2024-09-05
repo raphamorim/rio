@@ -148,7 +148,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn update_font(&mut self, font_library: &FontLibrary) {
-        log::info!("requested a font change");
+        tracing::info!("requested a font change");
 
         self.state.reset_compositor();
         self.state.set_fonts(font_library);

@@ -44,7 +44,6 @@ unicode-width = "0.1.13"
 image_rs = { package = "image", version = "0.25.2", default-features = false, features = ["ico"] }
 regex = "1.10.5"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
-log = "0.4.22"
 swash = "0.1.18"
 serde = { version = "1.0.208", features = ["derive"] }
 wgpu = "22.1.0"
@@ -59,6 +58,7 @@ console_log = "0.2.2"
 bitflags = "2.6.0"
 iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
+tracing = "0.1.40"
 
 [profile.release]
 opt-level = 3

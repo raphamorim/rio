@@ -57,7 +57,7 @@ impl Default for EventLoopWaker {
 impl EventLoopWaker {
     pub fn stop(&mut self) {
         if self.next_fire_date.is_some() {
-            log::info!("EventLoopWaker stop");
+            tracing::info!("EventLoopWaker stop");
             self.next_fire_date = None;
             unsafe { CFRunLoopTimerSetNextFireDate(self.timer, f64::MAX) }
         }
@@ -65,7 +65,7 @@ impl EventLoopWaker {
 
     pub fn start(&mut self) {
         if self.next_fire_date != Some(self.start_instant) {
-            log::info!("EventLoopWaker start");
+            tracing::info!("EventLoopWaker start");
             self.next_fire_date = Some(self.start_instant);
             unsafe { CFRunLoopTimerSetNextFireDate(self.timer, f64::MIN) }
         }

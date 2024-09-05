@@ -140,7 +140,7 @@ impl Database {
                         });
                         ids.push(ID(id));
                     }
-                    Err(e) => log::warn!(
+                    Err(e) => tracing::warn!(
                         "Failed to load a font face {} from source cause {}.",
                         index,
                         e
@@ -163,7 +163,7 @@ impl Database {
             match parse_face_info(source.clone(), data, index) {
                 Ok(info) => self.push_face_info(info),
                 Err(e) => {
-                    log::warn!(
+                    tracing::warn!(
                         "Failed to load a font face {} from '{}' cause {}.",
                         index,
                         path.display(),
@@ -223,7 +223,7 @@ impl Database {
                     Some("ttf") | Some("ttc") | Some("TTF") | Some("TTC")
                     | Some("otf") | Some("otc") | Some("OTF") | Some("OTC") => {
                         if let Err(e) = self.load_font_file(&path) {
-                            log::warn!(
+                            tracing::warn!(
                                 "Failed to load '{}' cause {}.",
                                 path.display(),
                                 e

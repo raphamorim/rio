@@ -590,7 +590,7 @@ pub type SugarloafFont = fonts::SugarloafFont;
 pub type SugarloafFonts = fonts::SugarloafFonts;
 
 #[cfg(not(target_arch = "wasm32"))]
-use log::{info, warn};
+use tracing::{info, warn};
 
 #[derive(Debug, Clone)]
 pub struct ComposedFontArc {
@@ -642,7 +642,7 @@ fn find_font(db: &crate::font::loader::Database, font_spec: SugarloafFont) -> Fi
                         if file.read_to_end(&mut font_data).is_ok() {
                             match FontData::from_data(font_data) {
                                 Ok(d) => {
-                                    log::info!(
+                                    tracing::info!(
                                         "Font '{}' found in {}",
                                         family,
                                         path.display()
@@ -650,7 +650,7 @@ fn find_font(db: &crate::font::loader::Database, font_spec: SugarloafFont) -> Fi
                                     return FindResult::Found(d);
                                 }
                                 Err(err_message) => {
-                                    log::info!(
+                                    tracing::info!(
                                         "Failed to load font '{query:?}', {err_message}"
                                     );
                                     return FindResult::NotFound(font_spec);
@@ -733,7 +733,7 @@ fn load_from_font_source(path: &PathBuf) -> Option<FontData> {
                     return Some(d);
                 }
                 Err(err_message) => {
-                    log::info!("Failed to load font from source {err_message}");
+                    tracing::info!("Failed to load font from source {err_message}");
                     return None;
                 }
             }

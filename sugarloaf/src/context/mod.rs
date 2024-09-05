@@ -46,7 +46,7 @@ fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureF
         filtered_formats.first().unwrap().clone_into(&mut format);
     }
 
-    log::info!("Sugarloaf selected format: {format:?} from {:?}", formats);
+    tracing::info!("Sugarloaf selected format: {format:?} from {:?}", formats);
 
     format
 }
@@ -73,17 +73,17 @@ impl Context<'_> {
             ..Default::default()
         });
 
-        log::info!("selected instance: {instance:?}");
+        tracing::info!("selected instance: {instance:?}");
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            log::info!("Available adapters:");
+            tracing::info!("Available adapters:");
             for a in instance.enumerate_adapters(wgpu::Backends::all()) {
-                log::info!("    {:?}", a.get_info())
+                tracing::info!("    {:?}", a.get_info())
             }
         }
 
-        log::info!("initializing the surface");
+        tracing::info!("initializing the surface");
 
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
@@ -99,7 +99,7 @@ impl Context<'_> {
         ))
         .expect("Request adapter");
 
-        log::info!("Selected adapter: {:?}", adapter.get_info());
+        tracing::info!("Selected adapter: {:?}", adapter.get_info());
 
         let caps = surface.get_capabilities(&adapter);
 

@@ -130,7 +130,7 @@ impl ApplicationHandler<EventPayload> for Application {
         window.is_focused = true;
         self.router.create_route_from_window(window);
 
-        log::info!("Initialisation complete");
+        tracing::info!("Initialisation complete");
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EventPayload) {

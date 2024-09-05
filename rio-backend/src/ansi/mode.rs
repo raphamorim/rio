@@ -1,4 +1,4 @@
-use log::warn;
+use tracing::warn;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Mode {
