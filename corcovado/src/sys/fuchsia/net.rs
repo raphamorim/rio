@@ -20,7 +20,7 @@ pub struct TcpStream {
 
 impl TcpStream {
     pub fn connect(stream: net::TcpStream, addr: &SocketAddr) -> io::Result<TcpStream> {
-        try!(set_nonblock(stream.as_raw_fd()));
+        set_nonblock(stream.as_raw_fd())?;
 
         let connected = stream.connect(addr);
         match connected {
