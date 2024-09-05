@@ -3,12 +3,12 @@ use super::{AddImage, ImageData, ImageId, ImageLocation};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
-use swash::scale::{
+use crate::font_introspector::scale::{
     image::{Content, Image as GlyphImage},
     *,
 };
-use swash::zeno::Format;
-use swash::FontRef;
+use crate::font_introspector::zeno::Format;
+use crate::font_introspector::FontRef;
 
 const SOURCES: &[Source] = &[
     Source::ColorOutline(0),

@@ -45,7 +45,6 @@ image_rs = { package = "image", version = "0.25.2", default-features = false, fe
 regex = "1.10.5"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
 log = "0.4.22"
-swash = "0.1.18"
 serde = { version = "1.0.208", features = ["derive"] }
 wgpu = "22.1.0"
 libc = "0.2.158"

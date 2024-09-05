@@ -51,7 +51,7 @@ impl Advanced {
         let mut found_font_features = vec![];
         if let Some(features) = font_features {
             for feature in features {
-                let setting: swash::Setting<u16> = (feature.as_str(), 1).into();
+                let setting: crate::font_introspector::Setting<u16> = (feature.as_str(), 1).into();
                 found_font_features.push(setting);
             }
         }
