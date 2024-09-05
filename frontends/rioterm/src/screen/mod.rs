@@ -1901,8 +1901,8 @@ impl Screen<'_> {
     }
 
     pub fn update_content(&mut self) {
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
+        let start = std::time::Instant::now();
+        println!("update_content time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1949,8 +1949,8 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        // let duration = start.elapsed();
-        // println!("Total update_content is: {:?}\n", duration);
+        let duration = start.elapsed();
+        println!("Total update_content is: {:?}\n", duration);
     }
 
     #[inline]

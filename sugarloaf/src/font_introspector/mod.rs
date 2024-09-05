@@ -57,32 +57,37 @@ pub mod text;
 pub use attributes::*;
 pub use cache::CacheKey;
 pub use charmap::Charmap;
+#[allow(unused)]
 pub use feature::{Action, Feature, WritingSystem};
+#[allow(unused)]
 pub use font::{FontDataRef, FontRef, TableProvider};
 pub use metrics::{GlyphMetrics, Metrics};
+#[allow(unused)]
 pub use palette::{ColorPalette, Usability};
 pub use setting::Setting;
+#[allow(unused)]
 pub use strike::BitmapStrike;
+#[allow(unused)]
 pub use string::{LocalizedString, StringId};
 pub use tag::{tag_from_bytes, tag_from_str_lossy, Tag};
+#[allow(unused)]
 pub use variation::{Instance, Variation};
 
 /// Collection of various iterators over metadata contained in a font.
 pub mod iter {
     pub use super::feature::{Features, WritingSystems};
+    #[allow(unused)]
     pub use super::font::Fonts;
     pub use super::palette::ColorPalettes;
     pub use super::strike::BitmapStrikes;
-    pub use super::string::{Chars, LocalizedStrings};
+    pub use super::string::LocalizedStrings;
     pub use super::variation::{Instances, Variations};
 }
 
 /// Proxies used to efficiently rematerialize metadata.
 pub mod proxy {
     pub use super::charmap::CharmapProxy;
-    pub use super::metrics::MetricsProxy;
     pub use super::strike::BitmapStrikesProxy;
-    pub use super::variation::VariationsProxy;
 }
 
 use iter::*;

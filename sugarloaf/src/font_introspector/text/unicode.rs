@@ -6,7 +6,6 @@ pub use super::compose::Decompose;
 #[doc(inline)]
 pub use super::unicode_data::{
     BidiClass, Block, Category, ClusterBreak, JoiningType, LineBreak, Script, WordBreak,
-    UNICODE_VERSION,
 };
 
 use super::compose::{compose_pair, decompose, decompose_compat};
@@ -86,11 +85,13 @@ impl Properties {
     }
 
     /// Returns true if the character is an opening bracket.
+    #[allow(unused)]
     pub fn is_open_bracket(self) -> bool {
         self.record().flags.is_open_bracket()
     }
 
     /// Returns true if the character is a closing bracket.
+    #[allow(unused)]
     pub fn is_close_bracket(self) -> bool {
         self.record().flags.is_close_bracket()
     }
@@ -177,61 +178,73 @@ pub trait Codepoint: Sized + Copy {
     fn properties(self) -> Properties;
 
     /// Returns the category of the character.
+    #[allow(unused)]
     fn category(self) -> Category {
         self.properties().category()
     }
 
     /// Returns the unicode block that contains the character.
+    #[allow(unused)]
     fn block(self) -> Block {
         self.properties().block()
     }
 
     /// Returns the script to which the character belongs.
+    #[allow(unused)]
     fn script(self) -> Script {
         self.properties().script()
     }
 
     /// Returns the canonical combining class of the character.
+    #[allow(unused)]
     fn combining_class(self) -> u8 {
         self.properties().combining_class()
     }
 
     /// Returns the bidirectional type of the character.
+    #[allow(unused)]
     fn bidi_class(self) -> BidiClass {
         self.properties().bidi_class()
     }
 
     /// Returns the joining type of the character.
+    #[allow(unused)]
     fn joining_type(self) -> JoiningType {
         self.properties().joining_type()
     }
 
     /// Returns the cluster break property for the character.
+    #[allow(unused)]
     fn cluster_break(self) -> ClusterBreak {
         self.properties().cluster_break()
     }
 
     /// Returns the word break property for the character.
+    #[allow(unused)]
     fn word_break(self) -> WordBreak {
         self.properties().word_break()
     }
 
     /// Returns the line break property for the character.
+    #[allow(unused)]
     fn line_break(self) -> LineBreak {
         self.properties().line_break()
     }
 
     /// Returns true if the character is an emoji.
+    #[allow(unused)]
     fn is_emoji(self) -> bool {
         self.properties().is_emoji()
     }
 
     /// Returns true if the character is an extended pictographic symbol.
+    #[allow(unused)]
     fn is_extended_pictographic(self) -> bool {
         self.properties().is_extended_pictographic()
     }
 
     /// Returns the bracket type of the character.
+    #[allow(unused)]
     fn bracket_type(self) -> BracketType;
 
     /// If the character is a closing bracket, returns its opening bracket
@@ -243,6 +256,7 @@ pub trait Codepoint: Sized + Copy {
     fn closing_bracket(self) -> Option<char>;
 
     /// Returns the mirror of the character, if any.
+    #[allow(unused)]
     fn mirror(self) -> Option<char>;
 
     /// Returns the composition of two characters, if any.
@@ -252,6 +266,7 @@ pub trait Codepoint: Sized + Copy {
     fn decompose(self) -> Decompose;
 
     /// Returns the compatiblity decomposition of the character.
+    #[allow(unused)]
     fn decompose_compatible(self) -> Decompose;
 }
 

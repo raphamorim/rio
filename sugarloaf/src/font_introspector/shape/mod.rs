@@ -315,6 +315,7 @@ impl ShapeContext {
 
     /// Creates a new builder for constructing a shaper with this context
     /// and the specified font.
+    #[allow(unused)]
     pub fn builder_with_id<'a>(
         &'a mut self,
         font: impl Into<FontRef<'a>>,
@@ -578,9 +579,11 @@ pub struct Shaper<'a> {
     state: &'a mut State,
     font: FontRef<'a>,
     font_entry: &'a FontEntry,
+    #[allow(unused)]
     charmap: Charmap<'a>,
     retain_ignorables: bool,
     size: f32,
+    #[allow(unused)]
     script: Script,
     joined: bool,
     dir: Direction,
@@ -667,6 +670,7 @@ impl<'a> Shaper<'a> {
     }
 
     /// Adds a string to the shaper.
+    #[allow(unused)]
     pub fn add_str(&mut self, s: &str) {
         use crate::font_introspector::text::Codepoint;
         let mut cluster = CharCluster::new();

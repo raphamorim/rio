@@ -477,7 +477,7 @@ pub struct FontData {
     // Offset to the table directory
     offset: u32,
     // Cache key
-    key: CacheKey,
+    pub key: CacheKey,
     charmap_proxy: CharmapProxy,
     pub weight: crate::font_introspector::Weight,
     pub style: crate::font_introspector::Style,

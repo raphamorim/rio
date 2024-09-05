@@ -16,6 +16,7 @@ impl CharInfo {
     }
 
     /// Returns the unicode properties for the character.
+    #[allow(unused)]
     pub fn properties(self) -> Properties {
         self.0
     }
