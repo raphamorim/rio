@@ -33,7 +33,8 @@ use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
-use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::clipboard::Clipboard;
+use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::{
     colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
@@ -53,9 +54,11 @@ use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
+use std::rc::Rc;
 use touch::TouchPurpose;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
@@ -73,7 +76,6 @@ const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
-    clipboard: Clipboard,
     pub modifiers: Modifiers,
     pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
@@ -82,6 +84,7 @@ pub struct Screen<'screen> {
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
+    pub clipboard: Rc<RefCell<Clipboard>>,
 }
 
 pub struct ScreenWindowProperties {
@@ -100,6 +103,7 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
+        clipboard: Rc<RefCell<Clipboard>>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -175,9 +179,6 @@ impl Screen<'_> {
 
         let renderer = Renderer::new(config, theme);
 
-        // let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
-        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
-
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
@@ -200,6 +201,7 @@ impl Screen<'_> {
             shell,
             working_dir,
             spawn_performer: true,
+            #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
             // When navigation is collapsed and does not contain any color rule
@@ -403,16 +405,6 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn clipboard_get(&mut self, clipboard_type: ClipboardType) -> String {
-        self.clipboard.get(clipboard_type)
-    }
-
-    #[inline]
-    pub fn clipboard_store(&mut self, clipboard_type: ClipboardType, content: String) {
-        self.clipboard.set(clipboard_type, content);
-    }
-
-    #[inline]
     pub fn scroll_bottom_when_cursor_not_visible(&mut self) {
         let mut terminal = self.ctx_mut().current_mut().terminal.lock();
         if terminal.display_offset() != 0 {
@@ -488,10 +480,8 @@ impl Screen<'_> {
                 // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
                 // the keys below.
                 _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
-                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key, mods, mode,
-                    )
-                    .into()
+                    crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                        .into()
                 }
                 // Winit uses different keys for `Backspace` so we explicitly specify the
                 // values, instead of using what was passed to us from it.
@@ -499,10 +489,8 @@ impl Screen<'_> {
                 Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                 Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
                 Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
-                .into(),
+                _ => crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                    .into(),
             };
 
             self.sugarloaf.mark_dirty();
@@ -568,9 +556,7 @@ impl Screen<'_> {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
+                crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
             }
         };
 
@@ -601,7 +587,7 @@ impl Screen<'_> {
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
                 && binding.action == Act::PasteSelection
             {
-                let content = self.clipboard.get(ClipboardType::Selection);
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Selection);
                 self.paste(&content, true);
             }
         }
@@ -669,14 +655,16 @@ impl Screen<'_> {
                             .send_bytes(s.to_owned().into_bytes());
                     }
                     Act::Paste => {
-                        let content = self.clipboard.get(ClipboardType::Clipboard);
+                        let content =
+                            self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
-                        let content = self.clipboard.get(ClipboardType::Selection);
+                        let content =
+                            self.clipboard.borrow_mut().get(ClipboardType::Selection);
                         self.paste(&content, true);
                     }
                     Act::Copy => {
@@ -1130,9 +1118,11 @@ impl Screen<'_> {
         drop(terminal);
 
         if ty == ClipboardType::Selection {
-            self.clipboard.set(ClipboardType::Clipboard, text.clone());
+            self.clipboard
+                .borrow_mut()
+                .set(ClipboardType::Clipboard, text.clone());
         }
-        self.clipboard.set(ty, text);
+        self.clipboard.borrow_mut().set(ty, text);
     }
 
     #[inline]

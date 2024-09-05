@@ -151,9 +151,10 @@ impl<W: Borrow<Window>> std::ops::Deref for AnyThread<W> {
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl<W: Borrow<Window>> rwh_06::HasWindowHandle for AnyThread<W> {
-    fn window_handle(&self) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError> {
+impl<W: Borrow<Window>> raw_window_handle::HasWindowHandle for AnyThread<W> {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
         // SAFETY: The top level user has asserted this is only used safely.
         unsafe { self.get_ref().window_handle_any_thread() }
     }
@@ -183,9 +184,9 @@ pub trait EventLoopBuilderExtWindows {
     /// Disable process-wide DPI awareness.
     ///
     /// ```
-    /// use winit::event_loop::EventLoopBuilder;
+    /// use rio_window::event_loop::EventLoopBuilder;
     /// #[cfg(target_os = "windows")]
-    /// use winit::platform::windows::EventLoopBuilderExtWindows;
+    /// use rio_window::platform::windows::EventLoopBuilderExtWindows;
     ///
     /// let mut builder = EventLoopBuilder::new();
     /// #[cfg(target_os = "windows")]
@@ -203,9 +204,9 @@ pub trait EventLoopBuilderExtWindows {
     ///
     /// ```
     /// # use windows_sys::Win32::UI::WindowsAndMessaging::{ACCEL, CreateAcceleratorTableW, TranslateAcceleratorW, DispatchMessageW, TranslateMessage, MSG};
-    /// use winit::event_loop::EventLoopBuilder;
+    /// use rio_window::event_loop::EventLoopBuilder;
     /// #[cfg(target_os = "windows")]
-    /// use winit::platform::windows::EventLoopBuilderExtWindows;
+    /// use rio_window::platform::windows::EventLoopBuilderExtWindows;
     ///
     /// let mut builder = EventLoopBuilder::new();
     /// #[cfg(target_os = "windows")]
@@ -334,11 +335,11 @@ pub trait WindowExtWindows {
     /// ## Example
     ///
     /// ```no_run
-    /// # use winit::window::Window;
+    /// # use rio_window::window::Window;
     /// # fn scope(window: Window) {
     /// use std::thread;
-    /// use winit::platform::windows::WindowExtWindows;
-    /// use winit::raw_window_handle::HasWindowHandle;
+    /// use rio_window::platform::windows::WindowExtWindows;
+    /// use rio_window::raw_window_handle::HasWindowHandle;
     ///
     /// // We can get the window handle on the current thread.
     /// let handle = window.window_handle().unwrap();
@@ -352,10 +353,9 @@ pub trait WindowExtWindows {
     /// });
     /// # }
     /// ```
-    #[cfg(feature = "rwh_06")]
     unsafe fn window_handle_any_thread(
         &self,
-    ) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError>;
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError>;
 }
 
 impl WindowExtWindows for Window {
@@ -408,15 +408,14 @@ impl WindowExtWindows for Window {
         self.window.set_corner_preference(preference)
     }
 
-    #[cfg(feature = "rwh_06")]
     unsafe fn window_handle_any_thread(
         &self,
-    ) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
         unsafe {
             let handle = self.window.rwh_06_no_thread_check()?;
 
             // SAFETY: The handle is valid in this context.
-            Ok(rwh_06::WindowHandle::borrow_raw(handle))
+            Ok(raw_window_handle::WindowHandle::borrow_raw(handle))
         }
     }
 }
@@ -441,16 +440,6 @@ pub trait WindowBorrowExtWindows: Borrow<Window> + Sized {
     /// Win32 APIs.
     ///
     /// [`Window`]: crate::window::Window
-    #[cfg_attr(
-        feature = "rwh_06",
-        doc = "[`HasWindowHandle`]: rwh_06::HasWindowHandle",
-        doc = "[`window_handle_any_thread`]: WindowExtWindows::window_handle_any_thread"
-    )]
-    #[cfg_attr(
-        not(feature = "rwh_06"),
-        doc = "[`HasWindowHandle`]: #only-available-with-rwh_06",
-        doc = "[`window_handle_any_thread`]: #only-available-with-rwh_06"
-    )]
     unsafe fn any_thread(self) -> AnyThread<Self> {
         AnyThread(self)
     }

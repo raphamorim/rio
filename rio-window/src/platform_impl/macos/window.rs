@@ -53,25 +53,23 @@ impl Window {
         self.delegate.get_on_main(|delegate| f(delegate))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub(crate) fn raw_window_handle_rwh_06(
+    pub(crate) fn raw_window_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         if let Some(mtm) = MainThreadMarker::new() {
-            Ok(self.delegate.get(mtm).raw_window_handle_rwh_06())
+            Ok(self.delegate.get(mtm).raw_window_handle_raw_window_handle())
         } else {
-            Err(rwh_06::HandleError::Unavailable)
+            Err(raw_window_handle::HandleError::Unavailable)
         }
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub(crate) fn raw_display_handle_rwh_06(
+    pub(crate) fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::AppKit(
-            rwh_06::AppKitDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::AppKit(
+            raw_window_handle::AppKitDisplayHandle::new(),
         ))
     }
 }

@@ -73,16 +73,6 @@ once_cell = "1.18.0"
 default = []
 always_dirty = []
 
-[[bench]]
-name = "bench_sugar_pile"
-path = "benches/bench_sugar_pile.rs"
-harness = false
-
-[[bench]]
-name = "bench_sugar_pile_with_screen"
-path = "benches/bench_sugar_pile_with_screen.rs"
-harness = false
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }

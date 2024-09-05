@@ -678,24 +678,22 @@ impl Window {
         None
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_window_handle_rwh_06(
+    pub fn raw_window_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-        Ok(rwh_06::WaylandWindowHandle::new({
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::WaylandWindowHandle::new({
             let ptr = self.window.wl_surface().id().as_ptr();
             std::ptr::NonNull::new(ptr as *mut _).expect("wl_surface will never be null")
         })
         .into())
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::WaylandDisplayHandle::new({
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::WaylandDisplayHandle::new({
             let ptr = self.display.id().as_ptr();
             std::ptr::NonNull::new(ptr as *mut _).expect("wl_proxy should never be null")
         })
@@ -751,7 +749,7 @@ impl TryFrom<&str> for Theme {
     type Error = ();
 
     /// ```
-    /// use winit::window::Theme;
+    /// use rio_window::window::Theme;
     ///
     /// assert_eq!("dark".try_into(), Ok(Theme::Dark));
     /// assert_eq!("lIghT".try_into(), Ok(Theme::Light));

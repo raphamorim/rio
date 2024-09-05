@@ -11,7 +11,7 @@
 pub use platform::cleanup_window;
 pub use platform::fill_window;
 
-#[cfg(all(feature = "rwh_06", not(any(target_os = "android", target_os = "ios"))))]
+#[cfg(not(target_os = "ios"))]
 mod platform {
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -110,17 +110,5 @@ mod platform {
                 context.destroy_surface(window);
             }
         });
-    }
-}
-
-#[cfg(not(all(feature = "rwh_06", not(any(target_os = "android", target_os = "ios")))))]
-mod platform {
-    pub fn fill_window(_window: &rio_window::window::Window) {
-        // No-op on mobile platforms.
-    }
-
-    #[allow(dead_code)]
-    pub fn cleanup_window(_window: &rio_window::window::Window) {
-        // No-op on mobile platforms.
     }
 }

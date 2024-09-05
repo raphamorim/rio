@@ -3,15 +3,9 @@ use crate::crosswords::pos::Line;
 use crate::crosswords::pos::Side;
 use crate::event::ClickState;
 use rio_backend::crosswords::pos::Pos;
-use std::time::Instant;
-
-#[cfg(not(use_wa))]
 use rio_window::event::ElementState;
-#[cfg(not(use_wa))]
 use rio_window::event::MouseButton;
-
-#[cfg(use_wa)]
-use wa::MouseButton;
+use std::time::Instant;
 
 #[derive(Default, Debug)]
 pub struct AccumulatedScroll {
@@ -26,18 +20,9 @@ pub struct AccumulatedScroll {
 pub struct Mouse {
     pub multiplier: f64,
     pub divider: f64,
-    #[cfg(not(use_wa))]
     pub left_button_state: ElementState,
-    #[cfg(not(use_wa))]
     pub middle_button_state: ElementState,
-    #[cfg(not(use_wa))]
     pub right_button_state: ElementState,
-    #[cfg(use_wa)]
-    pub left_button_state: bool,
-    #[cfg(use_wa)]
-    pub middle_button_state: bool,
-    #[cfg(use_wa)]
-    pub right_button_state: bool,
     pub last_click_timestamp: Instant,
     pub last_click_button: MouseButton,
     pub click_state: ClickState,
@@ -55,18 +40,9 @@ impl Default for Mouse {
             divider: 1.0,
             last_click_timestamp: Instant::now(),
             last_click_button: MouseButton::Left,
-            #[cfg(not(use_wa))]
             left_button_state: ElementState::Released,
-            #[cfg(not(use_wa))]
             middle_button_state: ElementState::Released,
-            #[cfg(not(use_wa))]
             right_button_state: ElementState::Released,
-            #[cfg(use_wa)]
-            left_button_state: false,
-            #[cfg(use_wa)]
-            middle_button_state: false,
-            #[cfg(use_wa)]
-            right_button_state: false,
             click_state: ClickState::None,
             square_side: Side::Left,
             inside_text_area: Default::default(),

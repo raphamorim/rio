@@ -8,18 +8,21 @@ use crate::scheduler::{Scheduler, Topic};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::RioEventType;
-use rio_window::event_loop::{ActiveEventLoop, EventLoop};
+use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
 use rio_window::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
 use rio_window::window::{Window, WindowId};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
+use std::rc::Rc;
 use std::time::Duration;
 
 pub struct Route {
@@ -174,10 +177,14 @@ pub struct Router {
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
+    pub clipboard: Rc<RefCell<Clipboard>>,
 }
 
 impl Router {
-    pub fn new(fonts: rio_backend::sugarloaf::font::SugarloafFonts) -> Router {
+    pub fn new(
+        fonts: rio_backend::sugarloaf::font::SugarloafFonts,
+        clipboard: Clipboard,
+    ) -> Router {
         let (font_library, fonts_not_found) =
             rio_backend::sugarloaf::font::FontLibrary::new(fonts);
 
@@ -190,11 +197,14 @@ impl Router {
             });
         }
 
+        let clipboard = Rc::new(RefCell::new(clipboard));
+
         Router {
             routes: HashMap::default(),
             propagated_report,
             config_route: None,
             font_library: Box::new(font_library),
+            clipboard,
         }
     }
 
@@ -258,6 +268,7 @@ impl Router {
             "Rio Settings",
             None,
             None,
+            self.clipboard.clone(),
         );
         let id = window.winit_window.id();
         let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
@@ -281,6 +292,7 @@ impl Router {
             "Rio",
             None,
             open_url,
+            self.clipboard.clone(),
         );
         self.routes.insert(
             window.winit_window.id(),
@@ -310,6 +322,7 @@ impl Router {
             "Rio",
             tab_id,
             open_url,
+            self.clipboard.clone(),
         );
         self.routes.insert(
             window.winit_window.id(),
@@ -336,14 +349,13 @@ pub struct RouteWindow {
 
 impl RouteWindow {
     pub fn new(
-        event_loop: &EventLoop<EventPayload>,
+        event_loop: &ActiveEventLoop,
+        event_proxy: &EventProxy,
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
+        clipboard: &Rc<RefCell<Clipboard>>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
-        let proxy = event_loop.create_proxy();
-        let event_proxy = EventProxy::new(proxy.clone());
-
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder("Rio", config, None);
 
@@ -360,8 +372,14 @@ impl RouteWindow {
             theme: winit_window.theme(),
         };
 
-        let screen =
-            Screen::new(properties, config, event_proxy, font_library, open_url)?;
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy.clone(),
+            font_library,
+            open_url,
+            clipboard.clone(),
+        )?;
 
         Ok(Self {
             is_focused: false,
@@ -376,6 +394,7 @@ impl RouteWindow {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_target(
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
@@ -384,6 +403,7 @@ impl RouteWindow {
         window_name: &str,
         tab_id: Option<String>,
         open_url: Option<String>,
+        clipboard: Rc<RefCell<Clipboard>>,
     ) -> RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder =
@@ -411,8 +431,15 @@ impl RouteWindow {
             theme: winit_window.theme(),
         };
 
-        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
-            .expect("Screen not created");
+        let screen = Screen::new(
+            properties,
+            config,
+            event_proxy,
+            font_library,
+            open_url,
+            clipboard,
+        )
+        .expect("Screen not created");
 
         Self {
             has_frame: true,

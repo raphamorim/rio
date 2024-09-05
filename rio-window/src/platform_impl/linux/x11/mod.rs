@@ -1,5 +1,3 @@
-#![cfg(x11_platform)]
-
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::CStr;
@@ -729,11 +727,10 @@ impl ActiveEventLoop {
             .expect_then_ignore_error("Failed to update device event filter");
     }
 
-    #[cfg(feature = "rwh_06")]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        let display_handle = rwh_06::XlibDisplayHandle::new(
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        let display_handle = raw_window_handle::XlibDisplayHandle::new(
             // SAFETY: display will never be null
             Some(
                 std::ptr::NonNull::new(self.xconn.display as *mut _)

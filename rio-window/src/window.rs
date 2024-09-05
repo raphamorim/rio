@@ -124,7 +124,6 @@ pub struct WindowAttributes {
     pub window_level: WindowLevel,
     pub active: bool,
     pub cursor: Cursor,
-    #[cfg(feature = "rwh_06")]
     pub(crate) parent_window: Option<SendSyncRawWindowHandle>,
     pub fullscreen: Option<Fullscreen>,
     // Platform-specific configuration.
@@ -155,7 +154,6 @@ impl Default for WindowAttributes {
             resize_increments: None,
             content_protected: false,
             cursor: Cursor::default(),
-            #[cfg(feature = "rwh_06")]
             parent_window: None,
             active: true,
             platform_specific: Default::default(),
@@ -163,19 +161,16 @@ impl Default for WindowAttributes {
     }
 }
 
-/// Wrapper for [`rwh_06::RawWindowHandle`] for [`WindowAttributes::parent_window`].
+/// Wrapper for [`raw_window_handle::RawWindowHandle`] for [`WindowAttributes::parent_window`].
 ///
 /// # Safety
 ///
 /// The user has to account for that when using [`WindowAttributes::with_parent_window()`],
 /// which is `unsafe`.
 #[derive(Debug, Clone)]
-#[cfg(feature = "rwh_06")]
-pub(crate) struct SendSyncRawWindowHandle(pub(crate) rwh_06::RawWindowHandle);
+pub(crate) struct SendSyncRawWindowHandle(pub(crate) raw_window_handle::RawWindowHandle);
 
-#[cfg(feature = "rwh_06")]
 unsafe impl Send for SendSyncRawWindowHandle {}
-#[cfg(feature = "rwh_06")]
 unsafe impl Sync for SendSyncRawWindowHandle {}
 
 impl WindowAttributes {
@@ -189,8 +184,7 @@ impl WindowAttributes {
 
 impl WindowAttributes {
     /// Get the parent window stored on the attributes.
-    #[cfg(feature = "rwh_06")]
-    pub fn parent_window(&self) -> Option<&rwh_06::RawWindowHandle> {
+    pub fn parent_window(&self) -> Option<&raw_window_handle::RawWindowHandle> {
         self.parent_window.as_ref().map(|handle| &handle.0)
     }
 
@@ -459,11 +453,10 @@ impl WindowAttributes {
         self
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
     pub unsafe fn with_parent_window(
         mut self,
-        parent_window: Option<rwh_06::RawWindowHandle>,
+        parent_window: Option<raw_window_handle::RawWindowHandle>,
     ) -> Self {
         self.parent_window = parent_window.map(SendSyncRawWindowHandle);
         self
@@ -1684,25 +1677,28 @@ impl Window {
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl rwh_06::HasWindowHandle for Window {
-    fn window_handle(&self) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError> {
-        let raw = self.window.raw_window_handle_rwh_06()?;
+impl raw_window_handle::HasWindowHandle for Window {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        let raw = self.window.raw_window_handle_raw_window_handle()?;
 
         // SAFETY: The window handle will never be deallocated while the window is alive,
         // and the main thread safety requirements are upheld internally by each platform.
-        Ok(unsafe { rwh_06::WindowHandle::borrow_raw(raw) })
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(raw) })
     }
 }
 
-#[cfg(feature = "rwh_06")]
-impl rwh_06::HasDisplayHandle for Window {
-    fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
-        let raw = self.window.raw_display_handle_rwh_06()?;
+impl raw_window_handle::HasDisplayHandle for Window {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
+    {
+        let raw = self.window.raw_display_handle_raw_window_handle()?;
 
         // SAFETY: The window handle will never be deallocated while the window is alive,
         // and the main thread safety requirements are upheld internally by each platform.
-        Ok(unsafe { rwh_06::DisplayHandle::borrow_raw(raw) })
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(raw) })
     }
 }
 

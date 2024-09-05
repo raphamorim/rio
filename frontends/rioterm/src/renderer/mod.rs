@@ -19,7 +19,6 @@ use rio_backend::sugarloaf::{
     Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-#[cfg(not(use_wa))]
 use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -60,45 +59,20 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(
-        #[cfg(not(use_wa))] config: &Config,
-        #[cfg(use_wa)] config: &Config,
-        #[cfg(not(use_wa))] current_theme: Option<Theme>,
-        #[cfg(use_wa)] appearance: wa::Appearance,
-    ) -> Renderer {
+    pub fn new(config: &Config, current_theme: Option<Theme>) -> Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        #[cfg(not(use_wa))]
-        {
-            if let Some(theme) = current_theme {
-                if let Some(adaptive_colors) = &config.adaptive_colors {
-                    match theme {
-                        Theme::Light => {
-                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                        }
-                        Theme::Dark => {
-                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                        }
-                    }
-                }
-            }
-        }
-
-        #[cfg(use_wa)]
-        {
+        if let Some(theme) = current_theme {
             if let Some(adaptive_colors) = &config.adaptive_colors {
-                match appearance {
-                    wa::Appearance::Light => {
+                match theme {
+                    Theme::Light => {
                         named_colors = adaptive_colors.light.unwrap_or(named_colors);
                     }
-                    wa::Appearance::Dark => {
+                    Theme::Dark => {
                         named_colors = adaptive_colors.dark.unwrap_or(named_colors);
                     }
-                    // TODO
-                    wa::Appearance::LightHighContrast => {}
-                    wa::Appearance::DarkHighContrast => {}
                 }
             }
         }
@@ -230,7 +204,7 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, false);
+        let (decoration, decoration_color) = self.compute_decoration(square);
 
         (
             FragmentStyle {
@@ -249,20 +223,17 @@ impl Renderer {
     fn compute_decoration(
         &self,
         square: &Square,
-        skip_underline: bool,
     ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            if !skip_underline {
-                decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                    offset: -1.0,
-                    size: 1.0,
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                }));
-            }
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -1.0,
+                size: 1.0,
+                is_doubled: false,
+                shape: UnderlineShape::Regular,
+            }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
@@ -332,26 +303,6 @@ impl Renderer {
                     self.create_style(square)
                 };
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                // let graphics = square.graphics().map(|graphics| {
-                //     graphics
-                //         .iter()
-                //         .map(|graphic| Graphic {
-                //             id: graphic.texture.id,
-                //             offset_x: graphic.offset_x,
-                //             offset_y: graphic.offset_y,
-                //         })
-                //         .collect::<_>()
-                // });
-                // style.media = Some(graphics);
-                let graphic = &square.graphics().unwrap()[0];
-                style.media = Some(Graphic {
-                    id: graphic.texture.id,
-                    offset_x: graphic.offset_x,
-                    offset_y: graphic.offset_y,
-                });
-            }
-
             if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -397,6 +348,27 @@ impl Renderer {
                 }
             }
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                // let graphics = square.graphics().map(|graphics| {
+                //     graphics
+                //         .iter()
+                //         .map(|graphic| Graphic {
+                //             id: graphic.texture.id,
+                //             offset_x: graphic.offset_x,
+                //             offset_y: graphic.offset_y,
+                //         })
+                //         .collect::<_>()
+                // });
+                // style.media = Some(graphics);
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(Graphic {
+                    id: graphic.texture.id,
+                    offset_x: graphic.offset_x,
+                    offset_y: graphic.offset_y,
+                });
+                style.background_color = None;
+            }
+
             if last_style != style {
                 if !content.is_empty() {
                     content_builder.add_text(&content, last_style);
@@ -419,18 +391,6 @@ impl Renderer {
         }
 
         content_builder.finish_line();
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn decrease_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity -= acc;
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn increase_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity += acc;
     }
 
     #[inline]
@@ -620,20 +580,20 @@ impl Renderer {
             self.named_colors.vi_cursor
         };
 
-        let mut has_underline_cursor = false;
+        let (decoration, decoration_color) = self.compute_decoration(square);
+        style.decoration = decoration;
+        style.decoration_color = decoration_color;
 
         match self.cursor.state.content {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
+                        offset: 0.0,
+                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
                 style.decoration_color = Some(cursor_color);
-
-                has_underline_cursor = true;
             }
             CursorShape::Block => {
                 style.cursor = Some(SugarCursor::Block(cursor_color));
@@ -643,11 +603,6 @@ impl Renderer {
             }
             CursorShape::Hidden => {}
         }
-
-        let (decoration, decoration_color) =
-            self.compute_decoration(square, has_underline_cursor);
-        style.decoration = decoration;
-        style.decoration_color = decoration_color;
 
         (style, content)
     }

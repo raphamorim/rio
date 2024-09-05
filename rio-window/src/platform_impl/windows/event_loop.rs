@@ -557,12 +557,11 @@ impl ActiveEventLoop {
         Some(monitor)
     }
 
-    #[cfg(feature = "rwh_06")]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Windows(
-            rwh_06::WindowsDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::Windows(
+            raw_window_handle::WindowsDisplayHandle::new(),
         ))
     }
 
@@ -606,12 +605,11 @@ impl ActiveEventLoop {
 pub(crate) struct OwnedDisplayHandle;
 
 impl OwnedDisplayHandle {
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::WindowsDisplayHandle::new().into())
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::WindowsDisplayHandle::new().into())
     }
 }
 
@@ -2528,10 +2526,6 @@ unsafe extern "system" fn thread_event_target_callback(
     }
     let userdata = unsafe { Box::from_raw(userdata_ptr) };
 
-    if msg != WM_PAINT {
-        unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
-    }
-
     let mut userdata_removed = false;
 
     // I decided to bind the closure to `callback` and pass it to catch_unwind rather than passing
@@ -2539,6 +2533,7 @@ unsafe extern "system" fn thread_event_target_callback(
     // the git blame and history would be preserved.
     let callback = || match msg {
         WM_NCDESTROY => {
+            unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
             unsafe { super::set_window_long(window, GWL_USERDATA, 0) };
             userdata_removed = true;
             0
@@ -2551,11 +2546,13 @@ unsafe extern "system" fn thread_event_target_callback(
         },
 
         WM_INPUT_DEVICE_CHANGE => {
+            unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
             let event = match wparam as u32 {
                 GIDC_ARRIVAL => DeviceEvent::Added,
                 GIDC_REMOVAL => DeviceEvent::Removed,
                 _ => unreachable!(),
             };
+            unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
 
             userdata.send_event(Event::DeviceEvent {
                 device_id: wrap_device_id(lparam as u32),
@@ -2574,6 +2571,7 @@ unsafe extern "system" fn thread_event_target_callback(
         }
 
         _ if msg == USER_EVENT_MSG_ID.get() => {
+            unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
             // synthesis a placeholder UserEvent, so that if the callback is
             // re-entered it can be buffered for later delivery. the real
             // user event is still in the mpsc channel and will be pulled
@@ -2583,6 +2581,7 @@ unsafe extern "system" fn thread_event_target_callback(
             0
         }
         _ if msg == EXEC_MSG_ID.get() => {
+            unsafe { RedrawWindow(window, ptr::null(), 0, RDW_INTERNALPAINT) };
             let mut function: ThreadExecFn = unsafe { Box::from_raw(wparam as *mut _) };
             function();
             0

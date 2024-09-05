@@ -468,25 +468,23 @@ impl Window {
         ))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_window_handle_rwh_06(
+    pub fn raw_window_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
-        let handle = rwh_06::OrbitalWindowHandle::new({
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
+        let handle = raw_window_handle::OrbitalWindowHandle::new({
             let window = self.window_socket.fd as *mut _;
             std::ptr::NonNull::new(window).expect("orbital fd should never be null")
         });
-        Ok(rwh_06::RawWindowHandle::Orbital(handle))
+        Ok(raw_window_handle::RawWindowHandle::Orbital(handle))
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Orbital(
-            rwh_06::OrbitalDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::Orbital(
+            raw_window_handle::OrbitalDisplayHandle::new(),
         ))
     }
 

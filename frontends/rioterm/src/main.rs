@@ -4,8 +4,7 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
-#[cfg(use_wa)]
-mod app;
+mod application;
 mod bindings;
 mod cli;
 mod constants;
@@ -19,19 +18,16 @@ mod mouse;
 mod panic;
 mod platform;
 mod renderer;
-#[cfg(not(use_wa))]
 mod router;
 mod routes;
 mod scheduler;
-#[cfg(not(use_wa))]
 mod screen;
-#[cfg(not(use_wa))]
-mod sequencer;
 mod watcher;
 
 use clap::Parser;
 use log::{info, LevelFilter, SetLoggerError};
 use logger::Logger;
+use rio_backend::event::EventPayload;
 use rio_backend::{ansi, crosswords, event, performer, selection};
 use std::str::FromStr;
 
@@ -145,18 +141,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     setup_environment_variables(&config);
 
-    #[cfg(not(use_wa))]
-    {
-        let window_event_loop = rio_window::event_loop::EventLoop::with_user_event()
-            .build()
-            .unwrap();
+    let window_event_loop =
+        rio_window::event_loop::EventLoop::<EventPayload>::with_user_event().build()?;
 
-        let mut sequencer = crate::sequencer::Sequencer::new(config, config_error);
-        let _ = sequencer.run(window_event_loop);
-    }
-
-    #[cfg(use_wa)]
-    let _ = app::run(config, config_error).await;
+    let mut application =
+        crate::application::Application::new(config, config_error, &window_event_loop);
+    let _ = application.run(window_event_loop);
 
     #[cfg(windows)]
     unsafe {

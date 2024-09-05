@@ -23,7 +23,7 @@
     "message": "터미널에서 이미지 표시"
   },
   "home.features.images-in-terminal.description": {
-    "message": "리오는 iTerm2와 kitty의 이미지 프로토콜을 사용해 터미널 내에서 이미지를 표시할 수 있습니다."
+    "message": "리오는 iTerm2와 sixel의 이미지 프로토콜을 사용해 터미널 내에서 이미지를 표시할 수 있습니다."
   },
   "home.features.cross-platform.title": {
     "message": "크로스 플랫폼"

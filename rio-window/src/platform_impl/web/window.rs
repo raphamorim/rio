@@ -100,32 +100,30 @@ impl Window {
         })
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_window_handle_rwh_06(
+    pub fn raw_window_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawWindowHandle, rwh_06::HandleError> {
+    ) -> Result<raw_window_handle::RawWindowHandle, raw_window_handle::HandleError> {
         self.inner
             .value()
             .map(|inner| {
                 let canvas = inner.canvas.borrow();
                 // SAFETY: This will only work if the reference to `HtmlCanvasElement` stays valid.
                 let canvas: &wasm_bindgen::JsValue = canvas.raw();
-                let window_handle = rwh_06::WebCanvasWindowHandle::new(
+                let window_handle = raw_window_handle::WebCanvasWindowHandle::new(
                     std::ptr::NonNull::from(canvas).cast(),
                 );
-                rwh_06::RawWindowHandle::WebCanvas(window_handle)
+                raw_window_handle::RawWindowHandle::WebCanvas(window_handle)
             })
-            .ok_or(rwh_06::HandleError::Unavailable)
+            .ok_or(raw_window_handle::HandleError::Unavailable)
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub(crate) fn raw_display_handle_rwh_06(
+    pub(crate) fn raw_display_handle_raw_window_handle(
         &self,
-    ) -> Result<rwh_06::RawDisplayHandle, rwh_06::HandleError> {
-        Ok(rwh_06::RawDisplayHandle::Web(
-            rwh_06::WebDisplayHandle::new(),
+    ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
+        Ok(raw_window_handle::RawDisplayHandle::Web(
+            raw_window_handle::WebDisplayHandle::new(),
         ))
     }
 }

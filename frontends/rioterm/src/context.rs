@@ -45,6 +45,7 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: Shell,
+    #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
@@ -137,12 +138,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        #[cfg(target_os = "windows")]
-        let width = size.width;
-
-        #[cfg(target_os = "windows")]
-        let height = size.height;
-
         let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = size.lines.try_into().unwrap_or(MIN_LINES as u16);
 
@@ -197,13 +192,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            pty = create_pty(
+            pty = match create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
                 &config.working_dir,
-                2,
-                1,
-            );
+                cols,
+                rows,
+            ) {
+                Ok(created_pty) => created_pty,
+                Err(err) => {
+                    log::error!("{err:?}");
+                    return Err(Box::new(err));
+                }
+            }
         }
 
         let machine = Machine::new(
@@ -219,20 +220,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let messenger = Messenger::new(channel);
-
-        #[cfg(target_os = "windows")]
-        {
-            if let Err(resize_error) =
-                messenger.send_resize(teletypewriter::WinsizeBuilder {
-                    width: width as u16,
-                    height: height as u16,
-                    cols,
-                    rows,
-                })
-            {
-                log::error!("{resize_error:?}");
-            }
-        };
 
         Ok(Context {
             route_id,
@@ -327,6 +314,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
         let config = ContextManagerConfig {
+            #[cfg(not(target_os = "windows"))]
             use_fork: true,
             working_dir: None,
             shell: Shell {
@@ -547,13 +535,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        #[cfg(any(use_wa, target_os = "macos"))]
-                        self.event_proxy.send_event(
-                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
-                            self.window_id,
-                        );
-
-                        #[cfg(not(any(use_wa, target_os = "macos")))]
                         self.event_proxy
                             .send_event(RioEvent::Title(window_title), self.window_id);
                     }
@@ -571,7 +552,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
-                for (i, context) in self.contexts.iter_mut().enumerate() {
+                for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
                     let empty_string = String::from("");
 
@@ -700,10 +681,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     ) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
-            let current_context = self.current();
-
             #[cfg(not(target_os = "windows"))]
             {
+                let current_context = self.current();
                 if let Ok(path) = teletypewriter::foreground_process_path(
                     *current_context.main_fd,
                     current_context.shell_pid,
@@ -798,10 +778,6 @@ pub mod test {
 
     #[test]
     fn test_capacity() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let context_manager =
@@ -816,10 +792,6 @@ pub mod test {
 
     #[test]
     fn test_add_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -848,10 +820,6 @@ pub mod test {
 
     #[test]
     fn test_add_context_start_with_capacity_limit() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -886,10 +854,6 @@ pub mod test {
 
     #[test]
     fn test_set_current() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -927,10 +891,6 @@ pub mod test {
 
     #[test]
     fn test_close_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -962,10 +922,6 @@ pub mod test {
 
     #[test]
     fn test_close_context_upcoming_ids() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -1017,10 +973,6 @@ pub mod test {
 
     #[test]
     fn test_close_last_context() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =
@@ -1050,10 +1002,6 @@ pub mod test {
 
     #[test]
     fn test_switch_to_next() {
-        #[cfg(use_wa)]
-        let window_id: WindowId = 0;
-
-        #[cfg(not(use_wa))]
         let window_id: WindowId = WindowId::from(0);
 
         let mut context_manager =

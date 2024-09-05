@@ -1,5 +1,3 @@
-#![cfg(windows_platform)]
-
 use smol_str::SmolStr;
 use windows_sys::Win32::Foundation::{HANDLE, HWND};
 use windows_sys::Win32::UI::WindowsAndMessaging::{HMENU, WINDOW_LONG_PTR_INDEX};

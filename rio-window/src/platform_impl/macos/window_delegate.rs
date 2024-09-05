@@ -628,9 +628,8 @@ impl WindowDelegate {
             os_error!(OsError::CreationError("couldn't create `NSWindow`"))
         })?;
 
-        #[cfg(feature = "rwh_06")]
         match attrs.parent_window.map(|handle| handle.0) {
-            Some(rwh_06::RawWindowHandle::AppKit(handle)) => {
+            Some(raw_window_handle::RawWindowHandle::AppKit(handle)) => {
                 // SAFETY: Caller ensures the pointer is valid or NULL
                 // Unwrap is fine, since the pointer comes from `NonNull`.
                 let parent_view: Retained<NSView> =
@@ -1603,14 +1602,15 @@ impl WindowDelegate {
         Some(monitor)
     }
 
-    #[cfg(feature = "rwh_06")]
     #[inline]
-    pub fn raw_window_handle_rwh_06(&self) -> rwh_06::RawWindowHandle {
-        let window_handle = rwh_06::AppKitWindowHandle::new({
+    pub fn raw_window_handle_raw_window_handle(
+        &self,
+    ) -> raw_window_handle::RawWindowHandle {
+        let window_handle = raw_window_handle::AppKitWindowHandle::new({
             let ptr = Retained::as_ptr(&self.view()) as *mut _;
             std::ptr::NonNull::new(ptr).expect("Retained<T> should never be null")
         });
-        rwh_06::RawWindowHandle::AppKit(window_handle)
+        raw_window_handle::RawWindowHandle::AppKit(window_handle)
     }
 
     fn toggle_style_mask(&self, mask: NSWindowStyleMask, on: bool) {

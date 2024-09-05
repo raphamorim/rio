@@ -2,6 +2,7 @@
 name = "corcovado"
 version = { workspace = true }
 license = "MIT"
+edition = "2015"
 authors = ["Raphael Amorim <rapha850@gmail.com"]
 description = "Non-blocking IO library"
 documentation = "https://raphamorim.io/rio/docs"
