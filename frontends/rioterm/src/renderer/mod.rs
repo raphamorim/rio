@@ -372,7 +372,6 @@ impl Renderer {
                 style.background_color = None;
             }
 
-
             if last_style != style {
                 if !content.is_empty() {
                     content_builder.add_text(&content, last_style);
