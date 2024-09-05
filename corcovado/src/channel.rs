@@ -172,9 +172,8 @@ impl<T> Clone for SyncSender<T> {
 impl<T> Receiver<T> {
     /// Attempts to return a pending value on this receiver without blocking.
     pub fn try_recv(&self) -> Result<T, mpsc::TryRecvError> {
-        self.rx.try_recv().map(|res| {
+        self.rx.try_recv().inspect(|_res| {
             let _ = self.ctl.dec();
-            res
         })
     }
 }

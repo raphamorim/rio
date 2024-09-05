@@ -93,11 +93,7 @@ pub unsafe fn cfstring_ref_to_string(cfstring: CFStringRef) -> String {
         num_bytes,
         std::ptr::null_mut::<u64>(),
     );
-    if let Ok(val) = String::from_utf8(buffer) {
-        val
-    } else {
-        String::new()
-    }
+    String::from_utf8(buffer).unwrap_or_default()
 }
 
 pub fn load_webkit_cursor(cursor_name_str: &str) -> ObjcId {
