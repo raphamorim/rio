@@ -1,4 +1,4 @@
-use crate::config::Shell;
+use crate::{ansi::CursorShape, config::Shell};
 
 #[inline]
 pub fn default_bool_true() -> bool {
@@ -68,8 +68,8 @@ pub fn default_log_level() -> String {
 }
 
 #[inline]
-pub fn default_cursor() -> char {
-    '▇'
+pub fn default_cursor() -> CursorShape {
+    CursorShape::default()
 }
 
 #[inline]
@@ -110,20 +110,7 @@ pub fn default_disable_ctlseqs_alt() -> bool {
 
 pub fn default_config_file_content() -> String {
     r#"
-# Cursor
-#
-# Default cursor is Block
-# Other available options are: '_' and '|'
-#
-cursor = '▇'
-
-# Blinking Cursor
-#
-# Default is true
-#
-blinking-cursor = false
-
-# Hide the mouse cursor while typing
+# Hide the cursor while typing
 #
 # Default is `false`
 #
@@ -135,6 +122,19 @@ blinking-cursor = false
 #
 # Example:
 # ignore-selection-foreground-color = false
+
+# Cursor
+#
+# [cursor]
+#
+# Default cursor shape is 'block'
+# Other available options are: 'underline', 'beam' or 'hidden'
+#
+# shape = 'block'
+#
+# Whether the cursor blinks. The default is true
+#
+# blinking = false
 
 # Theme
 #
