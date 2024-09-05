@@ -486,19 +486,19 @@ fn draw_layout(
         let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        if let Some(data) = draw_layout_cache.get(&hash) {
-            comp.draw_cached_run(
-                data,
-                px,
-                py,
-                depth,
-                rect,
-                line,
-                &mut last_rendered_graphic,
-                graphics,
-            );
-            continue;
-        }
+        // if let Some(data) = draw_layout_cache.get(&hash) {
+        //     comp.draw_cached_run(
+        //         data,
+        //         px,
+        //         py,
+        //         depth,
+        //         rect,
+        //         line,
+        //         &mut last_rendered_graphic,
+        //         graphics,
+        //     );
+        //     continue;
+        // }
 
         let mut cached_line_runs = Vec::new();
         for run in line.runs() {
@@ -605,12 +605,12 @@ fn fetch_dimensions(
     let (image_cache, glyphs_cache) = caches;
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let mut current_font_coords: Vec<i16> = Vec::with_capacity(4);
+    let mut current_font_coords: &[i16] = &[0, 0, 0, 0];
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
             current_font_size = run.font_size();
-            current_font_coords = run.normalized_coords().to_vec();
+            current_font_coords = run.normalized_coords();
         }
     }
 
@@ -676,7 +676,7 @@ fn fetch_dimensions(
                 );
 
                 current_font = *font;
-                current_font_coords = style.font_coords.to_vec();
+                current_font_coords = style.font_coords;
                 current_font_size = style.font_size;
             }
 

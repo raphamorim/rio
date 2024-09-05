@@ -306,26 +306,6 @@ impl Renderer {
                     self.create_style(square)
                 };
 
-            if square.flags.contains(Flags::GRAPHICS) {
-                // let graphics = square.graphics().map(|graphics| {
-                //     graphics
-                //         .iter()
-                //         .map(|graphic| Graphic {
-                //             id: graphic.texture.id,
-                //             offset_x: graphic.offset_x,
-                //             offset_y: graphic.offset_y,
-                //         })
-                //         .collect::<_>()
-                // });
-                // style.media = Some(graphics);
-                let graphic = &square.graphics().unwrap()[0];
-                style.media = Some(Graphic {
-                    id: graphic.texture.id,
-                    offset_x: graphic.offset_x,
-                    offset_y: graphic.offset_y,
-                });
-            }
-
             if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
                 && self
@@ -370,6 +350,28 @@ impl Renderer {
                         Some(self.named_colors.search_match_background);
                 }
             }
+
+            if square.flags.contains(Flags::GRAPHICS) {
+                // let graphics = square.graphics().map(|graphics| {
+                //     graphics
+                //         .iter()
+                //         .map(|graphic| Graphic {
+                //             id: graphic.texture.id,
+                //             offset_x: graphic.offset_x,
+                //             offset_y: graphic.offset_y,
+                //         })
+                //         .collect::<_>()
+                // });
+                // style.media = Some(graphics);
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(Graphic {
+                    id: graphic.texture.id,
+                    offset_x: graphic.offset_x,
+                    offset_y: graphic.offset_y,
+                });
+                style.background_color = None;
+            }
+
 
             if last_style != style {
                 if !content.is_empty() {
