@@ -438,17 +438,37 @@ impl ParserProcessor {
         }
     }
 
+    /// Process a new byte from the PTY.
+    #[inline]
+    pub fn advance_bytes<H>(&mut self, handler: &mut H, bytes: &[u8])
+    where
+        H: Handler,
+    {
+        if self.state.sync_state.timeout.is_none() {
+            let mut performer = Performer::new(&mut self.state, handler);
+            self.parser.advance_bytes(&mut performer, bytes);
+        } else {
+            for byte in bytes {
+                self.advance_sync(handler, *byte);
+            }
+        }
+    }
+
     /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
         H: Handler,
     {
         // Process all synchronized bytes.
-        for i in 0..self.state.sync_state.buffer.len() {
-            let byte = self.state.sync_state.buffer[i];
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, byte);
-        }
+        let bytes = self.state.sync_state.buffer;
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.advance_bytes(&mut performer, bytes);
+
+        // for i in 0..self.state.sync_state.buffer.len() {
+        //     let byte = self.state.sync_state.buffer[i];
+        //     let mut performer = Performer::new(&mut self.state, handler);
+        //     self.parser.advance(&mut performer, byte);
+        // }
 
         // Resetting state after processing makes sure we don't interpret buffered sync escapes.
         self.state.sync_state.buffer.clear();
