@@ -45,8 +45,8 @@ const FEATURES = [
     Icon: Image,
     description: (
       <Translate id="home.features.images-in-terminal.description">
-        The Rio can display images within the terminal using iTerm2 and kitty
-        image protocols.
+        The Rio can display images within the terminal using Sixel and iTerm2
+        image protocol.
       </Translate>
     ),
   },

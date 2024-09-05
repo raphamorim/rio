@@ -21,7 +21,7 @@
     "message": "Images no terminal"
   },
   "home.features.images-in-terminal.description": {
-    "message": "O Rio pode exibir imagens dentro do terminal usando os protocolos iTerm2 e kitty image."
+    "message": "O Rio pode exibir imagens dentro do terminal usando os protocolos iTerm2 e Sixel."
   },
   "home.features.cross-platform.title": {
     "message": "Multiplataforma"
