@@ -204,7 +204,7 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, false);
+        let (decoration, decoration_color) = self.compute_decoration(square);
 
         (
             FragmentStyle {
@@ -223,20 +223,17 @@ impl Renderer {
     fn compute_decoration(
         &self,
         square: &Square,
-        skip_underline: bool,
     ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            if !skip_underline {
-                decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                    offset: -1.0,
-                    size: 1.0,
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                }));
-            }
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -1.0,
+                size: 1.0,
+                is_doubled: false,
+                shape: UnderlineShape::Regular,
+            }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
@@ -583,20 +580,20 @@ impl Renderer {
             self.named_colors.vi_cursor
         };
 
-        let mut has_underline_cursor = false;
+        let (decoration, decoration_color) = self.compute_decoration(square);
+        style.decoration = decoration;
+        style.decoration_color = decoration_color;
 
         match self.cursor.state.content {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
+                        offset: 0.0,
+                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
                 style.decoration_color = Some(cursor_color);
-
-                has_underline_cursor = true;
             }
             CursorShape::Block => {
                 style.cursor = Some(SugarCursor::Block(cursor_color));
@@ -606,11 +603,6 @@ impl Renderer {
             }
             CursorShape::Hidden => {}
         }
-
-        let (decoration, decoration_color) =
-            self.compute_decoration(square, has_underline_cursor);
-        style.decoration = decoration;
-        style.decoration_color = decoration_color;
 
         (style, content)
     }
