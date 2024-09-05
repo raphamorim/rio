@@ -11,13 +11,13 @@
 use super::builder_data::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
-use crate::layout::render_data::{RenderData, RunCacheEntry};
-use rustc_hash::FxHashMap;
-use std::path::PathBuf;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use crate::font_introspector::text::{analyze, Script};
 use crate::font_introspector::{Setting, Synthesis};
+use crate::layout::render_data::{RenderData, RunCacheEntry};
+use rustc_hash::FxHashMap;
+use std::path::PathBuf;
 
 pub struct RunCache {
     inner: FxHashMap<u64, RunCacheEntry>,
@@ -83,7 +83,10 @@ impl LayoutContext {
     }
 
     #[inline]
-    pub fn set_font_features(&mut self, font_features: Vec<crate::font_introspector::Setting<u16>>) {
+    pub fn set_font_features(
+        &mut self,
+        font_features: Vec<crate::font_introspector::Setting<u16>>,
+    ) {
         self.font_features = font_features;
     }
 

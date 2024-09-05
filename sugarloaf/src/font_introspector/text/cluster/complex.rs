@@ -330,7 +330,11 @@ where
         Some(some)
     }
 
-    fn accept_zero_or_many_as(&mut self, kind: Kind, as_class: ShapeClass) -> Option<bool> {
+    fn accept_zero_or_many_as(
+        &mut self,
+        kind: Kind,
+        as_class: ShapeClass,
+    ) -> Option<bool> {
         let mut some = false;
         while self.accept_as(kind, as_class)? {
             some = true;

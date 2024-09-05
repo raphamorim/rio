@@ -305,7 +305,7 @@ impl ScaleContext {
     /// Creates a new scaling context with the specified maximum number of
     /// cache entries.
     pub fn with_max_entries(max_entries: usize) -> Self {
-        let max_entries = max_entries.min(64).max(1);
+        let max_entries = max_entries.clamp(1, 64);
         Self {
             fonts: FontCache::new(max_entries),
             state: State {
@@ -349,16 +349,17 @@ pub struct ScalerBuilder<'a> {
 impl<'a> ScalerBuilder<'a> {
     fn new(context: &'a mut ScaleContext, font: impl Into<FontRef<'a>>) -> Self {
         let font = font.into();
-        let (id, proxy) = context
-            .fonts
-            .get(&font, None, |font| ScalerProxy::from_font(font));
+        let (id, proxy) = context.fonts.get(&font, None, ScalerProxy::from_font);
         let skrifa_font = if font.offset == 0 {
             skrifa::FontRef::new(font.data).ok()
         } else {
             // TODO: make this faster
-            let index = crate::font_introspector::FontDataRef::new(font.data)
-                .and_then(|font_data| font_data.fonts().position(|f| f.offset == font.offset));
-            index.and_then(|index| skrifa::FontRef::from_index(font.data, index as u32).ok())
+            let index = crate::font_introspector::FontDataRef::new(font.data).and_then(
+                |font_data| font_data.fonts().position(|f| f.offset == font.offset),
+            );
+            index.and_then(|index| {
+                skrifa::FontRef::from_index(font.data, index as u32).ok()
+            })
         };
         let outlines = skrifa_font.map(|font_ref| font_ref.outline_glyphs());
         Self {
@@ -484,7 +485,11 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales an outline for the specified glyph into the provided outline.
-    pub fn scale_outline_into(&mut self, glyph_id: GlyphId, outline: &mut Outline) -> bool {
+    pub fn scale_outline_into(
+        &mut self,
+        glyph_id: GlyphId,
+        outline: &mut Outline,
+    ) -> bool {
         outline.clear();
         self.scale_outline_impl(glyph_id, None, Some(outline))
     }
@@ -505,7 +510,11 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a color outline for the specified glyph into the provided outline.
-    pub fn scale_color_outline_into(&mut self, glyph_id: GlyphId, outline: &mut Outline) -> bool {
+    pub fn scale_color_outline_into(
+        &mut self,
+        glyph_id: GlyphId,
+        outline: &mut Outline,
+    ) -> bool {
         outline.clear();
         if !self.has_color_outlines() {
             return false;
@@ -519,7 +528,8 @@ impl<'a> Scaler<'a> {
                 Some(layer) => layer,
                 _ => return false,
             };
-            if !self.scale_outline_impl(layer.glyph_id, layer.color_index, Some(outline)) {
+            if !self.scale_outline_impl(layer.glyph_id, layer.color_index, Some(outline))
+            {
                 return false;
             }
         }
@@ -634,7 +644,11 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a color bitmap for the specified glyph and mode.
-    pub fn scale_color_bitmap(&mut self, glyph_id: u16, strike: StrikeWith) -> Option<Image> {
+    pub fn scale_color_bitmap(
+        &mut self,
+        glyph_id: u16,
+        strike: StrikeWith,
+    ) -> Option<Image> {
         let mut image = Image::new();
         if self.scale_color_bitmap_into(glyph_id, strike, &mut image) {
             Some(image)
@@ -676,7 +690,9 @@ impl<'a> Scaler<'a> {
                         .get(glyph_id)
                 }
             }
-            StrikeWith::LargestSize => strikes.find_by_largest_ppem(glyph_id)?.get(glyph_id),
+            StrikeWith::LargestSize => {
+                strikes.find_by_largest_ppem(glyph_id)?.get(glyph_id)
+            }
             StrikeWith::Index(i) => strikes
                 .nth(i as usize)
                 .and_then(|strike| strike.get(glyph_id)),
@@ -825,7 +841,12 @@ impl<'a> Render<'a> {
 
     /// Renders the specified glyph using the current configuration into the
     /// provided image.
-    pub fn render_into(&self, scaler: &mut Scaler, glyph_id: GlyphId, image: &mut Image) -> bool {
+    pub fn render_into(
+        &self,
+        scaler: &mut Scaler,
+        glyph_id: GlyphId,
+        image: &mut Image,
+    ) -> bool {
         for source in self.sources {
             match source {
                 Source::Outline => {
@@ -919,8 +940,7 @@ impl<'a> Render<'a> {
                                 .render_into(&mut scratch[..], None);
                             let color = layer
                                 .color_index()
-                                .map(|i| palette.map(|p| p.get(i)))
-                                .flatten()
+                                .and_then(|i| palette.map(|p| p.get(i)))
                                 .unwrap_or(self.foreground);
                             bitmap::blit(
                                 &scratch[..],

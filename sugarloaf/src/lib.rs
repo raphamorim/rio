@@ -1,8 +1,8 @@
 pub mod components;
 pub mod context;
 pub mod font;
-pub mod layout;
 mod font_introspector;
+pub mod layout;
 mod sugarloaf;
 
 pub use font_introspector::{Stretch, Style, Weight};

@@ -1,6 +1,6 @@
 use super::unicode_data::{
-    compose_index, decompose_compat_index, decompose_index, COMPOSE0, COMPOSE1, COMPOSE1_COUNT,
-    DECOMPOSE, DECOMPOSE_COMPAT,
+    compose_index, decompose_compat_index, decompose_index, COMPOSE0, COMPOSE1,
+    COMPOSE1_COUNT, DECOMPOSE, DECOMPOSE_COMPAT,
 };
 use core::char::from_u32_unchecked;
 
@@ -110,7 +110,8 @@ fn compose_hangul(a: char, b: char) -> Option<char> {
     if !(VBASE..(TBASE + TCOUNT)).contains(&b) {
         return None;
     }
-    if !(LBASE..(LBASE + LCOUNT)).contains(&a) && !(SBASE..(SBASE + SCOUNT)).contains(&a) {
+    if !(LBASE..(LBASE + LCOUNT)).contains(&a) && !(SBASE..(SBASE + SCOUNT)).contains(&a)
+    {
         return None;
     }
     if a >= SBASE {
@@ -156,8 +157,10 @@ pub fn decompose(c: char) -> Decompose {
         } else {
             let buf = &DECOMPOSE[index..];
             let end = 1 + buf[0] as usize;
-            DecomposeInner::Slice(unsafe { &*(&buf[1..end] as *const [u32] as *const [char]) })
-                .into()
+            DecomposeInner::Slice(unsafe {
+                &*(&buf[1..end] as *const [u32] as *const [char])
+            })
+            .into()
         }
     }
 }
@@ -175,13 +178,17 @@ pub fn decompose_compat(c: char) -> Decompose {
             let index = decompose_index(c as usize);
             let buf = &DECOMPOSE[index..];
             let end = 1 + buf[0] as usize;
-            DecomposeInner::Slice(unsafe { &*(&buf[1..end] as *const [u32] as *const [char]) })
-                .into()
+            DecomposeInner::Slice(unsafe {
+                &*(&buf[1..end] as *const [u32] as *const [char])
+            })
+            .into()
         } else {
             let buf = &DECOMPOSE_COMPAT[index..];
             let end = 1 + buf[0] as usize;
-            DecomposeInner::Slice(unsafe { &*(&buf[1..end] as *const [u32] as *const [char]) })
-                .into()
+            DecomposeInner::Slice(unsafe {
+                &*(&buf[1..end] as *const [u32] as *const [char])
+            })
+            .into()
         }
     }
 }

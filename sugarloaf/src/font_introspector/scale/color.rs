@@ -52,7 +52,11 @@ impl ColorProxy {
 
     // Unused when render feature is disabled.
     #[allow(dead_code)]
-    pub fn palette<'a>(&self, font: &FontRef<'a>, index: u16) -> Option<ColorPalette<'a>> {
+    pub fn palette<'a>(
+        &self,
+        font: &FontRef<'a>,
+        index: u16,
+    ) -> Option<ColorPalette<'a>> {
         if self.cpal != 0 {
             ColorPalettes::from_font_and_offset(font, self.cpal).nth(index as usize)
         } else {

@@ -237,12 +237,12 @@ where
     loop {
         shaper.add_cluster(cluster);
         if !parser.next(cluster) {
-            f(&font, shaper);
+            f(font, shaper);
             return false;
         }
         if let Some(next_font) = selector.select_font(cluster) {
             if next_font != *font {
-                f(&font, shaper);
+                f(font, shaper);
                 *current_font = Some(next_font);
                 return true;
             }

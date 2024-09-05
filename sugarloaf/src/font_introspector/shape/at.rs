@@ -94,7 +94,7 @@ impl StageOffsets {
         script: RawTag,
         lang: Option<RawTag>,
     ) -> Option<(Self, [RawTag; 2])> {
-        let (lang, tags) = language_or_default_by_tags(&b, base, script, lang)?;
+        let (lang, tags) = language_or_default_by_tags(b, base, script, lang)?;
         let var = feature_var_offset(b, base);
         Some((Self { base, lang, var }, tags))
     }
@@ -224,8 +224,9 @@ impl FeatureStore {
                     } else {
                         FeatureMask::default()
                     };
-                    g.basic =
-                        self.mask(&[ABVS, BLWS, CALT, CLIG, HALN, LIGA, PRES, PSTS, RCLT, RLIG]);
+                    g.basic = self.mask(&[
+                        ABVS, BLWS, CALT, CLIG, HALN, LIGA, PRES, PSTS, RCLT, RLIG,
+                    ]);
                     g.position = self.mask(&[ABVM, BLWM, CURS, DIST, KERN, MARK, MKMK]);
                 }
             }
@@ -237,8 +238,8 @@ impl FeatureStore {
                 _ => {
                     g.basic = if script.is_joined() {
                         self.mask(&[
-                            CALT, CCMP, CLIG, FIN2, FIN3, FINA, INIT, ISOL, LIGA, LOCL, MED2, MEDI,
-                            MSET, RLIG, RVRN,
+                            CALT, CCMP, CLIG, FIN2, FIN3, FINA, INIT, ISOL, LIGA, LOCL,
+                            MED2, MEDI, MSET, RLIG, RVRN,
                         ])
                     } else {
                         self.mask(&[CALT, CCMP, CLIG, LIGA, LOCL, RVRN])
@@ -353,7 +354,7 @@ impl FeatureStoreBuilder {
             cache.features.push((ftag, fbit, stage));
             let foffset = if let Some(v) = vars {
                 if let Some(offset) = v.apply(b, findex as u16) {
-                    offset as usize
+                    offset
                 } else {
                     fbase + b.read::<u16>(rec + 4)? as usize
                 }
@@ -376,10 +377,14 @@ impl FeatureStoreBuilder {
                 cache.lookups.push(lookup);
                 continue;
             }
-            if let Some(ref mut lookup) = lookup_data(b, stage, list_base, *index, *mask, gdef) {
+            if let Some(ref mut lookup) =
+                lookup_data(b, stage, list_base, *index, *mask, gdef)
+            {
                 let start = cache.subtables.len();
                 self.coverage.begin();
-                if Self::collect_subtables(b, cache, &mut self.coverage, lookup) == Some(true) {
+                if Self::collect_subtables(b, cache, &mut self.coverage, lookup)
+                    == Some(true)
+                {
                     lookup.coverage = self.coverage.finish(&mut cache.coverage);
                     lookup.feature = *feature;
                     cache.lookups.push(*lookup);
@@ -399,7 +404,7 @@ impl FeatureStoreBuilder {
         lookup: &mut LookupData,
     ) -> Option<bool> {
         let start = cache.subtables.len();
-        if start >= core::u16::MAX as usize {
+        if start >= u16::MAX as usize {
             return None;
         }
         lookup.subtables.0 = start as u16;
@@ -438,7 +443,7 @@ struct CoverageBuilder {
 impl CoverageBuilder {
     fn begin(&mut self) {
         self.coverage.clear();
-        self.min = core::u16::MAX;
+        self.min = u16::MAX;
         self.max = 0;
     }
 
@@ -911,7 +916,9 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if self.cache.test(lookup.coverage, id) {
                         for s in subtables {
                             if let Some(index) = s.coverage(b, id) {
-                                if self.apply_subtable(b, s, index as usize, i, id) == Some(true) {
+                                if self.apply_subtable(b, s, index as usize, i, id)
+                                    == Some(true)
+                                {
                                     applied = true;
                                     break;
                                 }
@@ -936,7 +943,9 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if self.cache.test(lookup.coverage, id) {
                         for s in subtables {
                             if let Some(index) = s.coverage(b, id) {
-                                if self.apply_subtable(b, s, index as usize, i, id) == Some(true) {
+                                if self.apply_subtable(b, s, index as usize, i, id)
+                                    == Some(true)
+                                {
                                     applied = true;
                                     break;
                                 }
@@ -1052,8 +1061,11 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                         continue;
                     }
                     let glyph = b.read::<u16>(ligbase)?;
-                    self.buf
-                        .substitute_ligature(cur, glyph, &self.storage.indices[0..compcount]);
+                    self.buf.substitute_ligature(
+                        cur,
+                        glyph,
+                        &self.storage.indices[0..compcount],
+                    );
                     self.update_glyph(cur);
                     return Some(true);
                 }
@@ -1115,8 +1127,10 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                 let vf2 = b.read::<u16>(base + 6)?;
                 let len1 = vf1.count_ones() as usize * 2;
                 let step = len1 + vf2.count_ones() as usize * 2;
-                let class1 = self.class(base + b.read::<u16>(base + 8)? as usize, g) as usize;
-                let class2 = self.class(base + b.read::<u16>(base + 10)? as usize, g2) as usize;
+                let class1 =
+                    self.class(base + b.read::<u16>(base + 8)? as usize, g) as usize;
+                let class2 =
+                    self.class(base + b.read::<u16>(base + 10)? as usize, g2) as usize;
                 let class2_count = b.read::<u16>(base + 14)? as usize;
                 let v = base + 16 + (class1 * step * class2_count) + (class2 * step);
                 if vf1 != 0 {
@@ -1164,7 +1178,8 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     return Some(false);
                 }
                 let g2 = self.buf.glyphs[prev].id;
-                let index2 = self.coverage(base + b.read::<u16>(base + 4)? as usize, g2)? as usize;
+                let index2 =
+                    self.coverage(base + b.read::<u16>(base + 4)? as usize, g2)? as usize;
                 let (mark_class, mark_anchor) = {
                     let markbase = base + b.read::<u16>(base + 8)? as usize;
                     let a = self.mark_anchor(markbase, index as u16)?;
@@ -1178,7 +1193,8 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if index >= count {
                         return Some(false);
                     }
-                    let abase = basebase + b.read::<u16>(basebase + 2 + index * 2)? as usize;
+                    let abase =
+                        basebase + b.read::<u16>(basebase + 2 + index * 2)? as usize;
                     self.anchor(abase)?
                 };
                 let dx = base_anchor.0 - mark_anchor.0;
@@ -1198,10 +1214,11 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                 }
                 let g2 = self.buf.glyphs[prev].id;
                 let mark_index = index as u16;
-                let base_index = self.coverage(base + b.read::<u16>(base + 4)? as usize, g2)?;
+                let base_index =
+                    self.coverage(base + b.read::<u16>(base + 4)? as usize, g2)?;
                 let class_count = b.read::<u16>(base + 6)? as usize;
-                let mark_anchor =
-                    self.mark_anchor(base + b.read::<u16>(base + 8)? as usize, mark_index)?;
+                let mark_anchor = self
+                    .mark_anchor(base + b.read::<u16>(base + 8)? as usize, mark_index)?;
                 let mark_class = mark_anchor.0 as usize;
                 let mark_anchor = mark_anchor.1;
                 let mut lig_array = b.read::<u16>(base + 10)? as usize;
@@ -1224,7 +1241,8 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                 if comp_count == 0 || comp_index >= comp_count {
                     return None;
                 }
-                let comp_rec = lig_attach + 2 + comp_index * class_count * 2 + mark_class * 2;
+                let comp_rec =
+                    lig_attach + 2 + comp_index * class_count * 2 + mark_class * 2;
                 let anchor_offset = b.read::<u16>(comp_rec)? as usize;
                 if anchor_offset == 0 {
                     return None;
@@ -1257,8 +1275,10 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if input_count > 1 {
                         input_count -= 1;
                         let seq = c.read_array::<u16>(input_count)?;
-                        if let Some(end) = self
-                            .match_sequence(cur, input_count, |i, id| id == seq.get(i).unwrap_or(0))
+                        if let Some(end) =
+                            self.match_sequence(cur, input_count, |i, id| {
+                                id == seq.get(i).unwrap_or(0)
+                            })
                         {
                             input_end = end;
                         } else {
@@ -1299,9 +1319,11 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if input_count > 1 {
                         input_count -= 1;
                         let seq = c.read_array::<u16>(input_count)?;
-                        if let Some(end) = self.match_sequence(cur, input_count, |i, id| {
-                            self.class(input_classdef, id) == seq.get(i).unwrap_or(0)
-                        }) {
+                        if let Some(end) =
+                            self.match_sequence(cur, input_count, |i, id| {
+                                self.class(input_classdef, id) == seq.get(i).unwrap_or(0)
+                            })
+                        {
                             input_end = end;
                         } else {
                             continue;
@@ -1360,8 +1382,10 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if input_count > 1 {
                         input_count -= 1;
                         let seq = c.read_array::<u16>(input_count)?;
-                        if let Some(end) = self
-                            .match_sequence(cur, input_count, |i, id| id == seq.get(i).unwrap_or(0))
+                        if let Some(end) =
+                            self.match_sequence(cur, input_count, |i, id| {
+                                id == seq.get(i).unwrap_or(0)
+                            })
                         {
                             input_end = end;
                         } else {
@@ -1413,8 +1437,9 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     let backtrack_count = c.read::<u16>()? as usize;
                     if backtrack_count != 0 {
                         let seq = c.read_array::<u16>(backtrack_count)?;
-                        let pred =
-                            |i, id| self.class(backtrack_classdef, id) == seq.get(i).unwrap_or(0);
+                        let pred = |i, id| {
+                            self.class(backtrack_classdef, id) == seq.get(i).unwrap_or(0)
+                        };
                         if self.match_backtrack(cur, backtrack_count, pred).is_none() {
                             continue;
                         }
@@ -1424,9 +1449,11 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     if input_count > 1 {
                         input_count -= 1;
                         let seq = c.read_array::<u16>(input_count)?;
-                        if let Some(end) = self.match_sequence(cur, input_count, |i, id| {
-                            self.class(input_classdef, id) == seq.get(i).unwrap_or(0)
-                        }) {
+                        if let Some(end) =
+                            self.match_sequence(cur, input_count, |i, id| {
+                                self.class(input_classdef, id) == seq.get(i).unwrap_or(0)
+                            })
+                        {
                             input_end = end;
                         } else {
                             continue;
@@ -1435,8 +1462,9 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
                     let lookahead_count = c.read::<u16>()? as usize;
                     if lookahead_count != 0 {
                         let seq = c.read_array::<u16>(lookahead_count)?;
-                        let pred =
-                            |i, id| self.class(lookahead_classdef, id) == seq.get(i).unwrap_or(0);
+                        let pred = |i, id| {
+                            self.class(lookahead_classdef, id) == seq.get(i).unwrap_or(0)
+                        };
                         if self
                             .match_sequence(input_end, lookahead_count, pred)
                             .is_none()
@@ -1537,7 +1565,8 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
         }
         let b = self.data;
         let list_base = self.gsubgpos + b.read::<u16>(self.gsubgpos as usize + 8)? as u32;
-        let lookup = lookup_data(&self.data, self.stage, list_base, index, 0, Some(self.defs))?;
+        let lookup =
+            lookup_data(&self.data, self.stage, list_base, index, 0, Some(self.defs))?;
         self.storage.stack[self.top as usize] = self.s;
         self.top += 1;
         let v = self.apply_uncached(&lookup, cur, end + 1, first);
@@ -1585,7 +1614,8 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
             let fmt = b.read::<u16>(subtable)?;
             if let Some(ref s) = subtable_data(b, subtable as u32, kind, fmt) {
                 if let Some(index) = s.coverage(b, g) {
-                    if let Some(true) = self.apply_subtable(b, s, index as usize, cur, g) {
+                    if let Some(true) = self.apply_subtable(b, s, index as usize, cur, g)
+                    {
                         applied = true;
                         break;
                     }
@@ -1603,7 +1633,12 @@ impl<'a, 'b, 'c> ApplyContext<'a, 'b, 'c> {
         Some(applied)
     }
 
-    fn apply_contextual(&mut self, mut c: Stream<'a>, count: usize, end: usize) -> Option<bool> {
+    fn apply_contextual(
+        &mut self,
+        mut c: Stream<'a>,
+        count: usize,
+        end: usize,
+    ) -> Option<bool> {
         let mut applied = false;
         let start = self.s.cur;
         for _ in 0..count {

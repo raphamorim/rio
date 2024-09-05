@@ -206,12 +206,15 @@ impl<'a> Features<'a> {
         let kind = Kind::from_font(font);
         Self {
             kind: match kind {
-                Kind::At(gsub, gpos) => {
-                    FeaturesKind::AtAll(at::AllFeatures::new(Bytes::new(font.data), gsub, gpos))
-                }
-                Kind::Aat(morx, kern) => {
-                    FeaturesKind::Aat(aat::Features::new(aat::chains(font.data, morx), kern))
-                }
+                Kind::At(gsub, gpos) => FeaturesKind::AtAll(at::AllFeatures::new(
+                    Bytes::new(font.data),
+                    gsub,
+                    gpos,
+                )),
+                Kind::Aat(morx, kern) => FeaturesKind::Aat(aat::Features::new(
+                    aat::chains(font.data, morx),
+                    kern,
+                )),
                 _ => FeaturesKind::None,
             },
         }

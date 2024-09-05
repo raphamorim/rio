@@ -11,8 +11,8 @@ pub use super::unicode_data::{
 
 use super::compose::{compose_pair, decompose, decompose_compat};
 use super::unicode_data::{
-    get_record_index, MyanmarClass, Record, UseClass, BRACKETS, MIRRORS, RECORDS, SCRIPTS_BY_TAG,
-    SCRIPT_COMPLEXITY, SCRIPT_NAMES, SCRIPT_TAGS,
+    get_record_index, MyanmarClass, Record, UseClass, BRACKETS, MIRRORS, RECORDS,
+    SCRIPTS_BY_TAG, SCRIPT_COMPLEXITY, SCRIPT_NAMES, SCRIPT_TAGS,
 };
 use crate::font_introspector::Tag;
 

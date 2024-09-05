@@ -9,11 +9,11 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use crate::{sugarloaf::primitives::SugarCursor, Graphic};
-use std::hash::{Hash, Hasher};
 use crate::font_introspector::text::cluster::CharInfo;
 use crate::font_introspector::Setting;
 use crate::font_introspector::{Stretch, Style, Weight};
+use crate::{sugarloaf::primitives::SugarCursor, Graphic};
+use std::hash::{Hash, Hasher};
 
 /// Data that describes a fragment.
 #[derive(Copy, Debug, Clone)]

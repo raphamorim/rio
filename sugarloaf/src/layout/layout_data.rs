@@ -8,8 +8,8 @@
 
 use super::render_data::*;
 use super::Glyph;
-use crate::layout::FragmentStyle;
 use crate::font_introspector::text::cluster::ClusterInfo;
+use crate::layout::FragmentStyle;
 
 /// Cluster represents multiple glyphs.
 pub const CLUSTER_DETAILED: u8 = 1;

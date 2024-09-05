@@ -3,7 +3,10 @@ pub type Tag = u32;
 
 /// Creates a tag from four bytes.
 pub const fn tag_from_bytes(bytes: &[u8; 4]) -> Tag {
-    (bytes[0] as u32) << 24 | (bytes[1] as u32) << 16 | (bytes[2] as u32) << 8 | bytes[3] as u32
+    (bytes[0] as u32) << 24
+        | (bytes[1] as u32) << 16
+        | (bytes[2] as u32) << 8
+        | bytes[3] as u32
 }
 
 /// Creates a tag from the first four bytes of a string, inserting

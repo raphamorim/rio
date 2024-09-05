@@ -102,8 +102,7 @@ impl<'a> ColorPalette<'a> {
     /// language.
     pub fn name(&self, language: Option<&str>) -> Option<LocalizedString<'a>> {
         self.name_id()
-            .map(|id| self.font.localized_strings().find_by_id(id, language))
-            .flatten()
+            .and_then(|id| self.font.localized_strings().find_by_id(id, language))
     }
 
     /// Returns the theme usability of the palette, if available.

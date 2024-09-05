@@ -20,7 +20,7 @@ pub fn apply_morx(
                 }
             }
         }
-        for (_i, subtable) in chain.subtables().enumerate() {
+        for subtable in chain.subtables() {
             if subtable.flags() & flags == 0 {
                 // if TRACE {
                 //     println!("    <SKIP chain subtable {}>", i);
@@ -88,7 +88,7 @@ pub fn apply_morx(
                 }
                 SubtableKind::NonContextual(t) => {
                     //println!(".. non-contextual");
-                    for (_i, g) in buffer.glyphs.iter_mut().enumerate() {
+                    for g in buffer.glyphs.iter_mut() {
                         if let Some(s) = t.substitute(g.id) {
                             // if TRACE {
                             //     println!("NonContextual[{}] {} -> {}", i, g.id, s);
@@ -139,7 +139,9 @@ pub fn apply_morx(
                             buffer.multiply(i, array.len());
                             let start = i;
                             let end = start + array.len();
-                            for (g, s) in buffer.glyphs[start..end].iter_mut().zip(array.iter()) {
+                            for (g, s) in
+                                buffer.glyphs[start..end].iter_mut().zip(array.iter())
+                            {
                                 g.id = s;
                                 g.flags = 0;
                             }
@@ -160,7 +162,9 @@ pub fn apply_morx(
                             buffer.multiply(i, array.len());
                             let start = i;
                             let end = start + array.len();
-                            for (g, s) in buffer.glyphs[start..end].iter_mut().zip(array.iter()) {
+                            for (g, s) in
+                                buffer.glyphs[start..end].iter_mut().zip(array.iter())
+                            {
                                 g.id = s;
                                 g.flags = 0;
                             }
@@ -183,7 +187,7 @@ pub fn apply_kerx(
     disable_kern: bool,
 ) -> Option<()> {
     use kerx::*;
-    for (_i, subtable) in subtables(data, kerx, ankr).enumerate() {
+    for subtable in subtables(data, kerx, ankr) {
         // if TRACE {
         //     println!("    <kerx subtable {}>", i);
         // }
@@ -303,7 +307,7 @@ pub fn apply_kerx(
 
 pub fn apply_kern(data: &[u8], kern: u32, buffer: &mut Buffer) -> Option<()> {
     use kern::*;
-    for (_i, subtable) in subtables(data, kern).enumerate() {
+    for subtable in subtables(data, kern) {
         let kind = match subtable.kind() {
             Some(kind) => kind,
             _ => continue,
@@ -358,7 +362,8 @@ pub fn apply_kern(data: &[u8], kern: u32, buffer: &mut Buffer) -> Option<()> {
                                 if pos.y == 0. {
                                     pos.y = kerning as f32;
                                 }
-                            } else if let Some(base) = find_base(buffer, buffer.is_rtl, i) {
+                            } else if let Some(base) = find_base(buffer, buffer.is_rtl, i)
+                            {
                                 let diff = if base >= i { base - i } else { i - base };
                                 if diff < 255 {
                                     let pos = &mut buffer.positions[i];

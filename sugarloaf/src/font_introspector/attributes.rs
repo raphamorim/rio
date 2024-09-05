@@ -220,7 +220,10 @@ impl fmt::Display for Attributes {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut space = "";
         let (stretch, weight, style) = self.parts();
-        if style == Style::Normal && weight == Weight::NORMAL && stretch == Stretch::NORMAL {
+        if style == Style::Normal
+            && weight == Weight::NORMAL
+            && stretch == Stretch::NORMAL
+        {
             return write!(f, "regular");
         }
         if stretch != Stretch::NORMAL {
@@ -455,7 +458,7 @@ impl Weight {
         Some(match s {
             "normal" => Self::NORMAL,
             "bold" => Self::BOLD,
-            _ => Self(s.parse::<u32>().ok()?.min(1000).max(1) as u16),
+            _ => Self(s.parse::<u32>().ok()?.clamp(1, 1000) as u16),
         })
     }
 }
@@ -508,7 +511,7 @@ impl Stretch {
     /// clamped at half percentage increments between 50% and 200%,
     /// inclusive.
     pub fn from_percentage(percentage: f32) -> Self {
-        let value = ((percentage.min(200.).max(50.) - 50.) * 2.) as u16;
+        let value = ((percentage.clamp(50., 200.) - 50.) * 2.) as u16;
         Self(value)
     }
 
@@ -624,7 +627,11 @@ pub struct Synthesis {
 
 impl Synthesis {
     #[doc(hidden)]
-    pub fn new(variations: impl Iterator<Item = Setting<f32>>, embolden: bool, skew: f32) -> Self {
+    pub fn new(
+        variations: impl Iterator<Item = Setting<f32>>,
+        embolden: bool,
+        skew: f32,
+    ) -> Self {
         let mut synth = Self {
             embolden,
             skew: skew as i8,

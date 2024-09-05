@@ -131,7 +131,13 @@ pub struct Languages<'a> {
 }
 
 impl<'a> Languages<'a> {
-    fn new(data: Bytes<'a>, gsub: u32, gpos: u32, gsub_script: u32, gpos_script: u32) -> Self {
+    fn new(
+        data: Bytes<'a>,
+        gsub: u32,
+        gpos: u32,
+        gsub_script: u32,
+        gpos_script: u32,
+    ) -> Self {
         Self {
             data,
             gsub,
@@ -150,11 +156,13 @@ impl<'a> Languages<'a> {
             if self.cur < self.len {
                 let index = self.cur;
                 self.cur += 1;
-                let (tag, offset) = script_language_at(&self.data, self.gsub_script, index)?;
+                let (tag, offset) =
+                    script_language_at(&self.data, self.gsub_script, index)?;
                 let gsub_default = tag == DFLT;
                 let (gpos_offset, _) = if gsub_default {
                     (
-                        script_default_language(&self.data, self.gpos_script).unwrap_or(0),
+                        script_default_language(&self.data, self.gpos_script)
+                            .unwrap_or(0),
                         true,
                     )
                 } else {

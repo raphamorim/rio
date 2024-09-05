@@ -9,9 +9,9 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
+use crate::font_introspector::{FontRef, GlyphId, NormalizedCoord};
 use crate::layout::FragmentStyleDecoration;
 use crate::sugarloaf::primitives::SugarCursor;
-use crate::font_introspector::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
 #[derive(Copy, Clone)]

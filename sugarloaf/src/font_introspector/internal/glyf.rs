@@ -44,7 +44,13 @@ pub fn get<'a>(
 
 /// Returns the y-max value of the specified glyph from the bounding box in the
 /// `glyf` table.
-pub fn ymax(data: &[u8], loca_fmt: u8, loca: u32, glyf: u32, glyph_id: u16) -> Option<i16> {
+pub fn ymax(
+    data: &[u8],
+    loca_fmt: u8,
+    loca: u32,
+    glyf: u32,
+    glyph_id: u16,
+) -> Option<i16> {
     let glyph_data = get(data, loca_fmt, loca, glyf, glyph_id)?;
     let mut s = Stream::new(glyph_data);
     s.skip(8)?;

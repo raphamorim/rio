@@ -1,7 +1,9 @@
 use super::cluster::{Glyph, GlyphInfo};
 use super::feature::*;
 use crate::font_introspector::text::{
-    cluster::{Char, CharCluster, ClusterInfo, ShapeClass, SourceRange, MAX_CLUSTER_SIZE},
+    cluster::{
+        Char, CharCluster, ClusterInfo, ShapeClass, SourceRange, MAX_CLUSTER_SIZE,
+    },
     JoiningType,
 };
 use core::ops::Range;
@@ -357,7 +359,14 @@ impl Buffer {
         self.glyphs.splice(index..index, (0..count).map(|_| g));
     }
 
-    pub fn position(&mut self, index: usize, x: f32, y: f32, xadvance: f32, _yadvance: f32) {
+    pub fn position(
+        &mut self,
+        index: usize,
+        x: f32,
+        y: f32,
+        xadvance: f32,
+        _yadvance: f32,
+    ) {
         let p = &mut self.positions[index];
         p.x += x;
         p.y += y;
@@ -539,7 +548,11 @@ pub fn reorder_myanmar(chars: &[Char], order: &mut Vec<usize>) {
 }
 
 #[allow(clippy::needless_range_loop)]
-pub fn reorder_complex(glyphs: &mut [GlyphData], buf: &mut Vec<GlyphData>, order: &mut Vec<usize>) {
+pub fn reorder_complex(
+    glyphs: &mut [GlyphData],
+    buf: &mut Vec<GlyphData>,
+    order: &mut Vec<usize>,
+) {
     use ShapeClass::*;
     let mut first_base = None;
     let mut last_base = None;

@@ -32,7 +32,10 @@ pub fn desc_from_at(tag: RawTag) -> Option<(usize, &'static str)> {
 
 /// Returns a feature tag and description from an AAT feature
 /// and selector.
-pub fn desc_from_aat(feature: u16, selector: u16) -> Option<(usize, RawTag, &'static str)> {
+pub fn desc_from_aat(
+    feature: u16,
+    selector: u16,
+) -> Option<(usize, RawTag, &'static str)> {
     let key = ((feature << 8) | selector) as u16;
     Some(match AAT_TO_AT.binary_search_by(|pair| pair.0.cmp(&key)) {
         Ok(index) => {
