@@ -31,12 +31,8 @@
 //! [`Perform`]: trait.Perform.html
 //! [Paul Williams' ANSI parser state machine]: https://vt100.net/emu/dec_ansi_parser
 #![deny(clippy::all, clippy::if_not_else, clippy::enum_glob_use)]
-#![cfg_attr(feature = "no_std", no_std)]
 
 use core::mem::MaybeUninit;
-
-#[cfg(feature = "no_std")]
-use arrayvec::ArrayVec;
 
 mod definitions;
 mod params;
@@ -68,9 +64,6 @@ impl<'a, P: Perform> utf8::Receiver for VtUtf8Receiver<'a, P> {
 /// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`]
 ///
 /// [`Perform`]: trait.Perform.html
-///
-/// Generic over the value for the size of the raw Operating System Command
-/// buffer. Only used when the `no_std` feature is enabled.
 #[derive(Default)]
 pub struct Parser<const OSC_RAW_BUF_SIZE: usize = MAX_OSC_RAW> {
     state: State,
@@ -78,11 +71,8 @@ pub struct Parser<const OSC_RAW_BUF_SIZE: usize = MAX_OSC_RAW> {
     intermediate_idx: usize,
     params: Params,
     param: u16,
-    #[cfg(feature = "no_std")]
-    osc_raw: ArrayVec<u8, OSC_RAW_BUF_SIZE>,
-    #[cfg(not(feature = "no_std"))]
-    osc_raw: Vec<u8>,
     osc_params: [(usize, usize); MAX_OSC_PARAMS],
+    osc_raw: Vec<u8>,
     osc_num_params: usize,
     ignoring: bool,
     utf8_parser: utf8::Parser,
@@ -103,10 +93,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     /// ```rust
     /// let mut p = copa::Parser::<64>::new_with_size();
     /// ```
-    #[cfg(feature = "no_std")]
-    pub fn new_with_size() -> Parser<OSC_RAW_BUF_SIZE> {
-        Default::default()
-    }
 
     #[inline]
     fn params(&self) -> &Params {
@@ -118,6 +104,31 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         &self.intermediates[..self.intermediate_idx]
     }
 
+    #[inline]
+    pub fn advance_bytes<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+        // Utf8 characters are handled out-of-band.
+        if let State::Utf8 = self.state {
+            self.process_utf8_bytes(performer, bytes);
+            return;
+        }
+
+        for byte in bytes {
+            let byte = *byte;
+            // Handle state changes in the anywhere state before evaluating changes
+            // for current state.
+            let mut change = table::STATE_CHANGES[State::Anywhere as usize][byte as usize];
+
+            if change == 0 {
+                change = table::STATE_CHANGES[self.state as usize][byte as usize];
+            }
+
+            // Unpack into a state and action
+            let (state, action) = unpack(change);
+
+            self.perform_state_change(performer, state, action, byte);
+        }
+    }
+    
     /// Advance the parser state
     ///
     /// Requires a [`Perform`] in case `byte` triggers an action
@@ -146,10 +157,25 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     }
 
     #[inline]
+    fn process_utf8_bytes<P>(&mut self, performer: &mut P, bytes: &[u8])
+    where
+        P: Perform,
+    {
+        // encoding_rs::Encoder::encode_from_utf8(bytes)
+        let a = unsafe {
+            std::str::from_utf8_unchecked(bytes).chars()
+        };
+        // let mut receiver = VtUtf8Receiver(performer, &mut self.state);
+        // let utf8_parser = &mut self.utf8_parser;
+        // utf8_parser.advance(&mut receiver, bytes);
+    }
+
+    #[inline]
     fn process_utf8<P>(&mut self, performer: &mut P, byte: u8)
     where
         P: Perform,
     {
+        // encoder_rs.encode_from_utf8(byte)
         let mut receiver = VtUtf8Receiver(performer, &mut self.state);
         let utf8_parser = &mut self.utf8_parser;
         utf8_parser.advance(&mut receiver, byte);
@@ -264,13 +290,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.osc_num_params = 0;
             }
             Action::OscPut => {
-                #[cfg(feature = "no_std")]
-                {
-                    if self.osc_raw.is_full() {
-                        return;
-                    }
-                }
-
                 let idx = self.osc_raw.len();
 
                 // Param separator
@@ -450,7 +469,7 @@ pub trait Perform {
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {}
 }
 
-#[cfg(all(test, feature = "no_std"))]
+#[cfg(all(test))]
 #[macro_use]
 extern crate std;
 
@@ -717,11 +736,7 @@ mod tests {
                 assert_eq!(params.len(), 2);
                 assert_eq!(params[0], b"52");
 
-                #[cfg(not(feature = "no_std"))]
                 assert_eq!(params[1].len(), NUM_BYTES + INPUT_END.len());
-
-                #[cfg(feature = "no_std")]
-                assert_eq!(params[1].len(), MAX_OSC_RAW - params[0].len());
             }
             _ => panic!("expected osc sequence"),
         }
@@ -996,98 +1011,6 @@ mod tests {
                 assert!(ignore);
             }
             _ => panic!("expected csi sequence"),
-        }
-    }
-
-    #[cfg(feature = "no_std")]
-    #[test]
-    fn build_with_fixed_size() {
-        static INPUT: &[u8] = b"\x1b[3;1\x1b[?1049h";
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<30> = Parser::new_with_size();
-
-        for byte in INPUT {
-            parser.advance(&mut dispatcher, *byte);
-        }
-
-        assert_eq!(dispatcher.dispatched.len(), 1);
-        match &dispatcher.dispatched[0] {
-            Sequence::Csi(params, intermediates, ignore, _) => {
-                assert_eq!(intermediates, &[b'?']);
-                assert_eq!(params, &[[1049]]);
-                assert!(!ignore);
-            }
-            _ => panic!("expected csi sequence"),
-        }
-    }
-
-    #[cfg(feature = "no_std")]
-    #[test]
-    fn exceed_fixed_osc_buffer_size() {
-        const OSC_BUFFER_SIZE: usize = 32;
-        static NUM_BYTES: usize = OSC_BUFFER_SIZE + 100;
-        static INPUT_START: &[u8] = b"\x1b]52;";
-        static INPUT_END: &[u8] = b"\x07";
-
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<OSC_BUFFER_SIZE> = Parser::new_with_size();
-
-        // Create valid OSC escape
-        for byte in INPUT_START {
-            parser.advance(&mut dispatcher, *byte);
-        }
-
-        // Exceed max buffer size
-        for _ in 0..NUM_BYTES {
-            parser.advance(&mut dispatcher, b'a');
-        }
-
-        // Terminate escape for dispatch
-        for byte in INPUT_END {
-            parser.advance(&mut dispatcher, *byte);
-        }
-
-        assert_eq!(dispatcher.dispatched.len(), 1);
-        match &dispatcher.dispatched[0] {
-            Sequence::Osc(params, _) => {
-                assert_eq!(params.len(), 2);
-                assert_eq!(params[0], b"52");
-                assert_eq!(params[1].len(), OSC_BUFFER_SIZE - params[0].len());
-                for item in params[1].iter() {
-                    assert_eq!(*item, b'a');
-                }
-            }
-            _ => panic!("expected osc sequence"),
-        }
-    }
-
-    #[cfg(feature = "no_std")]
-    #[test]
-    fn fixed_size_osc_containing_string_terminator() {
-        static INPUT_START: &[u8] = b"\x1b]2;";
-        static INPUT_MIDDLE: &[u8] = b"s\xe6\x9c\xab";
-        static INPUT_END: &[u8] = b"\x1b\\";
-
-        let mut dispatcher = Dispatcher::default();
-        let mut parser: Parser<5> = Parser::new_with_size();
-
-        for byte in INPUT_START {
-            parser.advance(&mut dispatcher, *byte);
-        }
-        for byte in INPUT_MIDDLE {
-            parser.advance(&mut dispatcher, *byte);
-        }
-        for byte in INPUT_END {
-            parser.advance(&mut dispatcher, *byte);
-        }
-
-        assert_eq!(dispatcher.dispatched.len(), 2);
-        match &dispatcher.dispatched[0] {
-            Sequence::Osc(params, false) => {
-                assert_eq!(params[0], b"2");
-                assert_eq!(params[1], INPUT_MIDDLE);
-            }
-            _ => panic!("expected osc sequence"),
         }
     }
 }

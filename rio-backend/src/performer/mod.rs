@@ -177,9 +177,12 @@ where
             };
 
             // Parse the incoming bytes.
-            for byte in &buf[..unprocessed] {
-                state.parser.advance(&mut **terminal, *byte);
-            }
+            // for byte in &buf[..unprocessed] {
+            //     state.parser.advance(&mut **terminal, *byte);
+            // }
+
+            // Parse the incoming bytes.
+            state.parser.advance_bytes(&mut **terminal, &buf[..unprocessed]);
 
             processed += unprocessed;
             unprocessed = 0;
