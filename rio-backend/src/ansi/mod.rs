@@ -39,7 +39,7 @@ impl From<CursorShape> for char {
         match value {
             CursorShape::Underline => '_',
             CursorShape::Beam => '|',
-            _ => '▒',
+            _ => '▇',
         }
     }
 }
