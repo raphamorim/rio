@@ -54,11 +54,13 @@ impl<'a> Charmap<'a> {
     /// Returns a nominal glyph identifier for the specified codepoint.
     pub fn map(&self, codepoint: impl Into<u32>) -> GlyphId {
         let codepoint = codepoint.into();
-        let mut glyph_id = cmap::map(self.data, self.proxy.0, self.proxy.1, codepoint).unwrap_or(0);
+        let mut glyph_id =
+            cmap::map(self.data, self.proxy.0, self.proxy.1, codepoint).unwrap_or(0);
         // Remap U+0000..=U+00FF to U+F000..=U+F0FF for symbol encodings
         if glyph_id == 0 && self.proxy.2 && codepoint <= 0x00FF {
             glyph_id =
-                cmap::map(self.data, self.proxy.0, self.proxy.1, codepoint + 0xF000).unwrap_or(0);
+                cmap::map(self.data, self.proxy.0, self.proxy.1, codepoint + 0xF000)
+                    .unwrap_or(0);
         }
         glyph_id
     }

@@ -131,7 +131,11 @@ impl<'a> LocalizedStrings<'a> {
     /// ## Iteration behavior
     /// This function searches the entire string collection without regard
     /// for the current state of the iterator.
-    pub fn find_by_id(&self, id: StringId, language: Option<&str>) -> Option<LocalizedString<'a>> {
+    pub fn find_by_id(
+        &self,
+        id: StringId,
+        language: Option<&str>,
+    ) -> Option<LocalizedString<'a>> {
         let mut first = None;
         let mut best = None;
         let raw_id = id.to_raw();
@@ -242,7 +246,8 @@ impl<'a> LocalizedString<'a> {
             };
         }
         let len = self.data.read_or_default::<u16>(self.offset + 8) as usize;
-        let offset = self.data.read_or_default::<u16>(self.offset + 10) as usize + self.storage;
+        let offset =
+            self.data.read_or_default::<u16>(self.offset + 10) as usize + self.storage;
         Chars {
             record: *self,
             bytes: if encoding == Encoding::MacRoman {

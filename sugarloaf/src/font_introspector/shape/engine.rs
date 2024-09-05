@@ -41,16 +41,19 @@ impl<'a> Engine<'a> {
         lang: Option<Language>,
     ) -> Self {
         let data = Bytes::new(font_data);
-        let gdef = Gdef::from_offset(font_data, metadata.gdef).unwrap_or_else(Gdef::empty);
+        let gdef =
+            Gdef::from_offset(font_data, metadata.gdef).unwrap_or_else(Gdef::empty);
         let script_tag = script.to_opentype();
         let lang_tag = lang.map(|l| l.to_opentype()).flatten();
         let (gsub, stags) = if metadata.sub_mode == SubMode::Gsub {
-            at::StageOffsets::new(&data, metadata.gsub, script_tag, lang_tag).unwrap_or_default()
+            at::StageOffsets::new(&data, metadata.gsub, script_tag, lang_tag)
+                .unwrap_or_default()
         } else {
             (at::StageOffsets::default(), [0, 0])
         };
         let (gpos, ptags) = if metadata.pos_mode == PosMode::Gpos {
-            at::StageOffsets::new(&data, metadata.gpos, script_tag, lang_tag).unwrap_or_default()
+            at::StageOffsets::new(&data, metadata.gpos, script_tag, lang_tag)
+                .unwrap_or_default()
         } else {
             (at::StageOffsets::default(), [0, 0])
         };
@@ -199,7 +202,11 @@ impl<'a> Engine<'a> {
 /// Apple shaping.
 impl<'a> Engine<'a> {
     /// Converts a feature list into a sorted collection of AAT selectors.
-    pub fn collect_selectors(&self, features: &[(RawTag, u16)], selectors: &mut Vec<(u16, u16)>) {
+    pub fn collect_selectors(
+        &self,
+        features: &[(RawTag, u16)],
+        selectors: &mut Vec<(u16, u16)>,
+    ) {
         use internal::aat::morx::feature_from_tag;
         selectors.clear();
         for (tag, value) in features {

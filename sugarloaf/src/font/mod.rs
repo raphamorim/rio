@@ -7,6 +7,9 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
+use crate::font_introspector::proxy::CharmapProxy;
+use crate::font_introspector::text::cluster::{CharCluster, Status};
+use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
@@ -14,9 +17,6 @@ use rustc_hash::FxHashMap;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use crate::font_introspector::proxy::CharmapProxy;
-use crate::font_introspector::text::cluster::{CharCluster, Status};
-use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 
 pub use crate::font_introspector::{Style, Weight};
 

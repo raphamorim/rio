@@ -74,7 +74,7 @@ pub fn map(data: &[u8], subtable: u32, format: u8, codepoint: u32) -> Option<u16
                 let diff = (c - start) as usize * 2;
                 let id = b.read::<u16>(range_base + diff).unwrap_or(0);
                 return if id != 0 {
-                    Some((id as i32 + delta as i32) as u16)
+                    Some((id as i32 + delta) as u16)
                 } else {
                     Some(0)
                 };
@@ -267,7 +267,9 @@ pub fn map_variant(
             match codepoint.cmp(&value) {
                 Ordering::Less => hi = i,
                 Ordering::Greater => lo = i + 1,
-                Ordering::Equal => return Some(MapVariant::Variant(b.read_u16(rec + 3)?)),
+                Ordering::Equal => {
+                    return Some(MapVariant::Variant(b.read_u16(rec + 3)?))
+                }
             }
         }
     }

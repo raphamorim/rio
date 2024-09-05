@@ -154,7 +154,8 @@ pub fn decode(
     }
     state.trunc_16 = true;
     state.expand_alpha = true;
-    decode_data::<EmitRgba8>(&mut state, decomp, extra, target).ok_or(DecodeError::CorruptData)?;
+    decode_data::<EmitRgba8>(&mut state, decomp, extra, target)
+        .ok_or(DecodeError::CorruptData)?;
     Ok((w, h, state.has_alpha))
 }
 
@@ -345,9 +346,9 @@ fn decode_data<E: Emit>(
             let offset = y * (pitch + 1);
             let end = offset + pitch + 1;
             let source = decomp.get(offset..end)?;
-            let ty = *source.get(0)?;
+            let ty = *source.first()?;
             defilter(ty, source.get(1..)?, line, prev_line, bwidth)?;
-            E::emit(&state, line, target, 0, y, w, 1, w)?;
+            E::emit(state, line, target, 0, y, w, 1, w)?;
             std::mem::swap(&mut prev_line, &mut line);
         }
     } else {
@@ -355,7 +356,7 @@ fn decode_data<E: Emit>(
             let offset = y * (pitch + 1);
             let end = offset + pitch + 1;
             let source = decomp.get(offset..end)?;
-            let ty = *source.get(0)?;
+            let ty = *source.first()?;
             defilter(ty, source.get(1..)?, line, prev_line, bwidth)?;
             normalize(line, out_line, depth, has_palette, w, trunc_16)?;
             E::emit(&state, out_line, target, 0, y, w, 1, w)?;
@@ -371,7 +372,13 @@ const IS_LITTLE_ENDIAN: bool = true;
 #[cfg(not(target_endian = "little"))]
 const IS_LITTLE_ENDIAN: bool = false;
 
-fn defilter(ty: u8, source: &[u8], dest: &mut [u8], last: &[u8], bwidth: usize) -> Option<()> {
+fn defilter(
+    ty: u8,
+    source: &[u8],
+    dest: &mut [u8],
+    last: &[u8],
+    bwidth: usize,
+) -> Option<()> {
     let len = source.len();
     match ty {
         0 => {
@@ -385,7 +392,9 @@ fn defilter(ty: u8, source: &[u8], dest: &mut [u8], last: &[u8], bwidth: usize) 
             }
         }
         2 => {
-            for ((dest, source), last) in dest.iter_mut().zip(source.iter()).zip(last.iter()) {
+            for ((dest, source), last) in
+                dest.iter_mut().zip(source.iter()).zip(last.iter())
+            {
                 *dest = source.wrapping_add(*last);
             }
         }
@@ -404,8 +413,11 @@ fn defilter(ty: u8, source: &[u8], dest: &mut [u8], last: &[u8], bwidth: usize) 
                 dest[i] = source[i].wrapping_add(last[i]);
             }
             for i in bwidth..len {
-                dest[i] =
-                    source[i].wrapping_add(paeth(dest[i - bwidth], last[i], last[i - bwidth]));
+                dest[i] = source[i].wrapping_add(paeth(
+                    dest[i - bwidth],
+                    last[i],
+                    last[i - bwidth],
+                ));
             }
         }
         _ => return None,
@@ -591,5 +603,8 @@ fn get_u32be(buf: &[u8], offset: usize) -> u32 {
 }
 
 const fn chunk_name(bytes: &[u8; 4]) -> u32 {
-    (bytes[0] as u32) << 24 | (bytes[1] as u32) << 16 | (bytes[2] as u32) << 8 | bytes[3] as u32
+    (bytes[0] as u32) << 24
+        | (bytes[1] as u32) << 16
+        | (bytes[2] as u32) << 8
+        | bytes[3] as u32
 }

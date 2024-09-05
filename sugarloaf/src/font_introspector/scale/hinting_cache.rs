@@ -1,7 +1,8 @@
 use skrifa::{
     instance::{NormalizedCoord, Size},
     outline::{
-        HintingInstance, HintingMode, LcdLayout, OutlineGlyphCollection, OutlineGlyphFormat,
+        HintingInstance, HintingMode, LcdLayout, OutlineGlyphCollection,
+        OutlineGlyphFormat,
     },
 };
 /// We keep this small to enable a simple LRU cache with a linear
@@ -63,7 +64,10 @@ struct HintingEntry {
     serial: u64,
 }
 
-fn find_hinting_entry(entries: &mut Vec<HintingEntry>, key: &HintingKey) -> Option<(usize, bool)> {
+fn find_hinting_entry(
+    entries: &mut Vec<HintingEntry>,
+    key: &HintingKey,
+) -> Option<(usize, bool)> {
     let mut found_serial = u64::MAX;
     let mut found_index = 0;
     for (ix, entry) in entries.iter().enumerate() {

@@ -93,7 +93,8 @@ impl<'a> Fvar<'a> {
             return None;
         }
         let b = &self.data;
-        let base = self.axis_offset as usize + (self.axis_count as usize * self.axis_size as usize);
+        let base = self.axis_offset as usize
+            + (self.axis_count as usize * self.axis_size as usize);
         let offset = base + index as usize * self.inst_size as usize;
         let name_id = b.read::<u16>(offset)?;
         let values = b.read_array::<Fixed>(offset + 4, self.axis_count as usize)?;
@@ -146,8 +147,7 @@ impl VarAxis {
         };
         value = value.min(Fixed::ONE).max(-Fixed::ONE);
         value = avar
-            .map(|(data, avar)| adjust_axis(data, avar, self.index, value))
-            .flatten()
+            .and_then(|(data, avar)| adjust_axis(data, avar, self.index, value))
             .unwrap_or(value);
         value.to_f2dot14()
     }
@@ -240,7 +240,8 @@ pub fn adjust_axis(data: &[u8], avar: u32, axis: u16, coord: Fixed) -> Option<Fi
         return None;
     }
     let avar =
-        skrifa::raw::tables::avar::Avar::read(FontData::new(data.get(avar as usize..)?)).ok()?;
+        skrifa::raw::tables::avar::Avar::read(FontData::new(data.get(avar as usize..)?))
+            .ok()?;
     let mapping = avar
         .axis_segment_maps()
         .get(axis as usize)

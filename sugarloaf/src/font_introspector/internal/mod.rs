@@ -23,7 +23,10 @@ pub type RawTag = u32;
 
 /// Returns a tag value for the specified four bytes.
 pub const fn raw_tag(bytes: &[u8; 4]) -> RawTag {
-    (bytes[0] as u32) << 24 | (bytes[1] as u32) << 16 | (bytes[2] as u32) << 8 | bytes[3] as u32
+    (bytes[0] as u32) << 24
+        | (bytes[1] as u32) << 16
+        | (bytes[2] as u32) << 8
+        | bytes[3] as u32
 }
 
 /// Functions for checking the validity of a font file and extracting

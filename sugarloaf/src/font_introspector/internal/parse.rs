@@ -106,7 +106,11 @@ impl<'a> Bytes<'a> {
 
     /// Reads an array of values of the specified type and length at some
     /// offset.
-    pub fn read_array<T: FromBeData>(&self, offset: usize, len: usize) -> Option<Array<'a, T>> {
+    pub fn read_array<T: FromBeData>(
+        &self,
+        offset: usize,
+        len: usize,
+    ) -> Option<Array<'a, T>> {
         let len = len * T::SIZE;
         if !self.check_range(offset, len) {
             return None;
@@ -453,7 +457,8 @@ impl FromBeData for u16 {
                 .read_unaligned()
                 .swap_bytes()
         } else {
-            (*buf.get_unchecked(offset) as u16) << 8 | *buf.get_unchecked(offset + 1) as u16
+            (*buf.get_unchecked(offset) as u16) << 8
+                | *buf.get_unchecked(offset + 1) as u16
         }
     }
 }

@@ -169,7 +169,8 @@ impl LookupData {
     pub fn subtable_data(&self, b: &Bytes, index: u16) -> Option<SubtableData> {
         let base = self.offset as usize;
         let subtable_base = base + 6;
-        let mut offset = base + b.read::<u16>(subtable_base + index as usize * 2)? as usize;
+        let mut offset =
+            base + b.read::<u16>(subtable_base + index as usize * 2)? as usize;
         if self.is_ext {
             offset = offset + b.read::<u32>(offset + 4)? as usize;
         }
@@ -235,7 +236,8 @@ impl FeatureSubsts {
             let condset_count = b.read::<u16>(condset_table)? as usize;
             let mut matched = 0;
             for j in 0..condset_count {
-                let cond_table = condset_table + b.read::<u32>(condset_table + 2 + j * 4)? as usize;
+                let cond_table =
+                    condset_table + b.read::<u32>(condset_table + 2 + j * 4)? as usize;
                 let format = b.read::<u16>(cond_table)?;
                 if format != 1 {
                     break;
@@ -350,7 +352,11 @@ pub fn script_default_language(b: &Bytes, script_offset: u32) -> Option<u32> {
     }
 }
 
-pub fn script_language_at(b: &Bytes, script_offset: u32, index: u16) -> Option<(RawTag, u32)> {
+pub fn script_language_at(
+    b: &Bytes,
+    script_offset: u32,
+    index: u16,
+) -> Option<(RawTag, u32)> {
     if script_offset == 0 {
         return None;
     }
@@ -603,7 +609,7 @@ pub fn lookup_data(
             _ => return None,
         }
     };
-    let ignored = ((f as u8) & 0b1110) | 1 << 5;
+    let ignored = (f & 0b1110) | 1 << 5;
     Some(LookupData {
         index,
         stage,
@@ -622,7 +628,12 @@ pub fn lookup_data(
     })
 }
 
-pub fn subtable_data(b: &Bytes, offset: u32, kind: LookupKind, fmt: u16) -> Option<SubtableData> {
+pub fn subtable_data(
+    b: &Bytes,
+    offset: u32,
+    kind: LookupKind,
+    fmt: u16,
+) -> Option<SubtableData> {
     let base = offset as usize;
     fn cov(b: &Bytes, base: usize, offset: usize) -> Option<u16> {
         let c = b.read::<u16>(base + offset)?;
@@ -849,7 +860,11 @@ pub fn validate_coverage(b: &Bytes, coverage_offset: u32) -> Option<()> {
     }
 }
 
-pub unsafe fn fast_coverage(b: &Bytes, coverage_offset: u32, glyph_id: u16) -> Option<u16> {
+pub unsafe fn fast_coverage(
+    b: &Bytes,
+    coverage_offset: u32,
+    glyph_id: u16,
+) -> Option<u16> {
     let base = coverage_offset as usize;
     let fmt = b.read_unchecked::<u16>(base);
     let len = b.read_unchecked::<u16>(base + 2) as usize;

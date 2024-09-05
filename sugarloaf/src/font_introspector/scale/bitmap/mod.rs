@@ -5,7 +5,11 @@
 mod png;
 
 /// Decodes a PNG image.
-pub fn decode_png(data: &[u8], scratch: &mut Vec<u8>, target: &mut [u8]) -> Option<(u32, u32)> {
+pub fn decode_png(
+    data: &[u8],
+    scratch: &mut Vec<u8>,
+    target: &mut [u8],
+) -> Option<(u32, u32)> {
     png::decode(data, scratch, target)
         .map(|(w, h, _)| (w, h))
         .ok()
@@ -137,7 +141,7 @@ pub fn resize(
             target_height,
             scratch,
             1.,
-            &|x| bilinear(x),
+            &bilinear,
         ),
         Bicubic => resample(
             image,
@@ -149,7 +153,7 @@ pub fn resize(
             target_height,
             scratch,
             2.,
-            &|x| bicubic(x),
+            &bicubic,
         ),
         Mitchell => resample(
             image,
@@ -161,7 +165,7 @@ pub fn resize(
             target_height,
             scratch,
             2.,
-            &|x| mitchell(x),
+            &mitchell,
         ),
         Lanczos3 => resample(
             image,
@@ -173,7 +177,7 @@ pub fn resize(
             target_height,
             scratch,
             3.,
-            &|x| lanczos3(x),
+            &lanczos3,
         ),
         Gaussian => resample(
             image,
@@ -375,7 +379,9 @@ fn bicubic(x: f32) -> f32 {
     let b = 0.;
     let c = 0.5;
     let k = if a < 1. {
-        (12. - 9. * b - 6. * c) * a.powi(3) + (-18. + 12. * b + 6. * c) * a.powi(2) + (6. - 2. * b)
+        (12. - 9. * b - 6. * c) * a.powi(3)
+            + (-18. + 12. * b + 6. * c) * a.powi(2)
+            + (6. - 2. * b)
     } else if a < 2. {
         (-b - 6. * c) * a.powi(3)
             + (6. * b + 30. * c) * a.powi(2)
@@ -403,5 +409,6 @@ fn nearest(_x: f32) -> f32 {
 }
 
 fn gaussian(x: f32, r: f32) -> f32 {
-    ((2. * std::f32::consts::PI).sqrt() * r).recip() * (-x.powi(2) / (2. * r.powi(2))).exp()
+    ((2. * std::f32::consts::PI).sqrt() * r).recip()
+        * (-x.powi(2) / (2. * r.powi(2))).exp()
 }

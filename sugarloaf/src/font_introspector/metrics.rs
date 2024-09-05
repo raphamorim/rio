@@ -47,7 +47,11 @@ impl MetricsProxy {
     /// Materializes font metrics for the specified font and
     /// normalized variation coordinates. This proxy must have been created
     /// from the same font.
-    pub fn materialize_metrics(&self, font: &FontRef, coords: &[NormalizedCoord]) -> Metrics {
+    pub fn materialize_metrics(
+        &self,
+        font: &FontRef,
+        coords: &[NormalizedCoord],
+    ) -> Metrics {
         let data = font.data;
         let mut m = Metrics {
             units_per_em: self.units_per_em,
@@ -410,7 +414,8 @@ impl<'a> GlyphMetrics<'a> {
                     long_count,
                     ..
                 } => {
-                    let mut v = xmtx::advance(self.data, vmtx, long_count, glyph_id) as f32;
+                    let mut v =
+                        xmtx::advance(self.data, vmtx, long_count, glyph_id) as f32;
                     if vvar != 0 {
                         v += var::advance_delta(self.data, vvar, glyph_id, self.coords);
                     }
@@ -456,15 +461,18 @@ impl<'a> GlyphMetrics<'a> {
                     glyf,
                     ..
                 } => {
-                    if let Some(max_y) = glyf::ymax(self.data, loca_fmt, loca, glyf, glyph_id) {
+                    if let Some(max_y) =
+                        glyf::ymax(self.data, loca_fmt, loca, glyf, glyph_id)
+                    {
                         max_y as f32 + self.tsb(glyph_id)
                     } else {
                         self.units_per_em as f32
                     }
                 }
-                Vertical::VmtxVorg { vorg, .. } => vorg::origin(self.data, vorg, glyph_id)
-                    .unwrap_or(self.units_per_em as i16)
-                    as f32,
+                Vertical::VmtxVorg { vorg, .. } => {
+                    vorg::origin(self.data, vorg, glyph_id)
+                        .unwrap_or(self.units_per_em as i16) as f32
+                }
                 Vertical::Synthesized { origin, .. } => origin,
             }
     }

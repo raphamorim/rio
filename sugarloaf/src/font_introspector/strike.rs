@@ -158,7 +158,11 @@ impl<'a> BitmapStrikes<'a> {
     /// ## Iteration behavior
     /// This function searches the entire strike collection without regard
     /// for the current state of the iterator.
-    pub fn find_by_nearest_ppem(&self, ppem: u16, glyph_id: GlyphId) -> Option<BitmapStrike<'a>> {
+    pub fn find_by_nearest_ppem(
+        &self,
+        ppem: u16,
+        glyph_id: GlyphId,
+    ) -> Option<BitmapStrike<'a>> {
         let mut best = None;
         let mut best_size = 0;
         for i in 0..self.len {
@@ -188,7 +192,11 @@ impl<'a> BitmapStrikes<'a> {
     /// ## Iteration behavior
     /// This function searches the entire strike collection without regard
     /// for the current state of the iterator.
-    pub fn find_by_exact_ppem(&self, ppem: u16, glyph_id: GlyphId) -> Option<BitmapStrike<'a>> {
+    pub fn find_by_exact_ppem(
+        &self,
+        ppem: u16,
+        glyph_id: GlyphId,
+    ) -> Option<BitmapStrike<'a>> {
         for i in 0..self.len {
             let strike = match self.get(i) {
                 Some(strike) => strike,
@@ -417,17 +425,17 @@ impl<'a> Bitmap<'a> {
         match self.format {
             BitmapFormat::Packed(bits) => match bits {
                 1 => {
-                    for x in 0..(w * h) as usize {
+                    for x in 0..(w * h) {
                         dst[x] = (src[x >> 3] >> (!x & 7) & 1) * 255;
                     }
                 }
                 2 => {
-                    for x in 0..(w * h) as usize {
+                    for x in 0..(w * h) {
                         dst[x] = (src[x >> 2] >> (!(x * 2) & 2) & 3) * 85;
                     }
                 }
                 4 => {
-                    for x in 0..(w * h) as usize {
+                    for x in 0..(w * h) {
                         dst[x] = (src[x >> 1] >> (!(x * 4) & 4) & 15) * 17;
                     }
                 }
@@ -440,7 +448,7 @@ impl<'a> Bitmap<'a> {
                 1 => {
                     let mut dst_idx = 0;
                     for row in src.chunks(((w * bits as usize) + 7) / 8) {
-                        for x in 0..w as usize {
+                        for x in 0..w {
                             dst[dst_idx] = (row[x >> 3] >> (!x & 7) & 1) * 255;
                             dst_idx += 1;
                         }
@@ -449,7 +457,7 @@ impl<'a> Bitmap<'a> {
                 2 => {
                     let mut dst_idx = 0;
                     for row in src.chunks(((w * bits as usize) + 7) / 8) {
-                        for x in 0..w as usize {
+                        for x in 0..w {
                             dst[dst_idx] = (row[x >> 2] >> (!(x * 2) & 2) & 3) * 85;
                             dst_idx += 1;
                         }
@@ -458,7 +466,7 @@ impl<'a> Bitmap<'a> {
                 4 => {
                     let mut dst_idx = 0;
                     for row in src.chunks(((w * bits as usize) + 7) / 8) {
-                        for x in 0..w as usize {
+                        for x in 0..w {
                             dst[dst_idx] = (row[x >> 1] >> (!(x * 4) & 4) & 15) * 17;
                             dst_idx += 1;
                         }
@@ -505,12 +513,22 @@ struct Location {
 #[cfg(feature = "scale")]
 impl Location {
     /// Gets a bitmap from this location in the specified data source.
-    pub fn get<'a>(&self, data: &'a [u8], upem: u16, is_apple: bool) -> Option<Bitmap<'a>> {
+    pub fn get<'a>(
+        &self,
+        data: &'a [u8],
+        upem: u16,
+        is_apple: bool,
+    ) -> Option<Bitmap<'a>> {
         Bitmap::new(&get_data(data, self)?, upem, is_apple)
     }
 }
 
-fn get_coverage(table: &[u8], strike_base: usize, is_sbix: bool, glyph_id: u16) -> Option<bool> {
+fn get_coverage(
+    table: &[u8],
+    strike_base: usize,
+    is_sbix: bool,
+    glyph_id: u16,
+) -> Option<bool> {
     if is_sbix {
         return Some(sbix_range(table, strike_base, glyph_id, 0).is_some());
     }
@@ -605,8 +623,8 @@ fn get_location(
         };
         match index_format {
             1 => {
-                loc.offset =
-                    image_offset + d.read::<u32>(base + (glyph_id - first) as usize * 4)?;
+                loc.offset = image_offset
+                    + d.read::<u32>(base + (glyph_id - first) as usize * 4)?;
                 return Some(loc);
             }
             2 => {
@@ -625,8 +643,8 @@ fn get_location(
                 return Some(loc);
             }
             3 => {
-                loc.offset =
-                    image_offset + d.read::<u16>(base + (glyph_id - first) as usize * 2)? as u32;
+                loc.offset = image_offset
+                    + d.read::<u16>(base + (glyph_id - first) as usize * 2)? as u32;
                 return Some(loc);
             }
             4 => {
@@ -747,7 +765,12 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
     }
 }
 
-fn sbix_range(table: &[u8], strike_base: usize, glyph_id: u16, recurse: i32) -> Option<(u32, u32)> {
+fn sbix_range(
+    table: &[u8],
+    strike_base: usize,
+    glyph_id: u16,
+    recurse: i32,
+) -> Option<(u32, u32)> {
     const DUPE: RawTag = raw_tag(b"dupe");
     const PNG: RawTag = raw_tag(b"png ");
     if recurse > 1 {
@@ -791,7 +814,13 @@ struct BitmapData<'a> {
 
 #[cfg(feature = "scale")]
 impl<'a> BitmapData<'a> {
-    fn read_metrics(&mut self, d: &Bytes, offset: usize, flags: u8, big: bool) -> Option<()> {
+    fn read_metrics(
+        &mut self,
+        d: &Bytes,
+        offset: usize,
+        flags: u8,
+        big: bool,
+    ) -> Option<()> {
         let (w, h) = get_metrics(
             d,
             offset,

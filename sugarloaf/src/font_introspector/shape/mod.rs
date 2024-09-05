@@ -257,8 +257,8 @@ mod feature;
 use cluster::*;
 
 use super::{
-    cache::FontCache, charmap::Charmap, internal, metrics::Metrics, setting::Setting, FontRef,
-    NormalizedCoord,
+    cache::FontCache, charmap::Charmap, internal, metrics::Metrics, setting::Setting,
+    FontRef, NormalizedCoord,
 };
 use crate::font_introspector::text::{
     cluster::{CharCluster, Parser, ShapeClass, Token},

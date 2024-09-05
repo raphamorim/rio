@@ -64,7 +64,9 @@ impl Language {
                             lang.language[1] = b;
                             lang.lang_len = 2;
                             let key = tag2(&[a, b]);
-                            if let Ok(index) = LANG_BY_TAG2.binary_search_by(|x| x.0.cmp(&key)) {
+                            if let Ok(index) =
+                                LANG_BY_TAG2.binary_search_by(|x| x.0.cmp(&key))
+                            {
                                 lang_index = (*LANG_BY_TAG2.get(index)?).1
                             }
                         }
@@ -78,7 +80,9 @@ impl Language {
                             lang.language[2] = c;
                             lang.lang_len = 3;
                             let key = tag3(&[a, b, c]);
-                            if let Ok(index) = LANG_BY_TAG3.binary_search_by(|x| x.0.cmp(&key)) {
+                            if let Ok(index) =
+                                LANG_BY_TAG3.binary_search_by(|x| x.0.cmp(&key))
+                            {
                                 lang_index = (*LANG_BY_TAG3.get(index)?).1 as u16
                             }
                         }
@@ -157,7 +161,9 @@ impl Language {
 
     /// Returns the language component.
     pub fn language(&self) -> &str {
-        unsafe { core::str::from_utf8_unchecked(&self.language[..self.lang_len as usize]) }
+        unsafe {
+            core::str::from_utf8_unchecked(&self.language[..self.lang_len as usize])
+        }
     }
 
     /// Returns the script component.

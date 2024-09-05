@@ -92,7 +92,10 @@ impl<'a> Variations<'a> {
 
     /// Returns an iterator over the set of normalized coordinates
     /// corresponding to the specified variation settings.
-    pub fn normalized_coords<I>(&self, settings: I) -> impl Iterator<Item = NormalizedCoord> + Clone
+    pub fn normalized_coords<I>(
+        &self,
+        settings: I,
+    ) -> impl Iterator<Item = NormalizedCoord> + Clone
     where
         I: IntoIterator,
         I::Item: Into<Setting<f32>>,

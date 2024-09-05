@@ -57,8 +57,9 @@ pub fn lookup<T: FromBeData>(data: &Bytes, offset: usize, id: u16) -> Option<T> 
                     h = i;
                 } else {
                     let index = (id - first) as usize;
-                    let value_offset =
-                        data.read::<u16>(rec + 4)? as usize + offset + index * element_size;
+                    let value_offset = data.read::<u16>(rec + 4)? as usize
+                        + offset
+                        + index * element_size;
                     return data.read::<T>(value_offset);
                 }
             }
@@ -206,8 +207,8 @@ impl<'a> StateTable<'a> {
         let mut entry = self
             .data
             .read::<Entry<T>>(self.entry_table as usize + entry_offset)?;
-        let new_state =
-            (entry.new_state as u32).checked_sub(self.state_array)? / self.class_count as u32;
+        let new_state = (entry.new_state as u32).checked_sub(self.state_array)?
+            / self.class_count as u32;
         entry.new_state = new_state as u16;
         Some(entry)
     }
@@ -243,7 +244,8 @@ pub mod morx {
     /// Returns an iterator over the chains in a `morx` table at the
     /// specified offset.
     pub fn chains<'a>(data: &'a [u8], offset: u32) -> Chains<'a> {
-        let data = Bytes::with_offset(data, offset as usize).unwrap_or_else(|| Bytes::new(&[]));
+        let data =
+            Bytes::with_offset(data, offset as usize).unwrap_or_else(|| Bytes::new(&[]));
         let len = data.read_u32(4).unwrap_or(0);
         Chains {
             data,
@@ -679,7 +681,8 @@ pub mod morx {
                     }
                 }
                 if entry.data.current_index != 0xFFFF {
-                    if let Some(g) = self.lookup(entry.data.current_index, last_glyph_id) {
+                    if let Some(g) = self.lookup(entry.data.current_index, last_glyph_id)
+                    {
                         f(index, g)?;
                         current_glyph_id = g;
                     }
@@ -813,7 +816,11 @@ pub mod morx {
                         ligature_index += component as u32;
                         if action & (LAST | STORE) != 0 {
                             let ligature = self.ligature(ligature_index)?;
-                            f(glyph_index, ligature, state.indices.get(pos + 1..end_pos)?)?;
+                            f(
+                                glyph_index,
+                                ligature,
+                                state.indices.get(pos + 1..end_pos)?,
+                            )?;
                             state.glyphs[pos] = ligature;
                             pos += 1;
                         }
@@ -958,7 +965,8 @@ pub mod morx {
                 } else {
                     working_index + 1
                 };
-                let glyphs = self.current_glyphs(entry.flags, entry.data.current_index)?;
+                let glyphs =
+                    self.current_glyphs(entry.flags, entry.data.current_index)?;
                 current_inserted = glyphs.len();
                 f(base, glyphs)?;
             }
@@ -1203,7 +1211,12 @@ pub mod kerx {
     }
 
     impl<'a> Subtable<'a> {
-        fn new(data: &Bytes<'a>, offset: usize, version: u16, ankr: &'a [u8]) -> Option<Self> {
+        fn new(
+            data: &Bytes<'a>,
+            offset: usize,
+            version: u16,
+            ankr: &'a [u8],
+        ) -> Option<Self> {
             let data = Bytes::with_offset(data.data(), offset)?;
             let size = data.read_u32(0)?;
             let coverage = data.read_u32(4)?;
@@ -1473,9 +1486,12 @@ pub mod kerx {
                     1 => {
                         let mark_index = self.data.read_u16(offset)?;
                         let cur_index = self.data.read_u16(offset + 2)?;
-                        if let Some((x, y)) =
-                            self.anchor_offset(mark_index, state.mark_id, cur_index, glyph_id)
-                        {
+                        if let Some((x, y)) = self.anchor_offset(
+                            mark_index,
+                            state.mark_id,
+                            cur_index,
+                            glyph_id,
+                        ) {
                             let diff = index - state.mark;
                             if diff < 255 {
                                 f(index, diff, x, y);
