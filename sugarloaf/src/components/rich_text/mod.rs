@@ -486,19 +486,19 @@ fn draw_layout(
         let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        // if let Some(data) = draw_layout_cache.get(&hash) {
-        //     comp.draw_cached_run(
-        //         data,
-        //         px,
-        //         py,
-        //         depth,
-        //         rect,
-        //         line,
-        //         &mut last_rendered_graphic,
-        //         graphics,
-        //     );
-        //     continue;
-        // }
+        if let Some(data) = draw_layout_cache.get(&hash) {
+            comp.draw_cached_run(
+                data,
+                px,
+                py,
+                depth,
+                rect,
+                line,
+                &mut last_rendered_graphic,
+                graphics,
+            );
+            continue;
+        }
 
         let mut cached_line_runs = Vec::new();
         for run in line.runs() {
@@ -617,7 +617,7 @@ fn fetch_dimensions(
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
-        &current_font_coords,
+        current_font_coords,
         current_font_size,
     );
 
