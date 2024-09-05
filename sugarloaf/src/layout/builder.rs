@@ -178,7 +178,8 @@ impl<'a> ParagraphBuilder<'a> {
                 false
             } else {
                 // style.font_size != prev_style.font_size
-                style.letter_spacing != prev_style.letter_spacing
+                style.letter_spacing != prev_style.letter_spacing ||
+                style.cursor != prev_style.cursor
                     // || style.lang != prev_style.lang
                     // || style.font_features != prev_style.font_features
                     // || style.font_attrs != prev_style.font_attrs
