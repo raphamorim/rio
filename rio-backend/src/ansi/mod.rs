@@ -1,4 +1,5 @@
 use bitflags::bitflags;
+use serde::{Deserialize, Serialize};
 
 pub mod charset;
 pub mod control;
@@ -6,14 +7,20 @@ pub mod graphics;
 pub mod mode;
 pub mod sixel;
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, Eq, PartialEq)]
 pub enum CursorShape {
     /// Cursor is a block like `▒`.
+    #[default]
+    #[serde(alias = "block")]
     Block,
     /// Cursor is an underscore like `_`.
+    #[serde(alias = "underline")]
     Underline,
     /// Cursor is a vertical bar `⎸`.
+    #[serde(alias = "beam")]
     Beam,
+    /// Cursor is hidden.
+    #[serde(alias = "hidden")]
     Hidden,
 }
 
@@ -23,6 +30,16 @@ impl CursorShape {
             '_' => CursorShape::Underline,
             '|' => CursorShape::Beam,
             _ => CursorShape::Block,
+        }
+    }
+}
+
+impl From<CursorShape> for char {
+    fn from(value: CursorShape) -> Self {
+        match value {
+            CursorShape::Underline => '_',
+            CursorShape::Beam => '|',
+            _ => '▇',
         }
     }
 }

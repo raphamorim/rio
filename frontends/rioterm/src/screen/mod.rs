@@ -210,7 +210,7 @@ impl Screen<'_> {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            (&renderer.get_cursor_state(), config.blinking_cursor),
+            (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
@@ -330,7 +330,7 @@ impl Screen<'_> {
             let cursor = self.renderer.get_cursor_state_from_ref().content;
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
-            terminal.blinking_cursor = config.blinking_cursor;
+            terminal.blinking_cursor = config.cursor.blinking;
             drop(terminal);
         }
 
