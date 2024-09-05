@@ -68,11 +68,6 @@ pub fn default_log_level() -> String {
 }
 
 #[inline]
-pub fn default_log_file() -> String {
-    String::from("rio.log")
-}
-
-#[inline]
 pub fn default_cursor() -> char {
     '▇'
 }
