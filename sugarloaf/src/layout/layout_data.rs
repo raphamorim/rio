@@ -9,7 +9,7 @@
 use super::render_data::*;
 use super::Glyph;
 use crate::layout::FragmentStyle;
-use swash::text::cluster::ClusterInfo;
+use crate::font_introspector::text::cluster::ClusterInfo;
 
 /// Cluster represents multiple glyphs.
 pub const CLUSTER_DETAILED: u8 = 1;

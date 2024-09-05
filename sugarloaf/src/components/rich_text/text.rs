@@ -11,7 +11,7 @@
 
 use crate::layout::FragmentStyleDecoration;
 use crate::sugarloaf::primitives::SugarCursor;
-use swash::{FontRef, GlyphId, NormalizedCoord};
+use crate::font_introspector::{FontRef, GlyphId, NormalizedCoord};
 
 /// Properties for a text run.
 #[derive(Copy, Clone)]

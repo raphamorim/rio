@@ -2796,8 +2796,8 @@ dependencies = [
  "rio-window",
  "rustc-hash 2.0.0",
  "serde",
+ "skrifa",
  "slotmap",
- "swash",
  "tinyvec",
  "ttf-parser 0.21.1",
  "twox-hash",
@@ -2808,6 +2808,8 @@ dependencies = [
  "web-sys",
  "wgpu",
  "xi-unicode",
+ "yazi",
+ "zeno",
 ]
 
 [[package]]
@@ -2815,17 +2817,6 @@ name = "svg_fmt"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20e16a0f46cf5fd675563ef54f26e83e20f2366bcf027bcb3cc3ed2b98aaf2ca"
-
-[[package]]
-name = "swash"
-version = "0.1.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93cdc334a50fcc2aa3f04761af3b28196280a6aaadb1ef11215c478ae32615ac"
-dependencies = [
- "skrifa",
- "yazi",
- "zeno",
-]
 
 [[package]]
 name = "syn"
