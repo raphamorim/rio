@@ -343,7 +343,7 @@ impl Screen<'_> {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.demand_render();
+        self.render();
         self.resize_all_contexts();
     }
 
@@ -357,7 +357,7 @@ impl Screen<'_> {
 
         self.sugarloaf.update_font_size(action);
 
-        self.demand_render();
+        self.render();
         self.resize_all_contexts();
     }
 
@@ -383,7 +383,7 @@ impl Screen<'_> {
         self.render();
         self.resize_all_contexts();
 
-        self.demand_render();
+        self.render();
 
         self
     }
@@ -513,7 +513,7 @@ impl Screen<'_> {
                 self.search_input(character);
             }
 
-            self.demand_render();
+            self.render();
             return;
         }
 
@@ -673,52 +673,52 @@ impl Screen<'_> {
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
                         self.confirm_search();
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
                         self.cancel_search();
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
                         self.cancel_search();
                         self.start_search(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchFocusNext) => {
                         self.advance_search_origin(self.search_state.direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchFocusPrevious) => {
                         let direction = self.search_state.direction.opposite();
                         self.advance_search_origin(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchDeleteWord) => {
                         self.search_pop_word();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchHistoryPrevious) => {
                         self.search_history_previous();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchHistoryNext) => {
                         self.search_history_next();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ToggleViMode => {
                         let mut terminal =
@@ -727,7 +727,7 @@ impl Screen<'_> {
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ViMotion(motion) => {
                         let mut terminal =
@@ -740,7 +740,7 @@ impl Screen<'_> {
                             self.renderer.set_selection(selection.to_range(&terminal));
                         };
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
                         let mut terminal =
@@ -756,19 +756,19 @@ impl Screen<'_> {
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
@@ -792,7 +792,7 @@ impl Screen<'_> {
                         let num_tabs = self.ctx().len();
                         self.cancel_search();
                         self.resize_top_or_bottom_line(num_tabs);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
@@ -805,7 +805,7 @@ impl Screen<'_> {
 
                         let num_tabs = self.ctx().len().wrapping_sub(1);
                         self.resize_top_or_bottom_line(num_tabs);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::TabCloseUnfocused => {
                         self.clear_selection();
@@ -815,7 +815,7 @@ impl Screen<'_> {
                         }
                         self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Quit => {
                         self.context_manager.quit();
@@ -838,7 +838,7 @@ impl Screen<'_> {
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
@@ -851,7 +851,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
@@ -864,7 +864,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
@@ -877,7 +877,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollToTop => {
                         let mut terminal =
@@ -888,7 +888,7 @@ impl Screen<'_> {
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollToBottom => {
                         let mut terminal =
@@ -902,21 +902,21 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Scroll(delta) => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ClearHistory => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::Minimize => {
@@ -932,24 +932,24 @@ impl Screen<'_> {
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
                         self.cancel_search();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectLastTab => {
                         self.cancel_search();
                         self.context_manager.select_last_tab();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectNextTab => {
                         self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_next();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_prev();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -1895,14 +1895,9 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn demand_render(&mut self) {
-        self.update_content();
-        self.render();
-    }
-
-    pub fn update_content(&mut self) {
-        // let start = std::time::Instant::now();
-        // println!("update_content time elapsed");
+    pub fn render(&mut self) {
+        let start = std::time::Instant::now();
+        println!("render time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1949,14 +1944,6 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        // let duration = start.elapsed();
-        // println!("Total update_content is: {:?}\n", duration);
-    }
-
-    #[inline]
-    pub fn render(&mut self) {
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
 
         self.sugarloaf.render();
 
@@ -1967,7 +1954,7 @@ impl Screen<'_> {
             self.context_manager.schedule_render_on_route(800);
         }
 
-        // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
+        let duration = start.elapsed();
+        println!("Total render is: {:?}\n", duration);
     }
 }

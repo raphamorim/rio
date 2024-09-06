@@ -106,7 +106,6 @@ impl ApplicationHandler<EventPayload> for Application {
                 for (_id, route) in self.router.routes.iter_mut() {
                     route.update_config(&self.config, &self.router.font_library);
 
-                    route.window.screen.update_content();
                     route.request_redraw();
                 }
             }
@@ -152,11 +151,13 @@ impl ApplicationHandler<EventPayload> for Application {
                         return;
                     }
 
-                    route.window.screen.update_content();
-                    route.window.has_updates = true;
                     if route.window.has_frame {
-                        route.request_redraw();
+                        route.window.screen.render();
+                    } else {
+                        route.window.has_updates = true;
                     }
+
+                    route.request_frame(&mut self.scheduler);
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
@@ -170,9 +171,11 @@ impl ApplicationHandler<EventPayload> for Application {
                     if route_id == route.window.screen.ctx().current_route() {
                         route.window.has_updates = true;
 
-                        route.window.screen.update_content();
                         if route.window.has_frame {
-                            route.request_redraw();
+                            route.window.screen.render();
+                        } else {
+                            route.window.has_updates = true;
+                            route.request_frame(&mut self.scheduler);
                         }
                     }
                 }
@@ -245,7 +248,6 @@ impl ApplicationHandler<EventPayload> for Application {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
-                        route.window.screen.update_content();
                         route.request_redraw();
                     } else {
                         route.quit();
@@ -619,7 +621,6 @@ impl ApplicationHandler<EventPayload> for Application {
                     }
 
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.update_content();
                     route.window.screen.context_manager.schedule_render(60);
                 }
             }
@@ -716,7 +717,6 @@ impl ApplicationHandler<EventPayload> for Application {
                                 route.window.screen.on_left_click(pos);
                             }
 
-                            route.window.screen.update_content();
                             route.request_redraw();
                         }
                         route.window.screen.process_mouse_bindings(button);
@@ -953,7 +953,6 @@ impl ApplicationHandler<EventPayload> for Application {
 
                         if route.window.screen.ime.preedit() != preedit.as_ref() {
                             route.window.screen.ime.set_preedit(preedit);
-                            route.window.screen.update_content();
                             if route.window.has_frame {
                                 route.request_redraw();
                             }
@@ -980,7 +979,6 @@ impl ApplicationHandler<EventPayload> for Application {
                 route.window.is_focused = focused;
 
                 if has_regained_focus {
-                    route.window.screen.update_content();
                     route.request_redraw();
                 }
 
@@ -1041,6 +1039,7 @@ impl ApplicationHandler<EventPayload> for Application {
                     }
                     RoutePath::Terminal => {
                         route.window.screen.render();
+                        route.request_frame(&mut self.scheduler);
                     }
                     RoutePath::ConfirmQuit => {
                         route
@@ -1049,8 +1048,6 @@ impl ApplicationHandler<EventPayload> for Application {
                             .render_dialog("Do you want to leave Rio?");
                     }
                 }
-
-                route.request_frame(&mut self.scheduler);
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
