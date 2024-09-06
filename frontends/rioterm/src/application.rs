@@ -135,14 +135,6 @@ impl ApplicationHandler<EventPayload> for Application {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EventPayload) {
         let window_id = event.window_id;
         match event.payload {
-            RioEventType::Frame => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.window.has_frame = true;
-                    if route.window.has_updates {
-                        route.request_redraw();
-                    }
-                }
-            }
             RioEventType::Rio(RioEvent::Render) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.renderer.disable_unfocused_render
@@ -163,29 +155,24 @@ impl ApplicationHandler<EventPayload> for Application {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        route.window.has_updates = true;
+                        if self.config.renderer.max_fps == 0 {
+                            route.request_redraw();
+                        } else {
+                            let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
 
-                        if route.window.has_frame {
-                            if self.config.renderer.max_fps == 0 {
-                                route.request_redraw();
-                            } else {
-                                let timer_id =
-                                    TimerId::new(Topic::RenderRoute, window_id);
-                                let event = EventPayload::new(
-                                    RioEventType::Rio(RioEvent::Render),
-                                    window_id,
+                            if !self.scheduler.scheduled(timer_id) {
+                                self.scheduler.schedule(
+                                    event,
+                                    Duration::from_millis(
+                                        1000 / self.config.renderer.max_fps,
+                                    ),
+                                    false,
+                                    timer_id,
                                 );
-
-                                if !self.scheduler.scheduled(timer_id) {
-                                    self.scheduler.schedule(
-                                        event,
-                                        Duration::from_millis(
-                                            1000 / self.config.renderer.max_fps,
-                                        ),
-                                        false,
-                                        timer_id,
-                                    );
-                                }
                             }
                         }
                     }
@@ -1061,7 +1048,6 @@ impl ApplicationHandler<EventPayload> for Application {
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
-                route.request_frame(&mut self.scheduler);
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
