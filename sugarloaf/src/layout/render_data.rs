@@ -11,15 +11,15 @@
 
 //! RenderData.
 use super::layout_data::*;
+use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
+use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
+use crate::font_introspector::{GlyphId, NormalizedCoord};
 use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
-use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use swash::text::cluster::{Boundary, ClusterInfo};
-use swash::{GlyphId, NormalizedCoord};
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Debug, Default)]

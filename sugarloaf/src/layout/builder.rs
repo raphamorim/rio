@@ -11,13 +11,13 @@
 use super::builder_data::*;
 use super::MAX_ID;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
+use crate::font_introspector::shape::ShapeContext;
+use crate::font_introspector::text::cluster::{CharCluster, CharInfo, Parser, Token};
+use crate::font_introspector::text::{analyze, Script};
+use crate::font_introspector::{Setting, Synthesis};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use rustc_hash::FxHashMap;
 use std::path::PathBuf;
-use swash::shape::ShapeContext;
-use swash::text::cluster::{CharCluster, CharInfo, Parser, Token};
-use swash::text::{analyze, Script};
-use swash::{Setting, Synthesis};
 
 pub struct RunCache {
     inner: FxHashMap<u64, RunCacheEntry>,
@@ -56,7 +56,7 @@ impl RunCache {
 pub struct LayoutContext {
     fcx: FontContext,
     fonts: FontLibrary,
-    font_features: Vec<swash::Setting<u16>>,
+    font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
@@ -83,7 +83,10 @@ impl LayoutContext {
     }
 
     #[inline]
-    pub fn set_font_features(&mut self, font_features: Vec<swash::Setting<u16>>) {
+    pub fn set_font_features(
+        &mut self,
+        font_features: Vec<crate::font_introspector::Setting<u16>>,
+    ) {
         self.font_features = font_features;
     }
 
@@ -124,7 +127,7 @@ impl LayoutContext {
 pub struct ParagraphBuilder<'a> {
     fcx: &'a mut FontContext,
     fonts: &'a FontLibrary,
-    font_features: &'a Vec<swash::Setting<u16>>,
+    font_features: &'a Vec<crate::font_introspector::Setting<u16>>,
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
     last_offset: u32,
@@ -394,7 +397,7 @@ fn shape_item(
     fonts: &FontLibrary,
     scx: &mut ShapeContext,
     state: &BuilderState,
-    font_features: &[swash::Setting<u16>],
+    font_features: &[crate::font_introspector::Setting<u16>],
     item: &ItemData,
     cluster: &mut CharCluster,
     render_data: &mut RenderData,

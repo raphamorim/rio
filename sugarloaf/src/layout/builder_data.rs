@@ -9,11 +9,11 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
+use crate::font_introspector::text::cluster::CharInfo;
+use crate::font_introspector::Setting;
+use crate::font_introspector::{Stretch, Style, Weight};
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
 use std::hash::{Hash, Hasher};
-use swash::text::cluster::CharInfo;
-use swash::Setting;
-use swash::{Stretch, Style, Weight};
 
 /// Data that describes a fragment.
 #[derive(Copy, Debug, Clone)]
@@ -245,9 +245,9 @@ impl Hash for FragmentStyle {
         self.font_attrs.0.hash(state);
         self.font_attrs.1.hash(state);
         match self.font_attrs.2 {
-            swash::Style::Normal => 0.hash(state),
-            swash::Style::Italic => 1.hash(state),
-            swash::Style::Oblique(_) => 2.hash(state),
+            crate::font_introspector::Style::Normal => 0.hash(state),
+            crate::font_introspector::Style::Italic => 1.hash(state),
+            crate::font_introspector::Style::Oblique(_) => 2.hash(state),
         };
 
         self.color[0].to_bits().hash(state);

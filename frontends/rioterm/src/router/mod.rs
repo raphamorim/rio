@@ -359,7 +359,6 @@ impl RouteWindow {
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder("Rio", config, None);
 
-        #[allow(deprecated)]
         let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
 
@@ -418,7 +417,6 @@ impl RouteWindow {
             startup_notify::reset_activation_token_env();
         }
 
-        #[allow(deprecated)]
         let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
 

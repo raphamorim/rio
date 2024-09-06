@@ -104,7 +104,7 @@ impl Renderer {
             is_vi_mode_enabled: false,
             is_blinking: false,
             last_typing: None,
-            config_has_blinking_enabled: config.blinking_cursor,
+            config_has_blinking_enabled: config.cursor.blinking,
             term_has_blinking_enabled: false,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -120,9 +120,9 @@ impl Renderer {
             dynamic_background,
             active_search: None,
             cursor: Cursor {
-                content: config.cursor,
-                content_ref: config.cursor,
-                state: CursorState::new(config.cursor),
+                content: config.cursor.shape.into(),
+                content_ref: config.cursor.shape.into(),
+                state: CursorState::new(config.cursor.shape.into()),
             },
             width_cache: FxHashMap::default(),
         }

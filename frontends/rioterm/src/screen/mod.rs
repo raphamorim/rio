@@ -210,7 +210,7 @@ impl Screen<'_> {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            (&renderer.get_cursor_state(), config.blinking_cursor),
+            (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
@@ -330,7 +330,7 @@ impl Screen<'_> {
             let cursor = self.renderer.get_cursor_state_from_ref().content;
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
-            terminal.blinking_cursor = config.blinking_cursor;
+            terminal.blinking_cursor = config.cursor.blinking;
             drop(terminal);
         }
 
@@ -1906,7 +1906,7 @@ impl Screen<'_> {
 
     pub fn update_content(&mut self) {
         // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
+        // println!("update_content time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {

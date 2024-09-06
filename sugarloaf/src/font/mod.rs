@@ -7,6 +7,9 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
+use crate::font_introspector::proxy::CharmapProxy;
+use crate::font_introspector::text::cluster::{CharCluster, Status};
+use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
@@ -14,11 +17,8 @@ use rustc_hash::FxHashMap;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use swash::proxy::CharmapProxy;
-use swash::text::cluster::{CharCluster, Status};
-use swash::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
 
-pub use swash::{Style, Weight};
+pub use crate::font_introspector::{Style, Weight};
 
 #[derive(Debug)]
 enum Inner {
@@ -46,7 +46,7 @@ pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
     library: &FontLibraryData,
-    spec_font_attr_opt: Option<&(swash::Style, bool)>,
+    spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
 ) -> Option<usize> {
     let mut font_id = None;
     for (current_font_id, font) in library.inner.iter().enumerate() {
@@ -66,7 +66,7 @@ pub fn lookup_for_font_match(
             // In case bold is required
             // It follows spec on Bold (>=700)
             // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
-            if spec_font_attr.1 && font.weight < swash::Weight(700) {
+            if spec_font_attr.1 && font.weight < crate::font_introspector::Weight(700) {
                 continue;
             }
         }
@@ -477,11 +477,11 @@ pub struct FontData {
     // Offset to the table directory
     offset: u32,
     // Cache key
-    key: CacheKey,
+    pub key: CacheKey,
     charmap_proxy: CharmapProxy,
-    pub weight: swash::Weight,
-    pub style: swash::Style,
-    pub stretch: swash::Stretch,
+    pub weight: crate::font_introspector::Weight,
+    pub style: crate::font_introspector::Style,
+    pub stretch: crate::font_introspector::Stretch,
     pub synth: Synthesis,
     pub is_emoji: bool,
 }
