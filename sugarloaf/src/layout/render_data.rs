@@ -10,6 +10,7 @@
 // underline_color, background_color, text color and other functionalities
 
 //! RenderData.
+use crate::layout::builder::ShaperCache;
 use super::layout_data::*;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
@@ -173,25 +174,23 @@ impl RenderData {
                 advance: cached_run.advance,
             });
         }
-
-        self.data.last_span = 0;
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
-        styles: &[FragmentStyle],
+        style: &FragmentStyle,
         font: &usize,
         size: f32,
         line: u32,
         hash: u64,
         shaper: Shaper<'_>,
+        shaper_cache: &mut ShaperCache
     ) {
         // In case is a new line,
         // then needs to recompute the span index again
         if line != self.last_line {
             self.last_line = line;
-            self.data.last_span = 0;
             self.last_cached_run.runs.clear();
         }
 
@@ -200,171 +199,171 @@ impl RenderData {
         self.data.coords.extend_from_slice(&coords);
 
         let coords_end = self.data.coords.len() as u32;
-        let mut clusters_start = self.data.clusters.len() as u32;
+        let clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
 
         let mut advance = 0.;
-        let mut last_span = self.data.last_span;
-        let mut span_data = &styles[last_span];
+        let span_data = &style;
 
-        shaper.shape_with(|c| {
-            if c.info.boundary() == Boundary::Mandatory {
-                if let Some(c) = self.data.clusters.last_mut() {
-                    c.flags |= CLUSTER_NEWLINE;
-                }
-            }
-
-            let span = c.data;
-            if span as usize != last_span {
-                span_data = &styles[last_span];
-                // Ensure that every run belongs to a single span.
-                let clusters_end = self.data.clusters.len() as u32;
-                if clusters_end != clusters_start {
-                    let run_data = RunData {
-                        span: styles[last_span],
-                        line,
-                        hash,
-                        font: *font,
-                        coords: (coords_start, coords_end),
-                        size,
-                        clusters: (clusters_start, clusters_end),
-                        ascent: metrics.ascent * span_data.line_spacing,
-                        descent: metrics.descent * span_data.line_spacing,
-                        leading: metrics.leading * span_data.line_spacing,
-                        strikeout_offset: metrics.strikeout_offset,
-                        strikeout_size: metrics.stroke_size,
-                        advance,
-                    };
-                    self.data.runs.push(run_data);
-                    let mut owned_clusters = Vec::with_capacity(
-                        (clusters_end - clusters_start).try_into().unwrap(),
-                    );
-                    for current_cluster in &self.data.clusters
-                        [clusters_start as usize..clusters_end as usize]
-                    {
-                        let mut detailed_clusters = Vec::with_capacity(2);
-                        let glyphs_data = if current_cluster.is_detailed() {
-                            let detail = &self.data.detailed_clusters
-                                [current_cluster.glyphs as usize];
-                            detailed_clusters.push(*detail);
-                            &self.data.glyphs
-                                [detail.glyphs.0 as usize..detail.glyphs.1 as usize]
-                        } else if current_cluster.is_empty() {
-                            &[]
-                        } else {
-                            &self.data.glyphs[current_cluster.glyphs as usize
-                                ..current_cluster.glyphs as usize + 1]
-                        };
-                        owned_clusters.push(CachedClusterData {
-                            info: current_cluster.info,
-                            flags: current_cluster.flags,
-                            len: current_cluster.len,
-                            offset: current_cluster.offset,
-                            glyphs: glyphs_data.to_vec(),
-                            details: detailed_clusters,
-                        });
+        if let Some(cached_glyph_clusters) = shaper_cache.shape_with() {
+            for c in cached_glyph_clusters {
+                if c.info.boundary() == Boundary::Mandatory {
+                    if let Some(c) = self.data.clusters.last_mut() {
+                        c.flags |= CLUSTER_NEWLINE;
                     }
-
-                    if let Some(graphic) = styles[last_span].media {
-                        self.graphics.insert(graphic.id);
-                    }
-
-                    self.last_cached_run.runs.push(CachedRunData {
-                        span: styles[last_span],
-                        line,
-                        hash,
-                        font: *font,
-                        coords: coords.to_owned(),
-                        size,
-                        clusters: owned_clusters,
-                        ascent: metrics.ascent * span_data.line_spacing,
-                        descent: metrics.descent * span_data.line_spacing,
-                        leading: metrics.leading * span_data.line_spacing,
-                        strikeout_offset: metrics.strikeout_offset,
-                        strikeout_size: metrics.stroke_size,
-                        advance,
-                    });
-                    clusters_start = clusters_end;
                 }
-                last_span = span as usize;
-            }
-            let mut glyphs_start = self.data.glyphs.len() as u32;
-            let mut cluster_advance = 0.;
-            for glyph in c.glyphs {
-                cluster_advance += glyph.advance;
-                self.push_glyph(glyph);
-            }
-            advance += cluster_advance;
-            let mut component_advance = cluster_advance;
-            let is_ligature = c.components.len() > 1;
-            let (len, base_flags) = if is_ligature {
-                let x = &c.components[0];
-                component_advance /= c.components.len() as f32;
-                ((x.end - x.start) as u8, CLUSTER_LIGATURE)
-            } else {
-                ((c.source.end - c.source.start) as u8, 0)
-            };
-            let glyphs_end = self.data.glyphs.len() as u32;
-            if glyphs_end - glyphs_start > 1 || is_ligature {
-                let detail_index = self.data.detailed_clusters.len() as u32;
-                self.data.detailed_clusters.push(DetailedClusterData {
-                    glyphs: (glyphs_start, glyphs_end),
-                    advance: component_advance,
-                });
-                let cluster = ClusterData {
-                    info: c.info,
-                    flags: base_flags | CLUSTER_DETAILED,
-                    len,
-                    offset: c.source.start,
-                    glyphs: detail_index,
-                };
-                self.data.clusters.push(cluster);
-            } else {
-                let flags = if glyphs_start == glyphs_end {
-                    glyphs_start = c.data;
-                    CLUSTER_EMPTY
+
+                let mut glyphs_start = self.data.glyphs.len() as u32;
+                let mut cluster_advance = 0.;
+                for glyph in &c.glyphs {
+                    cluster_advance += glyph.advance;
+                    self.push_glyph(&glyph);
+                }
+                advance += cluster_advance;
+                let mut component_advance = cluster_advance;
+                let is_ligature = c.components.len() > 1;
+                let (len, base_flags) = if is_ligature {
+                    let x = &c.components[0];
+                    component_advance /= c.components.len() as f32;
+                    ((x.end - x.start) as u8, CLUSTER_LIGATURE)
                 } else {
-                    base_flags
+                    ((c.source.end - c.source.start) as u8, 0)
                 };
-                let cluster = ClusterData {
-                    info: c.info,
-                    flags,
-                    len,
-                    offset: c.source.start,
-                    glyphs: glyphs_start,
-                };
-                self.data.clusters.push(cluster);
-            }
-            if base_flags != 0 {
-                // Emit continuations
-                for component in &c.components[1..] {
+                let glyphs_end = self.data.glyphs.len() as u32;
+                if glyphs_end - glyphs_start > 1 || is_ligature {
+                    let detail_index = self.data.detailed_clusters.len() as u32;
+                    self.data.detailed_clusters.push(DetailedClusterData {
+                        glyphs: (glyphs_start, glyphs_end),
+                        advance: component_advance,
+                    });
                     let cluster = ClusterData {
-                        info: Default::default(),
-                        flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
-                        len: (component.end - component.start) as u8,
-                        offset: component.start,
-                        glyphs: component_advance.to_bits(),
+                        info: c.info,
+                        flags: base_flags | CLUSTER_DETAILED,
+                        len,
+                        offset: c.source.start,
+                        glyphs: detail_index,
+                    };
+                    self.data.clusters.push(cluster);
+                } else {
+                    let flags = if glyphs_start == glyphs_end {
+                        glyphs_start = c.data;
+                        CLUSTER_EMPTY
+                    } else {
+                        base_flags
+                    };
+                    let cluster = ClusterData {
+                        info: c.info,
+                        flags,
+                        len,
+                        offset: c.source.start,
+                        glyphs: glyphs_start,
                     };
                     self.data.clusters.push(cluster);
                 }
+                if base_flags != 0 {
+                    // Emit continuations
+                    for component in &c.components[1..] {
+                        let cluster = ClusterData {
+                            info: Default::default(),
+                            flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
+                            len: (component.end - component.start) as u8,
+                            offset: component.start,
+                            glyphs: component_advance.to_bits(),
+                        };
+                        self.data.clusters.push(cluster);
+                    }
 
-                if let Some(c) = self.data.clusters.last_mut() {
-                    c.flags |= CLUSTER_LAST_CONTINUATION
+                    if let Some(c) = self.data.clusters.last_mut() {
+                        c.flags |= CLUSTER_LAST_CONTINUATION
+                    }
                 }
             }
-        });
+        } else {
+            shaper.shape_with(|c| {
+                shaper_cache.add_glyph_cluster(c);
+                if c.info.boundary() == Boundary::Mandatory {
+                    if let Some(c) = self.data.clusters.last_mut() {
+                        c.flags |= CLUSTER_NEWLINE;
+                    }
+                }
+
+                let mut glyphs_start = self.data.glyphs.len() as u32;
+                let mut cluster_advance = 0.;
+                for glyph in c.glyphs {
+                    cluster_advance += glyph.advance;
+                    self.push_glyph(glyph);
+                }
+                advance += cluster_advance;
+                let mut component_advance = cluster_advance;
+                let is_ligature = c.components.len() > 1;
+                let (len, base_flags) = if is_ligature {
+                    let x = &c.components[0];
+                    component_advance /= c.components.len() as f32;
+                    ((x.end - x.start) as u8, CLUSTER_LIGATURE)
+                } else {
+                    ((c.source.end - c.source.start) as u8, 0)
+                };
+                let glyphs_end = self.data.glyphs.len() as u32;
+                if glyphs_end - glyphs_start > 1 || is_ligature {
+                    let detail_index = self.data.detailed_clusters.len() as u32;
+                    self.data.detailed_clusters.push(DetailedClusterData {
+                        glyphs: (glyphs_start, glyphs_end),
+                        advance: component_advance,
+                    });
+                    let cluster = ClusterData {
+                        info: c.info,
+                        flags: base_flags | CLUSTER_DETAILED,
+                        len,
+                        offset: c.source.start,
+                        glyphs: detail_index,
+                    };
+                    self.data.clusters.push(cluster);
+                } else {
+                    let flags = if glyphs_start == glyphs_end {
+                        glyphs_start = c.data;
+                        CLUSTER_EMPTY
+                    } else {
+                        base_flags
+                    };
+                    let cluster = ClusterData {
+                        info: c.info,
+                        flags,
+                        len,
+                        offset: c.source.start,
+                        glyphs: glyphs_start,
+                    };
+                    self.data.clusters.push(cluster);
+                }
+                if base_flags != 0 {
+                    // Emit continuations
+                    for component in &c.components[1..] {
+                        let cluster = ClusterData {
+                            info: Default::default(),
+                            flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
+                            len: (component.end - component.start) as u8,
+                            offset: component.start,
+                            glyphs: component_advance.to_bits(),
+                        };
+                        self.data.clusters.push(cluster);
+                    }
+
+                    if let Some(c) = self.data.clusters.last_mut() {
+                        c.flags |= CLUSTER_LAST_CONTINUATION
+                    }
+                }
+            });
+        }
+        shaper_cache.finish();
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
             return;
         }
-        self.data.last_span = last_span;
-
-        if let Some(graphic) = styles[last_span].media {
+        if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
 
         let run_data = RunData {
-            span: styles[last_span],
+            span: *style,
             line,
             hash,
             font: *font,
@@ -406,7 +405,7 @@ impl RenderData {
             });
         }
         self.last_cached_run.runs.push(CachedRunData {
-            span: styles[last_span],
+            span: *style,
             line,
             hash,
             font: *font,
