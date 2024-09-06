@@ -12,7 +12,7 @@ pub fn default_line_height() -> f32 {
 
 #[inline]
 pub fn default_max_fps() -> u64 {
-    60
+    120
 }
 
 #[inline]
