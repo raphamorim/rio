@@ -253,9 +253,9 @@ impl<'a> ParagraphBuilder<'a> {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
             // if render_specific_lines && !lines_to_render.contains(&line_number) {
-            if self.process_from_cache(render_data, line_number) {
-                continue;
-            }
+            // if self.process_from_cache(render_data, line_number) {
+            //     continue;
+            // }
 
             let line = &mut self.s.lines[line_number];
             let mut analysis = analyze(line.text.content.iter());
