@@ -1943,7 +1943,7 @@ impl Screen<'_> {
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
-            display_offset,
+            display_offset as i32,
             has_blinking_enabled,
             &mut search_hints,
             &self.search_state.focused_match,
