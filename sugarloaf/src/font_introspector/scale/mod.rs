@@ -26,7 +26,7 @@ building a [`Scaler`].
 Here, we'll create a context and build a scaler for a size of 14px with
 hinting enabled:
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -41,7 +41,7 @@ method with an iterator that yields a sequence of values that are convertible
 to [`Setting<f32>`]. Tuples of (&str, f32) will work in a pinch. For example,
 you can request a variation of the weight axis like this:
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -73,7 +73,7 @@ bitmaps that are available in the font. In the case of outlines, it can produce 
 raw outline in font units or an optionally hinted, scaled outline. For example, to
 extract the raw outline for the letter 'Q':
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -84,7 +84,7 @@ let outline = scaler.scale_outline(glyph_id);
 
 For the same, but hinted at 12px:
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -115,7 +115,7 @@ When requesting a bitmap, you specify the strategy for strike selection using th
 
 For example, if we want the largest available unscaled image for the fire emoji:
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -126,7 +126,7 @@ let image = scaler.scale_color_bitmap(glyph_id, StrikeWith::LargestSize);
 
 Or, to produce a scaled image for a size of 18px:
 ```
-# use crate::font_introspector::{FontRef, CacheKey, scale::*};
+# use sugarloaf::font_introspector::{FontRef, CacheKey, scale::*};
 # let font: FontRef = FontRef { data: &[], offset: 0, key: CacheKey::new() };
 // let font = ...;
 let mut context = ScaleContext::new();
@@ -154,7 +154,7 @@ This struct is constructed with a slice of [`Source`]s in priority order and
 will iterate through them until it finds one that satisfies the request. Typically,
 you'll want to use the following order:
 ```
-# use crate::font_introspector::scale::*;
+# use sugarloaf::font_introspector::scale::*;
 Render::new(&[
     // Color outline with the first palette
     Source::ColorOutline(0),
@@ -175,7 +175,7 @@ configured [`Scaler`] and the requested glyph identifier to produce an [`Image`]
 Let's put it all together by writing a simple function that will render subpixel glyphs
 with fractional positioning:
 ```
-# use crate::font_introspector::{scale::{*, image::Image}, FontRef, GlyphId};
+# use sugarloaf::font_introspector::{scale::{*, image::Image}, FontRef, GlyphId};
 fn render_glyph(
     context: &mut ScaleContext,
     font: &FontRef,
