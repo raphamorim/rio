@@ -500,9 +500,7 @@ impl Screen<'_> {
         }
 
         let ignore_chars = self.process_key_bindings(key, &mode, mods);
-
-        // VI mode doesn't have inputs
-        if ignore_chars || mode.contains(Mode::VI) {
+        if ignore_chars {
             return;
         }
 
