@@ -218,6 +218,15 @@ impl Router {
     }
 
     #[inline]
+    pub fn update_titles(&mut self) {
+        for route in self.routes.values_mut() {
+            if route.window.is_focused {
+                route.window.screen.context_manager.update_titles();
+            }
+        }
+    }
+
+    #[inline]
     pub fn create_route_from_window(&mut self, route_window: RouteWindow) {
         let id = route_window.winit_window.id();
         let mut route = Route {

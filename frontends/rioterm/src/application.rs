@@ -1053,7 +1053,10 @@ impl ApplicationHandler<EventPayload> for Application {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
-            None => ControlFlow::Wait,
+            None => {
+                self.router.update_titles();
+                ControlFlow::Wait
+            }
         };
         event_loop.set_control_flow(control_flow);
     }

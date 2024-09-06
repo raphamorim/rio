@@ -1933,7 +1933,6 @@ impl Screen<'_> {
         // let duration = start.elapsed();
         // println!("Total terminal info is: {:?}", duration);
 
-        self.context_manager.update_titles();
         self.renderer.set_ime(self.ime.preedit());
 
         // let duration = start.elapsed();
@@ -1944,7 +1943,7 @@ impl Screen<'_> {
             cursor,
             &mut self.sugarloaf,
             &self.context_manager,
-            display_offset as i32,
+            display_offset,
             has_blinking_enabled,
             &mut search_hints,
             &self.search_state.focused_match,

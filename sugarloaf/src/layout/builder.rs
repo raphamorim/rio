@@ -47,9 +47,12 @@ impl RunCache {
     }
 
     #[inline]
-    fn clear_on_max_capacity(&mut self) {
-        if self.inner.len() > 1024 {
+    fn clear_on_max_capacity(&mut self) -> bool {
+        if self.inner.len() > 512 {
             self.inner.clear();
+            true
+        } else {
+            false
         }
     }
 }
@@ -250,7 +253,7 @@ impl<'a> ParagraphBuilder<'a> {
 
     fn resolve(&mut self, render_data: &mut RenderData) {
         // Cache needs to be cleaned before build lines
-        self.cache.clear_on_max_capacity();
+        let should_clear = self.cache.clear_on_max_capacity();
 
         // let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
@@ -302,6 +305,11 @@ impl<'a> ParagraphBuilder<'a> {
                 self.shape(render_data, line_number);
             }
         };
+
+        if should_clear {
+            self.shaper_cache.clear();
+            self.cache_analysis.clear();
+        }
     }
 
     #[inline]
@@ -473,6 +481,12 @@ impl ShaperCache {
         for character in chars {
             self.key.push(character.ch);
         }
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.stash.clear();
+        self.key.clear();
     }
 
     #[inline]
