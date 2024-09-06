@@ -368,23 +368,72 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     #[inline]
-    fn shape(&mut self, render_data: &mut RenderData, line_number: usize) {
+    fn shape(&mut self, render_data: &mut RenderData, current_line: usize) {
         // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
-        let line = &self.s.lines[line_number];
+        let line = &self.s.lines[current_line];
         for item in &line.items {
-            shape_item(
-                self.fcx,
-                self.fonts,
-                self.scx,
-                self.s,
-                self.font_features,
-                item,
+            let range = item.start..item.end;
+            let span_index = self.s.lines[current_line].text.spans[item.start];
+            let style = self.s.lines[current_line].styles[span_index];
+            let vars = self.s.vars.get(item.vars);
+            let mut shape_state = ShapeState {
+                // script: item.script,
+                script: Script::Latin,
+                features: self.font_features,
+                vars,
+                synth: Synthesis::default(),
+                state: self.s,
+                span: &self.s.lines[current_line].styles[span_index],
+                font_id: None,
+                span_index,
+                size: self.s.font_size,
+            };
+
+            let chars = self.s.lines[current_line].text.content[range.to_owned()]
+                .iter()
+                .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
+                .zip(&self.s.lines[current_line].text.spans[range.to_owned()])
+                .zip(&self.s.lines[current_line].text.info[range])
+                .map(|z| {
+                    let (((&ch, &offset), &span_index), &info) = z;
+                    Token {
+                        ch,
+                        offset,
+                        len: ch.len_utf8() as u8,
+                        info,
+                        data: span_index as u32,
+                    }
+                });
+
+            let mut parser = Parser::new(Script::Latin, chars);
+            if !parser.next(&mut char_cluster) {
+                continue;
+            }
+            let font_library = { &self.fonts.inner.read().unwrap() };
+            shape_state.font_id = self.fcx.map_cluster(
                 &mut char_cluster,
-                render_data,
-                line_number,
-                self.cache,
+                &mut shape_state.synth,
+                font_library,
                 self.fonts_to_load,
+                &style,
+            );
+            while shape_clusters(
+                self.fcx,
+                font_library,
+                self.scx,
+                &mut shape_state,
+                &mut parser,
+                &mut char_cluster,
+                // dir,
+                render_data,
+                current_line,
+                self.fonts_to_load,
+            ) {}
+
+            self.cache.insert(
+                self.s.lines[current_line].hash,
+                render_data.last_cached_run.to_owned(),
             );
         }
         // let duration = start.elapsed();
