@@ -384,10 +384,6 @@ impl Renderer {
 
             content.push(square_content);
 
-            // Dois problemas
-            // calculate_hash
-            // e 
-
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {

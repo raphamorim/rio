@@ -21,7 +21,7 @@ impl Default for Renderer {
             performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
-            max_fps: default_max_fps()
+            max_fps: default_max_fps(),
         }
     }
 }
