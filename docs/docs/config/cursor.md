@@ -5,18 +5,12 @@ language: 'en'
 
 ## Cursor
 
-Default cursor is `Block`.
+By default, the cursor shape is set to `block`. You can also choose from other options like `underline` and `beam`.
 
-Other available options are: `_` and `|`
-
-```toml
-cursor = '▇'
-```
-
-## Blinking Cursor
-
-Default is `false`
+Additionally, you can enable or disable cursor blinking, which is set to `false` by default.
 
 ```toml
-blinking-cursor = false
+[cursor]
+shape = 'block'    # Options: 'block', 'underline', 'beam'
+blinking = false   # Enable/disable blinking (default: false)
 ```
