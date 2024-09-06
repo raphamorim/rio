@@ -59,6 +59,37 @@ pub struct GlyphCluster<'a> {
     pub data: UserData,
 }
 
+/// Collection of glyphs and associated metadata corresponding to one or
+/// more source clusters.
+#[derive(Clone, Debug)]
+pub struct OwnedGlyphCluster {
+    /// Full source range of the cluster in original units supplied to the
+    /// shaper.
+    pub source: SourceRange,
+    /// Information about the textual content of the cluster.
+    pub info: ClusterInfo,
+    /// Sequence of glyphs for the cluster. May be empty for clusters whose
+    /// source consisted entirely of control characters.
+    pub glyphs: Vec<Glyph>,
+    /// If the cluster is a ligature, this contains the source range
+    /// of each ligature component. Empty otherwise.
+    pub components: Vec<SourceRange>,
+    /// Arbitrary user data-- taken from the initial character of the cluster.
+    pub data: UserData,
+}
+
+impl<'a> From<&GlyphCluster<'a>> for OwnedGlyphCluster {
+    fn from(glyph_cluster: &GlyphCluster<'a>) -> Self {
+        OwnedGlyphCluster {
+            source: glyph_cluster.source,
+            info: glyph_cluster.info,
+            data: glyph_cluster.data,
+            components: glyph_cluster.components.to_vec(),
+            glyphs: glyph_cluster.glyphs.to_vec(),
+        }
+    }
+}
+
 #[allow(unused)]
 impl<'a> GlyphCluster<'a> {
     /// Returns true if the cluster is empty. Empty clusters still represent
