@@ -203,7 +203,6 @@ impl RenderData {
         let metrics = shaper.metrics();
 
         let mut advance = 0.;
-        let span_data = &style;
 
         if let Some(cached_glyph_clusters) = shaper_cache.shape_with() {
             for c in cached_glyph_clusters {
@@ -370,9 +369,12 @@ impl RenderData {
             coords: (coords_start, coords_end),
             size,
             clusters: (clusters_start, clusters_end),
-            ascent: metrics.ascent * span_data.line_spacing,
-            descent: metrics.descent * span_data.line_spacing,
-            leading: metrics.leading * span_data.line_spacing,
+            // ascent: metrics.ascent * span_data.line_spacing,
+            ascent: metrics.ascent,
+            // descent: metrics.descent * span_data.line_spacing,
+            descent: metrics.descent,
+            // leading: metrics.leading * span_data.line_spacing,
+            leading: metrics.leading,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
@@ -412,9 +414,12 @@ impl RenderData {
             coords: coords.to_owned(),
             size,
             clusters: owned_clusters,
-            ascent: metrics.ascent * span_data.line_spacing,
-            descent: metrics.descent * span_data.line_spacing,
-            leading: metrics.leading * span_data.line_spacing,
+            ascent: metrics.ascent,
+                // * span_data.line_spacing,
+            descent: metrics.descent,
+             // * span_data.line_spacing,
+            leading: metrics.leading,
+             // * span_data.line_spacing,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,

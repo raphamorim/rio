@@ -1896,8 +1896,8 @@ impl Screen<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        // let start = std::time::Instant::now();
-        // println!("_____________________________\nrender time elapsed");
+        let start = std::time::Instant::now();
+        println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1930,14 +1930,14 @@ impl Screen<'_> {
             drop(terminal);
             data
         };
-        // let duration = start.elapsed();
-        // println!("Total terminal info is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Total terminal info is: {:?}", duration);
 
         self.context_manager.update_titles();
         self.renderer.set_ime(self.ime.preedit());
 
-        // let duration = start.elapsed();
-        // println!("Total update_titles and set_ime info is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Total update_titles and set_ime info is: {:?}", duration);
 
         self.renderer.prepare_term(
             &rows,
@@ -1950,12 +1950,12 @@ impl Screen<'_> {
             &self.search_state.focused_match,
         );
 
-        // let duration = start.elapsed();
-        // println!("Total prepare_term is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Total prepare_term is: {:?}", duration);
 
         self.sugarloaf.render();
-        // let duration = start.elapsed();
-        // println!("Total render is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Total render is: {:?}", duration);
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled

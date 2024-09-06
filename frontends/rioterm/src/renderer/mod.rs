@@ -211,7 +211,7 @@ impl Renderer {
                 width,
                 color: foreground_color,
                 background_color,
-                font_attrs,
+                font_attrs: font_attrs.into(),
                 decoration,
                 decoration_color,
                 ..FragmentStyle::default()
@@ -570,7 +570,7 @@ impl Renderer {
         let mut style = FragmentStyle {
             color,
             background_color: Some(background_color),
-            font_attrs,
+            font_attrs: font_attrs.into(),
             ..FragmentStyle::default()
         };
 

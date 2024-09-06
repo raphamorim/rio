@@ -67,16 +67,19 @@ impl Attributes {
     }
 
     /// Returns the stretch attribute.
+    #[inline]
     pub fn stretch(&self) -> Stretch {
         Stretch((self.0 >> 19 & 0x1FF) as u16)
     }
 
     /// Returns the weight attribute.
+    #[inline]
     pub fn weight(&self) -> Weight {
         Weight((self.0 >> 9 & 0x3FF) as u16)
     }
 
     /// Returns the style attribute.
+    #[inline]
     pub fn style(&self) -> Style {
         Style::unpack(self.0 & 0x1FF)
     }
