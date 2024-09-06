@@ -129,7 +129,7 @@ pub fn resize(
             target_height,
             scratch,
             0.,
-            &|x| nearest(x),
+            &nearest,
         ),
         Bilinear => resample(
             image,

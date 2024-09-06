@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 /// Macro for consistent implementation of font resource iterators.
 macro_rules! impl_iter {
     ($name:ident, $item:ident) => {

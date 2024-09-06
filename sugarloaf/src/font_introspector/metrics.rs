@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 /*!
 Font and glyph metrics.
 */
@@ -141,6 +144,7 @@ impl MetricsProxy {
     }
 
     /// Returns the number of glyphs in the font.
+    #[allow(unused)]
     pub fn glyph_count(&self) -> u16 {
         self.glyph_count
     }

@@ -249,13 +249,16 @@ pub type StrikeIndex = u32;
 /// Bitmap strike selection mode.
 #[derive(Copy, Clone, Debug)]
 pub enum StrikeWith {
+    #[allow(unused)]
     /// Load a bitmap only if the exact size is available.
     ExactSize,
     /// Load a bitmap of the best available size.
     BestFit,
     /// Loads a bitmap of the largest size available.
+    #[allow(unused)]
     LargestSize,
     /// Load a bitmap from the specified strike.
+    #[allow(unused)]
     Index(StrikeIndex),
 }
 
@@ -389,6 +392,7 @@ impl<'a> ScalerBuilder<'a> {
     }
 
     /// Adds variation settings to the scaler.
+    #[allow(unused)]
     pub fn variations<I>(self, settings: I) -> Self
     where
         I: IntoIterator,
@@ -414,6 +418,7 @@ impl<'a> ScalerBuilder<'a> {
 
     /// Specifies the variation settings in terms of normalized coordinates. This will replace
     /// any previous variation settings.
+    #[allow(unused)]
     pub fn normalized_coords<I>(self, coords: I) -> Self
     where
         I: IntoIterator,
@@ -442,7 +447,7 @@ impl<'a> ScalerBuilder<'a> {
                     id: self.id,
                     outlines,
                     size: skrifa_size,
-                    coords: &self.coords,
+                    coords: self.coords,
                 };
                 self.hinting_cache.get(&key)
             }
@@ -495,6 +500,7 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales an outline for the specified glyph.
+    #[allow(unused)]
     pub fn scale_outline(&mut self, glyph_id: GlyphId) -> Option<Outline> {
         let mut outline = Outline::new();
         if self.scale_outline_into(glyph_id, &mut outline) {
@@ -510,6 +516,7 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a color outline for the specified glyph into the provided outline.
+    #[allow(unused)]
     pub fn scale_color_outline_into(
         &mut self,
         glyph_id: GlyphId,
@@ -538,6 +545,7 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a color outline for the specified glyph.
+    #[allow(unused)]
     pub fn scale_color_outline(&mut self, glyph_id: GlyphId) -> Option<Outline> {
         let mut outline = Outline::new();
         if self.scale_color_outline_into(glyph_id, &mut outline) {
@@ -566,7 +574,7 @@ impl<'a> Scaler<'a> {
                     } else {
                         (
                             self.skrifa_size,
-                            skrifa::instance::LocationRef::new(&self.coords),
+                            skrifa::instance::LocationRef::new(self.coords),
                         )
                             .into()
                     };
@@ -619,6 +627,7 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a bitmap for the specified glyph and mode.
+    #[allow(unused)]
     pub fn scale_bitmap(&mut self, glyph_id: u16, strike: StrikeWith) -> Option<Image> {
         let mut image = Image::new();
         if self.scale_bitmap_into(glyph_id, strike, &mut image) {
@@ -644,6 +653,7 @@ impl<'a> Scaler<'a> {
     }
 
     /// Scales a color bitmap for the specified glyph and mode.
+    #[allow(unused)]
     pub fn scale_color_bitmap(
         &mut self,
         glyph_id: u16,
@@ -805,6 +815,7 @@ impl<'a> Render<'a> {
 
     /// Specifies the path style to use when rasterizing an outline. Default is
     /// [`Fill::NonZero`](zeno::Fill::NonZero).
+    #[allow(unused)]
     pub fn style(&mut self, style: impl Into<Style<'a>>) -> &mut Self {
         self.style = style.into();
         self
@@ -812,6 +823,7 @@ impl<'a> Render<'a> {
 
     /// Specifies an additional offset to apply when rasterizing an outline.
     /// Default is `(0, 0)`.
+    #[allow(unused)]
     pub fn offset(&mut self, offset: Vector) -> &mut Self {
         self.offset = offset;
         self
@@ -819,6 +831,7 @@ impl<'a> Render<'a> {
 
     /// Specifies a transformation matrix to apply when rasterizing an
     /// outline. Default is `None`.
+    #[allow(unused)]
     pub fn transform(&mut self, transform: Option<Transform>) -> &mut Self {
         self.transform = transform;
         self
@@ -826,6 +839,7 @@ impl<'a> Render<'a> {
 
     /// Specifies the strength of a faux bold transform to apply when
     /// rasterizing an outline. Default is `0`.
+    #[allow(unused)]
     pub fn embolden(&mut self, strength: f32) -> &mut Self {
         self.embolden = strength;
         self
@@ -834,6 +848,7 @@ impl<'a> Render<'a> {
     /// Specifies an RGBA color to use when rasterizing layers of a color
     /// outline that do not directly reference a palette color. Default is
     /// `[128, 128, 128, 255]`.
+    #[allow(unused)]
     pub fn default_color(&mut self, color: [u8; 4]) -> &mut Self {
         self.foreground = color;
         self
@@ -983,6 +998,7 @@ impl<'a> Render<'a> {
     }
 
     /// Renders the specified glyph using the current configuration.
+    #[allow(unused)]
     pub fn render(&self, scaler: &mut Scaler, glyph_id: GlyphId) -> Option<Image> {
         let mut image = Image::new();
         if self.render_into(scaler, glyph_id, &mut image) {

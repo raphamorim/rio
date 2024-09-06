@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 //! Basic font attributes: stretch, weight and style.
 
 use super::internal::{head::Os2, RawFont};
@@ -297,7 +300,7 @@ pub struct ObliqueAngle(pub(crate) u8);
 impl ObliqueAngle {
     /// Creates a new oblique angle from degrees.
     pub fn from_degrees(degrees: f32) -> Self {
-        let a = degrees.min(90.).max(-90.) + 90.;
+        let a = degrees.clamp(-90.0, 90.) + 90.;
         Self(a as u8)
     }
 

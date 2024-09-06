@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::{cluster::Boundary, Codepoint, LineBreak, Properties, WordBreak};
 use core::borrow::Borrow;
 
@@ -38,6 +41,7 @@ where
 impl<I> Analyze<I> {
     /// Returns true if the analysis indicates that bidi resolution is
     /// required.
+    #[allow(unused)]
     pub fn needs_bidi_resolution(&self) -> bool {
         self.state.needs_bidi
     }

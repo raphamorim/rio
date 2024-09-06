@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 /*!
 Glyph cluster modeling-- output from the shaper.
 */
@@ -7,11 +10,13 @@ use crate::font_introspector::text::cluster::{ClusterInfo, SourceRange, UserData
 use crate::font_introspector::GlyphId;
 
 /// Information for a glyph.
+#[allow(unused)]
 #[derive(Copy, Clone, Default, Debug)]
 pub struct GlyphInfo(pub u16);
 
 impl GlyphInfo {
     /// Returns true if the glyph is an attached mark.
+    #[allow(unused)]
     pub fn is_mark(self) -> bool {
         self.0 & MARK_ATTACH != 0
     }
@@ -23,6 +28,7 @@ pub struct Glyph {
     /// Glyph identifier.
     pub id: GlyphId,
     /// Glyph flags.
+    #[allow(unused)]
     pub info: GlyphInfo,
     /// Horizontal offset.
     pub x: f32,
@@ -53,6 +59,7 @@ pub struct GlyphCluster<'a> {
     pub data: UserData,
 }
 
+#[allow(unused)]
 impl<'a> GlyphCluster<'a> {
     /// Returns true if the cluster is empty. Empty clusters still represent
     /// characters in the source text, but contain no glyphs. This will be

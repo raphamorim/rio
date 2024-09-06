@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 //! Collections of colors for layered outlines.
 
 use super::internal::*;
@@ -49,7 +52,7 @@ impl<'a> ColorPalettes<'a> {
         let version = b.read::<u16>(0)?;
         let num_entries = b.read::<u16>(2)?;
         let offset = b.read::<u32>(8)? as usize;
-        let first = b.read::<u16>(12 + index as usize * 2)? as usize;
+        let first = b.read::<u16>(12 + index * 2)? as usize;
         let offset = offset + first * 4;
         Some(ColorPalette {
             font: self.font,
@@ -94,7 +97,7 @@ impl<'a> ColorPalette<'a> {
             return None;
         }
         Some(StringId::Other(
-            d.read::<u16>(labels_offset + self.index as usize * 2)?,
+            d.read::<u16>(labels_offset + self.index * 2)?,
         ))
     }
 
@@ -151,7 +154,7 @@ impl<'a> ColorPalette<'a> {
         if types_offset == 0 {
             return None;
         }
-        d.read::<u32>(types_offset + self.index as usize * 4)
+        d.read::<u32>(types_offset + self.index * 4)
     }
 }
 

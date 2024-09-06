@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 //! Parser for Myanmar clusters.
 
 use super::unicode_data::{Category, ClusterBreak, MyanmarClass};

@@ -36,7 +36,7 @@ pub fn desc_from_aat(
     feature: u16,
     selector: u16,
 ) -> Option<(usize, RawTag, &'static str)> {
-    let key = ((feature << 8) | selector) as u16;
+    let key = (feature << 8) | selector;
     Some(match AAT_TO_AT.binary_search_by(|pair| pair.0.cmp(&key)) {
         Ok(index) => {
             let (tag, desc) = FEATURES[AAT_TO_AT[index].1 as usize];

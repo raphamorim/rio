@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::cache::CacheKey;
 use super::internal::{raw_data, RawFont};
 use super::Tag;
@@ -24,21 +27,25 @@ impl<'a> FontDataRef<'a> {
     }
 
     /// Returns true if the data represents a font collection.
+    #[allow(unused)]
     pub fn is_collection(&self) -> bool {
         raw_data::is_collection(self.data)
     }
 
     /// Returns the underlying data.
+    #[allow(unused)]
     pub fn data(&self) -> &'a [u8] {
         self.data
     }
 
     /// Returns the number of available fonts.
+    #[allow(unused)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns true if there are no available fonts.
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -209,7 +216,7 @@ impl<'a> Iterator for Fonts<'a> {
     type Item = FontRef<'a>;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let remaining = (self.data.len - self.pos) as usize;
+        let remaining = self.data.len - self.pos;
         (remaining, Some(remaining))
     }
 
@@ -232,7 +239,7 @@ impl<'a> Iterator for Fonts<'a> {
 
 impl<'a> ExactSizeIterator for Fonts<'a> {
     fn len(&self) -> usize {
-        (self.data.len - self.pos) as usize
+        self.data.len - self.pos
     }
 }
 
@@ -248,6 +255,7 @@ impl<'a> IntoIterator for FontDataRef<'a> {
 /// Source that can provide table data by tag.
 pub trait TableProvider {
     /// Returns the table for the specified tag.
+    #[allow(unused)]
     fn table_by_tag(&self, tag: Tag) -> Option<&[u8]>;
 }
 

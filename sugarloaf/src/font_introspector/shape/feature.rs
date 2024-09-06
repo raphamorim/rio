@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 //! Feature constants.
 
 use super::internal::{raw_tag, RawTag};
