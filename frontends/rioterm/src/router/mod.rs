@@ -54,7 +54,14 @@ impl Route {
     }
 
     /// Request a new frame for a window
+    #[inline]
     pub fn request_frame(&mut self, scheduler: &mut Scheduler) {
+        if let Some(swap_timeout) = self.window.swap_timeout {
+            if swap_timeout <= Duration::from_nanos(0) || cfg!(feature = "wayland") {
+                return;
+            }
+        }
+
         // Mark that we've used a frame.
         self.window.has_frame = false;
 
@@ -76,14 +83,11 @@ impl Route {
             .frame_timer
             .compute_timeout(monitor_vblank_interval);
 
-        if swap_timeout > Duration::from_nanos(0) && !cfg!(feature = "wayland") {
-            let window_id = self.window.winit_window.id();
-            let timer_id = TimerId::new(Topic::Frame, window_id);
-            let event = EventPayload::new(RioEventType::Frame, window_id);
-            scheduler.schedule(event, swap_timeout, false, timer_id);
-        } else {
-            self.window.has_frame = true;
-        }
+        let window_id = self.window.winit_window.id();
+        let timer_id = TimerId::new(Topic::Frame, window_id);
+        let event = EventPayload::new(RioEventType::Frame, window_id);
+        self.window.swap_timeout = Some(swap_timeout);
+        scheduler.schedule(event, swap_timeout, false, timer_id);
     }
 
     #[inline]
@@ -339,6 +343,7 @@ pub struct RouteWindow {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub has_frame: bool,
+    pub swap_timeout: Option<Duration>,
     pub has_updates: bool,
     pub winit_window: Window,
     pub frame_timer: FrameTimer,
@@ -384,6 +389,7 @@ impl RouteWindow {
             is_focused: false,
             is_occluded: false,
             has_frame: true,
+            swap_timeout: None,
             has_updates: true,
             frame_timer: FrameTimer::new(),
             winit_window,
@@ -442,6 +448,7 @@ impl RouteWindow {
         Self {
             has_frame: true,
             has_updates: true,
+            swap_timeout: None,
             frame_timer: FrameTimer::new(),
             is_focused: false,
             is_occluded: false,

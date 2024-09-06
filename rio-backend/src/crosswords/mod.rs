@@ -1886,7 +1886,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match intermediate {
             None => {
                 log::trace!("Reporting primary device attributes");
-                let text = String::from("\x1b[?62;4;6;22c");
+                // let text = String::from("\x1b[?62;4;6;22c");
+                let text = String::from("\x1b[?62;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
