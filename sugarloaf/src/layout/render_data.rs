@@ -10,11 +10,11 @@
 // underline_color, background_color, text color and other functionalities
 
 //! RenderData.
-use crate::layout::builder::ShaperCache;
 use super::layout_data::*;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
 use crate::font_introspector::{GlyphId, NormalizedCoord};
+use crate::layout::builder::ShaperCache;
 use crate::layout::builder_data::FragmentStyleDecoration;
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
@@ -185,7 +185,7 @@ impl RenderData {
         line: u32,
         hash: u64,
         shaper: Shaper<'_>,
-        shaper_cache: &mut ShaperCache
+        shaper_cache: &mut ShaperCache,
     ) {
         // In case is a new line,
         // then needs to recompute the span index again
@@ -217,7 +217,7 @@ impl RenderData {
                 let mut cluster_advance = 0.;
                 for glyph in &c.glyphs {
                     cluster_advance += glyph.advance;
-                    self.push_glyph(&glyph);
+                    self.push_glyph(glyph);
                 }
                 advance += cluster_advance;
                 let mut component_advance = cluster_advance;

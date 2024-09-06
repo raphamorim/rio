@@ -152,12 +152,8 @@ impl ApplicationHandler<EventPayload> for Application {
                     }
 
                     if route.window.has_frame {
-                        route.window.screen.render();
-                    } else {
-                        route.window.has_updates = true;
+                        route.request_redraw();
                     }
-
-                    route.request_frame(&mut self.scheduler);
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
@@ -172,10 +168,7 @@ impl ApplicationHandler<EventPayload> for Application {
                         route.window.has_updates = true;
 
                         if route.window.has_frame {
-                            route.window.screen.render();
-                        } else {
-                            route.window.has_updates = true;
-                            route.request_frame(&mut self.scheduler);
+                            route.request_redraw();
                         }
                     }
                 }
@@ -1039,7 +1032,6 @@ impl ApplicationHandler<EventPayload> for Application {
                     }
                     RoutePath::Terminal => {
                         route.window.screen.render();
-                        route.request_frame(&mut self.scheduler);
                     }
                     RoutePath::ConfirmQuit => {
                         route
@@ -1051,6 +1043,7 @@ impl ApplicationHandler<EventPayload> for Application {
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
+                route.request_frame(&mut self.scheduler);
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
