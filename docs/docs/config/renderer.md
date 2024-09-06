@@ -27,5 +27,5 @@ Example:
 performance = "High"
 backend = "Automatic"
 disable-unfocused-render = false
-max-fps = 60
+max-fps = 120
 ```
