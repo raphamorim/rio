@@ -10,9 +10,9 @@
 
 use super::builder_data::*;
 use super::MAX_ID;
+use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
-use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::cluster::{CharCluster, CharInfo, Parser, Token};
 use crate::font_introspector::text::{analyze, Script};
@@ -167,7 +167,7 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         // If the text is just space then break shaping
-        let mut break_shaping = text.trim().is_empty();
+        // let mut break_shaping = text.trim().is_empty();
 
         let mut offset = self.last_offset;
         line.styles.push(style);
@@ -187,25 +187,12 @@ impl<'a> ParagraphBuilder<'a> {
             push_char!(ch);
         }
 
-        if !break_shaping {
-            break_shaping = if let Some(prev_frag) = line.fragments.last() {
-                let prev_style = line.styles[prev_frag.span];
-                if prev_style == style {
-                    false
-                } else {
-                    true
-                    // style.font_size != prev_style.font_size
-                    // style.letter_spacing != prev_style.letter_spacing ||
-                    // style.cursor != prev_style.cursor
-                        // || style.lang != prev_style.lang
-                        // || style.font_features != prev_style.font_features
-                        // || style.font_attrs != prev_style.font_attrs
-                        // || style.font_vars != prev_style.font_vars
-                }
-            } else {
-                true
-            };
-        }
+        let break_shaping = if let Some(prev_frag) = line.fragments.last() {
+            let prev_style = line.styles[prev_frag.span];
+            prev_style != style
+        } else {
+            true
+        };
 
         let end = line.text.content.len();
         let len = end - start;
@@ -265,14 +252,14 @@ impl<'a> ParagraphBuilder<'a> {
         // Cache needs to be cleaned before build lines
         self.cache.clear_on_max_capacity();
 
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
             // if render_specific_lines && !lines_to_render.contains(&line_number) {
-            // if self.process_from_cache(render_data, line_number) {
-            //     continue;
-            // }
+            if self.process_from_cache(render_data, line_number) {
+                continue;
+            }
 
             let line = &mut self.s.lines[line_number];
             let content_key = line.text.content.iter().collect();
@@ -290,13 +277,13 @@ impl<'a> ParagraphBuilder<'a> {
             }
 
             self.itemize(line_number);
-            let start = std::time::Instant::now();
+            // let start = std::time::Instant::now();
             self.shape(render_data, line_number);
-            let duration = start.elapsed();
-            println!("Time elapsed in shape is: {:?}", duration);
+            // let duration = start.elapsed();
+            // println!("Time elapsed in shape is: {:?}", duration);
         }
-        let duration = start.elapsed();
-        println!("Time elapsed in resolve is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in resolve is: {:?}", duration);
 
         // In this case, we actually have found fonts that have not been loaded yet
         // We need to load and then restart the whole resolve function again
@@ -399,17 +386,15 @@ impl<'a> ParagraphBuilder<'a> {
                 state: self.s,
                 span: &self.s.lines[current_line].styles[span_index],
                 font_id: None,
-                span_index,
                 size: self.s.font_size,
             };
 
             let chars = self.s.lines[current_line].text.content[range.to_owned()]
                 .iter()
                 .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
-                .zip(&self.s.lines[current_line].text.spans[range.to_owned()])
                 .zip(&self.s.lines[current_line].text.info[range])
                 .map(|z| {
-                    let (((&ch, &offset), &span_index), &info) = z;
+                    let ((&ch, &offset), &info) = z;
                     Token {
                         ch,
                         offset,
@@ -464,9 +449,7 @@ struct ShapeState<'a> {
     span: &'a FragmentStyle,
     font_id: Option<usize>,
     size: f32,
-    span_index: usize,
 }
-
 
 #[derive(Default)]
 pub struct ShaperCache {
@@ -500,11 +483,14 @@ impl ShaperCache {
     #[inline]
     pub fn finish(&mut self) {
         if !self.key.is_empty() && !self.stash.is_empty() {
-            self.inner.insert(self.key.clone(), self.stash.clone());
+            self.inner.insert(
+                std::mem::take(&mut self.key),
+                std::mem::take(&mut self.stash),
+            );
+        } else {
+            self.stash.clear();
+            self.key.clear();
         }
-
-        self.key.clear();
-        self.stash.clear();
     }
 }
 
@@ -532,8 +518,6 @@ where
     let mut shaper = scx
         .builder(fonts[current_font_id].as_ref())
         .script(state.script)
-        // .language(state.span.lang)
-        // .direction(dir)
         .size(state.size)
         .features(state.features.iter().copied())
         .variations(state.synth.variations().iter().copied())
@@ -542,12 +526,12 @@ where
 
     let mut synth = Synthesis::default();
     loop {
-        shaper.add_cluster(cluster);
         shaper_cache.add_cluster(cluster.chars());
+        shaper.add_cluster(cluster);
 
         if !parser.next(cluster) {
             render_data.push_run(
-                &state.span,
+                state.span,
                 &current_font_id,
                 state.size,
                 current_line as u32,
@@ -558,17 +542,11 @@ where
             return false;
         }
 
-        // let cluster_span = cluster.user_data() as usize;
-        // if cluster_span != state.span_index {
-        //     state.span_index = cluster_span;
-        //     state.span = &state.state.lines[current_line].styles[cluster_span];
-        // }
-
         let next_font =
             fcx.map_cluster(cluster, &mut synth, fonts, fonts_to_load, state.span);
         if next_font != state.font_id || synth != state.synth {
             render_data.push_run(
-                &state.span,
+                state.span,
                 &current_font_id,
                 state.size,
                 current_line as u32,

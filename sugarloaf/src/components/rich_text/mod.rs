@@ -438,7 +438,7 @@ impl DrawLayoutCache {
 
     #[inline]
     fn clear_on_demand(&mut self) {
-        if self.inner.len() > 128 {
+        if self.inner.len() > 640 {
             self.inner.clear();
         }
     }
@@ -486,19 +486,19 @@ fn draw_layout(
         let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        // if let Some(data) = draw_layout_cache.get(&hash) {
-        //     comp.draw_cached_run(
-        //         data,
-        //         px,
-        //         py,
-        //         depth,
-        //         rect,
-        //         line,
-        //         &mut last_rendered_graphic,
-        //         graphics,
-        //     );
-        //     continue;
-        // }
+        if let Some(data) = draw_layout_cache.get(&hash) {
+            comp.draw_cached_run(
+                data,
+                px,
+                py,
+                depth,
+                rect,
+                line,
+                &mut last_rendered_graphic,
+                graphics,
+            );
+            continue;
+        }
 
         let mut cached_line_runs = Vec::new();
         for run in line.runs() {
