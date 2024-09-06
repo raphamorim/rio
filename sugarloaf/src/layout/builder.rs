@@ -60,6 +60,7 @@ pub struct LayoutContext {
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
+    cache_analysis: FxHashMap<String, Vec<CharInfo>>,
     fonts_to_load: Vec<(usize, PathBuf)>,
 }
 
@@ -74,6 +75,7 @@ impl LayoutContext {
             cache: RunCache::new(),
             fonts_to_load: vec![],
             font_features: vec![],
+            cache_analysis: FxHashMap::default(),
         }
     }
 
@@ -113,6 +115,7 @@ impl LayoutContext {
             s: &mut self.state,
             last_offset: 0,
             cache: &mut self.cache,
+            cache_analysis: &mut self.cache_analysis,
             fonts_to_load: &mut self.fonts_to_load,
         }
     }
@@ -132,6 +135,7 @@ pub struct ParagraphBuilder<'a> {
     s: &'a mut BuilderState,
     last_offset: u32,
     cache: &'a mut RunCache,
+    cache_analysis: &'a mut FxHashMap<String, Vec<CharInfo>>,
     fonts_to_load: &'a mut Vec<(usize, PathBuf)>,
 }
 
@@ -249,6 +253,7 @@ impl<'a> ParagraphBuilder<'a> {
         // Cache needs to be cleaned before build lines
         self.cache.clear_on_max_capacity();
 
+        let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
             // and the line number isn't part of the requested then process from cache
@@ -258,14 +263,28 @@ impl<'a> ParagraphBuilder<'a> {
             // }
 
             let line = &mut self.s.lines[line_number];
-            let mut analysis = analyze(line.text.content.iter());
-            for (props, boundary) in analysis.by_ref() {
-                line.text.info.push(CharInfo::new(props, boundary));
+            let content_key = line.text.content.iter().collect();
+            if let Some(cached_analysis) = self.cache_analysis.get(&content_key) {
+                line.text.info.extend_from_slice(cached_analysis);
+            } else {
+                let mut analysis = analyze(line.text.content.iter());
+                let mut cache = Vec::with_capacity(line.text.content.len());
+                for (props, boundary) in analysis.by_ref() {
+                    let char_info = CharInfo::new(props, boundary);
+                    line.text.info.push(char_info);
+                    cache.push(char_info);
+                }
+                self.cache_analysis.insert(content_key, cache);
             }
 
             self.itemize(line_number);
+            let start = std::time::Instant::now();
             self.shape(render_data, line_number);
+            let duration = start.elapsed();
+            println!("Time elapsed in shape is: {:?}", duration);
         }
+        let duration = start.elapsed();
+        println!("Time elapsed in resolve is: {:?}", duration);
 
         // In this case, we actually have found fonts that have not been loaded yet
         // We need to load and then restart the whole resolve function again
