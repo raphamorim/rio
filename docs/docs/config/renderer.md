@@ -18,6 +18,8 @@ language: 'en'
 
 - `disable-unfocused-render` - This property disable renderer processes while Rio is unfocused.
 
+- `max-fps` - Limits the maximum number of frames per second that rio terminal will attempt to draw. If you set as `0` then this limit will be ignored.
+
 Example:
 
 ```toml
@@ -25,4 +27,5 @@ Example:
 performance = "High"
 backend = "Automatic"
 disable-unfocused-render = false
+max-fps = 60
 ```

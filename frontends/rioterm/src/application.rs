@@ -151,9 +151,7 @@ impl ApplicationHandler<EventPayload> for Application {
                         return;
                     }
 
-                    if route.window.has_frame {
-                        route.request_redraw();
-                    }
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
@@ -168,7 +166,24 @@ impl ApplicationHandler<EventPayload> for Application {
                         route.window.has_updates = true;
 
                         if route.window.has_frame {
-                            route.request_redraw();
+                            if self.config.renderer.max_fps == 0 {
+                                route.request_redraw();
+                            } else {
+                                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                                let event = EventPayload::new(
+                                    RioEventType::Rio(RioEvent::Render),
+                                    window_id,
+                                );
+
+                                if !self.scheduler.scheduled(timer_id) {
+                                    self.scheduler.schedule(
+                                        event,
+                                        Duration::from_millis(1000 / self.config.renderer.max_fps),
+                                        false,
+                                        timer_id,
+                                    );
+                                }
+                            }
                         }
                     }
                 }
