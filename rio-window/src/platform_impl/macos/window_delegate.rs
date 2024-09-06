@@ -21,6 +21,7 @@ use objc2_foundation::{
     NSObjectNSThreadPerformAdditions, NSObjectProtocol, NSPoint, NSRect, NSSize,
     NSString,
 };
+use objc2_app_kit::NSColorSpace;
 
 use super::app_delegate::ApplicationDelegate;
 use super::cursor::cursor_from_icon;
@@ -540,9 +541,14 @@ fn new_window(
             window.setSharingType(NSWindowSharingType::NSWindowSharingNone);
         }
 
-        if attrs.platform_specific.titlebar_transparent {
+        // if attrs.platform_specific.titlebar_transparent {
             window.setTitlebarAppearsTransparent(true);
-        }
+        // }
+
+        // unsafe {
+            // window.setBackgroundColor(Some(&NSColor::redColor()));
+        // }
+
         if attrs.platform_specific.title_hidden {
             window.setTitleVisibility(NSWindowTitleVisibility::NSWindowTitleHidden);
         }
@@ -834,9 +840,14 @@ impl WindowDelegate {
                     .setBackgroundColor(Some(&NSColor::clearColor()));
             }
         } else {
+            let color = unsafe { NSColor::blackColor() };
+            let color = unsafe { color.colorUsingColorSpace(&*NSColorSpace::sRGBColorSpace()) }
+                .expect("failed to convert colorspace");
+            let (mut r, mut g, mut b, mut a) = (0.0, 0.0, 0.0, 0.0);
             unsafe {
+                color.getRed_green_blue_alpha(&mut r, &mut g, &mut b, &mut a); 
                 self.window()
-                    .setBackgroundColor(Some(&NSColor::blackColor()));
+                    .setBackgroundColor(Some(&color));
             }
         }
     }

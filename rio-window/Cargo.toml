@@ -85,6 +85,7 @@ features = [
     "NSBitmapImageRep",
     "NSButton",
     "NSColor",
+    "NSColorSpace",
     "NSControl",
     "NSCursor",
     "NSDragging",
