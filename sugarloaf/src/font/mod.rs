@@ -99,8 +99,8 @@ impl FontContext {
         fonts_to_load: &mut Vec<(usize, PathBuf)>,
         fragment_style: &FragmentStyle,
     ) -> Option<usize> {
-        let is_italic = fragment_style.font_attrs.2 == Style::Italic;
-        let is_bold = fragment_style.font_attrs.1 == Weight::BOLD;
+        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
+        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
 
         let chars = cluster.chars();
         let is_cache_key_empty = chars.is_empty();
