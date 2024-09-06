@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 /*!
 Unicode character properties.
 */
@@ -168,7 +171,7 @@ impl From<u32> for Properties {
 
 impl From<&'_ u32> for Properties {
     fn from(ch: &'_ u32) -> Self {
-        Self::new(*ch as u32)
+        Self::new(*ch)
     }
 }
 

@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::unicode_data::{
     compose_index, decompose_compat_index, decompose_index, COMPOSE0, COMPOSE1,
     COMPOSE1_COUNT, DECOMPOSE, DECOMPOSE_COMPAT,
@@ -82,7 +85,7 @@ fn pair_index(c: u32, table: &[(u32, u16, u16)]) -> Option<usize> {
             return None;
         }
         let end = start + entry.1 as usize;
-        if c as usize <= end {
+        if c <= end {
             return Some(entry.2 as usize + (c - start));
         }
     }

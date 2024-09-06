@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 //! Alpha and color bitmaps.
 
 use super::internal::*;
@@ -137,9 +140,9 @@ impl<'a> BitmapStrikes<'a> {
             return None;
         }
         let offset = if self.is_sbix {
-            self.data.read::<u32>(8 + index as usize * 4)? as usize
+            self.data.read::<u32>(8 + index * 4)? as usize
         } else {
-            8 + index as usize * 48
+            8 + index * 48
         };
         Some(BitmapStrike {
             data: self.data,
@@ -329,12 +332,14 @@ impl BitmapFormat {
 #[derive(Copy, Clone)]
 pub struct Bitmap<'a> {
     pub format: BitmapFormat,
+    #[allow(unused)]
     pub id: u16,
     pub ppem: u16,
     pub width: u32,
     pub height: u32,
     pub left: i32,
     pub top: i32,
+    #[allow(unused)]
     pub advance: u32,
     pub data: &'a [u8],
 }
@@ -606,7 +611,7 @@ fn get_location(
         let offset = array_offset + d.read::<u32>(offset + 4)? as usize;
         let index_format = d.read::<u16>(offset)?;
         let image_format = d.read::<u16>(offset + 2)? as u8;
-        let image_offset = d.read::<u32>(offset + 4)? as u32;
+        let image_offset = d.read::<u32>(offset + 4)?;
         let base = offset + 8;
         let mut loc = Location {
             ppem,

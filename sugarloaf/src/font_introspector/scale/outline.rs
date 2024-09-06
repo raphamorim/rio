@@ -21,6 +21,7 @@ impl Outline {
     }
 
     /// Returns true if the outline has color layers.
+    #[allow(unused)]
     pub fn is_color(&self) -> bool {
         self.is_color
     }
@@ -31,6 +32,7 @@ impl Outline {
     }
 
     /// Returns true if there are no layers in the outline.
+    #[allow(unused)]
     pub fn is_empty(&self) -> bool {
         self.layers.is_empty()
     }
@@ -62,16 +64,19 @@ impl Outline {
     }
 
     /// Returns a reference to the sequence of points in the outline.
+    #[allow(unused)]
     pub fn points(&self) -> &[Point] {
         &self.points
     }
 
     /// Returns a mutable reference to the sequence of points in the outline.
+    #[allow(unused)]
     pub fn points_mut(&mut self) -> &mut [Point] {
         &mut self.points
     }
 
     /// Returns a reference to the sequence of verbs in the outline.
+    #[allow(unused)]
     pub fn verbs(&self) -> &[Verb] {
         &self.verbs
     }
@@ -137,6 +142,7 @@ impl<'a> Layer<'a> {
     }
 
     /// Computes the bounding box of the layer.
+    #[allow(unused)]
     pub fn bounds(&self) -> Bounds {
         Bounds::from_points(self.points())
     }
@@ -151,13 +157,15 @@ impl<'a> Layer<'a> {
 pub struct LayerMut<'a> {
     points: &'a mut [Point],
     verbs: &'a [Verb],
+    #[allow(unused)]
     color_index: Option<u16>,
 }
 
+#[allow(unused)]
 impl<'a> LayerMut<'a> {
     /// Returns the sequence of points for the layer.
     pub fn points(&'a self) -> &'a [Point] {
-        &self.points[..]
+        self.points
     }
 
     /// Returns a mutable reference the sequence of points for the layer.
@@ -233,6 +241,7 @@ struct LayerData {
 }
 
 impl Outline {
+    #[allow(unused)]
     pub(super) fn set_color(&mut self, color: bool) {
         self.is_color = color;
     }

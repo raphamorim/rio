@@ -8,6 +8,7 @@ pub struct ScalerProxy {
     pub metrics: MetricsProxy,
     pub color: ColorProxy,
     pub bitmaps: BitmapStrikesProxy,
+    #[allow(unused)]
     pub coord_count: u16,
 }
 

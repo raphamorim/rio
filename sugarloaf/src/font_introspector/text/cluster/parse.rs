@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::{
     super::Script, complex::ComplexState, myanmar::MyanmarState, simple::SimpleState,
     CharCluster, Token,

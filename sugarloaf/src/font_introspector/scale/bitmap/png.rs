@@ -324,10 +324,10 @@ fn decode_data<E: Emit>(
                     bwidth,
                 )?;
                 if depth == 8 {
-                    E::emit(&state, line, target, start, y, w, inc, cols)?;
+                    E::emit(state, line, target, start, y, w, inc, cols)?;
                 } else {
                     normalize(line, out_line, depth, has_palette, cols, trunc_16)?;
-                    E::emit(&state, out_line, target, start, y, w, inc, cols)?;
+                    E::emit(state, out_line, target, start, y, w, inc, cols)?;
                 }
                 std::mem::swap(&mut prev_line, &mut line);
                 y += row_inc;
@@ -359,7 +359,7 @@ fn decode_data<E: Emit>(
             let ty = *source.first()?;
             defilter(ty, source.get(1..)?, line, prev_line, bwidth)?;
             normalize(line, out_line, depth, has_palette, w, trunc_16)?;
-            E::emit(&state, out_line, target, 0, y, w, 1, w)?;
+            E::emit(state, out_line, target, 0, y, w, 1, w)?;
             std::mem::swap(&mut prev_line, &mut line);
         }
     }

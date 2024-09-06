@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::cluster::{Glyph, GlyphInfo};
 use super::feature::*;
 use crate::font_introspector::text::{
@@ -74,7 +77,9 @@ pub struct Buffer {
     pub has_marks: bool,
     pub reversed: bool,
     pub next_cluster: u32,
+    #[allow(unused)]
     pub indices: Vec<usize>,
+    #[allow(unused)]
     pub ids: Vec<u16>,
     pub skip_state: SkipState,
     pub sub_args: Vec<u16>,
@@ -577,7 +582,7 @@ pub fn reorder_complex(
         }
         match g.char_class {
             Base => {
-                if first_base == None {
+                if first_base.is_none() {
                     first_base = Some(i);
                     ignored[i] = true;
                 }
@@ -589,13 +594,13 @@ pub fn reorder_complex(
                 last_halant = Some(i);
             }
             Reph => {
-                if reph == None {
+                if reph.is_none() {
                     reph = Some(i);
                     ignored[i] = true;
                 }
             }
             Pref => {
-                if pref == None {
+                if pref.is_none() {
                     pref = Some(i);
                     ignored[i] = true;
                 }

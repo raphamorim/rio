@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::internal::{var::*, RawFont};
 use super::{
     setting::Setting,
@@ -7,12 +10,14 @@ use super::{
 
 /// Proxy for rematerializing variations collections.
 #[derive(Copy, Clone)]
+#[allow(unused)]
 pub struct VariationsProxy {
     fvar: u32,
     avar: u32,
     len: usize,
 }
 
+#[allow(unused)]
 impl VariationsProxy {
     /// Creates a variations proxy from the specified font.
     pub fn from_font(font: &FontRef) -> Self {

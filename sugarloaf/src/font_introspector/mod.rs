@@ -1,26 +1,5 @@
-/*!
-Font introspection, complex text shaping and glyph rendering.
-
-For a comprehensive list of features provided by this crate, please check out
-the [readme](https://github.com/dfrg/swash/blob/master/README.md) on GitHub.
-
-# Note
-
-This is a low level library focusing on implementations of OpenType and
-various related Unicode specifications for building high quality, high performance
-text layout and rendering components with minimal overhead.
-
-If you're looking for something higher level, please stay tuned-- work is in
-progress.
-
-# Usage
-
-The primary currency in this crate is the [`FontRef`] struct so you'll want to
-start there to learn how to construct and use fonts.
-
-Documentation for [shaping](shape) and [scaling](scale) is provided in
-the respective modules.
-*/
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
 
 #![allow(clippy::float_cmp)]
 #![allow(clippy::many_single_char_names)]

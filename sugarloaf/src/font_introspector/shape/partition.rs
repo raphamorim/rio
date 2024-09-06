@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 /*!
 Shaper that partitions by font using trait based per-cluster selection.
 
@@ -43,33 +46,40 @@ pub trait ShapeOptions {
     type Variations: Iterator<Item = Setting<f32>>;
 
     /// Returns the script of the text in the fragment.
+    #[allow(unused)]
     fn script(&self) -> Script {
         Script::Latin
     }
 
     /// Returns the language of the text in the fragment.
+    #[allow(unused)]
     fn language(&self) -> Option<Language> {
         None
     }
 
     /// Returns the direction for the fragment.
+    #[allow(unused)]
     fn direction(&self) -> Direction {
         Direction::LeftToRight
     }
 
     /// Returns the font size for the fragment.
+    #[allow(unused)]
     fn size(&self) -> f32 {
         0.
     }
 
     /// Returns an iterator over the feature settings for the fragment.
+    #[allow(unused)]
     fn features(&self) -> Self::Features;
 
     /// Returns an iterator over the variation settings for the fragment.
+    #[allow(unused)]
     fn variations(&self) -> Self::Variations;
 
     /// Returns true if the shaper should insert dotted circles for broken
     /// clusters in the fragment.
+    #[allow(unused)]
     fn insert_dotted_circles(&self) -> bool {
         false
     }
@@ -144,6 +154,7 @@ impl<'a> ShapeOptions for SimpleShapeOptions<'a> {
 /// Shapes a run of text (provided as a [`Token`] iterator) using the specified [`Selector`] to assign
 /// per-cluster fonts. Invokes the specified closure `f` for each contiguous fragment with the chosen font
 /// and a prepared [`Shaper`] that contains the cluster content of the fragment.
+#[allow(unused)]
 pub fn shape<S, T>(
     context: &mut ShapeContext,
     selector: &mut S,
@@ -195,6 +206,7 @@ pub fn shape<S, T>(
     }
 }
 
+#[allow(unused)]
 fn shape_clusters<S, T>(
     context: &mut ShapeContext,
     selector: &mut S,

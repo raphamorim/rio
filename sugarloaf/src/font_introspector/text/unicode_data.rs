@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 // Automatically generated from the Unicode version 13.0.0 character database.
 
 #![allow(dead_code)]
@@ -79,6 +82,7 @@ pub enum Block {
     Batak = 23,
     Bengali = 24,
     Bhaiksuki = 25,
+    #[allow(clippy::enum_variant_names)]
     BlockElements = 26,
     Bopomofo = 27,
     BopomofoExtended = 28,
@@ -249,6 +253,7 @@ pub enum Block {
     MyanmarExtendedB = 193,
     Nabataean = 194,
     Nandinagari = 195,
+    #[allow(clippy::enum_variant_names)]
     NoBlock = 196,
     NewTaiLue = 197,
     Newa = 198,
@@ -430,6 +435,7 @@ pub enum Script {
     Kharoshthi = 59,
     Khmer = 60,
     Khojki = 61,
+    #[allow(clippy::enum_variant_names)]
     KhitanSmallScript = 62,
     Kannada = 63,
     Kaithi = 64,

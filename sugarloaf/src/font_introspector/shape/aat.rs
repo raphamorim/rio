@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use super::buffer::*;
 use super::internal::aat::*;
 
@@ -44,15 +47,16 @@ pub fn apply_morx(
                     let mut state = RearrangementState::new();
                     while i < buffer.glyphs.len() && ops < max_ops {
                         let g = buffer.glyphs[i].id;
-                        match t.next(&mut state, i, g, false, |r| {
+                        if let Some(advance) = t.next(&mut state, i, g, false, |r| {
                             // if TRACE {
                             //     println!("Rearrange!");
                             // }
                             r.apply(&mut buffer.glyphs);
                             Some(())
                         }) {
-                            Some(advance) => i += advance,
-                            None => break,
+                            i += advance;
+                        } else {
+                            break;
                         }
                         ops += 1;
                     }
@@ -131,24 +135,27 @@ pub fn apply_morx(
                     let mut state = InsertionState::new();
                     while i < buffer.glyphs.len() && ops < max_ops {
                         let g = buffer.glyphs[i].id;
-                        match t.next(&mut state, i, g, false, |i, array| {
-                            // if TRACE {
-                            //     let rep = array.iter().collect::<Vec<_>>();
-                            //     println!("Insert[{}] {:?}", i, &rep);
-                            // }
-                            buffer.multiply(i, array.len());
-                            let start = i;
-                            let end = start + array.len();
-                            for (g, s) in
-                                buffer.glyphs[start..end].iter_mut().zip(array.iter())
-                            {
-                                g.id = s;
-                                g.flags = 0;
-                            }
-                            Some(())
-                        }) {
-                            Some(advance) => i += advance,
-                            None => break,
+                        if let Some(advance) =
+                            t.next(&mut state, i, g, false, |i, array| {
+                                // if TRACE {
+                                //     let rep = array.iter().collect::<Vec<_>>();
+                                //     println!("Insert[{}] {:?}", i, &rep);
+                                // }
+                                buffer.multiply(i, array.len());
+                                let start = i;
+                                let end = start + array.len();
+                                for (g, s) in
+                                    buffer.glyphs[start..end].iter_mut().zip(array.iter())
+                                {
+                                    g.id = s;
+                                    g.flags = 0;
+                                }
+                                Some(())
+                            })
+                        {
+                            i += advance;
+                        } else {
+                            break;
                         }
                         ops += 1;
                     }
@@ -242,12 +249,15 @@ pub fn apply_kerx(
                 let len = buffer.glyphs.len();
                 let mut state = ContextualState::new();
                 while i < len {
-                    match t.next(&mut state, i, buffer.glyphs[i].id, |i, kerning| {
-                        buffer.positions[i].advance += kerning as f32;
-                        Some(())
-                    }) {
-                        Some(advance) => i += advance,
-                        None => break,
+                    if let Some(advance) =
+                        t.next(&mut state, i, buffer.glyphs[i].id, |i, kerning| {
+                            buffer.positions[i].advance += kerning as f32;
+                            Some(())
+                        })
+                    {
+                        i += advance;
+                    } else {
+                        break;
                     }
                 }
             }
@@ -290,12 +300,15 @@ pub fn apply_kerx(
                 let len = buffer.glyphs.len();
                 let mut state = Format4State::new();
                 while i < len {
-                    match t.next(&mut state, i, buffer.glyphs[i].id, |i, base, x, y| {
-                        buffer.position_mark(i, base, x, y);
-                        Some(())
-                    }) {
-                        Some(advance) => i += advance,
-                        None => break,
+                    if let Some(advance) =
+                        t.next(&mut state, i, buffer.glyphs[i].id, |i, base, x, y| {
+                            buffer.position_mark(i, base, x, y);
+                            Some(())
+                        })
+                    {
+                        i += advance;
+                    } else {
+                        break;
                     }
                 }
             }
@@ -354,32 +367,37 @@ pub fn apply_kern(data: &[u8], kern: u32, buffer: &mut Buffer) -> Option<()> {
                 let len = buffer.glyphs.len();
                 let mut state = Format1State::new();
                 while i < len {
-                    match t.next(&mut state, i, buffer.glyphs[i].id, |i, kerning| {
-                        let g = &buffer.glyphs[i];
-                        if g.joining_type == 6 {
-                            if cross_stream {
-                                let pos = &mut buffer.positions[i];
-                                if pos.y == 0. {
-                                    pos.y = kerning as f32;
-                                }
-                            } else if let Some(base) = find_base(buffer, buffer.is_rtl, i)
-                            {
-                                let diff = if base >= i { base - i } else { i - base };
-                                if diff < 255 {
+                    if let Some(advance) =
+                        t.next(&mut state, i, buffer.glyphs[i].id, |i, kerning| {
+                            let g = &buffer.glyphs[i];
+                            if g.joining_type == 6 {
+                                if cross_stream {
                                     let pos = &mut buffer.positions[i];
-                                    if pos.base == 0 {
-                                        pos.flags |= MARK_ATTACH;
-                                        pos.base = diff as u8;
-                                        pos.x = kerning as f32;
-                                        buffer.has_marks = true;
+                                    if pos.y == 0. {
+                                        pos.y = kerning as f32;
+                                    }
+                                } else if let Some(base) =
+                                    find_base(buffer, buffer.is_rtl, i)
+                                {
+                                    let diff =
+                                        if base >= i { base - i } else { i - base };
+                                    if diff < 255 {
+                                        let pos = &mut buffer.positions[i];
+                                        if pos.base == 0 {
+                                            pos.flags |= MARK_ATTACH;
+                                            pos.base = diff as u8;
+                                            pos.x = kerning as f32;
+                                            buffer.has_marks = true;
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Some(())
-                    }) {
-                        Some(advance) => i += advance,
-                        None => break,
+                            Some(())
+                        })
+                    {
+                        i += advance;
+                    } else {
+                        break;
                     }
                 }
             }

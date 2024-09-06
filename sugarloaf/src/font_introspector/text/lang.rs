@@ -1,3 +1,6 @@
+// font_introspector was retired from https://github.com/dfrg/swash
+// which is licensed under MIT license
+
 use crate::font_introspector::{tag_from_bytes, Tag};
 use core::fmt;
 
@@ -67,7 +70,7 @@ impl Language {
                             if let Ok(index) =
                                 LANG_BY_TAG2.binary_search_by(|x| x.0.cmp(&key))
                             {
-                                lang_index = (*LANG_BY_TAG2.get(index)?).1
+                                lang_index = (LANG_BY_TAG2.get(index)?).1
                             }
                         }
                         3 => {
@@ -83,7 +86,7 @@ impl Language {
                             if let Ok(index) =
                                 LANG_BY_TAG3.binary_search_by(|x| x.0.cmp(&key))
                             {
-                                lang_index = (*LANG_BY_TAG3.get(index)?).1 as u16
+                                lang_index = LANG_BY_TAG3.get(index)?.1 as u16
                             }
                         }
                         _ => return None,
@@ -156,7 +159,7 @@ impl Language {
             Ok(index) => index,
             _ => return None,
         };
-        return Self::parse(LANG_ENTRIES.get(name_index)?.1);
+        Self::parse(LANG_ENTRIES.get(name_index)?.1)
     }
 
     /// Returns the language component.
