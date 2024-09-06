@@ -220,6 +220,7 @@ impl Renderer {
         )
     }
 
+    #[inline]
     fn compute_decoration(
         &self,
         square: &Square,
@@ -371,7 +372,10 @@ impl Renderer {
 
             if last_style != style {
                 if !content.is_empty() {
+                    let start = std::time::Instant::now();
                     content_builder.add_text(&content, last_style);
+                    let duration = start.elapsed();
+                    println!("Total add_text: {:?}", duration);
                 }
 
                 content.clear();
@@ -380,10 +384,17 @@ impl Renderer {
 
             content.push(square_content);
 
+            // Dois problemas
+            // calculate_hash
+            // e 
+
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
+                    let start = std::time::Instant::now();
                     content_builder.add_text(&content, last_style);
+                    let duration = start.elapsed();
+                    println!("Total add_text: {:?}", duration);
                 }
 
                 break;
@@ -669,6 +680,7 @@ impl Renderer {
 
         let mut content_builder = Content::builder();
 
+        let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             self.create_line(
@@ -680,8 +692,13 @@ impl Renderer {
                 focused_match,
             );
         }
+        let duration = start.elapsed();
+        println!("Total loop rows: {:?}", duration);
 
+        let start = std::time::Instant::now();
         sugarloaf.set_content(content_builder.build());
+        let duration = start.elapsed();
+        println!("Total set_content build: {:?}", duration);
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
