@@ -639,7 +639,7 @@ impl Renderer {
         cursor: CursorState,
         sugarloaf: &mut Sugarloaf,
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
-        display_offset: i32,
+        display_offset: usize,
         has_blinking_enabled: bool,
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
@@ -675,7 +675,7 @@ impl Renderer {
                 &mut content_builder,
                 row,
                 has_cursor,
-                Line((i as i32) - display_offset),
+                Line((i - display_offset) as i32),
                 hints,
                 focused_match,
             );
