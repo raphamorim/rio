@@ -83,7 +83,7 @@ impl<'a> FontDataRef<'a> {
 ///
 /// ```
 /// fn print_localized_strings(font_path: &str) -> Option<()> {
-///     use crate::font_introspector::FontRef;
+///     use sugarloaf::font_introspector::FontRef;
 ///     // Read the full font file
 ///     let font_data = std::fs::read(font_path).ok()?;
 ///     // Create a font reference for the first font in the file
@@ -108,7 +108,7 @@ impl<'a> FontDataRef<'a> {
 /// the same, so we'll build a simple `Font` struct here that can load fonts from a
 /// file using a basic `Vec<u8>` as a backing store.
 /// ```
-/// use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef};
+/// use sugarloaf::font_introspector::{Attributes, CacheKey, Charmap, FontRef};
 ///
 /// pub struct Font {
 ///     // Full content of the font file

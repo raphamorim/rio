@@ -1,7 +1,7 @@
 pub mod components;
 pub mod context;
 pub mod font;
-mod font_introspector;
+pub mod font_introspector;
 pub mod layout;
 mod sugarloaf;
 
