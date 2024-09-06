@@ -9,8 +9,8 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use crate::font_introspector::Attributes;
 use crate::font_introspector::text::cluster::CharInfo;
+use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
 use std::hash::{Hash, Hasher};
