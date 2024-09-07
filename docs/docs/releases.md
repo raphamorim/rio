@@ -10,6 +10,7 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
+- Implement LRU to cache on layout and draw methods.
 - Reenable set subtitle on MacOS native tabs.
 
 ## 0.1.12
