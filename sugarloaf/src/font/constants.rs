@@ -60,4 +60,4 @@ pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
 pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
     font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
 
-pub const FONT_NOTO_EMOJI: &[u8] = font!("./resources/NotoEmoji/NotoEmoji.ttf");
+pub const FONT_TWEMOJI_EMOJI: &[u8] = font!("./resources/Twemoji/Twemoji.Mozilla.ttf");

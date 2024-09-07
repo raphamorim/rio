@@ -337,7 +337,7 @@ impl FontLibraryData {
             }
         } else {
             self.inner.push(FontSource::Data(
-                FontData::from_slice(FONT_NOTO_EMOJI).unwrap(),
+                FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
             ));
         }
 
