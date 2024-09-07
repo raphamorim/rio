@@ -15,7 +15,6 @@ language: 'en'
 - Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
 - Fix: Underline cursor not working.
-- Fix: Normalisation of size of nerd fonts width.
 - Fix:  sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
 - Initial support to Sixel protocol.
 - Support to `fonts.emoji`. You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
