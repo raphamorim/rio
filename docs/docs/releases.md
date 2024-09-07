@@ -9,6 +9,9 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+
+## 0.1.12
+
 - Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
 - Fix: Underline cursor not working.
