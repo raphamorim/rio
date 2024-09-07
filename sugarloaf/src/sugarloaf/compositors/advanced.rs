@@ -62,7 +62,6 @@ impl Advanced {
 
     #[inline]
     pub fn update_layout(&mut self, tree: &SugarTree) {
-        // let start = std::time::Instant::now();
         self.render_data = RenderData::default();
 
         let mut lb = self
@@ -74,19 +73,11 @@ impl Advanced {
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
-
-        // let duration = start.elapsed();
-        // println!(" - advanced::update_layout() is: {:?}", duration);
     }
 
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
         let mut content_builder = Content::builder();
-        // content_builder.enter_span(&[
-        //     SpanStyle::FontId(0),
-        //     SpanStyle::Size(tree.layout.font_size),
-        //     // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        // ]);
         content_builder.add_char(' ', FragmentStyle::default());
 
         let mut lb = self

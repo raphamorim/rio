@@ -21,6 +21,7 @@ pub struct GlyphCache {
     scx: ScaleContext,
     fonts: FxHashMap<FontKey, FontEntry>,
     img: GlyphImage,
+    max_height: u16,
 }
 
 impl GlyphCache {
@@ -29,6 +30,7 @@ impl GlyphCache {
             scx: ScaleContext::new(),
             fonts: FxHashMap::default(),
             img: GlyphImage::new(),
+            max_height: 0,
         }
     }
 
@@ -55,9 +57,15 @@ impl GlyphCache {
             entry,
             images,
             scaler,
+            max_height: &self.max_height,
             scaled_image: &mut self.img,
             quant_size,
         }
+    }
+
+    #[inline]
+    pub fn set_max_height(&mut self, max_height: u16) {
+        self.max_height = max_height;
     }
 
     // pub fn prune(&mut self, images: &mut ImageCache) {
@@ -68,14 +76,6 @@ impl GlyphCache {
     //         false
     //     });
     // }
-
-    #[allow(unused)]
-    pub fn clear_evicted(&mut self, images: &mut ImageCache) {
-        self.fonts.retain(|_, entry| {
-            entry.glyphs.retain(|_, g| images.is_valid(g.image));
-            !entry.glyphs.is_empty()
-        });
-    }
 }
 
 fn get_entry<'a>(
@@ -103,6 +103,7 @@ pub struct GlyphCacheSession<'a> {
     scaler: Scaler<'a>,
     scaled_image: &'a mut GlyphImage,
     quant_size: u16,
+    max_height: &'a u16,
 }
 
 impl<'a> GlyphCacheSession<'a> {
@@ -149,11 +150,33 @@ impl<'a> GlyphCacheSession<'a> {
                 data: ImageData::Borrowed(&self.scaled_image.data),
             };
             let image = self.images.allocate(req)?;
+
+            let mut top = p.top;
+            let mut height = h;
+
+            // If dimension is None it means that we are running
+            // for the first time and in this case, we will obtain
+            // what the next glyph entries should respect in terms of
+            // top and height values
+            //
+            // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
+            //
+            // The calculation is made based on max_height
+            // If the rect max height is 50 and the glyph height is 68
+            // and 48 top, then (68 - 50 = 18) height as difference and
+            // apply it to the top (bigger the top == up ^).
+            if self.max_height > &0 && &h > self.max_height {
+                let difference = h - self.max_height;
+
+                top -= difference as i32;
+                height = *self.max_height;
+            }
+
             let entry = GlyphEntry {
                 left: p.left,
-                top: p.top,
+                top,
                 width: w,
-                height: h,
+                height,
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
             };
