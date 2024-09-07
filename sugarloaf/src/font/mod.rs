@@ -9,7 +9,7 @@ pub const FONT_ID_REGULAR: usize = 0;
 use crate::font::constants::*;
 use crate::font_introspector::proxy::CharmapProxy;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
-use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
+use crate::font_introspector::{Attributes, CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
@@ -52,7 +52,6 @@ pub fn lookup_for_font_match(
     for (current_font_id, font) in library.inner.iter().enumerate() {
         let (font, font_ref) = match font {
             FontSource::Data(font_data) => (font_data, font_data.as_ref()),
-            FontSource::Extension(_) => (&library.standard, library.standard.as_ref()),
             FontSource::Standard => (&library.standard, library.standard.as_ref()),
         };
 
@@ -96,7 +95,6 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
-        fonts_to_load: &mut Vec<(usize, PathBuf)>,
         fragment_style: &FragmentStyle,
     ) -> Option<usize> {
         let is_italic = fragment_style.font_attrs.style() == Style::Italic;
@@ -193,13 +191,6 @@ impl Default for FontLibrary {
 pub enum FontSource {
     Standard,
     Data(FontData),
-    Extension(FontDataExtension),
-}
-
-#[derive(Clone)]
-pub struct FontDataExtension {
-    path: PathBuf,
-    is_emoji: bool,
 }
 
 pub struct FontLibraryData {
@@ -259,8 +250,6 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.bold_italic.family);
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
-
-        let is_using_standard_regular = spec.regular.is_default_family();
 
         match find_font(&self.db, spec.regular) {
             FindResult::Found(data) => {
@@ -349,7 +338,7 @@ impl FontLibraryData {
         } else {
             self.inner.push(FontSource::Data(
                 FontData::from_slice(FONT_NOTO_EMOJI).unwrap(),
-            ));   
+            ));
         }
 
         for extra_font in spec.extras {
@@ -370,11 +359,9 @@ impl FontLibraryData {
             }
         }
 
-        if !is_using_standard_regular {
-            self.inner.push(FontSource::Data(
-                FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-            ));
-        }
+        self.inner.push(FontSource::Data(
+            FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
+        ));
 
         fonts_not_fount
     }
@@ -394,7 +381,6 @@ impl Index<usize> for FontLibraryData {
     fn index(&self, index: usize) -> &Self::Output {
         match &self.inner[index] {
             FontSource::Data(font_ref) => font_ref,
-            FontSource::Extension(_) => &self.standard,
             FontSource::Standard => &self.standard,
         }
     }
@@ -404,7 +390,6 @@ impl IndexMut<usize> for FontLibraryData {
     fn index_mut(&mut self, index: usize) -> &mut FontData {
         match &mut self.inner[index] {
             FontSource::Data(font_ref) => font_ref,
-            FontSource::Extension(_) => &mut self.standard,
             FontSource::Standard => &mut self.standard,
         }
     }
@@ -669,6 +654,7 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
     FontData::from_slice(font_to_load).unwrap()
 }
 
+#[allow(dead_code)]
 fn find_font_path(
     db: &crate::font::loader::Database,
     font_family: String,

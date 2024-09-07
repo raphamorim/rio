@@ -19,7 +19,6 @@ use crate::font_introspector::text::{analyze, Script};
 use crate::font_introspector::{Setting, Synthesis};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
 use rustc_hash::FxHashMap;
-use std::path::PathBuf;
 
 pub struct RunCache {
     inner: FxHashMap<u64, RunCacheEntry>,
@@ -48,7 +47,7 @@ impl RunCache {
 
     #[inline]
     fn clear_on_max_capacity(&mut self) -> bool {
-        if self.inner.len() > 512 {
+        if self.inner.len() > 768 {
             self.inner.clear();
             true
         } else {
@@ -67,7 +66,6 @@ pub struct LayoutContext {
     cache: RunCache,
     cache_analysis: FxHashMap<String, Vec<CharInfo>>,
     shaper_cache: ShaperCache,
-    fonts_to_load: Vec<(usize, PathBuf)>,
 }
 
 impl LayoutContext {
@@ -80,7 +78,6 @@ impl LayoutContext {
             state: BuilderState::new(),
             cache: RunCache::new(),
             shaper_cache: ShaperCache::default(),
-            fonts_to_load: vec![],
             font_features: vec![],
             cache_analysis: FxHashMap::default(),
         }
@@ -111,6 +108,7 @@ impl LayoutContext {
 
         if prev_font_size != self.state.font_size {
             self.cache.inner.clear();
+            self.shaper_cache.inner.clear();
         }
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -124,7 +122,6 @@ impl LayoutContext {
             cache: &mut self.cache,
             shaper_cache: &mut self.shaper_cache,
             cache_analysis: &mut self.cache_analysis,
-            fonts_to_load: &mut self.fonts_to_load,
         }
     }
 
@@ -145,7 +142,6 @@ pub struct ParagraphBuilder<'a> {
     cache: &'a mut RunCache,
     shaper_cache: &'a mut ShaperCache,
     cache_analysis: &'a mut FxHashMap<String, Vec<CharInfo>>,
-    fonts_to_load: &'a mut Vec<(usize, PathBuf)>,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -288,24 +284,6 @@ impl<'a> ParagraphBuilder<'a> {
         // let duration = start.elapsed();
         // println!("Time elapsed in resolve is: {:?}", duration);
 
-        // In this case, we actually have found fonts that have not been loaded yet
-        // We need to load and then restart the whole resolve function again
-        if !self.fonts_to_load.is_empty() {
-            {
-                let font_library = { &mut self.fonts.inner.write().unwrap() };
-                while let Some(font_to_load) = self.fonts_to_load.pop() {
-                    let (font_id, path) = font_to_load;
-                    font_library.upsert(font_id, path);
-                }
-            }
-
-            *render_data = RenderData::default();
-            self.cache.inner.clear();
-            for line_number in 0..self.s.lines.len() {
-                self.shape(render_data, line_number);
-            }
-        };
-
         if should_clear {
             self.shaper_cache.clear();
             self.cache_analysis.clear();
@@ -420,7 +398,6 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 &mut shape_state.synth,
                 font_library,
-                self.fonts_to_load,
                 &style,
             );
 
@@ -433,7 +410,6 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 render_data,
                 current_line,
-                self.fonts_to_load,
                 self.shaper_cache,
             ) {}
 
@@ -486,6 +462,7 @@ impl ShaperCache {
     pub fn clear(&mut self) {
         self.stash.clear();
         self.key.clear();
+        self.inner.clear();
     }
 
     #[inline]
@@ -517,7 +494,6 @@ fn shape_clusters<I>(
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
     current_line: usize,
-    fonts_to_load: &mut Vec<(usize, PathBuf)>,
     shaper_cache: &mut ShaperCache,
 ) -> bool
 where
@@ -555,8 +531,7 @@ where
             return false;
         }
 
-        let next_font =
-            fcx.map_cluster(cluster, &mut synth, fonts, fonts_to_load, state.span);
+        let next_font = fcx.map_cluster(cluster, &mut synth, fonts, state.span);
         if next_font != state.font_id || synth != state.synth {
             render_data.push_run(
                 state.span,
