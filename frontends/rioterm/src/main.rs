@@ -89,14 +89,11 @@ fn setup_logs_by_filter_level(
         }
     }
 
-    let filter = EnvFilter::builder()
-        .with_default_directive(filter_level.into())
-        .parse("")?;
-
+    let env_filter = EnvFilter::builder().with_default_directive(filter_level.into());
     let stdout_subscriber = tracing_subscriber::fmt::layer()
         .with_writer(std::io::stdout)
         .with_ansi(true)
-        .with_filter(filter);
+        .with_filter(env_filter.parse("")?);
     let subscriber = tracing_subscriber::registry().with(stdout_subscriber);
 
     if let Some(log_file) = &log_file {
@@ -106,7 +103,8 @@ fn setup_logs_by_filter_level(
             .with_line_number(true)
             .with_writer(log_file)
             .with_target(false)
-            .with_ansi(false);
+            .with_ansi(false)
+            .with_filter(env_filter.parse("")?);
         subscriber.with(file_subscriber).init();
     } else {
         subscriber.init();
