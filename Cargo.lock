@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "copa"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -1599,6 +1599,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
+name = "lru"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37ee39891760e7d94734f6f63fedc29a2e4a152f836120753a72503f09fcf904"
+dependencies = [
+ "hashbrown",
+]
+
+[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2349,7 +2358,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "base64",
  "bitflags 2.6.0",
@@ -2378,7 +2387,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2386,7 +2395,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -2437,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "ahash",
  "bitflags 2.6.0",
@@ -2769,7 +2778,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -2787,6 +2796,7 @@ dependencies = [
  "image 0.25.2",
  "js-sys",
  "linked-hash-map",
+ "lru",
  "memmap2",
  "ordered-float",
  "png",
@@ -2842,7 +2852,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "corcovado",
  "dirs",
@@ -3180,7 +3190,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "wa"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "bitflags 2.6.0",
  "fnv",

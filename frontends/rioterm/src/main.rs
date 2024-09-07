@@ -9,7 +9,6 @@ mod bindings;
 mod cli;
 mod constants;
 mod context;
-mod frame;
 mod ime;
 mod messenger;
 mod mouse;

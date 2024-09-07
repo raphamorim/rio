@@ -26,7 +26,6 @@ impl TimerId {
 pub enum Topic {
     Render,
     RenderRoute,
-    Frame,
 }
 
 /// Event scheduled to be emitted at a specific time.
@@ -36,7 +35,6 @@ pub struct Timer {
     pub event: EventPayload,
     pub id: TimerId,
 
-    #[allow(unused)]
     interval: Option<Duration>,
 }
 

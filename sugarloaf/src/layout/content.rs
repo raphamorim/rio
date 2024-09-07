@@ -7,7 +7,6 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::layout::*;
-use core::ops::Range;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(PartialEq, Debug, Clone)]
@@ -75,72 +74,6 @@ impl Content {
 
             lcx.new_line();
         }
-    }
-
-    pub fn get_selection_into(&self, range: Range<usize>, buf: &mut String) {
-        buf.clear();
-        if let Some(s) = self.text.get(range) {
-            buf.push_str(s);
-        }
-    }
-
-    pub fn get_selection(&self, range: Range<usize>) -> String {
-        let mut s = String::default();
-        self.get_selection_into(range, &mut s);
-        s
-    }
-
-    #[inline]
-    pub fn insert_str(&mut self, offset: usize, text: &str) -> Option<usize> {
-        if self.text.is_char_boundary(offset) {
-            self.text.insert_str(offset, text);
-            let len = text.len() as u32;
-            let last_line = self.fragments.len();
-            let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-            self.fragments[last_line].data[frag_index].end += len;
-            for frag in &mut self.fragments[last_line].data[frag_index + 1..] {
-                frag.start += len;
-                frag.end += len;
-            }
-            return Some(offset + text.len());
-        }
-        None
-    }
-
-    #[inline]
-    pub fn insert(&mut self, offset: usize, ch: char) -> Option<usize> {
-        if self.text.is_char_boundary(offset) {
-            self.text.insert(offset, ch);
-            let len = ch.len_utf8() as u32;
-            let last_line = self.fragments.len();
-            let frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-            self.fragments[last_line].data[frag_index].end += len;
-            for frag in &mut self.fragments[last_line].data[frag_index + 1..] {
-                frag.start += len;
-                frag.end += len;
-            }
-            return Some(offset + len as usize);
-        }
-        None
-    }
-
-    pub fn erase(&mut self, offset: usize) -> Option<usize> {
-        let _frag_index = self.fragment_from_offset(offset).unwrap_or(0);
-        if self.text.is_char_boundary(offset) {
-            self.text.remove(offset);
-            return Some(offset);
-        }
-        None
-    }
-
-    fn fragment_from_offset(&self, offset: usize) -> Option<usize> {
-        let last_line = self.fragments.len();
-        for (i, frag) in self.fragments[last_line].data.iter().enumerate() {
-            if offset >= frag.start as usize && offset < frag.end as usize {
-                return Some(i);
-            }
-        }
-        self.fragments.len().checked_sub(1)
     }
 }
 

@@ -12,7 +12,8 @@ use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{CachedRun, Compositor, DisplayList, Rect, Vertex};
-use rustc_hash::FxHashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -243,7 +244,7 @@ impl RichTextBrush {
             images,
             textures_version: 0,
             glyphs: GlyphCache::new(),
-            draw_layout_cache: DrawLayoutCache::default(),
+            draw_layout_cache: DrawLayoutCache::new(),
             dlist,
             transform,
             pipeline,
@@ -291,7 +292,6 @@ impl RichTextBrush {
             &state.current.layout.dimensions,
             graphics,
         );
-        self.draw_layout_cache.clear_on_demand();
 
         self.dlist.clear();
         self.images.process_atlases(context);
@@ -420,27 +420,25 @@ impl RichTextBrush {
     }
 }
 
-#[derive(Default)]
 struct DrawLayoutCache {
-    inner: FxHashMap<u64, Vec<CachedRun>>,
+    inner: LruCache<u64, Vec<CachedRun>>,
 }
 
 impl DrawLayoutCache {
+    fn new() -> Self {
+        Self {
+            inner: LruCache::new(NonZeroUsize::new(128).unwrap()),
+        }
+    }
+
     #[inline]
-    fn get(&self, hash: &u64) -> Option<&Vec<CachedRun>> {
+    fn get(&mut self, hash: &u64) -> Option<&Vec<CachedRun>> {
         self.inner.get(hash)
     }
 
     #[inline]
-    fn insert(&mut self, hash: u64, data: Vec<CachedRun>) {
-        self.inner.insert(hash, data);
-    }
-
-    #[inline]
-    fn clear_on_demand(&mut self) {
-        if self.inner.len() > 128 {
-            self.inner.clear();
-        }
+    fn put(&mut self, hash: u64, data: Vec<CachedRun>) {
+        self.inner.put(hash, data);
     }
 
     #[inline]
@@ -474,6 +472,8 @@ fn draw_layout(
         }
     }
 
+    glyphs_cache.set_max_height(rect.height as u16);
+
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
@@ -505,7 +505,6 @@ fn draw_layout(
             let char_width = run.char_width();
             let mut cached_run = CachedRun::new(char_width);
             let font = *run.font();
-            let char_width = run.char_width();
 
             let run_x = px;
             glyphs.clear();
@@ -584,7 +583,7 @@ fn draw_layout(
         }
 
         if !cached_line_runs.is_empty() {
-            draw_layout_cache.insert(hash, cached_line_runs);
+            draw_layout_cache.put(hash, cached_line_runs);
         }
     }
 
