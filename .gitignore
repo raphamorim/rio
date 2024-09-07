@@ -14,4 +14,4 @@ NOTES
 *.wasm
 *.ts
 *.js
-rio.log
+*.log
