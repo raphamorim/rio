@@ -535,8 +535,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        self.event_proxy
-                            .send_event(RioEvent::Title(window_title), self.window_id);
+                        if cfg!(target_os = "macos") {
+                            self.event_proxy.send_event(
+                                RioEvent::TitleWithSubtitle(window_title, path.clone()),
+                                self.window_id,
+                            );
+                        } else {
+                            self.event_proxy.send_event(
+                                RioEvent::Title(window_title),
+                                self.window_id,
+                            );
+                        }
                     }
 
                     id =
