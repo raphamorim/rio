@@ -587,6 +587,8 @@ pub fn default_key_bindings(
         "/", +BindingMode::VI, ~BindingMode::SEARCH; Action::SearchForward;
         "n", +BindingMode::VI, ~BindingMode::SEARCH; SearchAction::SearchFocusNext;
         "n",  ModifiersState::SHIFT, +BindingMode::VI, ~BindingMode::SEARCH; SearchAction::SearchFocusPrevious;
+        Key::Named(Enter), +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
+        Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
         "i", +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
         "c", ModifiersState::CONTROL, +BindingMode::VI; Action::ToggleViMode;
         Key::Named(Escape), +BindingMode::VI; Action::ClearSelection;
