@@ -80,3 +80,14 @@ In case you would like to change:
 # [fonts.emoji]
 # family = "Noto Color Emoji"
 ```
+
+## User interface
+
+You can specify user interface font on Rio.
+
+Note: `fonts.ui` does not have live reload configuration update, you need to close and open Rio again.
+
+```toml
+[fonts.ui]
+family = "Departure Mono"
+```

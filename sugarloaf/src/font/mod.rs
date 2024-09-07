@@ -194,7 +194,7 @@ pub enum FontSource {
 }
 
 pub struct FontLibraryData {
-    pub main: FontArc,
+    pub ui: FontArc,
     // Standard is fallback for everything, it is also the inner number 0
     pub standard: FontData,
     pub inner: Vec<FontSource>,
@@ -207,7 +207,7 @@ impl Default for FontLibraryData {
         db.load_system_fonts();
         Self {
             db,
-            main: FontArc::try_from_slice(FONT_DEPARTURE_MONO).unwrap(),
+            ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
         }
@@ -362,6 +362,17 @@ impl FontLibraryData {
         self.inner.push(FontSource::Data(
             FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
         ));
+
+        if let Some(ui_spec) = spec.ui {
+            match find_font(&self.db, ui_spec) {
+                FindResult::Found(data) => {
+                    self.ui = FontArc::try_from_vec(data.data.to_vec()).unwrap();
+                }
+                FindResult::NotFound(spec) => {
+                    fonts_not_fount.push(spec);
+                }
+            }
+        }
 
         fonts_not_fount
     }
