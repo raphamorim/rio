@@ -133,7 +133,7 @@ impl ApplicationHandler for Application {
                 );
                 content.finish_line();
                 content.add_text(
-                    "㏑¼",
+                    "│㏑¼",
                     FragmentStyle {
                         color: [0.0, 0.0, 0.0, 1.0],
                         background_color: Some([1.0, 1.0, 1.0, 1.0]),
@@ -152,7 +152,7 @@ impl ApplicationHandler for Application {
                 );
                 content.finish_line();
                 content.add_text(
-                    " regular -> ",
+                    "│regular -> ",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
                             UnderlineInfo {
@@ -202,7 +202,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
-                    "curly",
+                    "│curly",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
                             UnderlineInfo {
@@ -219,7 +219,7 @@ impl ApplicationHandler for Application {
                 );
                 content.finish_line();
                 content.add_text(
-                    "dashed",
+                    "│dashed",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
                             UnderlineInfo {
@@ -256,6 +256,15 @@ impl ApplicationHandler for Application {
                         )),
                         color: [1.0, 1.0, 1.0, 1.0],
                         background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                        ..FragmentStyle::default()
+                    },
+                );
+                content.finish_line();
+                content.add_text(
+                    "│ \u{E0B6}Hello There!\u{e0b4}",
+                    FragmentStyle {
+                        color: [1.0, 1.0, 1.0, 1.0],
+                        background_color: Some([0.5, 0.5, 1.0, 1.0]),
                         ..FragmentStyle::default()
                     },
                 );

@@ -430,12 +430,12 @@ fn commit_line(
         hash: run_data.hash,
         ascent: run_data.ascent.round(),
         descent: run_data.descent.round(),
-        leading: (run_data.leading * 0.5).round() * 2.,
+        leading: (run_data.leading).round() * 2.,
         ..Default::default()
     };
 
-    let above = (line.ascent + line.leading * 0.5).round();
-    let below = (line.descent + line.leading * 0.5).round();
+    let above = line.ascent;
+    let below = line.descent;
     line.baseline = *y + above;
     *y = line.baseline + below;
 

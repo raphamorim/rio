@@ -472,6 +472,8 @@ fn draw_layout(
         }
     }
 
+    glyphs_cache.set_max_height(rect.height as u16);
+
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
@@ -503,7 +505,6 @@ fn draw_layout(
             let char_width = run.char_width();
             let mut cached_run = CachedRun::new(char_width);
             let font = *run.font();
-            let char_width = run.char_width();
 
             let run_x = px;
             glyphs.clear();
