@@ -67,7 +67,7 @@ weight = 800
 
 ## Emojis
 
-You can also specify which emoji font you would like to use, by default will be loaded a built-in Noto Emoji.
+You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
 
 In case you would like to change:
 
