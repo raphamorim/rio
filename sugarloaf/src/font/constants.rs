@@ -43,7 +43,7 @@ pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCodePL-LightItalic.otf");
 
 pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-Regular.otf");
+    font!("./resources/CascadiaCode/CascadiaCodeNF-Regular.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCodePL-SemiBold.otf");
@@ -57,8 +57,8 @@ pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
     font!("./resources/CascadiaCode/CascadiaCodePL-SemiLightItalic.otf");
 
-pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
-    font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
-
 pub const FONT_DEPARTURE_MONO: &[u8] =
     font!("./resources/DepartureMono/DepartureMono-Regular.otf");
+
+pub const FONT_NOTO_EMOJI: &[u8] =
+    font!("./resources/NotoEmoji/NotoEmoji.ttf");

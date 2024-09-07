@@ -35,7 +35,7 @@ pub mod text;
 
 pub use attributes::*;
 pub use cache::CacheKey;
-pub use charmap::Charmap;
+pub use charmap::{Charmap, map_glyph};
 #[allow(unused)]
 pub use feature::{Action, Feature, WritingSystem};
 #[allow(unused)]
