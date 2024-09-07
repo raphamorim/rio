@@ -18,22 +18,23 @@ use crate::font_introspector::text::cluster::{CharCluster, CharInfo, Parser, Tok
 use crate::font_introspector::text::{analyze, Script};
 use crate::font_introspector::{Setting, Synthesis};
 use crate::layout::render_data::{RenderData, RunCacheEntry};
-use rustc_hash::FxHashMap;
+use lru::LruCache;
+use std::num::NonZeroUsize;
 
 pub struct RunCache {
-    inner: FxHashMap<u64, RunCacheEntry>,
+    inner: LruCache<u64, RunCacheEntry>,
 }
 
 impl RunCache {
     #[inline]
     fn new() -> Self {
         Self {
-            inner: FxHashMap::default(),
+            inner: LruCache::new(NonZeroUsize::new(256).unwrap()),
         }
     }
 
     #[inline]
-    fn insert(&mut self, line_hash: u64, data: RunCacheEntry) {
+    fn put(&mut self, line_hash: u64, data: RunCacheEntry) {
         if data.runs.is_empty() {
             return;
         }
@@ -41,17 +42,7 @@ impl RunCache {
         if let Some(line) = self.inner.get_mut(&line_hash) {
             *line = data;
         } else {
-            self.inner.insert(line_hash, data);
-        }
-    }
-
-    #[inline]
-    fn clear_on_max_capacity(&mut self) -> bool {
-        if self.inner.len() > 768 {
-            self.inner.clear();
-            true
-        } else {
-            false
+            self.inner.put(line_hash, data);
         }
     }
 }
@@ -64,7 +55,7 @@ pub struct LayoutContext {
     scx: ShapeContext,
     state: BuilderState,
     cache: RunCache,
-    cache_analysis: FxHashMap<String, Vec<CharInfo>>,
+    cache_analysis: LruCache<String, Vec<CharInfo>>,
     shaper_cache: ShaperCache,
 }
 
@@ -77,9 +68,9 @@ impl LayoutContext {
             scx: ShapeContext::new(),
             state: BuilderState::new(),
             cache: RunCache::new(),
-            shaper_cache: ShaperCache::default(),
+            shaper_cache: ShaperCache::new(),
             font_features: vec![],
-            cache_analysis: FxHashMap::default(),
+            cache_analysis: LruCache::new(NonZeroUsize::new(256).unwrap()),
         }
     }
 
@@ -108,7 +99,7 @@ impl LayoutContext {
 
         if prev_font_size != self.state.font_size {
             self.cache.inner.clear();
-            self.shaper_cache.inner.clear();
+            self.shaper_cache.clear();
         }
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -141,7 +132,7 @@ pub struct ParagraphBuilder<'a> {
     last_offset: u32,
     cache: &'a mut RunCache,
     shaper_cache: &'a mut ShaperCache,
-    cache_analysis: &'a mut FxHashMap<String, Vec<CharInfo>>,
+    cache_analysis: &'a mut LruCache<String, Vec<CharInfo>>,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -248,9 +239,6 @@ impl<'a> ParagraphBuilder<'a> {
     }
 
     fn resolve(&mut self, render_data: &mut RenderData) {
-        // Cache needs to be cleaned before build lines
-        let should_clear = self.cache.clear_on_max_capacity();
-
         // let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
             // In case should render only requested lines
@@ -272,7 +260,7 @@ impl<'a> ParagraphBuilder<'a> {
                     line.text.info.push(char_info);
                     cache.push(char_info);
                 }
-                self.cache_analysis.insert(content_key, cache);
+                self.cache_analysis.put(content_key, cache);
             }
 
             self.itemize(line_number);
@@ -283,11 +271,6 @@ impl<'a> ParagraphBuilder<'a> {
         }
         // let duration = start.elapsed();
         // println!("Time elapsed in resolve is: {:?}", duration);
-
-        if should_clear {
-            self.shaper_cache.clear();
-            self.cache_analysis.clear();
-        }
     }
 
     #[inline]
@@ -413,7 +396,7 @@ impl<'a> ParagraphBuilder<'a> {
                 self.shaper_cache,
             ) {}
 
-            self.cache.insert(
+            self.cache.put(
                 self.s.lines[current_line].hash,
                 render_data.last_cached_run.to_owned(),
             );
@@ -434,16 +417,23 @@ struct ShapeState<'a> {
     size: f32,
 }
 
-#[derive(Default)]
 pub struct ShaperCache {
-    pub inner: FxHashMap<String, Vec<OwnedGlyphCluster>>,
+    pub inner: LruCache<String, Vec<OwnedGlyphCluster>>,
     stash: Vec<OwnedGlyphCluster>,
     key: String,
 }
 
 impl ShaperCache {
+    pub fn new() -> Self {
+        ShaperCache {
+            inner: LruCache::new(NonZeroUsize::new(256).unwrap()),
+            stash: vec![],
+            key: String::new(),
+        }
+    }
+
     #[inline]
-    pub fn shape_with(&self) -> Option<&Vec<OwnedGlyphCluster>> {
+    pub fn shape_with(&mut self) -> Option<&Vec<OwnedGlyphCluster>> {
         if self.key.is_empty() {
             return None;
         }
@@ -473,7 +463,7 @@ impl ShaperCache {
     #[inline]
     pub fn finish(&mut self) {
         if !self.key.is_empty() && !self.stash.is_empty() {
-            self.inner.insert(
+            self.inner.put(
                 std::mem::take(&mut self.key),
                 std::mem::take(&mut self.stash),
             );
