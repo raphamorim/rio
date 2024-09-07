@@ -566,8 +566,8 @@ impl FontData {
     }
 
     #[inline]
-    pub fn charmap_proxy(&self) -> CharmapProxy {
-        self.charmap_proxy
+    pub fn charmap_proxy(&self) -> &CharmapProxy {
+        &self.charmap_proxy
     }
 
     // Create the transient font reference for accessing this crate's
