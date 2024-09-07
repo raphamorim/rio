@@ -12,8 +12,21 @@ language: 'en'
 - Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
 - Fix: Underline cursor not working.
+- Fix: Normalisation of size of nerd fonts width.
 - Fix:  sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
 - Initial support to Sixel protocol.
+- Support to `fonts.emoji`, by default will be loaded Noto Emoji. If you would like to change would be something like:
+
+```toml
+# Apple
+# [fonts.emoji]
+# family = "Apple Color Emoji"
+
+# In case you have Noto Color Emoji installed
+# [fonts.emoji]
+# family = "Noto Color Emoji"
+```
+
 - **breaking:** Revamp the cursor configuration
 
 Before:

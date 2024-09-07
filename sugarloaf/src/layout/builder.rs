@@ -431,7 +431,6 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut shape_state,
                 &mut parser,
                 &mut char_cluster,
-                // dir,
                 render_data,
                 current_line,
                 self.fonts_to_load,

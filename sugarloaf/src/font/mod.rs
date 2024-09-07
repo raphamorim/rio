@@ -71,7 +71,7 @@ pub fn lookup_for_font_match(
             }
         }
 
-        let charmap = font.charmap_proxy().materialize(&font_ref);
+        let charmap = font.charmap_proxy.materialize(&font_ref);
         let status = cluster.map(|ch| charmap.map(ch));
         if status != Status::Discard {
             *synth = library[current_font_id].synth;
@@ -128,7 +128,7 @@ impl FontContext {
             if let Some(cached_font_id) = self.cache.get(&cache_key) {
                 let cached_font_id = *cached_font_id;
                 let charmap = library[cached_font_id]
-                    .charmap_proxy()
+                    .charmap_proxy
                     .materialize(&library[cached_font_id].as_ref());
                 let status = cluster.map(|ch| charmap.map(ch));
                 if status != Status::Discard {
@@ -147,39 +147,6 @@ impl FontContext {
             }
 
             return Some(found_font_id);
-        }
-
-        let mut emoji_font_id = None;
-        if cluster.info().is_emoji() {
-            for (id, font_source) in library.inner.iter().enumerate() {
-                match font_source {
-                    FontSource::Data(font_data) => {
-                        if font_data.is_emoji {
-                            emoji_font_id = Some(id);
-                            break;
-                        }
-                    }
-                    FontSource::Extension(font_data_extension) => {
-                        // In this case we will actually need to load
-                        if font_data_extension.is_emoji {
-                            emoji_font_id = Some(id);
-                            fonts_to_load.push((id, font_data_extension.path.clone()));
-                            break;
-                        }
-                    }
-                    FontSource::Standard => {}
-                }
-            }
-        }
-
-        if let Some(emoji_font_id) = emoji_font_id {
-            let charmap = library[emoji_font_id]
-                .charmap_proxy()
-                .materialize(&library[emoji_font_id].as_ref());
-            let status = cluster.map(|ch| charmap.map(ch));
-            if status != Status::Discard {
-                *synth = library[emoji_font_id].synth;
-            }
         }
 
         Some(0)
@@ -293,6 +260,8 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
+        let is_using_standard_regular = spec.regular.is_default_family();
+
         match find_font(&self.db, spec.regular) {
             FindResult::Found(data) => {
                 self.standard = data;
@@ -347,31 +316,40 @@ impl FontLibraryData {
         }
 
         for fallback in fallbacks::external_fallbacks() {
-            let is_emoji = fallback.to_lowercase().contains("emoji");
-
-            if is_emoji {
-                if let Some(path) = find_font_path(&self.db, fallback) {
-                    self.inner.push(FontSource::Extension(FontDataExtension {
-                        path,
-                        is_emoji,
-                    }));
+            match find_font(
+                &self.db,
+                SugarloafFont {
+                    family: fallback,
+                    ..SugarloafFont::default()
+                },
+            ) {
+                FindResult::Found(data) => {
+                    self.inner.push(FontSource::Data(data));
                 }
-            } else {
-                match find_font(
-                    &self.db,
-                    SugarloafFont {
-                        family: fallback,
-                        ..SugarloafFont::default()
-                    },
-                ) {
-                    FindResult::Found(data) => {
-                        self.inner.push(FontSource::Data(data));
-                    }
-                    FindResult::NotFound(_spec) => {
-                        // Fallback should not add errors
+                FindResult::NotFound(spec) => {
+                    // Fallback should not add errors
+                    log::info!("{:?}", spec);
+                }
+            }
+        }
+
+        if let Some(emoji_font) = spec.emoji {
+            match find_font(&self.db, emoji_font) {
+                FindResult::Found(data) => {
+                    self.inner.push(FontSource::Data(data));
+                }
+                FindResult::NotFound(spec) => {
+                    self.inner
+                        .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    if !spec.is_default_family() {
+                        fonts_not_fount.push(spec);
                     }
                 }
             }
+        } else {
+            self.inner.push(FontSource::Data(
+                FontData::from_slice(FONT_NOTO_EMOJI).unwrap(),
+            ));   
         }
 
         for extra_font in spec.extras {
@@ -392,9 +370,11 @@ impl FontLibraryData {
             }
         }
 
-        self.inner.push(FontSource::Data(
-            FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-        ));
+        if !is_using_standard_regular {
+            self.inner.push(FontSource::Data(
+                FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
+            ));
+        }
 
         fonts_not_fount
     }
@@ -478,7 +458,7 @@ pub struct FontData {
     offset: u32,
     // Cache key
     pub key: CacheKey,
-    charmap_proxy: CharmapProxy,
+    pub charmap_proxy: CharmapProxy,
     pub weight: crate::font_introspector::Weight,
     pub style: crate::font_introspector::Style,
     pub stretch: crate::font_introspector::Stretch,
@@ -558,16 +538,6 @@ impl FontData {
     #[inline]
     pub fn attributes(&self) -> Attributes {
         self.as_ref().attributes()
-    }
-
-    #[inline]
-    pub fn charmap(&self) -> Charmap {
-        self.as_ref().charmap()
-    }
-
-    #[inline]
-    pub fn charmap_proxy(&self) -> &CharmapProxy {
-        &self.charmap_proxy
     }
 
     // Create the transient font reference for accessing this crate's
