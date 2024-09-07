@@ -11,6 +11,15 @@ pub fn default_line_height() -> f32 {
 }
 
 #[inline]
+pub fn default_max_fps() -> u64 {
+    if cfg!(target_os = "macos") {
+        120
+    } else {
+        60
+    }
+}
+
+#[inline]
 pub fn default_padding_y() -> [f32; 2] {
     [0., 0.]
 }

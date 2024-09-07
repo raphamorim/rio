@@ -1,17 +1,13 @@
 mod window;
-use crate::event::{EventPayload, EventProxy};
-use crate::frame::FrameTimer;
+use crate::event::EventProxy;
 use crate::router::window::{configure_window, create_window_builder};
 use crate::routes::{assistant, RoutePath};
-use crate::scheduler::TimerId;
-use crate::scheduler::{Scheduler, Topic};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
-use rio_backend::event::RioEventType;
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -23,7 +19,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
-use std::time::Duration;
 
 pub struct Route {
     pub assistant: assistant::Assistant,
@@ -51,39 +46,6 @@ impl Route {
     #[inline]
     pub fn request_redraw(&mut self) {
         self.window.winit_window.request_redraw();
-    }
-
-    /// Request a new frame for a window
-    pub fn request_frame(&mut self, scheduler: &mut Scheduler) {
-        // Mark that we've used a frame.
-        self.window.has_frame = false;
-
-        // Get the display vblank interval.
-        let monitor_vblank_interval = 1_000_000.
-            / self
-                .window
-                .winit_window
-                .current_monitor()
-                .and_then(|monitor| monitor.refresh_rate_millihertz())
-                .unwrap_or(60_000) as f64;
-
-        // Now convert it to micro seconds.
-        let monitor_vblank_interval =
-            Duration::from_micros((1000. * monitor_vblank_interval) as u64);
-
-        let swap_timeout = self
-            .window
-            .frame_timer
-            .compute_timeout(monitor_vblank_interval);
-
-        if swap_timeout > Duration::from_nanos(0) && !cfg!(feature = "wayland") {
-            let window_id = self.window.winit_window.id();
-            let timer_id = TimerId::new(Topic::Frame, window_id);
-            let event = EventPayload::new(RioEventType::Frame, window_id);
-            scheduler.schedule(event, swap_timeout, false, timer_id);
-        } else {
-            self.window.has_frame = true;
-        }
     }
 
     #[inline]
@@ -214,6 +176,15 @@ impl Router {
     }
 
     #[inline]
+    pub fn update_titles(&mut self) {
+        for route in self.routes.values_mut() {
+            if route.window.is_focused {
+                route.window.screen.context_manager.update_titles();
+            }
+        }
+    }
+
+    #[inline]
     pub fn create_route_from_window(&mut self, route_window: RouteWindow) {
         let id = route_window.winit_window.id();
         let mut route = Route {
@@ -341,7 +312,6 @@ pub struct RouteWindow {
     pub has_frame: bool,
     pub has_updates: bool,
     pub winit_window: Window,
-    pub frame_timer: FrameTimer,
     pub screen: Screen<'static>,
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
@@ -385,7 +355,6 @@ impl RouteWindow {
             is_occluded: false,
             has_frame: true,
             has_updates: true,
-            frame_timer: FrameTimer::new(),
             winit_window,
             screen,
             #[cfg(target_os = "macos")]
@@ -442,7 +411,6 @@ impl RouteWindow {
         Self {
             has_frame: true,
             has_updates: true,
-            frame_timer: FrameTimer::new(),
             is_focused: false,
             is_occluded: false,
             winit_window,

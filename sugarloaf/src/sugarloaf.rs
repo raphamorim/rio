@@ -121,7 +121,7 @@ impl Sugarloaf<'_> {
         let ctx = Context::new(window, renderer);
 
         let text_brush = {
-            let data = { &font_library.inner.read().unwrap().main };
+            let data = { &font_library.inner.read().unwrap().ui };
             text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
                 .build(&ctx.device, ctx.format)
         };

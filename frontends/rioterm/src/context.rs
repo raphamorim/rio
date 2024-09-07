@@ -506,7 +506,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(unix)]
         {
-            let interval_time = Duration::from_secs(2);
+            let interval_time = Duration::from_secs(3);
             if self.titles.last_title_update.elapsed() > interval_time {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
@@ -535,8 +535,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                             format!("{} ({})", terminal_title, program)
                         };
 
-                        self.event_proxy
-                            .send_event(RioEvent::Title(window_title), self.window_id);
+                        if cfg!(target_os = "macos") {
+                            self.event_proxy.send_event(
+                                RioEvent::TitleWithSubtitle(window_title, path.clone()),
+                                self.window_id,
+                            );
+                        } else {
+                            self.event_proxy.send_event(
+                                RioEvent::Title(window_title),
+                                self.window_id,
+                            );
+                        }
                     }
 
                     id =
@@ -549,7 +558,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(unix))]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {

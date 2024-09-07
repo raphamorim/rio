@@ -9,7 +9,7 @@ pub const FONT_ID_REGULAR: usize = 0;
 use crate::font::constants::*;
 use crate::font_introspector::proxy::CharmapProxy;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
-use crate::font_introspector::{Attributes, CacheKey, Charmap, FontRef, Synthesis};
+use crate::font_introspector::{Attributes, CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
@@ -52,7 +52,6 @@ pub fn lookup_for_font_match(
     for (current_font_id, font) in library.inner.iter().enumerate() {
         let (font, font_ref) = match font {
             FontSource::Data(font_data) => (font_data, font_data.as_ref()),
-            FontSource::Extension(_) => (&library.standard, library.standard.as_ref()),
             FontSource::Standard => (&library.standard, library.standard.as_ref()),
         };
 
@@ -71,7 +70,7 @@ pub fn lookup_for_font_match(
             }
         }
 
-        let charmap = font.charmap_proxy().materialize(&font_ref);
+        let charmap = font.charmap_proxy.materialize(&font_ref);
         let status = cluster.map(|ch| charmap.map(ch));
         if status != Status::Discard {
             *synth = library[current_font_id].synth;
@@ -96,11 +95,10 @@ impl FontContext {
         cluster: &mut CharCluster,
         synth: &mut Synthesis,
         library: &FontLibraryData,
-        fonts_to_load: &mut Vec<(usize, PathBuf)>,
         fragment_style: &FragmentStyle,
     ) -> Option<usize> {
-        let is_italic = fragment_style.font_attrs.2 == Style::Italic;
-        let is_bold = fragment_style.font_attrs.1 == Weight::BOLD;
+        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
+        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
 
         let chars = cluster.chars();
         let is_cache_key_empty = chars.is_empty();
@@ -128,7 +126,7 @@ impl FontContext {
             if let Some(cached_font_id) = self.cache.get(&cache_key) {
                 let cached_font_id = *cached_font_id;
                 let charmap = library[cached_font_id]
-                    .charmap_proxy()
+                    .charmap_proxy
                     .materialize(&library[cached_font_id].as_ref());
                 let status = cluster.map(|ch| charmap.map(ch));
                 if status != Status::Discard {
@@ -147,39 +145,6 @@ impl FontContext {
             }
 
             return Some(found_font_id);
-        }
-
-        let mut emoji_font_id = None;
-        if cluster.info().is_emoji() {
-            for (id, font_source) in library.inner.iter().enumerate() {
-                match font_source {
-                    FontSource::Data(font_data) => {
-                        if font_data.is_emoji {
-                            emoji_font_id = Some(id);
-                            break;
-                        }
-                    }
-                    FontSource::Extension(font_data_extension) => {
-                        // In this case we will actually need to load
-                        if font_data_extension.is_emoji {
-                            emoji_font_id = Some(id);
-                            fonts_to_load.push((id, font_data_extension.path.clone()));
-                            break;
-                        }
-                    }
-                    FontSource::Standard => {}
-                }
-            }
-        }
-
-        if let Some(emoji_font_id) = emoji_font_id {
-            let charmap = library[emoji_font_id]
-                .charmap_proxy()
-                .materialize(&library[emoji_font_id].as_ref());
-            let status = cluster.map(|ch| charmap.map(ch));
-            if status != Status::Discard {
-                *synth = library[emoji_font_id].synth;
-            }
         }
 
         Some(0)
@@ -226,17 +191,10 @@ impl Default for FontLibrary {
 pub enum FontSource {
     Standard,
     Data(FontData),
-    Extension(FontDataExtension),
-}
-
-#[derive(Clone)]
-pub struct FontDataExtension {
-    path: PathBuf,
-    is_emoji: bool,
 }
 
 pub struct FontLibraryData {
-    pub main: FontArc,
+    pub ui: FontArc,
     // Standard is fallback for everything, it is also the inner number 0
     pub standard: FontData,
     pub inner: Vec<FontSource>,
@@ -249,7 +207,7 @@ impl Default for FontLibraryData {
         db.load_system_fonts();
         Self {
             db,
-            main: FontArc::try_from_slice(FONT_DEPARTURE_MONO).unwrap(),
+            ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
         }
@@ -347,31 +305,40 @@ impl FontLibraryData {
         }
 
         for fallback in fallbacks::external_fallbacks() {
-            let is_emoji = fallback.to_lowercase().contains("emoji");
-
-            if is_emoji {
-                if let Some(path) = find_font_path(&self.db, fallback) {
-                    self.inner.push(FontSource::Extension(FontDataExtension {
-                        path,
-                        is_emoji,
-                    }));
+            match find_font(
+                &self.db,
+                SugarloafFont {
+                    family: fallback,
+                    ..SugarloafFont::default()
+                },
+            ) {
+                FindResult::Found(data) => {
+                    self.inner.push(FontSource::Data(data));
                 }
-            } else {
-                match find_font(
-                    &self.db,
-                    SugarloafFont {
-                        family: fallback,
-                        ..SugarloafFont::default()
-                    },
-                ) {
-                    FindResult::Found(data) => {
-                        self.inner.push(FontSource::Data(data));
-                    }
-                    FindResult::NotFound(_spec) => {
-                        // Fallback should not add errors
+                FindResult::NotFound(spec) => {
+                    // Fallback should not add errors
+                    log::info!("{:?}", spec);
+                }
+            }
+        }
+
+        if let Some(emoji_font) = spec.emoji {
+            match find_font(&self.db, emoji_font) {
+                FindResult::Found(data) => {
+                    self.inner.push(FontSource::Data(data));
+                }
+                FindResult::NotFound(spec) => {
+                    self.inner
+                        .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    if !spec.is_default_family() {
+                        fonts_not_fount.push(spec);
                     }
                 }
             }
+        } else {
+            self.inner.push(FontSource::Data(
+                FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
+            ));
         }
 
         for extra_font in spec.extras {
@@ -396,6 +363,17 @@ impl FontLibraryData {
             FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
         ));
 
+        if let Some(ui_spec) = spec.ui {
+            match find_font(&self.db, ui_spec) {
+                FindResult::Found(data) => {
+                    self.ui = FontArc::try_from_vec(data.data.to_vec()).unwrap();
+                }
+                FindResult::NotFound(spec) => {
+                    fonts_not_fount.push(spec);
+                }
+            }
+        }
+
         fonts_not_fount
     }
 
@@ -414,7 +392,6 @@ impl Index<usize> for FontLibraryData {
     fn index(&self, index: usize) -> &Self::Output {
         match &self.inner[index] {
             FontSource::Data(font_ref) => font_ref,
-            FontSource::Extension(_) => &self.standard,
             FontSource::Standard => &self.standard,
         }
     }
@@ -424,7 +401,6 @@ impl IndexMut<usize> for FontLibraryData {
     fn index_mut(&mut self, index: usize) -> &mut FontData {
         match &mut self.inner[index] {
             FontSource::Data(font_ref) => font_ref,
-            FontSource::Extension(_) => &mut self.standard,
             FontSource::Standard => &mut self.standard,
         }
     }
@@ -478,7 +454,7 @@ pub struct FontData {
     offset: u32,
     // Cache key
     pub key: CacheKey,
-    charmap_proxy: CharmapProxy,
+    pub charmap_proxy: CharmapProxy,
     pub weight: crate::font_introspector::Weight,
     pub style: crate::font_introspector::Style,
     pub stretch: crate::font_introspector::Stretch,
@@ -558,16 +534,6 @@ impl FontData {
     #[inline]
     pub fn attributes(&self) -> Attributes {
         self.as_ref().attributes()
-    }
-
-    #[inline]
-    pub fn charmap(&self) -> Charmap {
-        self.as_ref().charmap()
-    }
-
-    #[inline]
-    pub fn charmap_proxy(&self) -> CharmapProxy {
-        self.charmap_proxy
     }
 
     // Create the transient font reference for accessing this crate's
@@ -699,6 +665,7 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
     FontData::from_slice(font_to_load).unwrap()
 }
 
+#[allow(dead_code)]
 fn find_font_path(
     db: &crate::font::loader::Database,
     font_family: String,

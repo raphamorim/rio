@@ -9,10 +9,40 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+
+- Implement LRU to cache on layout and draw methods.
+- Reenable set subtitle on MacOS native tabs.
+
+## 0.1.12
+
+- Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
 - Fix: Underline cursor not working.
 - Fix:  sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
 - Initial support to Sixel protocol.
+- Support to `fonts.emoji`. You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
+
+In case you would like to change:
+
+```toml
+# Apple
+# [fonts.emoji]
+# family = "Apple Color Emoji"
+
+# In case you have Noto Color Emoji installed
+# [fonts.emoji]
+# family = "Noto Color Emoji"
+```
+
+- Support to `fonts.ui`. You can specify user interface font on Rio.
+
+Note: `fonts.ui` does not have live reload configuration update, you need to close and open Rio again.
+
+```toml
+[fonts.ui]
+family = "Departure Mono"
+```
+
 - **breaking:** Revamp the cursor configuration
 
 Before:

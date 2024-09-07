@@ -5,7 +5,8 @@ pub fn external_fallbacks() -> Vec<String> {
         String::from("Menlo"),
         String::from("Geneva"),
         String::from("Arial Unicode MS"),
-        String::from("Apple Color Emoji"),
+        // String::from("Noto Emoji"),
+        // String::from("Noto Color Emoji"),
     ]
 }
 
@@ -15,7 +16,7 @@ pub fn external_fallbacks() -> Vec<String> {
         // Lucida Sans Unicode
         // Microsoft JhengHei
         String::from("Segoe UI"),
-        String::from("Segoe UI Emoji"),
+        // String::from("Segoe UI Emoji"),
         String::from("Segoe UI Symbol"),
         String::from("Segoe UI Historic"),
     ]
@@ -26,6 +27,6 @@ pub fn external_fallbacks() -> Vec<String> {
     vec![
         String::from("Noto Sans"),
         String::from("FreeSans"),
-        String::from("Noto Color Emoji"),
+        // String::from("Noto Color Emoji"),
     ]
 }
