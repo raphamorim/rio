@@ -23,8 +23,10 @@ mod screen;
 mod watcher;
 
 use clap::Parser;
+use rio_backend::config::config_dir_path;
 use rio_backend::event::EventPayload;
 use rio_backend::{ansi, crosswords, event, performer, selection};
+use std::path::PathBuf;
 use std::str::FromStr;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
@@ -79,7 +81,7 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
 
 fn setup_logs_by_filter_level(
     log_level: &str,
-    log_file: &Option<String>,
+    log_file: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut filter_level = LevelFilter::from_str(log_level).unwrap_or(LevelFilter::OFF);
 
@@ -96,8 +98,12 @@ fn setup_logs_by_filter_level(
         .with_filter(env_filter.parse("")?);
     let subscriber = tracing_subscriber::registry().with(stdout_subscriber);
 
-    if let Some(log_file) = &log_file {
-        let log_file = std::fs::File::create(log_file)?;
+    let mut log_file_path = PathBuf::new();
+    if log_file {
+        let log_dir_path = config_dir_path().join("log");
+        log_file_path = log_dir_path.join("rio.log");
+        std::fs::create_dir_all(&log_dir_path)?;
+        let log_file = std::fs::File::create(&log_file_path)?;
         let file_subscriber = tracing_subscriber::fmt::layer()
             .with_file(true)
             .with_line_number(true)
@@ -112,9 +118,9 @@ fn setup_logs_by_filter_level(
 
     let span = tracing::span!(tracing::Level::INFO, "logger");
     let _guard = span.enter();
-    tracing::info!("log_level: {log_level}");
-    if let Some(log_file) = log_file {
-        tracing::info!("log_file: {log_file}");
+    tracing::info!("logging level: {log_level}");
+    if log_file {
+        tracing::info!("logging to a file: {}", log_file_path.display());
     }
     Ok(())
 }
@@ -136,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {
-        let _ = setup_logs_by_filter_level("TRACE", &None);
+        let _ = setup_logs_by_filter_level("TRACE", false);
         rio_backend::config::create_config_file(config_path);
         return Ok(());
     }
@@ -147,9 +153,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     {
+        let log_to_file = args.window_options.terminal_options.log_file.clone();
         if let Err(e) = setup_logs_by_filter_level(
             &config.developer.log_level,
-            &config.developer.log_file,
+            log_to_file || config.developer.log_file,
         ) {
             eprintln!("unable to configure the logger: {e:?}");
         }
