@@ -1,5 +1,5 @@
 use std::ffi::CStr;
-use std::os::raw::c_short;
+use std::os::raw::{c_char, c_short};
 use std::sync::Arc;
 use std::{mem, ptr};
 
@@ -174,7 +174,7 @@ impl PreeditCallbacks {
         let start_callback = create_xim_callback(client_data, unsafe {
             mem::transmute::<
                 usize,
-                unsafe extern "C" fn(*mut x11_dl::xlib::_XIM, *mut i8, *mut i8),
+                unsafe extern "C" fn(*mut x11_dl::xlib::_XIM, *mut c_char, *mut c_char),
             >(preedit_start_callback as usize)
         });
         let done_callback = create_xim_callback(client_data, preedit_done_callback);
