@@ -10,6 +10,8 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
+- Fix: Image background support to OpenGL targets.
+- Fix: Unable to render images with sixel protocol & ratatui-image [#639](https://github.com/raphamorim/rio/issues/639).
 - Implement LRU to cache on layout and draw methods.
 - Reenable set subtitle on MacOS native tabs.
 
