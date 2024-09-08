@@ -61,6 +61,8 @@ impl SugarState {
         // because it's based on sugarline hash which only consider the font size
         self.compositors.advanced.reset();
         self.current.layout.rescale(scale).update();
+        self.current.layout.dimensions.height = 0.0;
+        self.current.layout.dimensions.width = 0.0;
         self.latest_change = SugarTreeDiff::Repaint;
     }
 
