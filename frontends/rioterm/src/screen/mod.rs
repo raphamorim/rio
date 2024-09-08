@@ -379,11 +379,8 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        // TODO: Fix this double render hack on scale update
         self.render();
         self.resize_all_contexts();
-
-        self.render();
 
         self
     }
