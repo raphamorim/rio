@@ -15,13 +15,13 @@ use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
 use crate::config::window::Window;
 use colors::Colors;
-use log::warn;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub enum ConfigError {
@@ -57,12 +57,15 @@ pub struct Developer {
     pub enable_fps_counter: bool,
     #[serde(default = "default_log_level", rename = "log-level")]
     pub log_level: String,
+    #[serde(rename = "log-file", default)]
+    pub log_file: bool,
 }
 
 impl Default for Developer {
     fn default() -> Developer {
         Developer {
             log_level: default_log_level(),
+            log_file: false,
             enable_fps_counter: false,
         }
     }
@@ -169,7 +172,7 @@ pub fn config_file_content() -> String {
 pub fn create_config_file(path: Option<PathBuf>) {
     let default_file_path = path.clone().unwrap_or(config_file_path());
     if default_file_path.exists() {
-        log::info!(
+        tracing::info!(
             "configuration file already exists at {}",
             default_file_path.display()
         );
@@ -180,27 +183,32 @@ pub fn create_config_file(path: Option<PathBuf>) {
         let default_dir_path = config_dir_path();
         match std::fs::create_dir_all(&default_dir_path) {
             Ok(_) => {
-                log::info!("configuration path created {}", default_dir_path.display());
+                tracing::info!(
+                    "configuration path created {}",
+                    default_dir_path.display()
+                );
             }
             Err(err_message) => {
-                log::error!("could not create config directory: {err_message}");
+                tracing::error!("could not create config directory: {err_message}");
             }
         }
     }
 
     match File::create(&default_file_path) {
         Err(err_message) => {
-            log::error!(
+            tracing::error!(
                 "could not create config file {}: {err_message}",
                 default_file_path.display()
             )
         }
         Ok(mut created_file) => {
-            log::info!("configuration file created {}", default_file_path.display());
+            tracing::info!("configuration file created {}", default_file_path.display());
 
             if let Err(err_message) = writeln!(created_file, "{}", config_file_content())
             {
-                log::error!("could not update config file with defaults: {err_message}")
+                tracing::error!(
+                    "could not update config file with defaults: {err_message}"
+                )
             }
         }
     }

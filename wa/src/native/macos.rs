@@ -361,7 +361,7 @@ extern "C" fn rio_perform_key_assignment(
     let menu_item = MenuItem::with_menu_item(menu_item);
     // Safe because waPerformKeyAssignment: is only used with KeyAssignment
     let opt_action = menu_item.get_represented_item();
-    log::debug!("rio_perform_key_assignment {opt_action:?}",);
+    tracing::debug!("rio_perform_key_assignment {opt_action:?}",);
     if let Some(action) = opt_action {
         match action {
             RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
@@ -396,7 +396,7 @@ extern "C" fn application_did_finish_launching(
     _sel: Sel,
     _notif: *mut Object,
 ) {
-    log::debug!("application_did_finish_launching");
+    tracing::debug!("application_did_finish_launching");
     unsafe {
         let pool: ObjcId = msg_send![class!(NSAutoreleasePool), new];
         (*this).set_ivar("launched", YES);
@@ -552,7 +552,7 @@ fn send_resize_event(payload: &mut MacosDisplay, rescale: bool) {
 #[inline]
 unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("mouse_moved");
+        tracing::info!("mouse_moved");
 
         if let Some(payload) = get_display_payload(this) {
             unsafe {
@@ -589,7 +589,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     fn fire_mouse_event(this: &Object, event: ObjcId, down: bool, btn: MouseButton) {
-        log::info!("fire_mouse_event");
+        tracing::info!("fire_mouse_event");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let point: NSPoint = msg_send!(event, locationInWindow);
@@ -619,7 +619,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn do_command_by_selector(this: &Object, _sel: Sel, _a_selector: Sel) {
-        log::info!("do_command_by_selector");
+        tracing::info!("do_command_by_selector");
         if let Some(payload) = get_display_payload(this) {
             if payload.ime == ImeState::Commited {
                 return;
@@ -632,7 +632,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn has_marked_text(this: &Object, _sel: Sel) -> BOOL {
-        log::info!("has_marked_text");
+        tracing::info!("has_marked_text");
         if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 YES
@@ -645,7 +645,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
-        log::info!("marked_range");
+        tracing::info!("marked_range");
         if let Some(payload) = get_display_payload(this) {
             if !payload.marked_text.is_empty() {
                 NSRange::new(0, payload.marked_text.len() as u64)
@@ -658,7 +658,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
-        log::info!("selected_range");
+        tracing::info!("selected_range");
         NSRange {
             location: 0,
             length: 1,
@@ -672,7 +672,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         astring: ObjcId,
         _replacement_range: NSRange,
     ) {
-        log::info!("insert_text_replacement_range");
+        tracing::info!("insert_text_replacement_range");
         let string = nsstring_to_string(astring);
         let is_control = string.chars().next().map_or(false, |c| c.is_control());
 
@@ -708,7 +708,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _selected_range: NSRange,
         _replacement_range: NSRange,
     ) {
-        log::info!("set_marked_text_selected_range_replacement_range");
+        tracing::info!("set_marked_text_selected_range_replacement_range");
         let s = nsstring_to_string(astring);
 
         if let Some(payload) = get_display_payload(this) {
@@ -750,7 +750,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn unmark_text(this: &Object, _sel: Sel) {
-        log::info!("unmark_text");
+        tracing::info!("unmark_text");
         if let Some(payload) = get_display_payload(this) {
             payload.marked_text.clear();
             payload.ime = ImeState::Ground;
@@ -767,7 +767,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _sel: Sel,
         _point: NSPoint,
     ) -> NSUInteger {
-        log::info!("character_index_for_point");
+        tracing::info!("character_index_for_point");
         NSNOT_FOUND as _
     }
 
@@ -777,7 +777,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         _range: NSRange,
         _actual: *mut c_void,
     ) -> NSRect {
-        log::info!("first_rect_for_character_range");
+        tracing::info!("first_rect_for_character_range");
 
         // Returns a rect in screen coordinates; this is used to place
         // the input method editor
@@ -809,7 +809,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> ObjcId {
-        log::info!("valid_attributes_for_marked_text");
+        tracing::info!("valid_attributes_for_marked_text");
         // FIXME: returns NSArray<NSAttributedStringKey> *
         let content: &[ObjcId; 0] = &[];
         unsafe {
@@ -830,31 +830,31 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("mouse_down");
+        tracing::info!("mouse_down");
         fire_mouse_event(this, event, true, MouseButton::Left);
     }
     extern "C" fn mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("mouse_up");
+        tracing::info!("mouse_up");
         fire_mouse_event(this, event, false, MouseButton::Left);
     }
     extern "C" fn right_mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("right_mouse_down");
+        tracing::info!("right_mouse_down");
         fire_mouse_event(this, event, true, MouseButton::Right);
     }
     extern "C" fn right_mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("right_mouse_up");
+        tracing::info!("right_mouse_up");
         fire_mouse_event(this, event, false, MouseButton::Right);
     }
     extern "C" fn other_mouse_down(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("other_mouse_down");
+        tracing::info!("other_mouse_down");
         fire_mouse_event(this, event, true, MouseButton::Middle);
     }
     extern "C" fn other_mouse_up(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("other_mouse_up");
+        tracing::info!("other_mouse_up");
         fire_mouse_event(this, event, false, MouseButton::Middle);
     }
     extern "C" fn scroll_wheel(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("scroll_wheel");
+        tracing::info!("scroll_wheel");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let mut dx: f64 = msg_send![event, scrollingDeltaX];
@@ -875,7 +875,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
     }
     extern "C" fn window_did_become_key(this: &Object, _sel: Sel, _event: ObjcId) {
-        log::info!("window_did_become_key");
+        tracing::info!("window_did_become_key");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 if let Some(app_state) = get_app_state(&*payload.app) {
@@ -892,7 +892,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
     }
     extern "C" fn window_did_resign_key(this: &Object, _sel: Sel, _event: ObjcId) {
-        log::info!("window_did_resign_key");
+        tracing::info!("window_did_resign_key");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 if let Some(app_state) = get_app_state(&*payload.app) {
@@ -909,7 +909,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
         }
     }
     extern "C" fn reset_cursor_rects(this: &Object, _sel: Sel) {
-        log::info!("reset_cursor_rects");
+        tracing::info!("reset_cursor_rects");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let cursor_id = {
@@ -933,7 +933,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn dragging_entered(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
-        log::info!("dragging_entered");
+        tracing::info!("dragging_entered");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let pboard: ObjcId = msg_send![sender, draggingPasteboard];
@@ -965,7 +965,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn dragging_exited(this: &Object, _: Sel, _sender: ObjcId) {
-        log::info!("dragging_exited");
+        tracing::info!("dragging_exited");
         if let Some(payload) = get_display_payload(this) {
             if let Some(&mut HandlerState::Running {
                 ref mut handler, ..
@@ -977,7 +977,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn perform_drag_operation(this: &Object, _: Sel, sender: ObjcId) -> BOOL {
-        log::info!("perform_drag_operation");
+        tracing::info!("perform_drag_operation");
         if let Some(payload) = get_display_payload(this) {
             unsafe {
                 let pboard: ObjcId = msg_send![sender, draggingPasteboard];
@@ -1005,7 +1005,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn window_should_close(this: &Object, _: Sel, _: ObjcId) -> BOOL {
-        log::info!("window_should_close");
+        tracing::info!("window_should_close");
         let payload = get_display_payload(this);
 
         if payload.is_none() {
@@ -1054,39 +1054,39 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn window_did_resize(this: &Object, _: Sel, _: ObjcId) {
-        log::info!("window_did_resize");
+        tracing::info!("window_did_resize");
         if let Some(payload) = get_display_payload(this) {
             send_resize_event(payload, false);
         }
     }
     extern "C" fn window_did_change_screen(this: &Object, _: Sel, _: ObjcId) {
-        log::info!("window_did_change_screen");
+        tracing::info!("window_did_change_screen");
         if let Some(payload) = get_display_payload(this) {
             send_resize_event(payload, true);
         }
     }
     extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        log::info!("window_did_enter_fullscreen");
+        tracing::info!("window_did_enter_fullscreen");
         if let Some(payload) = get_display_payload(this) {
             payload.fullscreen = true;
         }
     }
     extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: ObjcId) {
-        log::info!("window_did_exit_fullscreen");
+        tracing::info!("window_did_exit_fullscreen");
         if let Some(payload) = get_display_payload(this) {
             payload.fullscreen = false;
         }
     }
 
     extern "C" fn key_down(this: &Object, _sel: Sel, event: ObjcId) {
-        log::info!("key_down");
+        tracing::info!("key_down");
         if let Some(payload) = get_display_payload(this) {
             let repeat: bool = unsafe { msg_send!(event, isARepeat) };
             let unmod = unsafe { msg_send!(event, charactersIgnoringModifiers) };
             let unmod = nsstring_to_string(unmod);
             let chars = get_event_char(event);
 
-            log::info!("KEY_DOWN (chars={:?} unmod={:?}", chars, unmod,);
+            tracing::info!("KEY_DOWN (chars={:?} unmod={:?}", chars, unmod,);
 
             let old_ime = &payload.ime;
             // unmod is differently depending of the keymap used, for example if you
@@ -1136,7 +1136,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     }
 
     extern "C" fn appearance_did_change(this: &Object, _sel: Sel, _app: ObjcId) {
-        log::info!("appearance_did_change");
+        tracing::info!("appearance_did_change");
         if let Some(payload) = get_display_payload(this) {
             if let Some(&mut HandlerState::Running {
                 ref mut handler, ..
@@ -1150,7 +1150,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     extern "C" fn key_up(this: &Object, _sel: Sel, event: ObjcId) {
         if let Some(payload) = get_display_payload(this) {
             if let Some(key) = get_event_keycode(event) {
-                log::info!("KEY_UP (key={:?}", key);
+                tracing::info!("KEY_UP (key={:?}", key);
                 if let Some(&mut HandlerState::Running {
                     ref mut handler, ..
                 }) = get_app_handler(&Some(payload.app))
@@ -1418,7 +1418,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
 
 #[inline]
 extern "C" fn draw_rect(this: &Object, _sel: Sel, _rect: NSRect) {
-    log::info!("draw_rect");
+    tracing::info!("draw_rect");
     if let Some(payload) = get_display_payload(this) {
         if !payload.has_initialized {
             unsafe { payload.update_dimensions() };
@@ -1491,7 +1491,7 @@ pub fn define_metal_view_class(
     // }
 
     // extern "C" fn update_layer(_this: &mut Object, _sel: Sel) {
-    //     log::trace!("update_layer called");
+    //     tracing::trace!("update_layer called");
     // }
 
     // extern "C" fn timer_fired(_this: &Object, _sel: Sel, _: ObjcId) {
@@ -1519,7 +1519,7 @@ pub fn define_metal_view_class(
     }
 
     extern "C" fn make_backing_layer(this: &mut Object, _: Sel) -> ObjcId {
-        log::trace!("make_backing_layer");
+        tracing::trace!("make_backing_layer");
         let class = class!(CAMetalLayer);
         unsafe {
             let layer: ObjcId = msg_send![class, new];
@@ -1999,7 +1999,7 @@ impl App {
                 let appearance: ObjcId = msg_send![*app.inner, effectiveAppearance];
                 nsstring_to_string(msg_send![appearance, name])
             };
-            log::info!("App Appearance is {name}");
+            tracing::info!("App Appearance is {name}");
             match name.as_str() {
                 "NSAppearanceNameVibrantDark" | "NSAppearanceNameDarkAqua" => {
                     Appearance::Dark
@@ -2016,7 +2016,7 @@ impl App {
                     Appearance::DarkHighContrast
                 }
                 _ => {
-                    log::warn!("Unknown NSAppearanceName {name}, assume Light");
+                    tracing::warn!("Unknown NSAppearanceName {name}, assume Light");
                     Appearance::Light
                 }
             }

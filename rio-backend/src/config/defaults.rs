@@ -442,10 +442,11 @@ pub fn default_config_file_content() -> String {
 
 # Log level
 #
-# This property enables log level filter. Default is "OFF".
+# This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default.
 #
 # Example:
 # [developer]
 # log-level = "OFF"
+# # log-file = "rio.log"
 "#.to_string()
 }

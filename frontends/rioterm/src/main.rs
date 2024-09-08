@@ -10,7 +10,6 @@ mod cli;
 mod constants;
 mod context;
 mod ime;
-mod logger;
 mod messenger;
 mod mouse;
 #[cfg(windows)]
@@ -24,16 +23,22 @@ mod screen;
 mod watcher;
 
 use clap::Parser;
-use log::{info, LevelFilter, SetLoggerError};
-use logger::Logger;
+use rio_backend::config::config_dir_path;
 use rio_backend::event::EventPayload;
 use rio_backend::{ansi, crosswords, event, performer, selection};
+use std::path::PathBuf;
 use std::str::FromStr;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::{
+    self, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer,
+};
 
 #[cfg(windows)]
 use windows_sys::Win32::System::Console::{
     AttachConsole, FreeConsole, ATTACH_PARENT_PROCESS,
 };
+
+const LOG_LEVEL_ENV: &str = "RIO_LOG_LEVEL";
 
 pub fn setup_environment_variables(config: &rio_backend::config::Config) {
     #[cfg(unix)]
@@ -45,7 +50,9 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
 
     #[cfg(unix)]
     {
-        info!("[setup_environment_variables] terminfo: {terminfo}");
+        let span = tracing::span!(tracing::Level::INFO, "setup_environment_variables");
+        let _guard = span.enter();
+        tracing::info!("terminfo: {terminfo}");
         std::env::set_var("TERM", terminfo);
     }
 
@@ -72,19 +79,50 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
     }
 }
 
-static LOGGER: Logger = Logger;
+fn setup_logs_by_filter_level(
+    log_level: &str,
+    log_file: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut filter_level = LevelFilter::from_str(log_level).unwrap_or(LevelFilter::OFF);
 
-fn setup_logs_by_filter_level(log_level: &str) -> Result<(), SetLoggerError> {
-    let mut filter_level = LevelFilter::from_str(log_level).unwrap_or(LevelFilter::Off);
-
-    if let Ok(data) = std::env::var("RIO_LOG_LEVEL") {
+    if let Ok(data) = std::env::var(LOG_LEVEL_ENV) {
         if !data.is_empty() {
             filter_level = LevelFilter::from_str(&data).unwrap_or(filter_level);
         }
     }
 
-    info!("[setup_logs_by_filter_level] log_level: {log_level}");
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(filter_level))
+    let env_filter = EnvFilter::builder().with_default_directive(filter_level.into());
+    let stdout_subscriber = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stdout)
+        .with_ansi(true)
+        .with_filter(env_filter.parse("")?);
+    let subscriber = tracing_subscriber::registry().with(stdout_subscriber);
+
+    let mut log_file_path = PathBuf::new();
+    if log_file {
+        let log_dir_path = config_dir_path().join("log");
+        log_file_path = log_dir_path.join("rio.log");
+        std::fs::create_dir_all(&log_dir_path)?;
+        let log_file = std::fs::File::create(&log_file_path)?;
+        let file_subscriber = tracing_subscriber::fmt::layer()
+            .with_file(true)
+            .with_line_number(true)
+            .with_writer(log_file)
+            .with_target(false)
+            .with_ansi(false)
+            .with_filter(env_filter.parse("")?);
+        subscriber.with(file_subscriber).init();
+    } else {
+        subscriber.init();
+    }
+
+    let span = tracing::span!(tracing::Level::INFO, "logger");
+    let _guard = span.enter();
+    tracing::info!("logging level: {log_level}");
+    if log_file {
+        tracing::info!("logging to a file: {}", log_file_path.display());
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -104,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {
-        let _ = setup_logs_by_filter_level("TRACE");
+        let _ = setup_logs_by_filter_level("TRACE", false);
         rio_backend::config::create_config_file(config_path);
         return Ok(());
     }
@@ -115,8 +153,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     {
-        if setup_logs_by_filter_level(&config.developer.log_level).is_err() {
-            eprintln!("unable to configure log level");
+        let log_to_file = args.window_options.terminal_options.log_file.clone();
+        if let Err(e) = setup_logs_by_filter_level(
+            &config.developer.log_level,
+            log_to_file || config.developer.log_file,
+        ) {
+            eprintln!("unable to configure the logger: {e:?}");
         }
 
         if let Some(command) = args.window_options.terminal_options.command() {

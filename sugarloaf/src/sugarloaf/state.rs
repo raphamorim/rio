@@ -196,20 +196,20 @@ impl SugarState {
             let mut dimensions_changed = false;
             if dimension.height != self.current.layout.dimensions.height {
                 self.current.layout.dimensions.height = dimension.height;
-                log::info!("prepare_render: changed height... {}", dimension.height);
+                tracing::info!("prepare_render: changed height... {}", dimension.height);
                 dimensions_changed = true;
             }
 
             if dimension.width != self.current.layout.dimensions.width {
                 self.current.layout.dimensions.width = dimension.width;
                 self.current.layout.update_columns_per_font_width();
-                log::info!("prepare_render: changed width... {}", dimension.width);
+                tracing::info!("prepare_render: changed width... {}", dimension.width);
                 dimensions_changed = true;
             }
 
             if dimensions_changed {
                 self.current.layout.update();
-                log::info!("sugar_state: dimensions has changed");
+                tracing::info!("sugar_state: dimensions has changed");
             }
         }
     }
@@ -227,7 +227,7 @@ impl SugarState {
             self.compositors.advanced.update_layout(&self.current);
 
             self.latest_change = SugarTreeDiff::Repaint;
-            log::info!("has empty dimensions, will try to find...");
+            tracing::info!("has empty dimensions, will try to find...");
             return;
         }
 
@@ -247,7 +247,7 @@ impl SugarState {
             }
         }
 
-        log::info!("state compute_changes result: {:?}", self.latest_change);
+        tracing::info!("state compute_changes result: {:?}", self.latest_change);
 
         if should_update {
             if should_compute_dimensions {

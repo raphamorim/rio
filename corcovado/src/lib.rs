@@ -116,7 +116,7 @@ extern crate miow;
 extern crate windows_sys;
 
 #[macro_use]
-extern crate log;
+extern crate tracing;
 
 mod event_imp;
 mod io;

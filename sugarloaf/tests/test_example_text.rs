@@ -329,7 +329,7 @@ async fn pass() {
     create_html_canvas();
 
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init().expect("could not initialize logger");
+    console_tracing::init().expect("could not initialize logger");
     wasm_bindgen_futures::spawn_local(run());
 
     // assert_eq!(1 + 1, 2);

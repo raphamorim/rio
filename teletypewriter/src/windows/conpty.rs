@@ -1,8 +1,8 @@
 use crate::Winsize;
-use log::*;
 use std::io::{Error, Result};
 use std::os::windows::io::IntoRawHandle;
 use std::{mem, ptr};
+use tracing::*;
 
 use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 

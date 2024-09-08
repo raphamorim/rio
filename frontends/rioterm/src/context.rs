@@ -155,7 +155,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(not(target_os = "windows"))]
         {
             if config.use_fork {
-                log::info!("rio -> teletypewriter: create_pty_with_fork");
+                tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
                     cols,
@@ -163,12 +163,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
-                        log::error!("{err:?}");
+                        tracing::error!("{err:?}");
                         return Err(Box::new(err));
                     }
                 }
             } else {
-                log::info!("rio -> teletypewriter: create_pty_with_spawn");
+                tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
                     &Cow::Borrowed(&config.shell.program),
                     config.shell.args.clone(),
@@ -178,7 +178,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 ) {
                     Ok(created_pty) => created_pty,
                     Err(err) => {
-                        log::error!("{err:?}");
+                        tracing::error!("{err:?}");
                         return Err(Box::new(err));
                     }
                 }
@@ -201,7 +201,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             ) {
                 Ok(created_pty) => created_pty,
                 Err(err) => {
-                    log::error!("{err:?}");
+                    tracing::error!("{err:?}");
                     return Err(Box::new(err));
                 }
             }
@@ -252,7 +252,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         ) {
             Ok(context) => context,
             Err(err_message) => {
-                log::error!("{:?}", err_message);
+                tracing::error!("{:?}", err_message);
 
                 event_proxy.send_event(
                     RioEvent::ReportToAssistant(RioError {
@@ -743,7 +743,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     }
                 }
                 Err(..) => {
-                    log::error!("not able to create a new context");
+                    tracing::error!("not able to create a new context");
                 }
             }
         }

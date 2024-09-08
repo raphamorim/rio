@@ -2,10 +2,10 @@ extern crate bytes;
 extern crate corcovado;
 extern crate env_logger;
 extern crate iovec;
-extern crate log;
 extern crate net2;
 extern crate slab;
 extern crate tempdir;
+extern crate tracing;
 
 #[cfg(target_os = "fuchsia")]
 extern crate fuchsia_zircon as zircon;

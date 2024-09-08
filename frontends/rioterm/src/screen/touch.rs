@@ -127,7 +127,7 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             let delta_x = touch.location.x - start.location.x;
             let delta_y = touch.location.y - start.location.y;
             if delta_x.abs() > MAX_TAP_DISTANCE {
-                log::info!("tap to select");
+                tracing::info!("tap to select");
                 // Update gesture state.
                 let start_location = start.location;
                 *touch_purpose = TouchPurpose::Select(*start);
@@ -155,13 +155,13 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                 // Apply motion since touch start.
                 on_touch_motion(route, touch);
             } else if delta_y.abs() > MAX_TAP_DISTANCE {
-                log::info!("tap to scroll");
+                tracing::info!("tap to scroll");
                 // Update gesture state.
                 *touch_purpose = TouchPurpose::Scroll(*start);
                 // Apply motion since touch start.
                 on_touch_motion(route, touch);
             } else {
-                log::info!("tap normal");
+                tracing::info!("tap normal");
             }
         }
         TouchPurpose::Zoom(zoom) => {
@@ -177,14 +177,14 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                     .screen
                     .change_font_size(FontSizeAction::Decrease);
             }
-            log::info!("zoom motion: {}", font_delta);
+            tracing::info!("zoom motion: {}", font_delta);
         }
         TouchPurpose::Scroll(last_touch) => {
             // Calculate delta and update last touch position.
             let delta_y = touch.location.y - last_touch.location.y;
             *touch_purpose = TouchPurpose::Scroll(touch);
             route.window.screen.scroll(0., delta_y);
-            log::info!("scroll motion: {}", delta_y);
+            tracing::info!("scroll motion: {}", delta_y);
         }
         TouchPurpose::Select(_) => {
             let layout = route.window.screen.sugarloaf.layout();
@@ -192,7 +192,7 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             let y = touch.location.y.clamp(0.0, layout.height.into()) as usize;
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;
-            log::info!("select motion");
+            tracing::info!("select motion");
         }
         TouchPurpose::Invalid(_) => (),
     }
@@ -229,14 +229,14 @@ fn on_touch_end(route: &mut Route, touch: Touch) {
                 .on_left_click(route.window.screen.mouse_position(0));
             route.window.screen.mouse.click_state = ClickState::None;
             route.window.screen.mouse.left_button_state = ElementState::Released;
-            log::info!("tap end");
+            tracing::info!("tap end");
         }
         // Invalidate zoom once a finger was released.
         TouchPurpose::Zoom(zoom) => {
             let mut slots = zoom.slots();
             slots.remove(&touch.id);
             *touch_purpose = TouchPurpose::Invalid(slots);
-            log::info!("zoom end");
+            tracing::info!("zoom end");
         }
         // Reset touch state once all slots were released.
         TouchPurpose::Invalid(slots) => {
@@ -250,12 +250,12 @@ fn on_touch_end(route: &mut Route, touch: Touch) {
             *touch_purpose = Default::default();
             route.window.screen.mouse.click_state = ClickState::None;
             route.window.screen.mouse.left_button_state = ElementState::Released;
-            log::info!("select end");
+            tracing::info!("select end");
         }
         // Reset touch state on scroll finish.
         TouchPurpose::Scroll(_) => {
             *touch_purpose = Default::default();
-            log::info!("scroll end");
+            tracing::info!("scroll end");
         }
         TouchPurpose::None => (),
     }

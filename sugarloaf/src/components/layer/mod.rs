@@ -341,7 +341,7 @@ impl LayerBrush {
         let texture_version = self.texture_atlas.layer_count();
 
         if self.texture_version != texture_version {
-            log::info!("Atlas has grown. Recreating bind group...");
+            tracing::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("image texture atlas bind group"),
@@ -401,7 +401,7 @@ impl LayerBrush {
         let texture_version = self.texture_atlas.layer_count();
 
         if self.texture_version != texture_version {
-            log::info!("Atlas has grown. Recreating bind group...");
+            tracing::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("image texture atlas bind group"),

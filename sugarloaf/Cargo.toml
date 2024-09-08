@@ -32,7 +32,7 @@ targets = [
 [dependencies]
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
-log = { workspace = true }
+tracing = { workspace = true }
 serde = { workspace = true }
 twox-hash = { version = "1.6.3", default-features = false }
 image_rs = { workspace = true }

@@ -34,6 +34,10 @@ pub struct TerminalOptions {
     /// Writes the config to a given path or the default location.
     #[clap(long, value_name = "PATH", value_hint = ValueHint::FilePath)]
     pub write_config: Option<Option<PathBuf>>,
+
+    /// Writes the logs to a file inside the config directory.
+    #[clap(long)]
+    pub log_file: bool,
 }
 
 impl TerminalOptions {

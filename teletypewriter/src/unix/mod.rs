@@ -445,7 +445,7 @@ pub fn create_pty_with_spawn(
         shell_program = &user.shell;
     }
 
-    log::info!("spawn {:?} {:?}", shell_program, args);
+    tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
         let mut cmd = Command::new(shell_program);
@@ -602,11 +602,11 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
     };
 
     if shell.is_empty() {
-        log::info!("shell configuration is empty, will retrieve from env");
+        tracing::info!("shell configuration is empty, will retrieve from env");
         shell_program = &user.shell;
     }
 
-    log::info!("fork {:?}", shell_program);
+    tracing::info!("fork {:?}", shell_program);
 
     match unsafe {
         forkpty(
