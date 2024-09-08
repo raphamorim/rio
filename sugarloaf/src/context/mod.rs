@@ -99,7 +99,8 @@ impl Context<'_> {
         ))
         .expect("Request adapter");
 
-        tracing::info!("Selected adapter: {:?}", adapter.get_info());
+        let adapter_info = adapter.get_info();
+        tracing::info!("Selected adapter: {:?}", adapter_info);
 
         let caps = surface.get_capabilities(&adapter);
 
@@ -169,7 +170,7 @@ impl Context<'_> {
                 height: size.height,
             },
             scale,
-            adapter_info: adapter.get_info(),
+            adapter_info,
         }
     }
 
