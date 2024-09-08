@@ -17,7 +17,7 @@ include = [
 ]
 
 [dependencies]
-log = { workspace = true }
+tracing = { workspace = true }
 iovec = { workspace = true }
 slab = "0.4.9"
 net2 = "0.2.39"

@@ -47,7 +47,6 @@ use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
 use copa::Params;
 use grid::row::Row;
-use log::{debug, info, warn};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
@@ -59,6 +58,7 @@ use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
 use sugarloaf::GraphicData;
+use tracing::{debug, info, warn};
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -1495,11 +1495,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_title(&mut self) {
-        log::trace!("Pushing '{:?}' onto title stack", self.title);
+        tracing::trace!("Pushing '{:?}' onto title stack", self.title);
 
         if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
             let removed = self.title_stack.remove(0);
-            log::trace!(
+            tracing::trace!(
                 "Removing '{:?}' from bottom of title stack that exceeds its maximum depth",
                 removed
             );
@@ -1510,10 +1510,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn pop_title(&mut self) {
-        log::trace!("Attempting to pop title from stack...");
+        tracing::trace!("Attempting to pop title from stack...");
 
         if let Some(popped) = self.title_stack.pop() {
-            log::trace!("Title '{:?}' popped from stack", popped);
+            tracing::trace!("Title '{:?}' popped from stack", popped);
             self.set_title(Some(popped));
         }
     }
@@ -1739,13 +1739,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_keypad_application_mode(&mut self) {
-        log::trace!("Setting keypad application mode");
+        tracing::trace!("Setting keypad application mode");
         self.mode.insert(Mode::APP_KEYPAD);
     }
 
     #[inline]
     fn unset_keypad_application_mode(&mut self) {
-        log::trace!("Unsetting keypad application mode");
+        tracing::trace!("Unsetting keypad application mode");
         self.mode.remove(Mode::APP_KEYPAD);
     }
 
@@ -1774,7 +1774,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         index: pos::CharsetIndex,
         charset: pos::StandardCharset,
     ) {
-        log::trace!("Configuring charset {:?} as {:?}", index, charset);
+        tracing::trace!("Configuring charset {:?} as {:?}", index, charset);
         self.grid.cursor.charsets[index] = charset;
     }
 
@@ -1885,14 +1885,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn identify_terminal(&mut self, intermediate: Option<char>) {
         match intermediate {
             None => {
-                log::trace!("Reporting primary device attributes");
+                tracing::trace!("Reporting primary device attributes");
                 let text = String::from("\x1b[?62;4;6;22c");
                 // let text = String::from("\x1b[?62;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
             Some('>') => {
-                log::trace!("Reporting secondary device attributes");
+                tracing::trace!("Reporting secondary device attributes");
                 let version = version_number(env!("CARGO_PKG_VERSION"));
                 let text = format!("\x1b[>0;{version};1c");
                 self.event_proxy
@@ -1952,7 +1952,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn device_status(&mut self, arg: usize) {
-        log::trace!("Reporting device status: {}", arg);
+        tracing::trace!("Reporting device status: {}", arg);
         match arg {
             5 => {
                 let text = String::from("\x1b[0n");
@@ -2197,7 +2197,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
-        log::trace!("[unimplemented] Moving forward {} tabs", count);
+        tracing::trace!("[unimplemented] Moving forward {} tabs", count);
     }
 
     #[inline]

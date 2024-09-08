@@ -975,23 +975,23 @@ pub fn config_key_bindings(
 
                     if let Some(idx) = found_idx {
                         bindings.remove(idx);
-                        log::warn!(
+                        tracing::warn!(
                             "overwritten a previous key_binding with new one: {:?}",
                             key_binding
                         );
                     } else {
-                        log::info!("added a new key_binding: {:?}", key_binding);
+                        tracing::info!("added a new key_binding: {:?}", key_binding);
                     }
 
                     bindings.push(key_binding)
                 }
                 _ => {
-                    log::info!("added a new key_binding: {:?}", key_binding);
+                    tracing::info!("added a new key_binding: {:?}", key_binding);
                     bindings.push(key_binding)
                 }
             },
             Err(err_message) => {
-                log::error!("error loading a key binding: {:?}", err_message);
+                tracing::error!("error loading a key binding: {:?}", err_message);
             }
         }
     }

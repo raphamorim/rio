@@ -16,7 +16,8 @@ name = "rio"
 path = "src/main.rs"
 
 [dependencies]
-log = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "registry"] }
 wgpu = { workspace = true }
 rio-backend = { workspace = true }
 

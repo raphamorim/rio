@@ -4,11 +4,11 @@ use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use cursor_icon::CursorIcon;
-use log::{debug, warn};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
 use sugarloaf::GraphicData;
+use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;
 
@@ -544,7 +544,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        log::trace!("[execute] {byte:04x}");
+        tracing::trace!("[execute] {byte:04x}");
 
         match byte {
             C0::HT => self.handler.put_tab(1),
@@ -583,7 +583,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
         match self.state.dcs {
             Some(Dcs::SixelData(ref mut parser)) => {
                 if let Err(err) = parser.put(byte) {
-                    log::warn!("Failed to parse Sixel data: {}", err);
+                    tracing::warn!("Failed to parse Sixel data: {}", err);
                     self.state.dcs = None;
                 }
             }
@@ -604,7 +604,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 Ok((graphic, palette)) => {
                     self.handler.insert_graphic(graphic, Some(palette))
                 }
-                Err(err) => log::warn!("Failed to parse Sixel data: {}", err),
+                Err(err) => tracing::warn!("Failed to parse Sixel data: {}", err),
             },
             _ => debug!("[unhandled unhook]"),
         }
