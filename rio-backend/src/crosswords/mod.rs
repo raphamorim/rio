@@ -25,7 +25,6 @@ use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
 use crate::ansi::graphics::TextureRef;
 use crate::ansi::graphics::UpdateQueues;
-use crate::ansi::graphics::MAX_GRAPHIC_DIMENSIONS;
 use crate::ansi::sixel;
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, KeyboardModes,
@@ -57,7 +56,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
-use sugarloaf::GraphicData;
+use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
 use tracing::{debug, info, warn};
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
@@ -2416,6 +2415,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.graphics.sixel_shared_palette = Some(palette);
             }
         }
+
+        let graphic = match graphic.resized(
+            cell_width,
+            cell_height,
+            cell_width * self.grid.columns(),
+            cell_height * self.grid.screen_lines(),
+        ) {
+            Some(graphic) => graphic,
+            None => return,
+        };
 
         if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
             || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]

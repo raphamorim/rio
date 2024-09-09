@@ -1,3 +1,4 @@
+use crate::ansi::iterm2_image_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{mode::Mode, sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -801,6 +802,13 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
 
             // Reset text cursor color.
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
+
+            b"1337" => {
+                if let Some(graphic) = iterm2_image_protocol::parse(params) {
+                    println!("oi");
+                    self.handler.insert_graphic(graphic, None);
+                }
+            }
 
             // OSC 1337 is not necessarily only used by iTerm2 protocol
             // OSC 1337 is equal to xterm OSC 50
