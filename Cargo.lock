@@ -534,7 +534,6 @@ version = "0.1.12"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
- "unicode-normalization",
 ]
 
 [[package]]

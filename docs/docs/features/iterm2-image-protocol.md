@@ -1,9 +1,7 @@
 ---
-title: 'iTerm Image Protocol'
+title: 'iTerm2 Image Protocol'
 language: 'en'
 ---
-
-**Note: iTerm Image Protocol is still under development**
 
 Rio implements support for the iTerm2 inline image protocol.
 
@@ -14,8 +12,6 @@ To render an image inline in your terminal, you can use `imgcat` provided as a s
 - [npmjs.com/package/imgcat](https://www.npmjs.com/package/imgcat)
 - ... and etecetera.
 
-```bash
-imgcat ./rio-logo.png
-```
+![Demo iTerm2 image protocol](/assets/features/demo-iterm2-image-protocol.png)
 
-More info about [iTerm image protocol](https://iterm2.com/documentation-images.html)
+More info regarding [iTerm image protocol](https://iterm2.com/documentation-images.html)
