@@ -1,4 +1,5 @@
 // Implementation made by ayosec
+// https://github.com/ayosec/alacritty/commit/661a64c2b35283c97bac71d29535393e909c7d19
 // This module implements support for the [iTerm2 images protocol](https://iterm2.com/documentation-images.html).
 //
 // iTerm2 uses the OSC 1337 for a many non-standard commands, but we only support
