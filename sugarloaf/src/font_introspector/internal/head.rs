@@ -278,12 +278,8 @@ impl<'a> Os2<'a> {
 
     /// Returns a four character font vendor identifier.
     pub fn vendor_id(&self) -> &'a str {
-        core::str::from_utf8(
-            self.0
-                .read_bytes(58, 4)
-                .unwrap_or(&[b'n', b'o', b'n', b'e']),
-        )
-        .unwrap_or("none")
+        core::str::from_utf8(self.0.read_bytes(58, 4).unwrap_or(b"none"))
+            .unwrap_or("none")
     }
 
     /// Returns the font selection bit flags.  

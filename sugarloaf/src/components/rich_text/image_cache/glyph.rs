@@ -103,6 +103,7 @@ pub struct GlyphCacheSession<'a> {
     scaler: Scaler<'a>,
     scaled_image: &'a mut GlyphImage,
     quant_size: u16,
+    #[allow(unused)]
     max_height: &'a u16,
 }
 
@@ -151,8 +152,8 @@ impl<'a> GlyphCacheSession<'a> {
             };
             let image = self.images.allocate(req)?;
 
-            let mut top = p.top;
-            let mut height = h;
+            // let mut top = p.top;
+            // let mut height = h;
 
             // If dimension is None it means that we are running
             // for the first time and in this case, we will obtain
@@ -165,18 +166,18 @@ impl<'a> GlyphCacheSession<'a> {
             // If the rect max height is 50 and the glyph height is 68
             // and 48 top, then (68 - 50 = 18) height as difference and
             // apply it to the top (bigger the top == up ^).
-            if self.max_height > &0 && &h > self.max_height {
-                let difference = h - self.max_height;
+            // if self.max_height > &0 && &h > self.max_height {
+            //     let difference = h - self.max_height;
 
-                top -= difference as i32;
-                height = *self.max_height;
-            }
+            //     top -= difference as i32;
+            //     height = *self.max_height;
+            // }
 
             let entry = GlyphEntry {
                 left: p.left,
-                top,
+                top: p.top,
                 width: w,
-                height,
+                height: h,
                 image,
                 is_bitmap: self.scaled_image.content == Content::Color,
             };
