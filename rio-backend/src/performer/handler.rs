@@ -803,46 +803,14 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
             // Reset text cursor color.
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
+            // OSC 1337 is not necessarily only used by iTerm2 protocol
+            // OSC 1337 is equal to xterm OSC 50
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    println!("oi");
                     self.handler.insert_graphic(graphic, None);
                 }
             }
 
-            // OSC 1337 is not necessarily only used by iTerm2 protocol
-            // OSC 1337 is equal to xterm OSC 50
-            // b"1337" => {
-            // \x1b]1337;File=[arguments]:[base-64 encoded file contents]^G
-            //
-            // Example:
-            // printf "\x1b]1337;File=;size=234;width=100:aGVsbG8=\x07"
-            //
-            // leads to
-            // name: None,
-            // size: Some(234),
-            // width: 100,
-            // height: Automatic,
-            // preserve_aspect_ratio: true,
-            // inline: false,
-            // do_not_move_cursor: false,
-            // data: b"hello".to_vec(),
-
-            //     if params.len() >= 2
-            //         && params[1].len() >= 5
-            //         && params[1][0..5] == *b"File="
-            //     {
-            //         let content = params[2].split(|&b| b == b':').collect::<Vec<_>>();
-            //         if content.len() == 2 {
-            //             let _arguments = content[0];
-
-            //             let _base_64_file_content = content[1];
-            //         }
-            //         // self.handler.set_cursor_shape(shape);
-            //         // return;
-            //     }
-            //     unhandled(params);
-            // }
             _ => unhandled(params),
         }
     }
