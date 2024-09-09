@@ -173,13 +173,13 @@ impl GraphicData {
         let pixels;
 
         match image {
-            DynamicImage::ImageRgb8(image) => {
-                color_type = ColorType::Rgb;
-                width = image.width() as usize;
-                height = image.height() as usize;
-                pixels = image.into_raw();
-            }
-
+            // Sugarloaf only accepts rgba8 now
+            // DynamicImage::ImageRgb8(image) => {
+            //     color_type = ColorType::Rgb;
+            //     width = image.width() as usize;
+            //     height = image.height() as usize;
+            //     pixels = image.into_raw();
+            // }
             DynamicImage::ImageRgba8(image) => {
                 color_type = ColorType::Rgba;
                 width = image.width() as usize;
@@ -286,6 +286,7 @@ impl GraphicData {
         // Finally, use `resize` or `resize_exact` to make the new image.
         let width = width as u32;
         let height = height as u32;
+        // https://doc.servo.org/image/imageops/enum.FilterType.html
         let filter = image_rs::imageops::FilterType::Triangle;
 
         let new_image = if resize.preserve_aspect_ratio {

@@ -9,7 +9,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Handle {
     id: u64,
-    data: Data,
+    pub data: Data,
 }
 
 impl Handle {
