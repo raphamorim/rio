@@ -25,9 +25,8 @@
 use std::cmp::max;
 use std::{fmt, mem};
 
-use crate::ansi::graphics::MAX_GRAPHIC_DIMENSIONS;
 use crate::config::colors::ColorRgb;
-use sugarloaf::{ColorType, GraphicData, GraphicId};
+use sugarloaf::{ColorType, GraphicData, GraphicId, MAX_GRAPHIC_DIMENSIONS};
 
 use copa::Params;
 use tracing::trace;
@@ -543,6 +542,7 @@ impl Parser {
             color_type: ColorType::Rgba,
             pixels: rgba_pixels,
             is_opaque,
+            resize: None,
         };
 
         Ok((data, self.color_registers))

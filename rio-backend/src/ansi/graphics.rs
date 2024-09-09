@@ -33,9 +33,6 @@ pub struct UpdateQueues {
     pub clear_subregions: Vec<ClearSubregion>,
 }
 
-/// Max allowed dimensions (width, height) for the graphic, in pixels.
-pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
-
 #[derive(Clone, Debug)]
 pub struct TextureRef {
     /// Graphic identifier.

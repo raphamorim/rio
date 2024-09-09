@@ -9,7 +9,7 @@ pub use font_introspector::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{
     compositors::SugarCompositors,
-    graphics::{ColorType, Graphic, GraphicData, GraphicId, Graphics},
+    graphics::{MAX_GRAPHIC_DIMENSIONS, ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeParameter, ResizeCommand},
     primitives::*,
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
