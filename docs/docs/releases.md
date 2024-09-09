@@ -10,6 +10,8 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
+## 0.1.13
+
 - Support to iTerm2 image protocol.
 - Fix: Issue building rio for Void Linux [#656](https://github.com/raphamorim/rio/issues/656).
 - Fix: Adaptive theme doesn't appear to work correctly on macOS [#660](https://github.com/raphamorim/rio/issues/660).
