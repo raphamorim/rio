@@ -576,7 +576,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
         if self.handler.is_sixel_graphic_active() {
             self.handler.sixel_graphic_finish();
         } else {
-            dbg!("[unhandled dcs_unhook]");
+            debug!("[unhandled dcs_unhook]");
         }
     }
 
@@ -929,6 +929,14 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            ('p', [b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_mode(Mode::new(mode));
+            }
+            ('p', [b'?', b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_private_mode(PrivateMode::new(mode));
+            }
             ('q', [b' ']) => {
                 // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);

@@ -1262,7 +1262,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::info!("Setting public mode: {:?}", mode);
+        tracing::trace!("Setting public mode: {:?}", mode);
         match mode {
             NamedMode::Insert => self.mode.insert(Mode::INSERT),
             NamedMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
@@ -1270,8 +1270,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn unset_mode(&mut self, mode: AnsiMode) {
+        let mode = match mode {
+            AnsiMode::Named(mode) => mode,
+            AnsiMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {} in unset_mode", mode);
+                return;
+            }
+        };
+
+        tracing::trace!("Setting public mode: {:?}", mode);
+        match mode {
+            NamedMode::Insert => {
+                self.mode.remove(Mode::INSERT);
+                self.mark_fully_damaged();
+            }
+            NamedMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
+        }
+    }
+
+    #[inline]
     fn report_mode(&mut self, mode: AnsiMode) {
-        tracing::info!("Reporting mode {mode:?}");
+        tracing::trace!("Reporting mode {mode:?}");
         let state = match mode {
             AnsiMode::Named(mode) => match mode {
                 NamedMode::Insert => self.mode.contains(Mode::INSERT).into(),
@@ -1286,6 +1306,88 @@ impl<U: EventListener> Handler for Crosswords<U> {
             RioEvent::PtyWrite(format!("\x1b[{};{}$y", mode.raw(), state as u8,)),
             self.window_id,
         );
+    }
+
+    #[inline]
+    fn set_private_mode(&mut self, mode: PrivateMode) {
+        let mode = match mode {
+            PrivateMode::Named(mode) => mode,
+
+            // SixelDisplay
+            PrivateMode::Unknown(80) => {
+                self.mode.insert(Mode::SIXEL_DISPLAY);
+                return;
+            }
+
+            // SixelPrivateColorRegisters
+            PrivateMode::Unknown(1070) => {
+                self.mode.insert(Mode::SIXEL_PRIV_PALETTE);
+                return;
+            }
+
+            // SixelCursorToTheRight
+            PrivateMode::Unknown(8452) => {
+                self.mode.insert(Mode::SIXEL_CURSOR_TO_THE_RIGHT);
+                return;
+            }
+
+            PrivateMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {} in set_private_mode", mode);
+                return;
+            }
+        };
+
+        tracing::trace!("Setting private mode: {:?}", mode);
+        match mode {
+            NamedPrivateMode::UrgencyHints => self.mode.insert(Mode::URGENCY_HINTS),
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                if !self.mode.contains(Mode::ALT_SCREEN) {
+                    self.swap_alt();
+                }
+            }
+            NamedPrivateMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
+            NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
+            // Mouse protocols are mutually exclusive.
+            NamedPrivateMode::ReportMouseClicks => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_REPORT_CLICK);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
+            }
+            NamedPrivateMode::ReportCellMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_DRAG);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
+            }
+            NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MODE);
+                self.mode.insert(Mode::MOUSE_MOTION);
+                self.event_proxy
+                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
+            }
+            NamedPrivateMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
+            NamedPrivateMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
+            // Mouse encodings are mutually exclusive.
+            NamedPrivateMode::SgrMouse => {
+                self.mode.remove(Mode::UTF8_MOUSE);
+                self.mode.insert(Mode::SGR_MOUSE);
+            }
+            NamedPrivateMode::Utf8Mouse => {
+                self.mode.remove(Mode::SGR_MOUSE);
+                self.mode.insert(Mode::UTF8_MOUSE);
+            }
+            NamedPrivateMode::AlternateScroll => self.mode.insert(Mode::ALTERNATE_SCROLL),
+            NamedPrivateMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
+            NamedPrivateMode::Origin => self.mode.insert(Mode::ORIGIN),
+            NamedPrivateMode::ColumnMode => self.deccolm(),
+            NamedPrivateMode::BlinkingCursor => {
+                self.blinking_cursor = true;
+                self.event_proxy
+                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+            }
+            NamedPrivateMode::SyncUpdate => (),
+        }
     }
 
     #[inline]
@@ -1318,7 +1420,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::info!("Unsetting private mode: {:?}", mode);
+        tracing::trace!("Unsetting private mode: {:?}", mode);
         match mode {
             NamedPrivateMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
             NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
@@ -1352,9 +1454,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                self.blinking_cursor = false;
-                self.event_proxy
-                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+                // TODO: Update it
+                // self.blinking_cursor = false;
+                // self.event_proxy
+                // .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
         }
@@ -1434,26 +1537,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ),
             self.window_id,
         );
-    }
-
-    #[inline]
-    fn unset_mode(&mut self, mode: AnsiMode) {
-        let mode = match mode {
-            AnsiMode::Named(mode) => mode,
-            AnsiMode::Unknown(mode) => {
-                debug!("Ignorning unknown mode {} in unset_mode", mode);
-                return;
-            }
-        };
-
-        tracing::info!("Setting public mode: {:?}", mode);
-        match mode {
-            NamedMode::Insert => {
-                self.mode.remove(Mode::INSERT);
-                self.mark_fully_damaged();
-            }
-            NamedMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
-        }
     }
 
     #[inline]
