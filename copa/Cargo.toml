@@ -13,9 +13,6 @@ edition = "2021"
 rio-proc-macros = { workspace = true }
 arrayvec = { version = "0.7.6", default-features = false, optional = true }
 
-[dev-dependencies]
-unicode-normalization = "0.1.22"
-
 [features]
 default = ["no_std"]
 no_std = ["arrayvec"]
