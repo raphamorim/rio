@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 pub mod charset;
 pub mod control;
 pub mod graphics;
+pub mod iterm2_image_protocol;
 pub mod mode;
 pub mod sixel;
-pub mod iterm2_image_protocol;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, Eq, PartialEq)]
 pub enum CursorShape {

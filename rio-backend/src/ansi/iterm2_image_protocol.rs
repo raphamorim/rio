@@ -27,7 +27,7 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         Err(err) => {
             tracing::warn!("Can't decode base64 data: {}", err);
             return None;
-        },
+        }
     };
 
     let image = match image_rs::load_from_memory(&buffer) {
@@ -35,7 +35,7 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         Err(err) => {
             tracing::warn!("Can't load image: {}", err);
             return None;
-        },
+        }
     };
 
     let mut graphics = GraphicData::from_dynamic_image(GraphicId(0), image);
@@ -57,7 +57,9 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
 /// The `File=` string is found in the first parameter, and the file contents are
 /// appended in the last one. We have to split these parameter to get the expected
 /// data.
-fn param_values<'a>(params: &[&'a [u8]]) -> Option<(FxHashMap<&'a str, &'a str>, &'a [u8])> {
+fn param_values<'a>(
+    params: &[&'a [u8]],
+) -> Option<(FxHashMap<&'a str, &'a str>, &'a [u8])> {
     let mut map = FxHashMap::default();
     let mut contents = None;
 
@@ -111,7 +113,11 @@ fn resize_param(params: &FxHashMap<&str, &str>) -> Option<ResizeCommand> {
 
         // Split the value after the first non-digit byte.
         // If there is no unit, parse as number of cells.
-        let first_nondigit = value.as_bytes().iter().position(|b| !(b'0'..=b'9').contains(&b));
+        let first_nondigit = value
+            .as_bytes()
+            .iter()
+            .position(|b: &u8| !b.is_ascii_digit());
+        // .position(|b| !(b'0'..=b'9').contains(&b));
         let (number, unit) = match first_nondigit {
             Some(position) => value.split_at(position),
             None => return Some(ResizeParameter::Cells(str::parse(value).ok()?)),
@@ -129,7 +135,11 @@ fn resize_param(params: &FxHashMap<&str, &str>) -> Option<ResizeCommand> {
 
     let preserve_aspect_ratio = params.get(&"preserveAspectRatio") != Some(&"0");
 
-    Some(ResizeCommand { width, height, preserve_aspect_ratio })
+    Some(ResizeCommand {
+        width,
+        height,
+        preserve_aspect_ratio,
+    })
 }
 
 #[test]

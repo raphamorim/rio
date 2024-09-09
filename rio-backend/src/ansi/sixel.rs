@@ -47,16 +47,24 @@ const MAX_COMMAND_PARAMS: usize = 5;
 #[derive(Debug)]
 pub enum Error {
     /// Image dimensions are too big.
-    TooBigImage { width: usize, height: usize },
+    TooBigImage {
+        width: usize,
+        height: usize,
+    },
 
     /// A component in a color introducer is not valid.
-    InvalidColorComponent { register: u16, component_value: u16 },
+    InvalidColorComponent {
+        register: u16,
+        component_value: u16,
+    },
 
     /// The coordinate system to define the color register is not valid.
     InvalidColorCoordinateSystem {
         register: u16,
         coordinate_system: u16,
     },
+
+    NonExistentParser,
 }
 
 impl fmt::Display for Error {
@@ -90,6 +98,10 @@ impl fmt::Display for Error {
                     "Invalid color coordinate system {} for register {}",
                     coordinate_system, register
                 )
+            }
+
+            Error::NonExistentParser => {
+                write!(fmt, "Parser does not exist",)
             }
         }
     }

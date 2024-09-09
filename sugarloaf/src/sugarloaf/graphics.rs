@@ -3,11 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use std::cmp;
-use image_rs::DynamicImage;
 use crate::sugarloaf::types;
 use crate::sugarloaf::Handle;
+use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
+use std::cmp;
 
 /// Max allowed dimensions (width, height) for the graphic, in pixels.
 pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
@@ -178,14 +178,14 @@ impl GraphicData {
                 width = image.width() as usize;
                 height = image.height() as usize;
                 pixels = image.into_raw();
-            },
+            }
 
             DynamicImage::ImageRgba8(image) => {
                 color_type = ColorType::Rgba;
                 width = image.width() as usize;
                 height = image.height() as usize;
                 pixels = image.into_raw();
-            },
+            }
 
             _ => {
                 // Non-RGB image. Convert it to RGBA.
@@ -194,10 +194,18 @@ impl GraphicData {
                 width = image.width() as usize;
                 height = image.height() as usize;
                 pixels = image.into_raw();
-            },
+            }
         }
 
-        GraphicData { id, width, height, color_type, pixels, is_opaque: false, resize: None }
+        GraphicData {
+            id,
+            width,
+            height,
+            color_type,
+            pixels,
+            is_opaque: false,
+            resize: None,
+        }
     }
 
     /// Resize the graphic according to the dimensions in the `resize` field.
@@ -213,7 +221,8 @@ impl GraphicData {
             None => return Some(self),
         };
 
-        if (resize.width == ResizeParameter::Auto && resize.height == ResizeParameter::Auto)
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
             || self.height == 0
             || self.width == 0
         {
@@ -256,16 +265,22 @@ impl GraphicData {
         // Create a new DynamicImage to resize the graphic.
         let dynimage = match self.color_type {
             ColorType::Rgb => {
-                let buffer =
-                    image_rs::RgbImage::from_raw(self.width as u32, self.height as u32, self.pixels)?;
+                let buffer = image_rs::RgbImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
                 DynamicImage::ImageRgb8(buffer)
-            },
+            }
 
             ColorType::Rgba => {
-                let buffer =
-                    image_rs::RgbaImage::from_raw(self.width as u32, self.height as u32, self.pixels)?;
+                let buffer = image_rs::RgbaImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
                 DynamicImage::ImageRgba8(buffer)
-            },
+            }
         };
 
         // Finally, use `resize` or `resize_exact` to make the new image.
