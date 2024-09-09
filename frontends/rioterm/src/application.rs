@@ -81,7 +81,6 @@ impl Application {
                 | WindowEvent::PanGesture { .. }
                 | WindowEvent::HoveredFileCancelled
                 | WindowEvent::Destroyed
-                | WindowEvent::ThemeChanged(_)
                 | WindowEvent::HoveredFile(_)
                 | WindowEvent::Moved(_)
         )
