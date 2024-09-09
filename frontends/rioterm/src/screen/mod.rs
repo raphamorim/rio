@@ -457,7 +457,7 @@ impl Screen<'_> {
         let mods = self.modifiers.state();
 
         if is_kitty_keyboard_enabled && key.state == ElementState::Released {
-            if !mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+            if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
             {
@@ -476,7 +476,7 @@ impl Screen<'_> {
                 // NOTE: Echo the key back on release to follow kitty/foot behavior. When
                 // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
                 // the keys below.
-                _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
+                _ if mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) => {
                     crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
                         .into()
                 }
@@ -533,10 +533,10 @@ impl Screen<'_> {
             // 1. No keyboard input protocol is enabled.
             // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
             //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
-            let write_legacy = !mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC)
+            let write_legacy = !mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC)
                 && !text.is_empty()
-                && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                    || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                && (!mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
+                    || (mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
                         && (mods.is_empty() || mods == ModifiersState::SHIFT)
                         && key.location != KeyLocation::Numpad
                         // Special case escape here.

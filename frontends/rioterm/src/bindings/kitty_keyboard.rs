@@ -15,14 +15,14 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     let mut modifiers = mods.into();
 
     let kitty_seq = mode.intersects(
-        Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC
-            | Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES
-            | Mode::KEYBOARD_REPORT_EVENT_TYPES,
+        Mode::REPORT_ALL_KEYS_AS_ESC
+            | Mode::DISAMBIGUATE_ESC_CODES
+            | Mode::REPORT_EVENT_TYPES,
     );
 
-    let kitty_encode_all = mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC);
+    let kitty_encode_all = mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC);
     // The default parameter is 1, so we can omit it.
-    let kitty_event_type = mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+    let kitty_event_type = mode.contains(Mode::REPORT_EVENT_TYPES)
         && (key.repeat || key.state == ElementState::Released);
 
     let context = SequenceBuilder {
@@ -47,7 +47,7 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     let text = key.text_with_all_modifiers();
 
     let associated_text = text.filter(|text| {
-        mode.contains(Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT)
+        mode.contains(Mode::REPORT_ASSOCIATED_TEXT)
             && key.state != ElementState::Released
             && !text.is_empty()
             && !is_control_character(text)
@@ -143,7 +143,7 @@ impl SequenceBuilder {
 
             // NOTE: Base layouts are ignored, since winit doesn't expose this information
             // yet.
-            let payload = if self.mode.contains(Mode::KEYBOARD_REPORT_ALTERNATE_KEYS)
+            let payload = if self.mode.contains(Mode::REPORT_ALTERNATE_KEYS)
                 && alternate_key_code != unicode_key_code
             {
                 format!("{unicode_key_code}:{alternate_key_code}")

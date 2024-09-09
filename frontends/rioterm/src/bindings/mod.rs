@@ -174,11 +174,11 @@ impl BindingMode {
         binding_mode.set(BindingMode::SEARCH, search);
         binding_mode.set(
             BindingMode::DISAMBIGUATE_KEYS,
-            mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES),
+            mode.contains(Mode::DISAMBIGUATE_ESC_CODES),
         );
         binding_mode.set(
             BindingMode::ALL_KEYS_AS_ESC,
-            mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC),
+            mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC),
         );
         binding_mode.set(BindingMode::VI, mode.contains(Mode::VI));
         binding_mode

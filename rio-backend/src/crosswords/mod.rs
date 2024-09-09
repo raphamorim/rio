@@ -25,6 +25,9 @@ use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
 use crate::ansi::graphics::TextureRef;
 use crate::ansi::graphics::UpdateQueues;
+use crate::ansi::mode::NamedMode;
+use crate::ansi::mode::NamedPrivateMode;
+use crate::ansi::mode::PrivateMode;
 use crate::ansi::sixel;
 use crate::ansi::{
     mode::Mode as AnsiMode, ClearMode, CursorShape, KeyboardModes,
@@ -72,40 +75,63 @@ const MAX_GRAPHICS_PER_CELL: usize = 20;
 bitflags! {
     #[derive(Debug, Copy, Clone)]
      pub struct Mode: u32 {
-        const NONE                             = 0;
-        const SHOW_CURSOR                      = 0b0000_0000_0000_0000_0000_0001;
-        const APP_CURSOR                       = 0b0000_0000_0000_0000_0000_0010;
-        const APP_KEYPAD                       = 0b0000_0000_0000_0000_0000_0100;
-        const MOUSE_REPORT_CLICK               = 0b0000_0000_0000_0000_0000_1000;
-        const BRACKETED_PASTE                  = 0b0000_0000_0000_0000_0001_0000;
-        const SGR_MOUSE                        = 0b0000_0000_0000_0000_0010_0000;
-        const MOUSE_MOTION                     = 0b0000_0000_0000_0000_0100_0000;
-        const LINE_WRAP                        = 0b0000_0000_0000_0000_1000_0000;
-        const LINE_FEED_NEW_LINE               = 0b0000_0000_0000_0001_0000_0000;
-        const ORIGIN                           = 0b0000_0000_0000_0010_0000_0000;
-        const INSERT                           = 0b0000_0000_0000_0100_0000_0000;
-        const FOCUS_IN_OUT                     = 0b0000_0000_0000_1000_0000_0000;
-        const ALT_SCREEN                       = 0b0000_0000_0001_0000_0000_0000;
-        const MOUSE_DRAG                       = 0b0000_0000_0010_0000_0000_0000;
-        const MOUSE_MODE                       = 0b0000_0000_0010_0000_0100_1000;
-        const UTF8_MOUSE                       = 0b0000_0000_0100_0000_0000_0000;
-        const ALTERNATE_SCROLL                 = 0b0000_0000_1000_0000_0000_0000;
-        const VI                               = 0b0000_0001_0000_0000_0000_0000;
-        const URGENCY_HINTS                    = 0b0000_0010_0000_0000_0000_0000;
-        const KEYBOARD_DISAMBIGUATE_ESC_CODES  = 0b0000_0100_0000_0000_0000_0000;
-        const KEYBOARD_REPORT_EVENT_TYPES      = 0b0000_1000_0000_0000_0000_0000;
-        const KEYBOARD_REPORT_ALTERNATE_KEYS   = 0b0001_0000_0000_0000_0000_0000;
-        const KEYBOARD_REPORT_ALL_KEYS_AS_ESC  = 0b0010_0000_0000_0000_0000_0000;
-        const KEYBOARD_REPORT_ASSOCIATED_TEXT  = 0b0100_0000_0000_0000_0000_0000;
-        const KEYBOARD_PROTOCOL = Self::KEYBOARD_DISAMBIGUATE_ESC_CODES.bits()
-                                | Self::KEYBOARD_REPORT_EVENT_TYPES.bits()
-                                | Self::KEYBOARD_REPORT_ALTERNATE_KEYS.bits()
-                                | Self::KEYBOARD_REPORT_ALL_KEYS_AS_ESC.bits()
-                                | Self::KEYBOARD_REPORT_ASSOCIATED_TEXT.bits();
+        const NONE                    = 0;
+        const SHOW_CURSOR             = 0b0000_0000_0000_0000_0000_0001;
+        const APP_CURSOR              = 0b0000_0000_0000_0000_0000_0010;
+        const APP_KEYPAD              = 0b0000_0000_0000_0000_0000_0100;
+        const MOUSE_REPORT_CLICK      = 0b0000_0000_0000_0000_0000_1000;
+        const BRACKETED_PASTE         = 0b0000_0000_0000_0000_0001_0000;
+        const SGR_MOUSE               = 0b0000_0000_0000_0000_0010_0000;
+        const MOUSE_MOTION            = 0b0000_0000_0000_0000_0100_0000;
+        const LINE_WRAP               = 0b0000_0000_0000_0000_1000_0000;
+        const LINE_FEED_NEW_LINE      = 0b0000_0000_0000_0001_0000_0000;
+        const ORIGIN                  = 0b0000_0000_0000_0010_0000_0000;
+        const INSERT                  = 0b0000_0000_0000_0100_0000_0000;
+        const FOCUS_IN_OUT            = 0b0000_0000_0000_1000_0000_0000;
+        const ALT_SCREEN              = 0b0000_0000_0001_0000_0000_0000;
+        const MOUSE_DRAG              = 0b0000_0000_0010_0000_0000_0000;
+        const MOUSE_MODE              = 0b0000_0000_0010_0000_0100_1000;
+        const UTF8_MOUSE              = 0b0000_0000_0100_0000_0000_0000;
+        const ALTERNATE_SCROLL        = 0b0000_0000_1000_0000_0000_0000;
+        const VI                      = 0b0000_0001_0000_0000_0000_0000;
+        const URGENCY_HINTS           = 0b0000_0010_0000_0000_0000_0000;
+        const DISAMBIGUATE_ESC_CODES  = 0b0000_0100_0000_0000_0000_0000;
+        const REPORT_EVENT_TYPES      = 0b0000_1000_0000_0000_0000_0000;
+        const REPORT_ALTERNATE_KEYS   = 0b0001_0000_0000_0000_0000_0000;
+        const REPORT_ALL_KEYS_AS_ESC  = 0b0010_0000_0000_0000_0000_0000;
+        const REPORT_ASSOCIATED_TEXT  = 0b0100_0000_0000_0000_0000_0000;
+        const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
+                                      | Self::REPORT_EVENT_TYPES.bits()
+                                      | Self::REPORT_ALTERNATE_KEYS.bits()
+                                      | Self::REPORT_ALL_KEYS_AS_ESC.bits()
+                                      | Self::REPORT_ASSOCIATED_TEXT.bits();
+        const ANY                    = u32::MAX;
+
         const SIXEL_DISPLAY             = 1 << 28;
         const SIXEL_PRIV_PALETTE        = 1 << 29;
         const SIXEL_CURSOR_TO_THE_RIGHT = 1 << 31;
-        const ANY                 = u32::MAX;
+    }
+}
+
+/// The state of the [`Mode`] and [`PrivateMode`].
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+enum ModeState {
+    /// The mode is not supported.
+    NotSupported = 0,
+    /// The mode is currently set.
+    Set = 1,
+    /// The mode is currently not set.
+    Reset = 2,
+}
+
+impl From<bool> for ModeState {
+    fn from(value: bool) -> Self {
+        if value {
+            Self::Set
+        } else {
+            Self::Reset
+        }
     }
 }
 
@@ -123,23 +149,23 @@ impl From<KeyboardModes> for Mode {
     fn from(value: KeyboardModes) -> Self {
         let mut mode = Self::empty();
         mode.set(
-            Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES,
+            Mode::DISAMBIGUATE_ESC_CODES,
             value.contains(KeyboardModes::DISAMBIGUATE_ESC_CODES),
         );
         mode.set(
-            Mode::KEYBOARD_REPORT_EVENT_TYPES,
+            Mode::REPORT_EVENT_TYPES,
             value.contains(KeyboardModes::REPORT_EVENT_TYPES),
         );
         mode.set(
-            Mode::KEYBOARD_REPORT_ALTERNATE_KEYS,
+            Mode::REPORT_ALTERNATE_KEYS,
             value.contains(KeyboardModes::REPORT_ALTERNATE_KEYS),
         );
         mode.set(
-            Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC,
+            Mode::REPORT_ALL_KEYS_AS_ESC,
             value.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC),
         );
         mode.set(
-            Mode::KEYBOARD_REPORT_ASSOCIATED_TEXT,
+            Mode::REPORT_ASSOCIATED_TEXT,
             value.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT),
         );
         mode
@@ -354,7 +380,7 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 // Max size of the keyboard modes.
 const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Crosswords<U>
 where
     U: EventListener,
@@ -1183,8 +1209,8 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
         // println!("{:?}", mode);
-        let active_mode = self.mode & Mode::KEYBOARD_PROTOCOL;
-        self.mode &= !Mode::KEYBOARD_PROTOCOL;
+        let active_mode = self.mode & Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
         let new_mode = match apply {
             KeyboardModesApplyBehavior::Replace => mode,
             KeyboardModesApplyBehavior::Union => active_mode.union(mode),
@@ -1228,64 +1254,164 @@ impl<U: EventListener> Crosswords<U> {
 impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
+        let mode = match mode {
+            AnsiMode::Named(mode) => mode,
+            AnsiMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {} in set_mode", mode);
+                return;
+            }
+        };
+
+        tracing::info!("Setting public mode: {:?}", mode);
         match mode {
-            AnsiMode::UrgencyHints => self.mode.insert(Mode::URGENCY_HINTS),
-            AnsiMode::SwapScreenAndSetRestoreCursor => {
-                if !self.mode.contains(Mode::ALT_SCREEN) {
+            NamedMode::Insert => self.mode.insert(Mode::INSERT),
+            NamedMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
+        }
+    }
+
+    #[inline]
+    fn report_mode(&mut self, mode: AnsiMode) {
+        tracing::info!("Reporting mode {mode:?}");
+        let state = match mode {
+            AnsiMode::Named(mode) => match mode {
+                NamedMode::Insert => self.mode.contains(Mode::INSERT).into(),
+                NamedMode::LineFeedNewLine => {
+                    self.mode.contains(Mode::LINE_FEED_NEW_LINE).into()
+                }
+            },
+            AnsiMode::Unknown(_) => ModeState::NotSupported,
+        };
+
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(format!("\x1b[{};{}$y", mode.raw(), state as u8,)),
+            self.window_id,
+        );
+    }
+
+    #[inline]
+    fn unset_private_mode(&mut self, mode: PrivateMode) {
+        let mode = match mode {
+            PrivateMode::Named(mode) => mode,
+
+            // SixelDisplay
+            PrivateMode::Unknown(80) => {
+                self.mode.remove(Mode::SIXEL_DISPLAY);
+                return;
+            }
+
+            // SixelPrivateColorRegisters
+            PrivateMode::Unknown(1070) => {
+                self.graphics.sixel_shared_palette = None;
+                self.mode.remove(Mode::SIXEL_PRIV_PALETTE);
+                return;
+            }
+
+            // SixelCursorToTheRight
+            PrivateMode::Unknown(8452) => {
+                self.mode.remove(Mode::SIXEL_CURSOR_TO_THE_RIGHT);
+                return;
+            }
+
+            PrivateMode::Unknown(mode) => {
+                debug!("Ignoring unknown mode {} in unset_private_mode", mode);
+                return;
+            }
+        };
+
+        tracing::info!("Unsetting private mode: {:?}", mode);
+        match mode {
+            NamedPrivateMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
+            NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                if self.mode.contains(Mode::ALT_SCREEN) {
                     self.swap_alt();
                 }
             }
-            AnsiMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
-            AnsiMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
-            // Mouse protocols are mutually exclusive.
-            AnsiMode::ReportMouseClicks => {
-                self.mode.remove(Mode::MOUSE_MODE);
-                self.mode.insert(Mode::MOUSE_REPORT_CLICK);
+            NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
+            NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
+            NamedPrivateMode::ReportMouseClicks => {
+                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
-            AnsiMode::ReportSquareMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MODE);
-                self.mode.insert(Mode::MOUSE_DRAG);
+            NamedPrivateMode::ReportCellMouseMotion => {
+                self.mode.remove(Mode::MOUSE_DRAG);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
-            AnsiMode::ReportAllMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MODE);
-                self.mode.insert(Mode::MOUSE_MOTION);
+            NamedPrivateMode::ReportAllMouseMotion => {
+                self.mode.remove(Mode::MOUSE_MOTION);
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
-            AnsiMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
-            AnsiMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
-            // Mouse encodings are mutually exclusive.
-            AnsiMode::SgrMouse => {
-                self.mode.remove(Mode::UTF8_MOUSE);
-                self.mode.insert(Mode::SGR_MOUSE);
-            }
-            AnsiMode::Utf8Mouse => {
-                self.mode.remove(Mode::SGR_MOUSE);
-                self.mode.insert(Mode::UTF8_MOUSE);
-            }
-            AnsiMode::AlternateScroll => self.mode.insert(Mode::ALTERNATE_SCROLL),
-            AnsiMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
-            AnsiMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
-            AnsiMode::Origin => self.mode.insert(Mode::ORIGIN),
-            AnsiMode::Column => self.deccolm(),
-            AnsiMode::Insert => self.mode.insert(Mode::INSERT),
-            AnsiMode::BlinkingCursor => {
-                self.blinking_cursor = true;
+            NamedPrivateMode::ReportFocusInOut => self.mode.remove(Mode::FOCUS_IN_OUT),
+            NamedPrivateMode::BracketedPaste => self.mode.remove(Mode::BRACKETED_PASTE),
+            NamedPrivateMode::SgrMouse => self.mode.remove(Mode::SGR_MOUSE),
+            NamedPrivateMode::Utf8Mouse => self.mode.remove(Mode::UTF8_MOUSE),
+            NamedPrivateMode::AlternateScroll => self.mode.remove(Mode::ALTERNATE_SCROLL),
+            NamedPrivateMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
+            NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
+            NamedPrivateMode::ColumnMode => self.deccolm(),
+            NamedPrivateMode::BlinkingCursor => {
+                self.blinking_cursor = false;
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
-            AnsiMode::SixelDisplay => self.mode.insert(Mode::SIXEL_DISPLAY),
-            AnsiMode::SixelPrivateColorRegisters => {
-                self.mode.insert(Mode::SIXEL_PRIV_PALETTE)
-            }
-            AnsiMode::SixelCursorToTheRight => {
-                self.mode.insert(Mode::SIXEL_CURSOR_TO_THE_RIGHT);
-            }
+            NamedPrivateMode::SyncUpdate => (),
         }
+    }
+
+    #[inline]
+    fn report_private_mode(&mut self, mode: PrivateMode) {
+        tracing::info!("Reporting private mode {mode:?}");
+        let state = match mode {
+            PrivateMode::Named(mode) => match mode {
+                NamedPrivateMode::CursorKeys => {
+                    self.mode.contains(Mode::APP_CURSOR).into()
+                }
+                NamedPrivateMode::Origin => self.mode.contains(Mode::ORIGIN).into(),
+                NamedPrivateMode::LineWrap => self.mode.contains(Mode::LINE_WRAP).into(),
+                NamedPrivateMode::BlinkingCursor => self.blinking_cursor.into(),
+                NamedPrivateMode::ShowCursor => {
+                    self.mode.contains(Mode::SHOW_CURSOR).into()
+                }
+                NamedPrivateMode::ReportMouseClicks => {
+                    self.mode.contains(Mode::MOUSE_REPORT_CLICK).into()
+                }
+                NamedPrivateMode::ReportCellMouseMotion => {
+                    self.mode.contains(Mode::MOUSE_DRAG).into()
+                }
+                NamedPrivateMode::ReportAllMouseMotion => {
+                    self.mode.contains(Mode::MOUSE_MOTION).into()
+                }
+                NamedPrivateMode::ReportFocusInOut => {
+                    self.mode.contains(Mode::FOCUS_IN_OUT).into()
+                }
+                NamedPrivateMode::Utf8Mouse => {
+                    self.mode.contains(Mode::UTF8_MOUSE).into()
+                }
+                NamedPrivateMode::SgrMouse => self.mode.contains(Mode::SGR_MOUSE).into(),
+                NamedPrivateMode::AlternateScroll => {
+                    self.mode.contains(Mode::ALTERNATE_SCROLL).into()
+                }
+                NamedPrivateMode::UrgencyHints => {
+                    self.mode.contains(Mode::URGENCY_HINTS).into()
+                }
+                NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
+                    self.mode.contains(Mode::ALT_SCREEN).into()
+                }
+                NamedPrivateMode::BracketedPaste => {
+                    self.mode.contains(Mode::BRACKETED_PASTE).into()
+                }
+                NamedPrivateMode::SyncUpdate => ModeState::Reset,
+                NamedPrivateMode::ColumnMode => ModeState::NotSupported,
+            },
+            PrivateMode::Unknown(_) => ModeState::NotSupported,
+        };
+
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(format!("\x1b[?{};{}$y", mode.raw(), state as u8,)),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -1312,57 +1438,21 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn unset_mode(&mut self, mode: AnsiMode) {
+        let mode = match mode {
+            AnsiMode::Named(mode) => mode,
+            AnsiMode::Unknown(mode) => {
+                debug!("Ignorning unknown mode {} in unset_mode", mode);
+                return;
+            }
+        };
+
+        tracing::info!("Setting public mode: {:?}", mode);
         match mode {
-            AnsiMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
-            AnsiMode::SwapScreenAndSetRestoreCursor => {
-                if self.mode.contains(Mode::ALT_SCREEN) {
-                    self.swap_alt();
-                }
-            }
-            AnsiMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
-            AnsiMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
-            AnsiMode::ReportMouseClicks => {
-                self.mode.remove(Mode::MOUSE_REPORT_CLICK);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            AnsiMode::ReportSquareMouseMotion => {
-                self.mode.remove(Mode::MOUSE_DRAG);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            AnsiMode::ReportAllMouseMotion => {
-                self.mode.remove(Mode::MOUSE_MOTION);
-                self.event_proxy
-                    .send_event(RioEvent::MouseCursorDirty, self.window_id);
-            }
-            AnsiMode::ReportFocusInOut => self.mode.remove(Mode::FOCUS_IN_OUT),
-            AnsiMode::BracketedPaste => self.mode.remove(Mode::BRACKETED_PASTE),
-            AnsiMode::SgrMouse => self.mode.remove(Mode::SGR_MOUSE),
-            AnsiMode::Utf8Mouse => self.mode.remove(Mode::UTF8_MOUSE),
-            AnsiMode::AlternateScroll => self.mode.remove(Mode::ALTERNATE_SCROLL),
-            AnsiMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
-            AnsiMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
-            AnsiMode::Origin => self.mode.remove(Mode::ORIGIN),
-            AnsiMode::Column => self.deccolm(),
-            AnsiMode::Insert => {
+            NamedMode::Insert => {
                 self.mode.remove(Mode::INSERT);
                 self.mark_fully_damaged();
             }
-            AnsiMode::BlinkingCursor => {
-                // TODO: Update it
-                // self.blinking_cursor = false;
-                // self.event_proxy
-                //     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
-            }
-            AnsiMode::SixelDisplay => self.mode.remove(Mode::SIXEL_DISPLAY),
-            AnsiMode::SixelPrivateColorRegisters => {
-                self.graphics.sixel_shared_palette = None;
-                self.mode.remove(Mode::SIXEL_PRIV_PALETTE);
-            }
-            AnsiMode::SixelCursorToTheRight => {
-                self.mode.remove(Mode::SIXEL_CURSOR_TO_THE_RIGHT)
-            }
+            NamedMode::LineFeedNewLine => self.mode.remove(Mode::LINE_FEED_NEW_LINE),
         }
     }
 
@@ -2399,9 +2489,41 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn start_sixel_graphic(&mut self, params: &Params) -> Option<Box<sixel::Parser>> {
+    fn sixel_graphic_start(&mut self, params: &Params) {
         let palette = self.graphics.sixel_shared_palette.take();
-        Some(Box::new(sixel::Parser::new(params, palette)))
+        self.graphics.sixel_parser = Some(Box::new(sixel::Parser::new(params, palette)));
+    }
+
+    #[inline]
+    fn is_sixel_graphic_active(&self) -> bool {
+        self.graphics.sixel_parser.is_some()
+    }
+
+    #[inline]
+    fn sixel_graphic_put(&mut self, byte: u8) -> Result<(), sixel::Error> {
+        if let Some(parser) = &mut self.graphics.sixel_parser {
+            parser.put(byte)
+        } else {
+            Err(sixel::Error::NonExistentParser)
+        }
+    }
+
+    #[inline]
+    fn sixel_graphic_reset(&mut self) {
+        self.graphics.sixel_parser = None;
+    }
+
+    #[inline]
+    fn sixel_graphic_finish(&mut self) {
+        let parser = self.graphics.sixel_parser.take();
+        if let Some(parser) = parser {
+            match parser.finish() {
+                Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette)),
+                Err(err) => tracing::warn!("Failed to parse Sixel data: {}", err),
+            }
+        } else {
+            tracing::warn!("Failed to sixel_graphic_finish");
+        }
     }
 
     #[inline]
