@@ -456,7 +456,7 @@ fn draw_layout(
     rect: &SugarDimensions,
     graphics: &mut Graphics,
 ) {
-    // let start = std::time::Instant::now();
+    let start = std::time::Instant::now();
     let (x, y) = pos;
     let (image_cache, glyphs_cache, draw_layout_cache) = caches;
     let depth = 0.0;
@@ -483,24 +483,23 @@ fn draw_layout(
 
     let mut last_rendered_graphic = None;
     for line in render_data.lines() {
-        let hash = line.hash();
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        if let Some(data) = draw_layout_cache.get(&hash) {
-            comp.draw_cached_run(
-                data,
-                px,
-                py,
-                depth,
-                rect,
-                line,
-                &mut last_rendered_graphic,
-                graphics,
-            );
-            continue;
-        }
+        // if let Some(data) = draw_layout_cache.get(&hash) {
+        //     comp.draw_cached_run(
+        //         data,
+        //         px,
+        //         py,
+        //         depth,
+        //         rect,
+        //         line,
+        //         &mut last_rendered_graphic,
+        //         graphics,
+        //     );
+        //     continue;
+        // }
 
-        let mut cached_line_runs = Vec::new();
+        // let mut cached_line_runs = Vec::new();
         for run in line.runs() {
             let char_width = run.char_width();
             let mut cached_run = CachedRun::new(char_width);
@@ -576,19 +575,14 @@ fn draw_layout(
                 depth,
                 &style,
                 glyphs.iter(),
-                &mut cached_run,
             );
 
-            cached_line_runs.push(cached_run);
-        }
-
-        if !cached_line_runs.is_empty() {
-            draw_layout_cache.put(hash, cached_line_runs);
+            // cached_line_runs.push(cached_run);
         }
     }
 
-    // let duration = start.elapsed();
-    // println!(" - draw_layout() is: {:?}\n", duration);
+    let duration = start.elapsed();
+    println!(" - draw_layout() is: {:?}\n", duration);
 }
 
 #[inline]
@@ -685,7 +679,6 @@ fn fetch_dimensions(
                 0.0,
                 &style,
                 glyphs.iter(),
-                &mut cached_run,
             );
         }
     }

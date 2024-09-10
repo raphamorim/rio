@@ -26,7 +26,6 @@ use crate::font_introspector::text::cluster::CharInfo;
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
-use std::hash::{Hash, Hasher};
 
 /// Data that describes a fragment.
 #[derive(Copy, Debug, Clone)]
@@ -61,8 +60,6 @@ pub struct BuilderLine {
     pub fragments: Vec<FragmentData>,
     /// Span index per character.
     pub styles: Vec<FragmentStyle>,
-    /// Line Hash
-    pub hash: u64,
 }
 
 /// Builder state.
@@ -235,73 +232,6 @@ impl Default for FragmentStyle {
     }
 }
 
-impl Hash for FragmentStyle {
-    #[inline]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.font_attrs.hash(state);
-        self.color[0].to_bits().hash(state);
-        self.color[1].to_bits().hash(state);
-        self.color[2].to_bits().hash(state);
-        self.color[3].to_bits().hash(state);
-
-        if let Some(bg_color) = self.background_color {
-            bg_color[0].to_bits().hash(state);
-            bg_color[1].to_bits().hash(state);
-            bg_color[2].to_bits().hash(state);
-            bg_color[3].to_bits().hash(state);
-        }
-
-        if let Some(color) = self.decoration_color {
-            color[0].to_bits().hash(state);
-            color[1].to_bits().hash(state);
-            color[2].to_bits().hash(state);
-            color[3].to_bits().hash(state);
-        }
-
-        match self.decoration {
-            None => 0.hash(state),
-            Some(FragmentStyleDecoration::Strikethrough) => 1.hash(state),
-            Some(FragmentStyleDecoration::Underline(info)) => {
-                match info.shape {
-                    UnderlineShape::Regular => 2.hash(state),
-                    UnderlineShape::Dotted => 3.hash(state),
-                    UnderlineShape::Dashed => 4.hash(state),
-                    UnderlineShape::Curly => 5.hash(state),
-                }
-                info.is_doubled.hash(state);
-            }
-        }
-        match self.cursor {
-            None => {
-                0.hash(state);
-            }
-            Some(SugarCursor::Block(color)) => {
-                1.hash(state);
-                color[0].to_bits().hash(state);
-                color[1].to_bits().hash(state);
-                color[2].to_bits().hash(state);
-                color[3].to_bits().hash(state);
-            }
-            Some(SugarCursor::Caret(color)) => {
-                2.hash(state);
-                color[0].to_bits().hash(state);
-                color[1].to_bits().hash(state);
-                color[2].to_bits().hash(state);
-                color[3].to_bits().hash(state);
-            }
-            Some(SugarCursor::Underline(color)) => {
-                3.hash(state);
-                color[0].to_bits().hash(state);
-                color[1].to_bits().hash(state);
-                color[2].to_bits().hash(state);
-                color[3].to_bits().hash(state);
-            }
-        };
-
-        self.media.hash(state);
-    }
-}
-
 /// Context for paragraph layout.
 pub struct LayoutContext {
     fcx: FontContext,
@@ -391,12 +321,6 @@ pub struct ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    #[inline]
-    pub fn set_hash(&mut self, hash: u64) {
-        let current_line = self.s.current_line();
-        self.s.lines[current_line].hash = hash;
-    }
-
     #[inline]
     pub fn new_line(&mut self) {
         self.s.new_line();
@@ -508,7 +432,7 @@ impl<'a> ParagraphBuilder<'a> {
                 .iter()
                 .collect();
             if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                if let Some(font_id) = self.fcx.find_font(&shaper_key,
+                if let Some(font_id) = self.fcx.find_font_by_str(&shaper_key,
                     &mut shape_state.synth,
                     font_library,
                     &style,
@@ -519,7 +443,6 @@ impl<'a> ParagraphBuilder<'a> {
                             font_id,
                             shape_state.size,
                             current_line as u32,
-                            shape_state.state.lines[current_line].hash,
                             shaper,
                             metrics,
                             normalized_coords
@@ -689,7 +612,6 @@ where
                 &current_font_id,
                 state.size,
                 current_line as u32,
-                state.state.lines[current_line].hash,
                 shaper,
                 word_cache,
             );
@@ -703,7 +625,6 @@ where
                 &current_font_id,
                 state.size,
                 current_line as u32,
-                state.state.lines[current_line].hash,
                 shaper,
                 word_cache,
             );

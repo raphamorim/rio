@@ -19,7 +19,6 @@ pub struct Fragment {
 #[derive(PartialEq, Debug, Clone)]
 pub struct LineFragments {
     data: Vec<Fragment>,
-    hash: u64,
 }
 
 #[derive(Clone)]
@@ -33,8 +32,6 @@ impl Default for Content {
         Self {
             fragments: vec![LineFragments {
                 data: vec![],
-                // 0 means uninitialized hash
-                hash: 0,
             }],
             text: String::default(),
         }
@@ -62,8 +59,6 @@ impl Content {
     #[inline]
     pub fn layout(&self, lcx: &mut ParagraphBuilder) {
         for line in &self.fragments {
-            lcx.set_hash(line.hash);
-
             for e in &line.data {
                 if e.start < e.end {
                     if let Some(s) = self.text.get(e.start as usize..e.end as usize) {
@@ -75,19 +70,6 @@ impl Content {
             lcx.new_line();
         }
     }
-}
-
-#[inline]
-fn calculate_hash<C: Hash + ?Sized, T: Hash + ?Sized, B: Hash + ?Sized>(
-    c: &C,
-    t: &T,
-    a: &B,
-) -> u64 {
-    let mut s = DefaultHasher::new();
-    c.hash(&mut s);
-    t.hash(&mut s);
-    a.hash(&mut s);
-    s.finish()
 }
 
 #[derive(Default, Clone, PartialEq)]
@@ -102,9 +84,6 @@ impl ContentBuilder {
         self.content.text.push_str(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
-        let text_hash =
-            calculate_hash(&self.content.fragments[last_line].hash, text, &style);
-        self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data
             .push(Fragment { start, end, style });
@@ -116,9 +95,6 @@ impl ContentBuilder {
         self.content.text.push(text);
         let end = self.content.text.len() as u32;
         let last_line = self.content.fragments.len() - 1;
-        let text_hash =
-            calculate_hash(&self.content.fragments[last_line].hash, &text, &style);
-        self.content.fragments[last_line].hash = text_hash;
         self.content.fragments[last_line]
             .data
             .push(Fragment { start, end, style });
@@ -128,7 +104,6 @@ impl ContentBuilder {
     pub fn finish_line(&mut self) {
         self.content.fragments.push(LineFragments {
             data: vec![],
-            hash: 0,
         });
     }
 

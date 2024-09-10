@@ -82,7 +82,6 @@ impl RenderData {
         font: &usize,
         size: f32,
         line: u32,
-        hash: u64,
         shaper: Shaper<'_>,
         shaper_cache: &mut WordCache,
     ) {
@@ -262,7 +261,6 @@ impl RenderData {
         let run_data = RunData {
             span: *style,
             line,
-            hash,
             font: *font,
             coords: (coords_start, coords_end),
             size,
@@ -286,7 +284,6 @@ impl RenderData {
         font: usize,
         size: f32,
         line: u32,
-        hash: u64,
         glyph_clusters: &Vec<OwnedGlyphCluster>,
         metrics: &Metrics,
         normalized_coords: &[i16],
@@ -387,7 +384,6 @@ impl RenderData {
         let run_data = RunData {
             span: *style,
             line,
-            hash,
             font,
             coords: (coords_start, coords_end),
             size,
@@ -808,11 +804,6 @@ impl<'a> Line<'a> {
             layout: self.layout,
             iter: self.line_layout.runs[range].iter(),
         }
-    }
-
-    #[inline]
-    pub fn hash(&self) -> u64 {
-        self.line.hash
     }
 }
 
