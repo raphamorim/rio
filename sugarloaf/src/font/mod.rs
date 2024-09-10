@@ -149,6 +149,45 @@ impl FontContext {
 
         Some(0)
     }
+
+    #[inline]
+    pub fn find_font(
+        &mut self,
+        content: &str,
+        synth: &mut Synthesis,
+        library: &FontLibraryData,
+        fragment_style: &FragmentStyle,
+    ) -> Option<usize> {
+        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
+        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+
+        let is_cache_key_empty = content.is_empty();
+        if is_cache_key_empty {
+            return None;
+        }
+
+        let mut cache_key: String = String::default();
+        if is_bold && is_italic {
+            cache_key.push('m');
+        } else if is_bold {
+            cache_key.push('b');
+        } else if is_italic {
+            cache_key.push('i');
+        } else {
+            cache_key.push('r');
+        };
+
+        cache_key.push(content.chars().last().unwrap());
+
+        if !is_cache_key_empty {
+            if let Some(cached_font_id) = self.cache.get(&cache_key) {
+                *synth = library[*cached_font_id].synth;
+                return Some(*cached_font_id);
+            }
+        }
+
+        None
+    }
 }
 
 #[derive(Clone)]

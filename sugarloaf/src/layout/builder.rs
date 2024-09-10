@@ -485,7 +485,6 @@ impl<'a> ParagraphBuilder<'a> {
 
     #[inline]
     fn shape(&mut self, render_data: &mut RenderData, current_line: usize) {
-        // let start = std::time::Instant::now();
         let mut char_cluster = CharCluster::new();
         let line = &self.s.lines[current_line];
         let font_library = { &self.fonts.inner.read().unwrap() };
@@ -495,7 +494,6 @@ impl<'a> ParagraphBuilder<'a> {
             let style = self.s.lines[current_line].styles[span_index];
             let vars = self.s.vars.get(item.vars);
             let mut shape_state = ShapeState {
-                // script: item.script,
                 script: Script::Latin,
                 features: self.font_features,
                 vars,
@@ -509,32 +507,12 @@ impl<'a> ParagraphBuilder<'a> {
             let shaper_key: String = self.s.lines[current_line].text.content[range.to_owned()]
                 .iter()
                 .collect();
-            let start = std::time::Instant::now();
-
-            let chars = self.s.lines[current_line].text.content[range.to_owned()]
-                .iter()
-                .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
-                .zip(&self.s.lines[current_line].text.info[range])
-                .map(|z| {
-                    let ((&ch, &offset), &info) = z;
-                    Token {
-                        ch,
-                        offset,
-                        len: ch.len_utf8() as u8,
-                        info,
-                        data: 0,
-                    }
-                });
-
-            shape_state.font_id = self.fcx.map_cluster(
-                &mut char_cluster,
-                &mut shape_state.synth,
-                font_library,
-                &style,
-            );
-
             if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                if let Some(font_id) = shape_state.font_id {
+                if let Some(font_id) = self.fcx.find_font(&shaper_key,
+                    &mut shape_state.synth,
+                    font_library,
+                    &style,
+                ) {
                     if let Some((metrics, normalized_coords)) = self.metrics_cache.inner.get(&font_id) {
                         if render_data.push_run_without_shaper(
                             shape_state.span,
@@ -550,7 +528,22 @@ impl<'a> ParagraphBuilder<'a> {
                         }
                     }
                 }
-            }   
+            }
+
+            let chars = self.s.lines[current_line].text.content[range.to_owned()]
+                .iter()
+                .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
+                .zip(&self.s.lines[current_line].text.info[range])
+                .map(|z| {
+                    let ((&ch, &offset), &info) = z;
+                    Token {
+                        ch,
+                        offset,
+                        len: ch.len_utf8() as u8,
+                        info,
+                        data: 0,
+                    }
+                });
 
             let mut parser = Parser::new(Script::Latin, chars);
             if !parser.next(&mut char_cluster) {
@@ -575,17 +568,7 @@ impl<'a> ParagraphBuilder<'a> {
                 self.word_cache,
                 self.metrics_cache,
             ) {}
-
-            let duration = start.elapsed();
-            println!("Time elapsed in shape_clusters is: {:?}", duration);
-
-            // self.cache.put(
-            //     self.s.lines[current_line].hash,
-            //     render_data.last_cached_run.to_owned(),
-            // );
         }
-        // let duration = start.elapsed();
-        // println!("Time elapsed in shape is: {:?}", duration);
     }
 }
 
@@ -645,7 +628,7 @@ impl WordCache {
 
     #[inline]
     pub fn finish(&mut self) {
-        println!("{:?} {:?}", self.key, self.inner.len());
+        // println!("{:?} {:?}", self.key, self.inner.len());
         if !self.key.is_empty() && !self.stash.is_empty() {
             self.inner.put(
                 std::mem::take(&mut self.key),
