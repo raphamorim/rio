@@ -8,7 +8,6 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 mod builder;
-mod builder_data;
 mod content;
 mod layout_data;
 mod render_data;
@@ -21,14 +20,8 @@ pub mod iter {
     pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
 }
 
-pub use builder::{LayoutContext, ParagraphBuilder};
-pub use builder_data::{
-    FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
-};
+pub use builder::{LayoutContext, ParagraphBuilder, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,};
 pub use render_data::{Cluster, Glyph, Line, Run};
-
-/// Largest allowable span or fragment identifier.
-const MAX_ID: usize = i32::MAX as usize;
 
 /// Index of a span in sequential order of submission to a paragraph builder.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]

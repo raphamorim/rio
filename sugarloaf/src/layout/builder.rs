@@ -3,47 +3,302 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-// builder.rs was originally retired from dfrg/swash_demo licensed under MIT
+// layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
+//
+// This file had updates to support color, underline_color, background_color
+// and other functionalities
 
-//! Render data builder.
-
-use super::builder_data::*;
-use super::MAX_ID;
+use rustc_hash::FxHashMap;
+use crate::font_introspector::Metrics;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
-use crate::font_introspector::text::cluster::{CharCluster, CharInfo, Parser, Token};
+use crate::font_introspector::text::cluster::{CharCluster, Parser, Token};
 use crate::font_introspector::text::{analyze, Script};
-use crate::font_introspector::{Setting, Synthesis};
-use crate::layout::render_data::{RenderData, RunCacheEntry};
+use crate::font_introspector::{Synthesis};
+use crate::layout::render_data::{RenderData};
 use lru::LruCache;
 use std::num::NonZeroUsize;
 
-pub struct RunCache {
-    inner: LruCache<u64, RunCacheEntry>,
+use crate::font_introspector::text::cluster::CharInfo;
+use crate::font_introspector::Attributes;
+use crate::font_introspector::Setting;
+use crate::{sugarloaf::primitives::SugarCursor, Graphic};
+use std::hash::{Hash, Hasher};
+
+/// Data that describes a fragment.
+#[derive(Copy, Debug, Clone)]
+pub struct FragmentData {
+    /// Offset of the text.
+    pub start: usize,
+    /// End of the text.
+    pub end: usize,
+    /// Font variations.
+    pub vars: FontSettingKey,
 }
 
-impl RunCache {
-    #[inline]
-    fn new() -> Self {
+/// Builder Line State
+#[derive(Default)]
+pub struct BuilderLineText {
+    /// Combined text.
+    pub content: Vec<char>,
+    /// Fragment index per character.
+    pub frags: Vec<u32>,
+    /// Span index per character.
+    pub spans: Vec<usize>,
+    /// Character info per character.
+    pub info: Vec<CharInfo>,
+    /// Offset of each character relative to its fragment.
+    pub offsets: Vec<u32>,
+}
+
+#[derive(Default)]
+pub struct BuilderLine {
+    pub text: BuilderLineText,
+    /// Collection of fragments.
+    pub fragments: Vec<FragmentData>,
+    /// Span index per character.
+    pub styles: Vec<FragmentStyle>,
+    /// Line Hash
+    pub hash: u64,
+}
+
+/// Builder state.
+#[derive(Default)]
+pub struct BuilderState {
+    /// Lines State
+    pub lines: Vec<BuilderLine>,
+    /// Font variation setting cache.
+    pub vars: FontSettingCache<f32>,
+    /// User specified scale.
+    pub scale: f32,
+    // Font size in ppem.
+    pub font_size: f32,
+}
+
+impl BuilderState {
+    /// Creates a new layout state.
+    pub fn new() -> Self {
+        let mut lines = vec![BuilderLine::default()];
+        lines[0].styles.push(FragmentStyle::default());
         Self {
-            inner: LruCache::new(NonZeroUsize::new(256).unwrap()),
+            lines,
+            ..BuilderState::default()
         }
+    }
+    #[inline]
+    pub fn new_line(&mut self) {
+        self.lines.push(BuilderLine::default());
+        let last = self.lines.len() - 1;
+        self.lines[last].styles.push(FragmentStyle::default());
+    }
+    #[inline]
+    pub fn current_line(&self) -> usize {
+        let size = self.lines.len();
+        if size == 0 {
+            0
+        } else {
+            size - 1
+        }
+    }
+    #[inline]
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.vars.clear();
     }
 
     #[inline]
-    fn put(&mut self, line_hash: u64, data: RunCacheEntry) {
-        if data.runs.is_empty() {
-            return;
+    pub fn begin(&mut self) {
+        self.lines.push(BuilderLine::default());
+    }
+}
+
+/// Index into a font setting cache.
+pub type FontSettingKey = u32;
+
+/// Cache of tag/value pairs for font settings.
+#[derive(Default)]
+pub struct FontSettingCache<T: Copy + PartialOrd + PartialEq> {
+    settings: Vec<Setting<T>>,
+    lists: Vec<FontSettingList>,
+    tmp: Vec<Setting<T>>,
+}
+
+impl<T: Copy + PartialOrd + PartialEq> FontSettingCache<T> {
+    pub fn get(&self, key: u32) -> &[Setting<T>] {
+        if key == !0 {
+            &[]
+        } else {
+            self.lists
+                .get(key as usize)
+                .map(|list| list.get(&self.settings))
+                .unwrap_or(&[])
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.settings.clear();
+        self.lists.clear();
+        self.tmp.clear();
+    }
+}
+
+/// Sentinel for an empty set of font settings.
+pub const EMPTY_FONT_SETTINGS: FontSettingKey = !0;
+
+/// Range within a font setting cache.
+#[derive(Copy, Clone)]
+struct FontSettingList {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl FontSettingList {
+    pub fn get<T>(self, elements: &[T]) -> &[T] {
+        elements
+            .get(self.start as usize..self.end as usize)
+            .unwrap_or(&[])
+    }
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
+pub enum UnderlineShape {
+    #[default]
+    Regular = 0,
+    Dotted = 1,
+    Dashed = 2,
+    Curly = 3,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct UnderlineInfo {
+    pub offset: f32,
+    pub size: f32,
+    pub is_doubled: bool,
+    pub shape: UnderlineShape,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum FragmentStyleDecoration {
+    // offset, size
+    Underline(UnderlineInfo),
+    Strikethrough,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct FragmentStyle {
+    //  Unicode width
+    pub width: f32,
+    /// Font attributes.
+    pub font_attrs: Attributes,
+    /// Font color.
+    pub color: [f32; 4],
+    /// Background color.
+    pub background_color: Option<[f32; 4]>,
+    /// Font variations.
+    pub font_vars: FontSettingKey,
+    /// Additional spacing between letters (clusters) of text.
+    // pub letter_spacing: f32,
+    /// Additional spacing between words of text.
+    // pub word_spacing: f32,
+    /// Multiplicative line spacing factor.
+    // pub line_spacing: f32,
+    /// Enable underline decoration.
+    pub decoration: Option<FragmentStyleDecoration>,
+    /// Decoration color.
+    pub decoration_color: Option<[f32; 4]>,
+    /// Cursor style.
+    pub cursor: Option<SugarCursor>,
+    /// Media
+    pub media: Option<Graphic>,
+}
+
+impl Default for FragmentStyle {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            font_attrs: Attributes::default(),
+            font_vars: EMPTY_FONT_SETTINGS,
+            // letter_spacing: 0.,
+            // word_spacing: 0.,
+            // line_spacing: 1.,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            cursor: None,
+            decoration: None,
+            decoration_color: None,
+            media: None,
+        }
+    }
+}
+
+impl Hash for FragmentStyle {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.font_attrs.hash(state);
+        self.color[0].to_bits().hash(state);
+        self.color[1].to_bits().hash(state);
+        self.color[2].to_bits().hash(state);
+        self.color[3].to_bits().hash(state);
+
+        if let Some(bg_color) = self.background_color {
+            bg_color[0].to_bits().hash(state);
+            bg_color[1].to_bits().hash(state);
+            bg_color[2].to_bits().hash(state);
+            bg_color[3].to_bits().hash(state);
         }
 
-        if let Some(line) = self.inner.get_mut(&line_hash) {
-            *line = data;
-        } else {
-            self.inner.put(line_hash, data);
+        if let Some(color) = self.decoration_color {
+            color[0].to_bits().hash(state);
+            color[1].to_bits().hash(state);
+            color[2].to_bits().hash(state);
+            color[3].to_bits().hash(state);
         }
+
+        match self.decoration {
+            None => 0.hash(state),
+            Some(FragmentStyleDecoration::Strikethrough) => 1.hash(state),
+            Some(FragmentStyleDecoration::Underline(info)) => {
+                match info.shape {
+                    UnderlineShape::Regular => 2.hash(state),
+                    UnderlineShape::Dotted => 3.hash(state),
+                    UnderlineShape::Dashed => 4.hash(state),
+                    UnderlineShape::Curly => 5.hash(state),
+                }
+                info.is_doubled.hash(state);
+            }
+        }
+        match self.cursor {
+            None => {
+                0.hash(state);
+            }
+            Some(SugarCursor::Block(color)) => {
+                1.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            Some(SugarCursor::Caret(color)) => {
+                2.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+            Some(SugarCursor::Underline(color)) => {
+                3.hash(state);
+                color[0].to_bits().hash(state);
+                color[1].to_bits().hash(state);
+                color[2].to_bits().hash(state);
+                color[3].to_bits().hash(state);
+            }
+        };
+
+        self.media.hash(state);
     }
 }
 
@@ -54,9 +309,9 @@ pub struct LayoutContext {
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
     state: BuilderState,
-    cache: RunCache,
     cache_analysis: LruCache<String, Vec<CharInfo>>,
-    shaper_cache: ShaperCache,
+    word_cache: WordCache,
+    metrics_cache: MetricsCache,
 }
 
 impl LayoutContext {
@@ -67,10 +322,10 @@ impl LayoutContext {
             fcx: FontContext::default(),
             scx: ShapeContext::new(),
             state: BuilderState::new(),
-            cache: RunCache::new(),
-            shaper_cache: ShaperCache::new(),
+            word_cache: WordCache::new(),
             font_features: vec![],
             cache_analysis: LruCache::new(NonZeroUsize::new(256).unwrap()),
+            metrics_cache: MetricsCache::default(),
         }
     }
 
@@ -98,8 +353,8 @@ impl LayoutContext {
         self.state.font_size = font_size * scale;
 
         if prev_font_size != self.state.font_size {
-            self.cache.inner.clear();
-            self.shaper_cache.clear();
+            // self.cache.inner.clear();
+            self.word_cache.clear();
         }
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -110,15 +365,15 @@ impl LayoutContext {
             scx: &mut self.scx,
             s: &mut self.state,
             last_offset: 0,
-            cache: &mut self.cache,
-            shaper_cache: &mut self.shaper_cache,
+            word_cache: &mut self.word_cache,
+            metrics_cache: &mut self.metrics_cache,
             cache_analysis: &mut self.cache_analysis,
         }
     }
 
     #[inline]
     pub fn clear_cache(&mut self) {
-        self.cache.inner.clear();
+        // self.cache.inner.clear();
     }
 }
 
@@ -130,8 +385,8 @@ pub struct ParagraphBuilder<'a> {
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
     last_offset: u32,
-    cache: &'a mut RunCache,
-    shaper_cache: &'a mut ShaperCache,
+    word_cache: &'a mut WordCache,
+    metrics_cache: &'a mut MetricsCache,
     cache_analysis: &'a mut LruCache<String, Vec<CharInfo>>,
 }
 
@@ -152,38 +407,19 @@ impl<'a> ParagraphBuilder<'a> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
-        if id > MAX_ID {
-            return None;
-        }
-
-        // If the text is just space then break shaping
-        // let mut break_shaping = text.trim().is_empty();
-
         let mut offset = self.last_offset;
         line.styles.push(style);
         let span_id = line.styles.len() - 1;
 
-        macro_rules! push_char {
-            ($ch: expr) => {{
-                line.text.content.push($ch);
-                line.text.offsets.push(offset);
-                offset += ($ch).len_utf8() as u32;
-            }};
-        }
-
         let start = line.text.content.len();
 
         for ch in text.chars() {
-            push_char!(ch);
+            line.text.content.push(ch);
+            line.text.offsets.push(offset);
+            offset += (ch).len_utf8() as u32;
         }
 
-        let break_shaping = if let Some(prev_frag) = line.fragments.last() {
-            let prev_style = line.styles[prev_frag.span];
-            prev_style != style
-        } else {
-            true
-        };
-
+        // println!(">>> {:?}", text);
         let end = line.text.content.len();
         let len = end - start;
         line.text.frags.reserve(len);
@@ -197,8 +433,6 @@ impl<'a> ParagraphBuilder<'a> {
         }
 
         line.fragments.push(FragmentData {
-            span: span_id,
-            break_shaping,
             start,
             end,
             vars: style.font_vars,
@@ -222,32 +456,9 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
-    #[inline]
-    fn process_from_cache(
-        &mut self,
-        render_data: &mut RenderData,
-        current_line: usize,
-    ) -> bool {
-        let hash = self.s.lines[current_line].hash;
-        if let Some(data) = self.cache.inner.get(&hash) {
-            render_data.push_run_from_cached_line(data, current_line as u32);
-
-            return true;
-        }
-
-        false
-    }
-
     fn resolve(&mut self, render_data: &mut RenderData) {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
-            // In case should render only requested lines
-            // and the line number isn't part of the requested then process from cache
-            // if render_specific_lines && !lines_to_render.contains(&line_number) {
-            if self.process_from_cache(render_data, line_number) {
-                continue;
-            }
-
             let line = &mut self.s.lines[line_number];
             let content_key = line.text.content.iter().collect();
             if let Some(cached_analysis) = self.cache_analysis.get(&content_key) {
@@ -263,76 +474,13 @@ impl<'a> ParagraphBuilder<'a> {
                 self.cache_analysis.put(content_key, cache);
             }
 
-            self.itemize(line_number);
             // let start = std::time::Instant::now();
             self.shape(render_data, line_number);
             // let duration = start.elapsed();
             // println!("Time elapsed in shape is: {:?}", duration);
         }
-        // let duration = start.elapsed();
-        // println!("Time elapsed in resolve is: {:?}", duration);
-    }
-
-    #[inline]
-    fn itemize(&mut self, line_number: usize) {
-        let line = &mut self.s.lines[line_number];
-        let limit = line.text.content.len();
-        if line.text.frags.is_empty() || limit == 0 {
-            return;
-        }
-        // let mut last_script = line
-        //     .text
-        //     .info
-        //     .iter()
-        //     .map(|i| i.script())
-        //     .find(|s| real_script(*s))
-        //     .unwrap_or(Script::Latin);
-        let mut last_frag = line.fragments.first().unwrap();
-        // let last_level = 0;
-        let mut last_vars = last_frag.vars;
-        let mut item = ItemData {
-            // script: last_script,
-            // level: last_level,
-            start: last_frag.start,
-            end: last_frag.start,
-            vars: last_vars,
-        };
-        macro_rules! push_item {
-            () => {
-                if item.start < limit && item.start < item.end {
-                    // item.script = last_script;
-                    // item.level = last_level;
-                    item.vars = last_vars;
-                    line.items.push(item);
-                    item.start = item.end;
-                }
-            };
-        }
-        for frag in &line.fragments {
-            if frag.break_shaping || frag.start != last_frag.end {
-                push_item!();
-                item.start = frag.start;
-                item.end = frag.start;
-            }
-            last_frag = frag;
-            last_vars = frag.vars;
-            let range = frag.start..frag.end;
-            // for &props in &line.text.info[range] {
-            for &_props in &line.text.info[range] {
-                //     let script = props.script();
-                // let real = real_script(script);
-                // if script != last_script && real {
-                //     //item.end += 1;
-                //     // push_item!();
-                //     if real {
-                //         last_script = script;
-                //     }
-                // } else {
-                item.end += 1;
-                // }
-            }
-        }
-        push_item!();
+        let duration = start.elapsed();
+        println!("Time elapsed in resolve is: {:?}", duration);
     }
 
     #[inline]
@@ -341,7 +489,7 @@ impl<'a> ParagraphBuilder<'a> {
         let mut char_cluster = CharCluster::new();
         let line = &self.s.lines[current_line];
         let font_library = { &self.fonts.inner.read().unwrap() };
-        for item in &line.items {
+        for item in &line.fragments {
             let range = item.start..item.end;
             let span_index = self.s.lines[current_line].text.spans[item.start];
             let style = self.s.lines[current_line].styles[span_index];
@@ -358,6 +506,11 @@ impl<'a> ParagraphBuilder<'a> {
                 size: self.s.font_size,
             };
 
+            let shaper_key: String = self.s.lines[current_line].text.content[range.to_owned()]
+                .iter()
+                .collect();
+            let start = std::time::Instant::now();
+
             let chars = self.s.lines[current_line].text.content[range.to_owned()]
                 .iter()
                 .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
@@ -372,6 +525,32 @@ impl<'a> ParagraphBuilder<'a> {
                         data: 0,
                     }
                 });
+
+            shape_state.font_id = self.fcx.map_cluster(
+                &mut char_cluster,
+                &mut shape_state.synth,
+                font_library,
+                &style,
+            );
+
+            if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
+                if let Some(font_id) = shape_state.font_id {
+                    if let Some((metrics, normalized_coords)) = self.metrics_cache.inner.get(&font_id) {
+                        if render_data.push_run_without_shaper(
+                            shape_state.span,
+                            font_id,
+                            shape_state.size,
+                            current_line as u32,
+                            shape_state.state.lines[current_line].hash,
+                            shaper,
+                            metrics,
+                            normalized_coords
+                        ) {
+                            continue
+                        }
+                    }
+                }
+            }   
 
             let mut parser = Parser::new(Script::Latin, chars);
             if !parser.next(&mut char_cluster) {
@@ -393,13 +572,17 @@ impl<'a> ParagraphBuilder<'a> {
                 &mut char_cluster,
                 render_data,
                 current_line,
-                self.shaper_cache,
+                self.word_cache,
+                self.metrics_cache,
             ) {}
 
-            self.cache.put(
-                self.s.lines[current_line].hash,
-                render_data.last_cached_run.to_owned(),
-            );
+            let duration = start.elapsed();
+            println!("Time elapsed in shape_clusters is: {:?}", duration);
+
+            // self.cache.put(
+            //     self.s.lines[current_line].hash,
+            //     render_data.last_cached_run.to_owned(),
+            // );
         }
         // let duration = start.elapsed();
         // println!("Time elapsed in shape is: {:?}", duration);
@@ -417,16 +600,16 @@ struct ShapeState<'a> {
     size: f32,
 }
 
-pub struct ShaperCache {
+pub struct WordCache {
     pub inner: LruCache<String, Vec<OwnedGlyphCluster>>,
     stash: Vec<OwnedGlyphCluster>,
-    key: String,
+    pub key: String,
 }
 
-impl ShaperCache {
+impl WordCache {
     pub fn new() -> Self {
-        ShaperCache {
-            inner: LruCache::new(NonZeroUsize::new(256).unwrap()),
+        WordCache {
+            inner: LruCache::new(NonZeroUsize::new(2048).unwrap()),
             stash: vec![],
             key: String::new(),
         }
@@ -442,13 +625,6 @@ impl ShaperCache {
     }
 
     #[inline]
-    fn add_cluster(&mut self, chars: &[crate::font_introspector::text::cluster::Char]) {
-        for character in chars {
-            self.key.push(character.ch);
-        }
-    }
-
-    #[inline]
     pub fn clear(&mut self) {
         self.stash.clear();
         self.key.clear();
@@ -461,7 +637,15 @@ impl ShaperCache {
     }
 
     #[inline]
+    fn add_cluster(&mut self, chars: &[crate::font_introspector::text::cluster::Char]) {
+        for character in chars {
+            self.key.push(character.ch);
+        }
+    }
+
+    #[inline]
     pub fn finish(&mut self) {
+        println!("{:?} {:?}", self.key, self.inner.len());
         if !self.key.is_empty() && !self.stash.is_empty() {
             self.inner.put(
                 std::mem::take(&mut self.key),
@@ -474,6 +658,11 @@ impl ShaperCache {
     }
 }
 
+#[derive(Default)]
+struct MetricsCache {
+    pub inner: FxHashMap<usize, (Metrics, Vec<i16>)>
+}
+
 #[allow(clippy::too_many_arguments)]
 fn shape_clusters<I>(
     fcx: &mut FontContext,
@@ -484,7 +673,8 @@ fn shape_clusters<I>(
     cluster: &mut CharCluster,
     render_data: &mut RenderData,
     current_line: usize,
-    shaper_cache: &mut ShaperCache,
+    word_cache: &mut WordCache,
+    metrics_cache: &mut MetricsCache,
 ) -> bool
 where
     I: Iterator<Item = Token> + Clone,
@@ -503,10 +693,12 @@ where
         .variations(state.vars.iter().copied())
         .build();
 
+    metrics_cache.inner.insert(current_font_id, (shaper.metrics(), shaper.normalized_coords().to_vec()));
+
     let mut synth = Synthesis::default();
     loop {
-        shaper_cache.add_cluster(cluster.chars());
         shaper.add_cluster(cluster);
+        word_cache.add_cluster(cluster.chars());
 
         if !parser.next(cluster) {
             render_data.push_run(
@@ -516,7 +708,7 @@ where
                 current_line as u32,
                 state.state.lines[current_line].hash,
                 shaper,
-                shaper_cache,
+                word_cache,
             );
             return false;
         }
@@ -530,7 +722,7 @@ where
                 current_line as u32,
                 state.state.lines[current_line].hash,
                 shaper,
-                shaper_cache,
+                word_cache,
             );
             state.font_id = next_font;
             state.synth = synth;

@@ -288,6 +288,7 @@ impl Renderer {
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
+        let mut last_char_was_empty = false;
         let mut last_style = FragmentStyle::default();
 
         for column in 0..columns {
@@ -370,16 +371,34 @@ impl Renderer {
                 style.background_color = None;
             }
 
-            if last_style != style {
+            // TODO: Write tests for it
+            if square_content != ' ' && last_char_was_empty {
                 if !content.is_empty() {
-                    // let start = std::time::Instant::now();
                     content_builder.add_text(&content, last_style);
-                    // let duration = start.elapsed();
-                    // println!("Total add_text: {:?}", duration);
+                    content.clear();
                 }
 
-                content.clear();
+                last_char_was_empty = false;
+            }
+
+            if last_style != style {
+                if !content.is_empty() {
+                    content_builder.add_text(&content, last_style);
+                    content.clear();
+                }
+
                 last_style = style;
+            }
+
+            if square_content == ' ' && !last_char_was_empty {
+                if !content.is_empty() {
+                    content_builder.add_text(&content, last_style);
+                    content.clear();
+                }
+
+                content.push(square_content);
+                last_char_was_empty = true;
+                continue;
             }
 
             content.push(square_content);
@@ -638,7 +657,6 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
-    #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_term(
         &mut self,
