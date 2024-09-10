@@ -524,15 +524,6 @@ impl WordCache {
     }
 
     #[inline]
-    pub fn shape_with(&mut self) -> Option<&Vec<OwnedGlyphCluster>> {
-        if self.key.is_empty() {
-            return None;
-        }
-
-        self.inner.get(&self.key)
-    }
-
-    #[inline]
     pub fn clear(&mut self) {
         self.stash.clear();
         self.key.clear();
