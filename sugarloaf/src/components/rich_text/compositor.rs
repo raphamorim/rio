@@ -48,7 +48,7 @@ pub struct CachedRunInstructions {
 }
 
 #[derive(Default)]
-pub struct CachedRunUnderline {
+pub struct RunUnderline {
     enabled: bool,
     offset: i32,
     size: f32,
@@ -62,14 +62,14 @@ pub struct CachedRun {
     pub graphics: HashSet<Graphic>,
     instruction_set: FxHashMap<usize, CachedRunInstructions>,
     instruction_set_callback: Vec<InstructionCallback>,
-    underline: CachedRunUnderline,
+    underline: RunUnderline,
     char_width: f32,
 }
 
 impl CachedRun {
     pub fn new(char_width: f32) -> Self {
         Self {
-            underline: CachedRunUnderline::default(),
+            underline: RunUnderline::default(),
             char_width,
             glyphs_ids: Vec::new(),
             graphics: HashSet::new(),
@@ -319,45 +319,45 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: I,
-        cached_run: &mut CachedRun,
+        // cached_run: &mut CachedRun,
     ) where
         I: Iterator,
         I::Item: Borrow<Glyph>,
     {
         let rect = rect.into();
 
-        match style.decoration {
+        let underline = match style.decoration {
             Some(FragmentStyleDecoration::Underline(info)) => {
-                cached_run.underline = CachedRunUnderline {
+                Some(RunUnderline {
                     enabled: true,
                     offset: info.offset.round() as i32,
                     size: info.size,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: info.is_doubled,
                     shape: info.shape,
-                }
+                })
             }
             Some(FragmentStyleDecoration::Strikethrough) => {
-                cached_run.underline = CachedRunUnderline {
+                Some(RunUnderline {
                     enabled: true,
                     offset: (style.line_height / 3.5).round() as i32,
                     size: 2.0,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: false,
                     shape: UnderlineShape::Regular,
-                }
+                })
             }
-            _ => {}
+            _ => {
+                None
+            }
         };
 
         let subpx_bias = (0.125, 0.);
         let color = style.color;
 
-        for (glyph_acc, g) in glyphs.enumerate() {
-            let mut cached_run_instructions = CachedRunInstructions::default();
+        for g in glyphs {
             let glyph = g.borrow();
             let entry = session.get(glyph.id);
-            cached_run_instructions.entry = entry;
             if let Some(entry) = entry {
                 if let Some(img) = session.get_image(entry.image) {
                     let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
@@ -373,13 +373,6 @@ impl Compositor {
                             &coords,
                             entry.image.has_alpha(),
                         );
-                        cached_run_instructions
-                            .instructions
-                            .push(Instruction::Image(ComposedRect {
-                                color,
-                                coords,
-                                has_alpha: entry.image.has_alpha(),
-                            }));
                     } else {
                         let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
                         self.batches.add_mask_rect(
@@ -389,20 +382,9 @@ impl Compositor {
                             &coords,
                             true,
                         );
-                        cached_run_instructions.instructions.push(Instruction::Mask(
-                            ComposedRect {
-                                color,
-                                coords,
-                                has_alpha: true,
-                            },
-                        ));
                     }
                 }
             }
-
-            cached_run
-                .instruction_set
-                .insert(glyph_acc, cached_run_instructions);
         }
 
         if let Some(bg_color) = style.background_color {
@@ -411,9 +393,6 @@ impl Compositor {
                 depth,
                 &bg_color,
             );
-            cached_run
-                .instruction_set_callback
-                .push(InstructionCallback::Background(bg_color));
         }
 
         match style.cursor {
@@ -423,9 +402,6 @@ impl Compositor {
                     depth,
                     &cursor_color,
                 );
-                cached_run
-                    .instruction_set_callback
-                    .push(InstructionCallback::BlockCursor(cursor_color));
             }
             Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
@@ -433,21 +409,20 @@ impl Compositor {
                     depth,
                     &cursor_color,
                 );
-                cached_run
-                    .instruction_set_callback
-                    .push(InstructionCallback::CaretCursor(cursor_color));
             }
             _ => {}
         }
 
-        self.draw_underline(
-            &cached_run.underline,
-            rect.x,
-            rect.width,
-            style.baseline,
-            depth,
-            style.line_height,
-        );
+        if let Some(underline) = underline {
+            self.draw_underline(
+                &underline,
+                rect.x,
+                rect.width,
+                style.baseline,
+                depth,
+                style.line_height,
+            );
+        }
 
         // let duration = start.elapsed();
         // println!(" - draw_glyphs() is: {:?}", duration);
@@ -456,7 +431,7 @@ impl Compositor {
     #[inline]
     fn draw_underline(
         &mut self,
-        underline: &CachedRunUnderline,
+        underline: &RunUnderline,
         x: f32,
         advance: f32,
         baseline: f32,

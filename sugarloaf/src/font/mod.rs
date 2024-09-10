@@ -151,7 +151,7 @@ impl FontContext {
     }
 
     #[inline]
-    pub fn find_font(
+    pub fn find_font_by_str(
         &mut self,
         content: &str,
         synth: &mut Synthesis,
