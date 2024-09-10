@@ -7,7 +7,6 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::layout::*;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Fragment {
@@ -30,9 +29,7 @@ pub struct Content {
 impl Default for Content {
     fn default() -> Self {
         Self {
-            fragments: vec![LineFragments {
-                data: vec![],
-            }],
+            fragments: vec![LineFragments { data: vec![] }],
             text: String::default(),
         }
     }
@@ -102,9 +99,7 @@ impl ContentBuilder {
 
     #[inline]
     pub fn finish_line(&mut self) {
-        self.content.fragments.push(LineFragments {
-            data: vec![],
-        });
+        self.content.fragments.push(LineFragments { data: vec![] });
     }
 
     #[inline]

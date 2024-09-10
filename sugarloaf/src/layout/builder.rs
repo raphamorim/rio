@@ -9,17 +9,17 @@
 // This file had updates to support color, underline_color, background_color
 // and other functionalities
 
-use rustc_hash::FxHashMap;
-use crate::font_introspector::Metrics;
 use crate::font::{FontContext, FontLibrary, FontLibraryData};
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::cluster::{CharCluster, Parser, Token};
 use crate::font_introspector::text::{analyze, Script};
-use crate::font_introspector::{Synthesis};
-use crate::layout::render_data::{RenderData};
+use crate::font_introspector::Metrics;
+use crate::font_introspector::Synthesis;
+use crate::layout::render_data::RenderData;
 use lru::LruCache;
+use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
 
 use crate::font_introspector::text::cluster::CharInfo;
@@ -381,7 +381,7 @@ impl<'a> ParagraphBuilder<'a> {
 
 impl<'a> ParagraphBuilder<'a> {
     fn resolve(&mut self, render_data: &mut RenderData) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
             let line = &mut self.s.lines[line_number];
             let content_key = line.text.content.iter().collect();
@@ -403,8 +403,8 @@ impl<'a> ParagraphBuilder<'a> {
             // let duration = start.elapsed();
             // println!("Time elapsed in shape is: {:?}", duration);
         }
-        let duration = start.elapsed();
-        println!("Time elapsed in resolve is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in resolve is: {:?}", duration);
     }
 
     #[inline]
@@ -422,22 +422,25 @@ impl<'a> ParagraphBuilder<'a> {
                 features: self.font_features,
                 vars,
                 synth: Synthesis::default(),
-                state: self.s,
                 span: &self.s.lines[current_line].styles[span_index],
                 font_id: None,
                 size: self.s.font_size,
             };
 
-            let shaper_key: String = self.s.lines[current_line].text.content[range.to_owned()]
-                .iter()
-                .collect();
+            let shaper_key: String = self.s.lines[current_line].text.content
+                [range.to_owned()]
+            .iter()
+            .collect();
             if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                if let Some(font_id) = self.fcx.find_font_by_str(&shaper_key,
+                if let Some(font_id) = self.fcx.find_font_by_str(
+                    &shaper_key,
                     &mut shape_state.synth,
                     font_library,
                     &style,
                 ) {
-                    if let Some((metrics, normalized_coords)) = self.metrics_cache.inner.get(&font_id) {
+                    if let Some((metrics, normalized_coords)) =
+                        self.metrics_cache.inner.get(&font_id)
+                    {
                         if render_data.push_run_without_shaper(
                             shape_state.span,
                             font_id,
@@ -445,9 +448,9 @@ impl<'a> ParagraphBuilder<'a> {
                             current_line as u32,
                             shaper,
                             metrics,
-                            normalized_coords
+                            normalized_coords,
                         ) {
-                            continue
+                            continue;
                         }
                     }
                 }
@@ -496,7 +499,6 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 struct ShapeState<'a> {
-    state: &'a BuilderState,
     features: &'a [Setting<u16>],
     synth: Synthesis,
     vars: &'a [Setting<f32>],
@@ -566,7 +568,7 @@ impl WordCache {
 
 #[derive(Default)]
 struct MetricsCache {
-    pub inner: FxHashMap<usize, (Metrics, Vec<i16>)>
+    pub inner: FxHashMap<usize, (Metrics, Vec<i16>)>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -599,7 +601,10 @@ where
         .variations(state.vars.iter().copied())
         .build();
 
-    metrics_cache.inner.insert(current_font_id, (shaper.metrics(), shaper.normalized_coords().to_vec()));
+    metrics_cache.inner.insert(
+        current_font_id,
+        (shaper.metrics(), shaper.normalized_coords().to_vec()),
+    );
 
     let mut synth = Synthesis::default();
     loop {

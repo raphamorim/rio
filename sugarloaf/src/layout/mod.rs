@@ -20,7 +20,10 @@ pub mod iter {
     pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
 }
 
-pub use builder::{LayoutContext, ParagraphBuilder, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,};
+pub use builder::{
+    FragmentStyle, FragmentStyleDecoration, LayoutContext, ParagraphBuilder,
+    UnderlineInfo, UnderlineShape,
+};
 pub use render_data::{Cluster, Glyph, Line, Run};
 
 /// Index of a span in sequential order of submission to a paragraph builder.

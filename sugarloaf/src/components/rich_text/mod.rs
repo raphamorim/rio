@@ -11,9 +11,7 @@ use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
-use compositor::{CachedRun, Compositor, DisplayList, Rect, Vertex};
-use lru::LruCache;
-use std::num::NonZeroUsize;
+use compositor::{Compositor, DisplayList, Rect, Vertex};
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -47,7 +45,6 @@ pub struct RichTextBrush {
     index_buffer_size: u64,
     current_transform: [f32; 16],
     comp: Compositor,
-    draw_layout_cache: DrawLayoutCache,
     dlist: DisplayList,
     supported_vertex_buffer: usize,
     textures_version: usize,
@@ -244,7 +241,6 @@ impl RichTextBrush {
             images,
             textures_version: 0,
             glyphs: GlyphCache::new(),
-            draw_layout_cache: DrawLayoutCache::new(),
             dlist,
             transform,
             pipeline,
@@ -252,11 +248,6 @@ impl RichTextBrush {
             supported_vertex_buffer,
             current_transform,
         }
-    }
-
-    #[inline]
-    pub fn clean_cache(&mut self) {
-        self.draw_layout_cache.clear();
     }
 
     #[inline]
@@ -281,11 +272,7 @@ impl RichTextBrush {
 
         draw_layout(
             &mut self.comp,
-            (
-                &mut self.images,
-                &mut self.glyphs,
-                &mut self.draw_layout_cache,
-            ),
+            (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position,
             font_library,
@@ -420,45 +407,18 @@ impl RichTextBrush {
     }
 }
 
-struct DrawLayoutCache {
-    inner: LruCache<u64, Vec<CachedRun>>,
-}
-
-impl DrawLayoutCache {
-    fn new() -> Self {
-        Self {
-            inner: LruCache::new(NonZeroUsize::new(128).unwrap()),
-        }
-    }
-
-    #[inline]
-    fn get(&mut self, hash: &u64) -> Option<&Vec<CachedRun>> {
-        self.inner.get(hash)
-    }
-
-    #[inline]
-    fn put(&mut self, hash: u64, data: Vec<CachedRun>) {
-        self.inner.put(hash, data);
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        self.inner.clear();
-    }
-}
-
 fn draw_layout(
     comp: &mut compositor::Compositor,
-    caches: (&mut ImageCache, &mut GlyphCache, &mut DrawLayoutCache),
+    caches: (&mut ImageCache, &mut GlyphCache),
     render_data: &crate::layout::RenderData,
     pos: (f32, f32),
     font_library: &FontLibraryData,
     rect: &SugarDimensions,
     graphics: &mut Graphics,
 ) {
-    let start = std::time::Instant::now();
+    // let start = std::time::Instant::now();
     let (x, y) = pos;
-    let (image_cache, glyphs_cache, draw_layout_cache) = caches;
+    let (image_cache, glyphs_cache) = caches;
     let depth = 0.0;
     let mut glyphs = Vec::new();
     let mut current_font = 0;
@@ -485,32 +445,14 @@ fn draw_layout(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        // if let Some(data) = draw_layout_cache.get(&hash) {
-        //     comp.draw_cached_run(
-        //         data,
-        //         px,
-        //         py,
-        //         depth,
-        //         rect,
-        //         line,
-        //         &mut last_rendered_graphic,
-        //         graphics,
-        //     );
-        //     continue;
-        // }
-
-        // let mut cached_line_runs = Vec::new();
         for run in line.runs() {
             let char_width = run.char_width();
-            let mut cached_run = CachedRun::new(char_width);
             let font = *run.font();
 
             let run_x = px;
             glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
-                    cached_run.glyphs_ids.push(glyph.id);
-
                     let x = px + glyph.x;
                     let y = py - glyph.y;
                     // px += glyph.advance
@@ -565,8 +507,6 @@ fn draw_layout(
                     });
                     last_rendered_graphic = Some(graphic.id);
                 }
-
-                cached_run.graphics.insert(graphic);
             }
 
             comp.draw_run(
@@ -581,8 +521,8 @@ fn draw_layout(
         }
     }
 
-    let duration = start.elapsed();
-    println!(" - draw_layout() is: {:?}\n", duration);
+    // let duration = start.elapsed();
+    // println!(" - draw_layout() is: {:?}\n", duration);
 }
 
 #[inline]
@@ -620,7 +560,6 @@ fn fetch_dimensions(
         let mut px = x + line.offset();
         for run in line.runs() {
             let char_width = run.char_width();
-            let mut cached_run = CachedRun::new(char_width);
 
             let font = run.font();
             let py = line.baseline() + y;
