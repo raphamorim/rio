@@ -2,7 +2,6 @@ mod batch;
 mod compositor;
 mod image_cache;
 pub mod text;
-pub mod util;
 
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
