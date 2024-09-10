@@ -11,41 +11,13 @@
 
 use crate::components::rich_text::batch::BatchManager;
 pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
-use crate::components::rich_text::image_cache::glyph::{GlyphCacheSession, GlyphEntry};
+use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
 use crate::components::rich_text::image_cache::ImageCache;
 pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
-use crate::layout::{FragmentStyleDecoration, Line, SugarDimensions, UnderlineShape};
-use crate::sugarloaf::graphics::GraphicRenderRequest;
-use crate::Graphics;
+use crate::layout::{FragmentStyleDecoration, UnderlineShape};
 use crate::SugarCursor;
-use crate::{Graphic, GraphicId};
-use rustc_hash::FxHashMap;
 use std::borrow::Borrow;
-use std::collections::HashSet;
-
-pub struct ComposedRect {
-    coords: [f32; 4],
-    color: [f32; 4],
-    has_alpha: bool,
-}
-
-pub enum Instruction {
-    Image(ComposedRect),
-    Mask(ComposedRect),
-}
-
-pub enum InstructionCallback {
-    Background([f32; 4]),
-    CaretCursor([f32; 4]),
-    BlockCursor([f32; 4]),
-}
-
-#[derive(Default)]
-pub struct CachedRunInstructions {
-    pub instructions: Vec<Instruction>,
-    pub entry: Option<GlyphEntry>,
-}
 
 #[derive(Default)]
 pub struct RunUnderline {
@@ -55,28 +27,6 @@ pub struct RunUnderline {
     color: [f32; 4],
     is_doubled: bool,
     shape: UnderlineShape,
-}
-
-pub struct CachedRun {
-    pub glyphs_ids: Vec<u16>,
-    pub graphics: HashSet<Graphic>,
-    instruction_set: FxHashMap<usize, CachedRunInstructions>,
-    instruction_set_callback: Vec<InstructionCallback>,
-    underline: RunUnderline,
-    char_width: f32,
-}
-
-impl CachedRun {
-    pub fn new(char_width: f32) -> Self {
-        Self {
-            underline: RunUnderline::default(),
-            char_width,
-            glyphs_ids: Vec::new(),
-            graphics: HashSet::new(),
-            instruction_set_callback: Vec::new(),
-            instruction_set: FxHashMap::default(),
-        }
-    }
 }
 
 pub struct Compositor {
@@ -178,138 +128,6 @@ impl Compositor {
     //     );
     // }
 
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_cached_run(
-        &mut self,
-        cache_line: &Vec<CachedRun>,
-        px: f32,
-        py: f32,
-        depth: f32,
-        rect: &SugarDimensions,
-        line: Line,
-        last_rendered_graphic: &mut Option<GraphicId>,
-        graphics: &mut Graphics,
-    ) {
-        let mut px = px;
-        let subpx_bias = (0.125, 0.);
-
-        let line_height = line.ascent() + line.descent() + line.leading();
-        let topline = py - line.ascent();
-
-        for cached_run in cache_line {
-            let mut glyphs = Vec::new();
-            let run_x = px;
-
-            for glyph in &cached_run.glyphs_ids {
-                let x = px;
-                // let y = py - glyph.y;
-                let y = py;
-                // px += glyph.advance;
-                px += rect.width * cached_run.char_width;
-                glyphs.push(Glyph { id: *glyph, x, y });
-            }
-
-            let advance = px - run_x;
-            let mut index = 0;
-
-            for graphic in &cached_run.graphics {
-                if *last_rendered_graphic != Some(graphic.id) {
-                    graphics.top_layer.push(GraphicRenderRequest {
-                        id: graphic.id,
-                        pos_x: run_x - (graphic.offset_x as f32),
-                        pos_y: topline - (graphic.offset_y as f32),
-                        width: None,
-                        height: None,
-                    });
-                    *last_rendered_graphic = Some(graphic.id);
-                }
-            }
-
-            for glyph in &glyphs {
-                if let Some(set) = cached_run.instruction_set.get(&index) {
-                    if set.entry.is_none() {
-                        continue;
-                    }
-                    let entry = set.entry.unwrap();
-
-                    for instruction in &set.instructions {
-                        let gx = (glyph.x + subpx_bias.0).floor() + entry.left as f32;
-                        let gy = (glyph.y + subpx_bias.1).floor() - entry.top as f32;
-
-                        match instruction {
-                            Instruction::Image(data) => {
-                                self.batches.add_image_rect(
-                                    &Rect::new(
-                                        gx,
-                                        gy,
-                                        entry.width as f32,
-                                        entry.height as f32,
-                                    ),
-                                    depth,
-                                    &data.color,
-                                    &data.coords,
-                                    data.has_alpha,
-                                );
-                            }
-                            Instruction::Mask(data) => {
-                                self.batches.add_mask_rect(
-                                    &Rect::new(
-                                        gx,
-                                        gy,
-                                        entry.width as f32,
-                                        entry.height as f32,
-                                    ),
-                                    depth,
-                                    &data.color,
-                                    &data.coords,
-                                    data.has_alpha,
-                                );
-                            }
-                        }
-                    }
-                }
-
-                index += 1;
-            }
-
-            for instruction_callback in &cached_run.instruction_set_callback {
-                match instruction_callback {
-                    InstructionCallback::Background(color) => {
-                        self.batches.add_rect(
-                            &Rect::new(run_x, topline, advance, line_height),
-                            depth,
-                            color,
-                        );
-                    }
-                    InstructionCallback::BlockCursor(cursor_color) => {
-                        self.batches.add_rect(
-                            &Rect::new(run_x, topline, advance, line_height),
-                            depth,
-                            cursor_color,
-                        );
-                    }
-                    InstructionCallback::CaretCursor(cursor_color) => {
-                        self.batches.add_rect(
-                            &Rect::new(run_x, topline, 3.0, line_height),
-                            depth,
-                            cursor_color,
-                        );
-                    }
-                }
-            }
-
-            self.draw_underline(
-                &cached_run.underline,
-                run_x,
-                advance,
-                py,
-                depth,
-                line_height,
-            );
-        }
-    }
-
     /// Draws a text run.
     #[inline]
     pub fn draw_run<I>(
@@ -327,29 +145,23 @@ impl Compositor {
         let rect = rect.into();
 
         let underline = match style.decoration {
-            Some(FragmentStyleDecoration::Underline(info)) => {
-                Some(RunUnderline {
-                    enabled: true,
-                    offset: info.offset.round() as i32,
-                    size: info.size,
-                    color: style.decoration_color.unwrap_or(style.color),
-                    is_doubled: info.is_doubled,
-                    shape: info.shape,
-                })
-            }
-            Some(FragmentStyleDecoration::Strikethrough) => {
-                Some(RunUnderline {
-                    enabled: true,
-                    offset: (style.line_height / 3.5).round() as i32,
-                    size: 2.0,
-                    color: style.decoration_color.unwrap_or(style.color),
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                })
-            }
-            _ => {
-                None
-            }
+            Some(FragmentStyleDecoration::Underline(info)) => Some(RunUnderline {
+                enabled: true,
+                offset: info.offset.round() as i32,
+                size: info.size,
+                color: style.decoration_color.unwrap_or(style.color),
+                is_doubled: info.is_doubled,
+                shape: info.shape,
+            }),
+            Some(FragmentStyleDecoration::Strikethrough) => Some(RunUnderline {
+                enabled: true,
+                offset: (style.line_height / 3.5).round() as i32,
+                size: 2.0,
+                color: style.decoration_color.unwrap_or(style.color),
+                is_doubled: false,
+                shape: UnderlineShape::Regular,
+            }),
+            _ => None,
         };
 
         let subpx_bias = (0.125, 0.);

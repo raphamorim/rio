@@ -10,13 +10,13 @@
 // underline_color, background_color, text color and other functionalities
 
 //! RenderData.
-use crate::font_introspector::Metrics;
-use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use super::layout_data::*;
+use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
+use crate::font_introspector::Metrics;
 use crate::font_introspector::{GlyphId, NormalizedCoord};
-use crate::layout::builder::{WordCache, FragmentStyleDecoration};
+use crate::layout::builder::{FragmentStyleDecoration, WordCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
@@ -27,7 +27,6 @@ use core::ops::Range;
 #[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub data: LayoutData,
-    last_line: u32,
     pub graphics: std::collections::HashSet<GraphicId>,
     pub line_data: LineLayoutData,
 }
@@ -85,12 +84,6 @@ impl RenderData {
         shaper: Shaper<'_>,
         shaper_cache: &mut WordCache,
     ) {
-        // In case is a new line,
-        // then needs to recompute the span index again
-        if line != self.last_line {
-            self.last_line = line;
-        }
-
         let coords_start = self.data.coords.len() as u32;
         let coords = shaper.normalized_coords().to_owned();
         self.data.coords.extend_from_slice(&coords);
@@ -290,12 +283,8 @@ impl RenderData {
     ) -> bool {
         // In case is a new line,
         // then needs to recompute the span index again
-        if line != self.last_line {
-            self.last_line = line;
-        }
-
         let coords_start = self.data.coords.len() as u32;
-        self.data.coords.extend_from_slice(&normalized_coords);
+        self.data.coords.extend_from_slice(normalized_coords);
 
         let coords_end = self.data.coords.len() as u32;
         let clusters_start = self.data.clusters.len() as u32;
@@ -399,7 +388,7 @@ impl RenderData {
             advance,
         };
         self.data.runs.push(run_data);
-        return true;
+        true
     }
 
     #[inline]
