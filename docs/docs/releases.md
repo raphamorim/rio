@@ -9,6 +9,8 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+- Default navigation on MacOS is now NativeTab with transparency.
+- Default navigation on Linux/BSD/Windows is now BottomTab.
 - Fix font emoji width.
 
 ## 0.1.13
