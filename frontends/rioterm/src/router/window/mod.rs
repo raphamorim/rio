@@ -149,10 +149,12 @@ pub fn configure_window(winit_window: Window, config: &Config) -> Window {
     {
         use rio_window::platform::macos::WindowExtMacOS;
         let bg_color = config.colors.background.1;
-        if !is_transparent {
-            winit_window
-                .set_background_color(bg_color.r, bg_color.g, bg_color.b, bg_color.a);
-        }
+        winit_window.set_background_color(
+            bg_color.r,
+            bg_color.g,
+            bg_color.b,
+            config.window.opacity as f64,
+        );
         winit_window.set_has_shadow(!is_transparent);
     }
 
@@ -199,10 +201,12 @@ pub fn configure_window_by_ref(winit_window: &Window, config: &Config) {
     {
         use rio_window::platform::macos::WindowExtMacOS;
         let bg_color = config.colors.background.1;
-        if !is_transparent {
-            winit_window
-                .set_background_color(bg_color.r, bg_color.g, bg_color.b, bg_color.a);
-        }
+        winit_window.set_background_color(
+            bg_color.r,
+            bg_color.g,
+            bg_color.b,
+            config.window.opacity as f64,
+        );
         winit_window.set_has_shadow(!is_transparent);
     }
 
