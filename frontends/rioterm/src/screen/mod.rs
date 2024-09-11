@@ -219,7 +219,7 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") && config.window.opacity >= 1.0 {
+        if cfg!(target_os = "macos") {
             sugarloaf.set_background_color(None);
         } else {
             sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
@@ -342,7 +342,7 @@ impl Screen<'_> {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        if cfg!(target_os = "macos") && config.window.opacity >= 1.0 {
+        if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
         } else {
             self.sugarloaf
