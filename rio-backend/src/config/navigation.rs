@@ -17,11 +17,16 @@ pub enum NavigationMode {
     CollapsedTab,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for NavigationMode {
     fn default() -> Self {
-        if cfg!(target_os = "macos") {
+        #[cfg(target_os = "macos")]
+        {
             NavigationMode::NativeTab
-        } else {
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
             NavigationMode::BottomTab
         }
     }
