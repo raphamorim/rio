@@ -432,8 +432,8 @@ impl<'a> ParagraphBuilder<'a> {
             .iter()
             .collect();
             if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                if let Some(font_id) = self.fcx.find_font_by_str(
-                    &shaper_key,
+                if let Some(font_id) = self.fcx.find_font_by_character(
+                    self.s.lines[current_line].text.content[item.start],
                     &mut shape_state.synth,
                     font_library,
                     &style,

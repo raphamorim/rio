@@ -151,20 +151,15 @@ impl FontContext {
     }
 
     #[inline]
-    pub fn find_font_by_str(
+    pub fn find_font_by_character(
         &mut self,
-        content: &str,
+        character: char,
         synth: &mut Synthesis,
         library: &FontLibraryData,
         fragment_style: &FragmentStyle,
     ) -> Option<usize> {
         let is_italic = fragment_style.font_attrs.style() == Style::Italic;
         let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
-
-        let is_cache_key_empty = content.is_empty();
-        if is_cache_key_empty {
-            return None;
-        }
 
         let mut cache_key: String = String::default();
         if is_bold && is_italic {
@@ -177,13 +172,11 @@ impl FontContext {
             cache_key.push('r');
         };
 
-        cache_key.push(content.chars().last().unwrap());
+        cache_key.push(character);
 
-        if !is_cache_key_empty {
-            if let Some(cached_font_id) = self.cache.get(&cache_key) {
-                *synth = library[*cached_font_id].synth;
-                return Some(*cached_font_id);
-            }
+        if let Some(cached_font_id) = self.cache.get(&cache_key) {
+            *synth = library[*cached_font_id].synth;
+            return Some(*cached_font_id);
         }
 
         None
@@ -367,8 +360,9 @@ impl FontLibraryData {
                     self.inner.push(FontSource::Data(data));
                 }
                 FindResult::NotFound(spec) => {
-                    self.inner
-                        .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    self.inner.push(FontSource::Data(
+                        FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
+                    ));
                     if !spec.is_default_family() {
                         fonts_not_fount.push(spec);
                     }
@@ -378,6 +372,10 @@ impl FontLibraryData {
             self.inner.push(FontSource::Data(
                 FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
             ));
+        }
+        // Set last font as emoji
+        if let Some(FontSource::Data(ref mut font_ref)) = self.inner.last_mut() {
+            font_ref.is_emoji = true;
         }
 
         for extra_font in spec.extras {
