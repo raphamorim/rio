@@ -262,7 +262,7 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            "Rio",
+            "▲",
             None,
             open_url,
             self.clipboard.clone(),
@@ -292,7 +292,7 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            "Rio",
+            "▲",
             tab_id,
             open_url,
             self.clipboard.clone(),
@@ -329,7 +329,7 @@ impl RouteWindow {
         clipboard: &Rc<RefCell<Clipboard>>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
         #[allow(unused_mut)]
-        let mut window_builder = create_window_builder("Rio", config, None);
+        let mut window_builder = create_window_builder("▲", config, None);
 
         let winit_window = event_loop.create_window(window_builder).unwrap();
         let winit_window = configure_window(winit_window, config);
