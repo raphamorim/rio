@@ -10,7 +10,7 @@ use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
 
-const IS_MACOS: bool = cfg!(target_os = "macos");
+// const IS_MACOS: bool = cfg!(target_os = "macos");
 
 const SOURCES: &[Source] = &[
     Source::ColorOutline(0),
@@ -44,8 +44,8 @@ impl GlyphCache {
         coords: &[i16],
         size: f32,
     ) -> GlyphCacheSession<'a> {
-        let quant_size = (size * 32.) as u16;
-        // let quant_size = size as u16;
+        // let quant_size = (size * 32.) as u16;
+        let quant_size = size as u16;
         let entry = get_entry(&mut self.fonts, font.key.value(), coords);
         let scaler = self
             .scx
@@ -55,7 +55,8 @@ impl GlyphCache {
             // un-noticeable to the human eye.
             // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
             // now ignores font hint information completely.
-            .hint(!IS_MACOS)
+            // .hint(!IS_MACOS)
+            .hint(true)
             .size(size)
             // .normalized_coords(coords)
             .build();
