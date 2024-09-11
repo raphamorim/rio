@@ -21,8 +21,6 @@ Rio has multiple styles of showing navigation/tabs.
 
 ### CollapsedTab
 
-`CollapsedTab` is the default navigation mode for Linux, BSD and Windows.
-
 Note: The example below is using the [Dracula](https://github.com/dracula/rio-terminal) color scheme instead of Rio default colors.
 
 <img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="60%" />
@@ -48,6 +46,8 @@ mode = "NativeTab"
 ```
 
 ### BottomTab
+
+`BottomTab` is the default navigation mode for Linux, BSD and Windows.
 
 Note: `BottomTab` does not support click mode yet.
 

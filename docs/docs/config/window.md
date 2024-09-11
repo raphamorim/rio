@@ -30,9 +30,9 @@ language: 'en'
   - Default: `None`
 
 - `decorations` - Set window decorations
-  - `Enabled` (default) enable window decorations.
+  - `Enabled` (default for Windows/Linux/BSD) enable window decorations.
   - `Disabled` disable all window decorations.
-  - `Transparent` window decorations with transparency.
+  - `Transparent` (default for MacOS) window decorations with transparency.
   - `Buttonless` remove buttons from window decorations.
 
 Example:
@@ -52,6 +52,7 @@ decorations = "Enabled"
 ```toml
 [window]
 opacity = 0.5
+decorations = "enabled"
 blur = true
 ```
 
