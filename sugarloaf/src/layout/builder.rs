@@ -284,7 +284,7 @@ impl LayoutContext {
 
         if prev_font_size != self.state.font_size {
             // self.cache.inner.clear();
-            self.word_cache.clear();
+            self.metrics_cache.inner.clear();
         }
         ParagraphBuilder {
             fcx: &mut self.fcx,
@@ -299,11 +299,6 @@ impl LayoutContext {
             metrics_cache: &mut self.metrics_cache,
             cache_analysis: &mut self.cache_analysis,
         }
-    }
-
-    #[inline]
-    pub fn clear_cache(&mut self) {
-        // self.cache.inner.clear();
     }
 }
 
@@ -521,13 +516,6 @@ impl WordCache {
             stash: vec![],
             key: String::new(),
         }
-    }
-
-    #[inline]
-    pub fn clear(&mut self) {
-        self.stash.clear();
-        self.key.clear();
-        self.inner.clear();
     }
 
     #[inline]
