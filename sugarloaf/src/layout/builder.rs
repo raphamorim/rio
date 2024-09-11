@@ -534,14 +534,16 @@ impl WordCache {
     pub fn finish(&mut self) {
         // println!("{:?} {:?}", self.key, self.inner.len());
         if !self.key.is_empty() && !self.stash.is_empty() {
-            self.inner.put(
-                std::mem::take(&mut self.key),
-                std::mem::take(&mut self.stash),
-            );
-        } else {
-            self.stash.clear();
-            self.key.clear();
+            if self.inner.get(&self.key).is_none() {
+                self.inner.put(
+                    std::mem::take(&mut self.key),
+                    std::mem::take(&mut self.stash),
+                );
+                return;
+            }
         }
+        self.stash.clear();
+        self.key.clear();
     }
 }
 

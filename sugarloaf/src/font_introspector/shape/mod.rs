@@ -430,7 +430,6 @@ impl<'a> Shaper<'a> {
     }
 
     /// Adds a string to the shaper.
-    #[allow(unused)]
     pub fn add_str(&mut self, s: &str) {
         use crate::font_introspector::text::Codepoint;
         let mut cluster = CharCluster::new();
