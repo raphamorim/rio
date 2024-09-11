@@ -4,13 +4,16 @@ use crate::config::colors::{ColorArray, ColorBuilder, ColorComposition, Format};
 
 #[inline]
 pub fn background() -> ColorComposition {
+    let color = ColorBuilder::from_hex(String::from("#0F0D0E"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr();
     (
-        [0., 0., 0., 1.],
+        color,
         wgpu::Color {
-            r: 0.,
-            g: 0.,
-            b: 0.,
-            a: 1.,
+            r: color[0] as f64,
+            g: color[1] as f64,
+            b: color[2] as f64,
+            a: color[3] as f64,
         },
     )
 }

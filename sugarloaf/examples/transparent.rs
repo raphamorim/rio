@@ -56,7 +56,7 @@ fn main() {
     )
     .expect("Sugarloaf instance should be created");
 
-    sugarloaf.set_background_color(wgpu::Color::TRANSPARENT);
+    sugarloaf.set_background_color(None);
 
     #[allow(deprecated)]
     let _ = event_loop.run_on_demand(move |event, event_loop_window_target| {

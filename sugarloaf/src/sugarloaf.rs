@@ -28,7 +28,7 @@ pub struct Sugarloaf<'a> {
     layer_brush: LayerBrush,
     rich_text_brush: RichTextBrush,
     state: state::SugarState,
-    pub background_color: wgpu::Color,
+    pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     graphics: Graphics,
 }
@@ -135,7 +135,7 @@ impl Sugarloaf<'_> {
             state,
             layer_brush,
             ctx,
-            background_color: wgpu::Color::BLACK,
+            background_color: Some(wgpu::Color::BLACK),
             background_image: None,
             rect_brush,
             rich_text_brush,
@@ -181,7 +181,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
+    pub fn set_background_color(&mut self, color: Option<wgpu::Color>) -> &mut Self {
         self.background_color = color;
         self
     }
@@ -313,6 +313,12 @@ impl Sugarloaf<'_> {
                 }
 
                 {
+                    let load = if let Some(background_color) = self.background_color {
+                        wgpu::LoadOp::Clear(background_color)
+                    } else {
+                        wgpu::LoadOp::Load
+                    };
+
                     let mut rpass =
                         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             timestamp_writes: None,
@@ -322,7 +328,7 @@ impl Sugarloaf<'_> {
                                 view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(self.background_color),
+                                    load,
                                     store: wgpu::StoreOp::Store,
                                 },
                             })],
