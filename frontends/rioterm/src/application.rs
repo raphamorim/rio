@@ -232,6 +232,7 @@ impl ApplicationHandler<EventPayload> for Application {
                         }
                     }
 
+                    route.window.configure_window(&self.config);
                     route.update_config(&self.config, &self.router.font_library);
 
                     if let Some(error) = &config_error {

@@ -219,7 +219,12 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        sugarloaf.set_background_color(renderer.dynamic_background.1);
+        if cfg!(target_os = "macos") && config.window.opacity >= 1.0 {
+            sugarloaf.set_background_color(None);
+        } else {
+            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
+        }
+
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
@@ -337,8 +342,13 @@ impl Screen<'_> {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        self.sugarloaf
-            .set_background_color(self.renderer.dynamic_background.1);
+        if cfg!(target_os = "macos") && config.window.opacity >= 1.0 {
+            self.sugarloaf.set_background_color(None);
+        } else {
+            self.sugarloaf
+                .set_background_color(Some(self.renderer.dynamic_background.1));
+        }
+
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }

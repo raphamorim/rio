@@ -1,6 +1,8 @@
 mod window;
 use crate::event::EventProxy;
-use crate::router::window::{configure_window, create_window_builder};
+use crate::router::window::{
+    configure_window, configure_window_by_ref, create_window_builder,
+};
 use crate::routes::{assistant, RoutePath};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
@@ -360,6 +362,10 @@ impl RouteWindow {
             #[cfg(target_os = "macos")]
             is_macos_deadzone: false,
         })
+    }
+
+    pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
+        configure_window_by_ref(&self.winit_window, config);
     }
 
     #[allow(clippy::too_many_arguments)]
