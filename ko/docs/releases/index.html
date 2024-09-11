@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ko/assets/css/styles.42eabd25.css">
-<script src="/rio/ko/assets/js/runtime~main.710338ac.js" defer="defer"></script>
+<script src="/rio/ko/assets/js/runtime~main.4205dce8.js" defer="defer"></script>
 <script src="/rio/ko/assets/js/main.66237a6b.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -21,7 +21,7 @@
 <ul>
 <li>MacOS does not clear with background operation anymore, instead it relies on window background.</li>
 <li>Background color has changed to <code>#0F0D0E</code>.</li>
-<li>Default navigation on MacOS is now <code>NativeTab</code> with transparency.</li>
+<li>Default navigation on MacOS is now <code>NativeTab</code> with <code>window.decorations = &quot;transparent&quot;</code>.</li>
 <li>Default navigation on Linux/BSD/Windows is now BottomTab.</li>
 <li>Fix font emoji width.</li>
 </ul>
@@ -190,7 +190,7 @@
 <li>Wayland: avoid crashing when compositor is misbehaving. (ref: raphamorim/winit 22522c9b37e9734c9a2408fae8d34b2599ff4574).</li>
 <li>Performance upgrades for lines rendered previously.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1에 대한 직접 링크" title="0.1.1에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1에 대한 직접 링크" title="0.1.1에 대한 직  접 링크">​</a></h2>
 <ul>
 <li>Fix the validation errors whenever a surface is used with the vulkan backend.</li>
 <li>Clean up weak references to texture views and bind groups to prevent memory leaks.</li>
@@ -325,7 +325,7 @@
 <li>Fix: remove duplicate kitty backspace keybinds <a href="https://github.com/raphamorim/rio/pull/375" target="_blank" rel="noopener noreferrer">#375</a> by <a href="https://github.com/hougesen" target="_blank" rel="noopener noreferrer">@hougesen</a></li>
 <li>Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. <a href="https://github.com/raphamorim/rio/issues/344" target="_blank" rel="noopener noreferrer">#344</a> by <a href="https://github.com/hougesen" target="_blank" rel="noopener noreferrer">@hougesen</a></li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0030">0.0.30<a href="#0030" class="hash-link" aria-label="0.0.30에 대한 직접 링크" title="0.0.30에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0030">0.0.30<a href="#0030" class="hash-link" aria-label="0.0.30에 대한 직접 링 크" title="0.0.30에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix regression with color ansi when transparency is off.</li>
 <li><strong>Breaking</strong>: Config <code>navigation.macos-hide-window-buttons</code> has moved to <code>window.macos-hide-toolbar-buttons</code>.</li>
@@ -432,7 +432,7 @@
 <ul>
 <li>Now you can add extra fonts to load:</li>
 </ul>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">extras</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;Microsoft JhengHei&quot;</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">extras</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">family</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;Microsoft JhengHei&quot;</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드   복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Added <code>ScrollLineUp</code>, <code>ScrollLineDown</code>, <code>ScrollHalfPageUp</code>, <code>ScrollHalfPageDown</code>, <code>ScrollToTop</code>and <code>ScrollToBottom</code> to bindings.</li>
 <li>Fix japanese characters on Microsoft Windows (Ref: <a href="https://github.com/raphamorim/rio/issues/266" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/266</a>).</li>
@@ -449,7 +449,7 @@
 <li>Implemented <code>working-dir</code> parameter to cli <a href="https://github.com/raphamorim/rio/issues/258" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/258</a>.</li>
 <li>Remove legacy icns icons from bundle.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0020">0.0.20<a href="#0020" class="hash-link" aria-label="0.0.20에 대한 직접 링크" title="0.0.20에 대한 직접   링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0020">0.0.20<a href="#0020" class="hash-link" aria-label="0.0.20에 대  한 직접 링크" title="0.0.20에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix retrieve foreground process name to tabs.</li>
 <li>Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.</li>
@@ -581,7 +581,7 @@
 <ul>
 <li>Fix for font styles using CachedSugar.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0010">0.0.10<a href="#0010" class="hash-link" aria-label="0.0.10에 대한 직접 링크" title="0.0.10에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0010">0.0.10<a href="#0010" class="hash-link" aria-label="0.0.10에 대한 직접 링크" title="0.0.10에 대한 직접  링크">​</a></h2>
 <ul>
 <li>Major refactor of Sugarloaf.<!-- -->
 <ul>
