@@ -22,7 +22,7 @@ impl Default for NavigationMode {
         if cfg!(target_os = "macos") {
             NavigationMode::NativeTab
         } else {
-            NavigationMode::CollapsedTab
+            NavigationMode::BottomTab
         }
     }
 }
