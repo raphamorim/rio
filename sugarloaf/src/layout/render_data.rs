@@ -196,6 +196,7 @@ impl RenderData {
         self.data.runs.push(run_data);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: &FragmentStyle,
@@ -294,7 +295,6 @@ impl RenderData {
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
-
         let run_data = RunData {
             span: *style,
             line,

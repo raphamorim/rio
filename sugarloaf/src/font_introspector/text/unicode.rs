@@ -235,7 +235,6 @@ pub trait Codepoint: Sized + Copy {
     }
 
     /// Returns true if the character is an emoji.
-    #[allow(unused)]
     fn is_emoji(self) -> bool {
         self.properties().is_emoji()
     }
