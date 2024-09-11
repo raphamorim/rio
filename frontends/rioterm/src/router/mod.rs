@@ -1,7 +1,7 @@
 mod window;
 use crate::event::EventProxy;
 use crate::router::window::{
-    configure_window, configure_window_by_ref, create_window_builder,
+    configure_window, create_window_builder,
 };
 use crate::routes::{assistant, RoutePath};
 use crate::screen::{Screen, ScreenWindowProperties};
@@ -332,7 +332,7 @@ impl RouteWindow {
         let mut window_builder = create_window_builder("▲", config, None);
 
         let winit_window = event_loop.create_window(window_builder).unwrap();
-        let winit_window = configure_window(winit_window, config);
+        configure_window(&winit_window, config);
 
         let properties = ScreenWindowProperties {
             size: winit_window.inner_size(),
@@ -365,7 +365,7 @@ impl RouteWindow {
     }
 
     pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
-        configure_window_by_ref(&self.winit_window, config);
+        configure_window(&self.winit_window, config);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -393,7 +393,7 @@ impl RouteWindow {
         }
 
         let winit_window = event_loop.create_window(window_builder).unwrap();
-        let winit_window = configure_window(winit_window, config);
+        configure_window(&winit_window, config);
 
         let properties = ScreenWindowProperties {
             size: winit_window.inner_size(),

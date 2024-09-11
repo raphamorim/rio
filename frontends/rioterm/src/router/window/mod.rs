@@ -111,59 +111,7 @@ pub fn create_window_builder(
     window_builder
 }
 
-pub fn configure_window(winit_window: Window, config: &Config) -> Window {
-    let current_mouse_cursor = CursorIcon::Text;
-    winit_window.set_cursor(current_mouse_cursor);
-
-    // https://docs.rs/winit/latest/winit;/window/enum.ImePurpose.html#variant.Terminal
-    winit_window.set_ime_purpose(ImePurpose::Terminal);
-    winit_window.set_ime_allowed(true);
-
-    // TODO: Update ime position based on cursor
-    // winit_window.set_ime_cursor_area(rio_window::dpi::PhysicalPosition::new(500.0, 500.0), rio_window::dpi::LogicalSize::new(400, 400));
-
-    // This will ignore diacritical marks and accent characters from
-    // being processed as received characters. Instead, the input
-    // device's raw character will be placed in event queues with the
-    // Alt modifier set.
-    #[cfg(target_os = "macos")]
-    {
-        // OnlyLeft - The left `Option` key is treated as `Alt`.
-        // OnlyRight - The right `Option` key is treated as `Alt`.
-        // Both - Both `Option` keys are treated as `Alt`.
-        // None - No special handling is applied for `Option` key.
-        use rio_window::platform::macos::{OptionAsAlt, WindowExtMacOS};
-
-        match config.option_as_alt.to_lowercase().as_str() {
-            "both" => winit_window.set_option_as_alt(OptionAsAlt::Both),
-            "left" => winit_window.set_option_as_alt(OptionAsAlt::OnlyLeft),
-            "right" => winit_window.set_option_as_alt(OptionAsAlt::OnlyRight),
-            _ => {}
-        }
-    }
-
-    let is_transparent = config.window.opacity < 1.;
-    winit_window.set_transparent(is_transparent);
-
-    #[cfg(target_os = "macos")]
-    {
-        use rio_window::platform::macos::WindowExtMacOS;
-        let bg_color = config.colors.background.1;
-        winit_window.set_background_color(
-            bg_color.r,
-            bg_color.g,
-            bg_color.b,
-            config.window.opacity as f64,
-        );
-        winit_window.set_has_shadow(!is_transparent);
-    }
-
-    winit_window.set_blur(config.window.blur);
-
-    winit_window
-}
-
-pub fn configure_window_by_ref(winit_window: &Window, config: &Config) {
+pub fn configure_window(winit_window: &Window, config: &Config) {
     let current_mouse_cursor = CursorIcon::Text;
     winit_window.set_cursor(current_mouse_cursor);
 
