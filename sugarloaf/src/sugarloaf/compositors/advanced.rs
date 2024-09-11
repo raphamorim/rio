@@ -28,7 +28,6 @@ impl Advanced {
     #[inline]
     pub fn reset(&mut self) {
         self.render_data = RenderData::default();
-        self.layout_context.clear_cache();
     }
 
     #[inline]
