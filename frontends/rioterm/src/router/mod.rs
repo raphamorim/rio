@@ -1,8 +1,6 @@
 mod window;
 use crate::event::EventProxy;
-use crate::router::window::{
-    configure_window, create_window_builder,
-};
+use crate::router::window::{configure_window, create_window_builder};
 use crate::routes::{assistant, RoutePath};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
