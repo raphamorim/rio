@@ -260,8 +260,7 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
-            "𜱭𜱭",
+            RIO_TITLE,
             None,
             open_url,
             self.clipboard.clone(),
@@ -291,8 +290,7 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
-            "𜱭𜱭",
+            RIO_TITLE,
             tab_id,
             open_url,
             self.clipboard.clone(),
@@ -307,6 +305,12 @@ impl Router {
         );
     }
 }
+
+// https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const RIO_TITLE: &str = "𜱭𜱭";
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const RIO_TITLE: &str = "▲";
 
 pub struct RouteWindow {
     pub is_focused: bool,
@@ -329,8 +333,7 @@ impl RouteWindow {
         open_url: Option<String>,
         clipboard: &Rc<RefCell<Clipboard>>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
-        // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
-        let window_builder = create_window_builder("𜱭𜱭", config, tab_id);
+        let window_builder = create_window_builder(RIO_TITLE, config, tab_id);
 
         let winit_window = event_loop.create_window(window_builder).unwrap();
         configure_window(&winit_window, config);
