@@ -14,6 +14,7 @@ language: 'en'
 - Default navigation on MacOS is now `NativeTab` with `window.decorations = "transparent"`.
 - Default navigation on Linux/BSD/Windows is now BottomTab.
 - Fix font emoji width.
+- Fix MacOS tabbing when spawned from a new window.
 
 ## 0.1.13
 
