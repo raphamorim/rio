@@ -18,7 +18,7 @@ pub const APPLICATION_ID: &str = "rio";
 pub fn create_window_builder(
     title: &str,
     config: &Config,
-    #[allow(unused)] tab_id: Option<String>,
+    tab_id: Option<&str>,
 ) -> WindowAttributes {
     let image_icon = image_rs::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
@@ -81,7 +81,7 @@ pub fn create_window_builder(
 
         if config.navigation.is_native() {
             if let Some(identifier) = tab_id {
-                window_builder = window_builder.with_tabbing_identifier(&identifier);
+                window_builder = window_builder.with_tabbing_identifier(identifier);
             }
         } else {
             window_builder = window_builder

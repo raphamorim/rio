@@ -17,7 +17,6 @@ use rio_window::platform::startup_notify::{
 use rio_window::window::{Window, WindowId};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::error::Error;
 use std::rc::Rc;
 
 pub struct Route {
@@ -184,23 +183,6 @@ impl Router {
         }
     }
 
-    #[inline]
-    pub fn create_route_from_window(&mut self, route_window: RouteWindow) {
-        let id = route_window.winit_window.id();
-        let mut route = Route {
-            window: route_window,
-            path: RoutePath::Terminal,
-            assistant: Assistant::new(),
-        };
-
-        if let Some(err) = &self.propagated_report {
-            route.report_error(err);
-            self.propagated_report = None;
-        }
-
-        self.routes.insert(id, route);
-    }
-
     pub fn open_config_window(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -255,24 +237,36 @@ impl Router {
         config: &rio_backend::config::Config,
         open_url: Option<String>,
     ) {
+        let tab_id = if config.navigation.is_native() {
+            Some(self.routes.len().to_string())
+        } else {
+            None
+        };
+
         let window = RouteWindow::from_target(
             event_loop,
             event_proxy,
             config,
             &self.font_library,
             RIO_TITLE,
-            None,
+            tab_id.as_deref(),
             open_url,
             self.clipboard.clone(),
         );
-        self.routes.insert(
-            window.winit_window.id(),
-            Route {
-                window,
-                path: RoutePath::Terminal,
-                assistant: Assistant::new(),
-            },
-        );
+        let id = window.winit_window.id();
+
+        let mut route = Route {
+            window,
+            path: RoutePath::Terminal,
+            assistant: Assistant::new(),
+        };
+
+        if let Some(err) = &self.propagated_report {
+            route.report_error(err);
+            self.propagated_report = None;
+        }
+
+        self.routes.insert(id, route);
     }
 
     #[cfg(target_os = "macos")]
@@ -282,7 +276,7 @@ impl Router {
         event_loop: &ActiveEventLoop,
         event_proxy: EventProxy,
         config: &rio_backend::config::Config,
-        tab_id: Option<String>,
+        tab_id: Option<&str>,
         open_url: Option<String>,
     ) {
         let window = RouteWindow::from_target(
@@ -324,50 +318,6 @@ pub struct RouteWindow {
 }
 
 impl RouteWindow {
-    pub fn new(
-        event_loop: &ActiveEventLoop,
-        event_proxy: &EventProxy,
-        config: &rio_backend::config::Config,
-        font_library: &rio_backend::sugarloaf::font::FontLibrary,
-        tab_id: Option<String>,
-        open_url: Option<String>,
-        clipboard: &Rc<RefCell<Clipboard>>,
-    ) -> Result<RouteWindow, Box<dyn Error>> {
-        let window_builder = create_window_builder(RIO_TITLE, config, tab_id);
-
-        let winit_window = event_loop.create_window(window_builder).unwrap();
-        configure_window(&winit_window, config);
-
-        let properties = ScreenWindowProperties {
-            size: winit_window.inner_size(),
-            scale: winit_window.scale_factor(),
-            raw_window_handle: winit_window.window_handle().unwrap().into(),
-            raw_display_handle: winit_window.display_handle().unwrap().into(),
-            window_id: winit_window.id(),
-            theme: winit_window.theme(),
-        };
-
-        let screen = Screen::new(
-            properties,
-            config,
-            event_proxy.clone(),
-            font_library,
-            open_url,
-            clipboard.clone(),
-        )?;
-
-        Ok(Self {
-            is_focused: false,
-            is_occluded: false,
-            has_frame: true,
-            has_updates: true,
-            winit_window,
-            screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
-        })
-    }
-
     pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
         configure_window(&self.winit_window, config);
     }
@@ -379,13 +329,11 @@ impl RouteWindow {
         config: &RioConfig,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
-        tab_id: Option<String>,
+        tab_id: Option<&str>,
         open_url: Option<String>,
         clipboard: Rc<RefCell<Clipboard>>,
     ) -> RouteWindow {
-        #[allow(unused_mut)]
-        let mut window_builder =
-            create_window_builder(window_name, config, tab_id.clone());
+        let window_builder = create_window_builder(window_name, config, tab_id);
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
