@@ -325,6 +325,7 @@ impl RouteWindow {
         event_proxy: &EventProxy,
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        tab_id: Option<String>,
         open_url: Option<String>,
         clipboard: &Rc<RefCell<Clipboard>>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
