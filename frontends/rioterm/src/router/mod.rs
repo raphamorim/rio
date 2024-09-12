@@ -260,7 +260,8 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            "▲",
+            // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
+            "𜱭𜱭",
             None,
             open_url,
             self.clipboard.clone(),
@@ -290,7 +291,8 @@ impl Router {
             event_proxy,
             config,
             &self.font_library,
-            "▲",
+            // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
+            "𜱭𜱭",
             tab_id,
             open_url,
             self.clipboard.clone(),
@@ -326,8 +328,8 @@ impl RouteWindow {
         open_url: Option<String>,
         clipboard: &Rc<RefCell<Clipboard>>,
     ) -> Result<RouteWindow, Box<dyn Error>> {
-        #[allow(unused_mut)]
-        let mut window_builder = create_window_builder("▲", config, None);
+        // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
+        let window_builder = create_window_builder("𜱭𜱭", config, tab_id);
 
         let winit_window = event_loop.create_window(window_builder).unwrap();
         configure_window(&winit_window, config);
