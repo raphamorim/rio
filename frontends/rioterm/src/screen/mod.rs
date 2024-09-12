@@ -1887,21 +1887,24 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+    pub fn render_assistant(
+        &mut self,
+        assistant: &crate::router::routes::assistant::Assistant,
+    ) {
         self.sugarloaf.clear();
-        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
+        crate::router::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
-        crate::routes::welcome::screen(&mut self.sugarloaf);
+        crate::router::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
     pub fn render_dialog(&mut self, content: &str) {
         self.sugarloaf.clear();
-        crate::routes::dialog::screen(&mut self.sugarloaf, content);
+        crate::router::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
 

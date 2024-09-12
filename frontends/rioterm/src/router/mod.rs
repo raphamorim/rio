@@ -1,7 +1,7 @@
+pub mod routes;
 mod window;
 use crate::event::EventProxy;
 use crate::router::window::{configure_window, create_window_builder};
-use crate::routes::{assistant, RoutePath};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -15,6 +15,7 @@ use rio_window::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
 use rio_window::window::{Window, WindowId};
+use routes::{assistant, RoutePath};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;

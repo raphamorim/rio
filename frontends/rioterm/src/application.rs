@@ -1,7 +1,6 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
-use crate::router::Router;
-use crate::routes::RoutePath;
+use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
