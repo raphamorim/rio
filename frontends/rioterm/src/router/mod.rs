@@ -334,7 +334,8 @@ impl RouteWindow {
         open_url: Option<String>,
         clipboard: Rc<RefCell<Clipboard>>,
     ) -> RouteWindow {
-        let window_builder = create_window_builder(window_name, config, tab_id);
+        #[allow(unused_mut)]
+        let mut window_builder = create_window_builder(window_name, config, tab_id);
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
