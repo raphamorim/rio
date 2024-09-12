@@ -17,7 +17,6 @@ mod panic;
 mod platform;
 mod renderer;
 mod router;
-mod routes;
 mod scheduler;
 mod screen;
 mod watcher;
