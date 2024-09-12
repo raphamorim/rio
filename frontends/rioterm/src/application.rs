@@ -1,6 +1,6 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
-use crate::router::{RouteWindow, Router};
+use crate::router::Router;
 use crate::routes::RoutePath;
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
@@ -116,25 +116,12 @@ impl ApplicationHandler<EventPayload> for Application {
             return;
         }
 
-        let tab_id = if self.config.navigation.is_native() {
-            Some(String::from("initial-tab"))
-        } else {
-            None
-        };
-
-        let mut window = RouteWindow::new(
+        self.router.create_window(
             event_loop,
-            &self.event_proxy,
+            self.event_proxy.clone(),
             &self.config,
-            &self.router.font_library,
-            tab_id,
             None,
-            &self.router.clipboard,
-        )
-        .unwrap();
-        window.is_focused = true;
-
-        self.router.create_route_from_window(window);
+        );
 
         tracing::info!("Initialisation complete");
     }
@@ -455,7 +442,7 @@ impl ApplicationHandler<EventPayload> for Application {
                         event_loop,
                         self.event_proxy.clone(),
                         &self.config,
-                        Some(route.window.winit_window.tabbing_identifier()),
+                        Some(&route.window.winit_window.tabbing_identifier()),
                         None,
                     );
 
@@ -586,7 +573,7 @@ impl ApplicationHandler<EventPayload> for Application {
                     active_event_loop,
                     self.event_proxy.clone(),
                     config,
-                    tab_id.clone(),
+                    tab_id.as_deref(),
                     Some(url),
                 );
             }
