@@ -116,16 +116,24 @@ impl ApplicationHandler<EventPayload> for Application {
             return;
         }
 
+        let tab_id = if self.config.navigation.is_native() {
+            Some(String::from("initial-tab"))
+        } else {
+            None
+        };
+
         let mut window = RouteWindow::new(
             event_loop,
             &self.event_proxy,
             &self.config,
             &self.router.font_library,
+            tab_id,
             None,
             &self.router.clipboard,
         )
         .unwrap();
         window.is_focused = true;
+
         self.router.create_route_from_window(window);
 
         tracing::info!("Initialisation complete");
