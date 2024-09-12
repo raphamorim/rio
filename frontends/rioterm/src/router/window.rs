@@ -18,7 +18,7 @@ pub const APPLICATION_ID: &str = "rio";
 pub fn create_window_builder(
     title: &str,
     config: &Config,
-    tab_id: Option<&str>,
+    #[allow(unused_variables)] tab_id: Option<&str>,
 ) -> WindowAttributes {
     let image_icon = image_rs::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
