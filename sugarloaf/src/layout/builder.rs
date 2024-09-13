@@ -411,7 +411,7 @@ impl<'a> ParagraphBuilder<'a> {
                     font_library,
                     &style,
                 ) {
-                    if let Some((metrics, _normalized_coords)) =
+                    if let Some(metrics) =
                         self.metrics_cache.inner.get(&font_id)
                     {
                         if render_data.push_run_without_shaper(
@@ -526,7 +526,7 @@ impl WordCache {
 
 #[derive(Default)]
 struct MetricsCache {
-    pub inner: FxHashMap<usize, (Metrics, Vec<i16>)>,
+    pub inner: FxHashMap<usize, Metrics>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -562,13 +562,8 @@ where
     if !metrics_cache.inner.contains_key(&current_font_id) {
         metrics_cache.inner.insert(
             current_font_id,
-            (shaper.metrics(), shaper.normalized_coords().to_vec()),
+            shaper.metrics(),
         );
-    } else {
-        let metric = metrics_cache.inner.get(&current_font_id).unwrap();
-        if metric.0 != shaper.metrics() {
-            println!("{:?} {:?}", shaper.metrics(), shaper.normalized_coords());
-        }
     }
 
     let mut synth = Synthesis::default();
