@@ -512,7 +512,7 @@ pub struct WordCache {
 impl WordCache {
     pub fn new() -> Self {
         WordCache {
-            inner: LruCache::new(NonZeroUsize::new(2048).unwrap()),
+            inner: LruCache::new(NonZeroUsize::new(1024).unwrap()),
             stash: vec![],
             key: String::new(),
         }
