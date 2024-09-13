@@ -4,7 +4,7 @@
 const MENTIONS = [
   {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
-    username: 'jaijams',
+    username: '@jaijams',
     source: '/rio/assets/mentions/jaijams.jpg',
     quote: (
       <>
@@ -16,7 +16,7 @@ const MENTIONS = [
   },
   {
     url: '',
-    username: 'simonnyberg',
+    username: 'Simon Nyberg',
     source: '/rio/assets/mentions/simonnyberg.png',
     quote: (
       <>
@@ -26,7 +26,7 @@ const MENTIONS = [
   },
   {
     url: 'https://twitter.com/mcsmonte/status/1660949303089586177',
-    username: 'mcsmonte',
+    username: '@mcsmonte',
     source: '/rio/assets/mentions/mcsmonte.jpg',
     quote: (
       <>
@@ -39,19 +39,19 @@ const MENTIONS = [
   },
   {
     url: 'https://twitter.com/moeyua13/status/1665983183526195200',
-    username: 'moeyua13',
+    username: '@moeyua13',
     source: 'https://unavatar.io/x/moeyua13',
     quote: <>I really love this terminal</>,
   },
   {
     url: 'https://twitter.com/peterlazar1993/status/1689965895408402432',
-    username: 'peterlazar1993',
+    username: '@peterlazar1993',
     source: 'https://unavatar.io/x/peterlazar1993',
     quote: <>I've been dailydriving Rio, it's 🔥</>,
   },
   {
     url: 'https://twitter.com/EduRonqui/status/1717288090820055297',
-    username: 'EduRonqui',
+    username: '@EduRonqui',
     source: 'https://unavatar.io/x/EduRonqui',
     quote: (
       <>
@@ -63,7 +63,7 @@ const MENTIONS = [
   },
   {
     url: 'https://x.com/ferfabricio/status/1789425980357886355',
-    username: 'ferfabricio',
+    username: '@ferfabricio',
     source: '/rio/assets/mentions/ferfabricio.jpg',
     quote: (
       <>
