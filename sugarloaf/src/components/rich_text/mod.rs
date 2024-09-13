@@ -476,7 +476,6 @@ fn draw_layout(
 
             let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
-                font: font_library[font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color: run.color(),
@@ -496,7 +495,7 @@ fn draw_layout(
             {
                 session = glyphs_cache.session(
                     image_cache,
-                    style.font,
+                    font_library[font].as_ref(),
                     style.font_coords,
                     style.font_size,
                 );
@@ -590,7 +589,6 @@ fn fetch_dimensions(
             let color = run.color();
 
             let style = TextRunStyle {
-                font: font_library[*font].as_ref(),
                 font_coords: run.normalized_coords(),
                 font_size: run.font_size(),
                 color,
@@ -615,7 +613,7 @@ fn fetch_dimensions(
             {
                 session = glyphs_cache.session(
                     image_cache,
-                    style.font,
+                    font_library[*font].as_ref(),
                     style.font_coords,
                     style.font_size,
                 );

@@ -9,15 +9,13 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::font_introspector::{FontRef, GlyphId, NormalizedCoord};
+use crate::font_introspector::{GlyphId, NormalizedCoord};
 use crate::layout::FragmentStyleDecoration;
 use crate::sugarloaf::primitives::SugarCursor;
 
 /// Properties for a text run.
 #[derive(Copy, Clone)]
 pub struct TextRunStyle<'a> {
-    /// Font for the run.
-    pub font: FontRef<'a>,
     /// Normalized variation coordinates for the font.
     pub font_coords: &'a [NormalizedCoord],
     /// Font size.
