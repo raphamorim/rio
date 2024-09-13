@@ -2,19 +2,13 @@
 //
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
-//
-// layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
-// https://github.com/dfrg/swash_demo/blob/master/LICENSE
-//
-// This file had updates to support color, underline_color, background_color
-// and other functionalities
 
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
-use crate::font_introspector::text::cluster::Status;
 use crate::font_introspector::text::cluster::CharCluster;
+use crate::font_introspector::text::cluster::Status;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::font_introspector::Synthesis;
@@ -34,8 +28,8 @@ pub struct FragmentData {
     pub start: usize,
     /// End of the text.
     pub end: usize,
-    /// Font variations.
-    pub vars: FontSettingKey,
+    /// Style
+    pub style: FragmentStyle,
 }
 
 /// Builder Line State
@@ -45,8 +39,6 @@ pub struct BuilderLineText {
     pub content: Vec<char>,
     /// Fragment index per character.
     pub frags: Vec<u32>,
-    /// Span index per character.
-    pub spans: Vec<usize>,
 }
 
 #[derive(Default)]
@@ -54,8 +46,6 @@ pub struct BuilderLine {
     pub text: BuilderLineText,
     /// Collection of fragments.
     pub fragments: Vec<FragmentData>,
-    /// Span index per character.
-    pub styles: Vec<FragmentStyle>,
 }
 
 /// Builder state.
@@ -74,8 +64,7 @@ pub struct BuilderState {
 impl BuilderState {
     /// Creates a new layout state.
     pub fn new() -> Self {
-        let mut lines = vec![BuilderLine::default()];
-        lines[0].styles.push(FragmentStyle::default());
+        let lines = vec![BuilderLine::default()];
         Self {
             lines,
             ..BuilderState::default()
@@ -84,8 +73,6 @@ impl BuilderState {
     #[inline]
     pub fn new_line(&mut self) {
         self.lines.push(BuilderLine::default());
-        let last = self.lines.len() - 1;
-        self.lines[last].styles.push(FragmentStyle::default());
     }
     #[inline]
     pub fn current_line(&self) -> usize {
@@ -277,12 +264,9 @@ impl LayoutContext {
         self.state.font_size = font_size * scale;
 
         if prev_font_size != self.state.font_size {
-            // self.cache.inner.clear();
             self.metrics_cache.inner.clear();
         }
         ParagraphBuilder {
-            // bidi: &mut self.bidi,
-            // needs_bidi: false,
             font_features: &self.font_features,
             fonts: &self.fonts,
             scx: &mut self.scx,
@@ -317,11 +301,8 @@ impl<'a> ParagraphBuilder<'a> {
         let line = &mut self.s.lines[current_line];
         let id = line.text.frags.len();
         let mut offset = self.last_offset;
-        line.styles.push(style);
-        let span_id = line.styles.len() - 1;
 
         let start = line.text.content.len();
-
         for ch in text.chars() {
             line.text.content.push(ch);
             offset += (ch).len_utf8() as u32;
@@ -335,16 +316,7 @@ impl<'a> ParagraphBuilder<'a> {
             line.text.frags.push(id as u32);
         }
 
-        line.text.spans.reserve(len);
-        for _ in 0..len {
-            line.text.spans.push(span_id);
-        }
-
-        line.fragments.push(FragmentData {
-            start,
-            end,
-            vars: style.font_vars,
-        });
+        line.fragments.push(FragmentData { start, end, style });
 
         self.last_offset = offset;
         Some(())
@@ -371,29 +343,20 @@ impl<'a> ParagraphBuilder<'a> {
             let line = &self.s.lines[line_number];
             for item in &line.fragments {
                 let range = item.start..item.end;
-                let span_index = self.s.lines[line_number].text.spans[item.start];
-                let style = self.s.lines[line_number].styles[span_index];
-                let vars = self.s.vars.get(item.vars);
-                let mut shape_state = ShapeState {
-                    script: Script::Latin,
-                    features: self.font_features,
-                    vars,
-                    synth: font_library[style.font_id].synth,
-                    // font_id: None,
-                    size: self.s.font_size,
-                };
+                let style = item.style;
+                let vars = self.s.vars.get(item.style.font_vars);
+                let mut synth = Synthesis::default();
+                let script = Script::Latin;
 
                 let shaper_key: String = self.s.lines[line_number].text.content
                     [range.to_owned()]
                 .iter()
                 .collect();
                 if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                    if let Some(metrics) =
-                        self.metrics_cache.inner.get(&style.font_id)
-                    {
+                    if let Some(metrics) = self.metrics_cache.inner.get(&style.font_id) {
                         if render_data.push_run_without_shaper(
                             &style,
-                            shape_state.size,
+                            self.s.font_size,
                             line_number as u32,
                             shaper,
                             metrics,
@@ -408,17 +371,17 @@ impl<'a> ParagraphBuilder<'a> {
                 let charmap = &font_library[style.font_id].as_ref().charmap();
                 let status = char_cluster.map(|ch| charmap.map(ch));
                 if status != Status::Discard {
-                    shape_state.synth = font_library[style.font_id].synth;
+                    synth = font_library[style.font_id].synth;
                 }
 
                 let mut shaper = self
                     .scx
                     .builder(font_library[style.font_id].as_ref())
-                    .script(shape_state.script)
-                    .size(shape_state.size)
-                    .features(shape_state.features.iter().copied())
-                    .variations(shape_state.synth.variations().iter().copied())
-                    .variations(shape_state.vars.iter().copied())
+                    .script(script)
+                    .size(self.s.font_size)
+                    .features(self.font_features.iter().copied())
+                    .variations(synth.variations().iter().copied())
+                    .variations(vars.iter().copied())
                     .build();
 
                 if !self.metrics_cache.inner.contains_key(&style.font_id) {
@@ -438,14 +401,6 @@ impl<'a> ParagraphBuilder<'a> {
             }
         }
     }
-}
-
-struct ShapeState<'a> {
-    features: &'a [Setting<u16>],
-    synth: Synthesis,
-    vars: &'a [Setting<f32>],
-    script: Script,
-    size: f32,
 }
 
 pub struct WordCache {
