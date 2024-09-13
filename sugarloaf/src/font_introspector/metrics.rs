@@ -243,7 +243,7 @@ impl MetricsProxy {
 }
 
 /// Global font metrics.
-#[derive(Copy, Clone, Default, Debug)]
+#[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct Metrics {
     /// Number of font design units per em unit.
     pub units_per_em: u16,

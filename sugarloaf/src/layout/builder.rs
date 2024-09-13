@@ -411,7 +411,7 @@ impl<'a> ParagraphBuilder<'a> {
                     font_library,
                     &style,
                 ) {
-                    if let Some((metrics, normalized_coords)) =
+                    if let Some((metrics, _normalized_coords)) =
                         self.metrics_cache.inner.get(&font_id)
                     {
                         if render_data.push_run_without_shaper(
@@ -421,7 +421,6 @@ impl<'a> ParagraphBuilder<'a> {
                             current_line as u32,
                             shaper,
                             metrics,
-                            normalized_coords,
                         ) {
                             continue;
                         }
@@ -560,10 +559,17 @@ where
         .variations(state.vars.iter().copied())
         .build();
 
-    metrics_cache.inner.insert(
-        current_font_id,
-        (shaper.metrics(), shaper.normalized_coords().to_vec()),
-    );
+    if !metrics_cache.inner.contains_key(&current_font_id) {
+        metrics_cache.inner.insert(
+            current_font_id,
+            (shaper.metrics(), shaper.normalized_coords().to_vec()),
+        );
+    } else {
+        let metric = metrics_cache.inner.get(&current_font_id).unwrap();
+        if metric.0 != shaper.metrics() {
+            println!("{:?} {:?}", shaper.metrics(), shaper.normalized_coords());
+        }
+    }
 
     let mut synth = Synthesis::default();
     loop {
