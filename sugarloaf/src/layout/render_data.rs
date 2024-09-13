@@ -13,9 +13,9 @@
 use super::layout_data::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use crate::font_introspector::text::cluster::ClusterInfo;
+use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
+use crate::font_introspector::GlyphId;
 use crate::font_introspector::Metrics;
-use crate::font_introspector::{GlyphId};
 use crate::layout::builder::{FragmentStyleDecoration, WordCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
@@ -78,7 +78,6 @@ impl RenderData {
     pub(super) fn push_run(
         &mut self,
         style: &FragmentStyle,
-        font: &usize,
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
@@ -174,7 +173,6 @@ impl RenderData {
         let run_data = RunData {
             span: *style,
             line,
-            font: *font,
             size,
             clusters: (clusters_start, clusters_end),
             // ascent: metrics.ascent * span_data.line_spacing,
@@ -194,7 +192,6 @@ impl RenderData {
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: &FragmentStyle,
-        font: usize,
         size: f32,
         line: u32,
         glyph_clusters: &Vec<OwnedGlyphCluster>,
@@ -287,7 +284,6 @@ impl RenderData {
         let run_data = RunData {
             span: *style,
             line,
-            font,
             size,
             clusters: (clusters_start, clusters_end),
             // ascent: metrics.ascent * span_data.line_spacing,
@@ -350,7 +346,7 @@ impl<'a> Run<'a> {
     /// Returns the font for the run.
     #[inline]
     pub fn font(&self) -> &usize {
-        &self.run.font
+        &self.run.span.font_id
     }
 
     /// Returns the font size for the run.
