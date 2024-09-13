@@ -604,9 +604,7 @@ fn fetch_dimensions(
                 dimension.height = line_height.round();
             }
 
-            if font != &current_font
-                || style.font_size != current_font_size
-            {
+            if font != &current_font || style.font_size != current_font_size {
                 session = glyphs_cache.session(
                     image_cache,
                     style.font,

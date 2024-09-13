@@ -181,7 +181,6 @@ impl GlyphData {
 pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
-    pub font: usize,
     pub size: f32,
     // pub whitespace: bool,
     // pub trailing_whitespace: bool,

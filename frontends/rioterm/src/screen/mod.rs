@@ -1910,8 +1910,8 @@ impl Screen<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        // let start_total = std::time::Instant::now();
-        // println!("_____________________________\nrender time elapsed");
+        let start_total = std::time::Instant::now();
+        println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1976,7 +1976,7 @@ impl Screen<'_> {
             self.context_manager.schedule_render_on_route(800);
         }
 
-        // let duration = start_total.elapsed();
-        // println!("Total whole render function is: {:?}\n", duration);
+        let duration = start_total.elapsed();
+        println!("Total whole render function is: {:?}\n", duration);
     }
 }
