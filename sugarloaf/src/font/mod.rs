@@ -20,23 +20,6 @@ use std::sync::{Arc, RwLock};
 
 pub use crate::font_introspector::{Style, Weight};
 
-#[derive(Debug)]
-enum Inner {
-    #[allow(unused)]
-    #[cfg(not(target_arch = "wasm32"))]
-    Mapped(memmap2::Mmap),
-    Memory(Vec<u8>),
-}
-
-impl Inner {
-    fn data(&self) -> &[u8] {
-        match self {
-            Self::Mapped(mmap) => mmap,
-            Self::Memory(vec) => vec,
-        }
-    }
-}
-
 #[derive(Default)]
 pub struct FontContext {
     cache: FxHashMap<String, usize>,
@@ -219,7 +202,6 @@ impl Default for FontLibrary {
     }
 }
 
-#[derive(Clone)]
 pub enum FontSource {
     Standard,
     Data(FontData),
@@ -444,28 +426,17 @@ impl IndexMut<usize> for FontLibraryData {
 }
 
 /// Atomically reference counted, heap allocated or memory mapped buffer.
-#[derive(Clone, Debug)]
-#[repr(transparent)]
+#[derive(Clone)]
 pub struct SharedData {
-    inner: Arc<Inner>,
+    inner: Arc<dyn AsRef<[u8]> + Send + Sync>,
 }
 
 impl SharedData {
     /// Creates shared data from the specified bytes.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            inner: Arc::new(Inner::Memory(data)),
+            inner: Arc::new(data),
         }
-    }
-
-    /// Returns the underlying bytes of the data.
-    pub fn as_bytes(&self) -> &[u8] {
-        self.inner.data()
-    }
-
-    /// Returns the number of strong references to the data.
-    pub fn strong_count(&self) -> usize {
-        Arc::strong_count(&self.inner)
     }
 }
 
@@ -473,13 +444,13 @@ impl std::ops::Deref for SharedData {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        self.inner.data()
+        (*self.inner).as_ref()
     }
 }
 
 impl AsRef<[u8]> for SharedData {
     fn as_ref(&self) -> &[u8] {
-        self.inner.data()
+        (*self.inner).as_ref()
     }
 }
 
