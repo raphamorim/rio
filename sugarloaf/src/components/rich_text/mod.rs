@@ -3,10 +3,10 @@ mod compositor;
 mod image_cache;
 pub mod text;
 
+use crate::font::FontLibrary;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
-use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
@@ -267,14 +267,12 @@ impl RichTextBrush {
         self.comp.begin();
 
         let library = state.compositors.advanced.font_library();
-        let font_library = { &library.inner.read().unwrap() };
-
         draw_layout(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.render_data,
             state.current.layout.style.screen_position,
-            font_library,
+            library,
             &state.current.layout.dimensions,
             graphics,
         );
@@ -297,13 +295,11 @@ impl RichTextBrush {
         self.comp.begin();
 
         let library = state.compositors.advanced.font_library();
-        let font_library = { &library.inner.read().unwrap() };
-
         let dimension = fetch_dimensions(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.mocked_render_data,
-            font_library,
+            library,
         );
         if dimension.height > 0. && dimension.width > 0. {
             Some(dimension)
@@ -411,7 +407,7 @@ fn draw_layout(
     caches: (&mut ImageCache, &mut GlyphCache),
     render_data: &crate::layout::RenderData,
     pos: (f32, f32),
-    font_library: &FontLibraryData,
+    font_library: &FontLibrary,
     rect: &SugarDimensions,
     graphics: &mut Graphics,
 ) {
@@ -434,7 +430,8 @@ fn draw_layout(
 
     let mut session = glyphs_cache.session(
         image_cache,
-        font_library[current_font].as_ref(),
+        current_font,
+        font_library,
         font_coords,
         current_font_size,
     );
@@ -455,11 +452,13 @@ fn draw_layout(
             // the character "◼" is not an emoji and should be treated as
             // single width. So, we completely rely on what font is
             // being used and then set width 2 for it.
-            let char_width = if !font_library[font].is_emoji {
-                run.char_width()
-            } else {
-                2.0
-            };
+            // let char_width = if !font_library_data[font].is_emoji {
+            //     run.char_width()
+            // } else {
+            //     2.0
+            // };
+
+            let char_width = run.char_width();
 
             let run_x = px;
             glyphs.clear();
@@ -494,8 +493,9 @@ fn draw_layout(
             {
                 session = glyphs_cache.session(
                     image_cache,
-                    font_library[font].as_ref(),
-                    style.font_coords,
+                    current_font,
+                    font_library,
+                    font_coords,
                     style.font_size,
                 );
 
@@ -540,7 +540,7 @@ fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     caches: (&mut ImageCache, &mut GlyphCache),
     render_data: &crate::layout::RenderData,
-    font_library: &FontLibraryData,
+    font_library: &FontLibrary,
 ) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
@@ -558,7 +558,8 @@ fn fetch_dimensions(
 
     let mut session = glyphs_cache.session(
         image_cache,
-        font_library[current_font].as_ref(),
+        current_font,
+        font_library,
         font_coords,
         current_font_size,
     );
@@ -607,9 +608,10 @@ fn fetch_dimensions(
             if font != &current_font || style.font_size != current_font_size {
                 session = glyphs_cache.session(
                     image_cache,
-                    style.font,
+                    current_font,
+                    font_library,
                     font_coords,
-                    style.font_size,
+                    current_font_size,
                 );
 
                 current_font = *font;

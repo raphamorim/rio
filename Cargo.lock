@@ -2830,6 +2830,7 @@ dependencies = [
  "lru",
  "memmap2",
  "ordered-float",
+ "parking_lot",
  "png",
  "raw-window-handle",
  "rayon",

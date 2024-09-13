@@ -6,6 +6,7 @@ pub mod loader;
 
 pub const FONT_ID_REGULAR: usize = 0;
 
+use parking_lot::FairMutex;
 use crate::font::constants::*;
 use crate::font_introspector::proxy::CharmapProxy;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -16,7 +17,7 @@ use ab_glyph::FontArc;
 use rustc_hash::FxHashMap;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 pub use crate::font_introspector::{Style, Weight};
 
@@ -168,7 +169,7 @@ impl FontContext {
 
 #[derive(Clone)]
 pub struct FontLibrary {
-    pub(super) inner: Arc<RwLock<FontLibraryData>>,
+    pub(super) inner: Arc<FairMutex<FontLibraryData>>,
 }
 
 impl FontLibrary {
@@ -184,7 +185,7 @@ impl FontLibrary {
 
         (
             Self {
-                inner: Arc::new(RwLock::new(font_library)),
+                inner: Arc::new(FairMutex::new(font_library)),
             },
             sugarloaf_errors,
         )
@@ -197,7 +198,7 @@ impl Default for FontLibrary {
         let _fonts_not_found = font_library.load(SugarloafFonts::default());
 
         Self {
-            inner: Arc::new(RwLock::new(font_library)),
+            inner: Arc::new(FairMutex::new(font_library)),
         }
     }
 }
@@ -212,15 +213,11 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub standard: FontData,
     pub inner: Vec<FontSource>,
-    db: loader::Database,
 }
 
 impl Default for FontLibraryData {
     fn default() -> Self {
-        let mut db = loader::Database::new();
-        db.load_system_fonts();
         Self {
-            db,
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
@@ -265,7 +262,10 @@ impl FontLibraryData {
             font_family_overwrite.clone_into(&mut spec.italic.family);
         }
 
-        match find_font(&self.db, spec.regular) {
+        let mut db = loader::Database::new();
+        db.load_system_fonts();
+
+        match find_font(&db, spec.regular) {
             FindResult::Found(data) => {
                 self.standard = data;
                 self.inner = vec![FontSource::Standard];
@@ -279,7 +279,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&self.db, spec.italic) {
+        match find_font(&db, spec.italic) {
             FindResult::Found(data) => {
                 self.inner.push(FontSource::Data(data));
             }
@@ -292,7 +292,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&self.db, spec.bold) {
+        match find_font(&db, spec.bold) {
             FindResult::Found(data) => {
                 self.inner.push(FontSource::Data(data));
             }
@@ -305,7 +305,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&self.db, spec.bold_italic) {
+        match find_font(&db, spec.bold_italic) {
             FindResult::Found(data) => {
                 self.inner.push(FontSource::Data(data));
             }
@@ -320,7 +320,7 @@ impl FontLibraryData {
 
         for fallback in fallbacks::external_fallbacks() {
             match find_font(
-                &self.db,
+                &db,
                 SugarloafFont {
                     family: fallback,
                     ..SugarloafFont::default()
@@ -337,7 +337,7 @@ impl FontLibraryData {
         }
 
         if let Some(emoji_font) = spec.emoji {
-            match find_font(&self.db, emoji_font) {
+            match find_font(&db, emoji_font) {
                 FindResult::Found(data) => {
                     self.inner.push(FontSource::Data(data));
                 }
@@ -362,7 +362,7 @@ impl FontLibraryData {
 
         for extra_font in spec.extras {
             match find_font(
-                &self.db,
+                &db,
                 SugarloafFont {
                     family: extra_font.family,
                     style: extra_font.style,
@@ -383,7 +383,7 @@ impl FontLibraryData {
         ));
 
         if let Some(ui_spec) = spec.ui {
-            match find_font(&self.db, ui_spec) {
+            match find_font(&db, ui_spec) {
                 FindResult::Found(data) => {
                     self.ui = FontArc::try_from_vec(data.data.to_vec()).unwrap();
                 }
