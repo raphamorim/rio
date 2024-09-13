@@ -20,6 +20,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+
+// 𜱭𜱭 unicode is not available yet for all OS
+// https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
+// #[cfg(any(target_os = "macos", target_os = "windows"))]
+// const RIO_TITLE: &str = "𜱭𜱭";
+// #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const RIO_TITLE: &str = "▲";
+
 pub struct Route {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
@@ -300,12 +308,6 @@ impl Router {
         );
     }
 }
-
-// https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-const RIO_TITLE: &str = "𜱭𜱭";
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-const RIO_TITLE: &str = "▲";
 
 pub struct RouteWindow {
     pub is_focused: bool,
