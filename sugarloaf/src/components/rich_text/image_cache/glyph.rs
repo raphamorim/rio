@@ -1,6 +1,6 @@
-use crate::font::FontLibrary;
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
+use crate::font::FontLibrary;
 use crate::font_introspector::scale::{
     image::{Content, Image as GlyphImage},
     *,
