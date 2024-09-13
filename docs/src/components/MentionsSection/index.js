@@ -33,7 +33,7 @@ function MentionCard(props) {
         <figcaption>
           <cite>
             <a href={url} className={styles.mentionCardUsername}>
-              @{username}
+              {username}
             </a>
           </cite>
         </figcaption>
