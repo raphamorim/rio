@@ -6,25 +6,24 @@ pub mod loader;
 
 pub const FONT_ID_REGULAR: usize = 0;
 
-use parking_lot::FairMutex;
 use crate::font::constants::*;
 use crate::font_introspector::proxy::CharmapProxy;
+use crate::font_introspector::text::cluster::Parser;
+use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
+use crate::font_introspector::text::Codepoint;
+use crate::font_introspector::text::Script;
 use crate::font_introspector::{Attributes, CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use ab_glyph::FontArc;
+use parking_lot::FairMutex;
 use rustc_hash::FxHashMap;
 use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use crate::font_introspector::{Style, Weight};
-
-#[derive(Default)]
-pub struct FontContext {
-    cache: FxHashMap<String, usize>,
-}
 
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
@@ -72,104 +71,9 @@ pub fn lookup_for_font_match(
     font_id
 }
 
-impl FontContext {
-    #[inline]
-    pub fn map_cluster(
-        &mut self,
-        cluster: &mut CharCluster,
-        synth: &mut Synthesis,
-        library: &FontLibraryData,
-        fragment_style: &FragmentStyle,
-    ) -> Option<usize> {
-        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
-        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
-
-        let chars = cluster.chars();
-        let is_cache_key_empty = chars.is_empty();
-
-        let mut cache_key: String = String::default();
-        let spec_font_attr = if is_bold && is_italic {
-            cache_key.push('m');
-            Some((Style::Italic, true))
-        } else if is_bold {
-            cache_key.push('b');
-            Some((Style::Normal, true))
-        } else if is_italic {
-            cache_key.push('i');
-            Some((Style::Italic, false))
-        } else {
-            cache_key.push('r');
-            None
-        };
-
-        for c in chars.iter() {
-            cache_key.push(c.ch);
-        }
-
-        if !is_cache_key_empty {
-            if let Some(cached_font_id) = self.cache.get(&cache_key) {
-                let cached_font_id = *cached_font_id;
-                let charmap = library[cached_font_id]
-                    .charmap_proxy
-                    .materialize(&library[cached_font_id].as_ref());
-                let status = cluster.map(|ch| charmap.map(ch));
-                if status != Status::Discard {
-                    *synth = library[cached_font_id].synth;
-                }
-
-                return Some(cached_font_id);
-            }
-        }
-
-        if let Some(found_font_id) =
-            lookup_for_font_match(cluster, synth, library, spec_font_attr.as_ref())
-        {
-            if !is_cache_key_empty {
-                self.cache.insert(cache_key, found_font_id);
-            }
-
-            return Some(found_font_id);
-        }
-
-        Some(0)
-    }
-
-    #[inline]
-    pub fn find_font_by_character(
-        &mut self,
-        character: char,
-        synth: &mut Synthesis,
-        library: &FontLibraryData,
-        fragment_style: &FragmentStyle,
-    ) -> Option<usize> {
-        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
-        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
-
-        let mut cache_key: String = String::default();
-        if is_bold && is_italic {
-            cache_key.push('m');
-        } else if is_bold {
-            cache_key.push('b');
-        } else if is_italic {
-            cache_key.push('i');
-        } else {
-            cache_key.push('r');
-        };
-
-        cache_key.push(character);
-
-        if let Some(cached_font_id) = self.cache.get(&cache_key) {
-            *synth = library[*cached_font_id].synth;
-            return Some(*cached_font_id);
-        }
-
-        None
-    }
-}
-
 #[derive(Clone)]
 pub struct FontLibrary {
-    pub(super) inner: Arc<FairMutex<FontLibraryData>>,
+    pub inner: Arc<FairMutex<FontLibraryData>>,
 }
 
 impl FontLibrary {
@@ -213,6 +117,7 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub standard: FontData,
     pub inner: Vec<FontSource>,
+    pub cache: FxHashMap<String, usize>,
 }
 
 impl Default for FontLibraryData {
@@ -221,11 +126,59 @@ impl Default for FontLibraryData {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
+            cache: FxHashMap::default(),
         }
     }
 }
 
 impl FontLibraryData {
+    #[inline]
+    pub fn find_best_font_match(
+        &mut self,
+        ch: char,
+        fragment_style: &FragmentStyle,
+    ) -> Option<usize> {
+        let mut synth = Synthesis::default();
+        let mut char_cluster = CharCluster::new();
+        let mut parser = Parser::new(
+            Script::Latin,
+            std::iter::once(Token {
+                ch,
+                offset: 0,
+                len: ch.len_utf8() as u8,
+                info: ch.properties().into(),
+                data: 0,
+            }),
+        );
+        if !parser.next(&mut char_cluster) {
+            return Some(0);
+        }
+
+        let is_italic = fragment_style.font_attrs.style() == Style::Italic;
+        let is_bold = fragment_style.font_attrs.weight() == Weight::BOLD;
+
+        let spec_font_attr = if is_bold && is_italic {
+            Some((Style::Italic, true))
+        } else if is_bold {
+            Some((Style::Normal, true))
+        } else if is_italic {
+            Some((Style::Italic, false))
+        } else {
+            None
+        };
+
+        if let Some(found_font_id) = lookup_for_font_match(
+            &mut char_cluster,
+            &mut synth,
+            self,
+            spec_font_attr.as_ref(),
+        ) {
+            return Some(found_font_id);
+        }
+
+        Some(0)
+    }
+
     #[inline]
     pub fn insert(&mut self, font_data: FontData) {
         self.inner.push(FontSource::Data(font_data));

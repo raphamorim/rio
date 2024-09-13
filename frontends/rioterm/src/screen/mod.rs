@@ -177,7 +177,7 @@ impl Screen<'_> {
             }
         };
 
-        let renderer = Renderer::new(config, theme);
+        let renderer = Renderer::new(config, theme, font_library);
 
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
@@ -328,7 +328,7 @@ impl Screen<'_> {
         );
 
         self.sugarloaf.layout_mut().update();
-        self.renderer = Renderer::new(config, current_theme);
+        self.renderer = Renderer::new(config, current_theme, font_library);
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();

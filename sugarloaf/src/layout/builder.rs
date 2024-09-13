@@ -8,7 +8,10 @@ use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::cluster::CharCluster;
+use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Status;
+use crate::font_introspector::text::cluster::Token;
+use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::font_introspector::Synthesis;
@@ -336,26 +339,30 @@ impl<'a> ParagraphBuilder<'a> {
 }
 
 impl<'a> ParagraphBuilder<'a> {
+    #[inline]
     fn resolve(&mut self, render_data: &mut RenderData) {
-        let font_library = { &self.fonts.inner.lock() };
+        let script = Script::Latin;
         for line_number in 0..self.s.lines.len() {
-            let mut char_cluster = CharCluster::new();
+            // let mut char_cluster = CharCluster::new();
             let line = &self.s.lines[line_number];
             for item in &line.fragments {
                 let range = item.start..item.end;
-                let style = item.style;
                 let vars = self.s.vars.get(item.style.font_vars);
-                let mut synth = Synthesis::default();
-                let script = Script::Latin;
+                // let mut synth = Synthesis::default();
 
                 let shaper_key: String = self.s.lines[line_number].text.content
                     [range.to_owned()]
                 .iter()
                 .collect();
+
+                println!("{:?} {:?}", shaper_key, item.style.font_id);
+
                 if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                    if let Some(metrics) = self.metrics_cache.inner.get(&style.font_id) {
+                    if let Some(metrics) =
+                        self.metrics_cache.inner.get(&item.style.font_id)
+                    {
                         if render_data.push_run_without_shaper(
-                            &style,
+                            &item.style,
                             self.s.font_size,
                             line_number as u32,
                             shaper,
@@ -366,33 +373,49 @@ impl<'a> ParagraphBuilder<'a> {
                     }
                 }
 
-                self.word_cache.key = shaper_key;
+                self.word_cache.key = shaper_key.clone();
 
-                let charmap = &font_library[style.font_id].as_ref().charmap();
-                let status = char_cluster.map(|ch| charmap.map(ch));
-                if status != Status::Discard {
-                    synth = font_library[style.font_id].synth;
-                }
+                // let mut parser = Parser::new(
+                //     Script::Latin,
+                //     shaper_key.char_indices().map(|(i, ch)| Token {
+                //         ch,
+                //         offset: i as u32,
+                //         len: ch.len_utf8() as u8,
+                //         info: ch.properties().into(),
+                //         data: 0,
+                //     }),
+                // );
+                // if !parser.next(&mut char_cluster) {
+                //     continue;
+                // }
+
+                let font_library = { &self.fonts.inner.lock() };
+                // let charmap = &font_library[style.font_id].as_ref().charmap();
+                // let status = char_cluster.map(|ch| charmap.map(ch));
+                // if status != Status::Discard {
+                //     synth = font_library[style.font_id].synth;
+                // }
 
                 let mut shaper = self
                     .scx
-                    .builder(font_library[style.font_id].as_ref())
+                    .builder(font_library[item.style.font_id].as_ref())
                     .script(script)
                     .size(self.s.font_size)
                     .features(self.font_features.iter().copied())
-                    .variations(synth.variations().iter().copied())
+                    // .variations(synth.variations().iter().copied())
                     .variations(vars.iter().copied())
                     .build();
 
-                if !self.metrics_cache.inner.contains_key(&style.font_id) {
+                shaper.add_str(&self.word_cache.key);
+
+                if !self.metrics_cache.inner.contains_key(&item.style.font_id) {
                     self.metrics_cache
                         .inner
-                        .insert(style.font_id, shaper.metrics());
+                        .insert(item.style.font_id, shaper.metrics());
                 }
 
-                shaper.add_str(&self.word_cache.key);
                 render_data.push_run(
-                    &style,
+                    &item.style,
                     self.s.font_size,
                     line_number as u32,
                     shaper,
@@ -412,7 +435,7 @@ pub struct WordCache {
 impl WordCache {
     pub fn new() -> Self {
         WordCache {
-            inner: LruCache::new(NonZeroUsize::new(1024).unwrap()),
+            inner: LruCache::new(NonZeroUsize::new(512).unwrap()),
             stash: vec![],
             key: String::new(),
         }

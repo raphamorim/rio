@@ -54,12 +54,20 @@ pub struct Renderer {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
-    width_cache: FxHashMap<char, f32>,
     active_search: Option<String>,
+    font_context: rio_backend::sugarloaf::font::FontLibrary,
+    font_cache: FxHashMap<
+        (char, rio_backend::sugarloaf::font_introspector::Attributes),
+        (usize, f32),
+    >,
 }
 
 impl Renderer {
-    pub fn new(config: &Config, current_theme: Option<Theme>) -> Renderer {
+    pub fn new(
+        config: &Config,
+        current_theme: Option<Theme>,
+        font_context: &rio_backend::sugarloaf::font::FontLibrary,
+    ) -> Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
@@ -124,7 +132,8 @@ impl Renderer {
                 content_ref: config.cursor.shape.into(),
                 state: CursorState::new(config.cursor.shape.into()),
             },
-            width_cache: FxHashMap::default(),
+            font_cache: FxHashMap::default(),
+            font_context: font_context.clone(),
         }
     }
 
@@ -171,19 +180,13 @@ impl Renderer {
             square.c
         };
 
-        let width = if let Some(w) = self.width_cache.get(&content) {
-            *w
-        } else {
-            let w = square.c.width().unwrap_or(1) as f32;
-            self.width_cache.insert(square.c, w);
-            w
-        };
-
-        let font_attrs = match (
+        let attrs = (
             flags.contains(Flags::ITALIC),
             flags.contains(Flags::BOLD_ITALIC),
             flags.contains(Flags::BOLD),
-        ) {
+        );
+
+        let font_attrs = match attrs {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
             (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
@@ -208,7 +211,6 @@ impl Renderer {
 
         (
             FragmentStyle {
-                width,
                 color: foreground_color,
                 background_color,
                 font_attrs: font_attrs.into(),
@@ -370,6 +372,28 @@ impl Renderer {
                 });
                 style.background_color = None;
             }
+
+            if let Some((font_id, width)) =
+                self.font_cache.get(&(square_content, style.font_attrs))
+            {
+                style.font_id = *font_id;
+                style.width = *width;
+            } else {
+                let mut font_ctx = self.font_context.inner.lock();
+                if let Some(font_id) =
+                    font_ctx.find_best_font_match(square_content, &style)
+                {
+                    println!("{:?} {:?} {:?}", square_content, style.font_attrs, font_id);
+                    style.font_id = font_id;
+                }
+                let width = square.c.width().unwrap_or(1) as f32;
+                style.width = width;
+
+                self.font_cache.insert(
+                    (square_content, style.font_attrs),
+                    (style.font_id, style.width),
+                );
+            };
 
             // TODO: Write tests for it
             if square_content != ' ' && last_char_was_empty {
