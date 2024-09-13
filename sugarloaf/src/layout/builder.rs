@@ -337,7 +337,7 @@ impl<'a> ParagraphBuilder<'a> {
 
 impl<'a> ParagraphBuilder<'a> {
     fn resolve(&mut self, render_data: &mut RenderData) {
-        let font_library = { &self.fonts.inner.read().unwrap() };
+        let font_library = { &self.fonts.inner.lock() };
         for line_number in 0..self.s.lines.len() {
             let mut char_cluster = CharCluster::new();
             let line = &self.s.lines[line_number];

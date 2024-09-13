@@ -41,6 +41,7 @@ guillotiere = "0.6.2"
 ordered-float = "4.2.0"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
+parking_lot = { workspace = true }
 ab_glyph = "0.2.28"
 linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
