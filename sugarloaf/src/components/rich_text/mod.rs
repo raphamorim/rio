@@ -422,12 +422,11 @@ fn draw_layout(
     let mut glyphs = Vec::new();
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let mut current_font_coords: &[i16] = &[0, 0, 0, 0];
+    let font_coords: &[i16] = &[0, 0, 0, 0];
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
             current_font_size = run.font_size();
-            current_font_coords = run.normalized_coords();
         }
     }
 
@@ -436,7 +435,7 @@ fn draw_layout(
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
-        current_font_coords,
+        font_coords,
         current_font_size,
     );
 
@@ -476,7 +475,7 @@ fn draw_layout(
 
             let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
-                font_coords: run.normalized_coords(),
+                font_coords: font_coords,
                 font_size: run.font_size(),
                 color: run.color(),
                 cursor: run.cursor(),
@@ -491,7 +490,7 @@ fn draw_layout(
 
             if font != current_font
                 || style.font_size != current_font_size
-                || style.font_coords != current_font_coords
+                || style.font_coords != font_coords
             {
                 session = glyphs_cache.session(
                     image_cache,
@@ -501,7 +500,6 @@ fn draw_layout(
                 );
 
                 current_font = font;
-                current_font_coords = style.font_coords;
                 current_font_size = style.font_size;
             }
 
@@ -550,19 +548,18 @@ fn fetch_dimensions(
     let (image_cache, glyphs_cache) = caches;
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let mut current_font_coords: &[i16] = &[0, 0, 0, 0];
+    let font_coords: &[i16] = &[0, 0, 0, 0];
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
             current_font_size = run.font_size();
-            current_font_coords = run.normalized_coords();
         }
     }
 
     let mut session = glyphs_cache.session(
         image_cache,
         font_library[current_font].as_ref(),
-        current_font_coords,
+        font_coords,
         current_font_size,
     );
 
@@ -589,7 +586,7 @@ fn fetch_dimensions(
             let color = run.color();
 
             let style = TextRunStyle {
-                font_coords: run.normalized_coords(),
+                font_coords,
                 font_size: run.font_size(),
                 color,
                 cursor: run.cursor(),
@@ -609,17 +606,15 @@ fn fetch_dimensions(
 
             if font != &current_font
                 || style.font_size != current_font_size
-                || style.font_coords != current_font_coords
             {
                 session = glyphs_cache.session(
                     image_cache,
-                    font_library[*font].as_ref(),
-                    style.font_coords,
+                    style.font,
+                    font_coords,
                     style.font_size,
                 );
 
                 current_font = *font;
-                current_font_coords = style.font_coords;
                 current_font_size = style.font_size;
             }
 

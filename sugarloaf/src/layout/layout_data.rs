@@ -182,7 +182,6 @@ pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
     pub font: usize,
-    pub coords: (u32, u32),
     pub size: f32,
     // pub whitespace: bool,
     // pub trailing_whitespace: bool,
@@ -197,8 +196,6 @@ pub struct RunData {
 
 #[derive(Clone, Debug, Default)]
 pub struct LayoutData {
-    /// Normalized variation coordinates.
-    pub coords: Vec<i16>,
     /// Simple glyphs.
     pub glyphs: Vec<GlyphData>,
     /// Detailed glyphs.
@@ -215,7 +212,6 @@ pub struct LayoutData {
 
 impl LayoutData {
     pub fn clear(&mut self) {
-        self.coords.clear();
         self.glyphs.clear();
         self.detailed_glyphs.clear();
         self.clusters.clear();
