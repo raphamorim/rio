@@ -346,32 +346,31 @@ impl<'a> ParagraphBuilder<'a> {
             // let mut char_cluster = CharCluster::new();
             let line = &self.s.lines[line_number];
             for item in &line.fragments {
-                let range = item.start..item.end;
                 let vars = self.s.vars.get(item.style.font_vars);
                 // let mut synth = Synthesis::default();
 
                 let shaper_key: String = self.s.lines[line_number].text.content
-                    [range.to_owned()]
+                    [item.start..item.end]
                 .iter()
                 .collect();
 
-                println!("{:?} {:?}", shaper_key, item.style.font_id);
+                println!("{:?} -> {:?}", item.style.font_id, shaper_key);
 
-                if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                    if let Some(metrics) =
-                        self.metrics_cache.inner.get(&item.style.font_id)
-                    {
-                        if render_data.push_run_without_shaper(
-                            &item.style,
-                            self.s.font_size,
-                            line_number as u32,
-                            shaper,
-                            metrics,
-                        ) {
-                            continue;
-                        }
-                    }
-                }
+                // if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
+                //     if let Some(metrics) =
+                //         self.metrics_cache.inner.get(&item.style.font_id)
+                //     {
+                //         if render_data.push_run_without_shaper(
+                //             &item.style,
+                //             self.s.font_size,
+                //             line_number as u32,
+                //             shaper,
+                //             metrics,
+                //         ) {
+                //             continue;
+                //         }
+                //     }
+                // }
 
                 self.word_cache.key = shaper_key.clone();
 
@@ -392,9 +391,7 @@ impl<'a> ParagraphBuilder<'a> {
                 let font_library = { &self.fonts.inner.lock() };
                 // let charmap = &font_library[style.font_id].as_ref().charmap();
                 // let status = char_cluster.map(|ch| charmap.map(ch));
-                // if status != Status::Discard {
-                //     synth = font_library[style.font_id].synth;
-                // }
+                // synth = font_library[item.style.font_id].synth;
 
                 let mut shaper = self
                     .scx
@@ -415,7 +412,7 @@ impl<'a> ParagraphBuilder<'a> {
                 }
 
                 render_data.push_run(
-                    &item.style,
+                    item.style,
                     self.s.font_size,
                     line_number as u32,
                     shaper,

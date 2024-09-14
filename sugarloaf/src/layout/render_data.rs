@@ -77,7 +77,7 @@ impl RenderData {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
-        style: &FragmentStyle,
+        style: FragmentStyle,
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
@@ -171,7 +171,7 @@ impl RenderData {
         }
 
         let run_data = RunData {
-            span: *style,
+            span: style,
             line,
             size,
             clusters: (clusters_start, clusters_end),
@@ -191,7 +191,7 @@ impl RenderData {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run_without_shaper(
         &mut self,
-        style: &FragmentStyle,
+        style: FragmentStyle,
         size: f32,
         line: u32,
         glyph_clusters: &Vec<OwnedGlyphCluster>,
@@ -282,7 +282,7 @@ impl RenderData {
             self.graphics.insert(graphic.id);
         }
         let run_data = RunData {
-            span: *style,
+            span: style,
             line,
             size,
             clusters: (clusters_start, clusters_end),

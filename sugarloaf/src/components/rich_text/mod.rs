@@ -402,6 +402,7 @@ impl RichTextBrush {
     }
 }
 
+#[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
     caches: (&mut ImageCache, &mut GlyphCache),
@@ -419,12 +420,6 @@ fn draw_layout(
     let mut current_font = 0;
     let mut current_font_size = 0.0;
     let font_coords: &[i16] = &[0, 0, 0, 0];
-    if let Some(line) = render_data.lines().next() {
-        if let Some(run) = line.runs().next() {
-            current_font = *run.font();
-            current_font_size = run.font_size();
-        }
-    }
 
     glyphs_cache.set_max_height(rect.height as u16);
 
@@ -440,8 +435,10 @@ fn draw_layout(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         let py = line.baseline() + y;
+        let line_height = line.ascent() + line.descent() + line.leading();
         for run in line.runs() {
-            let font = *run.font();
+            glyphs.clear();
+            let font = run.font();
 
             // There is no simple way to define what's emoji
             // could have to refer to the Unicode tables. However it could
@@ -461,7 +458,6 @@ fn draw_layout(
             let char_width = run.char_width();
 
             let run_x = px;
-            glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
                     let x = px + glyph.x;
@@ -471,8 +467,6 @@ fn draw_layout(
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
-
-            let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
                 font_coords: font_coords,
                 font_size: run.font_size(),
@@ -487,7 +481,7 @@ fn draw_layout(
                 decoration_color: run.decoration_color(),
             };
 
-            if font != current_font
+            if font != &current_font
                 || style.font_size != current_font_size
                 || style.font_coords != font_coords
             {
@@ -499,7 +493,7 @@ fn draw_layout(
                     style.font_size,
                 );
 
-                current_font = font;
+                current_font = *font;
                 current_font_size = style.font_size;
             }
 

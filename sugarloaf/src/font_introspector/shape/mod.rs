@@ -142,7 +142,7 @@ pub struct ShaperBuilder<'a> {
 impl<'a> ShaperBuilder<'a> {
     /// Creates a new builder for configuring a shaper with the specified
     /// context and font.
-    fn new(context: &'a mut ShapeContext, font: impl Into<FontRef<'a>>) -> Self {
+    pub fn new(context: &'a mut ShapeContext, font: impl Into<FontRef<'a>>) -> Self {
         let font = font.into();
         let id = [font.key.value(), u64::MAX];
         Self::new_with_id(context, font, id)
