@@ -29,7 +29,7 @@ pub fn lookup_for_font_match(
     synth: &mut Synthesis,
     library: &FontLibraryData,
     spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
-) -> Option<usize> {
+) -> Option<(usize, bool)> {
     let mut font_id = None;
     for (current_font_id, font) in library.inner.iter().enumerate() {
         let (font, font_ref) = match font {
@@ -56,7 +56,7 @@ pub fn lookup_for_font_match(
         let status = cluster.map(|ch| charmap.map(ch));
         if status != Status::Discard {
             *synth = library[current_font_id].synth;
-            font_id = Some(current_font_id);
+            font_id = Some((current_font_id, library[current_font_id].is_emoji));
             break;
         }
     }
@@ -136,7 +136,7 @@ impl FontLibraryData {
         &mut self,
         ch: char,
         fragment_style: &FragmentStyle,
-    ) -> Option<usize> {
+    ) -> Option<(usize, bool)> {
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -150,7 +150,7 @@ impl FontLibraryData {
             }),
         );
         if !parser.next(&mut char_cluster) {
-            return Some(0);
+            return Some((0, false));
         }
 
         let is_italic = fragment_style.font_attrs.style() == Style::Italic;
@@ -166,16 +166,16 @@ impl FontLibraryData {
             None
         };
 
-        if let Some(found_font_id) = lookup_for_font_match(
+        if let Some(result) = lookup_for_font_match(
             &mut char_cluster,
             &mut synth,
             self,
             spec_font_attr.as_ref(),
         ) {
-            return Some(found_font_id);
+            return Some(result);
         }
 
-        Some(0)
+        Some((0, false))
     }
 
     #[inline]

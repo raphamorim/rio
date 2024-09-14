@@ -445,22 +445,6 @@ fn draw_layout(
         for run in line.runs() {
             glyphs.clear();
             let font = run.font();
-
-            // There is no simple way to define what's emoji
-            // could have to refer to the Unicode tables. However it could
-            // be leading to misleading results. For example if we used
-            // unicode and internationalization functionalities like
-            // https://github.com/open-i18n/rust-unic/, then characters
-            // like "◼" would be valid emojis. For a terminal context,
-            // the character "◼" is not an emoji and should be treated as
-            // single width. So, we completely rely on what font is
-            // being used and then set width 2 for it.
-            // let char_width = if !font_library_data[font].is_emoji {
-            //     run.char_width()
-            // } else {
-            //     2.0
-            // };
-
             let char_width = run.char_width();
 
             let run_x = px;
@@ -474,7 +458,7 @@ fn draw_layout(
                 }
             }
             let style = TextRunStyle {
-                font_coords: font_coords,
+                font_coords,
                 font_size: run.font_size(),
                 color: run.color(),
                 cursor: run.cursor(),
@@ -487,9 +471,7 @@ fn draw_layout(
                 decoration_color: run.decoration_color(),
             };
 
-            if font != &current_font
-                || style.font_size != current_font_size
-            {
+            if font != &current_font || style.font_size != current_font_size {
                 current_font = *font;
                 current_font_size = style.font_size;
 
