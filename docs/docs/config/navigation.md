@@ -10,7 +10,7 @@ language: 'en'
 
 ```toml
 [navigation]
-mode = "CollapsedTab"
+mode = "Bookmark"
 clickable = false
 hide-if-single = true
 use-current-path = false
@@ -19,9 +19,11 @@ color-automation = []
 
 Rio has multiple styles of showing navigation/tabs.
 
-### CollapsedTab
+### Bookmark
 
 Note: The example below is using the [Dracula](https://github.com/dracula/rio-terminal) color scheme instead of Rio default colors.
+
+`Bookmark` is the default navigation mode.
 
 <img src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="60%" />
 
@@ -29,12 +31,10 @@ Usage:
 
 ```toml
 [navigation]
-mode = "CollapsedTab"
+mode = "Bookmark"
 ```
 
 ### NativeTab (MacOS only)
-
-`NativeTab` is the default navigation mode for MacOS.
 
 <img alt="Demo NativeTab" src="/rio/assets/posts/0.0.17/demo-native-tabs.png" width="60%"/>
 
@@ -46,8 +46,6 @@ mode = "NativeTab"
 ```
 
 ### BottomTab
-
-`BottomTab` is the default navigation mode for Linux, BSD and Windows.
 
 Note: `BottomTab` does not support click mode yet.
 
@@ -128,7 +126,7 @@ The example below sets `#FFFF00` as color background whenever `nvim` is running.
 <p>
 <img alt="example navigation with program color automation using BottomTab" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
 
-<img alt="example navigation with program color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
+<img alt="example navigation with program color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
 </p>
 
 The configuration would be like:
@@ -158,7 +156,7 @@ color-automation = [
 <p>
 <img alt="example navigation with path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
 
-<img alt="example navigation with path color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
+<img alt="example navigation with path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
 </p>
 
 #### Program and path
@@ -181,5 +179,5 @@ color-automation = [
 <p>
 <img alt="example navigation with program and path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
 
-<img alt="example navigation with program and path color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
+<img alt="example navigation with program and path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
 </p>

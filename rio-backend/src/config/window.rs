@@ -14,9 +14,10 @@ pub enum WindowMode {
     Windowed,
 }
 
-#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+#[derive(Clone, Default, Serialize, Deserialize, Copy, Debug, PartialEq)]
 pub enum Decorations {
     #[serde(alias = "enabled")]
+    #[default]
     Enabled,
     #[serde(alias = "disabled")]
     Disabled,
@@ -24,17 +25,6 @@ pub enum Decorations {
     Transparent,
     #[serde(alias = "buttonless")]
     Buttonless,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for Decorations {
-    fn default() -> Decorations {
-        if cfg!(target_os = "macos") {
-            Decorations::Transparent
-        } else {
-            Decorations::Enabled
-        }
-    }
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]

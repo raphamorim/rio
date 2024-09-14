@@ -11,7 +11,7 @@ Rio support different types of navigation modes:
 </p>
 
 <p>
-<img alt="Demo CollapsedTab" src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="48%" />
+<img alt="Demo Bookmark" src="https://miro.medium.com/v2/resize:fit:1400/format:webp/1*gMLWcZkniSHUT6Cb7L06Gg.png" width="48%" />
 <img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="48%"/>
 </p>
 
