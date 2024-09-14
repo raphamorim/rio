@@ -53,7 +53,7 @@ pub fn lookup_for_font_match(
             }
         }
 
-        let charmap = font.charmap_proxy.materialize(&font_ref);
+        let charmap = font_ref.charmap();
         let status = cluster.map(|ch| charmap.map(ch));
         if status != Status::Discard {
             *synth = library[current_font_id].synth;
@@ -415,7 +415,6 @@ pub struct FontData {
     offset: u32,
     // Cache key
     pub key: CacheKey,
-    pub charmap_proxy: CharmapProxy,
     pub weight: crate::font_introspector::Weight,
     pub style: crate::font_introspector::Style,
     pub stretch: crate::font_introspector::Stretch,
@@ -441,7 +440,6 @@ impl FontData {
     #[inline]
     pub fn from_data(data: Vec<u8>) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(&data, 0).unwrap();
-        let charmap_proxy = CharmapProxy::from_font(&font.clone());
         let (offset, key) = (font.offset, font.key);
 
         // Return our struct with the original file data and copies of the
@@ -456,7 +454,6 @@ impl FontData {
             data: SharedData::new(data),
             offset,
             key,
-            charmap_proxy,
             synth,
             style,
             weight,
@@ -468,7 +465,6 @@ impl FontData {
     #[inline]
     pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
-        let charmap_proxy = CharmapProxy::from_font(&font);
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
         // offset and key from the font reference
@@ -482,7 +478,6 @@ impl FontData {
             data: SharedData::new(data.to_vec()),
             offset,
             key,
-            charmap_proxy,
             synth,
             style,
             weight,
