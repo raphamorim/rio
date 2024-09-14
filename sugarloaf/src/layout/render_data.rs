@@ -13,7 +13,7 @@
 use super::layout_data::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
+use crate::font_introspector::text::cluster::ClusterInfo;
 use crate::font_introspector::Metrics;
 use crate::font_introspector::{GlyphId, NormalizedCoord};
 use crate::layout::builder::{FragmentStyleDecoration, WordCache};
@@ -96,11 +96,11 @@ impl RenderData {
 
         shaper.shape_with(|c| {
             shaper_cache.add_glyph_cluster(c);
-            if c.info.boundary() == Boundary::Mandatory {
-                if let Some(c) = self.data.clusters.last_mut() {
-                    c.flags |= CLUSTER_NEWLINE;
-                }
-            }
+            // if c.info.boundary() == Boundary::Mandatory {
+            //     if let Some(c) = self.data.clusters.last_mut() {
+            //         c.flags |= CLUSTER_NEWLINE;
+            //     }
+            // }
 
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
@@ -217,11 +217,11 @@ impl RenderData {
         let mut advance = 0.;
 
         for c in glyph_clusters {
-            if c.info.boundary() == Boundary::Mandatory {
-                if let Some(c) = self.data.clusters.last_mut() {
-                    c.flags |= CLUSTER_NEWLINE;
-                }
-            }
+            // if c.info.boundary() == Boundary::Mandatory {
+            //     if let Some(c) = self.data.clusters.last_mut() {
+            //         c.flags |= CLUSTER_NEWLINE;
+            //     }
+            // }
 
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
