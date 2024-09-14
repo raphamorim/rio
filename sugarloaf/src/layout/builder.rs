@@ -14,7 +14,7 @@ use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::cluster::{CharCluster, Parser, Token};
-use crate::font_introspector::text::{analyze, Script};
+use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::font_introspector::Synthesis;
 use crate::layout::render_data::RenderData;
@@ -22,7 +22,6 @@ use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
 
-use crate::font_introspector::text::cluster::CharInfo;
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
@@ -47,8 +46,6 @@ pub struct BuilderLineText {
     pub frags: Vec<u32>,
     /// Span index per character.
     pub spans: Vec<usize>,
-    /// Character info per character.
-    pub info: Vec<CharInfo>,
     /// Offset of each character relative to its fragment.
     pub offsets: Vec<u32>,
 }
@@ -239,7 +236,6 @@ pub struct LayoutContext {
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
     state: BuilderState,
-    cache_analysis: LruCache<String, Vec<CharInfo>>,
     word_cache: WordCache,
     metrics_cache: MetricsCache,
 }
@@ -254,7 +250,6 @@ impl LayoutContext {
             state: BuilderState::new(),
             word_cache: WordCache::new(),
             font_features: vec![],
-            cache_analysis: LruCache::new(NonZeroUsize::new(256).unwrap()),
             metrics_cache: MetricsCache::default(),
         }
     }
@@ -297,7 +292,6 @@ impl LayoutContext {
             last_offset: 0,
             word_cache: &mut self.word_cache,
             metrics_cache: &mut self.metrics_cache,
-            cache_analysis: &mut self.cache_analysis,
         }
     }
 }
@@ -312,7 +306,6 @@ pub struct ParagraphBuilder<'a> {
     last_offset: u32,
     word_cache: &'a mut WordCache,
     metrics_cache: &'a mut MetricsCache,
-    cache_analysis: &'a mut LruCache<String, Vec<CharInfo>>,
 }
 
 impl<'a> ParagraphBuilder<'a> {
@@ -378,21 +371,6 @@ impl<'a> ParagraphBuilder<'a> {
     fn resolve(&mut self, render_data: &mut RenderData) {
         // let start = std::time::Instant::now();
         for line_number in 0..self.s.lines.len() {
-            let line = &mut self.s.lines[line_number];
-            let content_key = line.text.content.iter().collect();
-            if let Some(cached_analysis) = self.cache_analysis.get(&content_key) {
-                line.text.info.extend_from_slice(cached_analysis);
-            } else {
-                let mut analysis = analyze(line.text.content.iter());
-                let mut cache = Vec::with_capacity(line.text.content.len());
-                for (props, boundary) in analysis.by_ref() {
-                    let char_info = CharInfo::new(props, boundary);
-                    line.text.info.push(char_info);
-                    cache.push(char_info);
-                }
-                self.cache_analysis.put(content_key, cache);
-            }
-
             // let start = std::time::Instant::now();
             self.shape(render_data, line_number);
             // let duration = start.elapsed();
@@ -454,14 +432,13 @@ impl<'a> ParagraphBuilder<'a> {
             let chars = self.s.lines[current_line].text.content[range.to_owned()]
                 .iter()
                 .zip(&self.s.lines[current_line].text.offsets[range.to_owned()])
-                .zip(&self.s.lines[current_line].text.info[range])
                 .map(|z| {
-                    let ((&ch, &offset), &info) = z;
+                    let (&ch, &offset) = z;
                     Token {
                         ch,
                         offset,
                         len: ch.len_utf8() as u8,
-                        info,
+                        info: ch.into(),
                         data: 0,
                     }
                 });
