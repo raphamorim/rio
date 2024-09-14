@@ -345,7 +345,10 @@ impl<'a> ParagraphBuilder<'a> {
 
                 shaper.add_str(&self.word_cache.key);
 
-                self.metrics_cache.inner.entry(item.style.font_id).or_insert_with(|| shaper.metrics());
+                self.metrics_cache
+                    .inner
+                    .entry(item.style.font_id)
+                    .or_insert_with(|| shaper.metrics());
 
                 render_data.push_run(
                     item.style,

@@ -379,14 +379,26 @@ impl Renderer {
                 style.font_id = *font_id;
                 style.width = *width;
             } else {
+                let mut width = square.c.width().unwrap_or(1) as f32;
                 let mut font_ctx = self.font_context.inner.lock();
-                if let Some(font_id) =
+
+                // There is no simple way to define what's emoji
+                // could have to refer to the Unicode tables. However it could
+                // be leading to misleading results. For example if we used
+                // unicode and internationalization functionalities like
+                // https://github.com/open-i18n/rust-unic/, then characters
+                // like "◼" would be valid emojis. For a terminal context,
+                // the character "◼" is not an emoji and should be treated as
+                // single width. So, we completely rely on what font is
+                // being used and then set width 2 for it.
+                if let Some((font_id, is_emoji)) =
                     font_ctx.find_best_font_match(square_content, &style)
                 {
-                    println!("{:?} {:?} {:?}", square_content, style.font_attrs, font_id);
                     style.font_id = font_id;
+                    if is_emoji {
+                        width = 2.0;
+                    }
                 }
-                let width = square.c.width().unwrap_or(1) as f32;
                 style.width = width;
 
                 self.font_cache.insert(
