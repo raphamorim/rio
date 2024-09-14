@@ -101,8 +101,8 @@ impl ScreenNavigation {
         match self.navigation.mode {
             #[cfg(target_os = "macos")]
             NavigationMode::NativeTab => {}
-            NavigationMode::CollapsedTab => {
-                self.collapsed_tab(titles, colors, len, self.navigation.hide_if_single)
+            NavigationMode::Bookmark => {
+                self.bookmark(titles, colors, len, self.navigation.hide_if_single)
             }
             NavigationMode::TopTab => {
                 let position_y = 0.0;
@@ -132,7 +132,7 @@ impl ScreenNavigation {
     }
 
     #[inline]
-    pub fn collapsed_tab(
+    pub fn bookmark(
         &mut self,
         titles: &HashMap<usize, [String; 3]>,
         colors: &Colors,
