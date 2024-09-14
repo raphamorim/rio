@@ -7,7 +7,6 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
-use crate::font_introspector::proxy::CharmapProxy;
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};

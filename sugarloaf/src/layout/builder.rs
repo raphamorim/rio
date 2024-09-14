@@ -7,14 +7,8 @@ use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
-use crate::font_introspector::text::cluster::CharCluster;
-use crate::font_introspector::text::cluster::Parser;
-use crate::font_introspector::text::cluster::Status;
-use crate::font_introspector::text::cluster::Token;
-use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
-use crate::font_introspector::Synthesis;
 use crate::layout::render_data::RenderData;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
@@ -25,28 +19,15 @@ use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
 
 /// Data that describes a fragment.
-#[derive(Copy, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct FragmentData {
-    /// Offset of the text.
-    pub start: usize,
-    /// End of the text.
-    pub end: usize,
+    pub content: String,
     /// Style
     pub style: FragmentStyle,
 }
 
-/// Builder Line State
-#[derive(Default)]
-pub struct BuilderLineText {
-    /// Combined text.
-    pub content: Vec<char>,
-    /// Fragment index per character.
-    pub frags: Vec<u32>,
-}
-
 #[derive(Default)]
 pub struct BuilderLine {
-    pub text: BuilderLineText,
     /// Collection of fragments.
     pub fragments: Vec<FragmentData>,
 }
@@ -274,7 +255,6 @@ impl LayoutContext {
             fonts: &self.fonts,
             scx: &mut self.scx,
             s: &mut self.state,
-            last_offset: 0,
             word_cache: &mut self.word_cache,
             metrics_cache: &mut self.metrics_cache,
         }
@@ -287,7 +267,6 @@ pub struct ParagraphBuilder<'a> {
     font_features: &'a Vec<crate::font_introspector::Setting<u16>>,
     scx: &'a mut ShapeContext,
     s: &'a mut BuilderState,
-    last_offset: u32,
     word_cache: &'a mut WordCache,
     metrics_cache: &'a mut MetricsCache,
 }
@@ -302,26 +281,12 @@ impl<'a> ParagraphBuilder<'a> {
     pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> Option<()> {
         let current_line = self.s.current_line();
         let line = &mut self.s.lines[current_line];
-        let id = line.text.frags.len();
-        let mut offset = self.last_offset;
 
-        let start = line.text.content.len();
-        for ch in text.chars() {
-            line.text.content.push(ch);
-            offset += (ch).len_utf8() as u32;
-        }
+        line.fragments.push(FragmentData {
+            content: text.to_string(),
+            style,
+        });
 
-        // println!(">>> {:?}", text);
-        let end = line.text.content.len();
-        let len = end - start;
-        line.text.frags.reserve(len);
-        for _ in 0..len {
-            line.text.frags.push(id as u32);
-        }
-
-        line.fragments.push(FragmentData { start, end, style });
-
-        self.last_offset = offset;
         Some(())
     }
 
@@ -343,55 +308,31 @@ impl<'a> ParagraphBuilder<'a> {
     fn resolve(&mut self, render_data: &mut RenderData) {
         let script = Script::Latin;
         for line_number in 0..self.s.lines.len() {
-            // let mut char_cluster = CharCluster::new();
             let line = &self.s.lines[line_number];
             for item in &line.fragments {
                 let vars = self.s.vars.get(item.style.font_vars);
-                // let mut synth = Synthesis::default();
+                let shaper_key = &item.content;
 
-                let shaper_key: String = self.s.lines[line_number].text.content
-                    [item.start..item.end]
-                .iter()
-                .collect();
+                // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
 
-                println!("{:?} -> {:?}", item.style.font_id, shaper_key);
+                if let Some(shaper) = self.word_cache.inner.get(shaper_key) {
+                    if let Some(metrics) =
+                        self.metrics_cache.inner.get(&item.style.font_id)
+                    {
+                        if render_data.push_run_without_shaper(
+                            item.style,
+                            self.s.font_size,
+                            line_number as u32,
+                            shaper,
+                            metrics,
+                        ) {
+                            continue;
+                        }
+                    }
+                }
 
-                // if let Some(shaper) = self.word_cache.inner.get(&shaper_key) {
-                //     if let Some(metrics) =
-                //         self.metrics_cache.inner.get(&item.style.font_id)
-                //     {
-                //         if render_data.push_run_without_shaper(
-                //             &item.style,
-                //             self.s.font_size,
-                //             line_number as u32,
-                //             shaper,
-                //             metrics,
-                //         ) {
-                //             continue;
-                //         }
-                //     }
-                // }
-
-                self.word_cache.key = shaper_key.clone();
-
-                // let mut parser = Parser::new(
-                //     Script::Latin,
-                //     shaper_key.char_indices().map(|(i, ch)| Token {
-                //         ch,
-                //         offset: i as u32,
-                //         len: ch.len_utf8() as u8,
-                //         info: ch.properties().into(),
-                //         data: 0,
-                //     }),
-                // );
-                // if !parser.next(&mut char_cluster) {
-                //     continue;
-                // }
-
+                self.word_cache.key = shaper_key.to_owned();
                 let font_library = { &self.fonts.inner.lock() };
-                // let charmap = &font_library[style.font_id].as_ref().charmap();
-                // let status = char_cluster.map(|ch| charmap.map(ch));
-                // synth = font_library[item.style.font_id].synth;
 
                 let mut shaper = self
                     .scx
@@ -399,17 +340,12 @@ impl<'a> ParagraphBuilder<'a> {
                     .script(script)
                     .size(self.s.font_size)
                     .features(self.font_features.iter().copied())
-                    // .variations(synth.variations().iter().copied())
                     .variations(vars.iter().copied())
                     .build();
 
                 shaper.add_str(&self.word_cache.key);
 
-                if !self.metrics_cache.inner.contains_key(&item.style.font_id) {
-                    self.metrics_cache
-                        .inner
-                        .insert(item.style.font_id, shaper.metrics());
-                }
+                self.metrics_cache.inner.entry(item.style.font_id).or_insert_with(|| shaper.metrics());
 
                 render_data.push_run(
                     item.style,

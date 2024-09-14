@@ -1,11 +1,11 @@
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
-use crate::font::FontLibrary;
 use crate::font_introspector::scale::{
     image::{Content, Image as GlyphImage},
     *,
 };
 use crate::font_introspector::zeno::Format;
+use crate::font_introspector::FontRef;
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
@@ -40,23 +40,33 @@ impl GlyphCache {
     pub fn session<'a>(
         &'a mut self,
         images: &'a mut ImageCache,
-        font: usize,
-        font_library: &'a FontLibrary,
+        font: FontRef<'a>,
         coords: &[i16],
         size: f32,
     ) -> GlyphCacheSession<'a> {
         // let quant_size = (size * 32.) as u16;
         let quant_size = size as u16;
-        let entry = get_entry(&mut self.fonts, font, coords);
+        let entry = get_entry(&mut self.fonts, font.key.value(), coords);
+        let scaler = self
+            .scx
+            .builder(font)
+            // With the advent of high-DPI displays (displays with >300 pixels per inch),
+            // font hinting has become less relevant, as aliasing effects become
+            // un-noticeable to the human eye.
+            // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
+            // now ignores font hint information completely.
+            // .hint(!IS_MACOS)
+            .hint(true)
+            .size(size)
+            // .normalized_coords(coords)
+            .build();
         GlyphCacheSession {
-            font,
             entry,
             images,
-            font_library,
+            scaler,
             max_height: &self.max_height,
             scaled_image: &mut self.img,
             quant_size,
-            scale_context: &mut self.scx,
         }
     }
 
@@ -77,7 +87,7 @@ impl GlyphCache {
 
 fn get_entry<'a>(
     fonts: &'a mut FxHashMap<FontKey, FontEntry>,
-    id: usize,
+    id: u64,
     coords: &[i16],
 ) -> &'a mut FontEntry {
     let key = (id, Coords::Ref(coords));
@@ -97,10 +107,8 @@ fn get_entry<'a>(
 pub struct GlyphCacheSession<'a> {
     entry: &'a mut FontEntry,
     images: &'a mut ImageCache,
+    scaler: Scaler<'a>,
     scaled_image: &'a mut GlyphImage,
-    font: usize,
-    font_library: &'a FontLibrary,
-    scale_context: &'a mut ScaleContext,
     quant_size: u16,
     #[allow(unused)]
     max_height: &'a u16,
@@ -124,21 +132,6 @@ impl<'a> GlyphCacheSession<'a> {
         }
 
         self.scaled_image.data.clear();
-        let font_library_data = self.font_library.inner.lock();
-        let mut scaler = self
-            .scale_context
-            .builder(font_library_data[self.font].as_ref())
-            // With the advent of high-DPI displays (displays with >300 pixels per inch),
-            // font hinting has become less relevant, as aliasing effects become
-            // un-noticeable to the human eye.
-            // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
-            // now ignores font hint information completely.
-            // .hint(!IS_MACOS)
-            .hint(true)
-            .size(self.quant_size.into())
-            // .normalized_coords(coords)
-            .build();
-
         // let embolden = if IS_MACOS { 0.25 } else { 0. };
         if Render::new(SOURCES)
             .format(Format::CustomSubpixel([0.3, 0., -0.3]))
@@ -153,7 +146,7 @@ impl<'a> GlyphCacheSession<'a> {
             // } else {
             //     None
             // })
-            .render_into(&mut scaler, id, self.scaled_image)
+            .render_into(&mut self.scaler, id, self.scaled_image)
         {
             let p = self.scaled_image.placement;
             let w = p.width as u16;
@@ -206,11 +199,11 @@ impl<'a> GlyphCacheSession<'a> {
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 struct FontKey {
-    key: (usize, Coords<'static>),
+    key: (u64, Coords<'static>),
 }
 
-impl<'a> Borrow<(usize, Coords<'a>)> for FontKey {
-    fn borrow(&self) -> &(usize, Coords<'a>) {
+impl<'a> Borrow<(u64, Coords<'a>)> for FontKey {
+    fn borrow(&self) -> &(u64, Coords<'a>) {
         &self.key
     }
 }

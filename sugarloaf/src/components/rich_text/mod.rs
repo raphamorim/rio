@@ -3,10 +3,11 @@ mod compositor;
 mod image_cache;
 pub mod text;
 
+use crate::font::FontLibrary;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
-use crate::font::FontLibrary;
+use crate::font::FontLibraryData;
 use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
@@ -267,6 +268,7 @@ impl RichTextBrush {
         self.comp.begin();
 
         let library = state.compositors.advanced.font_library();
+
         draw_layout(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
@@ -295,11 +297,13 @@ impl RichTextBrush {
         self.comp.begin();
 
         let library = state.compositors.advanced.font_library();
+        let font_library = { &library.inner.lock() };
+
         let dimension = fetch_dimensions(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.mocked_render_data,
-            library,
+            font_library,
         );
         if dimension.height > 0. && dimension.width > 0. {
             Some(dimension)
@@ -402,7 +406,6 @@ impl RichTextBrush {
     }
 }
 
-#[inline]
 fn draw_layout(
     comp: &mut compositor::Compositor,
     caches: (&mut ImageCache, &mut GlyphCache),
@@ -419,15 +422,21 @@ fn draw_layout(
     let mut glyphs = Vec::new();
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let font_coords: &[i16] = &[0, 0, 0, 0];
+    let current_font_coords: &[i16] = &[0, 0, 0, 0];
+    if let Some(line) = render_data.lines().next() {
+        if let Some(run) = line.runs().next() {
+            current_font = *run.font();
+            current_font_size = run.font_size();
+        }
+    }
 
     glyphs_cache.set_max_height(rect.height as u16);
 
+    let font_library = { &font_library.inner.lock() };
     let mut session = glyphs_cache.session(
         image_cache,
-        current_font,
-        font_library,
-        font_coords,
+        font_library[current_font].as_ref(),
+        current_font_coords,
         current_font_size,
     );
 
@@ -435,10 +444,8 @@ fn draw_layout(
     for line in render_data.lines() {
         let mut px = x + line.offset();
         let py = line.baseline() + y;
-        let line_height = line.ascent() + line.descent() + line.leading();
         for run in line.runs() {
-            glyphs.clear();
-            let font = run.font();
+            let font = *run.font();
 
             // There is no simple way to define what's emoji
             // could have to refer to the Unicode tables. However it could
@@ -449,15 +456,14 @@ fn draw_layout(
             // the character "◼" is not an emoji and should be treated as
             // single width. So, we completely rely on what font is
             // being used and then set width 2 for it.
-            // let char_width = if !font_library_data[font].is_emoji {
-            //     run.char_width()
-            // } else {
-            //     2.0
-            // };
-
-            let char_width = run.char_width();
+            let char_width = if !font_library[font].is_emoji {
+                run.char_width()
+            } else {
+                2.0
+            };
 
             let run_x = px;
+            glyphs.clear();
             for cluster in run.visual_clusters() {
                 for glyph in cluster.glyphs() {
                     let x = px + glyph.x;
@@ -467,8 +473,10 @@ fn draw_layout(
                     glyphs.push(Glyph { id: glyph.id, x, y });
                 }
             }
+
+            let line_height = line.ascent() + line.descent() + line.leading();
             let style = TextRunStyle {
-                font_coords: font_coords,
+                font_coords: current_font_coords,
                 font_size: run.font_size(),
                 color: run.color(),
                 cursor: run.cursor(),
@@ -481,19 +489,15 @@ fn draw_layout(
                 decoration_color: run.decoration_color(),
             };
 
-            if font != &current_font
-                || style.font_size != current_font_size
-                || style.font_coords != font_coords
-            {
+            if font != current_font || style.font_size != current_font_size {
                 session = glyphs_cache.session(
                     image_cache,
-                    current_font,
-                    font_library,
-                    font_coords,
+                    font_library[font].as_ref(),
+                    style.font_coords,
                     style.font_size,
                 );
 
-                current_font = *font;
+                current_font = font;
                 current_font_size = style.font_size;
             }
 
@@ -534,7 +538,7 @@ fn fetch_dimensions(
     comp: &mut compositor::Compositor,
     caches: (&mut ImageCache, &mut GlyphCache),
     render_data: &crate::layout::RenderData,
-    font_library: &FontLibrary,
+    font_library: &FontLibraryData,
 ) -> SugarDimensions {
     let x = 0.;
     let y = 0.;
@@ -542,7 +546,7 @@ fn fetch_dimensions(
     let (image_cache, glyphs_cache) = caches;
     let mut current_font = 0;
     let mut current_font_size = 0.0;
-    let font_coords: &[i16] = &[0, 0, 0, 0];
+    let mut current_font_coords: &[i16] = &[0, 0, 0, 0];
     if let Some(line) = render_data.lines().next() {
         if let Some(run) = line.runs().next() {
             current_font = *run.font();
@@ -552,9 +556,8 @@ fn fetch_dimensions(
 
     let mut session = glyphs_cache.session(
         image_cache,
-        current_font,
-        font_library,
-        font_coords,
+        font_library[current_font].as_ref(),
+        current_font_coords,
         current_font_size,
     );
 
@@ -581,7 +584,7 @@ fn fetch_dimensions(
             let color = run.color();
 
             let style = TextRunStyle {
-                font_coords,
+                font_coords: current_font_coords,
                 font_size: run.font_size(),
                 color,
                 cursor: run.cursor(),
@@ -599,16 +602,19 @@ fn fetch_dimensions(
                 dimension.height = line_height.round();
             }
 
-            if font != &current_font || style.font_size != current_font_size {
+            if font != &current_font
+                || style.font_size != current_font_size
+                || style.font_coords != current_font_coords
+            {
                 session = glyphs_cache.session(
                     image_cache,
-                    current_font,
-                    font_library,
-                    font_coords,
-                    current_font_size,
+                    font_library[*font].as_ref(),
+                    style.font_coords,
+                    style.font_size,
                 );
 
                 current_font = *font;
+                current_font_coords = style.font_coords;
                 current_font_size = style.font_size;
             }
 

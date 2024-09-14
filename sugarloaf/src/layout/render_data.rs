@@ -13,7 +13,7 @@
 use super::layout_data::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use crate::font_introspector::text::cluster::{Boundary, ClusterInfo};
+use crate::font_introspector::text::cluster::ClusterInfo;
 use crate::font_introspector::GlyphId;
 use crate::font_introspector::Metrics;
 use crate::layout::builder::{FragmentStyleDecoration, WordCache};
