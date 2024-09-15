@@ -394,7 +394,7 @@ pub struct Instance {
 }
 
 impl Instance {
-    const INITIAL_AMOUNT: usize = 64;
+    const INITIAL_AMOUNT: usize = 6;
 
     #[inline]
     pub fn from_vertex(
