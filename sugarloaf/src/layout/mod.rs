@@ -8,11 +8,9 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 mod builder;
-mod content;
 mod layout_data;
 mod render_data;
 
-pub use content::{Content, ContentBuilder};
 pub use render_data::RenderData;
 
 /// Iterators over elements of a paragraph.
@@ -21,8 +19,7 @@ pub mod iter {
 }
 
 pub use builder::{
-    FragmentStyle, FragmentStyleDecoration, LayoutContext, ParagraphBuilder,
-    UnderlineInfo, UnderlineShape,
+    Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use render_data::{Cluster, Glyph, Line, Run};
 

@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, ContentBuilder, FragmentStyle, FragmentStyleDecoration,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    layout::SugarloafLayout, FragmentStyle, FragmentStyleDecoration, Sugarloaf,
+    SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
@@ -122,7 +122,7 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested { .. } => {
-                let mut content = ContentBuilder::default();
+                let content = sugarloaf.content();
                 content.add_text(
                     "Sugarloaf",
                     FragmentStyle {
@@ -131,7 +131,7 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.finish_line();
+                content.new_line();
                 content.add_text(
                     "│㏑¼",
                     FragmentStyle {
@@ -150,7 +150,7 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.finish_line();
+                content.new_line();
                 content.add_text(
                     "│regular -> ",
                     FragmentStyle {
@@ -217,7 +217,7 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.finish_line();
+                content.new_line();
                 content.add_text(
                     "│dashed",
                     FragmentStyle {
@@ -259,7 +259,7 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.finish_line();
+                content.new_line();
                 content.add_text(
                     "│ \u{E0B6}Hello There!\u{e0b4}",
                     FragmentStyle {
@@ -268,7 +268,6 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                sugarloaf.set_content(content.build());
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

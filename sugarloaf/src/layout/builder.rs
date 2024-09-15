@@ -202,7 +202,7 @@ impl Default for FragmentStyle {
 }
 
 /// Context for paragraph layout.
-pub struct LayoutContext {
+pub struct Content {
     fonts: FontLibrary,
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
@@ -211,7 +211,7 @@ pub struct LayoutContext {
     metrics_cache: MetricsCache,
 }
 
-impl LayoutContext {
+impl Content {
     /// Creates a new layout context with the specified font library.
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
@@ -237,10 +237,8 @@ impl LayoutContext {
         self.font_features = font_features;
     }
 
-    /// Creates a new builder for computing a paragraph layout with the
-    /// specified direction, language and scaling factor.
     #[inline]
-    pub fn builder(&mut self, scale: f32, font_size: f32) -> ParagraphBuilder {
+    pub fn build(&mut self, scale: f32, font_size: f32) {
         self.state.clear();
         self.state.begin();
         let prev_font_size = self.state.font_size;
@@ -250,37 +248,25 @@ impl LayoutContext {
         if prev_font_size != self.state.font_size {
             self.metrics_cache.inner.clear();
         }
-        ParagraphBuilder {
-            font_features: &self.font_features,
-            fonts: &self.fonts,
-            scx: &mut self.scx,
-            s: &mut self.state,
-            word_cache: &mut self.word_cache,
-            metrics_cache: &mut self.metrics_cache,
-        }
+        // ContentBuilder {
+        //     font_features: &self.font_features,
+        //     fonts: &self.fonts,
+        //     scx: &mut self.scx,
+        //     s: &mut self.state,
+        //     word_cache: &mut self.word_cache,
+        //     metrics_cache: &mut self.metrics_cache,
+        // }
     }
-}
 
-/// Builder for computing the layout of a paragraph.
-pub struct ParagraphBuilder<'a> {
-    fonts: &'a FontLibrary,
-    font_features: &'a Vec<crate::font_introspector::Setting<u16>>,
-    scx: &'a mut ShapeContext,
-    s: &'a mut BuilderState,
-    word_cache: &'a mut WordCache,
-    metrics_cache: &'a mut MetricsCache,
-}
-
-impl<'a> ParagraphBuilder<'a> {
     #[inline]
     pub fn new_line(&mut self) {
-        self.s.new_line();
+        self.state.new_line();
     }
 
     /// Adds a text fragment to the paragraph.
     pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> Option<()> {
-        let current_line = self.s.current_line();
-        let line = &mut self.s.lines[current_line];
+        let current_line = self.state.current_line();
+        let line = &mut self.state.lines[current_line];
 
         line.fragments.push(FragmentData {
             content: text.to_string(),
@@ -290,27 +276,13 @@ impl<'a> ParagraphBuilder<'a> {
         Some(())
     }
 
-    /// Consumes the builder and fills the specified paragraph with the result.
-    pub fn build_into(mut self, render_data: &mut RenderData) {
-        self.resolve(render_data);
-    }
-
-    /// Consumes the builder and returns the resulting paragraph.
-    pub fn build(self) -> RenderData {
-        let mut render_data = RenderData::default();
-        self.build_into(&mut render_data);
-        render_data
-    }
-}
-
-impl<'a> ParagraphBuilder<'a> {
     #[inline]
-    fn resolve(&mut self, render_data: &mut RenderData) {
+    pub fn resolve(&mut self, render_data: &mut RenderData) {
         let script = Script::Latin;
-        for line_number in 0..self.s.lines.len() {
-            let line = &self.s.lines[line_number];
+        for line_number in 0..self.state.lines.len() {
+            let line = &self.state.lines[line_number];
             for item in &line.fragments {
-                let vars = self.s.vars.get(item.style.font_vars);
+                let vars = self.state.vars.get(item.style.font_vars);
                 let shaper_key = &item.content;
 
                 // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
@@ -321,7 +293,7 @@ impl<'a> ParagraphBuilder<'a> {
                     {
                         if render_data.push_run_without_shaper(
                             item.style,
-                            self.s.font_size,
+                            self.state.font_size,
                             line_number as u32,
                             shaper,
                             metrics,
@@ -338,7 +310,7 @@ impl<'a> ParagraphBuilder<'a> {
                     .scx
                     .builder(font_library[item.style.font_id].as_ref())
                     .script(script)
-                    .size(self.s.font_size)
+                    .size(self.state.font_size)
                     .features(self.font_features.iter().copied())
                     .variations(vars.iter().copied())
                     .build();
@@ -352,10 +324,10 @@ impl<'a> ParagraphBuilder<'a> {
 
                 render_data.push_run(
                     item.style,
-                    self.s.font_size,
+                    self.state.font_size,
                     line_number as u32,
                     shaper,
-                    self.word_cache,
+                    &mut self.word_cache,
                 );
             }
         }
