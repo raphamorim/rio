@@ -2,8 +2,8 @@
 pub fn external_fallbacks() -> Vec<String> {
     vec![
         String::from(".SF NS"),
-        // String::from("Menlo"),
-        // String::from("Geneva"),
+        String::from("Menlo"),
+        String::from("Geneva"),
         String::from("Arial Unicode MS"),
         // String::from("Noto Emoji"),
         // String::from("Noto Color Emoji"),

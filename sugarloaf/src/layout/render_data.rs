@@ -16,7 +16,7 @@ use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
 use crate::font_introspector::text::cluster::ClusterInfo;
 use crate::font_introspector::GlyphId;
 use crate::font_introspector::Metrics;
-use crate::layout::builder::{FragmentStyleDecoration, WordCache};
+use crate::layout::content::{FragmentStyleDecoration, WordCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
