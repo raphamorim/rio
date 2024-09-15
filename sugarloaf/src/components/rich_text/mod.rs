@@ -271,9 +271,9 @@ impl RichTextBrush {
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
             &state.compositors.advanced.render_data,
-            state.current.layout.style.screen_position,
+            state.layout.style.screen_position,
             library,
-            &state.current.layout.dimensions,
+            &state.layout.dimensions,
             graphics,
         );
 
@@ -323,10 +323,7 @@ impl RichTextBrush {
 
         let queue = &mut ctx.queue;
 
-        let transform = orthographic_projection(
-            state.current.layout.width,
-            state.current.layout.height,
-        );
+        let transform = orthographic_projection(state.layout.width, state.layout.height);
         let transform_has_changed = transform != self.current_transform;
 
         if transform_has_changed {

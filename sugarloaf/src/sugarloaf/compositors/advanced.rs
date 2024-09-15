@@ -8,7 +8,7 @@
 
 use crate::font::FontLibrary;
 use crate::layout::{Content, FragmentStyle, RenderData};
-use crate::sugarloaf::state::SugarTree;
+use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
     pub render_data: RenderData,
@@ -76,13 +76,13 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
+    pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
         self.mocked_render_data = RenderData::default();
-        self.content
-            .build(tree.layout.dimensions.scale, tree.layout.font_size);
-        self.content.add_text(" ", FragmentStyle::default());
+        let mut content = Content::new(self.content.font_library());
+        content.build(layout.dimensions.scale, layout.font_size);
+        content.add_text(" ", FragmentStyle::default());
         self.mocked_render_data.clear();
-        self.content.resolve(&mut self.mocked_render_data);
+        content.resolve(&mut self.mocked_render_data);
 
         self.mocked_render_data
             .break_lines()

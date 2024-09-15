@@ -166,12 +166,12 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn layout(&self) -> SugarloafLayout {
-        self.state.current.layout
+        self.state.layout
     }
 
     #[inline]
     pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
-        &mut self.state.current.layout
+        &mut self.state.layout
     }
 
     #[inline]
