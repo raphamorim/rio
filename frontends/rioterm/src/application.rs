@@ -179,11 +179,11 @@ impl ApplicationHandler<EventPayload> for Application {
                     drop(terminal);
                     if let Some(graphic_queues) = graphics {
                         for graphic_data in graphic_queues.pending {
-                            route.window.screen.sugarloaf.add_graphic(graphic_data);
+                            route.window.screen.sugarloaf.graphics.insert(graphic_data);
                         }
 
                         for graphic_data in graphic_queues.remove_queue {
-                            route.window.screen.sugarloaf.remove_graphic(&graphic_data);
+                            route.window.screen.sugarloaf.graphics.remove(&graphic_data);
                         }
                     }
                 }

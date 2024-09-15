@@ -500,7 +500,6 @@ impl Screen<'_> {
                     .into(),
             };
 
-            self.sugarloaf.mark_dirty();
             self.ctx_mut().current_mut().messenger.send_write(bytes);
 
             return;
@@ -568,7 +567,6 @@ impl Screen<'_> {
         };
 
         if !bytes.is_empty() {
-            self.sugarloaf.mark_dirty();
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
@@ -1446,7 +1444,6 @@ impl Screen<'_> {
         // Enable IME so we can input into the search bar with it if we were in Vi mode.
         // self.window().set_ime_allowed(true);
 
-        self.sugarloaf.mark_dirty();
         self.render();
     }
 
@@ -1491,7 +1488,6 @@ impl Screen<'_> {
         // let vi_mode = self.get_mode().contains(Mode::VI);
         // self.window().set_ime_allowed(!vi_mode);
 
-        self.sugarloaf.mark_dirty();
         self.search_state.history_index = None;
 
         // Clear focused match.
@@ -1551,8 +1547,6 @@ impl Screen<'_> {
             // Update search highlighting.
             self.goto_match(MAX_SEARCH_WHILE_TYPING);
         }
-
-        self.sugarloaf.mark_dirty();
     }
 
     /// Reset terminal to the state before search was started.
@@ -1581,7 +1575,6 @@ impl Screen<'_> {
             drop(terminal);
         }
         self.search_state.display_offset_delta = 0;
-        self.sugarloaf.mark_dirty();
     }
 
     /// Jump to the first regex match from the search origin.
@@ -1650,8 +1643,6 @@ impl Screen<'_> {
         if should_reset_search_state {
             self.search_reset_state();
         }
-
-        self.sugarloaf.mark_dirty();
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
