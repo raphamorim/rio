@@ -18,7 +18,7 @@ use crate::SugarloafErrors;
 use ab_glyph::FontArc;
 use parking_lot::FairMutex;
 use rustc_hash::FxHashMap;
-use std::ops::{Index, IndexMut};
+// use std::ops::{Index, IndexMut};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,16 +27,11 @@ pub use crate::font_introspector::{Style, Weight};
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
-    library: &FontLibraryData,
+    library: &mut FontLibraryData,
     spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
 ) -> Option<(usize, bool)> {
     let mut font_id = None;
     for (current_font_id, font) in library.inner.iter().enumerate() {
-        let (font, font_ref) = match font {
-            FontSource::Data(font_data) => (font_data, font_data.as_ref()),
-            FontSource::Standard => (&library.standard, library.standard.as_ref()),
-        };
-
         // In this case, the font does match however
         // we need to check if is indeed a match
         if let Some(spec_font_attr) = spec_font_attr_opt {
@@ -52,11 +47,11 @@ pub fn lookup_for_font_match(
             }
         }
 
-        let charmap = font_ref.charmap();
+        let charmap = font.as_ref().charmap();
         let status = cluster.map(|ch| charmap.map(ch));
         if status != Status::Discard {
-            *synth = library[current_font_id].synth;
-            font_id = Some((current_font_id, library[current_font_id].is_emoji));
+            *synth = library.get(current_font_id).synth;
+            font_id = Some((current_font_id, library.get(current_font_id).is_emoji));
             break;
         }
     }
@@ -106,16 +101,10 @@ impl Default for FontLibrary {
     }
 }
 
-pub enum FontSource {
-    Standard,
-    Data(FontData),
-}
-
 pub struct FontLibraryData {
     pub ui: FontArc,
     // Standard is fallback for everything, it is also the inner number 0
-    pub standard: FontData,
-    pub inner: Vec<FontSource>,
+    pub inner: Vec<FontData>,
     pub cache: FxHashMap<String, usize>,
 }
 
@@ -123,7 +112,6 @@ impl Default for FontLibraryData {
     fn default() -> Self {
         Self {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
-            standard: FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: vec![],
             cache: FxHashMap::default(),
         }
@@ -180,7 +168,12 @@ impl FontLibraryData {
 
     #[inline]
     pub fn insert(&mut self, font_data: FontData) {
-        self.inner.push(FontSource::Data(font_data));
+        self.inner.push(font_data);
+    }
+
+    pub fn get(&mut self, font_id: usize) -> &FontData {
+        println!("font_id required {}", font_id);
+        &self.inner[font_id]
     }
 
     #[inline]
@@ -197,7 +190,7 @@ impl FontLibraryData {
     pub fn upsert(&mut self, font_id: usize, path: PathBuf) {
         if let Some(font_data) = self.inner.get_mut(font_id) {
             if let Some(loaded_font_data) = load_from_font_source(&path) {
-                *font_data = FontSource::Data(loaded_font_data);
+                *font_data = loaded_font_data;
             };
         }
     }
@@ -219,12 +212,10 @@ impl FontLibraryData {
 
         match find_font(&db, spec.regular) {
             FindResult::Found(data) => {
-                self.standard = data;
-                self.inner = vec![FontSource::Standard];
+                self.inner.push(data);
             }
             FindResult::NotFound(spec) => {
-                self.standard = load_fallback_from_memory(&spec);
-                self.inner = vec![FontSource::Standard];
+                self.inner.push(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
                 }
@@ -233,11 +224,11 @@ impl FontLibraryData {
 
         match find_font(&db, spec.italic) {
             FindResult::Found(data) => {
-                self.inner.push(FontSource::Data(data));
+                self.inner.push(data);
             }
             FindResult::NotFound(spec) => {
                 self.inner
-                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    .push(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
                 }
@@ -246,11 +237,11 @@ impl FontLibraryData {
 
         match find_font(&db, spec.bold) {
             FindResult::Found(data) => {
-                self.inner.push(FontSource::Data(data));
+                self.inner.push(data);
             }
             FindResult::NotFound(spec) => {
                 self.inner
-                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    .push(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
                 }
@@ -259,11 +250,11 @@ impl FontLibraryData {
 
         match find_font(&db, spec.bold_italic) {
             FindResult::Found(data) => {
-                self.inner.push(FontSource::Data(data));
+                self.inner.push(data);
             }
             FindResult::NotFound(spec) => {
                 self.inner
-                    .push(FontSource::Data(load_fallback_from_memory(&spec)));
+                    .push(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
                 }
@@ -279,7 +270,7 @@ impl FontLibraryData {
                 },
             ) {
                 FindResult::Found(data) => {
-                    self.inner.push(FontSource::Data(data));
+                    self.inner.push(data);
                 }
                 FindResult::NotFound(spec) => {
                     // Fallback should not add errors
@@ -291,24 +282,24 @@ impl FontLibraryData {
         if let Some(emoji_font) = spec.emoji {
             match find_font(&db, emoji_font) {
                 FindResult::Found(data) => {
-                    self.inner.push(FontSource::Data(data));
+                    self.inner.push(data);
                 }
                 FindResult::NotFound(spec) => {
-                    self.inner.push(FontSource::Data(
+                    self.inner.push(
                         FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
-                    ));
+                    );
                     if !spec.is_default_family() {
                         fonts_not_fount.push(spec);
                     }
                 }
             }
         } else {
-            self.inner.push(FontSource::Data(
+            self.inner.push(
                 FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap(),
-            ));
+            );
         }
         // Set last font as emoji
-        if let Some(FontSource::Data(ref mut font_ref)) = self.inner.last_mut() {
+        if let Some(ref mut font_ref) = self.inner.last_mut() {
             font_ref.is_emoji = true;
         }
 
@@ -322,7 +313,7 @@ impl FontLibraryData {
                 },
             ) {
                 FindResult::Found(data) => {
-                    self.inner.push(FontSource::Data(data));
+                    self.inner.push(data);
                 }
                 FindResult::NotFound(spec) => {
                     fonts_not_fount.push(spec);
@@ -330,9 +321,7 @@ impl FontLibraryData {
             }
         }
 
-        self.inner.push(FontSource::Data(
-            FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap(),
-        ));
+        self.inner.push(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
 
         if let Some(ui_spec) = spec.ui {
             match find_font(&db, ui_spec) {
@@ -357,25 +346,25 @@ impl FontLibraryData {
     }
 }
 
-impl Index<usize> for FontLibraryData {
-    type Output = FontData;
+// impl Index<usize> for FontLibraryData {
+//     type Output = FontData;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        match &self.inner[index] {
-            FontSource::Data(font_ref) => font_ref,
-            FontSource::Standard => &self.standard,
-        }
-    }
-}
+//     fn index(&self, index: usize) -> &Self::Output {
+//         match &self.inner[index] {
+//             FontSource::Data(font_ref) => font_ref,
+//             FontSource::Standard => &self.standard,
+//         }
+//     }
+// }
 
-impl IndexMut<usize> for FontLibraryData {
-    fn index_mut(&mut self, index: usize) -> &mut FontData {
-        match &mut self.inner[index] {
-            FontSource::Data(font_ref) => font_ref,
-            FontSource::Standard => &mut self.standard,
-        }
-    }
-}
+// impl IndexMut<usize> for FontLibraryData {
+//     fn index_mut(&mut self, index: usize) -> &mut FontData {
+//         match &mut self.inner[index] {
+//             FontSource::Data(font_ref) => font_ref,
+//             FontSource::Standard => &mut self.standard,
+//         }
+//     }
+// }
 
 /// Atomically reference counted, heap allocated or memory mapped buffer.
 #[derive(Clone)]
