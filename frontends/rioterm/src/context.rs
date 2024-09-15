@@ -563,7 +563,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    id = id.to_owned() + &(format!("{}{}{};", i, program, empty_string));
+                    id = id.to_owned()
+                        + &(format!("{}{}{};", i, program, String::default()));
                     self.titles.set_key_val(
                         i,
                         program,
