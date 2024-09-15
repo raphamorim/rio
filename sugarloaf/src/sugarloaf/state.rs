@@ -101,11 +101,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn mark_dirty(&mut self) {
-        // self.latest_change = SugarTreeDiff::Different;
-    }
-
-    #[inline]
     pub fn clean_screen(&mut self) {
         // self.current.content.clear();
         self.current.objects.clear();

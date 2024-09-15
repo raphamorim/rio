@@ -10,7 +10,7 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
-use crate::sugarloaf::graphics::{BottomLayer, GraphicData, GraphicId, Graphics};
+use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::{context::Context, Object};
 use ab_glyph::{self, PxScale};
@@ -30,7 +30,7 @@ pub struct Sugarloaf<'a> {
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
-    graphics: Graphics,
+    pub graphics: Graphics,
 }
 
 #[derive(Debug)]
@@ -171,7 +171,6 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
-        self.state.mark_dirty();
         &mut self.state.current.layout
     }
 
@@ -246,21 +245,6 @@ impl Sugarloaf<'_> {
     #[inline]
     fn clean_state(&mut self) {
         self.state.clean_compositor();
-    }
-
-    #[inline]
-    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
-        self.graphics.insert(graphic_data);
-    }
-
-    #[inline]
-    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
-        self.graphics.remove(graphic_id);
-    }
-
-    #[inline]
-    pub fn mark_dirty(&mut self) {
-        self.state.mark_dirty();
     }
 
     #[inline]
