@@ -304,11 +304,11 @@ impl Content {
                 }
 
                 self.word_cache.key = shaper_key.to_owned();
-                let font_library = { &self.fonts.inner.lock() };
+                let font_library = { &mut self.fonts.inner.lock() };
 
                 let mut shaper = self
                     .scx
-                    .builder(font_library[item.style.font_id].as_ref())
+                    .builder(font_library.get(item.style.font_id).as_ref())
                     .script(script)
                     .size(self.state.font_size)
                     .features(self.font_features.iter().copied())
