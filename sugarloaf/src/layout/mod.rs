@@ -7,7 +7,7 @@
 // nav and span_style were originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-mod builder;
+mod content;
 mod layout_data;
 mod render_data;
 
@@ -18,12 +18,12 @@ pub mod iter {
     pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
 }
 
-pub use builder::{
+pub use content::{
     Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use render_data::{Cluster, Glyph, Line, Run};
 
-/// Index of a span in sequential order of submission to a paragraph builder.
+/// Index of a span in sequential order of submission to a paragraph content.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]
 pub struct SpanId(pub usize);
 

@@ -127,7 +127,7 @@ impl<'a> GlyphCacheSession<'a> {
         let mut font_library_data = self.font_library.inner.lock();
         let mut scaler = self
             .scale_context
-            .builder(font_library_data.get(self.font).as_ref())
+            .builder(font_library_data.get(&self.font).as_ref())
             // With the advent of high-DPI displays (displays with >300 pixels per inch),
             // font hinting has become less relevant, as aliasing effects become
             // un-noticeable to the human eye.

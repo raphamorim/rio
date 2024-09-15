@@ -288,7 +288,7 @@ impl Renderer {
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
-        let mut last_char_was_empty = false;
+        let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
 
         for column in 0..columns {
@@ -405,14 +405,23 @@ impl Renderer {
                 );
             };
 
-            // TODO: Write tests for it
-            if square_content != ' ' && last_char_was_empty {
-                if !content.is_empty() {
+            if square_content == ' ' {
+                if !last_char_was_space {
+                    if !content.is_empty() {
+                        content_builder.add_text(&content, last_style);
+                        content.clear();
+                    }
+
+                    last_char_was_space = true;
+                    last_style = style;
+                }
+            } else {
+                if last_char_was_space && !content.is_empty() {
                     content_builder.add_text(&content, last_style);
                     content.clear();
                 }
 
-                last_char_was_empty = false;
+                last_char_was_space = false;
             }
 
             if last_style != style {
@@ -424,26 +433,12 @@ impl Renderer {
                 last_style = style;
             }
 
-            if square_content == ' ' && !last_char_was_empty {
-                if !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
-                    content.clear();
-                }
-
-                content.push(square_content);
-                last_char_was_empty = true;
-                continue;
-            }
-
             content.push(square_content);
 
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
-                    // let start = std::time::Instant::now();
                     content_builder.add_text(&content, last_style);
-                    // let duration = start.elapsed();
-                    // println!("Total add_text: {:?}", duration);
                 }
 
                 break;
