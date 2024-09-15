@@ -506,10 +506,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(unix)]
         {
-            let interval_time = Duration::from_secs(3);
+            let interval_time = Duration::from_secs(2);
             if self.titles.last_title_update.elapsed() > interval_time {
                 self.titles.last_title_update = Instant::now();
-                let mut id = String::from("");
+                let mut id = String::default();
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = teletypewriter::foreground_process_name(
                         *context.main_fd,
@@ -558,19 +558,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(not(unix))]
         {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(3) {
+            if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
                 self.titles.last_title_update = Instant::now();
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    let empty_string = String::from("");
-
                     id = id.to_owned() + &(format!("{}{}{};", i, program, empty_string));
                     self.titles.set_key_val(
                         i,
                         program,
-                        empty_string.clone(),
-                        empty_string,
+                        String::default(),
+                        String::default(),
                     );
                 }
                 self.titles.set_key(id);

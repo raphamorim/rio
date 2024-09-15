@@ -180,13 +180,11 @@ impl Renderer {
             square.c
         };
 
-        let attrs = (
+        let font_attrs = match (
             flags.contains(Flags::ITALIC),
             flags.contains(Flags::BOLD_ITALIC),
             flags.contains(Flags::BOLD),
-        );
-
-        let font_attrs = match attrs {
+        ) {
             (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
             (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
             (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
