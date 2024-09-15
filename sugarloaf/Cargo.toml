@@ -73,7 +73,6 @@ deflate = "1.0.0"
 criterion = "0.5.1"
 
 [features]
-always_dirty = []
 default = ["scale", "render"]
 scale = ["yazi", "zeno"]
 render = ["scale", "zeno/eval"]

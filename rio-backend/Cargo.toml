@@ -48,5 +48,4 @@ x11 = [
 ]
 wayland = [
     "copypasta/wayland",
-    "sugarloaf/always_dirty"
 ]

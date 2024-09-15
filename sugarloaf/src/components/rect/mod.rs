@@ -285,8 +285,7 @@ impl RectBrush {
             self.supported_quantity = total;
             self.instances = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rect::Rect instances"),
-                size: mem::size_of::<Rect>() as u64
-                    * self.supported_quantity as u64,
+                size: mem::size_of::<Rect>() as u64 * self.supported_quantity as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });

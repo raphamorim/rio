@@ -7,19 +7,19 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, FragmentStyle, LayoutContext, RenderData};
+use crate::layout::{Content, FragmentStyle, RenderData};
 use crate::sugarloaf::state::SugarTree;
 
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
-    layout_context: LayoutContext,
+    pub content: Content,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
-            layout_context: LayoutContext::new(font_library),
+            content: Content::new(font_library),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
         }
@@ -37,12 +37,12 @@ impl Advanced {
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
-        self.layout_context.font_library()
+        self.content.font_library()
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
-        self.layout_context = LayoutContext::new(fonts);
+        self.content = Content::new(fonts);
     }
 
     #[inline]
@@ -56,19 +56,20 @@ impl Advanced {
             }
         }
 
-        self.layout_context.set_font_features(found_font_features);
+        self.content.set_font_features(found_font_features);
     }
 
     #[inline]
-    pub fn update_layout(&mut self, tree: &SugarTree) {
-        self.render_data = RenderData::default();
+    pub fn content(&mut self, scale: f32, font_size: f32) -> &mut Content {
+        self.content.build(scale, font_size);
+        &mut self.content
+    }
 
-        let mut lb = self
-            .layout_context
-            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
-        tree.content.layout(&mut lb);
+    #[inline]
+    pub fn update_render_data(&mut self) {
+        self.render_data = RenderData::default();
         self.render_data.clear();
-        lb.build_into(&mut self.render_data);
+        self.content.resolve(&mut self.render_data);
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
@@ -76,16 +77,12 @@ impl Advanced {
 
     #[inline]
     pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
-        let mut content_builder = Content::builder();
-        content_builder.add_char(' ', FragmentStyle::default());
-
-        let mut lb = self
-            .layout_context
-            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
-        let content = content_builder.build_ref();
-        content.layout(&mut lb);
+        self.mocked_render_data = RenderData::default();
+        self.content
+            .build(tree.layout.dimensions.scale, tree.layout.font_size);
+        self.content.add_text(" ", FragmentStyle::default());
         self.mocked_render_data.clear();
-        lb.build_into(&mut self.mocked_render_data);
+        self.content.resolve(&mut self.mocked_render_data);
 
         self.mocked_render_data
             .break_lines()

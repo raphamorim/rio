@@ -16,8 +16,8 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
-    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use rio_window::window::Theme;
 use std::collections::HashMap;
@@ -279,7 +279,7 @@ impl Renderer {
     #[inline]
     fn create_line(
         &mut self,
-        content_builder: &mut ContentBuilder,
+        content_builder: &mut Content,
         row: &Row<Square>,
         has_cursor: bool,
         line: Line,
@@ -450,7 +450,7 @@ impl Renderer {
             }
         }
 
-        content_builder.finish_line();
+        content_builder.new_line();
     }
 
     #[inline]
@@ -726,13 +726,13 @@ impl Renderer {
             }
         }
 
-        let mut content_builder = Content::builder();
+        let content = sugarloaf.content();
 
         // let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             self.create_line(
-                &mut content_builder,
+                content,
                 row,
                 has_cursor,
                 Line((i as i32) - display_offset),
@@ -742,8 +742,6 @@ impl Renderer {
         }
         // let duration = start.elapsed();
         // println!("Total loop rows: {:?}", duration);
-
-        sugarloaf.set_content(content_builder.build());
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(

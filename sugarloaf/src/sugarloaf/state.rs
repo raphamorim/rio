@@ -6,19 +6,17 @@
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::Graphics;
-use crate::{Content, Object};
+use crate::{Content, Graphics, Object};
 
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
-    Equal,
     Different,
     Repaint,
 }
 
 #[derive(Clone, Default)]
 pub struct SugarTree {
-    pub content: Content,
+    // pub content: Content,
     pub objects: Vec<Object>,
     pub layout: SugarloafLayout,
 }
@@ -83,13 +81,10 @@ impl SugarState {
         }
     }
 
-    #[inline]
-    pub fn set_content(&mut self, new_content: Content) {
-        if self.current.content != new_content {
-            self.latest_change = SugarTreeDiff::Different;
-        }
-        self.current.content = new_content;
-    }
+    // #[inline]
+    // pub fn set_content(&mut self, new_content: Content) {
+    //     self.current.content = new_content;
+    // }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
@@ -107,22 +102,18 @@ impl SugarState {
 
     #[inline]
     pub fn mark_dirty(&mut self) {
-        self.latest_change = SugarTreeDiff::Different;
+        // self.latest_change = SugarTreeDiff::Different;
     }
 
     #[inline]
     pub fn clean_screen(&mut self) {
-        self.current.content.clear();
+        // self.current.content.clear();
         self.current.objects.clear();
         self.compositors.advanced.reset();
     }
 
     #[inline]
     pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
-        if self.current.objects == new_objects {
-            self.latest_change = SugarTreeDiff::Different;
-        };
-
         // Block are used only with elementary renderer
         self.current.objects = new_objects;
     }
@@ -131,13 +122,19 @@ impl SugarState {
     pub fn reset_compositor(&mut self) {
         self.compositors.elementary.clean();
         self.compositors.advanced.reset();
-        self.latest_change = SugarTreeDiff::Equal;
     }
 
     #[inline]
     pub fn clean_compositor(&mut self) {
         self.compositors.elementary.clean();
-        self.latest_change = SugarTreeDiff::Equal;
+    }
+
+    #[inline]
+    pub fn content(&mut self) -> &mut Content {
+        self.compositors.advanced.content(
+            self.current.layout.dimensions.scale,
+            self.current.layout.font_size,
+        )
     }
 
     #[inline]
@@ -149,12 +146,6 @@ impl SugarState {
         context: &mut super::Context,
         graphics: &mut Graphics,
     ) -> bool {
-        #[cfg(not(feature = "always_dirty"))]
-        if self.latest_change == SugarTreeDiff::Equal {
-            self.compositors.advanced.clean();
-            return false;
-        }
-
         advance_brush.prepare(context, self, graphics);
         rect_brush.resize(context);
 
@@ -220,43 +211,32 @@ impl SugarState {
         if self.current.layout.dimensions.width == 0.0
             || self.current.layout.dimensions.height == 0.0
         {
+            self.compositors.advanced.update_render_data();
+
             self.compositors
                 .advanced
                 .calculate_dimensions(&self.current);
-
-            self.compositors.advanced.update_layout(&self.current);
 
             self.latest_change = SugarTreeDiff::Repaint;
             tracing::info!("has empty dimensions, will try to find...");
             return;
         }
 
-        let mut should_update = false;
-        let mut should_compute_dimensions = false;
-
-        match &self.latest_change {
-            SugarTreeDiff::Equal => {
-                // Do nothing
-            }
-            SugarTreeDiff::Repaint => {
-                should_update = true;
-                should_compute_dimensions = true;
-            }
-            SugarTreeDiff::Different => {
-                should_update = true;
-            }
-        }
-
         tracing::info!("state compute_changes result: {:?}", self.latest_change);
 
-        if should_update {
-            if should_compute_dimensions {
+        match &self.latest_change {
+            SugarTreeDiff::Repaint => {
+                self.compositors.advanced.update_render_data();
+
                 self.compositors
                     .advanced
                     .calculate_dimensions(&self.current);
-            }
 
-            self.compositors.advanced.update_layout(&self.current);
+                self.latest_change = SugarTreeDiff::Different;
+            }
+            SugarTreeDiff::Different => {
+                self.compositors.advanced.update_render_data();
+            }
         }
     }
 }

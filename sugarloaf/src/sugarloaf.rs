@@ -12,7 +12,7 @@ use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
 use crate::sugarloaf::graphics::{BottomLayer, GraphicData, GraphicId, Graphics};
 use crate::sugarloaf::layer::types;
-use crate::{context::Context, Content, Object};
+use crate::{context::Context, Object};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
@@ -205,13 +205,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn content(&mut self) -> &mut crate::Content {
+        self.state.content()
     }
 
     #[inline]
-    pub fn set_content(&mut self, content: Content) {
-        self.state.set_content(content);
+    pub fn set_objects(&mut self, objects: Vec<Object>) {
+        self.state.compute_objects(objects);
     }
 
     #[inline]
