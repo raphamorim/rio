@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/pt-br/assets/css/styles.42eabd25.css">
-<script src="/rio/pt-br/assets/js/runtime~main.21161fcf.js" defer="defer"></script>
+<script src="/rio/pt-br/assets/js/runtime~main.3b28ae07.js" defer="defer"></script>
 <script src="/rio/pt-br/assets/js/main.450729be.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -20,6 +20,11 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="unreleased">Unreleased<a href="#unreleased" class="hash-link" aria-label="Unreleasedlink direto para" title="Unreleasedlink direto para">​</a></h2>
 <ul>
 <li><strong>breaking</strong>: <code>CollapsedTab</code> has been renamed to <code>Bookmark</code>.</li>
+<li>Memory usage reduced by 75% (avg ~201mb to 48mb).</li>
+<li>Implemented font data deallocator.</li>
+<li>Reduced font atlas buffer size to <code>1024</code>.</li>
+<li>Added lifetimes to application level (allowing to deallocate window structs once is removed).</li>
+<li>Migrated font context from <code>RwLock</code> to <code>Arc&lt;FairMutex&gt;</code>.</li>
 <li>MacOS does not clear with background operation anymore, instead it relies on window background.</li>
 <li>Background color has changed to <code>#0F0D0E</code>.</li>
 <li>Fix font emoji width.</li>
