@@ -33,16 +33,14 @@ pub fn lookup_for_font_match(
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
     let mut font_synth = Synthesis::default();
-    let keys: Vec<usize> = library.inner.clone().into_keys().collect();
+    let fonts_len: usize = library.inner.len();
 
-    for font_id in keys {
+    for font_id in 0..fonts_len {
         let mut is_emoji = false;
 
         if let Some(font) = library.inner.get(&font_id) {
             is_emoji = font.is_emoji;
             font_synth = font.synth;
-
-            println!("{:?} {:?}", font_id, font.data.is_none());
 
             // In this case, the font does match however
             // we need to check if is indeed a match
@@ -329,14 +327,14 @@ impl FontLibraryData {
                     self.insert(data);
                 }
                 FindResult::NotFound(spec) => {
-                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
+                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
                     if !spec.is_default_family() {
                         fonts_not_fount.push(spec);
                     }
                 }
             }
         } else {
-            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI).unwrap());
+            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
         }
 
         for extra_font in spec.extras {
@@ -359,7 +357,7 @@ impl FontLibraryData {
             }
         }
 
-        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO).unwrap());
+        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
 
         if let Some(ui_spec) = spec.ui {
             match find_font(&db, ui_spec, false, false) {
@@ -378,7 +376,7 @@ impl FontLibraryData {
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
         self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR).unwrap());
+            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
 
         vec![]
     }
@@ -476,7 +474,10 @@ impl FontData {
     }
 
     #[inline]
-    pub fn from_slice(data: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_slice(
+        data: &[u8],
+        is_emoji: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
         // Return our struct with the original file data and copies of the
@@ -496,7 +497,7 @@ impl FontData {
             weight,
             stretch,
             path: None,
-            is_emoji: false,
+            is_emoji,
         })
     }
 }
@@ -621,7 +622,7 @@ fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
         (_, _) => constants::FONT_CASCADIAMONO_REGULAR,
     };
 
-    FontData::from_slice(font_to_load).unwrap()
+    FontData::from_slice(font_to_load, false).unwrap()
 }
 
 #[allow(dead_code)]

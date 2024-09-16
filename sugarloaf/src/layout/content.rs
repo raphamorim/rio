@@ -357,7 +357,7 @@ impl WordCache {
 
     #[inline]
     pub fn finish(&mut self) {
-        println!("{:?} {:?}", self.key, self.inner.len());
+        // println!("{:?} {:?}", self.key, self.inner.len());
         if !self.key.is_empty()
             && !self.stash.is_empty()
             && self.inner.get(&self.key).is_none()
