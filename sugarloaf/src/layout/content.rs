@@ -305,30 +305,31 @@ impl Content {
 
                 self.word_cache.key = shaper_key.to_owned();
                 let font_library = { &mut self.fonts.inner.lock() };
+                if let Some(data) = font_library.get_data(&item.style.font_id) {
+                    let mut shaper = self
+                        .scx
+                        .builder(data)
+                        .script(script)
+                        .size(self.state.font_size)
+                        .features(self.font_features.iter().copied())
+                        .variations(vars.iter().copied())
+                        .build();
 
-                let mut shaper = self
-                    .scx
-                    .builder(font_library.get(&item.style.font_id).as_ref())
-                    .script(script)
-                    .size(self.state.font_size)
-                    .features(self.font_features.iter().copied())
-                    .variations(vars.iter().copied())
-                    .build();
+                    shaper.add_str(&self.word_cache.key);
 
-                shaper.add_str(&self.word_cache.key);
+                    self.metrics_cache
+                        .inner
+                        .entry(item.style.font_id)
+                        .or_insert_with(|| shaper.metrics());
 
-                self.metrics_cache
-                    .inner
-                    .entry(item.style.font_id)
-                    .or_insert_with(|| shaper.metrics());
-
-                render_data.push_run(
-                    item.style,
-                    self.state.font_size,
-                    line_number as u32,
-                    shaper,
-                    &mut self.word_cache,
-                );
+                    render_data.push_run(
+                        item.style,
+                        self.state.font_size,
+                        line_number as u32,
+                        shaper,
+                        &mut self.word_cache,
+                    );
+                }
             }
         }
     }

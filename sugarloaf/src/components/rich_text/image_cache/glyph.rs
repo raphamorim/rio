@@ -125,79 +125,82 @@ impl<'a> GlyphCacheSession<'a> {
 
         self.scaled_image.data.clear();
         let mut font_library_data = self.font_library.inner.lock();
-        let mut scaler = self
-            .scale_context
-            .builder(font_library_data.get(&self.font).as_ref())
-            // With the advent of high-DPI displays (displays with >300 pixels per inch),
-            // font hinting has become less relevant, as aliasing effects become
-            // un-noticeable to the human eye.
-            // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
-            // now ignores font hint information completely.
-            // .hint(!IS_MACOS)
-            .hint(true)
-            .size(self.quant_size.into())
-            // .normalized_coords(coords)
-            .build();
 
-        // let embolden = if IS_MACOS { 0.25 } else { 0. };
-        if Render::new(SOURCES)
-            .format(Format::CustomSubpixel([0.3, 0., -0.3]))
-            // .format(Format::Alpha)
-            // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
-            // .embolden(embolden)
-            // .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
-            //     Some(Transform::skew(
-            //         Angle::from_degrees(14.0),
-            //         Angle::from_degrees(0.0),
-            //     ))
-            // } else {
-            //     None
-            // })
-            .render_into(&mut scaler, id, self.scaled_image)
-        {
-            let p = self.scaled_image.placement;
-            let w = p.width as u16;
-            let h = p.height as u16;
-            let req = AddImage {
-                width: w,
-                height: h,
-                has_alpha: true,
-                data: ImageData::Borrowed(&self.scaled_image.data),
-            };
-            let image = self.images.allocate(req)?;
+        if let Some(data) = font_library_data.get_data(&self.font) {
+            let mut scaler = self
+                .scale_context
+                .builder(data)
+                // With the advent of high-DPI displays (displays with >300 pixels per inch),
+                // font hinting has become less relevant, as aliasing effects become
+                // un-noticeable to the human eye.
+                // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
+                // now ignores font hint information completely.
+                // .hint(!IS_MACOS)
+                .hint(true)
+                .size(self.quant_size.into())
+                // .normalized_coords(coords)
+                .build();
 
-            // let mut top = p.top;
-            // let mut height = h;
+            // let embolden = if IS_MACOS { 0.25 } else { 0. };
+            if Render::new(SOURCES)
+                .format(Format::CustomSubpixel([0.3, 0., -0.3]))
+                // .format(Format::Alpha)
+                // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
+                // .embolden(embolden)
+                // .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
+                //     Some(Transform::skew(
+                //         Angle::from_degrees(14.0),
+                //         Angle::from_degrees(0.0),
+                //     ))
+                // } else {
+                //     None
+                // })
+                .render_into(&mut scaler, id, self.scaled_image)
+            {
+                let p = self.scaled_image.placement;
+                let w = p.width as u16;
+                let h = p.height as u16;
+                let req = AddImage {
+                    width: w,
+                    height: h,
+                    has_alpha: true,
+                    data: ImageData::Borrowed(&self.scaled_image.data),
+                };
+                let image = self.images.allocate(req)?;
 
-            // If dimension is None it means that we are running
-            // for the first time and in this case, we will obtain
-            // what the next glyph entries should respect in terms of
-            // top and height values
-            //
-            // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
-            //
-            // The calculation is made based on max_height
-            // If the rect max height is 50 and the glyph height is 68
-            // and 48 top, then (68 - 50 = 18) height as difference and
-            // apply it to the top (bigger the top == up ^).
-            // if self.max_height > &0 && &h > self.max_height {
-            //     let difference = h - self.max_height;
+                // let mut top = p.top;
+                // let mut height = h;
 
-            //     top -= difference as i32;
-            //     height = *self.max_height;
-            // }
+                // If dimension is None it means that we are running
+                // for the first time and in this case, we will obtain
+                // what the next glyph entries should respect in terms of
+                // top and height values
+                //
+                // e.g: Placement { left: 11, top: 42, width: 8, height: 50 }
+                //
+                // The calculation is made based on max_height
+                // If the rect max height is 50 and the glyph height is 68
+                // and 48 top, then (68 - 50 = 18) height as difference and
+                // apply it to the top (bigger the top == up ^).
+                // if self.max_height > &0 && &h > self.max_height {
+                //     let difference = h - self.max_height;
 
-            let entry = GlyphEntry {
-                left: p.left,
-                top: p.top,
-                width: w,
-                height: h,
-                image,
-                is_bitmap: self.scaled_image.content == Content::Color,
-            };
+                //     top -= difference as i32;
+                //     height = *self.max_height;
+                // }
 
-            self.entry.glyphs.insert(key, entry);
-            return Some(entry);
+                let entry = GlyphEntry {
+                    left: p.left,
+                    top: p.top,
+                    width: w,
+                    height: h,
+                    image,
+                    is_bitmap: self.scaled_image.content == Content::Color,
+                };
+
+                self.entry.glyphs.insert(key, entry);
+                return Some(entry);
+            }
         }
 
         None
