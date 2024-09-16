@@ -27,13 +27,13 @@ use std::rc::Rc;
 // #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const RIO_TITLE: &str = "▲";
 
-pub struct Route {
+pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
-    pub window: RouteWindow,
+    pub window: RouteWindow<'a>,
 }
 
-impl Route {
+impl Route<'_> {
     /// Create a performer.
     #[inline]
     pub fn new(
@@ -49,7 +49,7 @@ impl Route {
     }
 }
 
-impl Route {
+impl Route<'_> {
     #[inline]
     pub fn request_redraw(&mut self) {
         self.window.winit_window.request_redraw();
@@ -141,19 +141,19 @@ impl Route {
     }
 }
 
-pub struct Router {
-    pub routes: HashMap<WindowId, Route>,
+pub struct Router<'a> {
+    pub routes: HashMap<WindowId, Route<'a>>,
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
     pub clipboard: Rc<RefCell<Clipboard>>,
 }
 
-impl Router {
-    pub fn new(
+impl Router<'_> {
+    pub fn new<'b>(
         fonts: rio_backend::sugarloaf::font::SugarloafFonts,
         clipboard: Clipboard,
-    ) -> Router {
+    ) -> Router<'b> {
         let (font_library, fonts_not_found) =
             rio_backend::sugarloaf::font::FontLibrary::new(fonts);
 
@@ -238,11 +238,11 @@ impl Router {
     }
 
     #[inline]
-    pub fn create_window(
-        &mut self,
-        event_loop: &ActiveEventLoop,
+    pub fn create_window<'a>(
+        &'a mut self,
+        event_loop: &'a ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &rio_backend::config::Config,
+        config: &'a rio_backend::config::Config,
         open_url: Option<String>,
     ) {
         let tab_id = if config.navigation.is_native() {
@@ -279,11 +279,11 @@ impl Router {
 
     #[cfg(target_os = "macos")]
     #[inline]
-    pub fn create_native_tab(
-        &mut self,
-        event_loop: &ActiveEventLoop,
+    pub fn create_native_tab<'a>(
+        &'a mut self,
+        event_loop: &'a ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &rio_backend::config::Config,
+        config: &'a rio_backend::config::Config,
         tab_id: Option<&str>,
         open_url: Option<String>,
     ) {
@@ -308,33 +308,33 @@ impl Router {
     }
 }
 
-pub struct RouteWindow {
+pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub has_frame: bool,
     pub has_updates: bool,
     pub winit_window: Window,
-    pub screen: Screen<'static>,
+    pub screen: Screen<'a>,
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
 }
 
-impl RouteWindow {
+impl<'a> RouteWindow<'a> {
     pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
         configure_window(&self.winit_window, config);
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn from_target(
-        event_loop: &ActiveEventLoop,
+    pub fn from_target<'b>(
+        event_loop: &'b ActiveEventLoop,
         event_proxy: EventProxy,
-        config: &RioConfig,
+        config: &'b RioConfig,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         window_name: &str,
         tab_id: Option<&str>,
         open_url: Option<String>,
         clipboard: Rc<RefCell<Clipboard>>,
-    ) -> RouteWindow {
+    ) -> RouteWindow<'a> {
         #[allow(unused_mut)]
         let mut window_builder = create_window_builder(window_name, config, tab_id);
 

@@ -23,19 +23,19 @@ use rio_window::window::{CursorIcon, Fullscreen};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
-pub struct Application {
+pub struct Application<'a> {
     config: rio_backend::config::Config,
     event_proxy: EventProxy,
-    router: Router,
+    router: Router<'a>,
     scheduler: Scheduler,
 }
 
-impl Application {
-    pub fn new(
+impl Application<'_> {
+    pub fn new<'app>(
         config: rio_backend::config::Config,
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
-    ) -> Application {
+    ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `loop_exiting`.
         let clipboard =
@@ -94,7 +94,7 @@ impl Application {
     }
 }
 
-impl ApplicationHandler<EventPayload> for Application {
+impl ApplicationHandler<EventPayload> for Application<'_> {
     fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {
         #[cfg(not(any(target_os = "macos", windows)))]
         {
