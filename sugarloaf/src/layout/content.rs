@@ -375,18 +375,14 @@ impl WordCache {
     pub fn finish(&mut self) {
         if !self.content.is_empty() && !self.stash.is_empty() {
             if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                println!("{:?} {:?}", self.content, cache.len());
+                // println!("{:?} {:?}", self.content, cache.len());
                 cache.put(
                     std::mem::take(&mut self.content),
                     std::mem::take(&mut self.stash),
                 );
             } else {
                 // If font id is main
-                let size = if self.font_id == 0 {
-                    384
-                } else {
-                    128
-                };
+                let size = if self.font_id == 0 { 384 } else { 128 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
                 cache.put(
                     std::mem::take(&mut self.content),
