@@ -127,7 +127,7 @@ impl Default for FontLibraryData {
         Self {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: FxHashMap::default(),
-            stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
+            stash: LruCache::new(NonZeroUsize::new(3).unwrap()),
         }
     }
 }
@@ -265,7 +265,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.italic, false, false) {
+        match find_font(&db, spec.italic, true, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -277,7 +277,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold, false, false) {
+        match find_font(&db, spec.bold, true, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -289,7 +289,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold_italic, false, false) {
+        match find_font(&db, spec.bold_italic, true, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
