@@ -287,7 +287,8 @@ impl Content {
 
                 // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
 
-                if let Some(shaper) = self.word_cache.inner.get(shaper_key) {
+                if let Some(shaper) = self.word_cache.get(&item.style.font_id, shaper_key)
+                {
                     if let Some(metrics) =
                         self.metrics_cache.inner.get(&item.style.font_id)
                     {
@@ -303,7 +304,8 @@ impl Content {
                     }
                 }
 
-                self.word_cache.key = shaper_key.to_owned();
+                self.word_cache.font_id = item.style.font_id;
+                self.word_cache.content = item.content.clone();
                 let font_library = { &mut self.fonts.inner.lock() };
                 if let Some(data) = font_library.get_data(&item.style.font_id) {
                     let mut shaper = self
@@ -315,7 +317,7 @@ impl Content {
                         .variations(vars.iter().copied())
                         .build();
 
-                    shaper.add_str(&self.word_cache.key);
+                    shaper.add_str(&self.word_cache.content);
 
                     self.metrics_cache
                         .inner
@@ -336,18 +338,32 @@ impl Content {
 }
 
 pub struct WordCache {
-    pub inner: LruCache<String, Vec<OwnedGlyphCluster>>,
+    pub inner: FxHashMap<usize, LruCache<String, Vec<OwnedGlyphCluster>>>,
     stash: Vec<OwnedGlyphCluster>,
-    pub key: String,
+    font_id: usize,
+    content: String,
 }
 
 impl WordCache {
     pub fn new() -> Self {
         WordCache {
-            inner: LruCache::new(NonZeroUsize::new(768).unwrap()),
+            inner: FxHashMap::default(),
             stash: vec![],
-            key: String::new(),
+            font_id: 0,
+            content: String::new(),
         }
+    }
+
+    #[inline]
+    pub fn get(
+        &mut self,
+        font_id: &usize,
+        content: &String,
+    ) -> Option<&Vec<OwnedGlyphCluster>> {
+        if let Some(cache) = self.inner.get_mut(font_id) {
+            return cache.get(content);
+        }
+        None
     }
 
     #[inline]
@@ -357,19 +373,34 @@ impl WordCache {
 
     #[inline]
     pub fn finish(&mut self) {
-        // println!("{:?} {:?}", self.key, self.inner.len());
-        if !self.key.is_empty()
-            && !self.stash.is_empty()
-            && self.inner.get(&self.key).is_none()
-        {
-            self.inner.put(
-                std::mem::take(&mut self.key),
-                std::mem::take(&mut self.stash),
-            );
+        if !self.content.is_empty() && !self.stash.is_empty() {
+            if let Some(cache) = self.inner.get_mut(&self.font_id) {
+                println!("{:?} {:?}", self.content, cache.len());
+                cache.put(
+                    std::mem::take(&mut self.content),
+                    std::mem::take(&mut self.stash),
+                );
+            } else {
+                // If font id is main
+                let size = if self.font_id == 0 {
+                    384
+                } else {
+                    128
+                };
+                let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
+                cache.put(
+                    std::mem::take(&mut self.content),
+                    std::mem::take(&mut self.stash),
+                );
+                self.inner.insert(self.font_id, cache);
+            }
+
+            self.font_id = 0;
             return;
         }
         self.stash.clear();
-        self.key.clear();
+        self.font_id = 0;
+        self.content.clear();
     }
 }
 
