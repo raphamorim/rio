@@ -10,6 +10,11 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 - **breaking**: `CollapsedTab` has been renamed to `Bookmark`.
+- Memory usage reduced by 75% (avg ~201mb to 48mb).
+- Implemented font data deallocator.
+- Reduced font atlas buffer size to `1024`.
+- Added lifetimes to application level (allowing to deallocate window structs once is removed).
+- Migrated font context from `RwLock` to `Arc<FairMutex>`.
 - MacOS does not clear with background operation anymore, instead it relies on window background.
 - Background color has changed to `#0F0D0E`.
 - Fix font emoji width.
