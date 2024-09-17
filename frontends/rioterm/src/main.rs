@@ -152,10 +152,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     {
-        let log_to_file = args.window_options.terminal_options.log_file;
+        let log_to_file = args.window_options.terminal_options.enable_log_file;
         if let Err(e) = setup_logs_by_filter_level(
             &config.developer.log_level,
-            log_to_file || config.developer.log_file,
+            log_to_file || config.developer.enable_log_file,
         ) {
             eprintln!("unable to configure the logger: {e:?}");
         }

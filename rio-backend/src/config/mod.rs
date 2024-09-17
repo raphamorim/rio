@@ -57,15 +57,15 @@ pub struct Developer {
     pub enable_fps_counter: bool,
     #[serde(default = "default_log_level", rename = "log-level")]
     pub log_level: String,
-    #[serde(rename = "log-file", default)]
-    pub log_file: bool,
+    #[serde(rename = "enable-log-file", default)]
+    pub enable_log_file: bool,
 }
 
 impl Default for Developer {
     fn default() -> Developer {
         Developer {
             log_level: default_log_level(),
-            log_file: false,
+            enable_log_file: false,
             enable_fps_counter: false,
         }
     }

@@ -358,7 +358,7 @@ pub fn default_config_file_content() -> String {
 #
 # "mode" - Define navigation mode
 #   • NativeTab (MacOS only)
-#   • CollapsedTab
+#   • Bookmark
 #   • BottomTab
 #   • TopTab
 #   • Plain
@@ -370,7 +370,7 @@ pub fn default_config_file_content() -> String {
 #
 # Example:
 # [navigation]
-# mode = "collapsedtab"
+# mode = "bookmark"
 # clickable = false
 # hide-if-single = true
 # use-current-path = false
@@ -447,6 +447,6 @@ pub fn default_config_file_content() -> String {
 # Example:
 # [developer]
 # log-level = "OFF"
-# # log-file = "rio.log"
+# enable-log-file = false
 "#.to_string()
 }

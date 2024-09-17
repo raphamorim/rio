@@ -9,6 +9,7 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+- `developer.log-file` has been renamed to `developer.enable-log-file`.
 - **breaking**: `CollapsedTab` has been renamed to `Bookmark`.
 - Memory usage reduced by 75% (avg ~201mb to 48mb on first screen render).
 - Implemented font data deallocator.

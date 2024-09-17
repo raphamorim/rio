@@ -37,7 +37,7 @@ pub struct TerminalOptions {
 
     /// Writes the logs to a file inside the config directory.
     #[clap(long)]
-    pub log_file: bool,
+    pub enable_log_file: bool,
 }
 
 impl TerminalOptions {
