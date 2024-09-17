@@ -7,13 +7,10 @@
 // nav and span_style were originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-mod builder;
-mod builder_data;
 mod content;
 mod layout_data;
 mod render_data;
 
-pub use content::{Content, ContentBuilder};
 pub use render_data::RenderData;
 
 /// Iterators over elements of a paragraph.
@@ -21,16 +18,12 @@ pub mod iter {
     pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
 }
 
-pub use builder::{LayoutContext, ParagraphBuilder};
-pub use builder_data::{
-    FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
+pub use content::{
+    Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use render_data::{Cluster, Glyph, Line, Run};
 
-/// Largest allowable span or fragment identifier.
-const MAX_ID: usize = i32::MAX as usize;
-
-/// Index of a span in sequential order of submission to a paragraph builder.
+/// Index of a span in sequential order of submission to a paragraph content.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]
 pub struct SpanId(pub usize);
 
@@ -228,12 +221,12 @@ impl SugarloafLayout {
         let expected_stack_bound = (self.width / self.dimensions.scale)
             - (self.dimensions.width * self.dimensions.scale);
 
-        log::info!("expected columns {}", self.columns);
+        tracing::info!("expected columns {}", self.columns);
         if current_stack_bound < expected_stack_bound {
             let stack_difference = ((expected_stack_bound - current_stack_bound)
                 / (self.dimensions.width * self.dimensions.scale))
                 as usize;
-            log::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
+            tracing::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
             self.columns += stack_difference;
         }
 
@@ -241,7 +234,7 @@ impl SugarloafLayout {
             let stack_difference = ((current_stack_bound - expected_stack_bound)
                 / (self.dimensions.width * self.dimensions.scale))
                 as usize;
-            log::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
+            tracing::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
             self.columns -= stack_difference;
         }
     }

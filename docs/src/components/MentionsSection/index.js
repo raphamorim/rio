@@ -8,14 +8,15 @@ import styles from './styles.module.css';
 
 /**
  * @typedef {Object} MentionCardProps
- * @property {string} tweetUrl
+ * @property {string} url
  * @property {string} username
+ * @property {string} source
  * @property {import('react').ReactNode} quote
  *
  * @param {MentionCardProps} props
  */
 function MentionCard(props) {
-  const { tweetUrl, username, quote } = props;
+  const { url, username, quote, source } = props;
 
   return (
     <figure className={styles.mentionCard}>
@@ -23,7 +24,7 @@ function MentionCard(props) {
         <img
           width={40}
           height={40}
-          src={`https://unavatar.io/twitter/${username}`}
+          src={source}
           decoding="async"
           loading="lazy"
           alt=""
@@ -31,13 +32,13 @@ function MentionCard(props) {
         />
         <figcaption>
           <cite>
-            <a href={tweetUrl} className={styles.mentionCardUsername}>
-              @{username}
+            <a href={url} className={styles.mentionCardUsername}>
+              {username}
             </a>
           </cite>
         </figcaption>
       </div>
-      <blockquote cite={tweetUrl} className={styles.mentionCardQuote}>
+      <blockquote cite={url} className={styles.mentionCardQuote}>
         {quote}
       </blockquote>
     </figure>
@@ -67,7 +68,7 @@ export default function MentionsSection() {
         {COLUMNS.map((column, i) => (
           <div className="col col--4" key={i}>
             {column.map((mention) => (
-              <MentionCard key={mention.tweetUrl} {...mention} />
+              <MentionCard key={mention.url} {...mention} />
             ))}
           </div>
         ))}

@@ -13,14 +13,14 @@ pub enum NavigationMode {
     NativeTab,
     #[serde(alias = "bottomtab")]
     BottomTab,
+    #[serde(alias = "bookmark")]
     #[default]
-    #[serde(alias = "collapsedtab")]
-    CollapsedTab,
+    Bookmark,
 }
 
 impl NavigationMode {
     const PLAIN_STR: &'static str = "Plain";
-    const COLLAPSED_TAB_STR: &'static str = "CollapsedTab";
+    const COLLAPSED_TAB_STR: &'static str = "Bookmark";
     const TOP_TAB_STR: &'static str = "TopTab";
     const BOTTOM_TAB_STR: &'static str = "BottomTab";
     #[cfg(target_os = "macos")]
@@ -29,7 +29,7 @@ impl NavigationMode {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Plain => Self::PLAIN_STR,
-            Self::CollapsedTab => Self::COLLAPSED_TAB_STR,
+            Self::Bookmark => Self::COLLAPSED_TAB_STR,
             Self::TopTab => Self::TOP_TAB_STR,
             Self::BottomTab => Self::BOTTOM_TAB_STR,
             #[cfg(target_os = "macos")]
@@ -42,7 +42,7 @@ impl NavigationMode {
 pub fn modes_as_vec_string() -> Vec<String> {
     [
         NavigationMode::Plain,
-        NavigationMode::CollapsedTab,
+        NavigationMode::Bookmark,
         NavigationMode::TopTab,
         NavigationMode::BottomTab,
         #[cfg(target_os = "macos")]
@@ -67,7 +67,7 @@ impl std::str::FromStr for NavigationMode {
 
     fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
         match s {
-            Self::COLLAPSED_TAB_STR => Ok(NavigationMode::CollapsedTab),
+            Self::COLLAPSED_TAB_STR => Ok(NavigationMode::Bookmark),
             Self::TOP_TAB_STR => Ok(NavigationMode::TopTab),
             Self::BOTTOM_TAB_STR => Ok(NavigationMode::BottomTab),
             #[cfg(target_os = "macos")]
@@ -127,7 +127,7 @@ impl Default for Navigation {
 impl Navigation {
     #[inline]
     pub fn is_collapsed_mode(&self) -> bool {
-        self.mode == NavigationMode::CollapsedTab
+        self.mode == NavigationMode::Bookmark
     }
 
     #[inline]
@@ -175,11 +175,11 @@ mod tests {
     fn test_collapsed_tab() {
         let content = r#"
             [navigation]
-            mode = 'CollapsedTab'
+            mode = 'Bookmark'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_automation.is_empty());
     }
@@ -216,14 +216,14 @@ mod tests {
     fn test_color_automation() {
         let content = r#"
             [navigation]
-            mode = 'CollapsedTab'
+            mode = 'Bookmark'
             color-automation = [
                 { program = 'vim', color = '#333333' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::CollapsedTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());

@@ -97,7 +97,7 @@ impl std::fmt::Display for RioErrorType {
             }
             RioErrorType::IgnoredReport => write!(f, ""),
             RioErrorType::InvalidConfigurationFormat(message) => {
-                write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/#configuration-file")
+                write!(f, "Found an issue loading the configuration file:\n\n{message}\n\nRio will proceed with the default configuration\nhttps://raphamorim.io/rio/docs/config")
             }
             RioErrorType::InvalidConfigurationTheme(message) => {
                 write!(f, "Found an issue in the configured theme:\n\n{message}")

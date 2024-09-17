@@ -23,7 +23,7 @@
     "message": "Obrazy w terminalu"
   },
   "home.features.images-in-terminal.description": {
-    "message": "Rio potrafi wyświetlać obrazy w terminalu za pomocą protokołów iTerm2 i kitty."
+    "message": "Rio potrafi wyświetlać obrazy w terminalu za pomocą protokołów iTerm2 i Sixel."
   },
   "home.features.cross-platform.title": {
     "message": "Wieloplatformowy"

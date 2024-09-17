@@ -11,23 +11,23 @@
 
 //! RenderData.
 use super::layout_data::*;
-use crate::layout::builder_data::FragmentStyleDecoration;
+use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
+use crate::font_introspector::shape::{cluster::Glyph as ShapedGlyph, Shaper};
+use crate::font_introspector::text::cluster::ClusterInfo;
+use crate::font_introspector::GlyphId;
+use crate::font_introspector::Metrics;
+use crate::layout::content::{FragmentStyleDecoration, WordCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
 use core::iter::DoubleEndedIterator;
 use core::ops::Range;
-use swash::shape::{cluster::Glyph as ShapedGlyph, Shaper};
-use swash::text::cluster::{Boundary, ClusterInfo};
-use swash::{GlyphId, NormalizedCoord};
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub data: LayoutData,
-    last_line: u32,
     pub graphics: std::collections::HashSet<GraphicId>,
-    pub last_cached_run: RunCacheEntry,
     pub line_data: LineLayoutData,
 }
 
@@ -73,221 +73,29 @@ impl RenderData {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct CachedClusterData {
-    pub info: ClusterInfo,
-    pub flags: u8,
-    /// Length of the cluster in the source text.
-    pub len: u8,
-    /// Offset of the cluster in the source text.
-    pub offset: u32,
-    /// Depending on `flags`, either an index into `glyphs` or an index
-    /// into `detailed_clusters`
-    pub glyphs: Vec<GlyphData>,
-    pub details: Vec<DetailedClusterData>,
-}
-
-#[derive(Debug, Clone)]
-pub struct CachedRunData {
-    pub clusters: Vec<CachedClusterData>,
-    pub coords: Vec<i16>,
-    pub span: FragmentStyle,
-    pub line: u32,
-    pub hash: u64,
-    pub font: usize,
-    pub size: f32,
-    pub ascent: f32,
-    pub descent: f32,
-    pub leading: f32,
-    pub strikeout_offset: f32,
-    pub strikeout_size: f32,
-    pub advance: f32,
-}
-
-#[derive(Clone, Default, Debug)]
-pub struct RunCacheEntry {
-    pub runs: Vec<CachedRunData>,
-}
-
 impl RenderData {
-    pub(super) fn push_run_from_cached_line(
-        &mut self,
-        cached_entry: &RunCacheEntry,
-        line: u32,
-    ) {
-        // Every time a line is cached we need to rebuild the indexes
-        // so RunData, Clusters, DetailedClusterData and Glyphs need to be
-        // pointed correctly across each other otherwise will lead to panic
-        for cached_run in &cached_entry.runs {
-            let coords_start = self.data.coords.len() as u32;
-            self.data.coords.extend_from_slice(&cached_run.coords);
-            let coords_end = self.data.coords.len() as u32;
-
-            let clusters_start = self.data.clusters.len() as u32;
-            for cached_cluster in &cached_run.clusters {
-                let mut glyphs_start = self.data.glyphs.len() as u32;
-                for glyph_data in &cached_cluster.glyphs {
-                    self.data.glyphs.push(*glyph_data);
-                }
-                let glyphs_end = self.data.glyphs.len() as u32;
-
-                let detailed_len = self.data.detailed_clusters.len() as u32;
-                for detail in &cached_cluster.details {
-                    self.data.detailed_clusters.push(DetailedClusterData {
-                        glyphs: (glyphs_start, glyphs_end),
-                        advance: detail.advance,
-                    });
-                }
-
-                if !cached_cluster.details.is_empty() {
-                    glyphs_start = detailed_len;
-                }
-
-                self.data.clusters.push(ClusterData {
-                    info: cached_cluster.info,
-                    flags: cached_cluster.flags,
-                    len: cached_cluster.len,
-                    offset: cached_cluster.offset,
-                    glyphs: glyphs_start,
-                });
-            }
-            let clusters_end = self.data.clusters.len() as u32;
-
-            if let Some(graphic) = cached_run.span.media {
-                self.graphics.insert(graphic.id);
-            }
-
-            self.data.runs.push(RunData {
-                coords: (coords_start, coords_end),
-                clusters: (clusters_start, clusters_end),
-                span: cached_run.span,
-                line,
-                hash: cached_run.hash,
-                font: cached_run.font,
-                size: cached_run.size,
-                ascent: cached_run.ascent,
-                descent: cached_run.descent,
-                leading: cached_run.leading,
-                strikeout_offset: cached_run.strikeout_offset,
-                strikeout_size: cached_run.strikeout_size,
-                advance: cached_run.advance,
-            });
-        }
-
-        self.data.last_span = 0;
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
-        styles: &[FragmentStyle],
-        font: &usize,
+        style: FragmentStyle,
         size: f32,
         line: u32,
-        hash: u64,
         shaper: Shaper<'_>,
+        shaper_cache: &mut WordCache,
     ) {
-        // In case is a new line,
-        // then needs to recompute the span index again
-        if line != self.last_line {
-            self.last_line = line;
-            self.data.last_span = 0;
-            self.last_cached_run.runs.clear();
-        }
-
-        let coords_start = self.data.coords.len() as u32;
-        let coords = shaper.normalized_coords().to_owned();
-        self.data.coords.extend_from_slice(&coords);
-
-        let coords_end = self.data.coords.len() as u32;
-        let mut clusters_start = self.data.clusters.len() as u32;
+        let clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
 
         let mut advance = 0.;
-        let mut last_span = self.data.last_span;
-        let mut span_data = &styles[last_span];
 
         shaper.shape_with(|c| {
-            if c.info.boundary() == Boundary::Mandatory {
-                if let Some(c) = self.data.clusters.last_mut() {
-                    c.flags |= CLUSTER_NEWLINE;
-                }
-            }
+            shaper_cache.add_glyph_cluster(c);
+            // if c.info.boundary() == Boundary::Mandatory {
+            //     if let Some(c) = self.data.clusters.last_mut() {
+            //         c.flags |= CLUSTER_NEWLINE;
+            //     }
+            // }
 
-            let span = c.data;
-            if span as usize != last_span {
-                span_data = &styles[last_span];
-                // Ensure that every run belongs to a single span.
-                let clusters_end = self.data.clusters.len() as u32;
-                if clusters_end != clusters_start {
-                    let run_data = RunData {
-                        span: styles[last_span],
-                        line,
-                        hash,
-                        font: *font,
-                        coords: (coords_start, coords_end),
-                        size,
-                        clusters: (clusters_start, clusters_end),
-                        ascent: metrics.ascent * span_data.line_spacing,
-                        descent: metrics.descent * span_data.line_spacing,
-                        leading: metrics.leading * span_data.line_spacing,
-                        strikeout_offset: metrics.strikeout_offset,
-                        strikeout_size: metrics.stroke_size,
-                        advance,
-                    };
-                    self.data.runs.push(run_data);
-                    let mut owned_clusters = Vec::with_capacity(
-                        (clusters_end - clusters_start).try_into().unwrap(),
-                    );
-                    for current_cluster in &self.data.clusters
-                        [clusters_start as usize..clusters_end as usize]
-                    {
-                        let mut detailed_clusters = Vec::with_capacity(2);
-                        let glyphs_data = if current_cluster.is_detailed() {
-                            let detail = &self.data.detailed_clusters
-                                [current_cluster.glyphs as usize];
-                            detailed_clusters.push(*detail);
-                            &self.data.glyphs
-                                [detail.glyphs.0 as usize..detail.glyphs.1 as usize]
-                        } else if current_cluster.is_empty() {
-                            &[]
-                        } else {
-                            &self.data.glyphs[current_cluster.glyphs as usize
-                                ..current_cluster.glyphs as usize + 1]
-                        };
-                        owned_clusters.push(CachedClusterData {
-                            info: current_cluster.info,
-                            flags: current_cluster.flags,
-                            len: current_cluster.len,
-                            offset: current_cluster.offset,
-                            glyphs: glyphs_data.to_vec(),
-                            details: detailed_clusters,
-                        });
-                    }
-
-                    if let Some(graphic) = styles[last_span].media {
-                        self.graphics.insert(graphic.id);
-                    }
-
-                    self.last_cached_run.runs.push(CachedRunData {
-                        span: styles[last_span],
-                        line,
-                        hash,
-                        font: *font,
-                        coords: coords.to_owned(),
-                        size,
-                        clusters: owned_clusters,
-                        ascent: metrics.ascent * span_data.line_spacing,
-                        descent: metrics.descent * span_data.line_spacing,
-                        leading: metrics.leading * span_data.line_spacing,
-                        strikeout_offset: metrics.strikeout_offset,
-                        strikeout_size: metrics.stroke_size,
-                        advance,
-                    });
-                    clusters_start = clusters_end;
-                }
-                last_span = span as usize;
-            }
             let mut glyphs_start = self.data.glyphs.len() as u32;
             let mut cluster_advance = 0.;
             for glyph in c.glyphs {
@@ -353,73 +161,143 @@ impl RenderData {
                 }
             }
         });
+        shaper_cache.finish();
         let clusters_end = self.data.clusters.len() as u32;
         if clusters_end == clusters_start {
             return;
         }
-        self.data.last_span = last_span;
-
-        if let Some(graphic) = styles[last_span].media {
+        if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
 
         let run_data = RunData {
-            span: styles[last_span],
+            span: style,
             line,
-            hash,
-            font: *font,
-            coords: (coords_start, coords_end),
             size,
             clusters: (clusters_start, clusters_end),
-            ascent: metrics.ascent * span_data.line_spacing,
-            descent: metrics.descent * span_data.line_spacing,
-            leading: metrics.leading * span_data.line_spacing,
+            // ascent: metrics.ascent * span_data.line_spacing,
+            ascent: metrics.ascent,
+            // descent: metrics.descent * span_data.line_spacing,
+            descent: metrics.descent,
+            // leading: metrics.leading * span_data.line_spacing,
+            leading: metrics.leading,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
         };
         self.data.runs.push(run_data);
-        let mut owned_clusters =
-            Vec::with_capacity((clusters_end - clusters_start).try_into().unwrap());
-        for current_cluster in
-            &self.data.clusters[clusters_start as usize..clusters_end as usize]
-        {
-            let mut detailed_clusters = Vec::with_capacity(2);
-            let glyphs_data = if current_cluster.is_detailed() {
-                let detail =
-                    &self.data.detailed_clusters[current_cluster.glyphs as usize];
-                detailed_clusters.push(*detail);
-                &self.data.glyphs[detail.glyphs.0 as usize..detail.glyphs.1 as usize]
-            } else if current_cluster.is_empty() {
-                &[]
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn push_run_without_shaper(
+        &mut self,
+        style: FragmentStyle,
+        size: f32,
+        line: u32,
+        glyph_clusters: &Vec<OwnedGlyphCluster>,
+        metrics: &Metrics,
+    ) -> bool {
+        // In case is a new line,
+        // then needs to recompute the span index again
+        let clusters_start = self.data.clusters.len() as u32;
+        let mut advance = 0.;
+
+        for c in glyph_clusters {
+            // if c.info.boundary() == Boundary::Mandatory {
+            //     if let Some(c) = self.data.clusters.last_mut() {
+            //         c.flags |= CLUSTER_NEWLINE;
+            //     }
+            // }
+
+            let mut glyphs_start = self.data.glyphs.len() as u32;
+            let mut cluster_advance = 0.;
+            for glyph in &c.glyphs {
+                cluster_advance += glyph.advance;
+                self.push_glyph(glyph);
+            }
+            advance += cluster_advance;
+            let mut component_advance = cluster_advance;
+            let is_ligature = c.components.len() > 1;
+            let (len, base_flags) = if is_ligature {
+                let x = &c.components[0];
+                component_advance /= c.components.len() as f32;
+                ((x.end - x.start) as u8, CLUSTER_LIGATURE)
             } else {
-                &self.data.glyphs
-                    [current_cluster.glyphs as usize..current_cluster.glyphs as usize + 1]
+                ((c.source.end - c.source.start) as u8, 0)
             };
-            owned_clusters.push(CachedClusterData {
-                info: current_cluster.info,
-                flags: current_cluster.flags,
-                len: current_cluster.len,
-                offset: current_cluster.offset,
-                glyphs: glyphs_data.to_vec(),
-                details: detailed_clusters,
-            });
+            let glyphs_end = self.data.glyphs.len() as u32;
+            if glyphs_end - glyphs_start > 1 || is_ligature {
+                let detail_index = self.data.detailed_clusters.len() as u32;
+                self.data.detailed_clusters.push(DetailedClusterData {
+                    glyphs: (glyphs_start, glyphs_end),
+                    advance: component_advance,
+                });
+                let cluster = ClusterData {
+                    info: c.info,
+                    flags: base_flags | CLUSTER_DETAILED,
+                    len,
+                    offset: c.source.start,
+                    glyphs: detail_index,
+                };
+                self.data.clusters.push(cluster);
+            } else {
+                let flags = if glyphs_start == glyphs_end {
+                    glyphs_start = c.data;
+                    CLUSTER_EMPTY
+                } else {
+                    base_flags
+                };
+                let cluster = ClusterData {
+                    info: c.info,
+                    flags,
+                    len,
+                    offset: c.source.start,
+                    glyphs: glyphs_start,
+                };
+                self.data.clusters.push(cluster);
+            }
+            if base_flags != 0 {
+                // Emit continuations
+                for component in &c.components[1..] {
+                    let cluster = ClusterData {
+                        info: Default::default(),
+                        flags: CLUSTER_CONTINUATION | CLUSTER_EMPTY,
+                        len: (component.end - component.start) as u8,
+                        offset: component.start,
+                        glyphs: component_advance.to_bits(),
+                    };
+                    self.data.clusters.push(cluster);
+                }
+
+                if let Some(c) = self.data.clusters.last_mut() {
+                    c.flags |= CLUSTER_LAST_CONTINUATION
+                }
+            }
         }
-        self.last_cached_run.runs.push(CachedRunData {
-            span: styles[last_span],
+        let clusters_end = self.data.clusters.len() as u32;
+        if clusters_end == clusters_start {
+            return true;
+        }
+        if let Some(graphic) = style.media {
+            self.graphics.insert(graphic.id);
+        }
+        let run_data = RunData {
+            span: style,
             line,
-            hash,
-            font: *font,
-            coords: coords.to_owned(),
             size,
-            clusters: owned_clusters,
-            ascent: metrics.ascent * span_data.line_spacing,
-            descent: metrics.descent * span_data.line_spacing,
-            leading: metrics.leading * span_data.line_spacing,
+            clusters: (clusters_start, clusters_end),
+            // ascent: metrics.ascent * span_data.line_spacing,
+            ascent: metrics.ascent,
+            // descent: metrics.descent * span_data.line_spacing,
+            descent: metrics.descent,
+            // leading: metrics.leading * span_data.line_spacing,
+            leading: metrics.leading,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
             advance,
-        });
+        };
+        self.data.runs.push(run_data);
+        true
     }
 
     #[inline]
@@ -468,7 +346,7 @@ impl<'a> Run<'a> {
     /// Returns the font for the run.
     #[inline]
     pub fn font(&self) -> &usize {
-        &self.run.font
+        &self.run.span.font_id
     }
 
     /// Returns the font size for the run.
@@ -494,13 +372,13 @@ impl<'a> Run<'a> {
         self.run.span.cursor
     }
 
-    /// Returns the normalized variation coordinates for the run.
-    pub fn normalized_coords(&self) -> &'a [NormalizedCoord] {
-        self.layout
-            .coords
-            .get(make_range(self.run.coords))
-            .unwrap_or(&[])
-    }
+    // /// Returns the normalized variation coordinates for the run.
+    // pub fn normalized_coords(&self) -> &'a [NormalizedCoord] {
+    //     self.layout
+    //         .coords
+    //         .get(make_range(self.run.coords))
+    //         .unwrap_or(&[])
+    // }
 
     /// Returns the advance of the run.
     #[inline]
@@ -824,11 +702,6 @@ impl<'a> Line<'a> {
             layout: self.layout,
             iter: self.line_layout.runs[range].iter(),
         }
-    }
-
-    #[inline]
-    pub fn hash(&self) -> u64 {
-        self.line.hash
     }
 }
 

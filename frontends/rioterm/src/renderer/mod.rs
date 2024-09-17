@@ -16,10 +16,9 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, ContentBuilder, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
-    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-#[cfg(not(use_wa))]
 use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -55,50 +54,33 @@ pub struct Renderer {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     hyperlink_range: Option<SelectionRange>,
-    width_cache: FxHashMap<char, f32>,
     active_search: Option<String>,
+    font_context: rio_backend::sugarloaf::font::FontLibrary,
+    font_cache: FxHashMap<
+        (char, rio_backend::sugarloaf::font_introspector::Attributes),
+        (usize, f32),
+    >,
 }
 
 impl Renderer {
     pub fn new(
-        #[cfg(not(use_wa))] config: &Config,
-        #[cfg(use_wa)] config: &Config,
-        #[cfg(not(use_wa))] current_theme: Option<Theme>,
-        #[cfg(use_wa)] appearance: wa::Appearance,
+        config: &Config,
+        current_theme: Option<Theme>,
+        font_context: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
 
-        #[cfg(not(use_wa))]
-        {
-            if let Some(theme) = current_theme {
-                if let Some(adaptive_colors) = &config.adaptive_colors {
-                    match theme {
-                        Theme::Light => {
-                            named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                        }
-                        Theme::Dark => {
-                            named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                        }
-                    }
-                }
-            }
-        }
-
-        #[cfg(use_wa)]
-        {
+        if let Some(theme) = current_theme {
             if let Some(adaptive_colors) = &config.adaptive_colors {
-                match appearance {
-                    wa::Appearance::Light => {
+                match theme {
+                    Theme::Light => {
                         named_colors = adaptive_colors.light.unwrap_or(named_colors);
                     }
-                    wa::Appearance::Dark => {
+                    Theme::Dark => {
                         named_colors = adaptive_colors.dark.unwrap_or(named_colors);
                     }
-                    // TODO
-                    wa::Appearance::LightHighContrast => {}
-                    wa::Appearance::DarkHighContrast => {}
                 }
             }
         }
@@ -130,7 +112,7 @@ impl Renderer {
             is_vi_mode_enabled: false,
             is_blinking: false,
             last_typing: None,
-            config_has_blinking_enabled: config.blinking_cursor,
+            config_has_blinking_enabled: config.cursor.blinking,
             term_has_blinking_enabled: false,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -146,11 +128,12 @@ impl Renderer {
             dynamic_background,
             active_search: None,
             cursor: Cursor {
-                content: config.cursor,
-                content_ref: config.cursor,
-                state: CursorState::new(config.cursor),
+                content: config.cursor.shape.into(),
+                content_ref: config.cursor.shape.into(),
+                state: CursorState::new(config.cursor.shape.into()),
             },
-            width_cache: FxHashMap::default(),
+            font_cache: FxHashMap::default(),
+            font_context: font_context.clone(),
         }
     }
 
@@ -197,14 +180,6 @@ impl Renderer {
             square.c
         };
 
-        let width = if let Some(w) = self.width_cache.get(&content) {
-            *w
-        } else {
-            let w = square.c.width().unwrap_or(1) as f32;
-            self.width_cache.insert(square.c, w);
-            w
-        };
-
         let font_attrs = match (
             flags.contains(Flags::ITALIC),
             flags.contains(Flags::BOLD_ITALIC),
@@ -230,14 +205,13 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square, false);
+        let (decoration, decoration_color) = self.compute_decoration(square);
 
         (
             FragmentStyle {
-                width,
                 color: foreground_color,
                 background_color,
-                font_attrs,
+                font_attrs: font_attrs.into(),
                 decoration,
                 decoration_color,
                 ..FragmentStyle::default()
@@ -246,23 +220,21 @@ impl Renderer {
         )
     }
 
+    #[inline]
     fn compute_decoration(
         &self,
         square: &Square,
-        skip_underline: bool,
     ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            if !skip_underline {
-                decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                    offset: -1.0,
-                    size: 1.0,
-                    is_doubled: false,
-                    shape: UnderlineShape::Regular,
-                }));
-            }
+            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                offset: -1.0,
+                size: 1.0,
+                is_doubled: false,
+                shape: UnderlineShape::Regular,
+            }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
@@ -307,7 +279,7 @@ impl Renderer {
     #[inline]
     fn create_line(
         &mut self,
-        content_builder: &mut ContentBuilder,
+        content_builder: &mut Content,
         row: &Row<Square>,
         has_cursor: bool,
         line: Line,
@@ -316,6 +288,7 @@ impl Renderer {
     ) {
         let columns: usize = row.len();
         let mut content = String::default();
+        let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
 
         for column in 0..columns {
@@ -331,26 +304,6 @@ impl Renderer {
                 } else {
                     self.create_style(square)
                 };
-
-            if square.flags.contains(Flags::GRAPHICS) {
-                // let graphics = square.graphics().map(|graphics| {
-                //     graphics
-                //         .iter()
-                //         .map(|graphic| Graphic {
-                //             id: graphic.texture.id,
-                //             offset_x: graphic.offset_x,
-                //             offset_y: graphic.offset_y,
-                //         })
-                //         .collect::<_>()
-                // });
-                // style.media = Some(graphics);
-                let graphic = &square.graphics().unwrap()[0];
-                style.media = Some(Graphic {
-                    id: graphic.texture.id,
-                    offset_x: graphic.offset_x,
-                    offset_y: graphic.offset_y,
-                });
-            }
 
             if self.hyperlink_range.is_some()
                 && square.hyperlink().is_some()
@@ -397,12 +350,86 @@ impl Renderer {
                 }
             }
 
+            if square.flags.contains(Flags::GRAPHICS) {
+                // let graphics = square.graphics().map(|graphics| {
+                //     graphics
+                //         .iter()
+                //         .map(|graphic| Graphic {
+                //             id: graphic.texture.id,
+                //             offset_x: graphic.offset_x,
+                //             offset_y: graphic.offset_y,
+                //         })
+                //         .collect::<_>()
+                // });
+                // style.media = Some(graphics);
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(Graphic {
+                    id: graphic.texture.id,
+                    offset_x: graphic.offset_x,
+                    offset_y: graphic.offset_y,
+                });
+                style.background_color = None;
+            }
+
+            if let Some((font_id, width)) =
+                self.font_cache.get(&(square_content, style.font_attrs))
+            {
+                style.font_id = *font_id;
+                style.width = *width;
+            } else {
+                let mut width = square.c.width().unwrap_or(1) as f32;
+                let mut font_ctx = self.font_context.inner.lock();
+
+                // There is no simple way to define what's emoji
+                // could have to refer to the Unicode tables. However it could
+                // be leading to misleading results. For example if we used
+                // unicode and internationalization functionalities like
+                // https://github.com/open-i18n/rust-unic/, then characters
+                // like "◼" would be valid emojis. For a terminal context,
+                // the character "◼" is not an emoji and should be treated as
+                // single width. So, we completely rely on what font is
+                // being used and then set width 2 for it.
+                if let Some((font_id, is_emoji)) =
+                    font_ctx.find_best_font_match(square_content, &style)
+                {
+                    style.font_id = font_id;
+                    if is_emoji {
+                        width = 2.0;
+                    }
+                }
+                style.width = width;
+
+                self.font_cache.insert(
+                    (square_content, style.font_attrs),
+                    (style.font_id, style.width),
+                );
+            };
+
+            if square_content == ' ' {
+                if !last_char_was_space {
+                    if !content.is_empty() {
+                        content_builder.add_text(&content, last_style);
+                        content.clear();
+                    }
+
+                    last_char_was_space = true;
+                    last_style = style;
+                }
+            } else {
+                if last_char_was_space && !content.is_empty() {
+                    content_builder.add_text(&content, last_style);
+                    content.clear();
+                }
+
+                last_char_was_space = false;
+            }
+
             if last_style != style {
                 if !content.is_empty() {
                     content_builder.add_text(&content, last_style);
+                    content.clear();
                 }
 
-                content.clear();
                 last_style = style;
             }
 
@@ -418,19 +445,7 @@ impl Renderer {
             }
         }
 
-        content_builder.finish_line();
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn decrease_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity -= acc;
-    }
-
-    #[inline]
-    #[cfg(use_wa)]
-    pub fn increase_foreground_opacity(&mut self, _acc: f32) {
-        // self.foreground_opacity += acc;
+        content_builder.new_line();
     }
 
     #[inline]
@@ -610,7 +625,7 @@ impl Renderer {
         let mut style = FragmentStyle {
             color,
             background_color: Some(background_color),
-            font_attrs,
+            font_attrs: font_attrs.into(),
             ..FragmentStyle::default()
         };
 
@@ -620,20 +635,20 @@ impl Renderer {
             self.named_colors.vi_cursor
         };
 
-        let mut has_underline_cursor = false;
+        let (decoration, decoration_color) = self.compute_decoration(square);
+        style.decoration = decoration;
+        style.decoration_color = decoration_color;
 
         match self.cursor.state.content {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
+                        offset: 0.0,
+                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
                 style.decoration_color = Some(cursor_color);
-
-                has_underline_cursor = true;
             }
             CursorShape::Block => {
                 style.cursor = Some(SugarCursor::Block(cursor_color));
@@ -643,11 +658,6 @@ impl Renderer {
             }
             CursorShape::Hidden => {}
         }
-
-        let (decoration, decoration_color) =
-            self.compute_decoration(square, has_underline_cursor);
-        style.decoration = decoration;
-        style.decoration_color = decoration_color;
 
         (style, content)
     }
@@ -676,7 +686,6 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
-    #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_term(
         &mut self,
@@ -712,12 +721,13 @@ impl Renderer {
             }
         }
 
-        let mut content_builder = Content::builder();
+        let content = sugarloaf.content();
 
+        // let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             self.create_line(
-                &mut content_builder,
+                content,
                 row,
                 has_cursor,
                 Line((i as i32) - display_offset),
@@ -725,8 +735,8 @@ impl Renderer {
                 focused_match,
             );
         }
-
-        sugarloaf.set_content(content_builder.build());
+        // let duration = start.elapsed();
+        // println!("Total loop rows: {:?}", duration);
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(

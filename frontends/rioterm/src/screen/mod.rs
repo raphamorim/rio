@@ -33,7 +33,8 @@ use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
-use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::clipboard::Clipboard;
+use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::{
     colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
@@ -53,9 +54,11 @@ use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::error::Error;
 use std::ffi::OsStr;
+use std::rc::Rc;
 use touch::TouchPurpose;
 
 /// Minimum number of pixels at the bottom/top where selection scrolling is performed.
@@ -73,7 +76,6 @@ const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
-    clipboard: Clipboard,
     pub modifiers: Modifiers,
     pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
@@ -82,6 +84,7 @@ pub struct Screen<'screen> {
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
+    pub clipboard: Rc<RefCell<Clipboard>>,
 }
 
 pub struct ScreenWindowProperties {
@@ -100,6 +103,7 @@ impl Screen<'_> {
         event_proxy: EventProxy,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         open_url: Option<String>,
+        clipboard: Rc<RefCell<Clipboard>>,
     ) -> Result<Screen<'screen>, Box<dyn Error>> {
         let size = window_properties.size;
         let scale = window_properties.scale;
@@ -173,10 +177,7 @@ impl Screen<'_> {
             }
         };
 
-        let renderer = Renderer::new(config, theme);
-
-        // let clipboard = unsafe { Clipboard::new(raw_display_handle.into()) };
-        let clipboard = unsafe { Clipboard::new(raw_display_handle) };
+        let renderer = Renderer::new(config, theme, font_library);
 
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
@@ -200,6 +201,7 @@ impl Screen<'_> {
             shell,
             working_dir,
             spawn_performer: true,
+            #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
             // When navigation is collapsed and does not contain any color rule
@@ -208,7 +210,7 @@ impl Screen<'_> {
                 && config.navigation.color_automation.is_empty()),
         };
         let context_manager = context::ContextManager::start(
-            (&renderer.get_cursor_state(), config.blinking_cursor),
+            (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
@@ -217,7 +219,12 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        sugarloaf.set_background_color(renderer.dynamic_background.1);
+        if cfg!(target_os = "macos") {
+            sugarloaf.set_background_color(None);
+        } else {
+            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
+        }
+
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
@@ -321,27 +328,32 @@ impl Screen<'_> {
         );
 
         self.sugarloaf.layout_mut().update();
-        self.renderer = Renderer::new(config, current_theme);
+        self.renderer = Renderer::new(config, current_theme, font_library);
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
             let cursor = self.renderer.get_cursor_state_from_ref().content;
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
-            terminal.blinking_cursor = config.blinking_cursor;
+            terminal.blinking_cursor = config.cursor.blinking;
             drop(terminal);
         }
 
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        self.sugarloaf
-            .set_background_color(self.renderer.dynamic_background.1);
+        if cfg!(target_os = "macos") {
+            self.sugarloaf.set_background_color(None);
+        } else {
+            self.sugarloaf
+                .set_background_color(Some(self.renderer.dynamic_background.1));
+        }
+
         if let Some(image) = &config.window.background_image {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.demand_render();
+        self.render();
         self.resize_all_contexts();
     }
 
@@ -355,7 +367,7 @@ impl Screen<'_> {
 
         self.sugarloaf.update_font_size(action);
 
-        self.demand_render();
+        self.render();
         self.resize_all_contexts();
     }
 
@@ -377,11 +389,8 @@ impl Screen<'_> {
     ) -> &mut Self {
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
-        // TODO: Fix this double render hack on scale update
         self.render();
         self.resize_all_contexts();
-
-        self.demand_render();
 
         self
     }
@@ -400,16 +409,6 @@ impl Screen<'_> {
             let winsize = crate::renderer::utils::terminal_dimensions(&layout);
             let _ = context.messenger.send_resize(winsize);
         }
-    }
-
-    #[inline]
-    pub fn clipboard_get(&mut self, clipboard_type: ClipboardType) -> String {
-        self.clipboard.get(clipboard_type)
-    }
-
-    #[inline]
-    pub fn clipboard_store(&mut self, clipboard_type: ClipboardType, content: String) {
-        self.clipboard.set(clipboard_type, content);
     }
 
     #[inline]
@@ -468,7 +467,7 @@ impl Screen<'_> {
         let mods = self.modifiers.state();
 
         if is_kitty_keyboard_enabled && key.state == ElementState::Released {
-            if !mode.contains(Mode::KEYBOARD_REPORT_EVENT_TYPES)
+            if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
             {
@@ -487,11 +486,9 @@ impl Screen<'_> {
                 // NOTE: Echo the key back on release to follow kitty/foot behavior. When
                 // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
                 // the keys below.
-                _ if mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC) => {
-                    crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                        key, mods, mode,
-                    )
-                    .into()
+                _ if mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) => {
+                    crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                        .into()
                 }
                 // Winit uses different keys for `Backspace` so we explicitly specify the
                 // values, instead of using what was passed to us from it.
@@ -499,13 +496,10 @@ impl Screen<'_> {
                 Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
                 Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
                 Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                _ => crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
-                .into(),
+                _ => crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+                    .into(),
             };
 
-            self.sugarloaf.mark_dirty();
             self.ctx_mut().current_mut().messenger.send_write(bytes);
 
             return;
@@ -525,7 +519,7 @@ impl Screen<'_> {
                 self.search_input(character);
             }
 
-            self.demand_render();
+            self.render();
             return;
         }
 
@@ -548,10 +542,10 @@ impl Screen<'_> {
             // 1. No keyboard input protocol is enabled.
             // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
             //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
-            let write_legacy = !mode.contains(Mode::KEYBOARD_REPORT_ALL_KEYS_AS_ESC)
+            let write_legacy = !mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC)
                 && !text.is_empty()
-                && (!mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
-                    || (mode.contains(Mode::KEYBOARD_DISAMBIGUATE_ESC_CODES)
+                && (!mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
+                    || (mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
                         && (mods.is_empty() || mods == ModifiersState::SHIFT)
                         && key.location != KeyLocation::Numpad
                         // Special case escape here.
@@ -568,14 +562,11 @@ impl Screen<'_> {
                 bytes
             } else {
                 // Otherwise we should build the key sequence for the given input.
-                crate::bindings::kitty_keyboard_protocol::build_key_sequence(
-                    key, mods, mode,
-                )
+                crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
             }
         };
 
         if !bytes.is_empty() {
-            self.sugarloaf.mark_dirty();
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
@@ -601,7 +592,7 @@ impl Screen<'_> {
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &button)
                 && binding.action == Act::PasteSelection
             {
-                let content = self.clipboard.get(ClipboardType::Selection);
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Selection);
                 self.paste(&content, true);
             }
         }
@@ -669,14 +660,16 @@ impl Screen<'_> {
                             .send_bytes(s.to_owned().into_bytes());
                     }
                     Act::Paste => {
-                        let content = self.clipboard.get(ClipboardType::Clipboard);
+                        let content =
+                            self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
                         self.paste(&content, true);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
-                        let content = self.clipboard.get(ClipboardType::Selection);
+                        let content =
+                            self.clipboard.borrow_mut().get(ClipboardType::Selection);
                         self.paste(&content, true);
                     }
                     Act::Copy => {
@@ -685,52 +678,52 @@ impl Screen<'_> {
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
                         self.confirm_search();
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchCancel) => {
                         self.cancel_search();
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchClear) => {
                         let direction = self.search_state.direction;
                         self.cancel_search();
                         self.start_search(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchFocusNext) => {
                         self.advance_search_origin(self.search_state.direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchFocusPrevious) => {
                         let direction = self.search_state.direction.opposite();
                         self.advance_search_origin(direction);
                         self.resize_top_or_bottom_line(self.ctx().len());
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchDeleteWord) => {
                         self.search_pop_word();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchHistoryPrevious) => {
                         self.search_history_previous();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Search(SearchAction::SearchHistoryNext) => {
                         self.search_history_next();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ToggleViMode => {
                         let mut terminal =
@@ -739,7 +732,7 @@ impl Screen<'_> {
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ViMotion(motion) => {
                         let mut terminal =
@@ -752,7 +745,7 @@ impl Screen<'_> {
                             self.renderer.set_selection(selection.to_range(&terminal));
                         };
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
                         let mut terminal =
@@ -768,19 +761,19 @@ impl Screen<'_> {
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
@@ -804,7 +797,7 @@ impl Screen<'_> {
                         let num_tabs = self.ctx().len();
                         self.cancel_search();
                         self.resize_top_or_bottom_line(num_tabs);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::TabCloseCurrent => {
                         self.clear_selection();
@@ -817,7 +810,7 @@ impl Screen<'_> {
 
                         let num_tabs = self.ctx().len().wrapping_sub(1);
                         self.resize_top_or_bottom_line(num_tabs);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::TabCloseUnfocused => {
                         self.clear_selection();
@@ -827,7 +820,7 @@ impl Screen<'_> {
                         }
                         self.context_manager.close_unfocused_tabs();
                         self.resize_top_or_bottom_line(1);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Quit => {
                         self.context_manager.quit();
@@ -850,7 +843,7 @@ impl Screen<'_> {
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollPageDown => {
                         // Move vi mode cursor.
@@ -863,7 +856,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollHalfPageUp => {
                         // Move vi mode cursor.
@@ -876,7 +869,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollHalfPageDown => {
                         // Move vi mode cursor.
@@ -889,7 +882,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollToTop => {
                         let mut terminal =
@@ -900,7 +893,7 @@ impl Screen<'_> {
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ScrollToBottom => {
                         let mut terminal =
@@ -914,21 +907,21 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::Scroll(delta) => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ClearHistory => {
                         let mut terminal =
                             self.context_manager.current_mut().terminal.lock();
                         terminal.clear_saved_history();
                         drop(terminal);
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
                     Act::Minimize => {
@@ -944,24 +937,24 @@ impl Screen<'_> {
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
                         self.cancel_search();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectLastTab => {
                         self.cancel_search();
                         self.context_manager.select_last_tab();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectNextTab => {
                         self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_next();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::SelectPrevTab => {
                         self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_prev();
-                        self.demand_render();
+                        self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
                     _ => (),
@@ -1130,9 +1123,11 @@ impl Screen<'_> {
         drop(terminal);
 
         if ty == ClipboardType::Selection {
-            self.clipboard.set(ClipboardType::Clipboard, text.clone());
+            self.clipboard
+                .borrow_mut()
+                .set(ClipboardType::Clipboard, text.clone());
         }
-        self.clipboard.set(ty, text);
+        self.clipboard.borrow_mut().set(ty, text);
     }
 
     #[inline]
@@ -1289,16 +1284,20 @@ impl Screen<'_> {
             let main_fd = *self.ctx().current().main_fd;
             let shell_pid = &self.ctx().current().shell_pid;
             match teletypewriter::spawn_daemon(program, args, main_fd, *shell_pid) {
-                Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
-                Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+                Ok(_) => tracing::debug!("Launched {} with args {:?}", program, args),
+                Err(_) => {
+                    tracing::warn!("Unable to launch {} with args {:?}", program, args)
+                }
             }
         }
 
         #[cfg(windows)]
         {
             match teletypewriter::spawn_daemon(program, args) {
-                Ok(_) => log::debug!("Launched {} with args {:?}", program, args),
-                Err(_) => log::warn!("Unable to launch {} with args {:?}", program, args),
+                Ok(_) => tracing::debug!("Launched {} with args {:?}", program, args),
+                Err(_) => {
+                    tracing::warn!("Unable to launch {} with args {:?}", program, args)
+                }
             }
         }
     }
@@ -1445,7 +1444,6 @@ impl Screen<'_> {
         // Enable IME so we can input into the search bar with it if we were in Vi mode.
         // self.window().set_ime_allowed(true);
 
-        self.sugarloaf.mark_dirty();
         self.render();
     }
 
@@ -1490,7 +1488,6 @@ impl Screen<'_> {
         // let vi_mode = self.get_mode().contains(Mode::VI);
         // self.window().set_ime_allowed(!vi_mode);
 
-        self.sugarloaf.mark_dirty();
         self.search_state.history_index = None;
 
         // Clear focused match.
@@ -1550,8 +1547,6 @@ impl Screen<'_> {
             // Update search highlighting.
             self.goto_match(MAX_SEARCH_WHILE_TYPING);
         }
-
-        self.sugarloaf.mark_dirty();
     }
 
     /// Reset terminal to the state before search was started.
@@ -1580,7 +1575,6 @@ impl Screen<'_> {
             drop(terminal);
         }
         self.search_state.display_offset_delta = 0;
-        self.sugarloaf.mark_dirty();
     }
 
     /// Jump to the first regex match from the search origin.
@@ -1649,8 +1643,6 @@ impl Screen<'_> {
         if should_reset_search_state {
             self.search_reset_state();
         }
-
-        self.sugarloaf.mark_dirty();
     }
 
     fn sgr_mouse_report(&mut self, pos: Pos, button: u8, state: ElementState) {
@@ -1886,33 +1878,31 @@ impl Screen<'_> {
         }
     }
 
-    pub fn render_assistant(&mut self, assistant: &crate::routes::assistant::Assistant) {
+    pub fn render_assistant(
+        &mut self,
+        assistant: &crate::router::routes::assistant::Assistant,
+    ) {
         self.sugarloaf.clear();
-        crate::routes::assistant::screen(&mut self.sugarloaf, assistant);
+        crate::router::routes::assistant::screen(&mut self.sugarloaf, assistant);
         self.sugarloaf.render();
     }
 
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
-        crate::routes::welcome::screen(&mut self.sugarloaf);
+        crate::router::routes::welcome::screen(&mut self.sugarloaf);
         self.sugarloaf.render();
     }
 
     pub fn render_dialog(&mut self, content: &str) {
         self.sugarloaf.clear();
-        crate::routes::dialog::screen(&mut self.sugarloaf, content);
+        crate::router::routes::dialog::screen(&mut self.sugarloaf, content);
         self.sugarloaf.render();
     }
 
     #[inline]
-    fn demand_render(&mut self) {
-        self.update_content();
-        self.render();
-    }
-
-    pub fn update_content(&mut self) {
-        // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
+    pub fn render(&mut self) {
+        // let start_total = std::time::Instant::now();
+        // println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1934,6 +1924,7 @@ impl Screen<'_> {
             None
         };
 
+        // let start = std::time::Instant::now();
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.context_manager.current().terminal.lock();
             let data = (
@@ -1945,10 +1936,11 @@ impl Screen<'_> {
             drop(terminal);
             data
         };
-
-        self.context_manager.update_titles();
         self.renderer.set_ime(self.ime.preedit());
+        // let duration = start.elapsed();
+        // println!("Total terminal with set_ime info is: {:?}", duration);
 
+        // let start = std::time::Instant::now();
         self.renderer.prepare_term(
             &rows,
             cursor,
@@ -1959,16 +1951,14 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
+
         // let duration = start.elapsed();
-        // println!("Total update_content is: {:?}\n", duration);
-    }
+        // println!("Total prepare_term is: {:?}", duration);
 
-    #[inline]
-    pub fn render(&mut self) {
         // let start = std::time::Instant::now();
-        // println!("Render time elapsed");
-
         self.sugarloaf.render();
+        // let duration = start.elapsed();
+        // println!("Total render is: {:?}", duration);
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
@@ -1977,7 +1967,7 @@ impl Screen<'_> {
             self.context_manager.schedule_render_on_route(800);
         }
 
-        // let duration = start.elapsed();
-        // println!("Total render time is: {:?}\n", duration);
+        // let duration = start_total.elapsed();
+        // println!("Total whole render function is: {:?}\n", duration);
     }
 }

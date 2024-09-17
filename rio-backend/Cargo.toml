@@ -14,14 +14,15 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-log = { workspace = true }
+tracing = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 toml = "0.8.19"
-base64 = "0.22.1"
+base64 = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 corcovado = { workspace = true }
+rustc-hash = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
 copypasta = { version = "0.10.1", default-features = false }
@@ -38,14 +39,6 @@ wgpu = { workspace = true }
 regex-automata = "0.4.7"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { version = "1.13.2", default-features = false }
-
-[lints.rust]
-unexpected_cfgs = { level = "allow", check-cfg = ['cfg(use_wa)'] }
-
-[target.'cfg(use_wa)'.dependencies]
-wa = { workspace = true }
-
-[target.'cfg(not(use_wa))'.dependencies]
 rio-window = { workspace = true }
 
 [features]
@@ -55,5 +48,4 @@ x11 = [
 ]
 wayland = [
     "copypasta/wayland",
-    "sugarloaf/always_dirty"
 ]

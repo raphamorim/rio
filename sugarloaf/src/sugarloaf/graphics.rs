@@ -5,7 +5,12 @@
 
 use crate::sugarloaf::types;
 use crate::sugarloaf::Handle;
+use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
+use std::cmp;
+
+/// Max allowed dimensions (width, height) for the graphic, in pixels.
+pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 
 pub struct GraphicDataEntry {
     pub handle: Handle,
@@ -117,6 +122,9 @@ pub struct GraphicData {
 
     /// Indicate if there are no transparent pixels.
     pub is_opaque: bool,
+
+    /// Render graphic in a different size.
+    pub resize: Option<ResizeCommand>,
 }
 
 impl GraphicData {
@@ -157,4 +165,201 @@ impl GraphicData {
 
         true
     }
+
+    pub fn from_dynamic_image(id: GraphicId, image: DynamicImage) -> Self {
+        let color_type;
+        let width;
+        let height;
+        let pixels;
+
+        match image {
+            // Sugarloaf only accepts rgba8 now
+            // DynamicImage::ImageRgb8(image) => {
+            //     color_type = ColorType::Rgb;
+            //     width = image.width() as usize;
+            //     height = image.height() as usize;
+            //     pixels = image.into_raw();
+            // }
+            DynamicImage::ImageRgba8(image) => {
+                color_type = ColorType::Rgba;
+                width = image.width() as usize;
+                height = image.height() as usize;
+                pixels = image.into_raw();
+            }
+
+            _ => {
+                // Non-RGB image. Convert it to RGBA.
+                let image = image.into_rgba8();
+                color_type = ColorType::Rgba;
+                width = image.width() as usize;
+                height = image.height() as usize;
+                pixels = image.into_raw();
+            }
+        }
+
+        GraphicData {
+            id,
+            width,
+            height,
+            color_type,
+            pixels,
+            is_opaque: false,
+            resize: None,
+        }
+    }
+
+    /// Resize the graphic according to the dimensions in the `resize` field.
+    pub fn resized(
+        self,
+        cell_width: usize,
+        cell_height: usize,
+        view_width: usize,
+        view_height: usize,
+    ) -> Option<Self> {
+        let resize = match self.resize {
+            Some(resize) => resize,
+            None => return Some(self),
+        };
+
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
+            || self.height == 0
+            || self.width == 0
+        {
+            return Some(self);
+        }
+
+        let mut width = match resize.width {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_width,
+            ResizeParameter::WindowPercent(n) => n as usize * view_width / 100,
+        };
+
+        let mut height = match resize.height {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_height,
+            ResizeParameter::WindowPercent(n) => n as usize * view_height / 100,
+        };
+
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        // Compute "auto" dimensions.
+        if resize.width == ResizeParameter::Auto {
+            width = self.width * height / self.height;
+        }
+
+        if resize.height == ResizeParameter::Auto {
+            height = self.height * width / self.width;
+        }
+
+        // Limit size to MAX_GRAPHIC_DIMENSIONS.
+        width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
+        height = cmp::min(height, MAX_GRAPHIC_DIMENSIONS[1]);
+
+        tracing::trace!("Resize new graphic to width={}, height={}", width, height,);
+
+        // Create a new DynamicImage to resize the graphic.
+        let dynimage = match self.color_type {
+            ColorType::Rgb => {
+                let buffer = image_rs::RgbImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
+                DynamicImage::ImageRgb8(buffer)
+            }
+
+            ColorType::Rgba => {
+                let buffer = image_rs::RgbaImage::from_raw(
+                    self.width as u32,
+                    self.height as u32,
+                    self.pixels,
+                )?;
+                DynamicImage::ImageRgba8(buffer)
+            }
+        };
+
+        // Finally, use `resize` or `resize_exact` to make the new image.
+        let width = width as u32;
+        let height = height as u32;
+        // https://doc.servo.org/image/imageops/enum.FilterType.html
+        let filter = image_rs::imageops::FilterType::Triangle;
+
+        let new_image = if resize.preserve_aspect_ratio {
+            dynimage.resize(width, height, filter)
+        } else {
+            dynimage.resize_exact(width, height, filter)
+        };
+
+        Some(Self::from_dynamic_image(self.id, new_image))
+    }
+}
+
+/// Unit to specify a dimension to resize the graphic.
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum ResizeParameter {
+    /// Dimension is computed from the original graphic dimensions.
+    Auto,
+
+    /// Size is specified in number of grid cells.
+    Cells(u32),
+
+    /// Size is specified in number pixels.
+    Pixels(u32),
+
+    /// Size is specified in a percent of the window.
+    WindowPercent(u32),
+}
+
+/// Dimensions to resize a graphic.
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub struct ResizeCommand {
+    pub width: ResizeParameter,
+
+    pub height: ResizeParameter,
+
+    pub preserve_aspect_ratio: bool,
+}
+
+#[test]
+fn check_opaque_region() {
+    let graphic = GraphicData {
+        id: GraphicId(0),
+        width: 10,
+        height: 10,
+        color_type: ColorType::Rgb,
+        pixels: vec![255; 10 * 10 * 3],
+        is_opaque: true,
+        resize: None,
+    };
+
+    assert!(graphic.is_filled(1, 1, 3, 3));
+    assert!(!graphic.is_filled(8, 8, 10, 10));
+
+    let pixels = {
+        // Put a transparent 3x3 box inside the picture.
+        let mut data = vec![255; 10 * 10 * 4];
+        for y in 3..6 {
+            let offset = y * 10 * 4;
+            data[offset..offset + 3 * 4].fill(0);
+        }
+        data
+    };
+
+    let graphic = GraphicData {
+        id: GraphicId(0),
+        pixels,
+        width: 10,
+        height: 10,
+        color_type: ColorType::Rgba,
+        is_opaque: false,
+        resize: None,
+    };
+
+    assert!(graphic.is_filled(0, 0, 3, 3));
+    assert!(!graphic.is_filled(1, 1, 4, 4));
 }

@@ -15,12 +15,16 @@ You can also set family on root to overwrite all fonts.
 family = "cascadiacode"
 ```
 
+## Extra fonts
+
 You can also specify extra fonts to load:
 
 ```toml
 [fonts]
 extras = [{ family = "Microsoft JhengHei" }]
 ```
+
+## Font features
 
 In case you want to specify any font feature:
 
@@ -31,7 +35,7 @@ features = ["ss02", "ss03", "ss05", "ss19"]
 
 Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.
 
----
+## Default configuration
 
 The font configuration default:
 
@@ -59,4 +63,31 @@ weight = 400
 family = "cascadiacode"
 style = "italic"
 weight = 800
+```
+
+## Emojis
+
+You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
+
+In case you would like to change:
+
+```toml
+# Apple
+# [fonts.emoji]
+# family = "Apple Color Emoji"
+
+# In case you have Noto Color Emoji installed
+# [fonts.emoji]
+# family = "Noto Color Emoji"
+```
+
+## User interface
+
+You can specify user interface font on Rio.
+
+Note: `fonts.ui` does not have live reload configuration update, you need to close and open Rio again.
+
+```toml
+[fonts.ui]
+family = "Departure Mono"
 ```

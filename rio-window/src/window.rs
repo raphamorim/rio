@@ -1681,7 +1681,7 @@ impl raw_window_handle::HasWindowHandle for Window {
     fn window_handle(
         &self,
     ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
-        let raw = self.window.raw_window_handle_rwh_06()?;
+        let raw = self.window.raw_window_handle_raw_window_handle()?;
 
         // SAFETY: The window handle will never be deallocated while the window is alive,
         // and the main thread safety requirements are upheld internally by each platform.
@@ -1694,7 +1694,7 @@ impl raw_window_handle::HasDisplayHandle for Window {
         &self,
     ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError>
     {
-        let raw = self.window.raw_display_handle_rwh_06()?;
+        let raw = self.window.raw_display_handle_raw_window_handle()?;
 
         // SAFETY: The window handle will never be deallocated while the window is alive,
         // and the main thread safety requirements are upheld internally by each platform.

@@ -154,8 +154,6 @@ mod udp;
 
 pub use self::awakener::Awakener;
 pub use self::selector::{Binding, Events, Overlapped, Selector};
-pub use self::tcp::{TcpListener, TcpStream};
-pub use self::udp::UdpSocket;
 
 #[derive(Copy, Clone)]
 #[allow(dead_code)]

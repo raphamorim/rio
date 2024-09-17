@@ -1,8 +1,8 @@
 // clipboard.rs was retired originally from https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty/src/clipboard.rs
 // which is licensed under Apache 2.0 license.
 
-use log::warn;
 use raw_window_handle::RawDisplayHandle;
+use tracing::warn;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipboardType {
@@ -10,7 +10,6 @@ pub enum ClipboardType {
     Selection,
 }
 
-#[cfg(any(test, not(any(feature = "x11", target_os = "macos", windows))))]
 use copypasta::nop_clipboard::NopClipboardContext;
 #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
 use copypasta::wayland_clipboard;
@@ -46,8 +45,6 @@ impl Clipboard {
 
     /// Used for tests and to handle missing clipboard provider when built without the `x11`
     /// feature.
-    #[cfg(any(test, not(any(feature = "x11", target_os = "macos", windows))))]
-    #[allow(dead_code)]
     pub fn new_nop() -> Self {
         Self {
             clipboard: Box::new(NopClipboardContext::new().unwrap()),

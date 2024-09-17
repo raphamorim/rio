@@ -2,6 +2,7 @@
 name = "corcovado"
 version = { workspace = true }
 license = "MIT"
+edition = "2015"
 authors = ["Raphael Amorim <rapha850@gmail.com"]
 description = "Non-blocking IO library"
 documentation = "https://raphamorim.io/rio/docs"
@@ -16,7 +17,7 @@ include = [
 ]
 
 [dependencies]
-log = { workspace = true }
+tracing = { workspace = true }
 iovec = { workspace = true }
 slab = "0.4.9"
 net2 = "0.2.39"

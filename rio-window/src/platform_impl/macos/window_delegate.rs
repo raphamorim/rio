@@ -119,6 +119,7 @@ pub(crate) struct State {
     standard_frame: Cell<Option<NSRect>>,
     is_simple_fullscreen: Cell<bool>,
     saved_style: Cell<Option<NSWindowStyleMask>>,
+    background_color: RefCell<Retained<NSColor>>,
 }
 
 declare_class!(
@@ -689,6 +690,7 @@ impl WindowDelegate {
             standard_frame: Cell::new(None),
             is_simple_fullscreen: Cell::new(false),
             saved_style: Cell::new(None),
+            background_color: unsafe { NSColor::blackColor().into() },
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -834,10 +836,9 @@ impl WindowDelegate {
                     .setBackgroundColor(Some(&NSColor::clearColor()));
             }
         } else {
-            unsafe {
-                self.window()
-                    .setBackgroundColor(Some(&NSColor::blackColor()));
-            }
+            self.window()
+                .setBackgroundColor(Some(&self.ivars().background_color.borrow()));
+            // .setBackgroundColor(Some(&NSColor::blackColor()));
         }
     }
 
@@ -1603,7 +1604,9 @@ impl WindowDelegate {
     }
 
     #[inline]
-    pub fn raw_window_handle_rwh_06(&self) -> raw_window_handle::RawWindowHandle {
+    pub fn raw_window_handle_raw_window_handle(
+        &self,
+    ) -> raw_window_handle::RawWindowHandle {
         let window_handle = raw_window_handle::AppKitWindowHandle::new({
             let ptr = Retained::as_ptr(&self.view()) as *mut _;
             std::ptr::NonNull::new(ptr).expect("Retained<T> should never be null")
@@ -1760,6 +1763,15 @@ impl WindowExtMacOS for WindowDelegate {
     #[inline]
     fn has_shadow(&self) -> bool {
         self.window().hasShadow()
+    }
+
+    #[inline]
+    fn set_background_color(&self, r: f64, g: f64, b: f64, a: f64) {
+        let color_value =
+            unsafe { NSColor::colorWithSRGBRed_green_blue_alpha(r, g, b, a) };
+        let mut background_color = self.ivars().background_color.borrow_mut();
+        *background_color = color_value.clone();
+        self.window().setBackgroundColor(Some(&color_value));
     }
 
     #[inline]

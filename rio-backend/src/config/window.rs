@@ -14,7 +14,7 @@ pub enum WindowMode {
     Windowed,
 }
 
-#[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+#[derive(Clone, Default, Serialize, Deserialize, Copy, Debug, PartialEq)]
 pub enum Decorations {
     #[serde(alias = "enabled")]
     #[default]

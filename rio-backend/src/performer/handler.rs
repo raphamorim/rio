@@ -1,19 +1,23 @@
+use crate::ansi::iterm2_image_protocol;
 use crate::ansi::CursorShape;
-use crate::ansi::{mode::Mode, sixel, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
 use cursor_icon::CursorIcon;
-use log::{debug, warn};
 use std::str::FromStr;
 use std::time::Duration;
 use std::time::Instant;
 use sugarloaf::GraphicData;
+use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;
 
 use crate::ansi::control::C0;
-use crate::ansi::{ClearMode, LineClearMode, TabulationClearMode};
+use crate::ansi::{
+    mode::{Mode, NamedPrivateMode, PrivateMode},
+    ClearMode, LineClearMode, TabulationClearMode,
+};
 use std::fmt::Write;
 
 // https://vt100.net/emu/dec_ansi_parser
@@ -25,16 +29,14 @@ const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
 /// Maximum number of bytes read in one synchronized update (2MiB).
 const SYNC_BUFFER_SIZE: usize = 0x20_0000;
 
-/// Number of bytes in the synchronized update DCS sequence before the passthrough parameters.
-const SYNC_ESCAPE_START_LEN: usize = 5;
+/// Number of bytes in the BSU/ESU CSI sequences.
+const SYNC_ESCAPE_LEN: usize = 8;
 
-/// Start of the DCS sequence for beginning synchronized updates.
-const SYNC_START_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-    [b'\x1b', b'P', b'=', b'1', b's'];
+/// BSU CSI sequence for beginning or extending synchronized updates.
+const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
 
-/// Start of the DCS sequence for terminating synchronized updates.
-const SYNC_END_ESCAPE_START: [u8; SYNC_ESCAPE_START_LEN] =
-    [b'\x1b', b'P', b'=', b'2', b's'];
+/// ESU CSI sequence for terminating synchronized updates.
+const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 
 fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {
@@ -73,19 +75,6 @@ fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
         g: scale(colors[1])?,
         b: scale(colors[2])?,
     })
-}
-
-/// Pending DCS sequence.
-#[derive(Debug)]
-enum Dcs {
-    /// Begin of the synchronized update.
-    SyncStart,
-
-    /// End of the synchronized update.
-    SyncEnd,
-
-    /// Sixel data
-    SixelData(Box<sixel::Parser>),
 }
 
 /// Parse colors in `#r(rrr)g(ggg)b(bbb)` format.
@@ -282,7 +271,19 @@ pub trait Handler {
     fn set_mode(&mut self, _mode: Mode) {}
 
     /// Unset mode.
-    fn unset_mode(&mut self, _: Mode) {}
+    fn unset_mode(&mut self, _mode: Mode) {}
+
+    /// DECRPM - report mode.
+    fn report_mode(&mut self, _mode: Mode) {}
+
+    /// Set private mode.
+    fn set_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// Unset private mode.
+    fn unset_private_mode(&mut self, _mode: PrivateMode) {}
+
+    /// DECRPM - report private mode.
+    fn report_private_mode(&mut self, _mode: PrivateMode) {}
 
     /// DECSTBM - Set the terminal scrolling region.
     fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
@@ -342,9 +343,15 @@ pub trait Handler {
     fn graphics_attribute(&mut self, _: u16, _: u16) {}
 
     /// Create a parser for Sixel data.
-    fn start_sixel_graphic(&mut self, _params: &Params) -> Option<Box<sixel::Parser>> {
-        None
+    fn sixel_graphic_start(&mut self, _params: &Params) {}
+    fn is_sixel_graphic_active(&self) -> bool {
+        false
     }
+    fn sixel_graphic_put(&mut self, _byte: u8) -> Result<(), sixel::Error> {
+        Ok(())
+    }
+    fn sixel_graphic_reset(&mut self) {}
+    fn sixel_graphic_finish(&mut self) {}
 
     /// Insert a new graphic item.
     fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
@@ -384,9 +391,6 @@ struct ProcessorState {
 
     /// State for synchronized terminal updates.
     sync_state: SyncState,
-
-    /// DCS sequence waiting for termination.
-    dcs: Option<Dcs>,
 }
 
 #[derive(Debug)]
@@ -396,9 +400,6 @@ struct SyncState {
 
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
-
-    /// Sync DCS waiting for termination sequence.
-    pending_dcs: Option<Dcs>,
 }
 
 impl Default for SyncState {
@@ -406,7 +407,6 @@ impl Default for SyncState {
         Self {
             buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
             timeout: None,
-            pending_dcs: None,
         }
     }
 }
@@ -450,6 +450,8 @@ impl ParserProcessor {
             self.parser.advance(&mut performer, byte);
         }
 
+        // Report that update ended, since we could end due to timeout.
+        handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
         // Resetting state after processing makes sure we don't interpret buffered sync escapes.
         self.state.sync_state.buffer.clear();
         self.state.sync_state.timeout = None;
@@ -475,48 +477,29 @@ impl ParserProcessor {
     {
         self.state.sync_state.buffer.push(byte);
 
-        // Handle sync DCS escape sequences.
-        match self.state.sync_state.pending_dcs {
-            Some(_) => self.advance_sync_dcs_end(handler, byte),
-            None => self.advance_sync_dcs_start(),
-        }
+        // Handle sync CSI escape sequences.
+        self.advance_sync_csi(handler);
     }
 
-    /// Find the start of sync DCS sequences.
-    fn advance_sync_dcs_start(&mut self) {
-        // Get the last few bytes for comparison.
-        let len = self.state.sync_state.buffer.len();
-        let offset = len.saturating_sub(SYNC_ESCAPE_START_LEN);
-        let end = &self.state.sync_state.buffer[offset..];
-
-        // Check for extension/termination of the synchronized update.
-        if end == SYNC_START_ESCAPE_START {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncStart);
-        } else if end == SYNC_END_ESCAPE_START || len >= SYNC_BUFFER_SIZE - 1 {
-            self.state.sync_state.pending_dcs = Some(Dcs::SyncEnd);
-        }
-    }
-
-    /// Parse the DCS termination sequence for synchronized updates.
-    fn advance_sync_dcs_end<H>(&mut self, handler: &mut H, byte: u8)
+    /// Handle BSU/ESU CSI sequences during synchronized update.
+    fn advance_sync_csi<H>(&mut self, handler: &mut H)
     where
         H: Handler,
     {
-        match byte {
-            // Ignore DCS passthrough characters.
-            0x00..=0x17 | 0x19 | 0x1c..=0x7f | 0xa0..=0xff => (),
-            // Cancel the DCS sequence.
-            0x18 | 0x1a | 0x80..=0x9f => self.state.sync_state.pending_dcs = None,
-            // Dispatch on ESC.
-            0x1b => match self.state.sync_state.pending_dcs.take() {
-                Some(Dcs::SyncStart) => {
-                    self.state.sync_state.timeout =
-                        Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
-                }
-                Some(Dcs::SyncEnd) => self.stop_sync(handler),
-                Some(Dcs::SixelData(_)) => (),
-                None => (),
-            },
+        // Get the last few bytes for comparison.
+        let len = self.state.sync_state.buffer.len();
+        let offset = len.saturating_sub(SYNC_ESCAPE_LEN);
+        let end = &self.state.sync_state.buffer[offset..];
+
+        // NOTE: It is technically legal to specify multiple private modes in the same
+        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
+        // reasonable.
+        //
+        // Check for extension/termination of the synchronized update.
+        if end == BSU_CSI {
+            self.state.sync_state.timeout = Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
+        } else if end == ESU_CSI || len >= SYNC_BUFFER_SIZE - 1 {
+            self.stop_sync(handler);
         }
     }
 }
@@ -544,7 +527,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     }
 
     fn execute(&mut self, byte: u8) {
-        log::trace!("[execute] {byte:04x}");
+        tracing::trace!("[execute] {byte:04x}");
 
         match byte {
             C0::HT => self.handler.put_tab(1),
@@ -568,8 +551,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     ) {
         match (action, intermediates) {
             ('q', []) => {
-                let parser = self.handler.start_sixel_graphic(params);
-                self.state.dcs = parser.map(Dcs::SixelData);
+                self.handler.sixel_graphic_start(params);
             }
             _ => debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -579,34 +561,22 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
     }
 
     fn put(&mut self, byte: u8) {
-        debug!("[put] {byte:02x}");
-        match self.state.dcs {
-            Some(Dcs::SixelData(ref mut parser)) => {
-                if let Err(err) = parser.put(byte) {
-                    log::warn!("Failed to parse Sixel data: {}", err);
-                    self.state.dcs = None;
-                }
+        if self.handler.is_sixel_graphic_active() {
+            if let Err(err) = self.handler.sixel_graphic_put(byte) {
+                tracing::warn!("Failed to parse Sixel data: {}", err);
+                self.handler.sixel_graphic_reset();
             }
-
-            _ => debug!("[unhandled put] byte={:?}", byte),
+        } else {
+            debug!("[unhandled put] byte={:?}", byte);
         }
     }
 
     #[inline]
     fn unhook(&mut self) {
-        match self.state.dcs.take() {
-            Some(Dcs::SyncStart) => {
-                self.state.sync_state.timeout =
-                    Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
-            }
-            Some(Dcs::SyncEnd) => (),
-            Some(Dcs::SixelData(parser)) => match parser.finish() {
-                Ok((graphic, palette)) => {
-                    self.handler.insert_graphic(graphic, Some(palette))
-                }
-                Err(err) => log::warn!("Failed to parse Sixel data: {}", err),
-            },
-            _ => debug!("[unhandled unhook]"),
+        if self.handler.is_sixel_graphic_active() {
+            self.handler.sixel_graphic_finish();
+        } else {
+            debug!("[unhandled dcs_unhook]");
         }
     }
 
@@ -804,37 +774,12 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
 
             // OSC 1337 is not necessarily only used by iTerm2 protocol
             // OSC 1337 is equal to xterm OSC 50
-            // b"1337" => {
-            // \x1b]1337;File=[arguments]:[base-64 encoded file contents]^G
-            //
-            // Example:
-            // printf "\x1b]1337;File=;size=234;width=100:aGVsbG8=\x07"
-            //
-            // leads to
-            // name: None,
-            // size: Some(234),
-            // width: 100,
-            // height: Automatic,
-            // preserve_aspect_ratio: true,
-            // inline: false,
-            // do_not_move_cursor: false,
-            // data: b"hello".to_vec(),
+            b"1337" => {
+                if let Some(graphic) = iterm2_image_protocol::parse(params) {
+                    self.handler.insert_graphic(graphic, None);
+                }
+            }
 
-            //     if params.len() >= 2
-            //         && params[1].len() >= 5
-            //         && params[1][0..5] == *b"File="
-            //     {
-            //         let content = params[2].split(|&b| b == b':').collect::<Vec<_>>();
-            //         if content.len() == 2 {
-            //             let _arguments = content[0];
-
-            //             let _base_64_file_content = content[1];
-            //         }
-            //         // self.handler.set_cursor_shape(shape);
-            //         // return;
-            //     }
-            //     unhandled(params);
-            // }
             _ => unhandled(params),
         }
     }
@@ -914,19 +859,20 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 let x = next_param_or(1) as usize;
                 handler.goto(Line(y - 1), Column(x - 1));
             }
-            ('h', intermediates) => {
+            ('h', []) => {
                 for param in params_iter.map(|param| param[0]) {
-                    let intermediate = intermediates.first();
-
+                    handler.set_mode(Mode::new(param))
+                }
+            }
+            ('h', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
                     // Handle sync updates opaquely.
-                    if intermediate == Some(&b'?') && param == 2026 {
-                        // self.state.sync_state.timeout.set_timeout(SYNC_UPDATE_TIMEOUT);
+                    if param == NamedPrivateMode::SyncUpdate as u16 {
+                        self.state.sync_state.timeout =
+                            Some(Instant::now() + SYNC_UPDATE_TIMEOUT);
                     }
 
-                    match Mode::from_primitive(intermediate, param) {
-                        Some(mode) => handler.set_mode(mode),
-                        None => csi_unhandled!(),
-                    }
+                    handler.set_private_mode(PrivateMode::new(param))
                 }
             }
             ('I', []) => handler.move_forward_tabs(next_param_or(1)),
@@ -958,12 +904,14 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                 handler.clear_line(mode);
             }
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
-            ('l', intermediates) => {
+            ('l', []) => {
                 for param in params_iter.map(|param| param[0]) {
-                    match Mode::from_primitive(intermediates.first(), param) {
-                        Some(mode) => handler.unset_mode(mode),
-                        None => csi_unhandled!(),
-                    }
+                    handler.unset_mode(Mode::new(param))
+                }
+            }
+            ('l', [b'?']) => {
+                for param in params_iter.map(|param| param[0]) {
+                    handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
             ('M', []) => handler.delete_lines(next_param_or(1) as usize),
@@ -981,6 +929,14 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
             }
             ('n', []) => handler.device_status(next_param_or(0) as usize),
             ('P', []) => handler.delete_chars(next_param_or(1) as usize),
+            ('p', [b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_mode(Mode::new(mode));
+            }
+            ('p', [b'?', b'$']) => {
+                let mode = next_param_or(0);
+                handler.report_private_mode(PrivateMode::new(mode));
+            }
             ('q', [b' ']) => {
                 // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);

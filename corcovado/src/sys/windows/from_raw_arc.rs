@@ -43,7 +43,9 @@ impl<T> FromRawArc<T> {
             cnt: AtomicUsize::new(1),
         });
         FromRawArc {
-            _inner: unsafe { mem::transmute(x) },
+            _inner: unsafe {
+                mem::transmute::<std::boxed::Box<Inner<T>>, *mut Inner<T>>(x)
+            },
         }
     }
 
@@ -87,7 +89,7 @@ impl<T> Drop for FromRawArc<T> {
                 return;
             }
             atomic::fence(Ordering::Acquire);
-            drop(mem::transmute::<_, Box<T>>(self._inner));
+            drop(mem::transmute::<*mut Inner<T>, Box<T>>(self._inner));
         }
     }
 }

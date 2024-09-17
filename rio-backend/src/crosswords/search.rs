@@ -7,12 +7,12 @@ use std::error::Error;
 use std::mem;
 use std::ops::RangeInclusive;
 
-use log::{debug, warn};
 use regex_automata::hybrid::dfa::{Builder, Cache, Config, DFA};
 pub use regex_automata::hybrid::BuildError;
 use regex_automata::nfa::thompson::Config as ThompsonConfig;
 use regex_automata::util::syntax::Config as SyntaxConfig;
 use regex_automata::{Anchored, Input, MatchKind};
+use tracing::{debug, warn};
 
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, GridIterator, Indexed};
 use crate::crosswords::square::{Flags, Square};
@@ -773,10 +773,7 @@ mod tests {
             .unwrap_or(0);
 
         // Create terminal with the appropriate dimensions.
-        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(use_wa)]
-        let window_id = 0;
         let size = CrosswordsSize::new(num_cols, lines.len());
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
@@ -1269,10 +1266,7 @@ mod tests {
 
     #[test]
     fn wide_without_spacer() {
-        #[cfg(not(use_wa))]
         let window_id = crate::event::WindowId::from(0);
-        #[cfg(use_wa)]
-        let window_id = 0;
         let size = CrosswordsSize::new(2, 2);
         let mut term =
             Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);

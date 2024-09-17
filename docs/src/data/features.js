@@ -6,6 +6,7 @@ import Image from '@site/static/assets/feature-icons/image.svg';
 import Lightning from '@site/static/assets/feature-icons/lightning.svg';
 import Palette from '@site/static/assets/feature-icons/palette.svg';
 import FontLigatures from '@site/static/assets/feature-icons/font-ligatures.svg';
+import Splits from '@site/static/assets/feature-icons/splits.svg';
 
 /**
  * @satisfies {import('@site/src/components/FeaturesSection/index').FeatureCardProps[]}
@@ -45,8 +46,8 @@ const FEATURES = [
     Icon: Image,
     description: (
       <Translate id="home.features.images-in-terminal.description">
-        The Rio can display images within the terminal using iTerm2 and kitty
-        image protocols.
+        Display images within the terminal using Sixel and iTerm2
+        image protocol.
       </Translate>
     ),
   },
@@ -71,8 +72,20 @@ const FEATURES = [
     Icon: FontLigatures,
     description: (
       <Translate id="home.features.font-ligatures.description">
-        Rio provide font ligatures support as a way to improve readability of
+        Font ligatures support as a way to improve readability of
         common expressions or operators.
+      </Translate>
+    ),
+  },
+  {
+    title: translate({
+      message: 'Splits',
+      id: 'home.features.font-ligatures.title',
+    }),
+    Icon: Splits,
+    description: (
+      <Translate id="home.features.font-ligatures.description">
+        Support to split and manage terminal screens in any platform that you would want to. 
       </Translate>
     ),
   },

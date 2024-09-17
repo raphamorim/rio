@@ -5,7 +5,7 @@
 
 use crate::components::text::glyph::OwnedSection;
 use crate::sugarloaf::graphics;
-use crate::sugarloaf::state::SugarTree;
+use crate::sugarloaf::SugarloafLayout;
 use crate::sugarloaf::{PxScale, Rect};
 use crate::Text;
 
@@ -45,11 +45,11 @@ impl Elementary {
     pub fn create_section_from_text(
         &mut self,
         sugar_text: &Text,
-        tree: &SugarTree,
+        layout: &SugarloafLayout,
     ) -> OwnedSection {
         let text = crate::components::text::OwnedText {
             text: sugar_text.content.to_owned(),
-            scale: PxScale::from(sugar_text.font_size * tree.layout.dimensions.scale),
+            scale: PxScale::from(sugar_text.font_size * layout.dimensions.scale),
             font_id: crate::components::text::FontId(0),
             extra: crate::components::text::Extra {
                 color: sugar_text.color,
@@ -57,7 +57,7 @@ impl Elementary {
             },
         };
 
-        let layout = if sugar_text.single_line {
+        let text_layout = if sugar_text.single_line {
             crate::components::text::glyph::Layout::default_single_line()
                 .v_align(crate::components::text::glyph::VerticalAlign::Center)
                 .h_align(crate::components::text::glyph::HorizontalAlign::Left)
@@ -69,12 +69,12 @@ impl Elementary {
 
         crate::components::text::OwnedSection {
             screen_position: (
-                sugar_text.position.0 * tree.layout.dimensions.scale,
-                sugar_text.position.1 * tree.layout.dimensions.scale,
+                sugar_text.position.0 * layout.dimensions.scale,
+                sugar_text.position.1 * layout.dimensions.scale,
             ),
-            bounds: (tree.layout.width, tree.layout.height),
+            bounds: (layout.width, layout.height),
             text: vec![text],
-            layout,
+            layout: text_layout,
         }
     }
 }

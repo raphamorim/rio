@@ -10,9 +10,9 @@ use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::SugarloafLayout;
-use crate::sugarloaf::graphics::{BottomLayer, GraphicData, GraphicId, Graphics};
+use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
-use crate::{context::Context, Content, Object};
+use crate::{context::Context, Object};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
@@ -28,9 +28,9 @@ pub struct Sugarloaf<'a> {
     layer_brush: LayerBrush,
     rich_text_brush: RichTextBrush,
     state: state::SugarState,
-    pub background_color: wgpu::Color,
+    pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
-    graphics: Graphics,
+    pub graphics: Graphics,
 }
 
 #[derive(Debug)]
@@ -121,8 +121,8 @@ impl Sugarloaf<'_> {
         let ctx = Context::new(window, renderer);
 
         let text_brush = {
-            let data = { &font_library.inner.read().unwrap().main };
-            text::GlyphBrushBuilder::using_fonts(vec![data.to_owned()])
+            let data = { font_library.inner.lock().ui.to_owned() };
+            text::GlyphBrushBuilder::using_fonts(vec![data])
                 .build(&ctx.device, ctx.format)
         };
 
@@ -135,7 +135,7 @@ impl Sugarloaf<'_> {
             state,
             layer_brush,
             ctx,
-            background_color: wgpu::Color::BLACK,
+            background_color: Some(wgpu::Color::BLACK),
             background_image: None,
             rect_brush,
             rich_text_brush,
@@ -148,7 +148,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn update_font(&mut self, font_library: &FontLibrary) {
-        log::info!("requested a font change");
+        tracing::info!("requested a font change");
 
         self.state.reset_compositor();
         self.state.set_fonts(font_library);
@@ -166,13 +166,12 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn layout(&self) -> SugarloafLayout {
-        self.state.current.layout
+        self.state.layout
     }
 
     #[inline]
     pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
-        self.state.mark_dirty();
-        &mut self.state.current.layout
+        &mut self.state.layout
     }
 
     #[inline]
@@ -181,7 +180,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
+    pub fn set_background_color(&mut self, color: Option<wgpu::Color>) -> &mut Self {
         self.background_color = color;
         self
     }
@@ -205,13 +204,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn content(&mut self) -> &mut crate::Content {
+        self.state.content()
     }
 
     #[inline]
-    pub fn set_content(&mut self, content: Content) {
-        self.state.set_content(content);
+    pub fn set_objects(&mut self, objects: Vec<Object>) {
+        self.state.compute_objects(objects);
     }
 
     #[inline]
@@ -246,21 +245,6 @@ impl Sugarloaf<'_> {
     #[inline]
     fn clean_state(&mut self) {
         self.state.clean_compositor();
-    }
-
-    #[inline]
-    pub fn add_graphic(&mut self, graphic_data: GraphicData) {
-        self.graphics.insert(graphic_data);
-    }
-
-    #[inline]
-    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
-        self.graphics.remove(graphic_id);
-    }
-
-    #[inline]
-    pub fn mark_dirty(&mut self) {
-        self.state.mark_dirty();
     }
 
     #[inline]
@@ -313,6 +297,12 @@ impl Sugarloaf<'_> {
                 }
 
                 {
+                    let load = if let Some(background_color) = self.background_color {
+                        wgpu::LoadOp::Clear(background_color)
+                    } else {
+                        wgpu::LoadOp::Load
+                    };
+
                     let mut rpass =
                         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             timestamp_writes: None,
@@ -322,7 +312,7 @@ impl Sugarloaf<'_> {
                                 view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(self.background_color),
+                                    load,
                                     store: wgpu::StoreOp::Store,
                                 },
                             })],
@@ -332,9 +322,6 @@ impl Sugarloaf<'_> {
                     if self.graphics.bottom_layer.is_some() {
                         self.layer_brush.render(0, &mut rpass, None);
                     }
-
-                    self.rich_text_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
 
                     if self.graphics.has_graphics_on_top_layer() {
                         let range_request = if self.graphics.bottom_layer.is_some() {
@@ -346,6 +333,9 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
+
+                    self.rich_text_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
 
                     self.rect_brush
                         .render(&mut rpass, &self.state, &mut self.ctx);

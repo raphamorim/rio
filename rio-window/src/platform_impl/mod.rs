@@ -12,9 +12,6 @@ mod platform;
 #[cfg(macos_platform)]
 #[path = "macos/mod.rs"]
 mod platform;
-#[cfg(ios_platform)]
-#[path = "ios/mod.rs"]
-mod platform;
 #[cfg(web_platform)]
 #[path = "web/mod.rs"]
 mod platform;
@@ -59,7 +56,6 @@ impl From<Fullscreen> for RootFullscreen {
 }
 
 #[cfg(all(
-    not(ios_platform),
     not(windows_platform),
     not(macos_platform),
     not(x11_platform),

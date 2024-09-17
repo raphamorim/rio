@@ -7,6 +7,7 @@ pub mod renderer;
 pub mod theme;
 pub mod window;
 
+use crate::ansi::CursorShape;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::keyboard::Keyboard;
@@ -14,13 +15,13 @@ use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
 use crate::config::window::Window;
 use colors::Colors;
-use log::warn;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
+use tracing::warn;
 
 #[derive(Clone, Debug)]
 pub enum ConfigError {
@@ -56,12 +57,15 @@ pub struct Developer {
     pub enable_fps_counter: bool,
     #[serde(default = "default_log_level", rename = "log-level")]
     pub log_level: String,
+    #[serde(rename = "enable-log-file", default)]
+    pub enable_log_file: bool,
 }
 
 impl Default for Developer {
     fn default() -> Developer {
         Developer {
             log_level: default_log_level(),
+            enable_log_file: false,
             enable_fps_counter: false,
         }
     }
@@ -69,8 +73,8 @@ impl Default for Developer {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
-    #[serde(default = "bool::default", rename = "blinking-cursor")]
-    pub blinking_cursor: bool,
+    #[serde(default)]
+    pub cursor: CursorConfig,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
     #[serde(default = "Window::default")]
@@ -103,8 +107,6 @@ pub struct Config {
     pub padding_x: f32,
     #[serde(rename = "padding-y", default = "default_padding_y")]
     pub padding_y: [f32; 2],
-    #[serde(default = "default_cursor")]
-    pub cursor: char,
     #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -132,6 +134,14 @@ pub struct Config {
     pub hide_cursor_when_typing: bool,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CursorConfig {
+    #[serde(default = "default_cursor")]
+    pub shape: CursorShape,
+    #[serde(default = "bool::default")]
+    pub blinking: bool,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -162,7 +172,7 @@ pub fn config_file_content() -> String {
 pub fn create_config_file(path: Option<PathBuf>) {
     let default_file_path = path.clone().unwrap_or(config_file_path());
     if default_file_path.exists() {
-        log::info!(
+        tracing::info!(
             "configuration file already exists at {}",
             default_file_path.display()
         );
@@ -173,27 +183,32 @@ pub fn create_config_file(path: Option<PathBuf>) {
         let default_dir_path = config_dir_path();
         match std::fs::create_dir_all(&default_dir_path) {
             Ok(_) => {
-                log::info!("configuration path created {}", default_dir_path.display());
+                tracing::info!(
+                    "configuration path created {}",
+                    default_dir_path.display()
+                );
             }
             Err(err_message) => {
-                log::error!("could not create config directory: {err_message}");
+                tracing::error!("could not create config directory: {err_message}");
             }
         }
     }
 
     match File::create(&default_file_path) {
         Err(err_message) => {
-            log::error!(
+            tracing::error!(
                 "could not create config file {}: {err_message}",
                 default_file_path.display()
             )
         }
         Ok(mut created_file) => {
-            log::info!("configuration file created {}", default_file_path.display());
+            tracing::info!("configuration file created {}", default_file_path.display());
 
             if let Err(err_message) = writeln!(created_file, "{}", config_file_content())
             {
-                log::error!("could not update config file with defaults: {err_message}")
+                tracing::error!(
+                    "could not update config file with defaults: {err_message}"
+                )
             }
         }
     }
@@ -240,18 +255,16 @@ impl Config {
 
                         if let Ok(light_loaded_theme) = Config::load_theme(&path) {
                             adaptive_colors.light = Some(light_loaded_theme.colors);
-                            println!("carregou");
                         } else {
-                            println!("failed to load light theme: {}", light_theme);
+                            warn!("failed to load light theme: {}", light_theme);
                         }
 
                         let dark_theme = &adaptive_theme.dark;
                         let path = tmp.join(dark_theme).with_extension("toml");
                         if let Ok(dark_loaded_theme) = Config::load_theme(&path) {
                             adaptive_colors.dark = Some(dark_loaded_theme.colors);
-                            println!("carregou");
                         } else {
-                            println!("failed to load dark theme: {}", dark_theme);
+                            warn!("failed to load dark theme: {}", dark_theme);
                         }
 
                         if adaptive_colors.light.is_some()
@@ -392,13 +405,12 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            blinking_cursor: false,
+            cursor: CursorConfig::default(),
             editor: default_editor(),
             adaptive_theme: None,
             adaptive_colors: None,
             bindings: Bindings::default(),
             colors: Colors::default(),
-            cursor: default_cursor(),
             scroll: Scroll::default(),
             keyboard: Keyboard::default(),
             developer: Developer::default(),
@@ -418,6 +430,15 @@ impl Default for Config {
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
             hide_cursor_when_typing: false,
+        }
+    }
+}
+
+impl Default for CursorConfig {
+    fn default() -> Self {
+        Self {
+            shape: default_cursor(),
+            blinking: false,
         }
     }
 }
@@ -461,7 +482,7 @@ mod tests {
     fn test_filepath_does_not_exist_with_fallback() {
         let config = Config::load_from_path(&tmp_dir().join("it-should-never-exist"));
         assert_eq!(config.theme, String::default());
-        assert_eq!(config.cursor, default_cursor());
+        assert_eq!(config.cursor.shape, default_cursor());
     }
 
     #[test]
@@ -500,9 +521,9 @@ mod tests {
         );
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.theme, String::default());
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.shell, default_shell());
         assert!(!result.renderer.disable_unfocused_render);
@@ -578,7 +599,7 @@ mod tests {
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.env_vars, [String::from("A=5"), String::from("B=8")]);
-        assert_eq!(result.cursor, default_cursor());
+        assert_eq!(result.cursor.shape, default_cursor());
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -601,13 +622,14 @@ mod tests {
         let result = create_temporary_config(
             "change-cursor",
             r#"
-            cursor = '_'
+            [cursor]
+            shape = 'underline'
         "#,
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
-        assert_eq!(result.cursor, '_');
+        assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors

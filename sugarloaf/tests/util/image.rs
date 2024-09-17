@@ -8,7 +8,7 @@ fn read_png(path: impl AsRef<Path>, width: u32, height: u32) -> Option<Vec<u8>> 
     let data = match std::fs::read(&path) {
         Ok(f) => f,
         Err(e) => {
-            log::warn!(
+            tracing::warn!(
                 "image comparison invalid: file io error when comparing {}: {}",
                 path.as_ref().display(),
                 e
@@ -22,19 +22,19 @@ fn read_png(path: impl AsRef<Path>, width: u32, height: u32) -> Option<Vec<u8>> 
     let mut buffer = vec![0; reader.output_buffer_size()];
     let info = reader.next_frame(&mut buffer).ok()?;
     if info.width != width {
-        log::warn!("image comparison invalid: size mismatch");
+        tracing::warn!("image comparison invalid: size mismatch");
         return None;
     }
     if info.height != height {
-        log::warn!("image comparison invalid: size mismatch");
+        tracing::warn!("image comparison invalid: size mismatch");
         return None;
     }
     if info.color_type != png::ColorType::Rgba {
-        log::warn!("image comparison invalid: color type mismatch");
+        tracing::warn!("image comparison invalid: color type mismatch");
         return None;
     }
     if info.bit_depth != png::BitDepth::Eight {
-        log::warn!("image comparison invalid: bit depth mismatch");
+        tracing::warn!("image comparison invalid: bit depth mismatch");
         return None;
     }
 

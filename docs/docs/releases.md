@@ -9,13 +9,90 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+
+## 0.1.14
+
+- `developer.log-file` has been renamed to `developer.enable-log-file`.
+- **breaking**: `CollapsedTab` has been renamed to `Bookmark`.
+- Memory usage reduced by 75% (avg ~201mb to 48mb on first screen render).
+- Implemented font data deallocator.
+- Reduced font atlas buffer size to `1024`.
+- Added lifetimes to application level (allowing to deallocate window structs once is removed).
+- Migrated font context from `RwLock` to `Arc<FairMutex>`.
+- MacOS does not clear with background operation anymore, instead it relies on window background.
+- Background color has changed to `#0F0D0E`.
+- Fix font emoji width.
+- Fix MacOS tabbing when spawned from a new window.
+
+## 0.1.13
+
+- Support to iTerm2 image protocol.
+- Fix: Issue building rio for Void Linux [#656](https://github.com/raphamorim/rio/issues/656).
+- Fix: Adaptive theme doesn't appear to work correctly on macOS [#660](https://github.com/raphamorim/rio/issues/660).
+- Fix: Image background support to OpenGL targets.
+- Fix: Unable to render images with sixel protocol & ratatui-image [#639](https://github.com/raphamorim/rio/issues/639).
+- Implement LRU to cache on layout and draw methods.
+- Reenable set subtitle on MacOS native tabs.
+
+## 0.1.12
+
+- Introduce: `renderer.max-fps`.
+- Fix: Cursor making text with ligatures hidden.
+- Fix: Underline cursor not working.
+- Fix:  sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
 - Initial support to Sixel protocol.
+- Support to `fonts.emoji`. You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
+
+In case you would like to change:
+
+```toml
+# Apple
+# [fonts.emoji]
+# family = "Apple Color Emoji"
+
+# In case you have Noto Color Emoji installed
+# [fonts.emoji]
+# family = "Noto Color Emoji"
+```
+
+- Support to `fonts.ui`. You can specify user interface font on Rio.
+
+Note: `fonts.ui` does not have live reload configuration update, you need to close and open Rio again.
+
+```toml
+[fonts.ui]
+family = "Departure Mono"
+```
+
+- **breaking:** Revamp the cursor configuration
+
+Before:
+
+```toml
+cursor = '▇'
+blinking-cursor = false
+```
+
+After:
+
+```toml
+[cursor]
+shape = 'block'
+blinking = false
+```
+
+## 0.1.11
+
+- Experimental support to Sixel protocol.
+- Clipboard has been moved to Application level and shared to all windows.
+- Replace `run` with `run_app`.
 - Support CSI_t 16 (Report Cell Size in Pixels).
 - Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
 - *breaking change*: collapsed tabs use now `tabs-active-highlight` instead of `tabs-active`.
 - Default font for UI has changed to [DepartureMono](https://departuremono.com/).
 - Performance: drop extra texture creation and manipulation.
+- Fix on windows: If editor is not found, the app panics [#641](https://github.com/raphamorim/rio/issues/641).
 - Improvements on `window.background-image` as respect width and height properties if were used.
 - Macos: remove grab cursor when dragging and use default instead.
 - Fix `tabs-active-highlight` config key [#618](https://github.com/raphamorim/rio/pull/618).
@@ -26,6 +103,7 @@ language: 'en'
 - Allow configuring with lowercase values for enums.
 - Rename `hide-cursor-when-typing` to `hide-mouse-cursor-when-typing`.
 - Cleanup selection once happens a resize.
+- Windows: Reduce WM_PAINT messages of thread target window.
 
 ## 0.1.10
 

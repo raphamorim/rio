@@ -6,11 +6,7 @@ use rio_backend::event::WindowId;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-#[cfg(not(use_wa))]
 use rio_window::event_loop::EventLoopProxy;
-
-#[cfg(use_wa)]
-use wa::event_loop::EventLoopProxy;
 
 /// ID uniquely identifying a timer.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -30,7 +26,6 @@ impl TimerId {
 pub enum Topic {
     Render,
     RenderRoute,
-    Frame,
 }
 
 /// Event scheduled to be emitted at a specific time.
@@ -40,7 +35,6 @@ pub struct Timer {
     pub event: EventPayload,
     pub id: TimerId,
 
-    #[allow(unused)]
     interval: Option<Duration>,
 }
 

@@ -557,7 +557,7 @@ impl ActiveEventLoop {
         Some(monitor)
     }
 
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::RawDisplayHandle::Windows(
@@ -606,7 +606,7 @@ pub(crate) struct OwnedDisplayHandle;
 
 impl OwnedDisplayHandle {
     #[inline]
-    pub fn raw_display_handle_rwh_06(
+    pub fn raw_display_handle_raw_window_handle(
         &self,
     ) -> Result<raw_window_handle::RawDisplayHandle, raw_window_handle::HandleError> {
         Ok(raw_window_handle::WindowsDisplayHandle::new().into())
@@ -772,11 +772,10 @@ impl<T: 'static> EventLoopProxy<T> {
     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
         self.event_send
             .send(event)
-            .map(|result| {
+            .inspect(|result| {
                 unsafe {
                     PostMessageW(self.target_window, USER_EVENT_MSG_ID.get(), 0, 0)
                 };
-                result
             })
             .map_err(|e| EventLoopClosed(e.0))
     }

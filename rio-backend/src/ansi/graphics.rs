@@ -2,6 +2,7 @@
 // Alacritty is licensed under Apache 2.0 license.
 // https://github.com/alacritty/alacritty/pull/4763/files
 
+use crate::ansi::sixel;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
 use crate::sugarloaf::{GraphicData, GraphicId};
@@ -32,9 +33,6 @@ pub struct UpdateQueues {
     /// Subregions in a graphic to be clear.
     pub clear_subregions: Vec<ClearSubregion>,
 }
-
-/// Max allowed dimensions (width, height) for the graphic, in pixels.
-pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 
 #[derive(Clone, Debug)]
 pub struct TextureRef {
@@ -127,7 +125,7 @@ pub enum TextureOperation {
 }
 
 /// Track changes in the grid to add or to remove graphics.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Graphics {
     /// Last generated identifier.
     pub last_id: u64,
@@ -146,6 +144,9 @@ pub struct Graphics {
 
     /// Cell width in pixels.
     pub cell_width: f32,
+
+    /// Current Sixel parser.
+    pub sixel_parser: Option<Box<sixel::Parser>>,
 }
 
 impl Graphics {
@@ -214,6 +215,7 @@ fn check_opaque_region() {
         color_type: ColorType::Rgb,
         pixels: vec![255; 10 * 10 * 3],
         is_opaque: true,
+        resize: None,
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -236,6 +238,7 @@ fn check_opaque_region() {
         height: 10,
         color_type: ColorType::Rgba,
         is_opaque: false,
+        resize: None,
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));

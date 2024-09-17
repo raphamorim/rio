@@ -9,7 +9,7 @@ Short introduction of Rio terminal features.
 
 - [Vi mode](/docs/features/vi-mode)
 - [Hyperlinks](/docs/features/hyperlinks)
-- [iTerm image protocol](/docs/features/iterm-image-protocol)
+- [iTerm2 image protocol](/docs/features/iterm2-image-protocol)
 - [Kitty keyboard protocol](/docs/features/kitty-keyboard-protocol)
 - [Rio is fast](/docs/features/rio-is-fast)
 - [Adaptive theme](/docs/features/adaptive-theme)

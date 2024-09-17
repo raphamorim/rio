@@ -24,14 +24,7 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
-      - name: cargo clippy
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            cargo clippy --all-targets --all-features
-          else
-            make lint
-          fi
-        shell: bash
+      - run: cargo clippy --all-targets --all-features
       - run: cargo test --release
   msys2-build-test: #cargo test doesn't necessarily build the exec we want
     strategy:

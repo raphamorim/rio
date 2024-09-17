@@ -2,8 +2,6 @@
 //!
 //! Only the modules corresponding to the platform you're compiling to will be available.
 
-#[cfg(any(ios_platform, docsrs))]
-pub mod ios;
 #[cfg(any(macos_platform, docsrs))]
 pub mod macos;
 #[cfg(any(orbital_platform, docsrs))]

@@ -57,23 +57,6 @@ const config = {
     },
   ],
 
-  plugins: [
-    // ... Your other plugins.
-    [
-      require.resolve("docusaurus-plugin-search-local"),
-      {
-        // ... Your options.
-        // `hashed` is recommended as long-term-cache of index file is possible.
-        hashed: true,
-        // For Docs using Chinese, The `language` is recommended to set to:
-        // ```
-        // language: ["en", "zh"],
-        // ```
-        // When applying `zh` in language, please install `nodejieba` in your project.
-      },
-    ],
-  ],
-
   presets: [
     [
       'classic',
@@ -83,21 +66,6 @@ const config = {
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
           disableVersioning: false,
-          // includeCurrentVersion: true,
-          // lastVersion: undefined,
-          // onlyIncludeVersions: ['current', '0.0.x'],
-          // versions: {
-          //   current: {
-          //     label: '0.1.x',
-          //     path: 'next',
-          //     banner: 'none',
-          //   },
-          //   '0.0.x': {
-          //     label: '0.0.x',
-          //     path: '0.0.x',
-          //     banner: 'none',
-          //   },
-          // },
         },
         blog: {
           showReadingTime: true,
@@ -219,6 +187,15 @@ const config = {
         backgroundColor: '#f712ff',
         textColor: '#FFFFFF',
         isCloseable: true,
+      },
+
+      algolia: {
+        // The application ID provided by Algolia
+        appId: '6KTBGQQMEX',
+        // Public API key: it is safe to commit it
+        apiKey: 'debd45deb1f0785248bdde28ec768d5a',
+        indexName: 'raphamorim',
+        debug: false,
       },
     }),
 };

@@ -7,19 +7,19 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, FragmentStyle, LayoutContext, RenderData};
-use crate::sugarloaf::state::SugarTree;
+use crate::layout::{Content, FragmentStyle, RenderData};
+use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
     pub render_data: RenderData,
     pub mocked_render_data: RenderData,
-    layout_context: LayoutContext,
+    pub content: Content,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
-            layout_context: LayoutContext::new(font_library),
+            content: Content::new(font_library),
             render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
         }
@@ -28,7 +28,6 @@ impl Advanced {
     #[inline]
     pub fn reset(&mut self) {
         self.render_data = RenderData::default();
-        self.layout_context.clear_cache();
     }
 
     #[inline]
@@ -38,12 +37,12 @@ impl Advanced {
 
     #[inline]
     pub fn font_library(&self) -> &FontLibrary {
-        self.layout_context.font_library()
+        self.content.font_library()
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
-        self.layout_context = LayoutContext::new(fonts);
+        self.content = Content::new(fonts);
     }
 
     #[inline]
@@ -51,50 +50,39 @@ impl Advanced {
         let mut found_font_features = vec![];
         if let Some(features) = font_features {
             for feature in features {
-                let setting: swash::Setting<u16> = (feature.as_str(), 1).into();
+                let setting: crate::font_introspector::Setting<u16> =
+                    (feature.as_str(), 1).into();
                 found_font_features.push(setting);
             }
         }
 
-        self.layout_context.set_font_features(found_font_features);
+        self.content.set_font_features(found_font_features);
     }
 
     #[inline]
-    pub fn update_layout(&mut self, tree: &SugarTree) {
-        // let start = std::time::Instant::now();
-        self.render_data = RenderData::default();
+    pub fn content(&mut self, scale: f32, font_size: f32) -> &mut Content {
+        self.content.build(scale, font_size);
+        &mut self.content
+    }
 
-        let mut lb = self
-            .layout_context
-            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
-        tree.content.layout(&mut lb);
+    #[inline]
+    pub fn update_render_data(&mut self) {
+        self.render_data = RenderData::default();
         self.render_data.clear();
-        lb.build_into(&mut self.render_data);
+        self.content.resolve(&mut self.render_data);
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
-
-        // let duration = start.elapsed();
-        // println!(" - advanced::update_layout() is: {:?}", duration);
     }
 
     #[inline]
-    pub fn calculate_dimensions(&mut self, tree: &SugarTree) {
-        let mut content_builder = Content::builder();
-        // content_builder.enter_span(&[
-        //     SpanStyle::FontId(0),
-        //     SpanStyle::Size(tree.layout.font_size),
-        //     // S::features(&[("dlig", 1).into(), ("hlig", 1).into()][..]),
-        // ]);
-        content_builder.add_char(' ', FragmentStyle::default());
-
-        let mut lb = self
-            .layout_context
-            .builder(tree.layout.dimensions.scale, tree.layout.font_size);
-        let content = content_builder.build_ref();
-        content.layout(&mut lb);
+    pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
+        self.mocked_render_data = RenderData::default();
+        let mut content = Content::new(self.content.font_library());
+        content.build(layout.dimensions.scale, layout.font_size);
+        content.add_text(" ", FragmentStyle::default());
         self.mocked_render_data.clear();
-        lb.build_into(&mut self.mocked_render_data);
+        content.resolve(&mut self.mocked_render_data);
 
         self.mocked_render_data
             .break_lines()

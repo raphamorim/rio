@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
-const MAX_INSTANCES: usize = 5_000;
+const INITIAL_QUANTITY: usize = 6;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
@@ -104,6 +104,7 @@ pub struct RectBrush {
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
+    supported_quantity: usize,
 }
 
 impl RectBrush {
@@ -223,10 +224,10 @@ impl RectBrush {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
-
+        let supported_quantity = INITIAL_QUANTITY;
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instances Buffer"),
-            size: mem::size_of::<Rect>() as u64 * MAX_INSTANCES as u64,
+            size: mem::size_of::<Rect>() as u64 * supported_quantity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -241,6 +242,7 @@ impl RectBrush {
             pipeline,
             current_transform: [0.0; 16],
             instances,
+            supported_quantity,
         }
     }
 
@@ -277,6 +279,18 @@ impl RectBrush {
             return;
         }
 
+        if total > self.supported_quantity {
+            self.instances.destroy();
+
+            self.supported_quantity = total;
+            self.instances = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::rect::Rect instances"),
+                size: mem::size_of::<Rect>() as u64 * self.supported_quantity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
         rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
@@ -285,15 +299,14 @@ impl RectBrush {
 
         let queue = &mut ctx.queue;
         while i < total {
-            let end = (i + MAX_INSTANCES).min(total);
+            let end = (i + self.supported_quantity).min(total);
             let amount = end - i;
 
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
             queue.write_buffer(&self.instances, 0, instance_bytes);
             rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-
-            i += MAX_INSTANCES;
+            i += self.supported_quantity;
         }
 
         // queue.submit(Some(encoder.finish()));
