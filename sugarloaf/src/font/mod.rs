@@ -127,7 +127,7 @@ impl Default for FontLibraryData {
         Self {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: FxHashMap::default(),
-            stash: LruCache::new(NonZeroUsize::new(3).unwrap()),
+            stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
         }
     }
 }
