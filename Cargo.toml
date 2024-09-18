@@ -62,14 +62,11 @@ console_error_panic_hook = "0.1.7"
 tracing = "0.1.40"
 
 [profile.release]
-opt-level = 3
 lto = true
 strip = true
-debug = 0
-panic = 'abort'
+debug = "limited"
 codegen-units = 1
 incremental = false
-
 
 [profile.dev]
 split-debuginfo = "unpacked"
