@@ -26,6 +26,32 @@ jobs:
       - run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
       - run: cargo test --release
+  msys2-build-test: #cargo test doesn't necessarily build the exec we want
+    strategy:
+      matrix:
+        sys: [MINGW64, UCRT64, CLANG64]
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.sys }}
+        update: true
+        install: base-devel git
+        pacboy: >-
+          rust:p
+          cc:p
+          pkgconf:p
+          cmake:p
+          freetype:p
+          python:p
+          fontconfig:p
+
+    - name: Run cargo 
+      shell: msys2 {0}
+      run: cargo build --release
 
   # cli:
   #   strategy:
