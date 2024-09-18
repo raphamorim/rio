@@ -1,8 +1,8 @@
 [package]
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 description = "Parser for implementing terminal emulators"
-repository = "https://github.com/alacritty/vte"
-documentation = "https://docs.rs/vte/"
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio"
 readme = "README.md"
 license = "Apache-2.0 OR MIT"
 version = { workspace = true }
