@@ -3,6 +3,7 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
+use crate::components::quad::QuadBrush;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::rect::{Rect, RectBrush};
@@ -25,6 +26,7 @@ pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
+    quad_brush: QuadBrush,
     layer_brush: LayerBrush,
     rich_text_brush: RichTextBrush,
     state: state::SugarState,
@@ -128,12 +130,14 @@ impl Sugarloaf<'_> {
 
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
+        let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
             layer_brush,
+            quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
