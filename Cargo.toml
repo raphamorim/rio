@@ -63,7 +63,7 @@ tracing = "0.1.40"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = { "thin", "windows-gnu": "true" }
 strip = true
 debug = 0
 panic = 'abort'

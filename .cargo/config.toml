@@ -2,9 +2,6 @@
 test-config = "test --release -p rio-config --"
 test-rio = "test --release -p rioterm --"
 
-[target.x86_64-pc-windows-gnu.build]
-lto = "true"
-
 [target.wasm32-unknown-unknown]
 rustflags = [
     # Enabled unstable APIs from web_sys
