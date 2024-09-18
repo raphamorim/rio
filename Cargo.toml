@@ -63,12 +63,16 @@ tracing = "0.1.40"
 
 [profile.release]
 opt-level = 3
-lto = { "thin", "windows-gnu": "true" }
+lto = "thin"
 strip = true
 debug = 0
 panic = 'abort'
 codegen-units = 1
 incremental = false
+
+[profile.release-lto] #creating a custom release profile for msys2 builds
+inherits = "release"
+lto = true
 
 [profile.dev]
 split-debuginfo = "unpacked"
