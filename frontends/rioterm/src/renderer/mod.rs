@@ -34,8 +34,8 @@ struct Cursor {
 }
 
 pub struct Renderer {
-    #[allow(unused)]
     pub option_as_alt: String,
+    pub has_adaptive_theme: bool,
     is_ime_enabled: bool,
     is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
@@ -71,14 +71,17 @@ impl Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
         let mut named_colors = config.colors;
+        let mut has_adaptive_theme = false;
 
         if let Some(theme) = current_theme {
             if let Some(adaptive_colors) = &config.adaptive_colors {
                 match theme {
                     Theme::Light => {
+                        has_adaptive_theme = true;
                         named_colors = adaptive_colors.light.unwrap_or(named_colors);
                     }
                     Theme::Dark => {
+                        has_adaptive_theme = true;
                         named_colors = adaptive_colors.dark.unwrap_or(named_colors);
                     }
                 }
@@ -106,6 +109,7 @@ impl Renderer {
         }
 
         Renderer {
+            has_adaptive_theme,
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_ime_enabled: false,
