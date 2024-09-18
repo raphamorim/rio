@@ -1924,7 +1924,6 @@ impl Screen<'_> {
             None
         };
 
-        // let start = std::time::Instant::now();
         let (rows, cursor, display_offset, has_blinking_enabled) = {
             let terminal = self.context_manager.current().terminal.lock();
             let data = (
@@ -1937,10 +1936,6 @@ impl Screen<'_> {
             data
         };
         self.renderer.set_ime(self.ime.preedit());
-        // let duration = start.elapsed();
-        // println!("Total terminal with set_ime info is: {:?}", duration);
-
-        // let start = std::time::Instant::now();
         self.renderer.prepare_term(
             &rows,
             cursor,
@@ -1951,20 +1946,14 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
-
-        // let duration = start.elapsed();
-        // println!("Total prepare_term is: {:?}", duration);
-
-        // let start = std::time::Instant::now();
         self.sugarloaf.render();
-        // let duration = start.elapsed();
-        // println!("Total render is: {:?}", duration);
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
         if self.renderer.has_blinking_enabled() && self.selection_is_empty() {
-            self.context_manager.schedule_render_on_route(800);
+            self.context_manager
+                .blink_cursor(self.renderer.config_blinking_interval);
         }
 
         // let duration = start_total.elapsed();

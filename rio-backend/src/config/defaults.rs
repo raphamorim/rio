@@ -11,6 +11,11 @@ pub fn default_line_height() -> f32 {
 }
 
 #[inline]
+pub fn default_cursor_interval() -> u64 {
+    800
+}
+
+#[inline]
 pub fn default_max_fps() -> u64 {
     if cfg!(target_os = "macos") {
         120

@@ -142,6 +142,8 @@ pub struct CursorConfig {
     pub shape: CursorShape,
     #[serde(default = "bool::default")]
     pub blinking: bool,
+    #[serde(default = "default_cursor_interval", rename = "blinking-interval")]
+    pub blinking_interval: u64,
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -439,6 +441,7 @@ impl Default for CursorConfig {
         Self {
             shape: default_cursor(),
             blinking: false,
+            blinking_interval: default_cursor_interval(),
         }
     }
 }

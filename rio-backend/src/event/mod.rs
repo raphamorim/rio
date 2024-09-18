@@ -23,8 +23,6 @@ pub enum RioEventType {
     Rio(RioEvent),
     Frame,
     // Message(Message),
-    BlinkCursor,
-    BlinkCursorTimeout,
 }
 
 #[derive(Debug)]
@@ -116,6 +114,8 @@ pub enum RioEvent {
     /// Cursor blinking state has changed.
     CursorBlinkingChange,
 
+    CursorBlinkingChangeOnRoute(usize),
+
     /// Terminal bell ring.
     Bell,
 
@@ -128,7 +128,7 @@ pub enum RioEvent {
     /// Leave current terminal.
     CloseTerminal(usize),
 
-    BlinkCursor,
+    BlinkCursor(u64, usize),
 
     UpdateGraphicLibrary,
 
@@ -154,6 +154,9 @@ impl Debug for RioEvent {
             RioEvent::Hide => write!(f, "Hide)"),
             RioEvent::HideOtherApplications => write!(f, "HideOtherApplications)"),
             RioEvent::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
+            RioEvent::CursorBlinkingChangeOnRoute(route_id) => {
+                write!(f, "CursorBlinkingChangeOnRoute {route_id}")
+            }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
             RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
@@ -182,7 +185,9 @@ impl Debug for RioEvent {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
             RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
-            RioEvent::BlinkCursor => write!(f, "BlinkCursor"),
+            RioEvent::BlinkCursor(timeout, route_id) => {
+                write!(f, "BlinkCursor {timeout} {route_id}")
+            }
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),

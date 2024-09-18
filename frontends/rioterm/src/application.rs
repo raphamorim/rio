@@ -275,6 +275,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if route_id == route.window.screen.ctx().current_route() {
+                        route.request_redraw();
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 let timer_id = TimerId::new(Topic::Render, window_id);
                 let event =
@@ -305,6 +312,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
+            RioEventType::Rio(RioEvent::BlinkCursor(millis, route_id)) => {
+                let timer_id = TimerId::new(Topic::CursorBlinking, window_id);
+                let event = EventPayload::new(
+                    RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)),
+                    window_id,
+                );
+
+                if !self.scheduler.scheduled(timer_id) {
+                    self.scheduler.schedule(
+                        event,
+                        Duration::from_millis(millis),
+                        false,
+                        timer_id,
+                    );
+                }
+            }
             RioEventType::Rio(RioEvent::Title(title)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.set_window_title(&title);
@@ -316,7 +339,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.set_window_subtitle(&subtitle);
                 }
             }
-            RioEventType::BlinkCursor | RioEventType::BlinkCursorTimeout => {}
             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.reset_mouse();

@@ -9,8 +9,29 @@ By default, the cursor shape is set to `block`. You can also choose from other o
 
 Additionally, you can enable or disable cursor blinking, which is set to `false` by default.
 
+### Shape
+
+Options: 'block', 'underline', 'beam'
+
 ```toml
 [cursor]
-shape = 'block'    # Options: 'block', 'underline', 'beam'
-blinking = false   # Enable/disable blinking (default: false)
+shape = 'block'
+```
+
+### Blinking
+
+Enable/disable blinking (default: false)
+
+```toml
+[cursor]
+blinking = false
+```
+
+### Blinking-interval
+
+Set cursor blinking interval (default: 800, only configurable from 350ms to 1200ms).
+
+```toml
+[cursor]
+blinking-interval = 800
 ```
