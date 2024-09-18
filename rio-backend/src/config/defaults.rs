@@ -137,19 +137,6 @@ pub fn default_config_file_content() -> String {
 # Example:
 # ignore-selection-foreground-color = false
 
-# Cursor
-#
-# [cursor]
-#
-# Default cursor shape is 'block'
-# Other available options are: 'underline', 'beam' or 'hidden'
-#
-# shape = 'block'
-#
-# Whether the cursor blinks. The default is true
-#
-# blinking = false
-
 # Theme
 #
 # It makes Rio look for the specified theme in the themes folder
@@ -218,6 +205,20 @@ pub fn default_config_file_content() -> String {
 # Default is `true`
 #
 # confirm-before-quit = false
+
+# Cursor
+#
+# shape - Default cursor shape is 'block'
+# Other available options are: 'underline', 'beam' or 'hidden'
+#
+# blinking - Whether the cursor blinks. The default is true
+#
+# blinking-interval - Cursor update on milliseconds interval
+#
+# [cursor]
+# shape = 'block'
+# blinking = false
+# blinking-interval = 800 
 
 # Editor
 #
