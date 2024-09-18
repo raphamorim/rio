@@ -265,7 +265,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.italic, true, false) {
+        match find_font(&db, spec.italic, false, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
@@ -277,7 +277,7 @@ impl FontLibraryData {
             }
         }
 
-        match find_font(&db, spec.bold, true, false) {
+        match find_font(&db, spec.bold, false, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }

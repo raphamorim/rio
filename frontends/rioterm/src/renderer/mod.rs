@@ -47,6 +47,7 @@ pub struct Renderer {
     cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
     pub config_has_blinking_enabled: bool,
+    pub config_blinking_interval: u64,
     term_has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
@@ -110,6 +111,7 @@ impl Renderer {
 
         Renderer {
             has_adaptive_theme,
+            config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_ime_enabled: false,

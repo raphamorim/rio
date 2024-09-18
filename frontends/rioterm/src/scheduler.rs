@@ -26,6 +26,7 @@ impl TimerId {
 pub enum Topic {
     Render,
     RenderRoute,
+    CursorBlinking,
 }
 
 /// Event scheduled to be emitted at a specific time.

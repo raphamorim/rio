@@ -397,12 +397,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
     }
 
-    // #[inline]
-    pub fn schedule_render_on_route(&mut self, scheduled_time: u64) {
+    #[inline]
+    pub fn blink_cursor(&mut self, scheduled_time: u64) {
         // PrepareRender will force a render for any route that is focused on window
         // PrepareRenderOnRoute only call render function for specific route ids.
         self.event_proxy.send_event(
-            RioEvent::PrepareRenderOnRoute(scheduled_time, self.current_route),
+            RioEvent::BlinkCursor(scheduled_time, self.current_route),
             self.window_id,
         );
     }
