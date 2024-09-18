@@ -51,7 +51,7 @@ jobs:
 
     - name: Run cargo 
       shell: msys2 {0}
-      run: cargo build --profile release-lto #cargo build works fine
+      run: cargo build --profile ${{ matrix.sys == 'CLANG64' && 'release' || 'release-lto' }} #clang handles lto=thin fine, but mingw does not
 
   # cli:
   #   strategy:
