@@ -9,6 +9,7 @@ language: 'en'
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+- Add support for msys2/mingw builds release [#635](https://github.com/raphamorim/rio/issues/635) by [@Kreijstal](https://github.com/Kreijstal).
 
 ## 0.1.14
 
