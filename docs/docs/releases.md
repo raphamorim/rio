@@ -14,6 +14,7 @@ language: 'en'
 
 - Introduce `cursor.blinking-interval`, default value is 800ms.
 - Fix blinking cursor lag issue.
+- performance: Use `Vec` (std based) instead of ArrayVec for copa.
 - Fix adaptive theme background color on macos.
 - Decorations as `Transparent` is default on MacOS.
 - Navigation mode as `NativeTab` is default on MacOS.
