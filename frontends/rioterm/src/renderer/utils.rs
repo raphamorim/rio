@@ -1,7 +1,7 @@
-use rio_window::window::Theme;
-use rio_backend::config::Config;
 use crate::constants;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
+use rio_backend::config::Config;
+use rio_window::window::Theme;
 
 #[inline]
 pub fn padding_top_from_config(

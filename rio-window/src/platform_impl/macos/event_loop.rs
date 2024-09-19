@@ -128,7 +128,9 @@ impl ActiveEventLoop {
         let app = NSApplication::sharedApplication(self.mtm);
 
         if app.respondsToSelector(sel!(effectiveAppearance)) {
-            Some(super::window_delegate::appearance_to_theme(&app.effectiveAppearance()))
+            Some(super::window_delegate::appearance_to_theme(
+                &app.effectiveAppearance(),
+            ))
         } else {
             Some(Theme::Light)
         }

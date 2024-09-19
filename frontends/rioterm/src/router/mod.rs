@@ -61,9 +61,7 @@ impl Route<'_> {
         config: &RioConfig,
         db: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
-        self.window
-            .screen
-            .update_config(config, db);
+        self.window.screen.update_config(config, db);
     }
 
     #[inline]
