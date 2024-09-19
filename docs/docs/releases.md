@@ -12,6 +12,9 @@ language: 'en'
 - Introduce `cursor.blinking-interval`, default value is 800ms.
 - Fix blinking cursor lag issue.
 - Fix adaptive theme background color on macos.
+- Decorations as `Transparent` is default on MacOS.
+- Navigation mode as `NativeTab` is default on MacOS.
+- `keyboard.use-kitty-keyboard-protocol` is now `false` by default.
 - Add support for msys2/mingw builds release [#635](https://github.com/raphamorim/rio/issues/635) by [@Kreijstal](https://github.com/Kreijstal).
 
 ## 0.1.14
