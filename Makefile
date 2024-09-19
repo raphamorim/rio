@@ -161,8 +161,7 @@ test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
 
-publish-crates:
-	cargo build --release
+publish-crates: build
 	cargo publish -p rio-window
 	cargo publish -p rio-proc-macros
 	cargo publish -p copa
