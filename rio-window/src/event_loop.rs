@@ -18,12 +18,12 @@ use std::time::{Duration, Instant};
 #[cfg(web_platform)]
 use web_time::{Duration, Instant};
 
-use crate::window::Theme;
 use crate::application::ApplicationHandler;
 use crate::error::{EventLoopError, OsError};
 use crate::event::Event;
 use crate::monitor::MonitorHandle;
 use crate::platform_impl;
+use crate::window::Theme;
 use crate::window::{CustomCursor, CustomCursorSource, Window, WindowAttributes};
 
 /// Provides a way to retrieve events from the system and from the windows that were registered to

@@ -33,12 +33,12 @@ use crate::dpi::{
 };
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
 use crate::event::WindowEvent;
-use objc2_app_kit::NSAppearanceNameAqua;
 use crate::platform::macos::{OptionAsAlt, WindowExtMacOS};
 use crate::window::{
     Cursor, CursorGrabMode, Icon, ImePurpose, ResizeDirection, Theme, UserAttentionType,
     WindowAttributes, WindowButtons, WindowLevel,
 };
+use objc2_app_kit::NSAppearanceNameAqua;
 
 #[derive(Clone, Debug)]
 pub struct PlatformSpecificWindowAttributes {
@@ -1877,10 +1877,11 @@ fn dark_appearance_name() -> &'static NSString {
 }
 
 pub fn appearance_to_theme(appearance: &NSAppearance) -> Theme {
-    let best_match = appearance.bestMatchFromAppearancesWithNames(&NSArray::from_id_slice(&[
-        unsafe { NSAppearanceNameAqua.copy() },
-        dark_appearance_name().copy(),
-    ]));
+    let best_match =
+        appearance.bestMatchFromAppearancesWithNames(&NSArray::from_id_slice(&[
+            unsafe { NSAppearanceNameAqua.copy() },
+            dark_appearance_name().copy(),
+        ]));
     if let Some(best_match) = best_match {
         if *best_match == *dark_appearance_name() {
             Theme::Dark
@@ -1888,7 +1889,10 @@ pub fn appearance_to_theme(appearance: &NSAppearance) -> Theme {
             Theme::Light
         }
     } else {
-        tracing::warn!(?appearance, "failed to determine the theme of the appearance");
+        tracing::warn!(
+            ?appearance,
+            "failed to determine the theme of the appearance"
+        );
         // Default to light in this case
         Theme::Light
     }

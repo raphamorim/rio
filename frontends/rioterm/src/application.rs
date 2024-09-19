@@ -1,6 +1,6 @@
-use crate::renderer::utils::update_colors_based_on_theme;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
+use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
@@ -1008,10 +1008,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ThemeChanged(new_theme) => {
                 update_colors_based_on_theme(&mut self.config, Some(new_theme));
-                route.window.screen.update_config(
-                    &self.config,
-                    &self.router.font_library,
-                );
+                route
+                    .window
+                    .screen
+                    .update_config(&self.config, &self.router.font_library);
                 route.window.configure_window(&self.config);
             }
 
