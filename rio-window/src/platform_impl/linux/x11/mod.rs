@@ -37,7 +37,7 @@ use crate::platform_impl::{
     ActiveEventLoop as PlatformActiveEventLoop, OsError, PlatformCustomCursor,
 };
 use crate::window::{
-    CustomCursor as RootCustomCursor, CustomCursorSource, WindowAttributes,
+    CustomCursor as RootCustomCursor, CustomCursorSource, Theme, WindowAttributes,
 };
 
 mod activation;
@@ -763,6 +763,10 @@ impl ActiveEventLoop {
 
     pub(crate) fn set_exit_code(&self, code: i32) {
         self.exit.set(Some(code))
+    }
+
+    pub(crate) fn system_theme(&self) -> Option<Theme> {
+        None
     }
 
     pub(crate) fn exit_code(&self) -> Option<i32> {

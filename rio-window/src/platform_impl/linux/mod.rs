@@ -945,6 +945,10 @@ impl ActiveEventLoop {
     fn exit_code(&self) -> Option<i32> {
         x11_or_wayland!(match self; Self(evlp) => evlp.exit_code())
     }
+
+    pub(crate) fn system_theme(&self) -> Option<Theme> {
+        x11_or_wayland!(match self; Self(evlp) => evlp.system_theme())
+    }
 }
 
 #[derive(Clone)]
