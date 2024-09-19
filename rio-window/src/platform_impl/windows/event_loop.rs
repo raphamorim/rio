@@ -88,7 +88,7 @@ use crate::platform_impl::platform::{
     raw_input, util, wrap_device_id, Fullscreen, WindowId, DEVICE_ID,
 };
 use crate::window::{
-    CustomCursor as RootCustomCursor, CustomCursorSource, WindowId as RootWindowId,
+    CustomCursor as RootCustomCursor, CustomCursorSource, Theme, WindowId as RootWindowId,
 };
 use runner::{EventLoopRunner, EventLoopRunnerShared};
 
@@ -582,6 +582,10 @@ impl ActiveEventLoop {
 
     pub(crate) fn exit(&self) {
         self.runner_shared.set_exit_code(0)
+    }
+
+    pub(crate) fn system_theme(&self) -> Option<Theme> {
+        None
     }
 
     pub(crate) fn exiting(&self) -> bool {

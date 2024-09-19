@@ -26,6 +26,7 @@ use crate::platform_impl::platform::min_timeout;
 use crate::platform_impl::{
     ActiveEventLoop as PlatformActiveEventLoop, OsError, PlatformCustomCursor,
 };
+use crate::window::Theme;
 use crate::window::{CustomCursor as RootCustomCursor, CustomCursorSource};
 
 mod proxy;
