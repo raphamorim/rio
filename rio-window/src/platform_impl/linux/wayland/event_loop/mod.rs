@@ -720,7 +720,7 @@ impl ActiveEventLoop {
         self.exit.get()
     }
 
-    pub fn system_theme(&self) -> Option<Theme> {
+    pub(crate) fn system_theme(&self) -> Option<Theme> {
         None
     }
 
