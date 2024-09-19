@@ -33,6 +33,7 @@ use crate::dpi::{
 };
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
 use crate::event::WindowEvent;
+use objc2_app_kit::NSAppearanceNameAqua;
 use crate::platform::macos::{OptionAsAlt, WindowExtMacOS};
 use crate::window::{
     Cursor, CursorGrabMode, Icon, ImePurpose, ResizeDirection, Theme, UserAttentionType,
@@ -1867,5 +1868,28 @@ fn set_ns_theme(theme: Option<Theme>, mtm: MainThreadMarker) {
             NSAppearance::appearanceNamed(&name).unwrap()
         });
         app.setAppearance(appearance.as_ref().map(|a| a.as_ref()));
+    }
+}
+
+fn dark_appearance_name() -> &'static NSString {
+    // Don't use the static `NSAppearanceNameDarkAqua` to allow linking on macOS < 10.14
+    ns_string!("NSAppearanceNameDarkAqua")
+}
+
+pub fn appearance_to_theme(appearance: &NSAppearance) -> Theme {
+    let best_match = appearance.bestMatchFromAppearancesWithNames(&NSArray::from_id_slice(&[
+        unsafe { NSAppearanceNameAqua.copy() },
+        dark_appearance_name().copy(),
+    ]));
+    if let Some(best_match) = best_match {
+        if *best_match == *dark_appearance_name() {
+            Theme::Dark
+        } else {
+            Theme::Light
+        }
+    } else {
+        tracing::warn!(?appearance, "failed to determine the theme of the appearance");
+        // Default to light in this case
+        Theme::Light
     }
 }

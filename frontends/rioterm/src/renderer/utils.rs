@@ -1,3 +1,5 @@
+use rio_window::window::Theme;
+use rio_backend::config::Config;
 use crate::constants;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
 
@@ -65,5 +67,24 @@ pub fn terminal_dimensions(
         height: height as u16,
         cols: layout.columns as u16,
         rows: layout.lines as u16,
+    }
+}
+
+pub fn update_colors_based_on_theme(config: &mut Config, theme_opt: Option<Theme>) {
+    if let Some(theme) = theme_opt {
+        if let Some(adaptive_colors) = &config.adaptive_colors {
+            match theme {
+                Theme::Light => {
+                    if let Some(light_colors) = adaptive_colors.light {
+                        config.colors = light_colors;
+                    }
+                }
+                Theme::Dark => {
+                    if let Some(darkcolors) = adaptive_colors.dark {
+                        config.colors = darkcolors;
+                    }
+                }
+            }
+        }
     }
 }

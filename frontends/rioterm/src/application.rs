@@ -1,3 +1,4 @@
+use crate::renderer::utils::update_colors_based_on_theme;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::router::{routes::RoutePath, Router};
@@ -115,6 +116,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
+        update_colors_based_on_theme(&mut self.config, event_loop.system_theme());
+
         self.router.create_window(
             event_loop,
             self.event_proxy.clone(),
@@ -226,8 +229,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                     }
 
-                    route.window.configure_window(&self.config);
                     route.update_config(&self.config, &self.router.font_library);
+                    route.window.configure_window(&self.config);
 
                     if let Some(error) = &config_error {
                         route.report_error(&error.to_owned().into());
@@ -1004,11 +1007,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::ThemeChanged(new_theme) => {
+                update_colors_based_on_theme(&mut self.config, Some(new_theme));
                 route.window.screen.update_config(
                     &self.config,
-                    Some(new_theme),
                     &self.router.font_library,
                 );
+                route.window.configure_window(&self.config);
             }
 
             WindowEvent::DroppedFile(path) => {
