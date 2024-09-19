@@ -724,6 +724,9 @@ impl ActiveEventLoop {
         None
     }
 
+    #[inline]
+    pub fn listen_device_events(&self, _allowed: DeviceEvents) {}
+
     pub(crate) fn create_custom_cursor(
         &self,
         cursor: CustomCursorSource,
