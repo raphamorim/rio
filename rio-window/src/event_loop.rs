@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 #[cfg(web_platform)]
 use web_time::{Duration, Instant};
 
+use crate::window::Theme;
 use crate::application::ApplicationHandler;
 use crate::error::{EventLoopError, OsError};
 use crate::event::Event;
@@ -475,6 +476,17 @@ impl ActiveEventLoop {
         .entered();
 
         self.p.listen_device_events(allowed);
+    }
+
+    /// Returns the current system theme.
+    ///
+    /// Returns `None` if it cannot be determined on the current platform.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **iOS / Android / Wayland / x11 / Orbital:** Unsupported.
+    pub fn system_theme(&self) -> Option<Theme> {
+        self.p.system_theme()
     }
 
     /// Sets the [`ControlFlow`].

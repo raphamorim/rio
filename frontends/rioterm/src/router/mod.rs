@@ -63,7 +63,7 @@ impl Route<'_> {
     ) {
         self.window
             .screen
-            .update_config(config, self.window.winit_window.theme(), db);
+            .update_config(config, db);
     }
 
     #[inline]
@@ -356,7 +356,6 @@ impl<'a> RouteWindow<'a> {
             raw_window_handle: winit_window.window_handle().unwrap().into(),
             raw_display_handle: winit_window.display_handle().unwrap().into(),
             window_id: winit_window.id(),
-            theme: winit_window.theme(),
         };
 
         let screen = Screen::new(

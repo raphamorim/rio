@@ -719,8 +719,9 @@ impl ActiveEventLoop {
         self.exit.get()
     }
 
-    #[inline]
-    pub fn listen_device_events(&self, _allowed: DeviceEvents) {}
+    pub fn system_theme(&self) -> Option<Theme> {
+        None
+    }
 
     pub(crate) fn create_custom_cursor(
         &self,

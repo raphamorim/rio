@@ -19,7 +19,6 @@ use rio_backend::sugarloaf::{
     Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
     SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use rio_window::window::Theme;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
@@ -35,7 +34,6 @@ struct Cursor {
 
 pub struct Renderer {
     pub option_as_alt: String,
-    pub has_adaptive_theme: bool,
     is_ime_enabled: bool,
     is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
@@ -66,28 +64,11 @@ pub struct Renderer {
 impl Renderer {
     pub fn new(
         config: &Config,
-        current_theme: Option<Theme>,
         font_context: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Renderer {
         let term_colors = TermColors::default();
         let colors = List::from(&term_colors);
-        let mut named_colors = config.colors;
-        let mut has_adaptive_theme = false;
-
-        if let Some(theme) = current_theme {
-            if let Some(adaptive_colors) = &config.adaptive_colors {
-                match theme {
-                    Theme::Light => {
-                        has_adaptive_theme = true;
-                        named_colors = adaptive_colors.light.unwrap_or(named_colors);
-                    }
-                    Theme::Dark => {
-                        has_adaptive_theme = true;
-                        named_colors = adaptive_colors.dark.unwrap_or(named_colors);
-                    }
-                }
-            }
-        }
+        let named_colors = config.colors;
 
         let mut dynamic_background =
             (named_colors.background.0, named_colors.background.1, false);
@@ -110,7 +91,6 @@ impl Renderer {
         }
 
         Renderer {
-            has_adaptive_theme,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,

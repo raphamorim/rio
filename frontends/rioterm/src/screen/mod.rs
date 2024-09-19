@@ -93,7 +93,6 @@ pub struct ScreenWindowProperties {
     pub raw_window_handle: RawWindowHandle,
     pub raw_display_handle: RawDisplayHandle,
     pub window_id: rio_window::window::WindowId,
-    pub theme: Option<rio_window::window::Theme>,
 }
 
 impl Screen<'_> {
@@ -110,7 +109,6 @@ impl Screen<'_> {
         let raw_window_handle = window_properties.raw_window_handle;
         let raw_display_handle = window_properties.raw_display_handle;
         let window_id = window_properties.window_id;
-        let theme = window_properties.theme;
 
         let padding_y_top =
             padding_top_from_config(&config.navigation, config.padding_y[0], 1);
@@ -177,7 +175,7 @@ impl Screen<'_> {
             }
         };
 
-        let renderer = Renderer::new(config, theme, font_library);
+        let renderer = Renderer::new(config, font_library);
 
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
@@ -219,7 +217,7 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") && !renderer.has_adaptive_theme {
+        if cfg!(target_os = "macos") {
             sugarloaf.set_background_color(None);
         } else {
             sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
@@ -305,7 +303,6 @@ impl Screen<'_> {
     pub fn update_config(
         &mut self,
         config: &rio_backend::config::Config,
-        current_theme: Option<rio_window::window::Theme>,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
     ) {
         let num_tabs = self.ctx().len();
@@ -328,7 +325,7 @@ impl Screen<'_> {
         );
 
         self.sugarloaf.layout_mut().update();
-        self.renderer = Renderer::new(config, current_theme, font_library);
+        self.renderer = Renderer::new(config, font_library);
 
         for context in self.ctx().contexts() {
             let mut terminal = context.terminal.lock();
@@ -342,7 +339,7 @@ impl Screen<'_> {
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
 
-        if cfg!(target_os = "macos") && !self.renderer.has_adaptive_theme {
+        if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
         } else {
             self.sugarloaf

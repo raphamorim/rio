@@ -1,3 +1,4 @@
+use objc2::sel;
 use std::any::Any;
 use std::cell::Cell;
 use std::collections::VecDeque;
@@ -33,6 +34,7 @@ use crate::event_loop::{
 use crate::platform::macos::ActivationPolicy;
 use crate::platform::pump_events::PumpStatus;
 use crate::platform_impl::platform::cursor::CustomCursor;
+use crate::window::Theme;
 use crate::window::{CustomCursor as RootCustomCursor, CustomCursorSource};
 
 #[derive(Default)]
@@ -120,6 +122,16 @@ impl ActiveEventLoop {
 
     pub(crate) fn control_flow(&self) -> ControlFlow {
         self.delegate.control_flow()
+    }
+
+    pub(crate) fn system_theme(&self) -> Option<Theme> {
+        let app = NSApplication::sharedApplication(self.mtm);
+
+        if app.respondsToSelector(sel!(effectiveAppearance)) {
+            Some(super::window_delegate::appearance_to_theme(&app.effectiveAppearance()))
+        } else {
+            Some(Theme::Light)
+        }
     }
 
     pub(crate) fn exit(&self) {
