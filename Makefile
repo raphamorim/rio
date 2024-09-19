@@ -29,9 +29,6 @@ run:
 dev:
 	cargo run -p rioterm
 
-dev-wa:
-	cargo run -p rioterm
-
 dev-debug:
 	RIO_LOG_LEVEL=debug make dev
 
@@ -156,17 +153,9 @@ install-debian-wayland:
 release-windows:
 	cargo wix -p rioterm
 
-# Note had to separate clippy default command because rio-backend feature
-# flag has been conflicting in the checks
 lint:
 	cargo fmt -- --check --color always
 	cargo clippy --all-targets --all-features -- -D warnings
-
-# There is errors regarding null pointers in corcovado that needs to be fixed for Windows
-test-win:
-	cargo fmt -- --check --color always
-	cargo clippy --all-targets --all-features
-	RUST_BACKTRACE=full cargo test --release
 
 test:
 	make lint
