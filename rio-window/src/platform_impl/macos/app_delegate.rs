@@ -25,6 +25,15 @@ use crate::event::{DeviceEvent, Event, InnerSizeWriter, StartCause, WindowEvent}
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
 
+#[repr(u64)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum NSApplicationTerminateReply {
+    NSTerminateCancel = 0,
+    NSTerminateNow = 1,
+    #[allow(unused)]
+    NSTerminateLater = 2,
+}
+
 #[derive(Debug)]
 struct Policy(NSApplicationActivationPolicy);
 
@@ -77,6 +86,73 @@ declare_class!(
     unsafe impl NSObjectProtocol for ApplicationDelegate {}
 
     unsafe impl NSApplicationDelegate for ApplicationDelegate {
+        #[method(applicationShouldTerminate:)]
+        fn should_terminate(&self, _sender: Option<&AnyObject>) -> u64 {
+            use objc::runtime::Object;
+            use objc::msg_send;
+            use objc::sel;
+            use objc::class;
+            use objc::sel_impl;
+            unsafe {
+                let panel: *mut Object = msg_send![class!(NSAlert), new];
+
+                let prompt = "All sessions will be closed";
+                let title = "Quit Rio terminal?";
+                let yes = "Yes";
+                let no = "No";
+                let cancel = "Cancel";
+
+                let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
+                let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:4];
+
+                let title_string: *mut Object = msg_send![class!(NSString), alloc];
+                let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:4];
+
+                let yes_string: *mut Object = msg_send![class!(NSString), alloc];
+                let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:4];
+
+                let no_string: *mut Object = msg_send![class!(NSString), alloc];
+                let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:4];
+
+                let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
+                let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:4];
+
+                let _: () = msg_send![panel, setMessageText: title_allocated_string];
+                let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: yes_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: no_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
+                let response: std::ffi::c_long = msg_send![panel, runModal];
+                match response {
+                    1000 => NSApplicationTerminateReply::NSTerminateNow as u64,
+                    1001 => NSApplicationTerminateReply::NSTerminateCancel as u64,
+                    _ => NSApplicationTerminateReply::NSTerminateCancel as u64,
+                }
+            }
+        }
+
+        // #[method(applicationDockMenu:)]
+        // fn dock_menu(&self, _sender: Option<&AnyObject>) -> *mut objc2::runtime::AnyObject {
+        //     use objc::sel;
+        //     use objc::sel_impl;
+        //     use crate::platform_impl::platform::menu_legacy::KeyAssignment;
+        //     use crate::platform_impl::platform::menu_legacy::Menu;
+        //     use crate::platform_impl::platform::menu_legacy::MenuItem;
+        //     use crate::platform_impl::platform::menu_legacy::RepresentedItem;
+        //     let dock_menu = Menu::new_with_title("");
+        //     let new_window_item =
+        //         MenuItem::new_with("New Window", Some(sel!(rioPerformKeyAssignment:)), "");
+        //     new_window_item
+        //         .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
+        //     dock_menu.add_item(&new_window_item);
+        //     dock_menu.autorelease()
+        // }
+
+        #[method(applicationShouldTerminateAfterLastWindowClosed:)]
+        fn should_terminate_after_last_window_closed(&self, _sender: Option<&AnyObject>) -> bool {
+            false
+        }
+
         // NOTE: This will, globally, only be run once, no matter how many
         // `EventLoop`s the user creates.
         #[method(applicationDidFinishLaunching:)]
