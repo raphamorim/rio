@@ -21,7 +21,6 @@ mod event;
 mod image;
 mod menu;
 mod menu_item;
-mod menu_legacy;
 mod pasteboard;
 mod responder;
 mod screen;
