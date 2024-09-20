@@ -218,7 +218,7 @@ pub fn default_config_file_content() -> String {
 # [cursor]
 # shape = 'block'
 # blinking = false
-# blinking-interval = 800 
+# blinking-interval = 800
 
 # Editor
 #
