@@ -1085,6 +1085,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         event_loop.set_control_flow(control_flow);
     }
 
+    fn open_config(&mut self, event_loop: &ActiveEventLoop) {
+        self.router.open_config_window(
+            event_loop,
+            self.event_proxy.clone(),
+            &self.config,
+        );
+    }
+
     // Emitted when the event loop is being shut down.
     // This is irreversible - if this event is emitted, it is guaranteed to be the last event that gets emitted.
     // You generally want to treat this as an “do on quit” event.

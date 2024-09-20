@@ -50,9 +50,12 @@ pub fn initialize(app: &NSApplication) {
     let open_config_title = ns_string!("Edit Configuration");
     let open_config = menu_item(
         mtm,
-        &open_config_title,
+        open_config_title,
         Some(sel!(openConfig:)),
-        Some(KeyEquivalent { key: ns_string!(","), masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand), }),
+        Some(KeyEquivalent {
+            key: ns_string!(","),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
     );
 
     // Hide application menu item
@@ -110,7 +113,7 @@ pub fn initialize(app: &NSApplication) {
     let create_window_item_title = ns_string!("New window");
     let create_window_item = menu_item(
         mtm,
-        &create_window_item_title,
+        create_window_item_title,
         Some(sel!(rioCreateWindow:)),
         Some(KeyEquivalent {
             key: ns_string!("n"),
@@ -122,8 +125,8 @@ pub fn initialize(app: &NSApplication) {
     let create_tab_item_title = ns_string!("New tab");
     let create_tab_item = menu_item(
         mtm,
-        &create_tab_item_title,
-        Some(sel!(rioCreateWindow:)),
+        create_tab_item_title,
+        Some(sel!(rioCreateTab:)),
         Some(KeyEquivalent {
             key: ns_string!("t"),
             masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
@@ -134,7 +137,7 @@ pub fn initialize(app: &NSApplication) {
     let create_split_vertical_item_title = ns_string!("Split vertically");
     let create_split_vertical_item = menu_item(
         mtm,
-        &create_split_vertical_item_title,
+        create_split_vertical_item_title,
         Some(sel!(rioCreateWindow:)),
         Some(KeyEquivalent {
             key: ns_string!("t"),
@@ -145,7 +148,7 @@ pub fn initialize(app: &NSApplication) {
     let create_split_horizontally_item_title = ns_string!("Split horizontally");
     let create_split_horizontally_item = menu_item(
         mtm,
-        &create_split_horizontally_item_title,
+        create_split_horizontally_item_title,
         Some(sel!(rioCreateWindow:)),
         Some(KeyEquivalent {
             key: ns_string!("t"),
@@ -156,7 +159,7 @@ pub fn initialize(app: &NSApplication) {
     let copy_title = ns_string!("Copy");
     let copy_item = menu_item(
         mtm,
-        &copy_title,
+        copy_title,
         Some(sel!(copy:)),
         Some(KeyEquivalent {
             key: ns_string!("c"),
@@ -166,7 +169,7 @@ pub fn initialize(app: &NSApplication) {
     let paste_title = ns_string!("Paste");
     let paste_item = menu_item(
         mtm,
-        &paste_title,
+        paste_title,
         Some(sel!(paste:)),
         Some(KeyEquivalent {
             key: ns_string!("v"),
@@ -176,7 +179,7 @@ pub fn initialize(app: &NSApplication) {
     let clear_scrollback_title = ns_string!("Clear scrollback");
     let clear_scrollback_item = menu_item(
         mtm,
-        &clear_scrollback_title,
+        clear_scrollback_title,
         Some(sel!(paste:)),
         Some(KeyEquivalent {
             key: ns_string!("k"),

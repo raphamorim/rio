@@ -111,6 +111,8 @@ pub enum Event<T: 'static> {
     Opened {
         urls: Vec<String>,
     },
+
+    OpenConfig,
 }
 
 impl<T> Event<T> {
@@ -128,6 +130,7 @@ impl<T> Event<T> {
             Resumed => Ok(Resumed),
             MemoryWarning => Ok(MemoryWarning),
             Opened { urls } => Ok(Opened { urls }),
+            OpenConfig => Ok(OpenConfig),
         }
     }
 }

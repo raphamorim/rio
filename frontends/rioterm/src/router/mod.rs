@@ -16,8 +16,8 @@ use rio_window::platform::startup_notify::{
 };
 use rio_window::window::{Window, WindowId};
 use routes::{assistant, RoutePath};
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 // 𜱭𜱭 unicode is not available yet for all OS
@@ -140,7 +140,7 @@ impl Route<'_> {
 }
 
 pub struct Router<'a> {
-    pub routes: HashMap<WindowId, Route<'a>>,
+    pub routes: FxHashMap<WindowId, Route<'a>>,
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
@@ -167,7 +167,7 @@ impl Router<'_> {
         let clipboard = Rc::new(RefCell::new(clipboard));
 
         Router {
-            routes: HashMap::default(),
+            routes: FxHashMap::default(),
             propagated_report,
             config_route: None,
             font_library: Box::new(font_library),

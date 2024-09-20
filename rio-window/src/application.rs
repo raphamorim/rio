@@ -226,4 +226,8 @@ pub trait ApplicationHandler<T: 'static = ()> {
     fn open_urls(&mut self, event_loop: &ActiveEventLoop, urls: Vec<String>) {
         let _ = (event_loop, urls);
     }
+
+    fn open_config(&mut self, event_loop: &ActiveEventLoop) {
+        let _ = event_loop;
+    }
 }
