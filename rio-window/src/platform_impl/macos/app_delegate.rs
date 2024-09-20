@@ -1,7 +1,7 @@
-use objc2_app_kit::NSMenu;
-use objc2_foundation::ns_string;
 use crate::platform_impl::platform::menu::menu_item;
 use objc2::sel;
+use objc2_app_kit::NSMenu;
+use objc2_foundation::ns_string;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::mem;
@@ -32,10 +32,10 @@ use crate::window::WindowId as RootWindowId;
 #[repr(u64)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum NSApplicationTerminateReply {
-    NSTerminateCancel = 0,
-    NSTerminateNow = 1,
+    Cancel = 0,
+    Now = 1,
     #[allow(unused)]
-    NSTerminateLater = 2,
+    Later = 2,
 }
 
 #[derive(Debug)]
@@ -128,9 +128,9 @@ declare_class!(
                 let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
                 let response: std::ffi::c_long = msg_send![panel, runModal];
                 match response {
-                    1000 => NSApplicationTerminateReply::NSTerminateNow as u64,
-                    1001 => NSApplicationTerminateReply::NSTerminateCancel as u64,
-                    _ => NSApplicationTerminateReply::NSTerminateCancel as u64,
+                    1000 => NSApplicationTerminateReply::Now as u64,
+                    1001 => NSApplicationTerminateReply::Cancel as u64,
+                    _ => NSApplicationTerminateReply::Cancel as u64,
                 }
             }
         }
@@ -143,7 +143,7 @@ declare_class!(
             let new_window_item_title = ns_string!("New Window");
             let new_window_item = menu_item(
                 mtm,
-                &new_window_item_title,
+                new_window_item_title,
                 Some(sel!(rioCreateWindow:)),
                 None,
             );
@@ -156,25 +156,18 @@ declare_class!(
             &self,
             _sender: Option<&AnyObject>,
         ) {
-            // let menu_item = MenuItem::with_menu_item(menu_item);
-            // // Safe because waPerformKeyAssignment: is only used with KeyAssignment
-            // let opt_action = menu_item.get_represented_item();
-            // tracing::debug!("rio_perform_key_assignment {opt_action:?}",);
-            // if let Some(action) = opt_action {
-            //     match action {
-            //         RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
-            //             App::create_window();
-            //         }
-            //         RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
-            //             App::create_tab(None);
-            //         }
-            //         RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
-            //             App::clipboard_set(text);
-            //         }
-            //     }
-            // }
             if self.is_launched() {
                 self.dispatch_create_window_event();
+            }
+        }
+
+        #[method(openConfig:)]
+        fn open_configuration(
+            &self,
+            _sender: Option<&AnyObject>,
+        ) {
+            if self.is_launched() {
+                self.dispatch_open_configuration();
             }
         }
 
@@ -435,6 +428,10 @@ impl ApplicationDelegate {
 
     pub fn dispatch_create_window_event(&self) {
         self.handle_event(Event::NewEvents(StartCause::CreateWindow));
+    }
+
+    pub fn dispatch_open_configuration(&self) {
+        self.handle_event(Event::OpenConfig);
     }
 
     pub fn open_urls(&self, urls: Vec<String>) {
