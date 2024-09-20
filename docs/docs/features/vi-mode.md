@@ -36,7 +36,6 @@ Below you can see the list of all default key bindings related to Vi mode. If yo
 | Arrow down                | Move cursor down           | Vi mode is activated |
 | Arrow left                | Move cursor left           | Vi mode is activated |
 | Arrow right               | Move cursor right          | Vi mode is activated |
-| Arrow right               | Move cursor right          | Vi mode is activated |
 | `0`                       | Move first                 | Vi mode is activated |
 | `4` + `shift`             | Move last                  | Vi mode is activated |
 | `6` + `shift`             | Move first occupied        | Vi mode is activated |
