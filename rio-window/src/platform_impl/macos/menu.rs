@@ -4,7 +4,7 @@ use objc2::sel;
 use objc2_app_kit::{NSApplication, NSEventModifierFlags, NSMenu, NSMenuItem};
 use objc2_foundation::{ns_string, MainThreadMarker, NSProcessInfo, NSString};
 
-struct KeyEquivalent<'a> {
+pub struct KeyEquivalent<'a> {
     key: &'a NSString,
     masks: Option<NSEventModifierFlags>,
 }
@@ -14,11 +14,15 @@ pub fn initialize(app: &NSApplication) {
     let menubar = NSMenu::new(mtm);
 
     let app_menu_item = NSMenuItem::new(mtm);
+    let shell_menu_item = NSMenuItem::new(mtm);
+    let edit_menu_item = NSMenuItem::new(mtm);
     let view_menu_item = NSMenuItem::new(mtm);
     let help_menu_item = NSMenuItem::new(mtm);
     let window_menu_item = NSMenuItem::new(mtm);
 
     menubar.addItem(&app_menu_item);
+    menubar.addItem(&shell_menu_item);
+    menubar.addItem(&edit_menu_item);
     menubar.addItem(&view_menu_item);
     menubar.addItem(&window_menu_item);
     menubar.addItem(&help_menu_item);
@@ -43,13 +47,13 @@ pub fn initialize(app: &NSApplication) {
     // Separator menu item
     let sep_first = NSMenuItem::separatorItem(mtm);
 
-    // let open_config_title = ns_string!("Edit Configuration");
-    // let open_config = menu_item(
-    //     mtm,
-    //     &open_config_title,
-    //     Some(sel!(openConfig:)),
-    //     Some(KeyEquivalent { key: ns_string!(","), masks: None }),
-    // );
+    let open_config_title = ns_string!("Edit Configuration");
+    let open_config = menu_item(
+        mtm,
+        &open_config_title,
+        Some(sel!(openConfig:)),
+        Some(KeyEquivalent { key: ns_string!(","), masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand), }),
+    );
 
     // Hide application menu item
     let hide_item_title = ns_string!("Hide ").stringByAppendingString(&process_name);
@@ -102,21 +106,109 @@ pub fn initialize(app: &NSApplication) {
         }),
     );
 
+    // New window menu item
+    let create_window_item_title = ns_string!("New window");
+    let create_window_item = menu_item(
+        mtm,
+        &create_window_item_title,
+        Some(sel!(rioCreateWindow:)),
+        Some(KeyEquivalent {
+            key: ns_string!("n"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+
+    // New window menu item
+    let create_tab_item_title = ns_string!("New tab");
+    let create_tab_item = menu_item(
+        mtm,
+        &create_tab_item_title,
+        Some(sel!(rioCreateWindow:)),
+        Some(KeyEquivalent {
+            key: ns_string!("t"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+
+    // New window menu item
+    let create_split_vertical_item_title = ns_string!("Split vertically");
+    let create_split_vertical_item = menu_item(
+        mtm,
+        &create_split_vertical_item_title,
+        Some(sel!(rioCreateWindow:)),
+        Some(KeyEquivalent {
+            key: ns_string!("t"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+
+    let create_split_horizontally_item_title = ns_string!("Split horizontally");
+    let create_split_horizontally_item = menu_item(
+        mtm,
+        &create_split_horizontally_item_title,
+        Some(sel!(rioCreateWindow:)),
+        Some(KeyEquivalent {
+            key: ns_string!("t"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+
+    let copy_title = ns_string!("Copy");
+    let copy_item = menu_item(
+        mtm,
+        &copy_title,
+        Some(sel!(copy:)),
+        Some(KeyEquivalent {
+            key: ns_string!("c"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+    let paste_title = ns_string!("Paste");
+    let paste_item = menu_item(
+        mtm,
+        &paste_title,
+        Some(sel!(paste:)),
+        Some(KeyEquivalent {
+            key: ns_string!("v"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+    let clear_scrollback_title = ns_string!("Clear scrollback");
+    let clear_scrollback_item = menu_item(
+        mtm,
+        &clear_scrollback_title,
+        Some(sel!(paste:)),
+        Some(KeyEquivalent {
+            key: ns_string!("k"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
+
+    let shell_menu = unsafe { NSMenu::initWithTitle(mtm.alloc(), ns_string!("Shell")) };
+    let edit_menu = unsafe { NSMenu::initWithTitle(mtm.alloc(), ns_string!("Edit")) };
     let view_menu = unsafe { NSMenu::initWithTitle(mtm.alloc(), ns_string!("View")) };
-
     let window_menu = unsafe { NSMenu::initWithTitle(mtm.alloc(), ns_string!("Window")) };
-
     let help_menu = unsafe { NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help")) };
+
     app_menu.addItem(&about_item);
     app_menu.addItem(&sep_first);
     app_menu.addItem(&services_item);
-    // app_menu.addItem(&open_config);
+    app_menu.addItem(&open_config);
     app_menu.addItem(&hide_item);
     app_menu.addItem(&hide_others_item);
     app_menu.addItem(&show_all_item);
     app_menu.addItem(&sep);
     app_menu.addItem(&quit_item);
     app_menu_item.setSubmenu(Some(&app_menu));
+    shell_menu.addItem(&create_window_item);
+    shell_menu.addItem(&create_tab_item);
+    shell_menu.addItem(&create_split_vertical_item);
+    shell_menu.addItem(&create_split_horizontally_item);
+    shell_menu_item.setSubmenu(Some(&shell_menu));
+    edit_menu.addItem(&copy_item);
+    edit_menu.addItem(&paste_item);
+    edit_menu.addItem(&clear_scrollback_item);
+    edit_menu_item.setSubmenu(Some(&edit_menu));
     view_menu_item.setSubmenu(Some(&view_menu));
     window_menu_item.setSubmenu(Some(&window_menu));
     help_menu_item.setSubmenu(Some(&help_menu));
@@ -129,7 +221,7 @@ pub fn initialize(app: &NSApplication) {
     app.setMainMenu(Some(&menubar));
 }
 
-fn menu_item(
+pub fn menu_item(
     mtm: MainThreadMarker,
     title: &NSString,
     selector: Option<Sel>,

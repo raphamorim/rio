@@ -112,7 +112,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
-        if cause != StartCause::Init {
+        if cause != StartCause::Init && cause != StartCause::CreateWindow {
             return;
         }
 

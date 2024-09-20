@@ -160,6 +160,9 @@ pub enum StartCause {
 
     /// Sent once, immediately after `run` is called. Indicates that the loop was just initialized.
     Init,
+
+    /// Menu or dock can trigger it
+    CreateWindow,
 }
 
 /// Describes an event from a [`Window`].
