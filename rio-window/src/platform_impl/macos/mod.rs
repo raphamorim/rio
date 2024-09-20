@@ -9,6 +9,7 @@ mod event_handler;
 mod event_loop;
 mod ffi;
 mod menu;
+mod menu_legacy;
 mod monitor;
 mod observer;
 mod view;
