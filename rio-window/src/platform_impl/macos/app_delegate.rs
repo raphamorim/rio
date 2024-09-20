@@ -1,3 +1,7 @@
+use objc2_app_kit::NSMenu;
+use objc2_foundation::ns_string;
+use crate::platform_impl::platform::menu::menu_item;
+use objc2::sel;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::mem;
@@ -131,22 +135,48 @@ declare_class!(
             }
         }
 
-        // #[method(applicationDockMenu:)]
-        // fn dock_menu(&self, _sender: Option<&AnyObject>) -> *mut objc2::runtime::AnyObject {
-        //     use objc::sel;
-        //     use objc::sel_impl;
-        //     use crate::platform_impl::platform::menu_legacy::KeyAssignment;
-        //     use crate::platform_impl::platform::menu_legacy::Menu;
-        //     use crate::platform_impl::platform::menu_legacy::MenuItem;
-        //     use crate::platform_impl::platform::menu_legacy::RepresentedItem;
-        //     let dock_menu = Menu::new_with_title("");
-        //     let new_window_item =
-        //         MenuItem::new_with("New Window", Some(sel!(rioPerformKeyAssignment:)), "");
-        //     new_window_item
-        //         .set_represented_item(RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow));
-        //     dock_menu.add_item(&new_window_item);
-        //     dock_menu.autorelease()
-        // }
+        #[method(applicationDockMenu:)]
+        fn dock_menu(&self, _sender: Option<&AnyObject>) -> *mut NSMenu {
+            let mtm = MainThreadMarker::from(self);
+
+            let menubar = NSMenu::new(mtm);
+            let new_window_item_title = ns_string!("New Window");
+            let new_window_item = menu_item(
+                mtm,
+                &new_window_item_title,
+                Some(sel!(rioCreateWindow:)),
+                None,
+            );
+            menubar.addItem(&new_window_item);
+            Retained::<NSMenu>::autorelease_return(menubar)
+        }
+
+        #[method(rioCreateWindow:)]
+        fn create_window(
+            &self,
+            _sender: Option<&AnyObject>,
+        ) {
+            // let menu_item = MenuItem::with_menu_item(menu_item);
+            // // Safe because waPerformKeyAssignment: is only used with KeyAssignment
+            // let opt_action = menu_item.get_represented_item();
+            // tracing::debug!("rio_perform_key_assignment {opt_action:?}",);
+            // if let Some(action) = opt_action {
+            //     match action {
+            //         RepresentedItem::KeyAssignment(KeyAssignment::SpawnWindow) => {
+            //             App::create_window();
+            //         }
+            //         RepresentedItem::KeyAssignment(KeyAssignment::SpawnTab) => {
+            //             App::create_tab(None);
+            //         }
+            //         RepresentedItem::KeyAssignment(KeyAssignment::Copy(ref text)) => {
+            //             App::clipboard_set(text);
+            //         }
+            //     }
+            // }
+            if self.is_launched() {
+                self.dispatch_create_window_event();
+            }
+        }
 
         #[method(applicationShouldTerminateAfterLastWindowClosed:)]
         fn should_terminate_after_last_window_closed(&self, _sender: Option<&AnyObject>) -> bool {
@@ -401,6 +431,10 @@ impl ApplicationDelegate {
         // NB: For consistency all platforms must emit a 'resumed' event even though macOS
         // applications don't themselves have a formal suspend/resume lifecycle.
         self.handle_event(Event::Resumed);
+    }
+
+    pub fn dispatch_create_window_event(&self) {
+        self.handle_event(Event::NewEvents(StartCause::CreateWindow));
     }
 
     pub fn open_urls(&self, urls: Vec<String>) {
