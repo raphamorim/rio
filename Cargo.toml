@@ -63,6 +63,7 @@ bitflags = "2.6.0"
 iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
 tracing = "0.1.40"
+objc = "0.2.7"
 
 [profile.release]
 lto = true

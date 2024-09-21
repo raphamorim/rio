@@ -25,7 +25,7 @@ use super::observer::{EventLoopWaker, RunLoop};
 use super::window::WinitWindow;
 use super::{menu, WindowId, DEVICE_ID};
 use crate::dpi::PhysicalSize;
-use crate::event::{DeviceEvent, Event, InnerSizeWriter, StartCause, WindowEvent};
+use crate::event::{DeviceEvent, Event, Hook, InnerSizeWriter, StartCause, WindowEvent};
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
 
@@ -158,6 +158,34 @@ declare_class!(
         ) {
             if self.is_launched() {
                 self.dispatch_create_window_event();
+            }
+        }
+
+        #[method(copy:)]
+        fn copy(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Copy);
+            }
+        }
+
+        #[method(paste:)]
+        fn paste(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Paste);
+            }
+        }
+
+        #[method(rioCreateTab:)]
+        fn create_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::CreateTab);
+            }
+        }
+
+        #[method(rioCloseTab:)]
+        fn close_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::CloseTab);
             }
         }
 
@@ -428,6 +456,10 @@ impl ApplicationDelegate {
 
     pub fn dispatch_create_window_event(&self) {
         self.handle_event(Event::NewEvents(StartCause::CreateWindow));
+    }
+
+    pub fn dispatch_hook(&self, hook: Hook) {
+        self.handle_event(Event::HookEvent(hook));
     }
 
     pub fn dispatch_open_configuration(&self) {
