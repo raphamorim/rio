@@ -485,26 +485,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if route.window.winit_window.num_tabs() > 1 {
-                        self.router.routes.remove(&window_id);
-                    } else {
-                        // In MacOS: Close last tab will work
-                        // leading to hide and run Rio in background
-                        let routes_len = self.router.routes.len();
-                        self.router.routes.remove(&window_id);
-                        // If was the last last window opened then hide the application
-                        if routes_len == 1 {
-                            let config = &self.config;
-                            event_loop.hide_application();
-                            self.router.create_window(
-                                event_loop,
-                                self.event_proxy.clone(),
-                                config,
-                                None,
-                            );
-                        }
-                    }
+                self.router.routes.remove(&window_id);
+                if self.router.routes.is_empty() && !self.config.confirm_before_quit {
+                    event_loop.exit();
                 }
             }
             #[cfg(target_os = "macos")]
@@ -624,6 +607,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event {
             WindowEvent::CloseRequested => {
                 self.router.routes.remove(&window_id);
+
+                if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                    return;
+                }
 
                 if self.router.routes.is_empty() {
                     event_loop.exit();
