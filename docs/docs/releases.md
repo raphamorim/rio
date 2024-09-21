@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-<!-- ## Unreleased -->
+## Unreleased
+
+- MacOS: Add dock menu.
+- MacOS: Add Shell and Edit menu.
+- MacOS: Support to native modal that asks if wants to close app.
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
