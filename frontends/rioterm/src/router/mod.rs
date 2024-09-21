@@ -16,8 +16,8 @@ use rio_window::platform::startup_notify::{
 };
 use rio_window::window::{Window, WindowId};
 use routes::{assistant, RoutePath};
+use rustc_hash::FxHashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 // 𜱭𜱭 unicode is not available yet for all OS
@@ -140,7 +140,7 @@ impl Route<'_> {
 }
 
 pub struct Router<'a> {
-    pub routes: HashMap<WindowId, Route<'a>>,
+    pub routes: FxHashMap<WindowId, Route<'a>>,
     propagated_report: Option<RioError>,
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
@@ -167,7 +167,7 @@ impl Router<'_> {
         let clipboard = Rc::new(RefCell::new(clipboard));
 
         Router {
-            routes: HashMap::default(),
+            routes: FxHashMap::default(),
             propagated_report,
             config_route: None,
             font_library: Box::new(font_library),
@@ -187,6 +187,20 @@ impl Router<'_> {
                 route.window.screen.context_manager.update_titles();
             }
         }
+    }
+
+    #[inline]
+    pub fn get_focused_route(&self) -> Option<WindowId> {
+        self.routes
+            .iter()
+            .find_map(|(key, val)| {
+                if val.window.is_focused {
+                    Some(key)
+                } else {
+                    None
+                }
+            })
+            .copied()
     }
 
     pub fn open_config_window(
@@ -369,7 +383,7 @@ impl<'a> RouteWindow<'a> {
         Self {
             has_frame: true,
             has_updates: true,
-            is_focused: false,
+            is_focused: true,
             is_occluded: false,
             winit_window,
             screen,

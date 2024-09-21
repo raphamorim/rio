@@ -18,9 +18,9 @@ pub fn default_cursor_interval() -> u64 {
 #[inline]
 pub fn default_max_fps() -> u64 {
     if cfg!(target_os = "macos") {
-        120
+        240
     } else {
-        60
+        120
     }
 }
 

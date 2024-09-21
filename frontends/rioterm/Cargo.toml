@@ -42,7 +42,7 @@ url = "2.5.2"
 rio-window = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc = "0.2.7"
+objc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.2", default-features = false, features = ["std"] }

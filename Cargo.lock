@@ -2496,6 +2496,7 @@ dependencies = [
  "js-sys",
  "libc",
  "memmap2",
+ "objc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

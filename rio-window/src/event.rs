@@ -111,6 +111,9 @@ pub enum Event<T: 'static> {
     Opened {
         urls: Vec<String>,
     },
+
+    OpenConfig,
+    HookEvent(Hook),
 }
 
 impl<T> Event<T> {
@@ -128,8 +131,18 @@ impl<T> Event<T> {
             Resumed => Ok(Resumed),
             MemoryWarning => Ok(MemoryWarning),
             Opened { urls } => Ok(Opened { urls }),
+            OpenConfig => Ok(OpenConfig),
+            HookEvent(hook) => Ok(HookEvent(hook)),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Hook {
+    CreateTab,
+    CloseTab,
+    Copy,
+    Paste,
 }
 
 /// Describes the reason the event loop is resuming.
@@ -160,6 +173,9 @@ pub enum StartCause {
 
     /// Sent once, immediately after `run` is called. Indicates that the loop was just initialized.
     Init,
+
+    /// Menu or dock can trigger it
+    CreateWindow,
 }
 
 /// Describes an event from a [`Window`].

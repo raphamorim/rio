@@ -10,7 +10,8 @@ use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::ColorRgb;
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
-    ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
+    ElementState, Hook, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
+    WindowEvent,
 };
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::event_loop::ControlFlow;
@@ -112,7 +113,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
-        if cause != StartCause::Init {
+        if cause != StartCause::Init && cause != StartCause::CreateWindow {
             return;
         }
 
@@ -484,26 +485,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if route.window.winit_window.num_tabs() > 1 {
-                        self.router.routes.remove(&window_id);
-                    } else {
-                        // In MacOS: Close last tab will work
-                        // leading to hide and run Rio in background
-                        let routes_len = self.router.routes.len();
-                        self.router.routes.remove(&window_id);
-                        // If was the last last window opened then hide the application
-                        if routes_len == 1 {
-                            let config = &self.config;
-                            event_loop.hide_application();
-                            self.router.create_window(
-                                event_loop,
-                                self.event_proxy.clone(),
-                                config,
-                                None,
-                            );
-                        }
-                    }
+                self.router.routes.remove(&window_id);
+                if self.router.routes.is_empty() && !self.config.confirm_before_quit {
+                    event_loop.exit();
                 }
             }
             #[cfg(target_os = "macos")]
@@ -623,6 +607,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event {
             WindowEvent::CloseRequested => {
                 self.router.routes.remove(&window_id);
+
+                if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                    return;
+                }
 
                 if self.router.routes.is_empty() {
                     event_loop.exit();
@@ -992,12 +980,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                let has_regained_focus = !route.window.is_focused && focused;
-                route.window.is_focused = focused;
+                // let has_regained_focus = !route.window.is_focused && focused;
+                // route.window.is_focused = focused;
 
-                if has_regained_focus {
-                    route.request_redraw();
-                }
+                // if has_regained_focus {
+                // route.request_redraw();
+                // }
 
                 route.window.screen.on_focus_change(focused);
             }
@@ -1083,6 +1071,51 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
         };
         event_loop.set_control_flow(control_flow);
+    }
+
+    fn open_config(&mut self, event_loop: &ActiveEventLoop) {
+        self.router.open_config_window(
+            event_loop,
+            self.event_proxy.clone(),
+            &self.config,
+        );
+    }
+
+    fn hook_event(&mut self, _event_loop: &ActiveEventLoop, hook: &Hook) {
+        let window_id = match self.router.get_focused_route() {
+            Some(window_id) => window_id,
+            None => return,
+        };
+
+        let route = match self.router.routes.get_mut(&window_id) {
+            Some(window) => window,
+            None => return,
+        };
+
+        match hook {
+            Hook::Copy => {
+                route.window.screen.copy_selection(ClipboardType::Clipboard);
+            }
+            Hook::Paste => {
+                let content = route
+                    .window
+                    .screen
+                    .clipboard
+                    .borrow_mut()
+                    .get(ClipboardType::Selection);
+                route.window.screen.paste(&content, true);
+            }
+            Hook::CreateTab => {
+                if self.config.navigation.has_navigation_key_bindings() {
+                    route.window.screen.create_tab();
+                }
+            }
+            Hook::CloseTab => {
+                if self.config.navigation.has_navigation_key_bindings() {
+                    route.window.screen.close_tab();
+                }
+            }
+        }
     }
 
     // Emitted when the event loop is being shut down.

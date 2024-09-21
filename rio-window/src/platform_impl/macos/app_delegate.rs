@@ -1,3 +1,7 @@
+use crate::platform_impl::platform::menu::menu_item;
+use objc2::sel;
+use objc2_app_kit::NSMenu;
+use objc2_foundation::ns_string;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::mem;
@@ -21,9 +25,18 @@ use super::observer::{EventLoopWaker, RunLoop};
 use super::window::WinitWindow;
 use super::{menu, WindowId, DEVICE_ID};
 use crate::dpi::PhysicalSize;
-use crate::event::{DeviceEvent, Event, InnerSizeWriter, StartCause, WindowEvent};
+use crate::event::{DeviceEvent, Event, Hook, InnerSizeWriter, StartCause, WindowEvent};
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
+
+#[repr(u64)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum NSApplicationTerminateReply {
+    Cancel = 0,
+    Now = 1,
+    #[allow(unused)]
+    Later = 2,
+}
 
 #[derive(Debug)]
 struct Policy(NSApplicationActivationPolicy);
@@ -77,6 +90,120 @@ declare_class!(
     unsafe impl NSObjectProtocol for ApplicationDelegate {}
 
     unsafe impl NSApplicationDelegate for ApplicationDelegate {
+        #[method(applicationShouldTerminate:)]
+        fn should_terminate(&self, _sender: Option<&AnyObject>) -> u64 {
+            use objc::runtime::Object;
+            use objc::msg_send;
+            use objc::sel;
+            use objc::class;
+            use objc::sel_impl;
+            unsafe {
+                let panel: *mut Object = msg_send![class!(NSAlert), new];
+
+                let prompt = "All sessions will be closed";
+                let title = "Quit Rio terminal?";
+                let yes = "Yes";
+                let no = "No";
+                let cancel = "Cancel";
+
+                let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
+                let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:4];
+
+                let title_string: *mut Object = msg_send![class!(NSString), alloc];
+                let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:4];
+
+                let yes_string: *mut Object = msg_send![class!(NSString), alloc];
+                let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:4];
+
+                let no_string: *mut Object = msg_send![class!(NSString), alloc];
+                let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:4];
+
+                let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
+                let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:4];
+
+                let _: () = msg_send![panel, setMessageText: title_allocated_string];
+                let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: yes_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: no_allocated_string];
+                let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
+                let response: std::ffi::c_long = msg_send![panel, runModal];
+                match response {
+                    1000 => NSApplicationTerminateReply::Now as u64,
+                    1001 => NSApplicationTerminateReply::Cancel as u64,
+                    _ => NSApplicationTerminateReply::Cancel as u64,
+                }
+            }
+        }
+
+        #[method(applicationDockMenu:)]
+        fn dock_menu(&self, _sender: Option<&AnyObject>) -> *mut NSMenu {
+            let mtm = MainThreadMarker::from(self);
+
+            let menubar = NSMenu::new(mtm);
+            let new_window_item_title = ns_string!("New Window");
+            let new_window_item = menu_item(
+                mtm,
+                new_window_item_title,
+                Some(sel!(rioCreateWindow:)),
+                None,
+            );
+            menubar.addItem(&new_window_item);
+            Retained::<NSMenu>::autorelease_return(menubar)
+        }
+
+        #[method(rioCreateWindow:)]
+        fn create_window(
+            &self,
+            _sender: Option<&AnyObject>,
+        ) {
+            if self.is_launched() {
+                self.dispatch_create_window_event();
+            }
+        }
+
+        #[method(copy:)]
+        fn copy(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Copy);
+            }
+        }
+
+        #[method(paste:)]
+        fn paste(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Paste);
+            }
+        }
+
+        #[method(rioCreateTab:)]
+        fn create_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::CreateTab);
+            }
+        }
+
+        #[method(rioCloseTab:)]
+        fn close_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::CloseTab);
+            }
+        }
+
+        #[method(openConfig:)]
+        fn open_configuration(
+            &self,
+            _sender: Option<&AnyObject>,
+        ) {
+            if self.is_launched() {
+                self.dispatch_open_configuration();
+            }
+        }
+
+        #[method(applicationShouldTerminateAfterLastWindowClosed:)]
+        fn should_terminate_after_last_window_closed(&self, _sender: Option<&AnyObject>) -> bool {
+            false
+        }
+
         // NOTE: This will, globally, only be run once, no matter how many
         // `EventLoop`s the user creates.
         #[method(applicationDidFinishLaunching:)]
@@ -325,6 +452,18 @@ impl ApplicationDelegate {
         // NB: For consistency all platforms must emit a 'resumed' event even though macOS
         // applications don't themselves have a formal suspend/resume lifecycle.
         self.handle_event(Event::Resumed);
+    }
+
+    pub fn dispatch_create_window_event(&self) {
+        self.handle_event(Event::NewEvents(StartCause::CreateWindow));
+    }
+
+    pub fn dispatch_hook(&self, hook: Hook) {
+        self.handle_event(Event::HookEvent(hook));
+    }
+
+    pub fn dispatch_open_configuration(&self) {
+        self.handle_event(Event::OpenConfig);
     }
 
     pub fn open_urls(&self, urls: Vec<String>) {
