@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-<!-- ## Unreleased -->
+## Unreleased
+
+- **breaking:** changed `renderer.max-fps` to `renderer.frame-time`.
+- Changed default font weight from 400 to 300.
+- Changed max-fps on MacOS, Windows and Linux.
 
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->

@@ -152,7 +152,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if self.config.renderer.max_fps == 0 {
+                        if self.config.renderer.frame_time == 0 {
                             route.request_redraw();
                         } else {
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
@@ -165,7 +165,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 self.scheduler.schedule(
                                     event,
                                     Duration::from_millis(
-                                        1000 / self.config.renderer.max_fps,
+                                        self.config.renderer.frame_time,
                                     ),
                                     false,
                                     timer_id,
