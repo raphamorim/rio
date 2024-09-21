@@ -19,6 +19,7 @@ use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 // 𜱭𜱭 unicode is not available yet for all OS
 // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
@@ -323,8 +324,9 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
-    pub has_frame: bool,
-    pub has_updates: bool,
+    pub frame_time_limit: Option<Duration>,
+    pub current_render_time: Duration,
+    pub next_render: Option<Duration>,
     pub winit_window: Window,
     pub screen: Screen<'a>,
     #[cfg(target_os = "macos")]
@@ -334,6 +336,29 @@ pub struct RouteWindow<'a> {
 impl<'a> RouteWindow<'a> {
     pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
         configure_window(&self.winit_window, config);
+    }
+
+    pub fn compute_timestamp(&mut self, current_render_duration: Duration) {
+        let frame_time_limit: Duration = match self.frame_time_limit {
+            Some(limit) => limit,
+            None => return,
+        };
+
+        // Render took a while so move to next frame
+        if current_render_duration > frame_time_limit {
+            self.next_render = Some(frame_time_limit);
+            return;
+        }
+
+        self.current_render_time += current_render_duration;
+
+        // If previous render duration and current are still under of frame time limit
+        if self.current_render_time < frame_time_limit {
+            self.next_render = None;
+        } else {
+            self.current_render_time = Duration::from_millis(0);
+            self.next_render = Some(frame_time_limit);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -380,9 +405,18 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
+        let frame_time_limit = if config.renderer.max_fps == 0 {
+            None
+        } else {
+            Some(Duration::from_millis(
+                1000 / config.renderer.max_fps.clamp(1, 1000),
+            ))
+        };
+
         Self {
-            has_frame: true,
-            has_updates: true,
+            frame_time_limit,
+            next_render: None,
+            current_render_time: Duration::from_millis(0),
             is_focused: true,
             is_occluded: false,
             winit_window,

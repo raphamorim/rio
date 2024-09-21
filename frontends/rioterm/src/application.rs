@@ -152,9 +152,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if self.config.renderer.max_fps == 0 {
-                            route.request_redraw();
-                        } else {
+                        if let Some(limit) = route.window.next_render {
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -162,15 +160,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             );
 
                             if !self.scheduler.scheduled(timer_id) {
-                                self.scheduler.schedule(
-                                    event,
-                                    Duration::from_millis(
-                                        1000 / self.config.renderer.max_fps,
-                                    ),
-                                    false,
-                                    timer_id,
-                                );
+                                self.scheduler.schedule(event, limit, false, timer_id);
                             }
+                        } else {
+                            route.request_redraw();
                         }
                     }
                 }
@@ -274,9 +267,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CursorBlinkingChange) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if route.window.has_frame {
-                        route.request_redraw();
-                    }
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
@@ -958,9 +949,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         if route.window.screen.ime.preedit() != preedit.as_ref() {
                             route.window.screen.ime.set_preedit(preedit);
-                            if route.window.has_frame {
-                                route.request_redraw();
-                            }
+                            route.request_redraw();
                         }
                     }
                     Ime::Enabled => {
@@ -1032,10 +1021,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                // let start = std::time::Instant::now();
-                route.window.has_updates = false;
-
                 route.window.winit_window.pre_present_notify();
+                let start = std::time::Instant::now();
                 match route.path {
                     RoutePath::Assistant => {
                         route.window.screen.render_assistant(&route.assistant);
@@ -1053,9 +1040,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .render_dialog("Do you want to leave Rio?");
                     }
                 }
-                // let duration = start.elapsed();
+                let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
+                route.window.compute_timestamp(duration);
+
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
