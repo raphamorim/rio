@@ -779,35 +779,10 @@ impl Screen<'_> {
                         self.context_manager.create_new_window();
                     }
                     Act::TabCreateNew => {
-                        let redirect = true;
-
-                        let layout = self.sugarloaf.layout();
-                        self.context_manager.add_context(
-                            redirect,
-                            layout,
-                            (
-                                &self.renderer.get_cursor_state_from_ref(),
-                                self.renderer.config_has_blinking_enabled,
-                            ),
-                        );
-
-                        let num_tabs = self.ctx().len();
-                        self.cancel_search();
-                        self.resize_top_or_bottom_line(num_tabs);
-                        self.render();
+                        self.create_tab();
                     }
                     Act::TabCloseCurrent => {
-                        self.clear_selection();
-                        self.context_manager.close_current_context();
-
-                        self.cancel_search();
-                        if self.ctx().len() <= 1 {
-                            return true;
-                        }
-
-                        let num_tabs = self.ctx().len().wrapping_sub(1);
-                        self.resize_top_or_bottom_line(num_tabs);
-                        self.render();
+                        self.close_tab();
                     }
                     Act::TabCloseUnfocused => {
                         self.clear_selection();
@@ -960,6 +935,39 @@ impl Screen<'_> {
         }
 
         ignore_chars.unwrap_or(false)
+    }
+
+    pub fn create_tab(&mut self) {
+        let redirect = true;
+
+        let layout = self.sugarloaf.layout();
+        self.context_manager.add_context(
+            redirect,
+            layout,
+            (
+                &self.renderer.get_cursor_state_from_ref(),
+                self.renderer.config_has_blinking_enabled,
+            ),
+        );
+
+        let num_tabs = self.ctx().len();
+        self.cancel_search();
+        self.resize_top_or_bottom_line(num_tabs);
+        self.render();
+    }
+
+    pub fn close_tab(&mut self) {
+        self.clear_selection();
+        self.context_manager.close_current_context();
+
+        self.cancel_search();
+        if self.ctx().len() <= 1 {
+            return;
+        }
+
+        let num_tabs = self.ctx().len().wrapping_sub(1);
+        self.resize_top_or_bottom_line(num_tabs);
+        self.render();
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {

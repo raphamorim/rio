@@ -189,6 +189,20 @@ impl Router<'_> {
         }
     }
 
+    #[inline]
+    pub fn get_focused_route(&self) -> Option<WindowId> {
+        self.routes
+            .iter()
+            .find_map(|(key, val)| {
+                if val.window.is_focused {
+                    Some(key)
+                } else {
+                    None
+                }
+            })
+            .copied()
+    }
+
     pub fn open_config_window(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -369,7 +383,7 @@ impl<'a> RouteWindow<'a> {
         Self {
             has_frame: true,
             has_updates: true,
-            is_focused: false,
+            is_focused: true,
             is_occluded: false,
             winit_window,
             screen,
