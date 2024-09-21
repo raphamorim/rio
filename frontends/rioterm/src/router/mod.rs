@@ -347,6 +347,7 @@ impl<'a> RouteWindow<'a> {
         // Render took a while so move to next frame
         if current_render_duration > frame_time_limit {
             self.next_render = Some(frame_time_limit);
+            self.current_render_time = Duration::from_millis(0);
             return;
         }
 
