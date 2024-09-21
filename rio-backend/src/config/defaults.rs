@@ -20,7 +20,7 @@ pub fn default_max_fps() -> u64 {
     if cfg!(target_os = "macos") {
         240
     } else {
-        90
+        120
     }
 }
 
