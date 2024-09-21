@@ -1,0 +1,30 @@
+{
+  "item.label.Install": {
+    "message": "インストール",
+    "description": "Navbar item with label Install"
+  },
+  "item.label.Config": {
+    "message": "設定",
+    "description": "Navbar item with label Config"
+  },
+  "item.label.Features": {
+    "message": "機能",
+    "description": "Navbar item with label Features"
+  },
+  "item.label.Releases": {
+    "message": "リリース",
+    "description": "Navbar item with label Releases"
+  },
+  "item.label.Blog": {
+    "message": "ブログ",
+    "description": "Navbar item with label Blog"
+  },
+  "item.label.Discord": {
+    "message": "Discord",
+    "description": "Navbar item with label Discord"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

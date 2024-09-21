@@ -80,12 +80,12 @@ const FEATURES = [
   {
     title: translate({
       message: 'Splits',
-      id: 'home.features.font-ligatures.title',
+      id: 'home.features.splits.title',
     }),
     Icon: Splits,
     description: (
-      <Translate id="home.features.font-ligatures.description">
-        Support to split and manage terminal screens in any platform that you would want to. 
+      <Translate id="home.features.splits.description">
+        Support to split and manage terminal screens in any platform that you would want to.
       </Translate>
     ),
   },
