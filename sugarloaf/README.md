@@ -6,12 +6,6 @@ Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on 
 cargo run --example text
 ```
 
-## Examples
-
-![Demo sugarloaf 1](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-1.png?raw=true)
-
-s![Demo Sugarloaf wasm](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-wasm-1.png?raw=true) |
-
 ## WASM Tests
 
 ### Setup
