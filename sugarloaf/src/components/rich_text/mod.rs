@@ -308,6 +308,11 @@ impl RichTextBrush {
         }
     }
 
+    pub fn reset(&mut self) {
+        // self.images = ImageCache::new(context);
+        self.glyphs = GlyphCache::new();
+    }
+
     #[inline]
     pub fn render<'pass>(
         &'pass mut self,

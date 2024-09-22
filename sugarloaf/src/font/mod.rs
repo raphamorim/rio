@@ -7,6 +7,7 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
+use crate::font::fonts::SugarloafFontStyle;
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -45,15 +46,17 @@ pub fn lookup_for_font_match(
             // In this case, the font does match however
             // we need to check if is indeed a match
             if let Some(spec_font_attr) = spec_font_attr_opt {
-                if font.style != spec_font_attr.0 {
+                let style_is_different = font.style != spec_font_attr.0;
+                let is_italic = spec_font_attr.0 == Style::Italic;
+                if style_is_different && is_italic && !font.should_italicize {
                     continue;
                 }
 
                 // In case bold is required
                 // It follows spec on Bold (>=700)
                 // https://developer.mozilla.org/en-US/docs/Web/CSS/@font-face/font-weight
-                if spec_font_attr.1 && font.weight < crate::font_introspector::Weight(700)
-                {
+                let weight_is_different = spec_font_attr.1 && font.weight < Weight(700);
+                if weight_is_different && !font.should_embolden {
                     continue;
                 }
             }
@@ -258,9 +261,10 @@ impl FontLibraryData {
                 self.insert(data);
             }
             FindResult::NotFound(spec) => {
-                self.insert(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
+                } else {
+                    self.insert(load_fallback_from_memory(&spec));
                 }
             }
         }
@@ -270,9 +274,10 @@ impl FontLibraryData {
                 self.insert(data);
             }
             FindResult::NotFound(spec) => {
-                self.insert(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
+                } else {
+                    self.insert(load_fallback_from_memory(&spec));
                 }
             }
         }
@@ -282,9 +287,10 @@ impl FontLibraryData {
                 self.insert(data);
             }
             FindResult::NotFound(spec) => {
-                self.insert(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
+                } else {
+                    self.insert(load_fallback_from_memory(&spec));
                 }
             }
         }
@@ -294,9 +300,10 @@ impl FontLibraryData {
                 self.insert(data);
             }
             FindResult::NotFound(spec) => {
-                self.insert(load_fallback_from_memory(&spec));
                 if !spec.is_default_family() {
                     fonts_not_fount.push(spec);
+                } else {
+                    self.insert(load_fallback_from_memory(&spec));
                 }
             }
         }
@@ -424,6 +431,8 @@ pub struct FontData {
     pub style: crate::font_introspector::Style,
     pub stretch: crate::font_introspector::Stretch,
     pub synth: Synthesis,
+    pub should_embolden: bool,
+    pub should_italicize: bool,
     pub is_emoji: bool,
 }
 
@@ -442,6 +451,7 @@ impl FontData {
         path: PathBuf,
         evictable: bool,
         is_emoji: bool,
+        font_spec: &SugarloafFont,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let font = FontRef::from_index(&data, 0).unwrap();
         let (offset, key) = (font.offset, font.key);
@@ -451,6 +461,12 @@ impl FontData {
         let attributes = font.attributes();
         let style = attributes.style();
         let weight = attributes.weight();
+
+        let should_italicize =
+            font_spec.style == SugarloafFontStyle::Italic && style != Style::Italic;
+
+        let should_embolden = font_spec.weight >= Some(700) && weight < Weight(700);
+
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
@@ -463,6 +479,8 @@ impl FontData {
         Ok(Self {
             data,
             offset,
+            should_italicize,
+            should_embolden,
             key,
             synth,
             style,
@@ -494,6 +512,8 @@ impl FontData {
             key,
             synth,
             style,
+            should_embolden: false,
+            should_italicize: false,
             weight,
             stretch,
             path: None,
@@ -542,14 +562,10 @@ fn find_font(
             query.weight = crate::font::loader::Weight(weight);
         }
 
-        if let Some(ref style) = font_spec.style {
-            let query_style = match style.to_lowercase().as_str() {
-                "italic" => crate::font::loader::Style::Italic,
-                _ => crate::font::loader::Style::Normal,
-            };
-
-            query.style = query_style;
-        }
+        query.style = match font_spec.style {
+            SugarloafFontStyle::Italic => crate::font::loader::Style::Italic,
+            _ => crate::font::loader::Style::Normal,
+        };
 
         info!("Font search: '{query:?}'");
 
@@ -566,6 +582,7 @@ fn find_font(
                                 path.to_path_buf(),
                                 evictable,
                                 is_emoji,
+                                &font_spec,
                             ) {
                                 Ok(d) => {
                                     tracing::info!(
@@ -596,20 +613,28 @@ fn find_font(
 }
 
 fn load_fallback_from_memory(font_spec: &SugarloafFont) -> FontData {
-    let style = font_spec.style.to_owned().unwrap_or("regular".to_string());
+    let style = &font_spec.style;
     let weight = font_spec.weight.unwrap_or(400);
 
-    let font_to_load = match (weight, style.as_str()) {
-        (100, "italic") => constants::FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC,
-        (200, "italic") => constants::FONT_CASCADIAMONO_LIGHT_ITALIC,
-        (300, "italic") => constants::FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC,
-        (400, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
-        (500, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
-        (600, "italic") => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
-        (700, "italic") => constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC,
-        (800, "italic") => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
-        (900, "italic") => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
-        (_, "italic") => constants::FONT_CASCADIAMONO_ITALIC,
+    let font_to_load = match (weight, style) {
+        (100, SugarloafFontStyle::Italic) => {
+            constants::FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC
+        }
+        (200, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_LIGHT_ITALIC,
+        (300, SugarloafFontStyle::Italic) => {
+            constants::FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC
+        }
+        (400, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_ITALIC,
+        (500, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_ITALIC,
+        (600, SugarloafFontStyle::Italic) => {
+            constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC
+        }
+        (700, SugarloafFontStyle::Italic) => {
+            constants::FONT_CASCADIAMONO_SEMI_BOLD_ITALIC
+        }
+        (800, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
+        (900, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_BOLD_ITALIC,
+        (_, SugarloafFontStyle::Italic) => constants::FONT_CASCADIAMONO_ITALIC,
         (100, _) => constants::FONT_CASCADIAMONO_EXTRA_LIGHT,
         (200, _) => constants::FONT_CASCADIAMONO_LIGHT,
         (300, _) => constants::FONT_CASCADIAMONO_SEMI_LIGHT,
