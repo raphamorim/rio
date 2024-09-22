@@ -324,9 +324,9 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
-    // pub frame_time_limit: Option<Duration>,
-    // pub last_timestamp: Instant,
-    pub frame_interval: Option<Duration>,
+    pub frame_time_limit: Option<Duration>,
+    pub current_render_time: Duration,
+    pub next_render: Option<Duration>,
     pub winit_window: Window,
     pub screen: Screen<'a>,
     #[cfg(target_os = "macos")]
@@ -338,22 +338,29 @@ impl<'a> RouteWindow<'a> {
         configure_window(&self.winit_window, config);
     }
 
-    // #[inline]
-    // pub fn compute_timestamp(&mut self) {
-    //     let frame_time_limit = match self.frame_time_limit {
-    //         Some(limit) => limit,
-    //         None => return,
-    //     };
+    pub fn compute_timestamp(&mut self, current_render_duration: Duration) {
+        let frame_time_limit: Duration = match self.frame_time_limit {
+            Some(limit) => limit,
+            None => return,
+        };
 
-    //     if self.last_timestamp.elapsed() > frame_time_limit {
-    //         // move to next frame
-    //         self.next_render = Some(frame_time_limit);
-    //     } else {
-    //         self.next_render = None;
-    //     }
+        // Render took a while so move to next frame
+        if current_render_duration > frame_time_limit {
+            self.next_render = Some(frame_time_limit);
+            self.current_render_time = Duration::from_millis(0);
+            return;
+        }
 
-    //     self.last_timestamp = Instant::now();
-    // }
+        self.current_render_time += current_render_duration;
+
+        // If previous render duration and current are still under of frame time limit
+        if self.current_render_time < frame_time_limit {
+            self.next_render = None;
+        } else {
+            self.current_render_time = Duration::from_millis(0);
+            self.next_render = Some(frame_time_limit);
+        }
+    }
 
     #[allow(clippy::too_many_arguments)]
     pub fn from_target<'b>(
@@ -399,14 +406,18 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
-        let frame_interval = if config.renderer.frame_interval == 0 {
+        let frame_time_limit = if config.renderer.max_fps == 0 {
             None
         } else {
-            Some(Duration::from_millis(config.renderer.frame_interval))
+            Some(Duration::from_millis(
+                1000 / config.renderer.max_fps.clamp(1, 1000),
+            ))
         };
 
         Self {
-            frame_interval,
+            frame_time_limit,
+            next_render: None,
+            current_render_time: Duration::from_millis(0),
             is_focused: true,
             is_occluded: false,
             winit_window,

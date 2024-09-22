@@ -1,4 +1,4 @@
-use crate::config::default_frame_interval;
+use crate::config::default_max_fps;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
@@ -10,8 +10,8 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
-    #[serde(default = "default_frame_interval", rename = "frame-interval")]
-    pub frame_interval: u64,
+    #[serde(default = "default_max_fps", rename = "max-fps")]
+    pub max_fps: u64,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -21,7 +21,7 @@ impl Default for Renderer {
             performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
-            frame_interval: default_frame_interval(),
+            max_fps: default_max_fps(),
         }
     }
 }

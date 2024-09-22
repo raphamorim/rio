@@ -7,7 +7,6 @@ language: 'en'
 
 ## Unreleased
 
-- *breaking* `renderer.max-fps` was replaced with `renderer.frame-interval`.
 - Support auto bold for fonts.
 - Support auto italic for fonts.
 - MacOS: Add dock menu.
