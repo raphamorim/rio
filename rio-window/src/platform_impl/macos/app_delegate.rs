@@ -147,7 +147,15 @@ declare_class!(
                 Some(sel!(rioCreateWindow:)),
                 None,
             );
+            let new_tab_item_title = ns_string!("New Tab");
+            let new_tab_item = menu_item(
+                mtm,
+                new_tab_item_title,
+                Some(sel!(rioCreateTab:)),
+                None,
+            );
             menubar.addItem(&new_window_item);
+            menubar.addItem(&new_tab_item);
             Retained::<NSMenu>::autorelease_return(menubar)
         }
 
