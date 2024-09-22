@@ -152,7 +152,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if let Some(interval) = route.window.frame_interval {
+                        if let Some(limit) = route.window.next_render {
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -160,7 +160,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             );
 
                             if !self.scheduler.scheduled(timer_id) {
-                                self.scheduler.schedule(event, interval, false, timer_id);
+                                self.scheduler.schedule(event, limit, false, timer_id);
                             }
                         } else {
                             route.request_redraw();
@@ -1022,6 +1022,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::RedrawRequested => {
                 route.window.winit_window.pre_present_notify();
+                let start = std::time::Instant::now();
                 match route.path {
                     RoutePath::Assistant => {
                         route.window.screen.render_assistant(&route.assistant);
@@ -1039,8 +1040,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .render_dialog("Do you want to leave Rio?");
                     }
                 }
+                let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
+                route.window.compute_timestamp(duration);
 
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
