@@ -7,6 +7,7 @@ language: 'en'
 
 ## Unreleased
 
+- *breaking* `renderer.max-fps` was replaced with `renderer.frame-interval`.
 - MacOS: Add dock menu.
 - MacOS: Add Shell and Edit menu.
 - MacOS: Support to native modal that asks if wants to close app.

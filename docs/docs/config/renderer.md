@@ -18,7 +18,9 @@ language: 'en'
 
 - `disable-unfocused-render` - This property disable renderer processes while Rio is unfocused.
 
-- `max-fps` - Limits the maximum number of frames per second that rio terminal will attempt to draw. If you set as `0` then this limit will be ignored. The default on MacOS is 180 and all other platforms is 90.
+- `frame-interval` - Time scheduler between frames in milliseconds per second that rio terminal will attempt to draw. If you set as `0` then this value will be ignored. The default on MacOS/Windows is 1 and all other platforms is 3.
+
+In case you would like define 60 frames per second as target, you would need to set each frame as 1/60th of one second long, so 16.67 milliseconds.
 
 Example:
 
@@ -27,5 +29,5 @@ Example:
 performance = "High"
 backend = "Automatic"
 disable-unfocused-render = false
-max-fps = 180
+frame-interval = 1
 ```
