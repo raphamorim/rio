@@ -2,11 +2,17 @@ use crate::font::DEFAULT_FONT_FAMILY;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum SugarloafFontStyle {
+    Normal,
+    Italic,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
     pub weight: Option<u16>,
-    pub style: Option<String>,
+    pub style: SugarloafFontStyle,
 }
 
 impl Default for SugarloafFont {
@@ -14,7 +20,7 @@ impl Default for SugarloafFont {
         Self {
             family: default_font_family(),
             weight: None,
-            style: None,
+            style: SugarloafFontStyle::Normal,
         }
     }
 }
@@ -40,7 +46,7 @@ pub fn default_font_regular() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(300),
-        style: Some(String::from("normal")),
+        style: SugarloafFontStyle::Normal,
     }
 }
 
@@ -48,7 +54,7 @@ pub fn default_font_bold() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
-        style: Some(String::from("normal")),
+        style: SugarloafFontStyle::Normal,
     }
 }
 
@@ -56,7 +62,7 @@ pub fn default_font_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(300),
-        style: Some(String::from("italic")),
+        style: SugarloafFontStyle::Italic,
     }
 }
 
@@ -64,7 +70,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
-        style: Some(String::from("italic")),
+        style: SugarloafFontStyle::Italic,
     }
 }
 

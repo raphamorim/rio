@@ -9,6 +9,7 @@ use crate::font_introspector::zeno::Format;
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
+use zeno::{Angle, Transform};
 
 // const IS_MACOS: bool = cfg!(target_os = "macos");
 
@@ -125,6 +126,9 @@ impl<'a> GlyphCacheSession<'a> {
 
         self.scaled_image.data.clear();
         let mut font_library_data = self.font_library.inner.lock();
+        let font_data = font_library_data.get(&self.font);
+        let should_embolden = font_data.should_embolden;
+        let should_italicize = font_data.should_italicize;
 
         if let Some(data) = font_library_data.get_data(&self.font) {
             let mut scaler = self
@@ -146,15 +150,15 @@ impl<'a> GlyphCacheSession<'a> {
                 .format(Format::CustomSubpixel([0.3, 0., -0.3]))
                 // .format(Format::Alpha)
                 // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
-                // .embolden(embolden)
-                // .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
-                //     Some(Transform::skew(
-                //         Angle::from_degrees(14.0),
-                //         Angle::from_degrees(0.0),
-                //     ))
-                // } else {
-                //     None
-                // })
+                .embolden(if should_embolden { 0.5 } else { 0.0 })
+                .transform(if should_italicize {
+                    Some(Transform::skew(
+                        Angle::from_degrees(14.0),
+                        Angle::from_degrees(0.0),
+                    ))
+                } else {
+                    None
+                })
                 .render_into(&mut scaler, id, self.scaled_image)
             {
                 let p = self.scaled_image.placement;

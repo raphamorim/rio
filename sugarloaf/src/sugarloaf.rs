@@ -150,6 +150,7 @@ impl Sugarloaf<'_> {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
 
+        self.rich_text_brush.reset();
         self.state.reset_compositor();
         self.state.set_fonts(font_library);
     }

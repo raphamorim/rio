@@ -73,11 +73,7 @@ impl std::fmt::Display for RioErrorType {
                         format!("{} weight", font.weight.unwrap())
                     };
 
-                    let style = if font.style.is_none() {
-                        String::from("any style")
-                    } else {
-                        format!("{} style", font.style.as_ref().unwrap())
-                    };
+                    let style = format!("{:?} style", font.style);
 
                     font_str +=
                         format!("\n• \"{}\" using {:?} {:?}", font.family, weight, style)
