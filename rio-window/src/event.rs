@@ -178,7 +178,7 @@ pub enum StartCause {
     CreateWindow,
 
     /// Macos only, executed once app is requesting a reopen
-    MacOSReopen
+    MacOSReopen,
 }
 
 /// Describes an event from a [`Window`].
