@@ -108,6 +108,7 @@ features = [
     "NSWindow",
     "NSWindowScripting",
     "NSWindowTabGroup",
+    "NSWorkspace"
 ]
 
 [target.'cfg(target_os = "windows")'.dependencies]

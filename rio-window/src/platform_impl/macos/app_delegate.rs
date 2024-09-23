@@ -1,6 +1,7 @@
 use crate::platform_impl::platform::menu::menu_item;
 use objc2::sel;
 use objc2_app_kit::NSMenu;
+use objc2_app_kit::NSWorkspace;
 use objc2_foundation::ns_string;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -207,6 +208,16 @@ declare_class!(
             }
         }
 
+        #[method(applicationDidUnhide:)]
+        fn application_did_unhided(
+            &self,
+            _sender: Option<&AnyObject>,
+        ) {
+            if self.is_launched() {
+                self.dispatch_application_did_unhided();
+            }
+        }
+
         #[method(applicationShouldTerminateAfterLastWindowClosed:)]
         fn should_terminate_after_last_window_closed(&self, _sender: Option<&AnyObject>) -> bool {
             false
@@ -297,7 +308,22 @@ impl ApplicationDelegate {
             activate_ignoring_other_apps,
             ..Default::default()
         });
-        unsafe { msg_send_id![super(this), init] }
+
+        let this: Retained<Self> = unsafe { msg_send_id![super(this), init] };
+
+        let workspace = &unsafe { NSWorkspace::sharedWorkspace() };
+        let workspace_center = &unsafe { workspace.notificationCenter() };
+        unsafe {
+            workspace_center.addObserver_selector_name_object(
+                &this,
+                sel!(applicationDidUnhide:),
+                // Some(ns_string!("NSWorkspaceDidActivateApplicationNotification")),
+                Some(ns_string!("NSWorkspaceDidUnhideApplicationNotification")),
+                Some(workspace),
+            )
+        }
+
+        this
     }
 
     pub fn get(mtm: MainThreadMarker) -> Retained<Self> {
@@ -452,6 +478,10 @@ impl ApplicationDelegate {
         self.ivars()
             .event_handler
             .handle_event(event, &ActiveEventLoop::new_root(self.retain()))
+    }
+
+    pub fn dispatch_application_did_unhided(&self) {
+        self.handle_event(Event::Unhided);
     }
 
     /// dispatch `NewEvents(Init)` + `Resumed`

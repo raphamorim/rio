@@ -231,6 +231,10 @@ pub trait ApplicationHandler<T: 'static = ()> {
         let _ = event_loop;
     }
 
+    fn unhided(&mut self, event_loop: &ActiveEventLoop) {
+        let _ = event_loop;
+    }
+
     fn hook_event(&mut self, event_loop: &ActiveEventLoop, hook: &Hook) {
         let _ = (event_loop, hook);
     }
