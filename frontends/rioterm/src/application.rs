@@ -620,7 +620,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::CloseRequested => {
                 self.router.routes.remove(&window_id);
 
-                if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                if self.config.confirm_before_quit {
+                    #[cfg(target_os = "macos")]
                     event_loop.hide_application();
                     return;
                 }
