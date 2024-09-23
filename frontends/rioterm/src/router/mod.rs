@@ -195,7 +195,7 @@ impl Router<'_> {
         self.routes
             .iter()
             .find_map(|(key, val)| {
-                if val.window.is_focused {
+                if val.window.winit_window.has_focus() {
                     Some(key)
                 } else {
                     None
