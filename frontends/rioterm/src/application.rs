@@ -112,25 +112,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         }
     }
 
-    // MacOS only: triggered whenever an application gets unhided
-    fn unhided(&mut self, event_loop: &ActiveEventLoop) {
-        // If is unhided and there's no window then should create one.
-        if !self.router.routes.is_empty() {
+    fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
+        if cause != StartCause::Init && cause != StartCause::CreateWindow
+            && cause != StartCause::MacOSReopen {
             return;
         }
 
-        update_colors_based_on_theme(&mut self.config, event_loop.system_theme());
-
-        self.router.create_window(
-            event_loop,
-            self.event_proxy.clone(),
-            &self.config,
-            None,
-        );
-    }
-
-    fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
-        if cause != StartCause::Init && cause != StartCause::CreateWindow {
+        if cause == StartCause::MacOSReopen && !self.router.routes.is_empty() {
             return;
         }
 
@@ -494,12 +482,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
                 self.router.routes.remove(&window_id);
-                if self.router.routes.is_empty() {
-                    if !self.config.confirm_before_quit {
-                        event_loop.exit();
-                    } else {
-                        event_loop.hide_application();
-                    }
+                if self.router.routes.is_empty() && !self.config.confirm_before_quit {
+                    event_loop.exit();
                 }
             }
             #[cfg(target_os = "macos")]
@@ -621,8 +605,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 self.router.routes.remove(&window_id);
 
                 if self.config.confirm_before_quit {
-                    #[cfg(target_os = "macos")]
-                    event_loop.hide_application();
                     return;
                 }
 
