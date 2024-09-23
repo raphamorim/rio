@@ -1,7 +1,6 @@
 use crate::platform_impl::platform::menu::menu_item;
 use objc2::sel;
 use objc2_app_kit::NSMenu;
-use objc2_app_kit::NSWorkspace;
 use objc2_foundation::ns_string;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
@@ -208,13 +207,16 @@ declare_class!(
             }
         }
 
-        #[method(applicationDidUnhide:)]
-        fn application_did_unhided(
-            &self,
+        #[method(applicationShouldHandleReopen:hasVisibleWindows:)]
+        fn should_handle_reopen(&self,
             _sender: Option<&AnyObject>,
-        ) {
-            if self.is_launched() {
-                self.dispatch_application_did_unhided();
+            has_open_windows: bool,
+        ) -> bool {
+            if self.is_launched() && !has_open_windows {
+                self.dispatch_application_reopen();
+                true
+            } else {
+                false
             }
         }
 
@@ -309,21 +311,21 @@ impl ApplicationDelegate {
             ..Default::default()
         });
 
-        let this: Retained<Self> = unsafe { msg_send_id![super(this), init] };
+        // let this: Retained<Self> = unsafe { msg_send_id![super(this), init] };
 
-        let workspace = &unsafe { NSWorkspace::sharedWorkspace() };
-        let workspace_center = &unsafe { workspace.notificationCenter() };
-        unsafe {
-            workspace_center.addObserver_selector_name_object(
-                &this,
-                sel!(applicationDidUnhide:),
-                // Some(ns_string!("NSWorkspaceDidActivateApplicationNotification")),
-                Some(ns_string!("NSWorkspaceDidUnhideApplicationNotification")),
-                Some(workspace),
-            )
-        }
+        // let workspace = &unsafe { NSWorkspace::sharedWorkspace() };
+        // let workspace_center = &unsafe { workspace.notificationCenter() };
+        // unsafe {
+        //     workspace_center.addObserver_selector_name_object(
+        //         &this,
+        //         sel!(applicationDidUnhide:),
+        //         // Some(ns_string!("NSWorkspaceDidActivateApplicationNotification")),
+        //         Some(ns_string!("NSWorkspaceDidUnhideApplicationNotification")),
+        //         Some(workspace),
+        //     )
+        // }
 
-        this
+        unsafe { msg_send_id![super(this), init] }
     }
 
     pub fn get(mtm: MainThreadMarker) -> Retained<Self> {
@@ -480,8 +482,8 @@ impl ApplicationDelegate {
             .handle_event(event, &ActiveEventLoop::new_root(self.retain()))
     }
 
-    pub fn dispatch_application_did_unhided(&self) {
-        self.handle_event(Event::Unhided);
+    pub fn dispatch_application_reopen(&self) {
+        self.handle_event(Event::NewEvents(StartCause::MacOSReopen));
     }
 
     /// dispatch `NewEvents(Init)` + `Resumed`

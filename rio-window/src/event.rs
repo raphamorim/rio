@@ -113,8 +113,6 @@ pub enum Event<T: 'static> {
     },
 
     OpenConfig,
-    // MacOS only (triggered whenever an app get active)
-    Unhided,
     HookEvent(Hook),
 }
 
@@ -134,7 +132,6 @@ impl<T> Event<T> {
             MemoryWarning => Ok(MemoryWarning),
             Opened { urls } => Ok(Opened { urls }),
             OpenConfig => Ok(OpenConfig),
-            Unhided => Ok(Unhided),
             HookEvent(hook) => Ok(HookEvent(hook)),
         }
     }
@@ -179,6 +176,9 @@ pub enum StartCause {
 
     /// Menu or dock can trigger it
     CreateWindow,
+
+    /// Macos only, executed once app is requesting a reopen
+    MacOSReopen
 }
 
 /// Describes an event from a [`Window`].
