@@ -598,14 +598,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn close_current_context(&mut self) {
         if self.contexts.len() == 1 {
-            // In MacOS: Close last tab will work, leading to hide and
-            // keep Rio running in background if allow_close_last_tab is true
+            // MacOS: Close last tab will work, leading to hide and
+            // keep Rio running in background.
             #[cfg(target_os = "macos")]
             {
-                if self.config.is_native {
-                    self.event_proxy
-                        .send_event(RioEvent::CloseWindow, self.window_id);
-                }
+                self.event_proxy
+                    .send_event(RioEvent::CloseWindow, self.window_id);
             }
             return;
         }
