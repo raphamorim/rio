@@ -239,7 +239,6 @@ declare_class!(
             // menu bar is initially unresponsive on macOS 10.15.
             app.setActivationPolicy(self.ivars().activation_policy.0);
 
-            window_activation_hack(&app);
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(self.ivars().activate_ignoring_other_apps);
 
@@ -677,28 +676,5 @@ pub(crate) struct HandlePendingUserEvents;
 fn min_timeout(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
     a.map_or(b, |a_timeout| {
         b.map_or(Some(a_timeout), |b_timeout| Some(a_timeout.min(b_timeout)))
-    })
-}
-
-/// A hack to make activation of multiple windows work when creating them before
-/// `applicationDidFinishLaunching:` / `Event::Event::NewEvents(StartCause::Init)`.
-///
-/// Alternative to this would be the user calling `window.set_visible(true)` in
-/// `StartCause::Init`.
-///
-/// If this becomes too bothersome to maintain, it can probably be removed
-/// without too much damage.
-fn window_activation_hack(app: &NSApplication) {
-    // TODO: Proper ordering of the windows
-    app.windows().into_iter().for_each(|window| {
-        // Call `makeKeyAndOrderFront` if it was called on the window in `WinitWindow::new`
-        // This way we preserve the user's desired initial visibility status
-        // TODO: Also filter on the type/"level" of the window, and maybe other things?
-        if window.isVisible() {
-            tracing::trace!("Activating visible window");
-            window.makeKeyAndOrderFront(None);
-        } else {
-            tracing::trace!("Skipping activating invisible window");
-        }
     })
 }
