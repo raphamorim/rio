@@ -274,6 +274,10 @@ impl<T> EventLoop<T> {
         &self.window_target
     }
 
+    pub fn set_confirm_before_quit(&self, confirmation: bool) {
+        self.delegate.set_confirm_before_quit(confirmation);
+    }
+
     pub fn run<F>(mut self, handler: F) -> Result<(), EventLoopError>
     where
         F: FnMut(Event<T>, &RootWindowTarget),

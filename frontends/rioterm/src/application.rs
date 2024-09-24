@@ -55,8 +55,10 @@ impl Application<'_> {
             event_proxy.clone(),
         );
         let scheduler = Scheduler::new(proxy);
-
         event_loop.listen_device_events(DeviceEvents::Never);
+
+        #[cfg(target_os = "macos")]
+        event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
         Application {
             config,
