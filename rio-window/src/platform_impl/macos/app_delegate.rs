@@ -51,6 +51,7 @@ impl Default for Policy {
 pub(super) struct State {
     activation_policy: Policy,
     default_menu: bool,
+    set_confirm_before_quit: Cell<bool>,
     activate_ignoring_other_apps: bool,
     event_handler: EventHandler,
     stop_on_launch: Cell<bool>,
@@ -92,6 +93,10 @@ declare_class!(
     unsafe impl NSApplicationDelegate for ApplicationDelegate {
         #[method(applicationShouldTerminate:)]
         fn should_terminate(&self, _sender: Option<&AnyObject>) -> u64 {
+            if !self.ivars().set_confirm_before_quit.get() {
+                return NSApplicationTerminateReply::Now as u64;
+            }
+
             use objc::runtime::Object;
             use objc::msg_send;
             use objc::sel;
@@ -347,6 +352,12 @@ impl ApplicationDelegate {
         closure: impl FnOnce() -> R,
     ) -> R {
         self.ivars().event_handler.set(handler, closure)
+    }
+
+    /// Place the event handler in the application delegate for the duration
+    /// of the given closure.
+    pub fn set_confirm_before_quit(&self, confirmation: bool) {
+        self.ivars().set_confirm_before_quit.set(confirmation)
     }
 
     /// If `pump_events` is called to progress the event loop then we
