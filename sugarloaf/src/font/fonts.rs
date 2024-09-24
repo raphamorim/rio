@@ -1,8 +1,9 @@
 use crate::font::DEFAULT_FONT_FAMILY;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum SugarloafFontStyle {
+    #[default]
     Normal,
     Italic,
 }
@@ -12,6 +13,7 @@ pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
     pub weight: Option<u16>,
+    #[serde(default = "SugarloafFontStyle::default")]
     pub style: SugarloafFontStyle,
 }
 
