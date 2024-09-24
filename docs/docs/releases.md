@@ -7,14 +7,18 @@ language: 'en'
 
 ## Unreleased
 
-- Support auto bold for fonts.
-- Support auto italic for fonts.
+<!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
+<!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+
+## 0.1.16
+
+- Support auto bold on fonts.
+- Support auto italic on fonts.
+- Reduced default regular weight to 300 instead of 400.
 - MacOS: Add dock menu.
 - MacOS: Add Shell and Edit menu.
 - MacOS: Support to native modal that asks if wants to close app.
-
-<!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
-<!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
+- MacOS: Fix `confirm-before-quit` property.
 
 ## 0.1.15
 
