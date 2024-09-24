@@ -105,7 +105,7 @@ pub fn initialize(app: &NSApplication) {
         Some(sel!(terminate:)),
         Some(KeyEquivalent {
             key: ns_string!("q"),
-            masks: None,
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
         }),
     );
 
