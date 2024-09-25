@@ -99,14 +99,9 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn reset_compositor(&mut self) {
+    pub fn reset_compositors(&mut self) {
         self.compositors.elementary.clean();
         self.compositors.advanced.reset();
-    }
-
-    #[inline]
-    pub fn clean_compositor(&mut self) {
-        self.compositors.elementary.clean();
     }
 
     #[inline]

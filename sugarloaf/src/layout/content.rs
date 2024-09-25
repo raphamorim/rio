@@ -248,14 +248,6 @@ impl Content {
         if prev_font_size != self.state.font_size {
             self.metrics_cache.inner.clear();
         }
-        // ContentBuilder {
-        //     font_features: &self.font_features,
-        //     fonts: &self.fonts,
-        //     scx: &mut self.scx,
-        //     s: &mut self.state,
-        //     word_cache: &mut self.word_cache,
-        //     metrics_cache: &mut self.metrics_cache,
-        // }
     }
 
     #[inline]
@@ -382,7 +374,7 @@ impl WordCache {
                 );
             } else {
                 // If font id is main
-                let size = if self.font_id == 0 { 384 } else { 128 };
+                let size = if self.font_id == 0 { 512 } else { 128 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
                 cache.put(
                     std::mem::take(&mut self.content),
