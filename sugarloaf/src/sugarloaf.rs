@@ -210,7 +210,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_content_state(&mut self, new_state: crate::ContentState)  {
+    pub fn set_content_state(&mut self, new_state: crate::ContentState) {
         self.state.set_content_state(new_state);
     }
 

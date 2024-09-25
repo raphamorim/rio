@@ -323,15 +323,15 @@ impl Router<'_> {
 
 #[repr(u8)]
 #[derive(PartialEq)]
-pub enum UpdateState {
-    UseLast,
-    HasUpdates,
-    HasProcessedUpdates,
+pub enum FrameState {
+    Fresh,
+    Pending,
+    Created,
 }
 
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
-    pub state: UpdateState,
+    pub frame_state: FrameState,
     pub is_occluded: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
@@ -351,12 +351,14 @@ impl<'a> RouteWindow<'a> {
     }
 
     pub fn wait_until(&self) -> Option<Duration> {
-        let elapsed_time = Instant::now().duration_since(self.render_timestamp).as_millis() as u64;
+        let elapsed_time = Instant::now()
+            .duration_since(self.render_timestamp)
+            .as_millis() as u64;
         let vblank_interval = self.vblank_interval.as_millis() as u64;
-        
+
         match vblank_interval >= elapsed_time {
             true => Some(Duration::from_millis(vblank_interval - elapsed_time)),
-            false => None
+            false => None,
         }
     }
 
@@ -416,11 +418,12 @@ impl<'a> RouteWindow<'a> {
             Duration::from_micros((1000. * monitor_vblank_interval) as u64);
 
         if let Some(target_fps) = config.renderer.target_fps {
-            monitor_vblank_interval = Duration::from_millis(1000 / target_fps.clamp(1, 1000));
+            monitor_vblank_interval =
+                Duration::from_millis(1000 / target_fps.clamp(1, 1000));
         }
 
         Self {
-            state: UpdateState::HasUpdates,
+            frame_state: FrameState::Fresh,
             vblank_interval: monitor_vblank_interval,
             is_focused: true,
             is_occluded: false,

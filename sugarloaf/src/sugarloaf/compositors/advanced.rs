@@ -61,7 +61,7 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn set_content_state(&mut self, new_state: ContentState)  {
+    pub fn set_content_state(&mut self, new_state: ContentState) {
         self.content.state = new_state;
     }
 

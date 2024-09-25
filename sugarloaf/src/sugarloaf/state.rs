@@ -112,9 +112,10 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_content_state(&mut self, new_content_state: ContentState)  {
+    pub fn set_content_state(&mut self, new_content_state: ContentState) {
         self.compositors
-            .advanced.set_content_state(new_content_state);
+            .advanced
+            .set_content_state(new_content_state);
     }
 
     #[inline]

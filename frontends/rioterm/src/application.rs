@@ -1,7 +1,7 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
-use crate::router::{routes::RoutePath, Router, UpdateState};
+use crate::router::{routes::RoutePath, FrameState, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
@@ -143,8 +143,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event.payload {
             RioEventType::Rio(RioEvent::ProcessUpdate) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.window.state = UpdateState::HasProcessedUpdates;
-                    route.window.screen.update_renderer();
+                    route.window.frame_state = FrameState::Created;
+                    route.window.screen.prepare_frame();
                     route.request_redraw();
                 }
             }
@@ -158,7 +158,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                     if route_id == route.window.screen.ctx().current_route() {
                         if let Some(time) = route.window.wait_until() {
-                            route.window.state = UpdateState::HasUpdates;
+                            route.window.frame_state = FrameState::Pending;
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -170,7 +170,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 self.scheduler.schedule(event, time, false, timer_id);
                             }
                         } else {
-                            route.window.state = UpdateState::HasUpdates;
+                            route.window.frame_state = FrameState::Pending;
                             route.window.start_render_timestamp();
                             route.request_redraw();
                         }
@@ -1000,20 +1000,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal => {
-                        let has_updates = match route.window.state {
-                            UpdateState::UseLast => false,
-                            UpdateState::HasUpdates => {
-                                route.window.screen.context_manager.schedule_update();
-                                false
-                            },
-                            UpdateState::HasProcessedUpdates => {
-                                route.window.state = UpdateState::UseLast;
-                                true
-                            },
-                        };
-                        route.window.screen.render_fn(has_updates);
-                    }
+                    RoutePath::Terminal => match route.window.frame_state {
+                        FrameState::Fresh => {}
+                        FrameState::Pending => {
+                            route.window.screen.context_manager.schedule_update();
+                        }
+                        FrameState::Created => {
+                            route.window.frame_state = FrameState::Fresh;
+                            route.window.screen.frame();
+                        }
+                    },
                     RoutePath::ConfirmQuit => {
                         route
                             .window
