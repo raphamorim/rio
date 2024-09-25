@@ -19,7 +19,7 @@ pub mod iter {
 }
 
 pub use content::{
-    Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
+    Content, ContentState, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use render_data::{Cluster, Glyph, Line, Run};
 

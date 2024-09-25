@@ -210,6 +210,11 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn set_content_state(&mut self, new_state: crate::ContentState)  {
+        self.state.set_content_state(new_state);
+    }
+
+    #[inline]
     pub fn set_objects(&mut self, objects: Vec<Object>) {
         self.state.compute_objects(objects);
     }

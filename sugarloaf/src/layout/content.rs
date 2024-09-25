@@ -26,15 +26,15 @@ pub struct FragmentData {
     pub style: FragmentStyle,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct BuilderLine {
     /// Collection of fragments.
     pub fragments: Vec<FragmentData>,
 }
 
 /// Builder state.
-#[derive(Default)]
-pub struct BuilderState {
+#[derive(Clone, Default)]
+pub struct ContentState {
     /// Lines State
     pub lines: Vec<BuilderLine>,
     /// Font variation setting cache.
@@ -45,13 +45,13 @@ pub struct BuilderState {
     pub font_size: f32,
 }
 
-impl BuilderState {
+impl ContentState {
     /// Creates a new layout state.
     pub fn new() -> Self {
         let lines = vec![BuilderLine::default()];
         Self {
             lines,
-            ..BuilderState::default()
+            ..ContentState::default()
         }
     }
     #[inline]
@@ -83,7 +83,7 @@ impl BuilderState {
 pub type FontSettingKey = u32;
 
 /// Cache of tag/value pairs for font settings.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct FontSettingCache<T: Copy + PartialOrd + PartialEq> {
     settings: Vec<Setting<T>>,
     lists: Vec<FontSettingList>,
@@ -206,7 +206,7 @@ pub struct Content {
     fonts: FontLibrary,
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
-    state: BuilderState,
+    pub state: ContentState,
     word_cache: WordCache,
     metrics_cache: MetricsCache,
 }
@@ -217,7 +217,7 @@ impl Content {
         Self {
             fonts: font_library.clone(),
             scx: ShapeContext::new(),
-            state: BuilderState::new(),
+            state: ContentState::new(),
             word_cache: WordCache::new(),
             font_features: vec![],
             metrics_cache: MetricsCache::default(),
@@ -248,14 +248,6 @@ impl Content {
         if prev_font_size != self.state.font_size {
             self.metrics_cache.inner.clear();
         }
-        // ContentBuilder {
-        //     font_features: &self.font_features,
-        //     fonts: &self.fonts,
-        //     scx: &mut self.scx,
-        //     s: &mut self.state,
-        //     word_cache: &mut self.word_cache,
-        //     metrics_cache: &mut self.metrics_cache,
-        // }
     }
 
     #[inline]

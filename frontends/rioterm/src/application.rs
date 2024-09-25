@@ -1,7 +1,7 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
-use crate::router::{routes::RoutePath, Router};
+use crate::router::{routes::RoutePath, Router, UpdateState};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
@@ -141,18 +141,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EventPayload) {
         let window_id = event.window_id;
         match event.payload {
-            RioEventType::Rio(RioEvent::Render) => {
+            RioEventType::Rio(RioEvent::ProcessUpdate) => {
+                println!("ProcessUpdate");
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if self.config.renderer.disable_unfocused_render
-                        && !route.window.is_focused
-                    {
-                        return;
-                    }
-
-                    route.request_redraw();
+                    route.window.screen.update_renderer();
+                    route.window.state = UpdateState::HasProcessedUpdates;
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
+                println!("RenderRoute");
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
@@ -162,6 +159,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                     if route_id == route.window.screen.ctx().current_route() {
                         if let Some(time) = route.window.wait_until() {
+                            route.window.state = UpdateState::HasUpdates;
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -173,6 +171,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 self.scheduler.schedule(event, time, false, timer_id);
                             }
                         } else {
+                            route.window.state = UpdateState::HasUpdates;
                             route.window.start_render_timestamp();
                             route.request_redraw();
                         }
@@ -286,36 +285,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if route_id == route.window.screen.ctx().current_route() {
                         route.request_redraw();
                     }
-                }
-            }
-            RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                let timer_id = TimerId::new(Topic::Render, window_id);
-                let event =
-                    EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
-                    );
-                }
-            }
-            RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
-                let event = EventPayload::new(
-                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
-                    window_id,
-                );
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
-                    );
                 }
             }
             RioEventType::Rio(RioEvent::BlinkCursor(millis, route_id)) => {
@@ -628,7 +597,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.schedule_render();
                 }
             }
 
@@ -824,7 +793,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if route.window.screen.search_nearest_hyperlink_from_pos() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.schedule_render();
                 } else {
                     let cursor_icon =
                         if !route.window.screen.modifiers.state().shift_key()
@@ -840,7 +809,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // In case hyperlink range has cleaned trigger one more render
                     if route.window.screen.renderer.has_hyperlink_range() {
                         route.window.screen.renderer.set_hyperlink_range(None);
-                        route.window.screen.context_manager.schedule_render(60);
+                        route.window.screen.context_manager.schedule_render();
                     }
                 }
 
@@ -852,7 +821,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         || !route.window.screen.mouse_mode())
                 {
                     route.window.screen.update_selection(point, square_side);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.schedule_render();
                 } else if square_changed
                     && route.window.screen.has_mouse_motion_and_drag()
                 {
@@ -1024,6 +993,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
+                if route.window.state == UpdateState::HasUpdates {
+                    let timer_id = TimerId::new(Topic::ProcessUpdate, window_id);
+                    let event =
+                        EventPayload::new(RioEventType::Rio(RioEvent::ProcessUpdate), window_id);
+
+                    if !self.scheduler.scheduled(timer_id) {
+                        self.scheduler.schedule(
+                            event,
+                            Duration::from_millis(1),
+                            false,
+                            timer_id,
+                        );
+                    }
+                }
+
                 route.window.winit_window.pre_present_notify();
                 match route.path {
                     RoutePath::Assistant => {
@@ -1033,7 +1017,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.render_welcome();
                     }
                     RoutePath::Terminal => {
-                        route.window.screen.render();
+                        let has_updates = match route.window.state {
+                            UpdateState::UseLast => false,
+                            UpdateState::HasUpdates => {
+                                false
+                            },
+                            UpdateState::HasProcessedUpdates => {
+                                route.window.state = UpdateState::UseLast;
+                                true
+                            },
+                        };
+                        route.window.screen.render_fn(has_updates);
+                        route.window.screen.context_manager.schedule_render();
                     }
                     RoutePath::ConfirmQuit => {
                         route

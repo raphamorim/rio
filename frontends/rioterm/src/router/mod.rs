@@ -321,8 +321,17 @@ impl Router<'_> {
     }
 }
 
+#[repr(u8)]
+#[derive(PartialEq)]
+pub enum UpdateState {
+    UseLast,
+    HasUpdates,
+    HasProcessedUpdates,
+}
+
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
+    pub state: UpdateState,
     pub is_occluded: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
@@ -411,6 +420,7 @@ impl<'a> RouteWindow<'a> {
         }
 
         Self {
+            state: UpdateState::HasUpdates,
             vblank_interval: monitor_vblank_interval,
             is_focused: true,
             is_occluded: false,

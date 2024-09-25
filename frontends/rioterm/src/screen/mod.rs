@@ -1904,9 +1904,9 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render(&mut self) {
+    pub fn update_renderer(&mut self) {
         let start_total = std::time::Instant::now();
-        println!("_____________________________\nrender time elapsed");
+        // println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -1940,7 +1940,7 @@ impl Screen<'_> {
             data
         };
         self.renderer.set_ime(self.ime.preedit());
-        self.renderer.prepare_term(
+        self.renderer.update_from_term(
             &rows,
             cursor,
             &mut self.sugarloaf,
@@ -1952,6 +1952,20 @@ impl Screen<'_> {
         );
         let duration = start_total.elapsed();
         println!("Total whole prepare render function is: {:?}\n", duration);
+    }
+
+    pub fn render(&mut self) {
+        self.render_fn(true);
+    }
+
+    pub fn render_fn(&mut self, has_updates: bool) {
+        if has_updates {
+            self.update_renderer();
+        } else {
+            self.renderer.update_from_last(&mut self.sugarloaf);
+        }
+
+        let start_total = std::time::Instant::now();
         self.sugarloaf.render();
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled

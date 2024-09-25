@@ -16,7 +16,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
+    Content, ContentState, Object, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
     SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
@@ -37,6 +37,8 @@ pub struct Renderer {
     pub option_as_alt: String,
     is_ime_enabled: bool,
     is_vi_mode_enabled: bool,
+    sugarloaf_content: ContentState,
+    sugarloaf_objects: Vec<Object>,
     pub is_kitty_keyboard_enabled: bool,
     pub last_typing: Option<Instant>,
     pub named_colors: Colors,
@@ -92,6 +94,8 @@ impl Renderer {
         }
 
         Renderer {
+            sugarloaf_content: ContentState::default(),
+            sugarloaf_objects: vec![],
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
@@ -563,20 +567,6 @@ impl Renderer {
         }
     }
 
-    // #[inline]
-    // #[allow(dead_code)]
-    // fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-    //     let media = &square.graphics().unwrap()[0].texture;
-    //     Sugar {
-    //         media: Some(SugarGraphic {
-    //             id: media.id,
-    //             width: media.width,
-    //             height: media.height,
-    //         }),
-    //         ..Sugar::default()
-    //     }
-    // }
-
     #[inline]
     fn create_cursor_style(&self, square: &Square) -> (FragmentStyle, char) {
         let font_attrs = match (
@@ -694,8 +684,14 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
+    #[inline]
+    pub fn update_from_last(&mut self, sugarloaf: &mut Sugarloaf,) {
+        sugarloaf.set_content_state(self.sugarloaf_content.clone());
+        sugarloaf.set_objects(self.sugarloaf_objects.clone());
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub fn prepare_term(
+    pub fn update_from_term(
         &mut self,
         rows: &[Row<Square>],
         cursor: CursorState,
@@ -730,8 +726,6 @@ impl Renderer {
         }
 
         let content = sugarloaf.content();
-
-        let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             self.create_line(
@@ -743,21 +737,21 @@ impl Renderer {
                 focused_match,
             );
         }
-        let duration = start.elapsed();
-        println!("Total loop rows: {:?}", duration);
 
-        let mut objects = Vec::with_capacity(30);
+        self.sugarloaf_content = content.state.clone();
+
+        self.sugarloaf_objects.clear();
         self.navigation.build_objects(
             (layout.width, layout.height, layout.dimensions.scale),
             &self.named_colors,
             context_manager,
             self.active_search.is_some(),
-            &mut objects,
+            &mut self.sugarloaf_objects,
         );
 
         if let Some(active_search_content) = &self.active_search {
             search::draw_search_bar(
-                &mut objects,
+                &mut self.sugarloaf_objects,
                 &self.named_colors,
                 (layout.width, layout.height, layout.dimensions.scale),
                 active_search_content,
@@ -766,6 +760,6 @@ impl Renderer {
             self.active_search = None;
         }
 
-        sugarloaf.set_objects(objects);
+        sugarloaf.set_objects(self.sugarloaf_objects.clone());
     }
 }

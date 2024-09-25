@@ -7,7 +7,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, FragmentStyle, RenderData};
+use crate::layout::{Content, ContentState, FragmentStyle, RenderData};
 use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
@@ -58,6 +58,11 @@ impl Advanced {
     pub fn content(&mut self, scale: f32, font_size: f32) -> &mut Content {
         self.content.build(scale, font_size);
         &mut self.content
+    }
+
+    #[inline]
+    pub fn set_content_state(&mut self, new_state: ContentState)  {
+        self.content.state = new_state;
     }
 
     #[inline]

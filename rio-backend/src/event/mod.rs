@@ -46,12 +46,11 @@ pub enum ClickState {
 
 #[derive(Clone)]
 pub enum RioEvent {
-    PrepareRender(u64),
-    PrepareRenderOnRoute(u64, usize),
     /// New terminal content available.
     Render,
     /// New terminal content available per route.
     RenderRoute(usize),
+    ProcessUpdate,
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -159,12 +158,9 @@ impl Debug for RioEvent {
             }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
-            RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
-            RioEvent::PrepareRenderOnRoute(millis, route) => {
-                write!(f, "PrepareRender({millis} on route {route})")
-            }
             RioEvent::Render => write!(f, "Render"),
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
+            RioEvent::ProcessUpdate => write!(f, "ProcessUpdate"),
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
