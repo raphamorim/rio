@@ -392,6 +392,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn schedule_update(&mut self) {
+        println!("oi????");
+        self.event_proxy
+            .send_event(RioEvent::ProcessUpdate, self.window_id);
+    }
+
+    #[inline]
     pub fn schedule_render(&mut self) {
         println!("oi????");
         self.event_proxy

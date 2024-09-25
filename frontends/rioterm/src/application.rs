@@ -146,6 +146,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.update_renderer();
                     route.window.state = UpdateState::HasProcessedUpdates;
+                    route.window.start_render_timestamp();
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
@@ -993,21 +995,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                if route.window.state == UpdateState::HasUpdates {
-                    let timer_id = TimerId::new(Topic::ProcessUpdate, window_id);
-                    let event =
-                        EventPayload::new(RioEventType::Rio(RioEvent::ProcessUpdate), window_id);
-
-                    if !self.scheduler.scheduled(timer_id) {
-                        self.scheduler.schedule(
-                            event,
-                            Duration::from_millis(1),
-                            false,
-                            timer_id,
-                        );
-                    }
-                }
-
                 route.window.winit_window.pre_present_notify();
                 match route.path {
                     RoutePath::Assistant => {
@@ -1020,6 +1007,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let has_updates = match route.window.state {
                             UpdateState::UseLast => false,
                             UpdateState::HasUpdates => {
+                                route.window.screen.context_manager.schedule_update();
                                 false
                             },
                             UpdateState::HasProcessedUpdates => {
@@ -1028,7 +1016,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             },
                         };
                         route.window.screen.render_fn(has_updates);
-                        route.window.screen.context_manager.schedule_render();
                     }
                     RoutePath::ConfirmQuit => {
                         route
