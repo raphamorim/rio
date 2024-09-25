@@ -161,18 +161,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if let Some(limit) = route.window.frame_time_limit {
-                            let timer_id = TimerId::new(Topic::RenderRoute, window_id);
-                            let event = EventPayload::new(
-                                RioEventType::Rio(RioEvent::Render),
-                                window_id,
-                            );
+                        let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                        let event = EventPayload::new(
+                            RioEventType::Rio(RioEvent::Render),
+                            window_id,
+                        );
 
-                            if !self.scheduler.scheduled(timer_id) {
+                        if !self.scheduler.scheduled(timer_id) {
+                            if let Some(limit) = route.window.wait_until() {
+                                route.window.start_render_timestamp();
                                 self.scheduler.schedule(event, limit, false, timer_id);
+                            } else {
+                                route.window.start_render_timestamp();
+                                route.request_redraw();
                             }
-                        } else {
-                            route.request_redraw();
                         }
                     }
                 }

@@ -7,6 +7,8 @@ language: 'en'
 
 ## Unreleased
 
+- Use max frame per seconds based on the current monitor refresh rate.
+- *breaking* `renderer.max-fps` has been changed to `renderer.target-fps`.
 - Fix background color for underline and beam cursors when using transparent window.
 - Fix IME color for underline and beam cursors.
 - Add default for Style property on Sugarloaf font.
