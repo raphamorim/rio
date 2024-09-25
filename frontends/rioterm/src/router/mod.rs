@@ -19,7 +19,7 @@ use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // 𜱭𜱭 unicode is not available yet for all OS
 // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
@@ -321,10 +321,20 @@ impl Router<'_> {
     }
 }
 
+#[repr(u8)]
+#[derive(PartialEq)]
+pub enum FrameState {
+    Fresh,
+    Pending,
+    Created,
+}
+
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
+    pub frame_state: FrameState,
     pub is_occluded: bool,
-    pub frame_time_limit: Option<Duration>,
+    pub render_timestamp: Instant,
+    pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
     #[cfg(target_os = "macos")]
@@ -334,6 +344,22 @@ pub struct RouteWindow<'a> {
 impl<'a> RouteWindow<'a> {
     pub fn configure_window(&mut self, config: &rio_backend::config::Config) {
         configure_window(&self.winit_window, config);
+    }
+
+    pub fn start_render_timestamp(&mut self) {
+        self.render_timestamp = Instant::now();
+    }
+
+    pub fn wait_until(&self) -> Option<Duration> {
+        let elapsed_time = Instant::now()
+            .duration_since(self.render_timestamp)
+            .as_millis() as u64;
+        let vblank_interval = self.vblank_interval.as_millis() as u64;
+
+        match vblank_interval >= elapsed_time {
+            true => Some(Duration::from_millis(vblank_interval - elapsed_time)),
+            false => None,
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -380,18 +406,28 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
-        let frame_time_limit = if config.renderer.max_fps == 0 {
-            None
-        } else {
-            Some(Duration::from_millis(
-                1000 / config.renderer.max_fps.clamp(1, 1000),
-            ))
-        };
+        // Get the display vblank interval.
+        let monitor_vblank_interval = 1_000_000.
+            / winit_window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+                .unwrap_or(60_000) as f64;
+
+        // Now convert it to micro seconds.
+        let mut monitor_vblank_interval =
+            Duration::from_micros((1000. * monitor_vblank_interval) as u64);
+
+        if let Some(target_fps) = config.renderer.target_fps {
+            monitor_vblank_interval =
+                Duration::from_millis(1000 / target_fps.clamp(1, 1000));
+        }
 
         Self {
-            frame_time_limit,
+            frame_state: FrameState::Fresh,
+            vblank_interval: monitor_vblank_interval,
             is_focused: true,
             is_occluded: false,
+            render_timestamp: Instant::now(),
             winit_window,
             screen,
             #[cfg(target_os = "macos")]

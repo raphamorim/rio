@@ -1905,6 +1905,11 @@ impl Screen<'_> {
     }
 
     pub fn render(&mut self) {
+        self.prepare_frame();
+        self.frame();
+    }
+
+    pub fn prepare_frame(&mut self) {
         // let start_total = std::time::Instant::now();
         // println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
@@ -1950,6 +1955,31 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
+        // let duration = start_total.elapsed();
+        // println!("Total whole prepare render function is: {:?}\n", duration);
+    }
+
+    #[inline]
+    pub fn frame_last(&mut self) {
+        self.renderer.prepare_from_last(&mut self.sugarloaf);
+
+        // let start_total = std::time::Instant::now();
+        self.sugarloaf.render();
+        // In this case the configuration of blinking cursor is enabled
+        // and the terminal also have instructions of blinking enabled
+        // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
+        if self.renderer.has_blinking_enabled() && self.selection_is_empty() {
+            self.context_manager
+                .blink_cursor(self.renderer.config_blinking_interval);
+        }
+
+        // let duration = start_total.elapsed();
+        // println!("Total whole render function is: {:?}\n", duration);
+    }
+
+    #[inline]
+    pub fn frame(&mut self) {
+        // let start_total = std::time::Instant::now();
         self.sugarloaf.render();
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled

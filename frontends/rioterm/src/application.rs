@@ -1,7 +1,7 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
-use crate::router::{routes::RoutePath, Router};
+use crate::router::{routes::RoutePath, FrameState, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
@@ -141,14 +141,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: EventPayload) {
         let window_id = event.window_id;
         match event.payload {
-            RioEventType::Rio(RioEvent::Render) => {
+            RioEventType::Rio(RioEvent::ProcessUpdate) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if self.config.renderer.disable_unfocused_render
-                        && !route.window.is_focused
-                    {
-                        return;
-                    }
-
+                    route.window.frame_state = FrameState::Created;
+                    route.window.screen.prepare_frame();
+                    route.window.start_render_timestamp();
                     route.request_redraw();
                 }
             }
@@ -161,7 +158,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if let Some(limit) = route.window.frame_time_limit {
+                        if let Some(time) = route.window.wait_until() {
+                            route.window.frame_state = FrameState::Pending;
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -169,9 +167,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             );
 
                             if !self.scheduler.scheduled(timer_id) {
-                                self.scheduler.schedule(event, limit, false, timer_id);
+                                route.window.start_render_timestamp();
+                                self.scheduler.schedule(event, time, false, timer_id);
                             }
                         } else {
+                            route.window.frame_state = FrameState::Pending;
+                            route.window.start_render_timestamp();
                             route.request_redraw();
                         }
                     }
@@ -284,36 +285,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if route_id == route.window.screen.ctx().current_route() {
                         route.request_redraw();
                     }
-                }
-            }
-            RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                let timer_id = TimerId::new(Topic::Render, window_id);
-                let event =
-                    EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
-                    );
-                }
-            }
-            RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
-                let event = EventPayload::new(
-                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
-                    window_id,
-                );
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
-                    );
                 }
             }
             RioEventType::Rio(RioEvent::BlinkCursor(millis, route_id)) => {
@@ -626,7 +597,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.prepare_frame();
+                    route.window.screen.frame();
                 }
             }
 
@@ -822,7 +794,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if route.window.screen.search_nearest_hyperlink_from_pos() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.prepare_frame();
+                    route.window.screen.frame();
                 } else {
                     let cursor_icon =
                         if !route.window.screen.modifiers.state().shift_key()
@@ -838,7 +811,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // In case hyperlink range has cleaned trigger one more render
                     if route.window.screen.renderer.has_hyperlink_range() {
                         route.window.screen.renderer.set_hyperlink_range(None);
-                        route.window.screen.context_manager.schedule_render(60);
+                        route.window.screen.prepare_frame();
+                        route.window.screen.frame();
                     }
                 }
 
@@ -850,7 +824,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         || !route.window.screen.mouse_mode())
                 {
                     route.window.screen.update_selection(point, square_side);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.prepare_frame();
+                    route.window.screen.frame();
                 } else if square_changed
                     && route.window.screen.has_mouse_motion_and_drag()
                 {
@@ -977,14 +952,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
                 }
-
-                // let has_regained_focus = !route.window.is_focused && focused;
-                // route.window.is_focused = focused;
-
-                // if has_regained_focus {
-                // route.request_redraw();
-                // }
-
                 route.window.screen.on_focus_change(focused);
             }
 
@@ -1030,18 +997,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                route.window.winit_window.pre_present_notify();
                 match route.path {
                     RoutePath::Assistant => {
+                        route.window.winit_window.pre_present_notify();
                         route.window.screen.render_assistant(&route.assistant);
                     }
                     RoutePath::Welcome => {
+                        route.window.winit_window.pre_present_notify();
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal => {
-                        route.window.screen.render();
-                    }
+                    RoutePath::Terminal => match route.window.frame_state {
+                        FrameState::Fresh => {
+                            route.window.screen.frame_last();
+                        }
+                        FrameState::Pending => {
+                            route.window.screen.context_manager.schedule_update();
+                        }
+                        FrameState::Created => {
+                            route.window.winit_window.pre_present_notify();
+                            route.window.frame_state = FrameState::Fresh;
+                            route.window.screen.frame();
+                        }
+                    },
                     RoutePath::ConfirmQuit => {
+                        route.window.winit_window.pre_present_notify();
                         route
                             .window
                             .screen

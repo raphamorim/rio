@@ -6,7 +6,7 @@
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{Content, Graphics, Object};
+use crate::{Content, ContentState, Graphics, Object};
 
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
@@ -109,6 +109,13 @@ impl SugarState {
         self.compositors
             .advanced
             .content(self.layout.dimensions.scale, self.layout.font_size)
+    }
+
+    #[inline]
+    pub fn set_content_state(&mut self, new_content_state: ContentState) {
+        self.compositors
+            .advanced
+            .set_content_state(new_content_state);
     }
 
     #[inline]
