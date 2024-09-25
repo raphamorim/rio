@@ -142,16 +142,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         let window_id = event.window_id;
         match event.payload {
             RioEventType::Rio(RioEvent::ProcessUpdate) => {
-                println!("ProcessUpdate");
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.window.screen.update_renderer();
                     route.window.state = UpdateState::HasProcessedUpdates;
-                    route.window.start_render_timestamp();
+                    route.window.screen.update_renderer();
                     route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
-                println!("RenderRoute");
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
