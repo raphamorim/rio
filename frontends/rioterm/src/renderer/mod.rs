@@ -603,15 +603,36 @@ impl Renderer {
             std::mem::swap(&mut background_color, &mut color);
         }
 
-        // If IME is enabled or is a block cursor, put background color
+        let has_dynamic_background = self.dynamic_background.2
+            && background_color[0] == self.dynamic_background.0[0]
+            && background_color[1] == self.dynamic_background.0[1]
+            && background_color[2] == self.dynamic_background.0[2];
+        let background_color = if has_dynamic_background
+            && self.cursor.state.content != CursorShape::Block
+        {
+            None
+        } else {
+            Some(background_color)
+        };
+
+        // If IME is or cursor is block enabled, put background color
         // when cursor is over the character
-        if self.is_ime_enabled || self.cursor.state.content == CursorShape::Block {
-            color = self.named_colors.background.0;
+        match (
+            self.is_ime_enabled,
+            self.cursor.state.content == CursorShape::Block,
+        ) {
+            (_, true) => {
+                color = self.named_colors.background.0;
+            }
+            (true, false) => {
+                color = self.named_colors.foreground;
+            }
+            (false, false) => {}
         }
 
         let mut style = FragmentStyle {
             color,
-            background_color: Some(background_color),
+            background_color,
             font_attrs: font_attrs.into(),
             ..FragmentStyle::default()
         };

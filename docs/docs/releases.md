@@ -7,6 +7,9 @@ language: 'en'
 
 ## Unreleased
 
+- Fix background color for underline and beam cursors when using transparent window.
+- Fix IME color for underline and beam cursors.
+- Add default for Style property on Sugarloaf font.
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
