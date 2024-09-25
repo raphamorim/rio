@@ -151,7 +151,7 @@ impl Sugarloaf<'_> {
         tracing::info!("requested a font change");
 
         self.rich_text_brush.reset();
-        self.state.reset_compositor();
+        self.state.reset_compositors();
         self.state.set_fonts(font_library);
     }
 
@@ -244,8 +244,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    fn clean_state(&mut self) {
-        self.state.clean_compositor();
+    pub fn reset(&mut self) {
+        self.state.reset_compositors();
     }
 
     #[inline]
@@ -260,7 +260,7 @@ impl Sugarloaf<'_> {
             &mut self.ctx,
             &mut self.graphics,
         ) {
-            self.clean_state();
+            self.reset();
             return;
         }
 
@@ -360,6 +360,6 @@ impl Sugarloaf<'_> {
                 }
             }
         }
-        self.clean_state();
+        self.reset();
     }
 }
