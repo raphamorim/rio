@@ -161,7 +161,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        if let Some(limit) = route.window.frame_time_limit {
+                        if let Some(time) = route.window.wait_until() {
                             let timer_id = TimerId::new(Topic::RenderRoute, window_id);
                             let event = EventPayload::new(
                                 RioEventType::Rio(RioEvent::Render),
@@ -169,9 +169,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             );
 
                             if !self.scheduler.scheduled(timer_id) {
-                                self.scheduler.schedule(event, limit, false, timer_id);
+                                route.window.start_render_timestamp();
+                                self.scheduler.schedule(event, time, false, timer_id);
                             }
                         } else {
+                            route.window.start_render_timestamp();
                             route.request_redraw();
                         }
                     }
@@ -977,14 +979,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
                 }
-
-                // let has_regained_focus = !route.window.is_focused && focused;
-                // route.window.is_focused = focused;
-
-                // if has_regained_focus {
-                // route.request_redraw();
-                // }
-
                 route.window.screen.on_focus_change(focused);
             }
 

@@ -69,6 +69,7 @@ impl RenderData {
     #[inline]
     pub fn clear(&mut self) {
         self.data.clear();
+        self.graphics.clear();
         self.line_data.clear();
     }
 }

@@ -731,7 +731,7 @@ impl Renderer {
 
         let content = sugarloaf.content();
 
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
             let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
             self.create_line(
@@ -743,8 +743,8 @@ impl Renderer {
                 focused_match,
             );
         }
-        // let duration = start.elapsed();
-        // println!("Total loop rows: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Total loop rows: {:?}", duration);
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(

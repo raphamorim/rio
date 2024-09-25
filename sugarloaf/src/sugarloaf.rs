@@ -244,8 +244,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    fn clean_state(&mut self) {
-        self.state.clean_compositor();
+    pub fn reset(&mut self) {
+        self.state.reset_compositor();
     }
 
     #[inline]
@@ -260,7 +260,7 @@ impl Sugarloaf<'_> {
             &mut self.ctx,
             &mut self.graphics,
         ) {
-            self.clean_state();
+            self.reset();
             return;
         }
 
@@ -360,6 +360,6 @@ impl Sugarloaf<'_> {
                 }
             }
         }
-        self.clean_state();
+        self.reset();
     }
 }

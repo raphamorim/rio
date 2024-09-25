@@ -382,7 +382,7 @@ impl WordCache {
                 );
             } else {
                 // If font id is main
-                let size = if self.font_id == 0 { 384 } else { 128 };
+                let size = if self.font_id == 0 { 744 } else { 124 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
                 cache.put(
                     std::mem::take(&mut self.content),

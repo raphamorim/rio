@@ -105,11 +105,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn clean_compositor(&mut self) {
-        self.compositors.elementary.clean();
-    }
-
-    #[inline]
     pub fn content(&mut self) -> &mut Content {
         self.compositors
             .advanced

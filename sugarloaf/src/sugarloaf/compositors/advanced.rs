@@ -27,12 +27,7 @@ impl Advanced {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.render_data = RenderData::default();
-    }
-
-    #[inline]
-    pub fn clean(&mut self) {
-        self.render_data = RenderData::default();
+        self.render_data.clear();
     }
 
     #[inline]
@@ -67,8 +62,6 @@ impl Advanced {
 
     #[inline]
     pub fn update_render_data(&mut self) {
-        self.render_data = RenderData::default();
-        self.render_data.clear();
         self.content.resolve(&mut self.render_data);
         self.render_data
             .break_lines()
