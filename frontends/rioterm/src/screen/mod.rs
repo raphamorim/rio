@@ -1905,7 +1905,7 @@ impl Screen<'_> {
     }
 
     pub fn update_renderer(&mut self) {
-        let start_total = std::time::Instant::now();
+        // let start_total = std::time::Instant::now();
         // println!("_____________________________\nrender time elapsed");
         let is_search_active = self.search_active();
         if is_search_active {
@@ -1950,8 +1950,8 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        let duration = start_total.elapsed();
-        println!("Total whole prepare render function is: {:?}\n", duration);
+        // let duration = start_total.elapsed();
+        // println!("Total whole prepare render function is: {:?}\n", duration);
     }
 
     pub fn render(&mut self) {
@@ -1965,7 +1965,7 @@ impl Screen<'_> {
             self.renderer.update_from_last(&mut self.sugarloaf);
         }
 
-        let start_total = std::time::Instant::now();
+        // let start_total = std::time::Instant::now();
         self.sugarloaf.render();
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
@@ -1975,7 +1975,7 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        let duration = start_total.elapsed();
-        println!("Total whole render function is: {:?}\n", duration);
+        // let duration = start_total.elapsed();
+        // println!("Total whole render function is: {:?}\n", duration);
     }
 }
