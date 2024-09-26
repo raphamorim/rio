@@ -349,7 +349,8 @@ impl<'a> RouteWindow<'a> {
 
         match vblank_interval >= elapsed_time {
             true => Some(Duration::from_millis(vblank_interval - elapsed_time)),
-            false => None,
+            // false => None,
+            false => Some(Duration::from_millis(vblank_interval.wrapping_sub(1))),
         }
     }
 
