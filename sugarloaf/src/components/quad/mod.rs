@@ -69,7 +69,7 @@ impl QuadBrush {
     pub fn new(context: &Context) -> QuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
         let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("quad: Instances Buffer"),
+            label: Some("sugarloaf::quad Instances Buffer"),
             size: mem::size_of::<ComposedQuad>() as u64 * supported_quantity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
