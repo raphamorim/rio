@@ -1,3 +1,7 @@
+// This code was originally retired from iced-rs, which is licensed
+// under MIT license https://github.com/iced-rs/iced/blob/master/LICENSE
+// The code has suffered changes to fit on Sugarloaf architecture.
+
 struct SolidVertexInput {
     @builtin(vertex_index) vertex_index: u32,
     @location(0) color: vec4<f32>,
@@ -25,7 +29,7 @@ struct SolidVertexOutput {
 }
 
 @vertex
-fn solid_vs_main(input: SolidVertexInput) -> SolidVertexOutput {
+fn composed_quad_vs_main(input: SolidVertexInput) -> SolidVertexOutput {
     var out: SolidVertexOutput;
 
     var pos: vec2<f32> = (input.pos + min(input.shadow_offset, vec2<f32>(0.0, 0.0)) - input.shadow_blur_radius) * globals.scale;
@@ -70,7 +74,7 @@ fn solid_vs_main(input: SolidVertexInput) -> SolidVertexOutput {
 }
 
 @fragment
-fn solid_fs_main(
+fn composed_quad_fs_main(
     input: SolidVertexOutput
 ) -> @location(0) vec4<f32> {
     var mixed_color: vec4<f32> = input.color;

@@ -2,11 +2,11 @@
 // under MIT license https://github.com/iced-rs/iced/blob/master/LICENSE
 // The code has suffered changes to fit on Sugarloaf architecture.
 
-mod solid;
+mod composed_quad;
 
 use crate::components::core::orthographic_projection;
 use crate::context::Context;
-use solid::Solid;
+pub use composed_quad::ComposedQuad;
 
 use bytemuck::{Pod, Zeroable};
 
@@ -15,14 +15,14 @@ use std::mem;
 /// The background of some element.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Background {
-    /// A solid color.
+    /// A composed_quad color.
     Color([f32; 4]),
 }
 
 const INITIAL_INSTANCES: usize = 2_000;
 
 /// The properties of a quad.
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
 #[repr(C)]
 pub struct Quad {
     /// The position of the [`Quad`].
@@ -52,7 +52,7 @@ pub struct Quad {
 
 #[derive(Debug)]
 pub struct QuadBrush {
-    solid: solid::Pipeline,
+    composed_quad: composed_quad::Pipeline,
     constant_layout: wgpu::BindGroupLayout,
     layers: Vec<Layer>,
     prepare_layer: usize,
@@ -64,7 +64,7 @@ impl QuadBrush {
             context
                 .device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("iced_wgpu::quad uniforms layout"),
+                    label: Some("sugarloaf::quad uniforms layout"),
                     entries: &[wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX,
@@ -80,7 +80,7 @@ impl QuadBrush {
                 });
 
         Self {
-            solid: solid::Pipeline::new(
+            composed_quad: composed_quad::Pipeline::new(
                 &context.device,
                 context.format,
                 &constant_layout,
@@ -123,8 +123,8 @@ impl QuadBrush {
             //     bounds.height,
             // );
 
-            self.solid
-                .render(render_pass, &layer.constants, &layer.solid);
+            self.composed_quad
+                .render(render_pass, &layer.constants, &layer.composed_quad);
         }
     }
 
@@ -137,20 +137,20 @@ impl QuadBrush {
 pub struct Layer {
     constants: wgpu::BindGroup,
     constants_buffer: wgpu::Buffer,
-    solid: solid::Layer,
+    composed_quad: composed_quad::Layer,
 }
 
 impl Layer {
     pub fn new(device: &wgpu::Device, constant_layout: &wgpu::BindGroupLayout) -> Self {
         let constants_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("iced_wgpu::quad uniforms buffer"),
+            label: Some("sugarloaf::quad uniforms buffer"),
             size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let constants = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("iced_wgpu::quad uniforms bind group"),
+            label: Some("sugarloaf::quad uniforms bind group"),
             layout: constant_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
@@ -161,7 +161,7 @@ impl Layer {
         Self {
             constants,
             constants_buffer,
-            solid: solid::Layer::new(device),
+            composed_quad: composed_quad::Layer::new(device),
         }
     }
 
@@ -174,8 +174,8 @@ impl Layer {
     ) {
         self.update(context, transformation, scale);
 
-        if !quads.solids.is_empty() {
-            self.solid.prepare(context, &quads.solids);
+        if !quads.composed_quads.is_empty() {
+            self.composed_quad.prepare(context, &quads.composed_quads);
         }
     }
 
@@ -190,30 +190,23 @@ impl Layer {
 /// A group of [`Quad`]s rendered together.
 #[derive(Default, Debug)]
 pub struct Batch {
-    /// The solid quads of the [`Layer`].
-    solids: Vec<Solid>,
+    /// The composed_quad quads of the [`Layer`].
+    composed_quads: Vec<ComposedQuad>,
 }
 
 impl Batch {
     /// Returns true if there are no quads of any type in [`Quads`].
     pub fn is_empty(&self) -> bool {
-        self.solids.is_empty()
+        self.composed_quads.is_empty()
     }
 
     /// Adds a [`Quad`] with the provided `Background` type to the quad [`Layer`].
-    pub fn add(&mut self, quad: Quad, background: &Background) {
-        match background {
-            Background::Color(color) => {
-                self.solids.push(Solid {
-                    color: *color,
-                    quad,
-                });
-            }
-        };
+    pub fn add(&mut self, composed_quad: ComposedQuad) {
+        self.composed_quads.push(composed_quad);
     }
 
     pub fn clear(&mut self) {
-        self.solids.clear();
+        self.composed_quads.clear();
     }
 }
 
