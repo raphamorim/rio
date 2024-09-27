@@ -1,4 +1,5 @@
 pub mod image;
+pub mod uniforms;
 // pub mod svg;
 pub mod buffer;
 pub mod shapes;
