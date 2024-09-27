@@ -84,6 +84,7 @@ release-macos-signed:
 	$(if $(strip $(VERSION)),make release-macos-signed-app, make version-not-found)
 
 release-macos-signed-app:
+	@make install-terminfo
 	@make app-universal
 	@echo "Releasing Rio v$(version)"
 	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(TARGET_DIR_OSX)/$(APP_NAME)"
@@ -92,6 +93,7 @@ release-macos-signed-app:
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
 	rm -rf ./release/$(APP_NAME)
 	@unzip ./release/Rio-v$(version).zip -d ./release
+	@echo "Please verify if 'Rio.App/Contents/Resources/72/rio' exists before create-dmg"
 
 install-macos: release-macos
 	rm -rf /Applications/$(APP_NAME)
