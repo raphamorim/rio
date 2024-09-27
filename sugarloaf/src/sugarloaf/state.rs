@@ -140,7 +140,8 @@ impl SugarState {
                 }
                 Object::Rect(rect) => {
                     self.compositors.elementary.rects.push(*rect);
-                }
+                },
+                Object::Quad(_) => {}
             }
         }
 

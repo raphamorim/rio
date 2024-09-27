@@ -4,20 +4,20 @@ use crate::context::Context;
 
 use bytemuck::{Pod, Zeroable};
 
-/// A quad filled with a solid color.
-#[derive(Clone, Copy, Debug, Pod, Zeroable)]
+/// A quad filled with a ComposedQuad color.
+#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
 #[repr(C)]
-pub struct Solid {
+pub struct ComposedQuad {
     /// The background color data of the quad.
     pub color: [f32; 4],
 
-    /// The [`Quad`] data of the [`Solid`].
+    /// The [`Quad`] data of the [`ComposedQuad`].
     pub quad: Quad,
 }
 
 #[derive(Debug)]
 pub struct Layer {
-    instances: Buffer<Solid>,
+    instances: Buffer<ComposedQuad>,
     instance_count: usize,
 }
 
@@ -25,7 +25,7 @@ impl Layer {
     pub fn new(device: &wgpu::Device) -> Self {
         let instances = Buffer::new(
             device,
-            "quad.solid.buffer",
+            "quad.ComposedQuad.buffer",
             quad::INITIAL_INSTANCES,
             wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         );
@@ -36,7 +36,7 @@ impl Layer {
         }
     }
 
-    pub fn prepare(&mut self, context: &Context, instances: &[Solid]) {
+    pub fn prepare(&mut self, context: &Context, instances: &[ComposedQuad]) {
         let _ = self.instances.resize(&context.device, instances.len());
         let _ = self.instances.write(&context.queue, 0, instances);
 
@@ -56,32 +56,32 @@ impl Pipeline {
         constants_layout: &wgpu::BindGroupLayout,
     ) -> Self {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("quad.solid.pipeline"),
+            label: Some("quad.ComposedQuad.pipeline"),
             push_constant_ranges: &[],
             bind_group_layouts: &[constants_layout],
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("quad.solid.shader"),
+            label: Some("quad.ComposedQuad.shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(concat!(
                 include_str!("./quad.wgsl"),
                 "\n",
                 include_str!("./vertex.wgsl"),
                 "\n",
-                include_str!("./solid.wgsl"),
+                include_str!("./composed_quad.wgsl"),
             ))),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             cache: None,
-            label: Some("quad.solid.pipeline"),
+            label: Some("quad.ComposedQuad.pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "solid_vs_main",
+                entry_point: "composed_quad_vs_main",
                 buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<Solid>() as u64,
+                    array_stride: std::mem::size_of::<ComposedQuad>() as u64,
                     step_mode: wgpu::VertexStepMode::Instance,
                     attributes: &wgpu::vertex_attr_array!(
                         // Color
@@ -108,7 +108,7 @@ impl Pipeline {
             fragment: Some(wgpu::FragmentState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "solid_fs_main",
+                entry_point: "composed_quad_fs_main",
                 targets: &quad::color_target_state(format),
             }),
             primitive: wgpu::PrimitiveState {
