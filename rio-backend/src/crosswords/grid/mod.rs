@@ -82,7 +82,6 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     /// Update the size of the scrollback history.
-    #[allow(dead_code)]
     pub fn update_history(&mut self, history_size: usize) {
         let current_history_size = self.history_size();
         if current_history_size > history_size {
@@ -264,7 +263,6 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
     }
 
     /// Completely reset the grid state.
-    #[allow(dead_code)]
     pub fn reset<D>(&mut self)
     where
         T: ResetDiscriminant<D>,
