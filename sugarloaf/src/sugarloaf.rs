@@ -3,9 +3,9 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
-use crate::components::quad::QuadBrush;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
+use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
