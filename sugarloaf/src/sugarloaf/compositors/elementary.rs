@@ -4,26 +4,14 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::components::text::glyph::OwnedSection;
-use crate::sugarloaf::graphics;
 use crate::sugarloaf::SugarloafLayout;
 use crate::sugarloaf::{PxScale, Rect};
-use crate::Text;
-
-#[allow(unused)]
-struct GraphicRect {
-    id: graphics::GraphicId,
-    height: u16,
-    width: u16,
-    pos_x: f32,
-    pos_y: f32,
-    columns: f32,
-    start_row: f32,
-    end_row: f32,
-}
+use crate::{ComposedQuad, Text};
 
 #[derive(Default)]
 pub struct Elementary {
     pub rects: Vec<Rect>,
+    pub quads: Vec<ComposedQuad>,
     text_y: f32,
     current_row: u16,
 }
@@ -39,6 +27,7 @@ impl Elementary {
         self.current_row = 0;
         self.text_y = 0.0;
         self.rects.clear();
+        self.quads.clear();
     }
 
     #[inline]

@@ -257,16 +257,14 @@ impl Sugarloaf<'_> {
         self.state.compute_changes();
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
-        if !self.state.compute_updates(
+        self.state.compute_updates(
             &mut self.rich_text_brush,
             &mut self.text_brush,
             &mut self.rect_brush,
+            &mut self.quad_brush,
             &mut self.ctx,
             &mut self.graphics,
-        ) {
-            self.reset();
-            return;
-        }
+        );
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -340,6 +338,9 @@ impl Sugarloaf<'_> {
                     }
 
                     self.rich_text_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
+
+                    self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
 
                     self.rect_brush

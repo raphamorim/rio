@@ -1,16 +1,20 @@
-// This code was originally retired from iced-rs, which is licensed
-// under MIT license https://github.com/iced-rs/iced/blob/master/LICENSE
-// The code has suffered changes to fit on Sugarloaf architecture.
-
-mod composed_quad;
-
-use crate::components::core::orthographic_projection;
+use crate::components::core::{orthographic_projection, uniforms::Uniforms};
 use crate::context::Context;
-pub use composed_quad::ComposedQuad;
 
 use bytemuck::{Pod, Zeroable};
 
 use std::mem;
+
+/// A quad filled with a ComposedQuad color.
+#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
+#[repr(C)]
+pub struct ComposedQuad {
+    /// The background color data of the quad.
+    pub color: [f32; 4],
+
+    /// The [`Quad`] data of the [`ComposedQuad`].
+    pub quad: Quad,
+}
 
 /// The background of some element.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -19,7 +23,7 @@ pub enum Background {
     Color([f32; 4]),
 }
 
-const INITIAL_INSTANCES: usize = 2_000;
+const INITIAL_QUANTITY: usize = 2;
 
 /// The properties of a quad.
 #[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
@@ -52,14 +56,25 @@ pub struct Quad {
 
 #[derive(Debug)]
 pub struct QuadBrush {
-    composed_quad: composed_quad::Pipeline,
-    constant_layout: wgpu::BindGroupLayout,
-    layers: Vec<Layer>,
-    prepare_layer: usize,
+    pipeline: wgpu::RenderPipeline,
+    current_transform: [f32; 16],
+    constants: wgpu::BindGroup,
+    transform: wgpu::Buffer,
+    instances: wgpu::Buffer,
+    // transform: wgpu::Buffer,
+    supported_quantity: usize,
 }
 
 impl QuadBrush {
     pub fn new(context: &Context) -> QuadBrush {
+        let supported_quantity = INITIAL_QUANTITY;
+        let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("quad: Instances Buffer"),
+            size: mem::size_of::<ComposedQuad>() as u64 * supported_quantity as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let constant_layout =
             context
                 .device
@@ -79,184 +94,178 @@ impl QuadBrush {
                     }],
                 });
 
-        Self {
-            composed_quad: composed_quad::Pipeline::new(
-                &context.device,
-                context.format,
-                &constant_layout,
-            ),
-            layers: Vec::new(),
-            prepare_layer: 0,
-            constant_layout,
-        }
-    }
-
-    pub fn prepare(
-        &mut self,
-        context: &Context,
-        quads: &Batch,
-        transformation: [f32; 16],
-        scale: f32,
-    ) {
-        if self.layers.len() <= self.prepare_layer {
-            self.layers
-                .push(Layer::new(&context.device, &self.constant_layout));
-        }
-
-        let layer = &mut self.layers[self.prepare_layer];
-        layer.prepare(context, quads, transformation, scale);
-
-        self.prepare_layer += 1;
-    }
-
-    pub fn render<'a>(
-        &'a self,
-        layer: usize,
-        quads: &Batch,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
-        if let Some(layer) = self.layers.get(layer) {
-            // render_pass.set_scissor_rect(
-            //     bounds.x,
-            //     bounds.y,
-            //     bounds.width,
-            //     bounds.height,
-            // );
-
-            self.composed_quad
-                .render(render_pass, &layer.constants, &layer.composed_quad);
-        }
-    }
-
-    pub fn end_frame(&mut self) {
-        self.prepare_layer = 0;
-    }
-}
-
-#[derive(Debug)]
-pub struct Layer {
-    constants: wgpu::BindGroup,
-    constants_buffer: wgpu::Buffer,
-    composed_quad: composed_quad::Layer,
-}
-
-impl Layer {
-    pub fn new(device: &wgpu::Device, constant_layout: &wgpu::BindGroupLayout) -> Self {
-        let constants_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        let transform = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad uniforms buffer"),
             size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
-        let constants = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("sugarloaf::quad uniforms bind group"),
-            layout: constant_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: constants_buffer.as_entire_binding(),
-            }],
-        });
+        let constants = context
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("sugarloaf::quad uniforms bind group"),
+                layout: &constant_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: transform.as_entire_binding(),
+                }],
+            });
+
+        let layout =
+            context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("sugarloaf::quad pipeline"),
+                    push_constant_ranges: &[],
+                    bind_group_layouts: &[&constant_layout],
+                });
+
+        let shader = context
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("sugarloaf::quad shader"),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(concat!(
+                    include_str!("./quad.wgsl"),
+                    "\n",
+                    include_str!("./vertex.wgsl"),
+                    "\n",
+                    include_str!("./composed_quad.wgsl"),
+                ))),
+            });
+
+        let pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: Some("sugarloaf::quad render pipeline"),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: "composed_quad_vs_main",
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<ComposedQuad>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array!(
+                                // Color
+                                0 => Float32x4,
+                                // Position
+                                1 => Float32x2,
+                                // Size
+                                2 => Float32x2,
+                                // Border color
+                                3 => Float32x4,
+                                // Border radius
+                                4 => Float32x4,
+                                // Border width
+                                5 => Float32,
+                                // Shadow color
+                                6 => Float32x4,
+                                // Shadow offset
+                                7 => Float32x2,
+                                // Shadow blur radius
+                                8 => Float32,
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: "composed_quad_fs_main",
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: Some(wgpu::BlendState {
+                                color: wgpu::BlendComponent {
+                                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                    operation: wgpu::BlendOperation::Add,
+                                },
+                                alpha: wgpu::BlendComponent {
+                                    src_factor: wgpu::BlendFactor::One,
+                                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                    operation: wgpu::BlendOperation::Add,
+                                },
+                            }),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Cw,
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState {
+                        count: 1,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    multiview: None,
+                });
 
         Self {
+            supported_quantity,
+            instances,
             constants,
-            constants_buffer,
-            composed_quad: composed_quad::Layer::new(device),
+            transform,
+            pipeline,
+            current_transform: [0.0; 16],
         }
     }
 
-    pub fn prepare(
-        &mut self,
-        context: &Context,
-        quads: &Batch,
-        transformation: [f32; 16],
-        scale: f32,
+    pub fn resize(&mut self, ctx: &mut Context) {
+        let transform: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
+        // device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let scale = ctx.scale;
+        let queue = &mut ctx.queue;
+
+        if transform != self.current_transform {
+            let uniforms = Uniforms::new(transform, scale);
+
+            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
+
+            self.current_transform = transform;
+        }
+    }
+
+    pub fn render<'a>(
+        &'a mut self,
+        context: &mut Context,
+        state: &crate::sugarloaf::state::SugarState,
+        render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        self.update(context, transformation, scale);
+        let instances = &state.compositors.elementary.quads;
+        let total = instances.len();
 
-        if !quads.composed_quads.is_empty() {
-            self.composed_quad.prepare(context, &quads.composed_quads);
+        if total == 0 {
+            return;
         }
-    }
 
-    pub fn update(&mut self, context: &Context, transformation: [f32; 16], scale: f32) {
-        let uniforms = Uniforms::new(transformation, scale);
-        let bytes = bytemuck::bytes_of(&uniforms);
+        if total > self.supported_quantity {
+            self.instances.destroy();
 
-        context.queue.write_buffer(&self.constants_buffer, 0, bytes);
-    }
-}
-
-/// A group of [`Quad`]s rendered together.
-#[derive(Default, Debug)]
-pub struct Batch {
-    /// The composed_quad quads of the [`Layer`].
-    composed_quads: Vec<ComposedQuad>,
-}
-
-impl Batch {
-    /// Returns true if there are no quads of any type in [`Quads`].
-    pub fn is_empty(&self) -> bool {
-        self.composed_quads.is_empty()
-    }
-
-    /// Adds a [`Quad`] with the provided `Background` type to the quad [`Layer`].
-    pub fn add(&mut self, composed_quad: ComposedQuad) {
-        self.composed_quads.push(composed_quad);
-    }
-
-    pub fn clear(&mut self) {
-        self.composed_quads.clear();
-    }
-}
-
-fn color_target_state(
-    format: wgpu::TextureFormat,
-) -> [Option<wgpu::ColorTargetState>; 1] {
-    [Some(wgpu::ColorTargetState {
-        format,
-        blend: Some(wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::SrcAlpha,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-        }),
-        write_mask: wgpu::ColorWrites::ALL,
-    })]
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
-struct Uniforms {
-    transform: [f32; 16],
-    scale: f32,
-    // Uniforms must be aligned to their largest member,
-    // this uses a mat4x4<f32> which aligns to 16, so align to that
-    _padding: [f32; 3],
-}
-
-impl Uniforms {
-    fn new(transformation: [f32; 16], scale: f32) -> Uniforms {
-        Self {
-            transform: transformation,
-            scale,
-            _padding: [0.0; 3],
+            self.supported_quantity = total;
+            self.instances = context.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::quad instances"),
+                size: mem::size_of::<ComposedQuad>() as u64
+                    * self.supported_quantity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         }
-    }
-}
 
-impl Default for Uniforms {
-    fn default() -> Self {
-        Self {
-            transform: orthographic_projection(0.0, 0.0),
-            scale: 1.0,
-            _padding: [0.0; 3],
-        }
+        let instance_bytes = bytemuck::cast_slice(instances);
+        context
+            .queue
+            .write_buffer(&self.instances, 0, instance_bytes);
+
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, &self.constants, &[]);
+        render_pass.set_vertex_buffer(0, self.instances.slice(..));
+
+        render_pass.draw(0..6, 0..total as u32);
     }
 }

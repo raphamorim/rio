@@ -5,7 +5,7 @@
 
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
-use crate::sugarloaf::{text, RectBrush, RichTextBrush, SugarloafLayout};
+use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{Content, Graphics, Object};
 
 #[derive(Debug, PartialEq)]
@@ -117,11 +117,13 @@ impl SugarState {
         advance_brush: &mut RichTextBrush,
         elementary_brush: &mut text::GlyphBrush<()>,
         rect_brush: &mut RectBrush,
+        quad_brush: &mut QuadBrush,
         context: &mut super::Context,
         graphics: &mut Graphics,
-    ) -> bool {
+    ) {
         advance_brush.prepare(context, self, graphics);
         rect_brush.resize(context);
+        quad_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf
         // like objects rendering (created by .text() or .append_rects())
@@ -140,12 +142,12 @@ impl SugarState {
                 }
                 Object::Rect(rect) => {
                     self.compositors.elementary.rects.push(*rect);
-                },
-                Object::Quad(_) => {}
+                }
+                Object::Quad(composed_quad) => {
+                    self.compositors.elementary.quads.push(*composed_quad);
+                }
             }
         }
-
-        true
     }
 
     #[inline]

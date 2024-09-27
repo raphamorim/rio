@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, Object, Rect, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::SugarloafLayout, ComposedQuad, Object, Quad, Rect, Sugarloaf,
+    SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -48,7 +48,7 @@ impl Application {
 impl ApplicationHandler for Application {
     fn resumed(&mut self, active_event_loop: &ActiveEventLoop) {
         let window_attribute = WindowAttributes::default()
-            .with_title("Rect example")
+            .with_title("Shapes example")
             .with_inner_size(LogicalSize::new(self.width, self.height))
             .with_resizable(true);
         let window = active_event_loop.create_window(window_attribute).unwrap();
@@ -101,6 +101,19 @@ impl ApplicationHandler for Application {
         }
 
         let objects = vec![
+            Object::Quad(ComposedQuad {
+                color: [1.0, 1.0, 0.0, 0.5],
+                quad: Quad {
+                    position: [5., 5.],
+                    shadow_blur_radius: 2.0,
+                    shadow_offset: [1.0, 1.0],
+                    shadow_color: [1.0, 1.0, 0.0, 1.0],
+                    border_color: [1.0, 0.0, 1.0, 1.0],
+                    border_width: 3.0,
+                    border_radius: [10.0, 10.0, 10.0, 10.0],
+                    size: [200.0, 200.0],
+                },
+            }),
             Object::Rect(Rect {
                 position: [10.0, 10.0],
                 color: [1.0, 1.0, 1.0, 1.0],
