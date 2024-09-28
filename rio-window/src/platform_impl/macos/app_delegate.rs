@@ -202,6 +202,20 @@ declare_class!(
             }
         }
 
+        #[method(rioSplitDown:)]
+        fn split_down(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitDown);
+            }
+        }
+
+        #[method(rioSplitRight:)]
+        fn split_right(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitRight);
+            }
+        }
+
         #[method(openConfig:)]
         fn open_configuration(
             &self,

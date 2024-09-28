@@ -110,7 +110,7 @@ pub fn initialize(app: &NSApplication) {
     );
 
     // New window menu item
-    let create_window_item_title = ns_string!("New window");
+    let create_window_item_title = ns_string!("New Window");
     let create_window_item = menu_item(
         mtm,
         create_window_item_title,
@@ -121,7 +121,7 @@ pub fn initialize(app: &NSApplication) {
         }),
     );
 
-    let create_tab_item_title = ns_string!("New tab");
+    let create_tab_item_title = ns_string!("New Tab");
     let create_tab_item = menu_item(
         mtm,
         create_tab_item_title,
@@ -132,7 +132,7 @@ pub fn initialize(app: &NSApplication) {
         }),
     );
 
-    let close_tab_item_title = ns_string!("Close tab");
+    let close_tab_item_title = ns_string!("Close Tab");
     let close_tab_item = menu_item(
         mtm,
         close_tab_item_title,
@@ -143,28 +143,30 @@ pub fn initialize(app: &NSApplication) {
         }),
     );
 
-    // // New window menu item
-    // let create_split_vertical_item_title = ns_string!("Split vertically");
-    // let create_split_vertical_item = menu_item(
-    //     mtm,
-    //     create_split_vertical_item_title,
-    //     Some(sel!(rioCreateWindow:)),
-    //     Some(KeyEquivalent {
-    //         key: ns_string!("t"),
-    //         masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
-    //     }),
-    // );
+    let create_split_horizontally_item_title = ns_string!("Split Right");
+    let create_split_horizontally_item = menu_item(
+        mtm,
+        create_split_horizontally_item_title,
+        Some(sel!(rioSplitRight:)),
+        Some(KeyEquivalent {
+            key: ns_string!("d"),
+            masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
+        }),
+    );
 
-    // let create_split_horizontally_item_title = ns_string!("Split horizontally");
-    // let create_split_horizontally_item = menu_item(
-    //     mtm,
-    //     create_split_horizontally_item_title,
-    //     Some(sel!(rioCreateWindow:)),
-    //     Some(KeyEquivalent {
-    //         key: ns_string!("t"),
-    //         masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
-    //     }),
-    // );
+    let create_split_vertical_item_title = ns_string!("Split Down");
+    let create_split_vertical_item = menu_item(
+        mtm,
+        create_split_vertical_item_title,
+        Some(sel!(rioSplitDown:)),
+        Some(KeyEquivalent {
+            key: ns_string!("d"),
+            masks: Some(
+                NSEventModifierFlags::NSEventModifierFlagCommand
+                    | NSEventModifierFlags::NSEventModifierFlagShift,
+            ),
+        }),
+    );
 
     let copy_title = ns_string!("Copy");
     let copy_item = menu_item(
@@ -206,8 +208,8 @@ pub fn initialize(app: &NSApplication) {
     shell_menu.addItem(&create_window_item);
     shell_menu.addItem(&create_tab_item);
     shell_menu.addItem(&close_tab_item);
-    // shell_menu.addItem(&create_split_vertical_item);
-    // shell_menu.addItem(&create_split_horizontally_item);
+    shell_menu.addItem(&create_split_horizontally_item);
+    shell_menu.addItem(&create_split_vertical_item);
     shell_menu_item.setSubmenu(Some(&shell_menu));
     edit_menu.addItem(&copy_item);
     edit_menu.addItem(&paste_item);
