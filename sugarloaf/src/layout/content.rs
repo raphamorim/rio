@@ -263,7 +263,6 @@ impl Content {
             state.scale = scale;
             state.font_size = font_size * scale;
 
-            // TODO: FIX
             if prev_font_size != state.font_size {
                 state.metrics_cache.inner.clear();
             }

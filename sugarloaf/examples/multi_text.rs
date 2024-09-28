@@ -169,7 +169,7 @@ impl ApplicationHandler for Application {
                     content.clear(rich_text);
                     content.add_text(
                         rich_text,
-                        "Text area one",
+                        &format!("Text area {:?}", rich_text),
                         FragmentStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
