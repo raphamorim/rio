@@ -81,9 +81,16 @@ impl Text {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RichText {
+    pub id: usize,
+    pub position: [f32; 2],
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
     Rect(Rect),
     Text(Text),
     Quad(ComposedQuad),
+    RichText(RichText),
 }

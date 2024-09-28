@@ -43,13 +43,24 @@ pub struct BuilderState {
     pub scale: f32,
     // Font size in ppem.
     pub font_size: f32,
+    metrics_cache: MetricsCache,
 }
 
 impl BuilderState {
     /// Creates a new layout state.
-    pub fn new() -> Self {
+    // pub fn new() -> Self {
+    //     let lines = vec![BuilderLine::default()];
+    //     Self {
+    //         lines,
+    //         ..BuilderState::default()
+    //     }
+    // }
+    /// Creates a new layout state.
+    pub fn from_scale_and_font_size(font_size: f32, scale: f32) -> Self {
         let lines = vec![BuilderLine::default()];
         Self {
+            font_size: font_size * scale,
+            scale,
             lines,
             ..BuilderState::default()
         }
@@ -206,9 +217,8 @@ pub struct Content {
     fonts: FontLibrary,
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
-    state: BuilderState,
+    states: FxHashMap<usize, BuilderState>,
     word_cache: WordCache,
-    metrics_cache: MetricsCache,
 }
 
 impl Content {
@@ -217,10 +227,9 @@ impl Content {
         Self {
             fonts: font_library.clone(),
             scx: ShapeContext::new(),
-            state: BuilderState::new(),
+            states: FxHashMap::default(),
             word_cache: WordCache::new(),
             font_features: vec![],
-            metrics_cache: MetricsCache::default(),
         }
     }
 
@@ -238,91 +247,114 @@ impl Content {
     }
 
     #[inline]
-    pub fn build(&mut self, scale: f32, font_size: f32) {
-        self.state.clear();
-        self.state.begin();
-        let prev_font_size = self.state.font_size;
-        self.state.scale = scale;
-        self.state.font_size = font_size * scale;
+    pub fn create_state(&mut self, scale: f32, font_size: f32) -> usize {
+        let id = self.states.len();
+        self.states.insert(id, BuilderState::from_scale_and_font_size(scale, font_size));
+        id
+    }
 
-        if prev_font_size != self.state.font_size {
-            self.metrics_cache.inner.clear();
+    #[inline]
+    pub fn clear_state(&mut self, id: &usize, scale: f32, font_size: f32) {
+        if let Some(state) = self.states.get_mut(id) {
+            state.clear();
+            state.begin();
+
+            let prev_font_size = state.font_size;
+            state.scale = scale;
+            state.font_size = font_size * scale;
+
+            // TODO: FIX
+            if prev_font_size != state.font_size {
+                state.metrics_cache.inner.clear();
+            }
         }
     }
 
     #[inline]
-    pub fn new_line(&mut self) {
-        self.state.new_line();
-    }
-
-    /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> Option<()> {
-        let current_line = self.state.current_line();
-        let line = &mut self.state.lines[current_line];
-
-        line.fragments.push(FragmentData {
-            content: text.to_string(),
-            style,
-        });
-
-        Some(())
+    pub fn new_line(&mut self, id: &usize) {
+        if let Some(content) = self.states.get_mut(id) {
+            content.new_line();
+        }
     }
 
     #[inline]
-    pub fn resolve(&mut self, render_data: &mut RenderData) {
-        let script = Script::Latin;
-        for line_number in 0..self.state.lines.len() {
-            let line = &self.state.lines[line_number];
-            for item in &line.fragments {
-                let vars = self.state.vars.get(item.style.font_vars);
-                let shaper_key = &item.content;
+    pub fn clear(&mut self, id: &usize) {
+        if let Some(state) = self.states.get_mut(id) {
+            state.clear();
+            state.begin();   
+        }
+    }
 
-                // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
+    /// Adds a text fragment to the paragraph.
+    pub fn add_text(&mut self, id: &usize, text: &str, style: FragmentStyle) {
+        if let Some(state) = self.states.get_mut(id) {
+            let current_line = state.current_line();
+            let line = &mut state.lines[current_line];
 
-                if let Some(shaper) = self.word_cache.get(&item.style.font_id, shaper_key)
-                {
-                    if let Some(metrics) =
-                        self.metrics_cache.inner.get(&item.style.font_id)
+            line.fragments.push(FragmentData {
+                content: text.to_string(),
+                style,
+            });
+        }
+    }
+
+    #[inline]
+    pub fn resolve(&mut self, id: &usize, render_data: &mut RenderData) {
+        if let Some(state) = self.states.get_mut(id) {
+            let script = Script::Latin;
+            for line_number in 0..state.lines.len() {
+                let line = &state.lines[line_number];
+                for item in &line.fragments {
+                    let vars = state.vars.get(item.style.font_vars);
+                    let shaper_key = &item.content;
+
+                    // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
+
+                    if let Some(shaper) = self.word_cache.get(&item.style.font_id, shaper_key)
                     {
-                        if render_data.push_run_without_shaper(
-                            item.style,
-                            self.state.font_size,
-                            line_number as u32,
-                            shaper,
-                            metrics,
-                        ) {
-                            continue;
+                        if let Some(metrics) =
+                            state.metrics_cache.inner.get(&item.style.font_id)
+                        {
+                            if render_data.push_run_without_shaper(
+                                item.style,
+                                state.font_size,
+                                line_number as u32,
+                                shaper,
+                                metrics,
+                            ) {
+                                continue;
+                            }
                         }
                     }
-                }
 
-                self.word_cache.font_id = item.style.font_id;
-                self.word_cache.content = item.content.clone();
-                let font_library = { &mut self.fonts.inner.lock() };
-                if let Some(data) = font_library.get_data(&item.style.font_id) {
-                    let mut shaper = self
-                        .scx
-                        .builder(data)
-                        .script(script)
-                        .size(self.state.font_size)
-                        .features(self.font_features.iter().copied())
-                        .variations(vars.iter().copied())
-                        .build();
+                    self.word_cache.font_id = item.style.font_id;
+                    self.word_cache.content = item.content.clone();
+                    let font_library = { &mut self.fonts.inner.lock() };
+                    if let Some(data) = font_library.get_data(&item.style.font_id) {
+                        let mut shaper = self
+                            .scx
+                            .builder(data)
+                            .script(script)
+                            .size(state.font_size)
+                            .features(self.font_features.iter().copied())
+                            .variations(vars.iter().copied())
+                            .build();
 
-                    shaper.add_str(&self.word_cache.content);
+                        shaper.add_str(&self.word_cache.content);
 
-                    self.metrics_cache
-                        .inner
-                        .entry(item.style.font_id)
-                        .or_insert_with(|| shaper.metrics());
+                        state.metrics_cache
+                            .inner
+                            .entry(item.style.font_id)
+                            .or_insert_with(|| shaper.metrics());
 
-                    render_data.push_run(
-                        item.style,
-                        self.state.font_size,
-                        line_number as u32,
-                        shaper,
-                        &mut self.word_cache,
-                    );
+                        render_data.push_run(
+                            item.style,
+                            state.font_size,
+                            line_number as u32,
+                            shaper,
+                            &mut self.word_cache,
+                        );
+                    }
                 }
             }
         }
