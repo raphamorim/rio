@@ -8,7 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, FragmentStyle, FragmentStyleDecoration, Sugarloaf,
+    layout::SugarloafLayout, FragmentStyle, RichText, Object, FragmentStyleDecoration, Sugarloaf,
     SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
@@ -85,6 +85,7 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
+        sugarloaf.create_rich_text();
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -124,6 +125,7 @@ impl ApplicationHandler for Application {
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
                 content.add_text(
+                    &0,
                     "Sugarloaf",
                     FragmentStyle {
                         color: [1.0, 1.0, 1.0, 1.0],
@@ -131,8 +133,9 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.new_line();
+                content.new_line(&0);
                 content.add_text(
+                    &0,
                     "│㏑¼",
                     FragmentStyle {
                         color: [0.0, 0.0, 0.0, 1.0],
@@ -142,6 +145,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     "🥶",
                     FragmentStyle {
                         color: [1.0, 0.0, 1.0, 1.0],
@@ -150,8 +154,9 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.new_line();
+                content.new_line(&0);
                 content.add_text(
+                    &0,
                     "│regular -> ",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
@@ -168,6 +173,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     " ",
                     FragmentStyle {
                         decoration: None,
@@ -177,6 +183,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     "|still|",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
@@ -193,6 +200,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     " ",
                     FragmentStyle {
                         decoration: None,
@@ -202,6 +210,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     "│curly",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
@@ -217,8 +226,9 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.new_line();
+                content.new_line(&0);
                 content.add_text(
+                    &0,
                     "│dashed",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
@@ -235,6 +245,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     " ",
                     FragmentStyle {
                         decoration: None,
@@ -244,6 +255,7 @@ impl ApplicationHandler for Application {
                     },
                 );
                 content.add_text(
+                    &0,
                     "dotted",
                     FragmentStyle {
                         decoration: Some(FragmentStyleDecoration::Underline(
@@ -259,8 +271,9 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
-                content.new_line();
+                content.new_line(&0);
                 content.add_text(
+                    &0,
                     "│ \u{E0B6}Hello There!\u{e0b4}",
                     FragmentStyle {
                         color: [1.0, 1.0, 1.0, 1.0],
@@ -268,6 +281,13 @@ impl ApplicationHandler for Application {
                         ..FragmentStyle::default()
                     },
                 );
+
+                sugarloaf.set_objects(vec![
+                    Object::RichText(RichText {
+                        id: 0,
+                        position: [0., 0.],
+                    }),
+                ]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
