@@ -207,11 +207,14 @@ impl Screen<'_> {
             should_update_titles: !(is_collapsed
                 && config.navigation.color_automation.is_empty()),
         };
+
+        let rich_text_id = sugarloaf.create_rich_text();
         let context_manager = context::ContextManager::start(
             (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
+            rich_text_id,
             context_manager_config,
             sugarloaf.layout(),
             sugarloaf_errors,
