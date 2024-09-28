@@ -161,7 +161,9 @@ impl SugarState {
                 Object::Quad(composed_quad) => {
                     self.compositors.elementary.quads.push(*composed_quad);
                 }
-                Object::RichText(_rich_text) => {}
+                Object::RichText(_rich_text) => {
+                    // self.rich_texts.push(*rich_text);
+                }
             }
         }
     }
