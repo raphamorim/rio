@@ -288,6 +288,7 @@ impl Content {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
             state.begin();
+            state.render_data = RenderData::new();
         }
     }
 
