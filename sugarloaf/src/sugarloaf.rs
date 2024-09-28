@@ -3,6 +3,7 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
+use crate::Content;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
@@ -208,8 +209,15 @@ impl Sugarloaf<'_> {
         self
     }
 
-    #[inline]
-    pub fn content(&mut self) -> &mut crate::Content {
+    pub fn create_rich_text(&mut self) -> usize {
+        self.state.create_rich_text()
+    }
+
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.state.clear_rich_text(id);
+    }
+
+    pub fn content(&mut self) -> &mut Content {
         self.state.content()
     }
 
