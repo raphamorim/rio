@@ -256,35 +256,37 @@ impl RichTextBrush {
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
     ) {
-        // let start = std::time::Instant::now();
-
-        if state.compositors.advanced.render_data.is_empty() {
+        if state.rich_texts.is_empty() {
             self.dlist.clear();
             return;
         }
 
-        // Render
         self.comp.begin();
-
         let library = state.compositors.advanced.font_library();
-        draw_layout(
-            &mut self.comp,
-            (&mut self.images, &mut self.glyphs),
-            &state.compositors.advanced.render_data,
-            state.layout.style.screen_position,
-            library,
-            &state.layout.dimensions,
-            graphics,
-        );
+        for rich_text in &state.rich_texts {
+            if let Some(rt) = state.compositors.advanced.get_rich_text(&rich_text.id) {
+                let position = (
+                    state.layout.style.screen_position.0
+                        + (rich_text.position[0] * state.layout.dimensions.scale),
+                    state.layout.style.screen_position.1
+                        + (rich_text.position[1] * state.layout.dimensions.scale),
+                );
+
+                draw_layout(
+                    &mut self.comp,
+                    (&mut self.images, &mut self.glyphs),
+                    &rt.render_data,
+                    position,
+                    library,
+                    &state.layout.dimensions,
+                    graphics,
+                );
+            }
+        }
 
         self.dlist.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.dlist);
-        // let duration = start.elapsed();
-        // println!(" - rich_text::prepare::draw_layout() is: {:?}", duration);
-
-        // let duration = start.elapsed();
-        // println!(" - rich_text::prepare() is: {:?}", duration);
     }
 
     #[inline]
@@ -308,6 +310,7 @@ impl RichTextBrush {
         }
     }
 
+    #[inline]
     pub fn reset(&mut self) {
         self.glyphs = GlyphCache::new();
     }

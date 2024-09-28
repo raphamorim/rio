@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, FragmentStyle, Object, RichText, Quad, ComposedQuad, Sugarloaf,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::SugarloafLayout, ComposedQuad, FragmentStyle, Object, Quad, RichText,
+    Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -143,7 +143,7 @@ impl ApplicationHandler for Application {
             Object::RichText(RichText {
                 id: 1,
                 position: [220., 5.],
-            })
+            }),
         ];
 
         match event {
