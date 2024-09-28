@@ -173,6 +173,7 @@ impl SugarState {
     }
 
     #[inline]
+    // TODO: Merge it into compute_changes
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
         // If layout is different or current has empty dimensions
         // then current will flip with next and will try to obtain
