@@ -44,6 +44,7 @@ pub struct BuilderState {
     // Font size in ppem.
     pub font_size: f32,
     metrics_cache: MetricsCache,
+    pub render_data: RenderData,
 }
 
 impl BuilderState {
@@ -239,6 +240,11 @@ impl Content {
     }
 
     #[inline]
+    pub fn get_state(&self, state_id: &usize) -> Option<&BuilderState> {
+        self.states.get(state_id)
+    }
+
+    #[inline]
     pub fn set_font_features(
         &mut self,
         font_features: Vec<crate::font_introspector::Setting<u16>>,
@@ -249,7 +255,8 @@ impl Content {
     #[inline]
     pub fn create_state(&mut self, scale: f32, font_size: f32) -> usize {
         let id = self.states.len();
-        self.states.insert(id, BuilderState::from_scale_and_font_size(scale, font_size));
+        self.states
+            .insert(id, BuilderState::from_scale_and_font_size(scale, font_size));
         id
     }
 
@@ -280,7 +287,7 @@ impl Content {
     pub fn clear(&mut self, id: &usize) {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
-            state.begin();   
+            state.begin();
         }
     }
 
@@ -298,7 +305,7 @@ impl Content {
     }
 
     #[inline]
-    pub fn resolve(&mut self, id: &usize, render_data: &mut RenderData) {
+    pub fn resolve(&mut self, id: &usize) {
         if let Some(state) = self.states.get_mut(id) {
             let script = Script::Latin;
             for line_number in 0..state.lines.len() {
@@ -309,12 +316,13 @@ impl Content {
 
                     // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
 
-                    if let Some(shaper) = self.word_cache.get(&item.style.font_id, shaper_key)
+                    if let Some(shaper) =
+                        self.word_cache.get(&item.style.font_id, shaper_key)
                     {
                         if let Some(metrics) =
                             state.metrics_cache.inner.get(&item.style.font_id)
                         {
-                            if render_data.push_run_without_shaper(
+                            if state.render_data.push_run_without_shaper(
                                 item.style,
                                 state.font_size,
                                 line_number as u32,
@@ -341,12 +349,13 @@ impl Content {
 
                         shaper.add_str(&self.word_cache.content);
 
-                        state.metrics_cache
+                        state
+                            .metrics_cache
                             .inner
                             .entry(item.style.font_id)
                             .or_insert_with(|| shaper.metrics());
 
-                        render_data.push_run(
+                        state.render_data.push_run(
                             item.style,
                             state.font_size,
                             line_number as u32,
@@ -356,6 +365,11 @@ impl Content {
                     }
                 }
             }
+
+            state
+                .render_data
+                .break_lines()
+                .break_without_advance_or_alignment();
         }
     }
 }

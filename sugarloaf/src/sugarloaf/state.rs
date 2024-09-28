@@ -17,7 +17,7 @@ pub enum SugarTreeDiff {
 pub struct SugarState {
     latest_change: SugarTreeDiff,
     objects: Vec<Object>,
-    rich_texts: Vec<RichText>,
+    pub rich_texts: Vec<RichText>,
     pub layout: SugarloafLayout,
     pub compositors: SugarCompositors,
 }
@@ -114,16 +114,12 @@ impl SugarState {
 
     #[inline]
     pub fn clear_rich_text(&mut self, id: &usize) {
-        self.compositors
-            .advanced
-            .clear_rich_text(id, &self.layout);
+        self.compositors.advanced.clear_rich_text(id, &self.layout);
     }
 
     #[inline]
     pub fn create_rich_text(&mut self) -> usize {
-        self.compositors
-            .advanced
-            .create_rich_text(&self.layout)
+        self.compositors.advanced.create_rich_text(&self.layout)
     }
 
     pub fn content(&mut self) -> &mut Content {
@@ -164,10 +160,8 @@ impl SugarState {
                 }
                 Object::Quad(composed_quad) => {
                     self.compositors.elementary.quads.push(*composed_quad);
-                },
-                Object::RichText(rich_text) => {
-                    // self.rich_texts.push(*rich_text);
                 }
+                Object::RichText(_rich_text) => {}
             }
         }
     }
