@@ -7,27 +7,25 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, FragmentStyle, RenderData};
+use crate::layout::{BuilderState, Content, FragmentStyle, RenderData};
 use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
-    pub render_data: RenderData,
-    pub mocked_render_data: RenderData,
     pub content: Content,
+    pub mocked_render_data: RenderData,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             content: Content::new(font_library),
-            render_data: RenderData::new(),
             mocked_render_data: RenderData::new(),
         }
     }
 
     #[inline]
     pub fn reset(&mut self) {
-        self.render_data.clear();
+        // self.render_data.clear();
     }
 
     #[inline]
@@ -56,20 +54,24 @@ impl Advanced {
 
     #[inline]
     pub fn clear_rich_text(&mut self, id: &usize, layout: &SugarloafLayout) {
-        self.content.clear_state(id, layout.dimensions.scale, layout.font_size);
+        self.content
+            .clear_state(id, layout.dimensions.scale, layout.font_size);
+    }
+
+    #[inline]
+    pub fn get_rich_text(&self, id: &usize) -> Option<&BuilderState> {
+        self.content.get_state(id)
     }
 
     #[inline]
     pub fn create_rich_text(&mut self, layout: &SugarloafLayout) -> usize {
-        self.content.create_state(layout.dimensions.scale, layout.font_size)
+        self.content
+            .create_state(layout.dimensions.scale, layout.font_size)
     }
 
     #[inline]
     pub fn update_render_data(&mut self, rich_text_id: usize) {
-        self.content.resolve(&rich_text_id, &mut self.render_data);
-        self.render_data
-            .break_lines()
-            .break_without_advance_or_alignment();
+        self.content.resolve(&rich_text_id);
     }
 
     #[inline]
@@ -79,10 +81,7 @@ impl Advanced {
         let id = content.create_state(layout.dimensions.scale, layout.font_size);
         content.add_text(&id, " ", FragmentStyle::default());
         self.mocked_render_data.clear();
-        content.resolve(&id, &mut self.mocked_render_data);
-
-        self.mocked_render_data
-            .break_lines()
-            .break_without_advance_or_alignment()
+        content.resolve(&id);
+        self.mocked_render_data = content.get_state(&id).unwrap().render_data.clone();
     }
 }
