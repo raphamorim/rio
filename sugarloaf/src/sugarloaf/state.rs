@@ -17,6 +17,7 @@ pub enum SugarTreeDiff {
 pub struct SugarState {
     latest_change: SugarTreeDiff,
     objects: Vec<Object>,
+    rich_texts: Vec<crate::RichText>,
     pub layout: SugarloafLayout,
     pub compositors: SugarCompositors,
 }
@@ -32,6 +33,7 @@ impl SugarState {
             // First time computing changes should obtain dimensions
             layout: initial_layout,
             objects: vec![],
+            rich_texts: vec![],
             latest_change: SugarTreeDiff::Repaint,
         };
 
@@ -89,6 +91,7 @@ impl SugarState {
     pub fn clean_screen(&mut self) {
         // self.content.clear();
         self.objects.clear();
+        self.rich_texts.clear();
         self.compositors.advanced.reset();
     }
 
@@ -105,10 +108,21 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn content(&mut self) -> &mut Content {
+    pub fn clear_rich_text(&mut self, id: &usize) {
         self.compositors
             .advanced
-            .content(self.layout.dimensions.scale, self.layout.font_size)
+            .clear_rich_text(id, &self.layout);
+    }
+
+    #[inline]
+    pub fn create_rich_text(&mut self) -> usize {
+        self.compositors
+            .advanced
+            .create_rich_text(&self.layout)
+    }
+
+    pub fn content(&mut self) -> &mut Content {
+        &mut self.compositors.advanced.content
     }
 
     #[inline]
@@ -145,6 +159,9 @@ impl SugarState {
                 }
                 Object::Quad(composed_quad) => {
                     self.compositors.elementary.quads.push(*composed_quad);
+                },
+                Object::RichText(rich_text) => {
+                    self.rich_texts.push(*rich_text);
                 }
             }
         }
@@ -188,7 +205,9 @@ impl SugarState {
         if self.layout.dimensions.width == 0.0 || self.layout.dimensions.height == 0.0 {
             self.compositors.advanced.calculate_dimensions(&self.layout);
 
-            self.compositors.advanced.update_render_data();
+            for rich_text in &self.rich_texts {
+                self.compositors.advanced.update_render_data(rich_text.id);
+            }
 
             self.latest_change = SugarTreeDiff::Repaint;
             tracing::info!("has empty dimensions, will try to find...");
@@ -201,13 +220,15 @@ impl SugarState {
             SugarTreeDiff::Repaint => {
                 self.compositors.advanced.calculate_dimensions(&self.layout);
 
-                self.compositors.advanced.update_render_data();
-
                 self.latest_change = SugarTreeDiff::Different;
             }
-            SugarTreeDiff::Different => {
-                self.compositors.advanced.update_render_data();
-            }
+            SugarTreeDiff::Different => {}
+        }
+
+        println!("{:?}", self.rich_texts);
+
+        for rich_text in &self.rich_texts {
+            self.compositors.advanced.update_render_data(rich_text.id);
         }
     }
 }

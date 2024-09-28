@@ -55,14 +55,18 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn content(&mut self, scale: f32, font_size: f32) -> &mut Content {
-        self.content.build(scale, font_size);
-        &mut self.content
+    pub fn clear_rich_text(&mut self, id: &usize, layout: &SugarloafLayout) {
+        self.content.clear_state(id, layout.dimensions.scale, layout.font_size);
     }
 
     #[inline]
-    pub fn update_render_data(&mut self) {
-        self.content.resolve(&mut self.render_data);
+    pub fn create_rich_text(&mut self, layout: &SugarloafLayout) -> usize {
+        self.content.create_state(layout.dimensions.scale, layout.font_size)
+    }
+
+    #[inline]
+    pub fn update_render_data(&mut self, rich_text_id: usize) {
+        self.content.resolve(&rich_text_id, &mut self.render_data);
         self.render_data
             .break_lines()
             .break_without_advance_or_alignment();
@@ -72,10 +76,10 @@ impl Advanced {
     pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
         self.mocked_render_data = RenderData::default();
         let mut content = Content::new(self.content.font_library());
-        content.build(layout.dimensions.scale, layout.font_size);
-        content.add_text(" ", FragmentStyle::default());
+        let id = content.create_state(layout.dimensions.scale, layout.font_size);
+        content.add_text(&id, " ", FragmentStyle::default());
         self.mocked_render_data.clear();
-        content.resolve(&mut self.mocked_render_data);
+        content.resolve(&id, &mut self.mocked_render_data);
 
         self.mocked_render_data
             .break_lines()
