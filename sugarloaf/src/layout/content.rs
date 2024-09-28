@@ -83,6 +83,7 @@ impl BuilderState {
     pub fn clear(&mut self) {
         self.lines.clear();
         self.vars.clear();
+        self.render_data.clear();
     }
 
     #[inline]
@@ -288,7 +289,6 @@ impl Content {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
             state.begin();
-            state.render_data = RenderData::new();
         }
     }
 
