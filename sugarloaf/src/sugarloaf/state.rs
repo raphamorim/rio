@@ -6,7 +6,7 @@
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{Content, Graphics, Object};
+use crate::{Content, Graphics, Object, RichText};
 
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
@@ -17,7 +17,7 @@ pub enum SugarTreeDiff {
 pub struct SugarState {
     latest_change: SugarTreeDiff,
     objects: Vec<Object>,
-    rich_texts: Vec<crate::RichText>,
+    rich_texts: Vec<RichText>,
     pub layout: SugarloafLayout,
     pub compositors: SugarCompositors,
 }
@@ -91,14 +91,19 @@ impl SugarState {
     pub fn clean_screen(&mut self) {
         // self.content.clear();
         self.objects.clear();
-        self.rich_texts.clear();
-        self.compositors.advanced.reset();
     }
 
     #[inline]
     pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
         // Block are used only with elementary renderer
+        let mut rich_texts: Vec<RichText> = vec![];
+        for obj in &new_objects {
+            if let Object::RichText(rich_text) = obj {
+                rich_texts.push(*rich_text);
+            }
+        }
         self.objects = new_objects;
+        self.rich_texts = rich_texts
     }
 
     #[inline]
@@ -161,7 +166,7 @@ impl SugarState {
                     self.compositors.elementary.quads.push(*composed_quad);
                 },
                 Object::RichText(rich_text) => {
-                    self.rich_texts.push(*rich_text);
+                    // self.rich_texts.push(*rich_text);
                 }
             }
         }
@@ -224,8 +229,6 @@ impl SugarState {
             }
             SugarTreeDiff::Different => {}
         }
-
-        println!("{:?}", self.rich_texts);
 
         for rich_text in &self.rich_texts {
             self.compositors.advanced.update_render_data(rich_text.id);
