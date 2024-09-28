@@ -88,6 +88,7 @@ impl ApplicationHandler for Application {
 
         self.rich_texts.push(sugarloaf.create_rich_text());
         self.rich_texts.push(sugarloaf.create_rich_text());
+        self.rich_texts.push(sugarloaf.create_rich_text());
 
         sugarloaf.set_background_color(None);
         window.request_redraw();
@@ -143,6 +144,23 @@ impl ApplicationHandler for Application {
             Object::RichText(RichText {
                 id: 1,
                 position: [220., 5.],
+            }),
+            Object::Quad(ComposedQuad {
+                color: [1.0, 0.5, 0.5, 0.5],
+                quad: Quad {
+                    position: [440., 5.],
+                    shadow_blur_radius: 0.0,
+                    shadow_offset: [0.0, 0.0],
+                    shadow_color: [1.0, 1.0, 0.0, 1.0],
+                    border_color: [1.0, 0.0, 1.0, 1.0],
+                    border_width: 2.0,
+                    border_radius: [0.0, 0.0, 0.0, 0.0],
+                    size: [200.0, 150.0],
+                },
+            }),
+            Object::RichText(RichText {
+                id: 2,
+                position: [440., 5.],
             }),
         ];
 
