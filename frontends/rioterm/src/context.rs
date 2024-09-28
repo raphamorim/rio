@@ -33,6 +33,7 @@ pub struct Context<T: EventListener> {
     pub main_fd: Arc<i32>,
     #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
+    pub rich_text_id: usize,
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
@@ -126,6 +127,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             shell_pid: 1,
             messenger: Messenger::new(sender),
             terminal,
+            rich_text_id: 0,
         }
     }
 
@@ -135,6 +137,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
         route_id: usize,
+        rich_text_id: usize,
         size: SugarloafLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
@@ -229,6 +232,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             shell_pid,
             messenger,
             terminal,
+            rich_text_id,
         })
     }
 
@@ -238,6 +242,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
         route_id: usize,
+        rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: SugarloafLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
@@ -247,6 +252,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy.clone(),
             window_id,
             route_id,
+            rich_text_id,
             size,
             &ctx_config,
         ) {
@@ -330,6 +336,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             (&CursorState::new('_'), false),
             event_proxy.clone(),
             window_id,
+            0,
             0,
             SugarloafLayout::default(),
             &config,
@@ -728,6 +735,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cursor_state,
                 self.event_proxy.clone(),
                 self.window_id,
+                0,
                 self.acc_current_route,
                 layout,
                 &cloned_config,

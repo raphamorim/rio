@@ -17,7 +17,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
     Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight, Object, RichText
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -395,7 +395,7 @@ impl Renderer {
             if square_content == ' ' {
                 if !last_char_was_space {
                     if !content.is_empty() {
-                        content_builder.add_text(&content, last_style);
+                        content_builder.add_text(&0, &content, last_style);
                         content.clear();
                     }
 
@@ -404,7 +404,7 @@ impl Renderer {
                 }
             } else {
                 if last_char_was_space && !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    content_builder.add_text(&0, &content, last_style);
                     content.clear();
                 }
 
@@ -413,7 +413,7 @@ impl Renderer {
 
             if last_style != style {
                 if !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    content_builder.add_text(&0, &content, last_style);
                     content.clear();
                 }
 
@@ -425,14 +425,14 @@ impl Renderer {
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    content_builder.add_text(&0, &content, last_style);
                 }
 
                 break;
             }
         }
 
-        content_builder.new_line();
+        content_builder.new_line(&0);
     }
 
     #[inline]
@@ -730,6 +730,7 @@ impl Renderer {
         }
 
         let content = sugarloaf.content();
+        content.clear(&0);
 
         // let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
@@ -765,6 +766,11 @@ impl Renderer {
 
             self.active_search = None;
         }
+
+        objects.push(Object::RichText(RichText {
+            id: 0,
+            position: [0., 0.]
+        }));
 
         sugarloaf.set_objects(objects);
     }
