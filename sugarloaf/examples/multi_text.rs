@@ -165,6 +165,7 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
+                let time = std::time::Instant::now();
                 for rich_text in &self.rich_texts {
                     content.clear(rich_text);
                     content.add_text(
@@ -179,7 +180,7 @@ impl ApplicationHandler for Application {
                     content.new_line(rich_text);
                     content.add_text(
                         rich_text,
-                        "New line....",
+                        &format!("{:?}", time.elapsed()),
                         FragmentStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             ..FragmentStyle::default()
