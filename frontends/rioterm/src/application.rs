@@ -1110,9 +1110,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             Hook::CloseTab => {
-                if self.config.navigation.has_navigation_key_bindings() {
-                    route.window.screen.close_tab();
-                }
+                route.window.screen.close_tab();
+            }
+            Hook::SplitDown => {
+                // route.window.screen.close_tab();
+            }
+            Hook::SplitRight => {
+                // route.window.screen.close_tab();
             }
         }
     }

@@ -143,6 +143,8 @@ pub enum Hook {
     CloseTab,
     Copy,
     Paste,
+    SplitDown,
+    SplitRight,
 }
 
 /// Describes the reason the event loop is resuming.

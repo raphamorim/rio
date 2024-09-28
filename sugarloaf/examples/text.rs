@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, FragmentStyle, RichText, Object, FragmentStyleDecoration, Sugarloaf,
-    SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    layout::SugarloafLayout, FragmentStyle, FragmentStyleDecoration, Object, RichText,
+    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
@@ -282,12 +282,10 @@ impl ApplicationHandler for Application {
                     },
                 );
 
-                sugarloaf.set_objects(vec![
-                    Object::RichText(RichText {
-                        id: 0,
-                        position: [0., 0.],
-                    }),
-                ]);
+                sugarloaf.set_objects(vec![Object::RichText(RichText {
+                    id: 0,
+                    position: [0., 0.],
+                })]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

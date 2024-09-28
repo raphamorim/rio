@@ -16,8 +16,8 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::Config;
 use rio_backend::sugarloaf::{
-    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight, Object, RichText
+    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Object, RichText, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -769,7 +769,7 @@ impl Renderer {
 
         objects.push(Object::RichText(RichText {
             id: 0,
-            position: [0., 0.]
+            position: [0., 0.],
         }));
 
         sugarloaf.set_objects(objects);
