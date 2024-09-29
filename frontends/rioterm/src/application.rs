@@ -1029,6 +1029,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .window
                     .screen
                     .set_scale(scale, route.window.winit_window.inner_size());
+                route.window.update_vblank_interval();
             }
 
             WindowEvent::RedrawRequested => {
