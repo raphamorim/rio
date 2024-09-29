@@ -48,21 +48,11 @@ pub struct BuilderState {
 }
 
 impl BuilderState {
-    /// Creates a new layout state.
-    // pub fn new() -> Self {
-    //     let lines = vec![BuilderLine::default()];
-    //     Self {
-    //         lines,
-    //         ..BuilderState::default()
-    //     }
-    // }
-    /// Creates a new layout state.
+    #[inline]
     pub fn from_scale_and_font_size(font_size: f32, scale: f32) -> Self {
-        let lines = vec![BuilderLine::default()];
         Self {
             font_size: font_size * scale,
             scale,
-            lines,
             ..BuilderState::default()
         }
     }
@@ -72,12 +62,7 @@ impl BuilderState {
     }
     #[inline]
     pub fn current_line(&self) -> usize {
-        let size = self.lines.len();
-        if size == 0 {
-            0
-        } else {
-            size - 1
-        }
+        self.lines.len().wrapping_sub(1)
     }
     #[inline]
     pub fn clear(&mut self) {
@@ -85,7 +70,6 @@ impl BuilderState {
         self.vars.clear();
         self.render_data.clear();
     }
-
     #[inline]
     pub fn begin(&mut self) {
         self.lines.push(BuilderLine::default());
@@ -221,6 +205,7 @@ pub struct Content {
     scx: ShapeContext,
     states: FxHashMap<usize, BuilderState>,
     word_cache: WordCache,
+    selector: Option<usize>,
 }
 
 impl Content {
@@ -232,7 +217,15 @@ impl Content {
             states: FxHashMap::default(),
             word_cache: WordCache::new(),
             font_features: vec![],
+            selector: None,
         }
+    }
+
+    #[inline]
+    pub fn sel(&mut self, state_id: usize) -> &mut Content {
+        self.selector = Some(state_id);
+
+        self
     }
 
     #[inline]
@@ -278,22 +271,93 @@ impl Content {
     }
 
     #[inline]
-    pub fn new_line(&mut self, id: &usize) {
+    pub fn new_line_with_id(&mut self, id: &usize) -> &mut Content {
         if let Some(content) = self.states.get_mut(id) {
             content.new_line();
         }
+
+        self
     }
 
     #[inline]
-    pub fn clear(&mut self, id: &usize) {
+    pub fn new_line(&mut self) -> &mut Content {
+        if let Some(selector) = self.selector {
+            return self.new_line_with_id(&selector);
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn clear_line(&mut self, line_to_clear: usize) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(state) = self.states.get_mut(&selector) {
+                state.lines[line_to_clear] = BuilderLine::default();
+                // if let Some(line) = state.render_data.lines().next() {
+                //     line.runs().clear();
+                // }
+            }
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn clear_with_id(&mut self, id: &usize) -> &mut Content {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
             state.begin();
         }
+
+        self
+    }
+
+    #[inline]
+    pub fn clear(&mut self) -> &mut Content {
+        if let Some(selector) = self.selector {
+            return self.clear_with_id(&selector);
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn add_text(&mut self, text: &str, style: FragmentStyle) -> &mut Content {
+        if let Some(selector) = self.selector {
+            return self.add_text_with_id(&selector, text, style);
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn add_text_on_line(
+        &mut self,
+        line: usize,
+        text: &str,
+        style: FragmentStyle,
+    ) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(state) = self.states.get_mut(&selector) {
+                let line = &mut state.lines[line];
+
+                line.fragments.push(FragmentData {
+                    content: text.to_string(),
+                    style,
+                });
+            }
+        }
+
+        self
     }
 
     /// Adds a text fragment to the paragraph.
-    pub fn add_text(&mut self, id: &usize, text: &str, style: FragmentStyle) {
+    pub fn add_text_with_id(
+        &mut self,
+        id: &usize,
+        text: &str,
+        style: FragmentStyle,
+    ) -> &mut Content {
         if let Some(state) = self.states.get_mut(id) {
             let current_line = state.current_line();
             let line = &mut state.lines[current_line];
@@ -303,6 +367,8 @@ impl Content {
                 style,
             });
         }
+
+        self
     }
 
     #[inline]
