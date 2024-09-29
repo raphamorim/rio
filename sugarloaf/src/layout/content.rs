@@ -26,10 +26,11 @@ pub struct FragmentData {
     pub style: FragmentStyle,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct BuilderLine {
     /// Collection of fragments.
     pub fragments: Vec<FragmentData>,
+    pub render_data: RenderData,
 }
 
 /// Builder state.
@@ -44,7 +45,6 @@ pub struct BuilderState {
     // Font size in ppem.
     pub font_size: f32,
     metrics_cache: MetricsCache,
-    pub render_data: RenderData,
 }
 
 impl BuilderState {
@@ -68,7 +68,6 @@ impl BuilderState {
     pub fn clear(&mut self) {
         self.lines.clear();
         self.vars.clear();
-        self.render_data.clear();
     }
     #[inline]
     pub fn begin(&mut self) {
@@ -376,7 +375,7 @@ impl Content {
         if let Some(state) = self.states.get_mut(id) {
             let script = Script::Latin;
             for line_number in 0..state.lines.len() {
-                let line = &state.lines[line_number];
+                let line = &mut state.lines[line_number];
                 for item in &line.fragments {
                     let vars = state.vars.get(item.style.font_vars);
                     let shaper_key = &item.content;
@@ -389,7 +388,7 @@ impl Content {
                         if let Some(metrics) =
                             state.metrics_cache.inner.get(&item.style.font_id)
                         {
-                            if state.render_data.push_run_without_shaper(
+                            if line.render_data.push_run_without_shaper(
                                 item.style,
                                 state.font_size,
                                 line_number as u32,
@@ -422,7 +421,7 @@ impl Content {
                             .entry(item.style.font_id)
                             .or_insert_with(|| shaper.metrics());
 
-                        state.render_data.push_run(
+                        line.render_data.push_run(
                             item.style,
                             state.font_size,
                             line_number as u32,
@@ -432,11 +431,6 @@ impl Content {
                     }
                 }
             }
-
-            state
-                .render_data
-                .break_lines()
-                .break_without_advance_or_alignment();
         }
     }
 }

@@ -7,19 +7,19 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{BuilderState, Content, FragmentStyle, RenderData};
+use crate::layout::{BuilderLine, BuilderState, Content, FragmentStyle, RenderData};
 use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
     pub content: Content,
-    pub mocked_render_data: RenderData,
+    pub fake_line: BuilderLine,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             content: Content::new(font_library),
-            mocked_render_data: RenderData::new(),
+            fake_line: BuilderLine::default(),
         }
     }
 
@@ -76,15 +76,14 @@ impl Advanced {
 
     #[inline]
     pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
-        self.mocked_render_data = RenderData::default();
+        self.fake_line = BuilderLine::default();
         let mut content = Content::new(self.content.font_library());
         let id = content.create_state(layout.dimensions.scale, layout.font_size);
         content
             .sel(id)
             .new_line()
             .add_text(" ", FragmentStyle::default());
-        self.mocked_render_data.clear();
         content.resolve(&id);
-        self.mocked_render_data = content.get_state(&id).unwrap().render_data.clone();
+        self.fake_line = content.get_state(&id).unwrap().lines[0].clone();
     }
 }
