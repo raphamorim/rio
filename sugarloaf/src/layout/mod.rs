@@ -19,8 +19,8 @@ pub mod iter {
 }
 
 pub use content::{
-    BuilderState, Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo,
-    UnderlineShape,
+    BuilderLine, BuilderState, Content, FragmentStyle, FragmentStyleDecoration,
+    UnderlineInfo, UnderlineShape,
 };
 pub use render_data::{Cluster, Glyph, Line, Run};
 

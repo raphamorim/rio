@@ -395,7 +395,7 @@ impl Renderer {
             if square_content == ' ' {
                 if !last_char_was_space {
                     if !content.is_empty() {
-                        content_builder.add_text(&0, &content, last_style);
+                        content_builder.add_text(&content, last_style);
                         content.clear();
                     }
 
@@ -404,7 +404,7 @@ impl Renderer {
                 }
             } else {
                 if last_char_was_space && !content.is_empty() {
-                    content_builder.add_text(&0, &content, last_style);
+                    content_builder.add_text(&content, last_style);
                     content.clear();
                 }
 
@@ -413,7 +413,7 @@ impl Renderer {
 
             if last_style != style {
                 if !content.is_empty() {
-                    content_builder.add_text(&0, &content, last_style);
+                    content_builder.add_text(&content, last_style);
                     content.clear();
                 }
 
@@ -425,14 +425,14 @@ impl Renderer {
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
-                    content_builder.add_text(&0, &content, last_style);
+                    content_builder.add_text(&content, last_style);
                 }
 
                 break;
             }
         }
 
-        content_builder.new_line(&0);
+        content_builder.new_line();
     }
 
     #[inline]
@@ -730,7 +730,7 @@ impl Renderer {
         }
 
         let content = sugarloaf.content();
-        content.clear(&0);
+        content.sel(0).clear();
 
         // let start = std::time::Instant::now();
         for (i, row) in rows.iter().enumerate() {
