@@ -79,7 +79,10 @@ impl Advanced {
         self.mocked_render_data = RenderData::default();
         let mut content = Content::new(self.content.font_library());
         let id = content.create_state(layout.dimensions.scale, layout.font_size);
-        content.add_text(&id, " ", FragmentStyle::default());
+        content
+            .sel(id)
+            .new_line()
+            .add_text(" ", FragmentStyle::default());
         self.mocked_render_data.clear();
         content.resolve(&id);
         self.mocked_render_data = content.get_state(&id).unwrap().render_data.clone();
