@@ -7,7 +7,7 @@ pub mod kitty_keyboard;
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
-use rio_backend::config::bindings::KeyBinding as ConfigKeyBinding;
+use rio_backend::config::bindings::{Bindings, KeyBinding as ConfigKeyBinding};
 use rio_backend::config::keyboard::Keyboard as ConfigKeyboard;
 use rio_window::event::MouseButton;
 use rio_window::keyboard::Key::*;
@@ -162,6 +162,7 @@ bitflags! {
         const SEARCH              = 0b0001_0000;
         const DISAMBIGUATE_KEYS   = 0b0010_0000;
         const ALL_KEYS_AS_ESC     = 0b0100_0000;
+        const LEADER              = 0b1000_0000;
     }
 }
 
@@ -181,6 +182,7 @@ impl BindingMode {
             mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC),
         );
         binding_mode.set(BindingMode::VI, mode.contains(Mode::VI));
+        binding_mode.set(BindingMode::LEADER, mode.contains(Mode::LEADER));
         binding_mode
     }
 }
@@ -553,7 +555,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 }
 
 pub fn default_key_bindings(
-    unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
+    unprocessed_config_key_bindings: Bindings,
     use_navigation_key_bindings: bool,
     config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
@@ -942,31 +944,41 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "~alt" => res_mode.not_mode |= BindingMode::ALT_SCREEN,
             "vi" => res_mode.mode |= BindingMode::VI,
             "~vi" => res_mode.not_mode |= BindingMode::VI,
+            "leader" => res_mode.mode |= BindingMode::LEADER,
             _ => {
                 res_mode.not_mode |= BindingMode::empty();
                 res_mode.mode |= BindingMode::empty();
             }
         }
     }
-
-    Ok(KeyBinding {
+    let key_binding = KeyBinding {
         trigger,
         mods: res,
         action,
         mode: res_mode.mode,
         notmode: res_mode.not_mode,
-    })
+    };
+
+    // panic!("Parsed key binding: {:?}", key_binding);
+
+    Ok(key_binding)
 }
 
 pub fn config_key_bindings(
-    config_key_bindings: Vec<ConfigKeyBinding>,
+    config_key_bindings: Bindings,
     mut bindings: Vec<KeyBinding>,
 ) -> Vec<KeyBinding> {
-    if config_key_bindings.is_empty() {
+    if config_key_bindings.keys.is_empty() {
         return bindings;
     }
 
-    for ckb in config_key_bindings {
+    if let Some(leader) = config_key_bindings.leader {
+        let mut binding = convert(leader).unwrap();
+        binding.mode |= BindingMode::LEADER;
+        bindings.push(binding);
+    }
+
+    for ckb in config_key_bindings.keys {
         match convert(ckb) {
             Ok(key_binding) => match key_binding.action {
                 Action::None | Action::ReceiveChar => {

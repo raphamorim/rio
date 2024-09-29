@@ -25,6 +25,7 @@ pub type KeyBindings = Vec<KeyBinding>;
 #[derive(Default, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Bindings {
     pub keys: KeyBindings,
+    pub leader: Option<KeyBinding>,
 }
 
 #[cfg(test)]
