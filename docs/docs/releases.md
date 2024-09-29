@@ -7,6 +7,7 @@ language: 'en'
 
 ## Unreleased
 
+- VI Mode now supports search by [@orhun](https://github.com/orhun).
 - Use max frame per seconds based on the current monitor refresh rate.
 - *breaking* `renderer.max-fps` has been changed to `renderer.target-fps`.
 - Fix background color for underline and beam cursors when using transparent window.

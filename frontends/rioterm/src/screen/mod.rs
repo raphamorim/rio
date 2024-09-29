@@ -518,6 +518,11 @@ impl Screen<'_> {
             return;
         }
 
+        // Vi mode on its own doesn't have any input, the search input was done before.
+        if mode.contains(Mode::VI) {
+            return;
+        }
+
         let bytes = if !is_kitty_keyboard_enabled {
             // If text is empty then leave without input bytes
             if text.is_empty() {
@@ -1202,7 +1207,7 @@ impl Screen<'_> {
         selection.update(pos, side);
 
         // Move vi cursor and expand selection.
-        if terminal.mode().contains(Mode::VI) {
+        if terminal.mode().contains(Mode::VI) && !self.search_active() {
             terminal.vi_mode_cursor.pos = pos;
             selection.include_all();
         }
