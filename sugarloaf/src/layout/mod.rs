@@ -8,21 +8,17 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 mod content;
-mod layout_data;
+mod glyph;
 mod render_data;
 
 pub use render_data::RenderData;
-
-/// Iterators over elements of a paragraph.
-pub mod iter {
-    pub use super::render_data::{Clusters, Glyphs, Lines, Runs};
-}
+pub use glyph::Glyph;
 
 pub use content::{
     BuilderLine, BuilderState, Content, FragmentStyle, FragmentStyleDecoration,
     UnderlineInfo, UnderlineShape,
 };
-pub use render_data::{Cluster, Glyph, Line, Run};
+pub use render_data::Run;
 
 /// Index of a span in sequential order of submission to a paragraph content.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Default, Debug)]

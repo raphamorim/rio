@@ -11,7 +11,6 @@ use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{Compositor, DisplayList, Rect, Vertex};
-use std::ops::Range;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -425,10 +424,17 @@ fn draw_layout(
     let mut current_font = 0;
     let mut current_font_size = 0.0;
     let font_coords: &[i16] = &[0, 0, 0, 0];
+
+    let mut ascent = 0.0;
+    let mut descent = 0.0;
+    let mut leading = 0.0;
     if let Some(line) = lines.first() {
-        if let Some(first_run) = line.render_data.data.runs.first() {
+        if let Some(first_run) = line.render_data.runs.first() {
             current_font = first_run.span.font_id;
             current_font_size = first_run.size;
+            ascent = first_run.ascent.round();
+            descent = first_run.descent.round();
+            leading = (first_run.leading).round() * 2.;
         }
     }
 
@@ -443,34 +449,26 @@ fn draw_layout(
     );
 
     let mut last_rendered_graphic = None;
-    let mut line_y = 0.;
+    let mut line_y = 0. + y;
     for line in lines {
-        if line.render_data.data.runs.is_empty() {
+        if line.render_data.runs.is_empty() {
             continue;
         }
 
-        let first_run = &line.render_data.data.runs[0];
-        let ascent = first_run.ascent.round();
-        let descent = first_run.descent.round();
-        let leading = (first_run.leading).round() * 2.;
-        // let mut px = x + line.offset();
         let mut px = x + 0.0;
         let baseline = line_y + ascent;
         line_y = baseline + descent;
-        let py = ascent + y;
+        let py = line_y;
         let line_height = ascent + descent + leading;
-        for run in &line.render_data.data.runs {
+        for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;
             let char_width = run.span.width;
 
             let run_x = px;
             for glyph in &run.glyphs {
-                // let x = px + glyph.x;
-                // let y = py - glyph.y;
                 let x = px;
                 let y = py;
-                // px += glyph.advance
                 px += rect.width * char_width;
                 glyphs.push(Glyph {
                     id: glyph.simple_data().0,
@@ -528,8 +526,6 @@ fn draw_layout(
                 &style,
                 glyphs.iter(),
             );
-
-            // cached_line_runs.push(cached_run);
         }
     }
 
@@ -551,7 +547,7 @@ fn fetch_dimensions(
     let mut current_font = 0;
     let mut current_font_size = 0.0;
     let font_coords: &[i16] = &[0, 0, 0, 0];
-    if let Some(first_run) = line.render_data.data.runs.first() {
+    if let Some(first_run) = line.render_data.runs.first() {
         current_font = first_run.span.font_id;
         current_font_size = first_run.size;
     }
@@ -566,7 +562,7 @@ fn fetch_dimensions(
 
     let mut glyphs = Vec::with_capacity(3);
     let mut dimension = SugarDimensions::default();
-    let first_run = &line.render_data.data.runs[0];
+    let first_run = &line.render_data.runs[0];
     let ascent = first_run.ascent.round();
     let descent = first_run.descent.round();
     let leading = (first_run.leading).round() * 2.;
@@ -574,7 +570,7 @@ fn fetch_dimensions(
     let mut px = x + 0.0;
     let py = ascent + y;
     let line_height = ascent + descent + leading;
-    for run in &line.render_data.data.runs {
+    for run in &line.render_data.runs {
         let char_width = run.span.width;
 
         let font = run.span.font_id;
