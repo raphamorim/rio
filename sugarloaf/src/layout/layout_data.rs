@@ -177,14 +177,17 @@ impl GlyphData {
     }
 }
 
-#[derive(Copy, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
     pub size: f32,
+    /// Simple glyphs.
+    pub glyphs: Vec<GlyphData>,
+    /// Detailed glyphs.
+    pub detailed_glyphs: Vec<Glyph>,
     // pub whitespace: bool,
     // pub trailing_whitespace: bool,
-    pub clusters: (u32, u32),
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
@@ -258,11 +261,11 @@ impl LineLayoutData {
 
     #[inline]
     pub fn run_index_for_cluster(&self, cluster: u32) -> Option<usize> {
-        for (i, run) in self.runs.iter().enumerate() {
-            if cluster >= run.clusters.0 && cluster < run.clusters.1 {
-                return Some(i);
-            }
-        }
+        // for (i, run) in self.runs.iter().enumerate() {
+        //     if cluster >= run.clusters.0 && cluster < run.clusters.1 {
+        //         return Some(i);
+        //     }
+        // }
         self.runs.len().checked_sub(1)
     }
 
@@ -317,50 +320,50 @@ impl<'a> BreakLines<'a> {
         }
     }
 
-    #[inline]
-    pub fn break_without_advance_or_alignment(&'a mut self) {
-        let run_len = self.layout.runs.len();
-        let mut y = 0.;
+    // #[inline]
+    // pub fn break_without_advance_or_alignment(&'a mut self) {
+    //     let run_len = self.layout.runs.len();
+    //     let mut y = 0.;
 
-        for i in 0..self.layout.runs.len() {
-            let run = &self.layout.runs[i];
+    //     for i in 0..self.layout.runs.len() {
+    //         let run = &self.layout.runs[i];
 
-            let mut should_commit_line = false;
+    //         let mut should_commit_line = false;
 
-            if i == run_len - 1 {
-                should_commit_line = true;
-            } else {
-                // If next run has a different line number then
-                // try to commit line
-                let next_run = &self.layout.runs[i + 1];
-                if next_run.line != run.line {
-                    should_commit_line = true;
-                }
-            }
+    //         if i == run_len - 1 {
+    //             should_commit_line = true;
+    //         } else {
+    //             // If next run has a different line number then
+    //             // try to commit line
+    //             let next_run = &self.layout.runs[i + 1];
+    //             if next_run.line != run.line {
+    //                 should_commit_line = true;
+    //             }
+    //         }
 
-            self.state.line.runs.1 = i as u32 + 1;
-            // self.state.line.clusters.1 = self.state.j as u32;
-            self.state.line.clusters.1 = run.clusters.1;
+    //         self.state.line.runs.1 = i as u32 + 1;
+    //         // self.state.line.clusters.1 = self.state.j as u32;
+    //         self.state.line.clusters.1 = run.clusters.1;
 
-            if should_commit_line
-                && commit_line(
-                    self.layout,
-                    self.lines,
-                    &mut self.state.line,
-                    None,
-                    true,
-                    run,
-                    &mut y,
-                )
-            {
-                self.state.runs = self.lines.runs.len();
-                self.state.lines = self.lines.lines.len();
-                self.state.line.x = 0.;
-                // self.state.j += 1;
-                self.state.line.clusters.1 = run.clusters.1 + 1;
-            }
-        }
-    }
+    //         if should_commit_line
+    //             && commit_line(
+    //                 self.layout,
+    //                 self.lines,
+    //                 &mut self.state.line,
+    //                 None,
+    //                 true,
+    //                 run,
+    //                 &mut y,
+    //             )
+    //         {
+    //             self.state.runs = self.lines.runs.len();
+    //             self.state.lines = self.lines.lines.len();
+    //             self.state.line.x = 0.;
+    //             // self.state.j += 1;
+    //             self.state.line.clusters.1 = run.clusters.1 + 1;
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Copy, Clone, Default)]
@@ -377,64 +380,64 @@ struct BreakerState {
     line: LineState,
 }
 
-#[inline]
-fn commit_line(
-    layout: &LayoutData,
-    lines: &mut LineLayoutData,
-    state: &mut LineState,
-    max_advance: Option<f32>,
-    explicit: bool,
-    run_data: &RunData,
-    y: &mut f32,
-) -> bool {
-    state.clusters.1 = state.clusters.1.min(layout.clusters.len() as u32);
-    if state.runs.0 == state.runs.1 || state.clusters.0 == state.clusters.1 {
-        return false;
-    }
-    let line_index = lines.lines.len() as u32;
-    let last_run = (state.runs.1 - state.runs.0) as usize - 1;
-    let runs_start = lines.runs.len() as u32;
-    for (i, run) in layout.runs[make_range(state.runs)].iter().enumerate() {
-        let mut cluster_range = run.clusters;
-        if i == 0 {
-            cluster_range.0 = state.clusters.0;
-        }
-        if i == last_run {
-            cluster_range.1 = state.clusters.1;
-        }
-        if cluster_range.0 >= cluster_range.1 {
-            continue;
-        }
-        let mut copy = run.to_owned();
-        copy.clusters = cluster_range;
-        copy.line = line_index;
-        lines.runs.push(copy);
-    }
-    let runs_end = lines.runs.len() as u32;
-    if runs_start == runs_end {
-        return false;
-    }
-    let mut line = LineData {
-        runs: (runs_start, runs_end),
-        clusters: state.clusters,
-        width: state.x,
-        max_advance,
-        explicit_break: explicit,
-        ascent: run_data.ascent.round(),
-        descent: run_data.descent.round(),
-        leading: (run_data.leading).round() * 2.,
-        ..Default::default()
-    };
+// #[inline]
+// fn commit_line(
+//     layout: &LayoutData,
+//     lines: &mut LineLayoutData,
+//     state: &mut LineState,
+//     max_advance: Option<f32>,
+//     explicit: bool,
+//     run_data: &RunData,
+//     y: &mut f32,
+// ) -> bool {
+//     state.clusters.1 = state.clusters.1.min(layout.clusters.len() as u32);
+//     if state.runs.0 == state.runs.1 || state.clusters.0 == state.clusters.1 {
+//         return false;
+//     }
+//     let line_index = lines.lines.len() as u32;
+//     let last_run = (state.runs.1 - state.runs.0) as usize - 1;
+//     let runs_start = lines.runs.len() as u32;
+//     for (i, run) in layout.runs[make_range(state.runs)].iter().enumerate() {
+//         let mut cluster_range = run.clusters;
+//         if i == 0 {
+//             cluster_range.0 = state.clusters.0;
+//         }
+//         if i == last_run {
+//             cluster_range.1 = state.clusters.1;
+//         }
+//         if cluster_range.0 >= cluster_range.1 {
+//             continue;
+//         }
+//         let mut copy = run.to_owned();
+//         copy.clusters = cluster_range;
+//         copy.line = line_index;
+//         lines.runs.push(copy);
+//     }
+//     let runs_end = lines.runs.len() as u32;
+//     if runs_start == runs_end {
+//         return false;
+//     }
+//     let mut line = LineData {
+//         runs: (runs_start, runs_end),
+//         clusters: state.clusters,
+//         width: state.x,
+//         max_advance,
+//         explicit_break: explicit,
+//         ascent: run_data.ascent.round(),
+//         descent: run_data.descent.round(),
+//         leading: (run_data.leading).round() * 2.,
+//         ..Default::default()
+//     };
 
-    let above = line.ascent;
-    let below = line.descent;
-    line.baseline = *y + above;
-    *y = line.baseline + below;
+//     let above = line.ascent;
+//     let below = line.descent;
+//     line.baseline = *y + above;
+//     *y = line.baseline + below;
 
-    lines.lines.push(line);
-    state.clusters.0 = state.clusters.1;
-    state.clusters.1 += 1;
-    state.runs.0 = state.runs.1 - 1;
+//     lines.lines.push(line);
+//     state.clusters.0 = state.clusters.1;
+//     state.clusters.1 += 1;
+//     state.runs.0 = state.runs.1 - 1;
 
-    true
-}
+//     true
+// }
