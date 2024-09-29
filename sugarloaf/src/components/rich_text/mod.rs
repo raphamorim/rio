@@ -424,17 +424,10 @@ fn draw_layout(
     let mut current_font = 0;
     let mut current_font_size = 0.0;
     let font_coords: &[i16] = &[0, 0, 0, 0];
-
-    let mut ascent = 0.0;
-    let mut descent = 0.0;
-    let mut leading = 0.0;
     if let Some(line) = lines.first() {
         if let Some(first_run) = line.render_data.runs.first() {
             current_font = first_run.span.font_id;
             current_font_size = first_run.size;
-            ascent = first_run.ascent.round();
-            descent = first_run.descent.round();
-            leading = (first_run.leading).round() * 2.;
         }
     }
 
@@ -455,6 +448,10 @@ fn draw_layout(
             continue;
         }
 
+        let first_run = &line.render_data.runs[0];
+        let ascent = first_run.ascent.round();
+        let descent = first_run.descent.round();
+        let leading = (first_run.leading).round() * 2.;
         let mut px = x + 0.0;
         let baseline = line_y + ascent;
         line_y = baseline + descent;
