@@ -324,6 +324,7 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
+    has_fps_target: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
     pub winit_window: Window,
@@ -351,6 +352,24 @@ impl<'a> RouteWindow<'a> {
             true => Some(Duration::from_millis(vblank_interval - elapsed_time)),
             // false => None,
             false => Some(Duration::from_millis(vblank_interval.wrapping_sub(1))),
+        }
+    }
+
+    pub fn update_vblank_interval(&mut self) {
+        if !self.has_fps_target {
+            // Get the display vblank interval.
+            let monitor_vblank_interval = 1_000_000.
+                / self
+                    .winit_window
+                    .current_monitor()
+                    .and_then(|monitor| monitor.refresh_rate_millihertz())
+                    .unwrap_or(60_000) as f64;
+
+            // Now convert it to micro seconds.
+            let monitor_vblank_interval =
+                Duration::from_micros((1000. * monitor_vblank_interval) as u64);
+
+            self.vblank_interval = monitor_vblank_interval;
         }
     }
 
@@ -408,14 +427,17 @@ impl<'a> RouteWindow<'a> {
         // Now convert it to micro seconds.
         let mut monitor_vblank_interval =
             Duration::from_micros((1000. * monitor_vblank_interval) as u64);
+        let mut has_fps_target = false;
 
         if let Some(target_fps) = config.renderer.target_fps {
             monitor_vblank_interval =
                 Duration::from_millis(1000 / target_fps.clamp(1, 1000));
+            has_fps_target = true;
         }
 
         Self {
             vblank_interval: monitor_vblank_interval,
+            has_fps_target,
             render_timestamp: Instant::now(),
             is_focused: true,
             is_occluded: false,
