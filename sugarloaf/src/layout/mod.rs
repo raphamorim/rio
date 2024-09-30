@@ -11,8 +11,8 @@ mod content;
 mod glyph;
 mod render_data;
 
-pub use render_data::RenderData;
 pub use glyph::Glyph;
+pub use render_data::RenderData;
 
 pub use content::{
     BuilderLine, BuilderState, Content, FragmentStyle, FragmentStyleDecoration,

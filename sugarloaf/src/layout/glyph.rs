@@ -6,8 +6,8 @@
 // layout_data.rs was originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-use crate::font_introspector::GlyphId;
 use crate::font_introspector::shape::cluster::Glyph as ShapedGlyph;
+use crate::font_introspector::GlyphId;
 use crate::layout::FragmentStyle;
 
 pub const GLYPH_DETAILED: u32 = 0x80000000;
@@ -68,7 +68,6 @@ pub struct RunData {
     pub strikeout_size: f32,
     pub advance: f32,
 }
-
 
 /// Shaped glyph in a paragraph.
 #[derive(Copy, Debug, Clone)]

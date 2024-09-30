@@ -1935,25 +1935,12 @@ impl Screen<'_> {
             None
         };
 
-        let (rows, cursor, display_offset, has_blinking_enabled) = {
-            let terminal = self.context_manager.current().terminal.lock();
-            let data = (
-                terminal.visible_rows(),
-                terminal.cursor(),
-                terminal.display_offset(),
-                terminal.blinking_cursor,
-            );
-            drop(terminal);
-            data
-        };
+        let renderable = self.context_manager.renderable_content();
         self.renderer.set_ime(self.ime.preedit());
         self.renderer.prepare_term(
-            &rows,
-            cursor,
+            renderable,
             &mut self.sugarloaf,
-            &self.context_manager,
-            display_offset as i32,
-            has_blinking_enabled,
+            // &self.context_manager,
             &mut search_hints,
             &self.search_state.focused_match,
         );
