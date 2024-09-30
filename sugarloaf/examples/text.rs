@@ -124,163 +124,153 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
-                content.add_text(
-                    &0,
-                    "Sugarloaf",
-                    FragmentStyle {
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.new_line(&0);
-                content.add_text(
-                    &0,
-                    "│㏑¼",
-                    FragmentStyle {
-                        color: [0.0, 0.0, 0.0, 1.0],
-                        background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                        width: 2.0,
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    "🥶",
-                    FragmentStyle {
-                        color: [1.0, 0.0, 1.0, 1.0],
-                        background_color: Some([0.3, 0.5, 1.0, 1.0]),
-                        width: 2.0,
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.new_line(&0);
-                content.add_text(
-                    &0,
-                    "│regular -> ",
-                    FragmentStyle {
-                        decoration: Some(FragmentStyleDecoration::Underline(
-                            UnderlineInfo {
-                                offset: -2.0,
-                                size: 1.0,
-                                is_doubled: false,
-                                shape: UnderlineShape::Regular,
-                            },
-                        )),
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    " ",
-                    FragmentStyle {
-                        decoration: None,
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    "|still|",
-                    FragmentStyle {
-                        decoration: Some(FragmentStyleDecoration::Underline(
-                            UnderlineInfo {
-                                offset: -2.0,
-                                size: 1.0,
-                                is_doubled: false,
-                                shape: UnderlineShape::Regular,
-                            },
-                        )),
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    " ",
-                    FragmentStyle {
-                        decoration: None,
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    "│curly",
-                    FragmentStyle {
-                        decoration: Some(FragmentStyleDecoration::Underline(
-                            UnderlineInfo {
-                                offset: -2.0,
-                                size: 1.0,
-                                is_doubled: false,
-                                shape: UnderlineShape::Curly,
-                            },
-                        )),
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.new_line(&0);
-                content.add_text(
-                    &0,
-                    "│dashed",
-                    FragmentStyle {
-                        decoration: Some(FragmentStyleDecoration::Underline(
-                            UnderlineInfo {
-                                offset: -2.0,
-                                size: 1.0,
-                                is_doubled: false,
-                                shape: UnderlineShape::Dashed,
-                            },
-                        )),
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    " ",
-                    FragmentStyle {
-                        decoration: None,
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.add_text(
-                    &0,
-                    "dotted",
-                    FragmentStyle {
-                        decoration: Some(FragmentStyleDecoration::Underline(
-                            UnderlineInfo {
-                                offset: -2.0,
-                                size: 1.0,
-                                is_doubled: false,
-                                shape: UnderlineShape::Dotted,
-                            },
-                        )),
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
-                content.new_line(&0);
-                content.add_text(
-                    &0,
-                    "│ \u{E0B6}Hello There!\u{e0b4}",
-                    FragmentStyle {
-                        color: [1.0, 1.0, 1.0, 1.0],
-                        background_color: Some([0.5, 0.5, 1.0, 1.0]),
-                        ..FragmentStyle::default()
-                    },
-                );
+                content.sel(0);
+                content
+                    .add_text(
+                        "Sugarloaf",
+                        FragmentStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        "│㏑¼",
+                        FragmentStyle {
+                            color: [0.0, 0.0, 0.0, 1.0],
+                            background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                            width: 2.0,
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        "🥶",
+                        FragmentStyle {
+                            color: [1.0, 0.0, 1.0, 1.0],
+                            background_color: Some([0.3, 0.5, 1.0, 1.0]),
+                            width: 2.0,
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        "│regular -> ",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Regular,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        "|still|",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Regular,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        "│curly",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Curly,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        "│dashed",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Dashed,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        " ",
+                        FragmentStyle {
+                            decoration: None,
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        "dotted",
+                        FragmentStyle {
+                            decoration: Some(FragmentStyleDecoration::Underline(
+                                UnderlineInfo {
+                                    offset: -2.0,
+                                    size: 1.0,
+                                    is_doubled: false,
+                                    shape: UnderlineShape::Dotted,
+                                },
+                            )),
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        "│ \u{E0B6}Hello There!\u{e0b4}",
+                        FragmentStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.5, 0.5, 1.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    );
 
                 sugarloaf.set_objects(vec![Object::RichText(RichText {
                     id: 0,

@@ -3,6 +3,7 @@ mod search;
 pub mod utils;
 
 use crate::ansi::CursorShape;
+use crate::context::renderable::{RenderableContent, RenderableContentStrategy};
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, CursorState, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
@@ -266,9 +267,10 @@ impl Renderer {
     #[inline]
     fn create_line(
         &mut self,
-        content_builder: &mut Content,
+        builder: &mut Content,
         row: &Row<Square>,
         has_cursor: bool,
+        line_opt: Option<usize>,
         line: Line,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
@@ -395,7 +397,11 @@ impl Renderer {
             if square_content == ' ' {
                 if !last_char_was_space {
                     if !content.is_empty() {
-                        content_builder.add_text(&content, last_style);
+                        if let Some(line) = line_opt {
+                            builder.add_text_on_line(line, &content, last_style);
+                        } else {
+                            builder.add_text(&content, last_style);
+                        }
                         content.clear();
                     }
 
@@ -404,7 +410,11 @@ impl Renderer {
                 }
             } else {
                 if last_char_was_space && !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
                     content.clear();
                 }
 
@@ -413,7 +423,11 @@ impl Renderer {
 
             if last_style != style {
                 if !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
                     content.clear();
                 }
 
@@ -425,14 +439,21 @@ impl Renderer {
             // Render last column and break row
             if column == (columns - 1) {
                 if !content.is_empty() {
-                    content_builder.add_text(&content, last_style);
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
                 }
 
                 break;
             }
         }
 
-        content_builder.new_line();
+        if let Some(line) = line_opt {
+            builder.build_line(line);
+        }
+        builder.new_line();
     }
 
     #[inline]
@@ -694,24 +715,21 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[inline]
     pub fn prepare_term(
         &mut self,
-        rows: &[Row<Square>],
-        cursor: CursorState,
+        renderable_content: &RenderableContent,
         sugarloaf: &mut Sugarloaf,
-        context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
-        display_offset: i32,
-        has_blinking_enabled: bool,
+        // context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let layout = sugarloaf.layout();
-        self.cursor.state = cursor;
+        self.cursor.state = renderable_content.cursor.clone();
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
         self.font_size = layout.font_size;
-        self.term_has_blinking_enabled = has_blinking_enabled;
+        self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
 
         // Only blink cursor if does not contain selection
         let has_selection = self.selection_range.is_some();
@@ -730,31 +748,58 @@ impl Renderer {
         }
 
         let content = sugarloaf.content();
-        content.sel(0).clear();
+        let display_offset = renderable_content.display_offset;
 
         // let start = std::time::Instant::now();
-        for (i, row) in rows.iter().enumerate() {
-            let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-            self.create_line(
-                content,
-                row,
-                has_cursor,
-                Line((i as i32) - display_offset),
-                hints,
-                focused_match,
-            );
+        match &renderable_content.strategy {
+            RenderableContentStrategy::Full => {
+                content.sel(0);
+                content.clear();
+                for (i, row) in renderable_content.inner.iter().enumerate() {
+                    let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
+                    self.create_line(
+                        content,
+                        row,
+                        has_cursor,
+                        None,
+                        Line((i as i32) - display_offset),
+                        hints,
+                        focused_match,
+                    );
+                }
+                content.build();
+            }
+            RenderableContentStrategy::Lines(lines) => {
+                content.sel(0);
+                for line in lines {
+                    let line = *line;
+                    let has_cursor =
+                        is_cursor_visible && self.cursor.state.pos.row == line;
+                    content.clear_line(line);
+                    self.create_line(
+                        content,
+                        &renderable_content.inner[line],
+                        has_cursor,
+                        Some(line),
+                        Line((line as i32) - display_offset),
+                        hints,
+                        focused_match,
+                    );
+                }
+            }
+            RenderableContentStrategy::Noop => {}
         }
         // let duration = start.elapsed();
         // println!("Total loop rows: {:?}", duration);
 
         let mut objects = Vec::with_capacity(30);
-        self.navigation.build_objects(
-            (layout.width, layout.height, layout.dimensions.scale),
-            &self.named_colors,
-            context_manager,
-            self.active_search.is_some(),
-            &mut objects,
-        );
+        // self.navigation.build_objects(
+        //     (layout.width, layout.height, layout.dimensions.scale),
+        //     &self.named_colors,
+        //     context_manager,
+        //     self.active_search.is_some(),
+        //     &mut objects,
+        // );
 
         if let Some(active_search_content) = &self.active_search {
             search::draw_search_bar(

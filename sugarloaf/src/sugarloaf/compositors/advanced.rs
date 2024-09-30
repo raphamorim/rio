@@ -70,11 +70,6 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn update_render_data(&mut self, rich_text_id: usize) {
-        self.content.resolve(&rich_text_id);
-    }
-
-    #[inline]
     pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
         self.fake_line = BuilderLine::default();
         let mut content = Content::new(self.content.font_library());
@@ -82,8 +77,8 @@ impl Advanced {
         content
             .sel(id)
             .new_line()
-            .add_text(" ", FragmentStyle::default());
-        content.resolve(&id);
+            .add_text(" ", FragmentStyle::default())
+            .build();
         self.fake_line = content.get_state(&id).unwrap().lines[0].clone();
     }
 }

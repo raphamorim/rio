@@ -292,9 +292,6 @@ impl Content {
         if let Some(selector) = self.selector {
             if let Some(state) = self.states.get_mut(&selector) {
                 state.lines[line_to_clear] = BuilderLine::default();
-                // if let Some(line) = state.render_data.lines().next() {
-                //     line.runs().clear();
-                // }
             }
         }
 
@@ -371,10 +368,76 @@ impl Content {
     }
 
     #[inline]
-    pub fn resolve(&mut self, id: &usize) {
-        if let Some(state) = self.states.get_mut(id) {
-            let script = Script::Latin;
-            for line_number in 0..state.lines.len() {
+    pub fn build(&mut self) {
+        if let Some(selector) = self.selector {
+            if let Some(state) = self.states.get_mut(&selector) {
+                let script = Script::Latin;
+                for line_number in 0..state.lines.len() {
+                    let line = &mut state.lines[line_number];
+                    for item in &line.fragments {
+                        let vars = state.vars.get(item.style.font_vars);
+                        let shaper_key = &item.content;
+
+                        // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
+
+                        if let Some(shaper) =
+                            self.word_cache.get(&item.style.font_id, shaper_key)
+                        {
+                            if let Some(metrics) =
+                                state.metrics_cache.inner.get(&item.style.font_id)
+                            {
+                                if line.render_data.push_run_without_shaper(
+                                    item.style,
+                                    state.font_size,
+                                    line_number as u32,
+                                    shaper,
+                                    metrics,
+                                ) {
+                                    continue;
+                                }
+                            }
+                        }
+
+                        self.word_cache.font_id = item.style.font_id;
+                        self.word_cache.content = item.content.clone();
+                        let font_library = { &mut self.fonts.inner.lock() };
+                        if let Some(data) = font_library.get_data(&item.style.font_id) {
+                            let mut shaper = self
+                                .scx
+                                .builder(data)
+                                .script(script)
+                                .size(state.font_size)
+                                .features(self.font_features.iter().copied())
+                                .variations(vars.iter().copied())
+                                .build();
+
+                            shaper.add_str(&self.word_cache.content);
+
+                            state
+                                .metrics_cache
+                                .inner
+                                .entry(item.style.font_id)
+                                .or_insert_with(|| shaper.metrics());
+
+                            line.render_data.push_run(
+                                item.style,
+                                state.font_size,
+                                line_number as u32,
+                                shaper,
+                                &mut self.word_cache,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn build_line(&mut self, line_number: usize) {
+        if let Some(selector) = self.selector {
+            if let Some(state) = self.states.get_mut(&selector) {
+                let script = Script::Latin;
                 let line = &mut state.lines[line_number];
                 for item in &line.fragments {
                     let vars = state.vars.get(item.style.font_vars);
