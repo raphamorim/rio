@@ -1,9 +1,12 @@
+pub mod renderable;
+
 use crate::ansi::CursorShape;
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
 use crate::messenger::Messenger;
 use crate::performer::Machine;
+use renderable::RenderableContent;
 use rio_backend::config::Shell;
 use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
@@ -28,6 +31,7 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 pub struct Context<T: EventListener> {
     pub route_id: usize,
     pub terminal: Arc<FairMutex<Crosswords<T>>>,
+    pub renderable_content: RenderableContent,
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
     pub main_fd: Arc<i32>,
@@ -126,6 +130,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             #[cfg(not(target_os = "windows"))]
             shell_pid: 1,
             messenger: Messenger::new(sender),
+            renderable_content: RenderableContent::default(),
             terminal,
             rich_text_id: 0,
         }
@@ -233,10 +238,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger,
             terminal,
             rich_text_id,
+            renderable_content: RenderableContent::default(),
         })
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         cursor_state: (&CursorState, bool),
         event_proxy: T,
@@ -600,6 +607,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.current_index = context_id;
             self.current_route = self.contexts[self.current_index].route_id;
         }
+    }
+
+    #[inline]
+    pub fn renderable_content(&mut self) -> &RenderableContent {
+        let current = self.current_mut();
+        let terminal = current.terminal.lock();
+        current.renderable_content.update(
+            terminal.visible_rows(),
+            terminal.display_offset(),
+            terminal.cursor(),
+            terminal.blinking_cursor,
+        );
+        drop(terminal);
+
+        &current.renderable_content
     }
 
     #[inline]

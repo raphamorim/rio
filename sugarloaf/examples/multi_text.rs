@@ -186,7 +186,9 @@ impl ApplicationHandler for Application {
                 let time = std::time::Instant::now();
                 for rich_text in &self.rich_texts {
                     if rich_text < &2 {
-                        content.sel(*rich_text).clear().new_line().add_text(
+                        content.sel(*rich_text).clear();
+
+                        content.new_line().add_text(
                             &format!("Text area {:?}", rich_text),
                             FragmentStyle {
                                 color: [1.0, 1.0, 1.0, 1.0],
@@ -194,44 +196,52 @@ impl ApplicationHandler for Application {
                                 ..FragmentStyle::default()
                             },
                         );
-                        content.sel(*rich_text).new_line().add_text(
-                            &format!("{:?}", time.elapsed()),
-                            FragmentStyle {
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                ..FragmentStyle::default()
-                            },
-                        );
-                    } else {
-                        if let Some(state) = content.get_state(rich_text) {
-                            // Line has initialised
-                            if !state.lines.is_empty() {
-                                // println!("{:?}", state.render_data);
-                                content.sel(*rich_text).clear_line(1).add_text_on_line(
+                        content
+                            .new_line()
+                            .add_text(
+                                &format!("{:?}", time.elapsed()),
+                                FragmentStyle {
+                                    color: [1.0, 1.0, 1.0, 1.0],
+                                    ..FragmentStyle::default()
+                                },
+                            )
+                            .build();
+                    } else if let Some(state) = content.get_state(rich_text) {
+                        // Line has initialised
+                        if !state.lines.is_empty() {
+                            content
+                                .sel(*rich_text)
+                                .clear_line(1)
+                                .add_text_on_line(
                                     1,
                                     &format!("Updated {:?}", time.elapsed()),
                                     FragmentStyle {
                                         color: [1.0, 1.0, 1.0, 1.0],
                                         ..FragmentStyle::default()
                                     },
-                                );
-                            } else {
-                                // Line has not initialised
-                                content.sel(*rich_text).new_line().add_text(
+                                )
+                                .build_line(1);
+                        } else {
+                            // Line has not initialised
+                            content
+                                .sel(*rich_text)
+                                .new_line()
+                                .add_text(
                                     &format!("Should not update {:?}", time.elapsed()),
                                     FragmentStyle {
                                         color: [1.0, 1.0, 1.0, 1.0],
                                         ..FragmentStyle::default()
                                     },
-                                );
-                                // Line has not initialised
-                                content.sel(*rich_text).new_line().add_text(
+                                )
+                                .new_line()
+                                .add_text(
                                     &format!("Should update {:?}", time.elapsed()),
                                     FragmentStyle {
                                         color: [1.0, 1.0, 1.0, 1.0],
                                         ..FragmentStyle::default()
                                     },
-                                );
-                            }
+                                )
+                                .build();
                         }
                     }
                 }

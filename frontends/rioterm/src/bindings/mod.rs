@@ -1090,6 +1090,14 @@ pub fn platform_key_bindings(
         ));
     }
 
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "d", ModifiersState::SUPER; Action::SplitRight;
+            "d", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SplitDown;
+        ));
+    }
+
     key_bindings
 }
 

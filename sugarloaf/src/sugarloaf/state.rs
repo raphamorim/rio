@@ -207,10 +207,6 @@ impl SugarState {
         if self.layout.dimensions.width == 0.0 || self.layout.dimensions.height == 0.0 {
             self.compositors.advanced.calculate_dimensions(&self.layout);
 
-            for rich_text in &self.rich_texts {
-                self.compositors.advanced.update_render_data(rich_text.id);
-            }
-
             self.latest_change = SugarTreeDiff::Repaint;
             tracing::info!("has empty dimensions, will try to find...");
             return;
@@ -225,10 +221,6 @@ impl SugarState {
                 self.latest_change = SugarTreeDiff::Different;
             }
             SugarTreeDiff::Different => {}
-        }
-
-        for rich_text in &self.rich_texts {
-            self.compositors.advanced.update_render_data(rich_text.id);
         }
     }
 }
