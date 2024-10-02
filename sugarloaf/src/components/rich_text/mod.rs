@@ -521,7 +521,7 @@ fn draw_layout(
                 Rect::new(run_x, py, style.advance, 1.),
                 depth,
                 &style,
-                glyphs.iter(),
+                &glyphs,
             );
         }
     }
@@ -625,7 +625,7 @@ fn fetch_dimensions(
             Rect::new(run_x, py, style.advance, 1.),
             0.0,
             &style,
-            glyphs.iter(),
+            &glyphs,
         );
     }
 
