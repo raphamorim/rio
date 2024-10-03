@@ -1151,7 +1151,7 @@ impl Window {
         unsafe {
             DwmSetWindowAttribute(
                 self.hwnd(),
-                DWMWA_CLOAK,
+                DWMWA_CLOAK as u32,
                 &cloaked as *const BOOL as *const _,
                 mem::size_of::<BOOL>() as u32,
             );
