@@ -304,6 +304,13 @@ pub trait WindowExtWindows {
     /// Supported starting with Windows 11 Build 22000.
     fn set_corner_preference(&self, preference: CornerPreference);
 
+    /// Cloaks the window such that it is not visible to the user. The window is still composed by DWM.
+    ///
+    /// A cloaked window will not appear on Taskbar. Cloaking is particularly useful when you want a
+    /// window to complete its UI layout, sizing, etc. without flickering in front of the user.
+    /// Not supported on Windows 7 and earlier.
+    fn set_cloaked(&self, cloaked: bool);
+
     /// Get the raw window handle for this [`Window`] without checking for thread affinity.
     ///
     /// Window handles in Win32 have a property called "thread affinity" that ties them to their
@@ -406,6 +413,11 @@ impl WindowExtWindows for Window {
     #[inline]
     fn set_corner_preference(&self, preference: CornerPreference) {
         self.window.set_corner_preference(preference)
+    }
+
+    #[inline]
+    fn set_cloaked(&self, cloaked: bool) {
+        self.window.set_cloaked(cloaked)
     }
 
     unsafe fn window_handle_any_thread(
@@ -536,6 +548,11 @@ pub trait WindowAttributesExtWindows {
     ///
     /// Supported starting with Windows 11 Build 22000.
     fn with_corner_preference(self, corners: CornerPreference) -> Self;
+
+    /// Cloaks the window such that it is not visible to the user. The window is still composed by DWM.
+    ///
+    /// Not supported on Windows 7 and earlier.
+    fn with_cloaked(self, cloaked: bool) -> Self;
 }
 
 impl WindowAttributesExtWindows for WindowAttributes {
@@ -621,6 +638,12 @@ impl WindowAttributesExtWindows for WindowAttributes {
     #[inline]
     fn with_corner_preference(mut self, corners: CornerPreference) -> Self {
         self.platform_specific.corner_preference = Some(corners);
+        self
+    }
+
+    #[inline]
+    fn with_cloaked(mut self, cloaked: bool) -> Self {
+        self.platform_specific.cloaked = cloaked;
         self
     }
 }

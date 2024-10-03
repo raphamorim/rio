@@ -9,11 +9,11 @@ use std::{io, panic, ptr};
 
 use windows_sys::Win32::Foundation::{
     HWND, LPARAM, OLE_E_WRONGCOMPOBJ, POINT, POINTS, RECT, RPC_E_CHANGED_MODE, S_OK,
-    WPARAM,
+    TRUE, WPARAM,
 };
 use windows_sys::Win32::Graphics::Dwm::{
     DwmEnableBlurBehindWindow, DwmSetWindowAttribute, DWMWA_BORDER_COLOR,
-    DWMWA_CAPTION_COLOR, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_TEXT_COLOR,
+    DWMWA_CAPTION_COLOR, DWMWA_CLOAK, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_TEXT_COLOR,
     DWMWA_WINDOW_CORNER_PREFERENCE, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
     DWM_SYSTEMBACKDROP_TYPE, DWM_WINDOW_CORNER_PREFERENCE,
 };
@@ -1144,6 +1144,19 @@ impl Window {
             );
         }
     }
+
+    #[inline]
+    pub fn set_cloaked(&self, cloaked: bool) {
+        let cloaked = if cloaked { TRUE } else { FALSE };
+        unsafe {
+            DwmSetWindowAttribute(
+                self.hwnd(),
+                DWMWA_CLOAK,
+                &cloaked as *const BOOL as *const _,
+                mem::size_of::<BOOL>() as u32,
+            );
+        }
+    }
 }
 
 impl Drop for Window {
@@ -1357,6 +1370,7 @@ impl<'a> InitData<'a> {
         if let Some(corner) = self.attributes.platform_specific.corner_preference {
             win.set_corner_preference(corner);
         }
+        win.set_cloaked(self.attributes.platform_specific.cloaked);
     }
 }
 unsafe fn init(
