@@ -7,6 +7,7 @@ language: 'en'
 
 ## Unreleased
 
+- Add DWMWA_CLOAK support on Microsof Windows.
 - VI Mode now supports search by [@orhun](https://github.com/orhun).
 - Use max frame per seconds based on the current monitor refresh rate.
 - *breaking* `renderer.max-fps` has been changed to `renderer.target-fps`.
