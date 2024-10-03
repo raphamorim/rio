@@ -1,3 +1,5 @@
+enable f16;
+
 struct Globals {
     transform: mat4x4<f32>,
 }
@@ -8,16 +10,16 @@ struct Globals {
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) v_pos: vec4<f32>,
-    @location(1) v_color: vec4<f32>,
-    @location(2) v_uv: vec2<f32>,
+    @location(0) v_pos: vec4<f16>,
+    @location(1) v_color: vec4<f16>,
+    @location(2) v_uv: vec2<f16>,
     @location(3) layers: vec2<i32>,
 }
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) f_color: vec4<f32>,
-    @location(1) f_uv: vec2<f32>,
+    @builtin(position) position: vec4<f16>,
+    @location(0) f_color: vec4<f16>,
+    @location(1) f_uv: vec2<f16>,
     @location(2) color_layer: i32,
     @location(3) mask_layer: i32,
 }
@@ -36,14 +38,14 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    var out: vec4<f32> = input.f_color;
+    var out: vec4<f16> = input.f_color;
 
     if input.color_layer > 0 {
         out = textureSampleLevel(font_texture, font_sampler, input.f_uv, 0.0);
     }
 
     if input.mask_layer > 0 {
-        out = vec4<f32>(out.xyz, textureSampleLevel(font_texture, font_sampler, input.f_uv, 0.0).x);
+        out = vec4<f16>(out.xyz, textureSampleLevel(font_texture, font_sampler, input.f_uv, 0.0).x);
     }
 
     return out;

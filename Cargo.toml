@@ -50,7 +50,8 @@ regex = "1.10.6"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
 swash = "0.1.18"
 serde = { version = "1.0.208", features = ["derive"] }
-wgpu = "22.1.0"
+wgpu = { git = "https://github.com/raphamorim/wgpu-simd" }
+# 22.1.0"
 libc = "0.2.158"
 smol_str = "0.3.1"
 futures = "0.3.30"
