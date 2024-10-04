@@ -608,10 +608,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                self.router.routes.remove(&window_id);
-
+                // MacOS doesn't exit the loop
                 if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                    self.router.routes.remove(&window_id);
                     return;
+                }
+
+                if self.config.confirm_before_quit {
+                    route.confirm_quit();
+                    route.request_redraw();
+                } else {
+                    self.router.routes.remove(&window_id);
                 }
 
                 if self.router.routes.is_empty() {
