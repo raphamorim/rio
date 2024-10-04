@@ -338,62 +338,74 @@ impl Config {
     pub fn try_load() -> Result<Self, ConfigError> {
         let path = config_file_path();
         if path.exists() {
-            let content = std::fs::read_to_string(path).unwrap();
-            match toml::from_str::<Config>(&content) {
-                Ok(mut decoded) => {
-                    let theme = &decoded.theme;
-                    let theme_path = config_dir_path().join("themes");
-                    if !theme.is_empty() {
-                        let path = theme_path.join(theme).with_extension("toml");
-                        match Config::load_theme(&path) {
-                            Ok(loaded_theme) => {
-                                decoded.colors = loaded_theme.colors;
-                            }
-                            Err(err_message) => {
-                                return Err(ConfigError::ErrLoadingTheme(err_message));
+            match std::fs::read_to_string(path) {
+                Ok(content) => match toml::from_str::<Config>(&content) {
+                    Ok(mut decoded) => {
+                        let theme = &decoded.theme;
+                        let theme_path = config_dir_path().join("themes");
+                        if !theme.is_empty() {
+                            let path = theme_path.join(theme).with_extension("toml");
+                            match Config::load_theme(&path) {
+                                Ok(loaded_theme) => {
+                                    decoded.colors = loaded_theme.colors;
+                                }
+                                Err(err_message) => {
+                                    return Err(ConfigError::ErrLoadingTheme(
+                                        err_message,
+                                    ));
+                                }
                             }
                         }
+
+                        if let Some(adaptive_theme) = &decoded.adaptive_theme {
+                            let mut adaptive_colors = AdaptiveColors {
+                                dark: None,
+                                light: None,
+                            };
+
+                            let light_theme = &adaptive_theme.light;
+                            let path =
+                                theme_path.join(light_theme).with_extension("toml");
+                            match Config::load_theme(&path) {
+                                Ok(light_loaded_theme) => {
+                                    adaptive_colors.light =
+                                        Some(light_loaded_theme.colors)
+                                }
+                                Err(err_message) => {
+                                    warn!("failed to load light theme: {}", light_theme);
+                                    return Err(ConfigError::ErrLoadingTheme(
+                                        err_message,
+                                    ));
+                                }
+                            }
+
+                            let dark_theme = &adaptive_theme.dark;
+                            let path = theme_path.join(dark_theme).with_extension("toml");
+                            match Config::load_theme(&path) {
+                                Ok(dark_loaded_theme) => {
+                                    adaptive_colors.dark = Some(dark_loaded_theme.colors)
+                                }
+                                Err(err_message) => {
+                                    warn!("failed to load dark theme: {}", dark_theme);
+                                    return Err(ConfigError::ErrLoadingTheme(
+                                        err_message,
+                                    ));
+                                }
+                            }
+
+                            if adaptive_colors.light.is_some()
+                                && adaptive_colors.dark.is_some()
+                            {
+                                decoded.adaptive_colors = Some(adaptive_colors);
+                            }
+                        }
+
+                        Ok(decoded)
                     }
-
-                    if let Some(adaptive_theme) = &decoded.adaptive_theme {
-                        let mut adaptive_colors = AdaptiveColors {
-                            dark: None,
-                            light: None,
-                        };
-
-                        let light_theme = &adaptive_theme.light;
-                        let path = theme_path.join(light_theme).with_extension("toml");
-                        match Config::load_theme(&path) {
-                            Ok(light_loaded_theme) => {
-                                adaptive_colors.light = Some(light_loaded_theme.colors)
-                            }
-                            Err(err_message) => {
-                                warn!("failed to load light theme: {}", light_theme);
-                                return Err(ConfigError::ErrLoadingTheme(err_message));
-                            }
-                        }
-
-                        let dark_theme = &adaptive_theme.dark;
-                        let path = theme_path.join(dark_theme).with_extension("toml");
-                        match Config::load_theme(&path) {
-                            Ok(dark_loaded_theme) => {
-                                adaptive_colors.dark = Some(dark_loaded_theme.colors)
-                            }
-                            Err(err_message) => {
-                                warn!("failed to load dark theme: {}", dark_theme);
-                                return Err(ConfigError::ErrLoadingTheme(err_message));
-                            }
-                        }
-
-                        if adaptive_colors.light.is_some()
-                            && adaptive_colors.dark.is_some()
-                        {
-                            decoded.adaptive_colors = Some(adaptive_colors);
-                        }
+                    Err(err_message) => {
+                        Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
                     }
-
-                    Ok(decoded)
-                }
+                },
                 Err(err_message) => {
                     Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
                 }
