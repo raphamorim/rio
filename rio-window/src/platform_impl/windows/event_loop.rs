@@ -776,7 +776,7 @@ impl<T: 'static> EventLoopProxy<T> {
     pub fn send_event(&self, event: T) -> Result<(), EventLoopClosed<T>> {
         self.event_send
             .send(event)
-            .inspect(|result| {
+            .inspect(|_result| {
                 unsafe {
                     PostMessageW(self.target_window, USER_EVENT_MSG_ID.get(), 0, 0)
                 };
