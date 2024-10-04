@@ -91,10 +91,13 @@ pub fn create_window_builder(
         }
     }
 
-    // On windows cloak (hide) the window initially, we later reveal it after the first draw.
-    // This is a workaround to hide the "white flash" that occurs during application startup.
     #[cfg(target_os = "windows")]
-    window_builder.set_cloaked(true);
+    {
+        use rio_window::platform::windows::WindowExtWindows;
+        // On windows cloak (hide) the window initially, we later reveal it after the first draw.
+        // This is a workaround to hide the "white flash" that occurs during application startup.
+        window_builder.set_cloaked(true);
+    }
 
     match config.window.mode {
         WindowMode::Fullscreen => {
