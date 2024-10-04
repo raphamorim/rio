@@ -375,8 +375,7 @@ impl<'a> RouteWindow<'a> {
 
     #[inline]
     #[cfg(target_os = "windows")]
-    pub fn disable_cloak(&mut self) {
-    }
+    pub fn disable_cloak(&mut self) {}
 
     #[allow(clippy::too_many_arguments)]
     pub fn from_target<'b>(
@@ -422,6 +421,14 @@ impl<'a> RouteWindow<'a> {
         )
         .expect("Screen not created");
 
+        #[cfg(target_os = "windows")]
+        {
+            // On windows cloak (hide) the window initially, we later reveal it after the first draw.
+            // This is a workaround to hide the "white flash" that occurs during application startup.
+            use rio_window::platform::windows::WindowExtWindows;
+            winit_window.set_cloaked(false);
+        }
+
         // Get the display vblank interval.
         let monitor_vblank_interval = 1_000_000.
             / winit_window
@@ -438,12 +445,6 @@ impl<'a> RouteWindow<'a> {
             monitor_vblank_interval =
                 Duration::from_millis(1000 / target_fps.clamp(1, 1000));
             has_fps_target = true;
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            use rio_window::platform::windows::WindowExtWindows;
-            self.winit_window.set_cloaked(false);
         }
 
         Self {
