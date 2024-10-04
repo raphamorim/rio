@@ -324,8 +324,6 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
-    #[cfg(target_os = "windows")]
-    is_cloaked: bool,
     has_fps_target: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
@@ -378,10 +376,6 @@ impl<'a> RouteWindow<'a> {
     #[inline]
     #[cfg(target_os = "windows")]
     pub fn disable_cloak(&mut self) {
-        use rio_window::platform::windows::WindowExtWindows;
-        if self.is_cloaked {
-            self.winit_window.set_cloaked(false);
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -446,13 +440,17 @@ impl<'a> RouteWindow<'a> {
             has_fps_target = true;
         }
 
+        #[cfg(target_os = "windows")]
+        {
+            use rio_window::platform::windows::WindowExtWindows;
+            self.winit_window.set_cloaked(false);
+        }
+
         Self {
             vblank_interval: monitor_vblank_interval,
             has_fps_target,
             render_timestamp: Instant::now(),
             is_focused: true,
-            #[cfg(target_os = "windows")]
-            is_cloaked: true,
             is_occluded: false,
             winit_window,
             screen,
