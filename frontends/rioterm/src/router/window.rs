@@ -93,10 +93,10 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "windows")]
     {
-        use rio_window::platform::windows::WindowExtWindows;
+        use rio_window::platform::windows::WindowAttributesExtWindows;
         // On windows cloak (hide) the window initially, we later reveal it after the first draw.
         // This is a workaround to hide the "white flash" that occurs during application startup.
-        window_builder.set_cloaked(true);
+        window_builder = window_builder.with_cloaked(true);
     }
 
     match config.window.mode {

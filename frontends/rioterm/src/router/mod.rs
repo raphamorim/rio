@@ -378,6 +378,7 @@ impl<'a> RouteWindow<'a> {
     #[inline]
     #[cfg(target_os = "windows")]
     pub fn disable_cloak(&mut self) {
+        use rio_window::platform::windows::WindowExtWindows;
         if self.is_cloaked {
             self.winit_window.set_cloaked(false);
         }
