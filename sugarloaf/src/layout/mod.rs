@@ -31,8 +31,6 @@ impl SpanId {
     }
 }
 
-use crate::sugarloaf::primitives::SugarloafStyle;
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Delta<T: Default> {
     pub x: T,
@@ -48,48 +46,122 @@ pub struct SugarDimensions {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub struct SugarloafLayout {
+pub struct RichTextLayout {
     pub line_height: f32,
-    pub width: f32,
-    pub height: f32,
     pub font_size: f32,
     pub original_font_size: f32,
     pub columns: usize,
     pub lines: usize,
-    pub margin: Delta<f32>,
-    pub style: SugarloafStyle,
     pub dimensions: SugarDimensions,
+    pub margin: Delta<f32>,
+}
+
+impl RichTextLayout {
+    #[inline]
+    pub fn update_columns_per_font_width(&mut self, layout: &SugarloafLayout) {
+        // SugarStack is a primitive representation of columns data
+        let current_stack_bound =
+            (self.dimensions.width * self.dimensions.scale) * self.columns as f32;
+        let expected_stack_bound = (layout.width / self.dimensions.scale)
+            - (self.dimensions.width * self.dimensions.scale);
+
+        tracing::info!("expected columns {}", self.columns);
+        if current_stack_bound < expected_stack_bound {
+            let stack_difference = ((expected_stack_bound - current_stack_bound)
+                / (self.dimensions.width * self.dimensions.scale))
+                as usize;
+            tracing::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
+            let _ = self.columns.wrapping_add(stack_difference);
+        }
+
+        if current_stack_bound > expected_stack_bound {
+            let stack_difference = ((current_stack_bound - expected_stack_bound)
+                / (self.dimensions.width * self.dimensions.scale))
+                as usize;
+            tracing::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
+            let _ = self.columns.wrapping_sub(stack_difference);
+        }
+    }
+
+    pub fn increase_font_size(&mut self) -> bool {
+        if self.font_size < 40.0 {
+            self.font_size += 1.0;
+            return true;
+        }
+        false
+    }
+
+    pub fn decrease_font_size(&mut self) -> bool {
+        if self.font_size > 6.0 {
+            self.font_size -= 1.0;
+            return true;
+        }
+        false
+    }
+
+    pub fn reset_font_size(&mut self) -> bool {
+        if self.font_size != self.original_font_size {
+            self.font_size = self.original_font_size;
+            return true;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn update(&mut self, layout: &SugarloafLayout) {
+        let (columns, lines) = compute(
+            layout.width,
+            layout.height,
+            self.dimensions,
+            self.line_height,
+            self.margin,
+        );
+        self.columns = columns;
+        self.lines = lines;
+    }
+
+    #[inline]
+    pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
+        self.dimensions.width *= scale_factor;
+        self.dimensions.height *= scale_factor;
+        self.dimensions.scale = scale_factor;
+        self
+    }
+}
+
+impl Default for RichTextLayout {
+    fn default() -> Self {
+        Self {
+            line_height: 1.0,
+            font_size: 0.0,
+            original_font_size: 0.0,
+            columns: MIN_COLS,
+            lines: MIN_LINES,
+            dimensions: SugarDimensions::default(),
+            margin: Delta::<f32>::default(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct SugarloafLayout {
+    pub width: f32,
+    pub height: f32,
+    pub margin: Delta<f32>,
+    pub scale_factor: f32,
+    pub default_rich_text: RichTextLayout,
 }
 
 impl Default for SugarloafLayout {
     fn default() -> Self {
         Self {
-            line_height: 1.0,
             width: 0.0,
             height: 0.0,
-            font_size: 0.0,
-            original_font_size: 0.0,
-            columns: MIN_COLS,
-            lines: MIN_LINES,
             margin: Delta::<f32>::default(),
-            style: SugarloafStyle::default(),
-            dimensions: SugarDimensions::default(),
+            scale_factor: 1.0,
+            default_rich_text: RichTextLayout::default(),
         }
     }
-}
-
-#[inline]
-fn update_styles(layout: &mut SugarloafLayout) {
-    let text_scale = layout.font_size * layout.dimensions.scale;
-    let new_styles = SugarloafStyle {
-        line_height: layout.line_height,
-        screen_position: (
-            layout.margin.x * layout.dimensions.scale,
-            layout.margin.top_y * layout.dimensions.scale,
-        ),
-        text_scale,
-    };
-    layout.style = new_styles;
 }
 
 const MIN_COLS: usize = 2;
@@ -126,43 +198,37 @@ impl SugarloafLayout {
         padding: (f32, f32, f32),
         scale_factor: f32,
         font_size: f32,
-        line_height: f32,
+        _line_height: f32,
     ) -> SugarloafLayout {
-        let style = SugarloafStyle::default();
-
         // Line height can never be zero
-        let line_height = if line_height == 0.0 { 1.0 } else { line_height };
+        // let line_height = if line_height == 0.0 { 1.0 } else { line_height };
 
-        let mut layout = SugarloafLayout {
+        SugarloafLayout {
             width,
             height,
-            columns: MIN_COLS,
-            lines: MIN_LINES,
-            original_font_size: font_size,
-            font_size,
-            dimensions: SugarDimensions {
-                scale: scale_factor,
-                ..SugarDimensions::default()
-            },
-            line_height,
-            style,
+            // dimensions: SugarDimensions {
+            //     scale: scale_factor,
+            //     ..SugarDimensions::default()
+            // },
+            // line_height,
+            scale_factor,
             margin: Delta {
                 x: padding.0,
                 top_y: padding.1,
                 bottom_y: padding.2,
             },
-        };
-
-        update_styles(&mut layout);
-        layout
-    }
-
-    #[inline]
-    pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
-        self.dimensions.width *= scale_factor;
-        self.dimensions.height *= scale_factor;
-        self.dimensions.scale = scale_factor;
-        self
+            default_rich_text: RichTextLayout {
+                font_size,
+                original_font_size: font_size,
+                columns: MIN_COLS,
+                lines: MIN_LINES,
+                dimensions: SugarDimensions {
+                    scale: scale_factor,
+                    ..SugarDimensions::default()
+                },
+                ..RichTextLayout::default()
+            },
+        }
     }
 
     #[inline]
@@ -172,110 +238,30 @@ impl SugarloafLayout {
         self
     }
 
-    pub fn increase_font_size(&mut self) -> bool {
-        if self.font_size < 40.0 {
-            self.font_size += 1.0;
-            return true;
-        }
-        false
-    }
-
-    pub fn decrease_font_size(&mut self) -> bool {
-        if self.font_size > 6.0 {
-            self.font_size -= 1.0;
-            return true;
-        }
-        false
-    }
-
-    pub fn reset_font_size(&mut self) -> bool {
-        if self.font_size != self.original_font_size {
-            self.font_size = self.original_font_size;
-            return true;
-        }
-        false
-    }
-
-    #[inline]
-    pub fn update(&mut self) {
-        update_styles(self);
-        let (columns, lines) = compute(
-            self.width,
-            self.height,
-            self.dimensions,
-            self.line_height,
-            self.margin,
-        );
-        self.columns = columns;
-        self.lines = lines;
-    }
-
-    #[inline]
-    pub fn update_columns_per_font_width(&mut self) {
-        // SugarStack is a primitive representation of columns data
-        let current_stack_bound =
-            (self.dimensions.width * self.dimensions.scale) * self.columns as f32;
-        let expected_stack_bound = (self.width / self.dimensions.scale)
-            - (self.dimensions.width * self.dimensions.scale);
-
-        tracing::info!("expected columns {}", self.columns);
-        if current_stack_bound < expected_stack_bound {
-            let stack_difference = ((expected_stack_bound - current_stack_bound)
-                / (self.dimensions.width * self.dimensions.scale))
-                as usize;
-            tracing::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
-            self.columns += stack_difference;
-        }
-
-        if current_stack_bound > expected_stack_bound {
-            let stack_difference = ((current_stack_bound - expected_stack_bound)
-                / (self.dimensions.width * self.dimensions.scale))
-                as usize;
-            tracing::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
-            self.columns -= stack_difference;
-        }
-    }
-
     // This method will run over the new font and font_size
     #[inline]
     pub fn recalculate(
         &mut self,
-        font_size: f32,
-        line_height: f32,
+        _font_size: f32,
+        _line_height: f32,
         margin_x: f32,
         margin_y_top: f32,
         margin_y_bottom: f32,
     ) -> &mut Self {
-        let mut should_apply_changes = false;
-        if self.font_size != font_size {
-            self.font_size = font_size;
-            self.original_font_size = font_size;
-            should_apply_changes = true;
-        }
+        // if self.font_size != font_size {
+        //     self.font_size = font_size;
+        //     self.original_font_size = font_size;
+        //     should_apply_changes = true;
+        // }
 
-        if self.line_height != line_height {
-            self.line_height = line_height;
-            should_apply_changes = true;
-        }
+        // if self.line_height != line_height {
+        //     self.line_height = line_height;
+        //     should_apply_changes = true;
+        // }
 
-        if self.margin.x != margin_x {
-            self.margin.x = margin_x;
-            should_apply_changes = true;
-        }
-
-        if self.margin.bottom_y != margin_y_bottom {
-            self.margin.bottom_y = margin_y_bottom;
-            should_apply_changes = true;
-        }
-
-        if self.margin.top_y != margin_y_top {
-            self.margin.top_y = margin_y_top;
-            should_apply_changes = true;
-        }
-
-        if should_apply_changes {
-            update_styles(self);
-        }
+        self.margin.x = margin_x;
+        self.margin.bottom_y = margin_y_bottom;
+        self.margin.top_y = margin_y_top;
 
         self
     }

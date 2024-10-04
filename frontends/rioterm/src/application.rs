@@ -617,6 +617,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.confirm_before_quit {
                     route.confirm_quit();
                     route.request_redraw();
+                    return;
                 } else {
                     self.router.routes.remove(&window_id);
                 }

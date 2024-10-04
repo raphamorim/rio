@@ -266,10 +266,10 @@ impl RichTextBrush {
         for rich_text in &state.rich_texts {
             if let Some(rt) = state.compositors.advanced.get_rich_text(&rich_text.id) {
                 let position = (
-                    state.layout.style.screen_position.0
-                        + (rich_text.position[0] * state.layout.dimensions.scale),
-                    state.layout.style.screen_position.1
-                        + (rich_text.position[1] * state.layout.dimensions.scale),
+                    (state.layout.margin.x * state.layout.scale_factor)
+                        + (rich_text.position[0] * state.layout.scale_factor),
+                    (state.layout.margin.top_y * state.layout.scale_factor)
+                        + (rich_text.position[1] * state.layout.scale_factor),
                 );
 
                 draw_layout(
@@ -278,7 +278,7 @@ impl RichTextBrush {
                     &rt.lines,
                     position,
                     library,
-                    &state.layout.dimensions,
+                    &rt.layout.dimensions,
                     graphics,
                 );
             }
@@ -292,16 +292,16 @@ impl RichTextBrush {
     #[inline]
     pub fn dimensions(
         &mut self,
-        state: &crate::sugarloaf::state::SugarState,
+        font_library: &FontLibrary,
+        render_data: &crate::layout::BuilderLine,
     ) -> Option<SugarDimensions> {
         self.comp.begin();
 
-        let library = state.compositors.advanced.font_library();
         let dimension = fetch_dimensions(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
-            &state.compositors.advanced.fake_line,
-            library,
+            &render_data,
+            font_library,
         );
         if dimension.height > 0. && dimension.width > 0. {
             Some(dimension)
