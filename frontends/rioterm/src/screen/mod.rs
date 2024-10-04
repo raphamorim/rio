@@ -1935,12 +1935,10 @@ impl Screen<'_> {
             None
         };
 
-        let renderable = self.context_manager.renderable_content();
         self.renderer.set_ime(self.ime.preedit());
         self.renderer.prepare_term(
-            renderable,
             &mut self.sugarloaf,
-            // &self.context_manager,
+            &mut self.context_manager,
             &mut search_hints,
             &self.search_state.focused_match,
         );

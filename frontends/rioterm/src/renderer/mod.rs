@@ -2,8 +2,10 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
+use rio_backend::event::EventProxy;
+use crate::context::ContextManager;
 use crate::ansi::CursorShape;
-use crate::context::renderable::{RenderableContent, RenderableContentStrategy};
+use crate::context::renderable::RenderableContentStrategy;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, CursorState, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
@@ -452,8 +454,9 @@ impl Renderer {
 
         if let Some(line) = line_opt {
             builder.build_line(line);
+        } else {
+            builder.new_line();
         }
-        builder.new_line();
     }
 
     #[inline]
@@ -718,13 +721,13 @@ impl Renderer {
     #[inline]
     pub fn prepare_term(
         &mut self,
-        renderable_content: &RenderableContent,
         sugarloaf: &mut Sugarloaf,
-        // context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
+        context_manager: &mut ContextManager<EventProxy>,
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let layout = sugarloaf.layout();
+        let renderable_content = context_manager.renderable_content();
         self.cursor.state = renderable_content.cursor.clone();
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
@@ -749,6 +752,11 @@ impl Renderer {
 
         let content = sugarloaf.content();
         let display_offset = renderable_content.display_offset;
+
+        // let mut render_strategy = &renderable_content.strategy;
+        // if has_selection {
+        //     render_strategy = &RenderableContentStrategy::Full;
+        // }
 
         // let start = std::time::Instant::now();
         match &renderable_content.strategy {
@@ -793,13 +801,13 @@ impl Renderer {
         // println!("Total loop rows: {:?}", duration);
 
         let mut objects = Vec::with_capacity(30);
-        // self.navigation.build_objects(
-        //     (layout.width, layout.height, layout.dimensions.scale),
-        //     &self.named_colors,
-        //     context_manager,
-        //     self.active_search.is_some(),
-        //     &mut objects,
-        // );
+        self.navigation.build_objects(
+            (layout.width, layout.height, layout.dimensions.scale),
+            &self.named_colors,
+            context_manager,
+            self.active_search.is_some(),
+            &mut objects,
+        );
 
         if let Some(active_search_content) = &self.active_search {
             search::draw_search_bar(

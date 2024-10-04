@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
@@ -7,7 +8,7 @@ pub enum RenderableContentStrategy {
     Noop,
     #[default]
     Full,
-    Lines(Vec<usize>),
+    Lines(HashSet<usize>),
 }
 
 #[derive(Default)]
@@ -29,41 +30,49 @@ impl RenderableContent {
         cursor: CursorState,
         has_blinking_enabled: bool,
     ) {
-        self.strategy = RenderableContentStrategy::Noop;
+        self.inner = rows.clone();
+        self.strategy = RenderableContentStrategy::Full;
+        self.cursor = cursor;
+        self.has_blinking_enabled = has_blinking_enabled;
         self.display_offset = display_offset as i32;
 
-        if self.cursor != cursor {
-            self.cursor = cursor;
-            self.strategy = RenderableContentStrategy::Full;
-            self.inner = rows.clone();
-            return;
-        }
-        self.cursor = cursor;
+        // let mut diff = HashSet::with_capacity(rows.len());
+        // if self.cursor.pos != cursor.pos {
+        //     // Add old row cursor
+        //     diff.insert(*self.cursor.pos.row as usize);
+        //     // Add new row cursor
+        //     diff.insert(*cursor.pos.row as usize);
+        // }
+        // self.cursor = cursor;
+        // self.strategy = RenderableContentStrategy::Full;
 
-        if self.has_blinking_enabled != has_blinking_enabled {
-            self.has_blinking_enabled = has_blinking_enabled;
-            self.strategy = RenderableContentStrategy::Full;
-            self.inner = rows.clone();
-            return;
-        }
-        self.has_blinking_enabled = has_blinking_enabled;
+        // let require_full = self.display_offset != display_offset as i32 ||
+        //     self.has_blinking_enabled != has_blinking_enabled ||
+        //     self.inner.len() != rows.len();
 
-        if self.inner.len() != rows.len() {
-            self.strategy = RenderableContentStrategy::Full;
-            self.inner = rows.clone();
-            return;
-        }
+        // self.display_offset = display_offset as i32;
+        // self.has_blinking_enabled = has_blinking_enabled;
 
-        let mut diff = Vec::with_capacity(rows.len());
-        for current_idx in 0..(rows.len() - 1) {
-            if rows[current_idx] != self.inner[current_idx] {
-                diff.push(current_idx);
-            }
-        }
+        // if require_full {
+        //     self.inner = rows.clone();
+        //     return;
+        // }
 
-        self.inner = rows.clone();
-        if !diff.is_empty() {
-            self.strategy = RenderableContentStrategy::Lines(diff);
-        }
+        // let mut diff = HashSet::with_capacity(rows.len());
+        // for current_idx in 0..(rows.len()) {
+        //     if current_idx == 0 {
+        //         println!("{:?} {:?}", self.inner[current_idx], rows[current_idx]);
+        //     }
+        //     if rows[current_idx] != self.inner[current_idx] {
+        //         self.inner[current_idx] = rows[current_idx].clone();
+        //         diff.insert(current_idx);
+        //     }
+        // }
+
+        // if !diff.is_empty() {
+        //     self.strategy = RenderableContentStrategy::Lines(diff);
+        // } else {
+        //     self.strategy = RenderableContentStrategy::Noop;
+        // }
     }
 }
