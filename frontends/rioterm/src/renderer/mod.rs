@@ -2,10 +2,9 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
-use rio_backend::event::EventProxy;
-use crate::context::ContextManager;
 use crate::ansi::CursorShape;
 use crate::context::renderable::RenderableContentStrategy;
+use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, CursorState, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
@@ -18,6 +17,7 @@ use rio_backend::config::colors::{
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
+use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
     Content, FragmentStyle, FragmentStyleDecoration, Graphic, Object, RichText, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,

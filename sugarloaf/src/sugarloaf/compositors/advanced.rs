@@ -7,19 +7,17 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
+use crate::layout::RichTextLayout;
 use crate::layout::{BuilderLine, BuilderState, Content, FragmentStyle};
-use crate::sugarloaf::SugarloafLayout;
 
 pub struct Advanced {
     pub content: Content,
-    pub fake_line: BuilderLine,
 }
 
 impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             content: Content::new(font_library),
-            fake_line: BuilderLine::default(),
         }
     }
 
@@ -53,9 +51,8 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn clear_rich_text(&mut self, id: &usize, layout: &SugarloafLayout) {
-        self.content
-            .clear_state(id, layout.dimensions.scale, layout.font_size);
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.content.clear_state(id);
     }
 
     #[inline]
@@ -64,21 +61,20 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self, layout: &SugarloafLayout) -> usize {
-        self.content
-            .create_state(layout.dimensions.scale, layout.font_size)
+    pub fn create_rich_text(&mut self, rich_text_layout: &RichTextLayout) -> usize {
+        self.content.create_state(rich_text_layout)
     }
+}
 
-    #[inline]
-    pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
-        self.fake_line = BuilderLine::default();
-        let mut content = Content::new(self.content.font_library());
-        let id = content.create_state(layout.dimensions.scale, layout.font_size);
-        content
-            .sel(id)
-            .new_line()
-            .add_text(" ", FragmentStyle::default())
-            .build();
-        self.fake_line = content.get_state(&id).unwrap().lines[0].clone();
-    }
+pub fn calculate_dimensions(
+    content: &mut Content,
+    rich_text_layout: &RichTextLayout,
+) -> BuilderLine {
+    let id = content.create_state(rich_text_layout);
+    content
+        .sel(id)
+        .new_line()
+        .add_text(" ", FragmentStyle::default())
+        .build();
+    content.get_state(&id).unwrap().lines[0].clone()
 }

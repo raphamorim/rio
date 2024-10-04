@@ -38,7 +38,7 @@ impl Elementary {
     ) -> OwnedSection {
         let text = crate::components::text::OwnedText {
             text: sugar_text.content.to_owned(),
-            scale: PxScale::from(sugar_text.font_size * layout.dimensions.scale),
+            scale: PxScale::from(sugar_text.font_size * layout.scale_factor),
             font_id: crate::components::text::FontId(0),
             extra: crate::components::text::Extra {
                 color: sugar_text.color,
@@ -58,8 +58,8 @@ impl Elementary {
 
         crate::components::text::OwnedSection {
             screen_position: (
-                sugar_text.position.0 * layout.dimensions.scale,
-                sugar_text.position.1 * layout.dimensions.scale,
+                sugar_text.position.0 * layout.scale_factor,
+                sugar_text.position.1 * layout.scale_factor,
             ),
             bounds: (layout.width, layout.height),
             text: vec![text],

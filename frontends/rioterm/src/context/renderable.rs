@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
+use std::collections::HashSet;
 
 #[derive(Default, Clone, Debug)]
 pub enum RenderableContentStrategy {
