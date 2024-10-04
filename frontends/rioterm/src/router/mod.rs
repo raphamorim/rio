@@ -379,7 +379,7 @@ impl<'a> RouteWindow<'a> {
     #[cfg(target_os = "windows")]
     pub fn disable_cloak(&mut self) {
         if self.is_cloaked {
-            self.winit_window.set_cloak(false);
+            self.winit_window.set_cloaked(false);
         }
     }
 
