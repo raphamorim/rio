@@ -1034,6 +1034,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::RedrawRequested => {
                 route.window.winit_window.pre_present_notify();
+
+                // On windows cloak (hide) the window initially, we later reveal it after the first draw.
+                // This is a workaround to hide the "white flash" that occurs during application startup.
+                #[cfg(target_os = "windows")]
+                route.window.disable_cloak();
+
                 match route.path {
                     RoutePath::Assistant => {
                         route.window.screen.render_assistant(&route.assistant);
