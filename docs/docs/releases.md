@@ -7,6 +7,7 @@ language: 'en'
 
 ## Unreleased
 
+- Fix flash of white during startup on Microsof Windows [#640](https://github.com/raphamorim/rio/issues/640).
 - Add DWMWA_CLOAK support on Microsof Windows.
 - VI Mode now supports search by [@orhun](https://github.com/orhun).
 - Use max frame per seconds based on the current monitor refresh rate.
