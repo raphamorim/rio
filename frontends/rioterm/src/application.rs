@@ -613,7 +613,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.confirm_quit();
                         route.request_redraw();
                     } else {
-                        self.router.routes.remove(&window_id);        
+                        self.router.routes.remove(&window_id);
                     }
                     return;
                 }

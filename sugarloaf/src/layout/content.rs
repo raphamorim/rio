@@ -10,6 +10,7 @@ use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::layout::render_data::RenderData;
+use crate::layout::RichTextLayout;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
@@ -40,19 +41,17 @@ pub struct BuilderState {
     pub lines: Vec<BuilderLine>,
     /// Font variation setting cache.
     pub vars: FontSettingCache<f32>,
-    /// User specified scale.
-    pub scale: f32,
-    // Font size in ppem.
-    pub font_size: f32,
     metrics_cache: MetricsCache,
+    scaled_font_size: f32,
+    pub layout: RichTextLayout,
 }
 
 impl BuilderState {
     #[inline]
-    pub fn from_scale_and_font_size(font_size: f32, scale: f32) -> Self {
+    pub fn from_layout(layout: &RichTextLayout) -> Self {
         Self {
-            font_size: font_size * scale,
-            scale,
+            layout: *layout,
+            scaled_font_size: layout.font_size * layout.dimensions.scale,
             ..BuilderState::default()
         }
     }
@@ -202,7 +201,7 @@ pub struct Content {
     fonts: FontLibrary,
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
-    states: FxHashMap<usize, BuilderState>,
+    pub states: FxHashMap<usize, BuilderState>,
     word_cache: WordCache,
     selector: Option<usize>,
 }
@@ -238,6 +237,11 @@ impl Content {
     }
 
     #[inline]
+    pub fn get_state_mut(&mut self, state_id: &usize) -> Option<&mut BuilderState> {
+        self.states.get_mut(state_id)
+    }
+
+    #[inline]
     pub fn set_font_features(
         &mut self,
         font_features: Vec<crate::font_introspector::Setting<u16>>,
@@ -246,26 +250,26 @@ impl Content {
     }
 
     #[inline]
-    pub fn create_state(&mut self, scale: f32, font_size: f32) -> usize {
+    pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
         let id = self.states.len();
         self.states
-            .insert(id, BuilderState::from_scale_and_font_size(scale, font_size));
+            .insert(id, BuilderState::from_layout(rich_text_layout));
         id
     }
 
     #[inline]
-    pub fn clear_state(&mut self, id: &usize, scale: f32, font_size: f32) {
+    pub fn clear_state(&mut self, id: &usize) {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
             state.begin();
 
-            let prev_font_size = state.font_size;
-            state.scale = scale;
-            state.font_size = font_size * scale;
+            // let prev_font_size = state.scaled_font_size;
+            // state.scale = scale;
+            // state.scaled_font_size = font_size * scale;
 
-            if prev_font_size != state.font_size {
-                state.metrics_cache.inner.clear();
-            }
+            // if prev_font_size != state.scaled_font_size {
+            //     state.metrics_cache.inner.clear();
+            // }
         }
     }
 
@@ -291,7 +295,8 @@ impl Content {
     pub fn clear_line(&mut self, line_to_clear: usize) -> &mut Content {
         if let Some(selector) = self.selector {
             if let Some(state) = self.states.get_mut(&selector) {
-                state.lines[line_to_clear] = BuilderLine::default();
+                state.lines[line_to_clear].fragments.clear();
+                state.lines[line_to_clear].render_data.clear();
             }
         }
 
@@ -388,7 +393,7 @@ impl Content {
                             {
                                 if line.render_data.push_run_without_shaper(
                                     item.style,
-                                    state.font_size,
+                                    state.scaled_font_size,
                                     line_number as u32,
                                     shaper,
                                     metrics,
@@ -406,7 +411,7 @@ impl Content {
                                 .scx
                                 .builder(data)
                                 .script(script)
-                                .size(state.font_size)
+                                .size(state.scaled_font_size)
                                 .features(self.font_features.iter().copied())
                                 .variations(vars.iter().copied())
                                 .build();
@@ -421,7 +426,7 @@ impl Content {
 
                             line.render_data.push_run(
                                 item.style,
-                                state.font_size,
+                                state.scaled_font_size,
                                 line_number as u32,
                                 shaper,
                                 &mut self.word_cache,
@@ -453,7 +458,7 @@ impl Content {
                         {
                             if line.render_data.push_run_without_shaper(
                                 item.style,
-                                state.font_size,
+                                state.layout.font_size,
                                 line_number as u32,
                                 shaper,
                                 metrics,
@@ -471,7 +476,7 @@ impl Content {
                             .scx
                             .builder(data)
                             .script(script)
-                            .size(state.font_size)
+                            .size(state.layout.font_size)
                             .features(self.font_features.iter().copied())
                             .variations(vars.iter().copied())
                             .build();
@@ -486,7 +491,7 @@ impl Content {
 
                         line.render_data.push_run(
                             item.style,
-                            state.font_size,
+                            state.layout.font_size,
                             line_number as u32,
                             shaper,
                             &mut self.word_cache,

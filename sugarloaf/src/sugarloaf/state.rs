@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use super::compositors::advanced::calculate_dimensions;
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
@@ -11,7 +12,7 @@ use crate::{Content, Graphics, Object, RichText};
 #[derive(Debug, PartialEq)]
 pub enum SugarTreeDiff {
     Different,
-    Repaint,
+    Repaint(Vec<usize>),
 }
 
 pub struct SugarState {
@@ -34,7 +35,7 @@ impl SugarState {
             layout: initial_layout,
             objects: vec![],
             rich_texts: vec![],
-            latest_change: SugarTreeDiff::Repaint,
+            latest_change: SugarTreeDiff::Different,
         };
 
         state.compositors.advanced.set_font_features(font_features);
@@ -43,48 +44,52 @@ impl SugarState {
 
     #[inline]
     pub fn compute_layout_resize(&mut self, width: u32, height: u32) {
-        self.layout.resize(width, height).update();
-        self.latest_change = SugarTreeDiff::Repaint;
+        self.layout.resize(width, height);
+        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn compute_layout_rescale(&mut self, scale: f32) {
         self.compositors.advanced.reset();
-        self.layout.rescale(scale).update();
-        self.layout.dimensions.height = 0.0;
-        self.layout.dimensions.width = 0.0;
-        self.latest_change = SugarTreeDiff::Repaint;
+        self.layout.scale_factor = scale;
+        for state in self.compositors.advanced.content.states.values_mut() {
+            state.layout.rescale(scale).update(&self.layout);
+            state.layout.dimensions.height = 0.0;
+            state.layout.dimensions.width = 0.0;
+        }
+        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn compute_layout_font_size(&mut self, operation: u8) {
-        let should_update = match operation {
-            0 => self.layout.reset_font_size(),
-            2 => self.layout.increase_font_size(),
-            1 => self.layout.decrease_font_size(),
-            _ => false,
-        };
+        // let should_update = match operation {
+        //     0 => self.layout.reset_font_size(),
+        //     2 => self.layout.increase_font_size(),
+        //     1 => self.layout.decrease_font_size(),
+        //     _ => false,
+        // };
 
-        if should_update {
-            self.layout.update();
-            self.layout.dimensions.height = 0.0;
-            self.layout.dimensions.width = 0.0;
-            self.latest_change = SugarTreeDiff::Repaint;
-        }
+        // if should_update {
+        //     self.layout.dimensions.height = 0.0;
+        //     self.layout.dimensions.width = 0.0;
+        //     // self.latest_change = SugarTreeDiff::Repaint;
+        // }
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
-        self.layout.dimensions.height = 0.0;
-        self.layout.dimensions.width = 0.0;
-        self.latest_change = SugarTreeDiff::Repaint;
+        for state in self.compositors.advanced.content.states.values_mut() {
+            state.layout.dimensions.height = 0.0;
+            state.layout.dimensions.width = 0.0;
+        }
+        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
         self.compositors.advanced.set_font_features(font_features);
-        self.latest_change = SugarTreeDiff::Repaint;
+        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
@@ -114,12 +119,14 @@ impl SugarState {
 
     #[inline]
     pub fn clear_rich_text(&mut self, id: &usize) {
-        self.compositors.advanced.clear_rich_text(id, &self.layout);
+        self.compositors.advanced.clear_rich_text(id);
     }
 
     #[inline]
     pub fn create_rich_text(&mut self) -> usize {
-        self.compositors.advanced.create_rich_text(&self.layout)
+        self.compositors
+            .advanced
+            .create_rich_text(&self.layout.default_rich_text)
     }
 
     pub fn content(&mut self) -> &mut Content {
@@ -175,53 +182,80 @@ impl SugarState {
         // then current will flip with next and will try to obtain
         // the dimensions.
 
-        if self.latest_change != SugarTreeDiff::Repaint {
-            return;
-        }
+        match &self.latest_change {
+            SugarTreeDiff::Repaint(rich_texts) => {
+                if rich_texts.is_empty() {
+                    return;
+                }
 
-        if let Some(dimension) = advance_brush.dimensions(self) {
-            let mut dimensions_changed = false;
-            if dimension.height != self.layout.dimensions.height {
-                self.layout.dimensions.height = dimension.height;
-                tracing::info!("prepare_render: changed height... {}", dimension.height);
-                dimensions_changed = true;
-            }
+                let font_library = self.compositors.advanced.font_library().clone();
 
-            if dimension.width != self.layout.dimensions.width {
-                self.layout.dimensions.width = dimension.width;
-                self.layout.update_columns_per_font_width();
-                tracing::info!("prepare_render: changed width... {}", dimension.width);
-                dimensions_changed = true;
-            }
+                for rich_text in rich_texts {
+                    if let Some(rte) =
+                        self.compositors.advanced.content.get_state_mut(&rich_text)
+                    {
+                        let mut content = Content::new(&font_library);
+                        let render_data = calculate_dimensions(&mut content, &rte.layout);
+                        if let Some(dimension) =
+                            advance_brush.dimensions(&font_library, &render_data)
+                        {
+                            let mut dimensions_changed = false;
+                            if dimension.height != rte.layout.dimensions.height {
+                                rte.layout.dimensions.height = dimension.height;
+                                println!(
+                                    "prepare_render: changed height... {}",
+                                    dimension.height
+                                );
+                                dimensions_changed = true;
+                            }
 
-            if dimensions_changed {
-                self.layout.update();
-                tracing::info!("sugar_state: dimensions has changed");
+                            if dimension.width != rte.layout.dimensions.width {
+                                rte.layout.dimensions.width = dimension.width;
+                                rte.layout.update_columns_per_font_width(&self.layout);
+                                println!(
+                                    "prepare_render: changed width... {}",
+                                    dimension.width
+                                );
+                                dimensions_changed = true;
+                            }
+
+                            if dimensions_changed {
+                                println!("sugar_state: dimensions has changed");
+                                rte.layout.update(&self.layout);
+                            }
+                        }
+                    }
+                }
             }
+            SugarTreeDiff::Different => {}
         }
     }
 
     #[inline]
     pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
-        if self.layout.dimensions.width == 0.0 || self.layout.dimensions.height == 0.0 {
-            self.compositors.advanced.calculate_dimensions(&self.layout);
+        let mut rte_to_repaint = Vec::with_capacity(self.rich_texts.len());
+        for rich_text in &self.rich_texts {
+            if let Some(rte) = self.compositors.advanced.content.get_state(&rich_text.id)
+            {
+                if rte.layout.dimensions.width == 0.0
+                    || rte.layout.dimensions.height == 0.0
+                {
+                    rte_to_repaint.push(rich_text.id);
 
-            self.latest_change = SugarTreeDiff::Repaint;
-            tracing::info!("has empty dimensions, will try to find...");
+                    tracing::info!("has empty dimensions, will try to find...");
+                }
+            }
+        }
+
+        if !rte_to_repaint.is_empty() {
+            self.latest_change = SugarTreeDiff::Repaint(rte_to_repaint);
             return;
         }
 
+        self.latest_change = SugarTreeDiff::Different;
+
         tracing::info!("state compute_changes result: {:?}", self.latest_change);
-
-        match &self.latest_change {
-            SugarTreeDiff::Repaint => {
-                self.compositors.advanced.calculate_dimensions(&self.layout);
-
-                self.latest_change = SugarTreeDiff::Different;
-            }
-            SugarTreeDiff::Different => {}
-        }
     }
 }
 

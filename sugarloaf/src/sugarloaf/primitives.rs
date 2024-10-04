@@ -14,13 +14,6 @@ pub enum SugarCursor {
     Underline([f32; 4]),
 }
 
-#[derive(Copy, PartialEq, Default, Debug, Clone)]
-pub struct SugarloafStyle {
-    pub screen_position: (f32, f32),
-    pub line_height: f32,
-    pub text_scale: f32,
-}
-
 #[derive(Default, Clone, Deserialize, Debug, PartialEq)]
 pub struct ImageProperties {
     #[serde(default = "String::default")]
