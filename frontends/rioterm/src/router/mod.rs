@@ -373,10 +373,6 @@ impl<'a> RouteWindow<'a> {
         }
     }
 
-    #[inline]
-    #[cfg(target_os = "windows")]
-    pub fn disable_cloak(&mut self) {}
-
     #[allow(clippy::too_many_arguments)]
     pub fn from_target<'b>(
         event_loop: &'b ActiveEventLoop,
