@@ -219,8 +219,8 @@ impl Sugarloaf<'_> {
         self
     }
 
-    pub fn create_rich_text(&mut self) -> usize {
-        self.state.create_rich_text()
+    pub fn create_rich_text(&mut self, width: f32, height: f32) -> usize {
+        self.state.create_rich_text(width, height)
     }
 
     pub fn clear_rich_text(&mut self, id: &usize) {

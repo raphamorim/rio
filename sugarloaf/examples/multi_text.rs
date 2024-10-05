@@ -86,9 +86,9 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        self.rich_texts.push(sugarloaf.create_rich_text());
-        self.rich_texts.push(sugarloaf.create_rich_text());
-        self.rich_texts.push(sugarloaf.create_rich_text());
+        self.rich_texts.push(sugarloaf.create_rich_text(200., 200.,));
+        self.rich_texts.push(sugarloaf.create_rich_text(200., 150.));
+        self.rich_texts.push(sugarloaf.create_rich_text(320., 150.));
 
         sugarloaf.set_rich_text_font_size(&1, 24.0);
         sugarloaf.set_rich_text_font_size(&2, 12.0);
