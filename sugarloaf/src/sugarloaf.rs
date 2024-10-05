@@ -219,8 +219,8 @@ impl Sugarloaf<'_> {
         self
     }
 
-    pub fn create_rich_text(&mut self, width: f32, height: f32) -> usize {
-        self.state.create_rich_text(width, height)
+    pub fn create_rich_text(&mut self) -> usize {
+        self.state.create_rich_text()
     }
 
     pub fn clear_rich_text(&mut self, id: &usize) {
@@ -248,7 +248,6 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
-        self.state.compute_layout_resize(width, height);
         if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
             if bottom_layer.should_fit {
                 bottom_layer.data.bounds.width = self.ctx.size.width;
@@ -359,7 +358,7 @@ impl Sugarloaf<'_> {
                     }
 
                     self.rich_text_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
+                        .render(&mut self.ctx, &mut rpass);
 
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);

@@ -36,12 +36,6 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_resize(&mut self, width: u32, height: u32) {
-        self.layout.resize(width, height);
-        // self.latest_change = SugarTreeDiff::Repaint;
-    }
-
-    #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
         if let Some(builder_state) = self.compositors.advanced.content.get_state(id) {
             return builder_state.layout;
@@ -55,7 +49,7 @@ impl SugarState {
         self.compositors.advanced.reset();
         self.layout.scale_factor = scale;
         for (id, state) in &mut self.compositors.advanced.content.states {
-            state.layout.rescale(scale).update();
+            state.layout.rescale(scale);
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
 
@@ -153,15 +147,10 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self,  width: f32, height: f32) -> usize {
-        let rich_text_layout = RichTextLayout {
-            width,
-            height,
-            ..self.layout.default_rich_text
-        };
+    pub fn create_rich_text(&mut self) -> usize {
         self.compositors
             .advanced
-            .create_rich_text(&rich_text_layout)
+            .create_rich_text(&self.layout.default_rich_text)
     }
 
     pub fn content(&mut self) -> &mut Content {
@@ -194,7 +183,7 @@ impl SugarState {
                         &self
                             .compositors
                             .elementary
-                            .create_section_from_text(text, &self.layout),
+                            .create_section_from_text(text, context, &self.layout),
                     );
                 }
                 Object::Rect(rect) => {
@@ -232,7 +221,6 @@ impl SugarState {
         for rich_text in &self.rich_text_repaint {
             self.compositors.advanced.content.update_dimensions(
                 rich_text,
-                &self.layout,
                 advance_brush,
             );
         }
