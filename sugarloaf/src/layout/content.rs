@@ -458,7 +458,7 @@ impl Content {
                         {
                             if line.render_data.push_run_without_shaper(
                                 item.style,
-                                state.layout.font_size,
+                                state.scaled_font_size,
                                 line_number as u32,
                                 shaper,
                                 metrics,
@@ -476,7 +476,7 @@ impl Content {
                             .scx
                             .builder(data)
                             .script(script)
-                            .size(state.layout.font_size)
+                            .size(state.scaled_font_size)
                             .features(self.font_features.iter().copied())
                             .variations(vars.iter().copied())
                             .build();
@@ -491,7 +491,7 @@ impl Content {
 
                         line.render_data.push_run(
                             item.style,
-                            state.layout.font_size,
+                            state.scaled_font_size,
                             line_number as u32,
                             shaper,
                             &mut self.word_cache,
