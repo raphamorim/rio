@@ -5,8 +5,8 @@
 
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
-use crate::sugarloaf::{text, RichTextLayout, QuadBrush, RectBrush, RichTextBrush};
 use crate::layout::RootStyle;
+use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
 use crate::{Content, Graphics, Object, RichText};
 
 pub struct SugarState {
@@ -180,10 +180,11 @@ impl SugarState {
             match object {
                 Object::Text(text) => {
                     elementary_brush.queue(
-                        &self
-                            .compositors
-                            .elementary
-                            .create_section_from_text(text, context, &self.style),
+                        &self.compositors.elementary.create_section_from_text(
+                            text,
+                            context,
+                            &self.style,
+                        ),
                     );
                 }
                 Object::Rect(rect) => {
@@ -219,10 +220,10 @@ impl SugarState {
             return;
         }
         for rich_text in &self.rich_text_repaint {
-            self.compositors.advanced.content.update_dimensions(
-                rich_text,
-                advance_brush,
-            );
+            self.compositors
+                .advanced
+                .content
+                .update_dimensions(rich_text, advance_brush);
         }
 
         self.rich_text_repaint.clear();

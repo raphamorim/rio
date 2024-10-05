@@ -1,8 +1,8 @@
 pub mod grid;
 pub mod renderable;
 
-use crate::context::grid::ContextGrid;
 use crate::ansi::CursorShape;
+use crate::context::grid::ContextGrid;
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
@@ -252,7 +252,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         window_id: WindowId,
         route_id: usize,
         rich_text_id: usize,
-        margins: (f32,f32,f32),
+        margins: (f32, f32, f32),
         ctx_config: ContextManagerConfig,
         size: RichTextLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
@@ -359,7 +359,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_index: 0,
             current_route: 0,
             acc_current_route: 0,
-            contexts: vec![ContextGrid::new(initial_context)],
+            contexts: vec![ContextGrid::new((0., 0., 0.), initial_context)],
             capacity,
             event_proxy,
             window_id,
@@ -386,7 +386,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             if let Some(index_to_remove) = self
                 .contexts
                 .iter()
-                .position(|ctx| ctx.context.context.route_id == route_id)
+                .position(|ctx| ctx.current().context.route_id == route_id)
             {
                 let mut should_set_current = false;
                 if requires_change_route {
@@ -447,10 +447,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn close_unfocused_tabs(&mut self) {
-        let current_route_id = self.current().context.context.route_id;
+        let current_route_id = self.current().route_id;
         self.titles.titles.retain(|&i, _| i == self.current_index);
-        self.contexts.retain(|ctx| ctx.context.context.route_id == current_route_id);
-        self.current_route = self.contexts[0].context.context.route_id;
+        self.contexts
+            .retain(|ctx| ctx.current().context.route_id == current_route_id);
+        self.current_route = self.contexts[0].current().context.route_id;
         self.set_current(0);
     }
 
@@ -529,19 +530,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 let mut id = String::default();
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = teletypewriter::foreground_process_name(
-                        *context.context.context.main_fd,
-                        context.context.context.shell_pid,
+                        *context.current().context.main_fd,
+                        context.current().context.shell_pid,
                     );
 
                     let path = teletypewriter::foreground_process_path(
-                        *context.context.context.main_fd,
-                        context.context.context.shell_pid,
+                        *context.current().context.main_fd,
+                        context.current().context.shell_pid,
                     )
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_default();
 
                     let terminal_title = {
-                        let terminal = context.context.context.terminal.lock();
+                        let terminal = context.current().context.terminal.lock();
                         terminal.title.to_string()
                     };
 
@@ -608,15 +609,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
-            self.current_route = self.contexts[self.current_index].context.context.route_id;
+            self.current_route = self.current().route_id;
         }
     }
 
     #[inline]
     pub fn renderable_content(&mut self) -> &RenderableContent {
         let current = self.current_mut();
-        let terminal = current.context.context.terminal.lock();
-        current.context.context.renderable_content.update(
+        let terminal = current.terminal.lock();
+        current.renderable_content.update(
             terminal.visible_rows(),
             terminal.display_offset(),
             terminal.cursor(),
@@ -624,7 +625,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         );
         drop(terminal);
 
-        &current.context.context.renderable_content
+        &current.renderable_content
     }
 
     #[inline]
@@ -667,13 +668,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn current(&self) -> &ContextGrid<T> {
-        &self.contexts[self.current_index]
+    pub fn current(&self) -> &Context<T> {
+        &self.contexts[self.current_index].current().context
     }
 
     #[inline]
-    pub fn current_mut(&mut self) -> &mut ContextGrid<T> {
-        &mut self.contexts[self.current_index]
+    pub fn current_mut(&mut self) -> &mut Context<T> {
+        &mut self.contexts[self.current_index].current_mut().context
     }
 
     #[inline]
@@ -690,7 +691,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.current_index += 1;
         }
 
-        self.current_route = self.contexts[self.current_index].context.context.route_id;
+        self.current_route = self.current().route_id;
     }
 
     #[inline]
@@ -707,7 +708,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.current_index -= 1;
         }
 
-        self.current_route = self.contexts[self.current_index].context.context.route_id;
+        self.current_route = self.current().route_id;
     }
 
     #[inline]
@@ -723,8 +724,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             {
                 let current_context = self.current();
                 if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.context.context.main_fd,
-                    current_context.context.context.shell_pid,
+                    *current_context.main_fd,
+                    current_context.shell_pid,
                 ) {
                     working_dir = Some(path.to_string_lossy().to_string());
                 }
@@ -769,7 +770,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     self.contexts.push(new_context);
                     if redirect {
                         self.current_index = last_index;
-                        self.current_route = self.contexts[self.current_index].context.context.route_id;
+                        self.current_route = self.current().route_id;
                     }
                 }
                 Err(..) => {
