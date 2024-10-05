@@ -74,6 +74,44 @@ impl BuilderState {
     pub fn begin(&mut self) {
         self.lines.push(BuilderLine::default());
     }
+    #[inline]
+    pub fn update_font_size(&mut self) {
+        let font_size = self.layout.font_size;
+        let scale = self.layout.dimensions.scale;
+        let prev_font_size = self.scaled_font_size;
+        self.scaled_font_size = font_size * scale;
+
+        if prev_font_size != self.scaled_font_size {
+            self.metrics_cache.inner.clear();
+        }
+    }
+
+    pub fn increase_font_size(&mut self) -> bool {
+        if self.layout.font_size < 40.0 {
+            self.layout.font_size += 1.0;
+            self.update_font_size();
+            return true;
+        }
+        false
+    }
+
+    pub fn decrease_font_size(&mut self) -> bool {
+        if self.layout.font_size > 6.0 {
+            self.layout.font_size -= 1.0;
+            self.update_font_size();
+            return true;
+        }
+        false
+    }
+
+    pub fn reset_font_size(&mut self) -> bool {
+        if self.layout.font_size != self.layout.original_font_size {
+            self.layout.font_size = self.layout.original_font_size;
+            self.update_font_size();
+            return true;
+        }
+        false
+    }
 }
 
 /// Index into a font setting cache.
@@ -289,7 +327,7 @@ impl Content {
 
                 if dimension.width != rte.layout.dimensions.width {
                     rte.layout.dimensions.width = dimension.width;
-                    rte.layout.update_columns_per_font_width(&state_layout);
+                    rte.layout.update_columns_per_font_width(state_layout);
                     tracing::info!(
                         "prepare_render: changed width... {}",
                         dimension.width
@@ -299,7 +337,7 @@ impl Content {
 
                 if dimensions_changed {
                     tracing::info!("sugar_state: dimensions has changed");
-                    rte.layout.update(&state_layout);
+                    rte.layout.update();
                 }
             }
         }
@@ -310,14 +348,6 @@ impl Content {
         if let Some(state) = self.states.get_mut(id) {
             state.clear();
             state.begin();
-
-            // let prev_font_size = state.scaled_font_size;
-            // state.scale = scale;
-            // state.scaled_font_size = font_size * scale;
-
-            // if prev_font_size != state.scaled_font_size {
-            //     state.metrics_cache.inner.clear();
-            // }
         }
     }
 

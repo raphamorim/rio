@@ -18,7 +18,7 @@ use row::Row;
 use std::cmp::{max, min};
 use std::ops::{Bound, Deref, Index, IndexMut, Range, RangeBounds};
 use storage::Storage;
-use sugarloaf::layout::SugarloafLayout;
+use sugarloaf::layout::RichTextLayout;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {
@@ -510,7 +510,7 @@ impl Dimensions for (usize, usize) {
     }
 }
 
-impl Dimensions for SugarloafLayout {
+impl Dimensions for RichTextLayout {
     #[inline]
     fn columns(&self) -> usize {
         self.columns

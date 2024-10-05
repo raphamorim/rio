@@ -13,7 +13,7 @@ use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
-use rio_backend::sugarloaf::layout::SugarloafLayout;
+use rio_backend::sugarloaf::layout::RichTextLayout;
 use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -143,7 +143,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         window_id: WindowId,
         route_id: usize,
         rich_text_id: usize,
-        size: SugarloafLayout,
+        size: RichTextLayout,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
         let cols: u16 = size.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
@@ -251,7 +251,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         route_id: usize,
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
-        size: SugarloafLayout,
+        size: RichTextLayout,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
@@ -345,7 +345,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             0,
             0,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             &config,
         )?;
 
@@ -711,7 +711,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn add_context(
         &mut self,
         redirect: bool,
-        layout: SugarloafLayout,
+        layout: RichTextLayout,
         cursor_state: (&CursorState, bool),
     ) {
         let mut working_dir = None;
@@ -838,7 +838,7 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
@@ -847,7 +847,7 @@ pub mod test {
         let should_redirect = true;
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.capacity, 5);
@@ -865,13 +865,13 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
@@ -879,7 +879,7 @@ pub mod test {
         for _ in 0..20 {
             context_manager.add_context(
                 should_redirect,
-                SugarloafLayout::default(),
+                RichTextLayout::default(),
                 (&CursorState::new('_'), false),
             );
         }
@@ -898,7 +898,7 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.current_index, 1);
@@ -910,12 +910,12 @@ pub mod test {
         let should_redirect = false;
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.set_current(3);
@@ -935,12 +935,12 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 3);
@@ -966,22 +966,22 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
 
@@ -995,7 +995,7 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
 
@@ -1017,12 +1017,12 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 2);
@@ -1046,27 +1046,27 @@ pub mod test {
 
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         context_manager.add_context(
             should_redirect,
-            SugarloafLayout::default(),
+            RichTextLayout::default(),
             (&CursorState::new('_'), false),
         );
         assert_eq!(context_manager.len(), 5);

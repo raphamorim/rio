@@ -401,7 +401,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let layout = route.window.screen.sugarloaf.layout();
+                    let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
                     let text =
                         format(crate::renderer::utils::terminal_dimensions(&layout));
                     route
@@ -808,7 +808,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let display_offset = route.window.screen.display_offset();
                 let old_point = route.window.screen.mouse_position(display_offset);
 
-                let layout = route.window.screen.sugarloaf.layout();
+                let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
@@ -891,7 +891,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let layout = route.window.screen.sugarloaf.layout();
+                        let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
                         let new_scroll_px_x = columns * layout.font_size;
                         let new_scroll_px_y = lines * layout.font_size;
                         route

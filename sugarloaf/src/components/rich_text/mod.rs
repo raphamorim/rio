@@ -300,7 +300,7 @@ impl RichTextBrush {
         let dimension = fetch_dimensions(
             &mut self.comp,
             (&mut self.images, &mut self.glyphs),
-            &render_data,
+            render_data,
             font_library,
         );
         if dimension.height > 0. && dimension.width > 0. {
