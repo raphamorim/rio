@@ -90,6 +90,9 @@ impl ApplicationHandler for Application {
         self.rich_texts.push(sugarloaf.create_rich_text());
         self.rich_texts.push(sugarloaf.create_rich_text());
 
+        sugarloaf.set_rich_text_font_size(&1, 24.0);
+        sugarloaf.set_rich_text_font_size(&2, 12.0);
+
         sugarloaf.set_background_color(None);
         window.request_redraw();
 

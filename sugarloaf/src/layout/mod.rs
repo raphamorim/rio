@@ -47,6 +47,8 @@ pub struct SugarDimensions {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RichTextLayout {
+    pub width: f32,
+    pub height: f32,
     pub line_height: f32,
     pub font_size: f32,
     pub original_font_size: f32,
@@ -83,35 +85,11 @@ impl RichTextLayout {
         }
     }
 
-    pub fn increase_font_size(&mut self) -> bool {
-        if self.font_size < 40.0 {
-            self.font_size += 1.0;
-            return true;
-        }
-        false
-    }
-
-    pub fn decrease_font_size(&mut self) -> bool {
-        if self.font_size > 6.0 {
-            self.font_size -= 1.0;
-            return true;
-        }
-        false
-    }
-
-    pub fn reset_font_size(&mut self) -> bool {
-        if self.font_size != self.original_font_size {
-            self.font_size = self.original_font_size;
-            return true;
-        }
-        false
-    }
-
     #[inline]
-    pub fn update(&mut self, layout: &SugarloafLayout) {
+    pub fn update(&mut self) {
         let (columns, lines) = compute(
-            layout.width,
-            layout.height,
+            self.width,
+            self.height,
             self.dimensions,
             self.line_height,
             self.margin,
@@ -132,6 +110,8 @@ impl RichTextLayout {
 impl Default for RichTextLayout {
     fn default() -> Self {
         Self {
+            width: 0.0,
+            height: 0.0,
             line_height: 1.0,
             font_size: 0.0,
             original_font_size: 0.0,

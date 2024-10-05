@@ -43,7 +43,6 @@ pub struct Renderer {
     pub is_kitty_keyboard_enabled: bool,
     pub last_typing: Option<Instant>,
     pub named_colors: Colors,
-    font_size: f32,
     pub colors: List,
     pub navigation: ScreenNavigation,
     cursor: Cursor,
@@ -111,7 +110,6 @@ impl Renderer {
                 color_automation,
                 config.padding_y,
             ),
-            font_size: config.fonts.size,
             selection_range: None,
             hyperlink_range: None,
             named_colors,
@@ -731,7 +729,6 @@ impl Renderer {
         self.cursor.state = renderable_content.cursor.clone();
         let mut is_cursor_visible = self.cursor.state.is_visible();
 
-        self.font_size = layout.font_size;
         self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
 
         // Only blink cursor if does not contain selection
@@ -802,7 +799,7 @@ impl Renderer {
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
-            (layout.width, layout.height, layout.dimensions.scale),
+            (layout.width, layout.height, layout.scale_factor),
             &self.named_colors,
             context_manager,
             self.active_search.is_some(),
@@ -813,7 +810,7 @@ impl Renderer {
             search::draw_search_bar(
                 &mut objects,
                 &self.named_colors,
-                (layout.width, layout.height, layout.dimensions.scale),
+                (layout.width, layout.height, layout.scale_factor),
                 active_search_content,
             );
 
