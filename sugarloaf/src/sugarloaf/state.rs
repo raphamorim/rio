@@ -7,6 +7,7 @@ use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
+use crate::SugarDimensions;
 use crate::{Content, Graphics, Object, RichText};
 
 pub struct SugarState {
@@ -198,6 +199,23 @@ impl SugarState {
                 }
             }
         }
+    }
+
+    #[inline]
+    pub fn get_rich_text_dimensions(
+        &mut self,
+        id: &usize,
+        advance_brush: &mut RichTextBrush,
+    ) -> SugarDimensions {
+        self.compositors
+            .advanced
+            .content
+            .update_dimensions(id, advance_brush);
+        if let Some(rte) = self.compositors.advanced.content.get_state(id) {
+            return rte.layout.dimensions;
+        }
+
+        SugarDimensions::default()
     }
 
     #[inline]

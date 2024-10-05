@@ -5,9 +5,11 @@ use std::collections::HashSet;
 
 #[derive(Default, Clone, Debug)]
 pub enum RenderableContentStrategy {
+    #[allow(unused)]
     Noop,
     #[default]
     Full,
+    #[allow(unused)]
     Lines(HashSet<usize>),
 }
 

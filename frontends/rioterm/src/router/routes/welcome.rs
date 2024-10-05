@@ -1,14 +1,15 @@
+use crate::context::grid::ContextDimension;
 use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
 
 #[inline]
-pub fn screen(sugarloaf: &mut Sugarloaf) {
+pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let blue = [0.1764706, 0.6039216, 1.0, 1.0];
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
     let black = [0.0, 0.0, 0.0, 1.0];
 
-    let layout = sugarloaf.layout();
-    let width = layout.width / layout.scale_factor;
+    let layout = sugarloaf.window_size();
+    let width = layout.width / sugarloaf.style().scale_factor;
 
     let mut objects = Vec::with_capacity(7);
 
@@ -23,26 +24,26 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
         size: [30., layout.height],
     }));
     objects.push(Object::Rect(Rect {
-        position: [15., layout.margin.top_y + 60.],
+        position: [15., context_dimension.margin.top_y + 60.],
         color: yellow,
         size: [30., layout.height],
     }));
     objects.push(Object::Rect(Rect {
-        position: [30., layout.margin.top_y + 120.],
+        position: [30., context_dimension.margin.top_y + 120.],
         color: red,
         size: [30., layout.height],
     }));
 
     if width <= 440. {
         objects.push(Object::Text(Text::single_line(
-            (70., layout.margin.top_y + 50.),
+            (70., context_dimension.margin.top_y + 50.),
             String::from("Welcome to\nRio Terminal"),
             28.,
             [1., 1., 1., 1.],
         )));
 
         objects.push(Object::Text(Text::single_line(
-            (70., layout.margin.top_y + 100.),
+            (70., context_dimension.margin.top_y + 100.),
             String::from("> enter to continue"),
             18.,
             yellow,
@@ -52,21 +53,21 @@ pub fn screen(sugarloaf: &mut Sugarloaf) {
     }
 
     objects.push(Object::Text(Text::single_line(
-        (70., layout.margin.top_y + 50.),
+        (70., context_dimension.margin.top_y + 50.),
         String::from("Welcome to Rio Terminal"),
         28.,
         [1., 1., 1., 1.],
     )));
 
     objects.push(Object::Text(Text::single_line(
-        (70., layout.margin.top_y + 80.),
+        (70., context_dimension.margin.top_y + 80.),
         String::from("> press enter to continue"),
         18.,
         yellow,
     )));
 
     objects.push(Object::Text(Text::multi_line(
-        (70., layout.margin.top_y + 220.),
+        (70., context_dimension.margin.top_y + 220.),
         welcome_content(),
         18.,
         [1., 1., 1., 1.],

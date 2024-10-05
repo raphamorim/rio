@@ -18,7 +18,6 @@ use row::Row;
 use std::cmp::{max, min};
 use std::ops::{Bound, Deref, Index, IndexMut, Range, RangeBounds};
 use storage::Storage;
-use sugarloaf::layout::RichTextLayout;
 
 #[derive(Debug, Copy, Clone)]
 pub enum Scroll {

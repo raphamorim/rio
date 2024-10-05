@@ -109,42 +109,9 @@ impl RootStyle {
         // let line_height = if line_height == 0.0 { 1.0 } else { line_height };
 
         RootStyle {
-            // dimensions: SugarDimensions {
-            //     scale: scale_factor,
-            //     ..SugarDimensions::default()
-            // },
-            // line_height,
             scale_factor,
             font_size,
             line_height,
         }
-    }
-
-    // This method will run over the new font and font_size
-    #[inline]
-    pub fn recalculate(
-        &mut self,
-        _font_size: f32,
-        _line_height: f32,
-        margin_x: f32,
-        margin_y_top: f32,
-        margin_y_bottom: f32,
-    ) -> &mut Self {
-        // if self.font_size != font_size {
-        //     self.font_size = font_size;
-        //     self.original_font_size = font_size;
-        //     should_apply_changes = true;
-        // }
-
-        // if self.line_height != line_height {
-        //     self.line_height = line_height;
-        //     should_apply_changes = true;
-        // }
-
-        // self.margin.x = margin_x;
-        // self.margin.bottom_y = margin_y_bottom;
-        // self.margin.top_y = margin_y_top;
-
-        self
     }
 }
