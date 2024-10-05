@@ -266,8 +266,8 @@ impl RichTextBrush {
         for rich_text in &state.rich_texts {
             if let Some(rt) = state.compositors.advanced.get_rich_text(&rich_text.id) {
                 let position = (
-                    rich_text.position[0] * state.layout.scale_factor,
-                    rich_text.position[1] * state.layout.scale_factor,
+                    rich_text.position[0] * state.style.scale_factor,
+                    rich_text.position[1] * state.style.scale_factor,
                 );
 
                 draw_layout(

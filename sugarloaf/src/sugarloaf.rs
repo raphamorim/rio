@@ -10,7 +10,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{SugarloafLayout, RichTextLayout};
+use crate::layout::{RootStyle, RichTextLayout};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
@@ -118,7 +118,7 @@ impl Sugarloaf<'_> {
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
-        layout: SugarloafLayout,
+        layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
@@ -171,13 +171,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn layout(&self) -> SugarloafLayout {
-        self.state.layout
+    pub fn style(&self) -> RootStyle {
+        self.state.style
     }
 
     #[inline]
-    pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
-        &mut self.state.layout
+    pub fn style_mut(&mut self) -> &mut RootStyle {
+        &mut self.state.style
     }
 
     #[inline]

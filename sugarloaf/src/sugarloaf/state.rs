@@ -5,27 +5,27 @@
 
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
-use crate::sugarloaf::{text, RichTextLayout, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
+use crate::sugarloaf::{text, RichTextLayout, QuadBrush, RectBrush, RichTextBrush};
+use crate::layout::RootStyle;
 use crate::{Content, Graphics, Object, RichText};
 
 pub struct SugarState {
     objects: Vec<Object>,
     pub rich_texts: Vec<RichText>,
     rich_text_repaint: Vec<usize>,
-    pub layout: SugarloafLayout,
+    pub style: RootStyle,
     pub compositors: SugarCompositors,
 }
 
 impl SugarState {
     pub fn new(
-        initial_layout: SugarloafLayout,
+        style: RootStyle,
         font_library: &FontLibrary,
         font_features: &Option<Vec<String>>,
     ) -> SugarState {
         let mut state = SugarState {
             compositors: SugarCompositors::new(font_library),
-            // First time computing changes should obtain dimensions
-            layout: initial_layout,
+            style,
             objects: vec![],
             rich_texts: vec![],
             rich_text_repaint: vec![],
@@ -41,13 +41,13 @@ impl SugarState {
             return builder_state.layout;
         }
 
-        self.layout.default_rich_text
+        RichTextLayout::from_default_layout(&self.style)
     }
 
     #[inline]
     pub fn compute_layout_rescale(&mut self, scale: f32) {
         self.compositors.advanced.reset();
-        self.layout.scale_factor = scale;
+        self.style.scale_factor = scale;
         for (id, state) in &mut self.compositors.advanced.content.states {
             state.layout.rescale(scale);
             state.layout.dimensions.height = 0.0;
@@ -150,7 +150,7 @@ impl SugarState {
     pub fn create_rich_text(&mut self) -> usize {
         self.compositors
             .advanced
-            .create_rich_text(&self.layout.default_rich_text)
+            .create_rich_text(&RichTextLayout::from_default_layout(&self.style))
     }
 
     pub fn content(&mut self) -> &mut Content {
@@ -183,7 +183,7 @@ impl SugarState {
                         &self
                             .compositors
                             .elementary
-                            .create_section_from_text(text, context, &self.layout),
+                            .create_section_from_text(text, context, &self.style),
                     );
                 }
                 Object::Rect(rect) => {
