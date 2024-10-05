@@ -61,6 +61,19 @@ impl RichTextLayout {
         self.dimensions.scale = scale_factor;
         self
     }
+
+    pub fn from_default_layout(default_layout: &RootStyle) -> Self {
+        Self {
+            line_height: default_layout.line_height,
+            font_size: default_layout.font_size,
+            original_font_size: default_layout.font_size,
+            dimensions: SugarDimensions {
+                scale: default_layout.scale_factor,
+                ..SugarDimensions::default()   
+            }
+
+        }
+    }
 }
 
 impl Default for RichTextLayout {
@@ -75,45 +88,40 @@ impl Default for RichTextLayout {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub struct SugarloafLayout {
+pub struct RootStyle {
     pub scale_factor: f32,
-    pub default_rich_text: RichTextLayout,
+    pub font_size: f32,
+    pub line_height: f32,
 }
 
-impl Default for SugarloafLayout {
+impl Default for RootStyle {
     fn default() -> Self {
         Self {
+            line_height: 1.0,
             scale_factor: 1.0,
-            default_rich_text: RichTextLayout::default(),
+            font_size: 14.,
         }
     }
 }
 
-impl SugarloafLayout {
+impl RootStyle {
     pub fn new(
         scale_factor: f32,
         font_size: f32,
-        _line_height: f32,
-    ) -> SugarloafLayout {
+        line_height: f32,
+    ) -> RootStyle {
         // Line height can never be zero
         // let line_height = if line_height == 0.0 { 1.0 } else { line_height };
 
-        SugarloafLayout {
+        RootStyle {
             // dimensions: SugarDimensions {
             //     scale: scale_factor,
             //     ..SugarDimensions::default()
             // },
             // line_height,
             scale_factor,
-            default_rich_text: RichTextLayout {
-                font_size,
-                original_font_size: font_size,
-                dimensions: SugarDimensions {
-                    scale: scale_factor,
-                    ..SugarDimensions::default()
-                },
-                ..RichTextLayout::default()
-            },
+            font_size,
+            line_height,
         }
     }
 

@@ -5,7 +5,7 @@
 
 use crate::sugarloaf::Context;
 use crate::components::text::glyph::OwnedSection;
-use crate::sugarloaf::SugarloafLayout;
+use crate::sugarloaf::RootStyle;
 use crate::sugarloaf::{PxScale, Rect};
 use crate::{ComposedQuad, Text};
 
@@ -36,11 +36,11 @@ impl Elementary {
         &mut self,
         sugar_text: &Text,
         context: &mut Context,
-        layout: &SugarloafLayout,
+        style: &RootStyle,
     ) -> OwnedSection {
         let text = crate::components::text::OwnedText {
             text: sugar_text.content.to_owned(),
-            scale: PxScale::from(sugar_text.font_size * layout.scale_factor),
+            scale: PxScale::from(sugar_text.font_size * style.scale_factor),
             font_id: crate::components::text::FontId(0),
             extra: crate::components::text::Extra {
                 color: sugar_text.color,
@@ -60,8 +60,8 @@ impl Elementary {
 
         crate::components::text::OwnedSection {
             screen_position: (
-                sugar_text.position.0 * layout.scale_factor,
-                sugar_text.position.1 * layout.scale_factor,
+                sugar_text.position.0 * style.scale_factor,
+                sugar_text.position.1 * style.scale_factor,
             ),
             bounds: (context.size.width, context.size.height),
             text: vec![text],

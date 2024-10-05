@@ -8,7 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::SugarloafLayout, ComposedQuad, FragmentStyle, Object, Quad, RichText,
+    layout::RootStyle, ComposedQuad, FragmentStyle, Object, Quad, RichText,
     Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
@@ -57,11 +57,12 @@ impl ApplicationHandler for Application {
 
         let scale_factor = window.scale_factor();
         let font_size = 20.;
+        let line_height = 1.0;
 
-        let sugarloaf_layout = SugarloafLayout::new(
+        let sugarloaf_layout = RootStyle::new(
             scale_factor as f32,
             font_size,
-            1.0,
+            line_height
         );
 
         let size = window.inner_size();
