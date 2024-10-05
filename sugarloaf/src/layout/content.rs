@@ -313,29 +313,9 @@ impl Content {
             let render_data = content.get_state(&id).unwrap().lines[0].clone();
 
             if let Some(dimension) = advance_brush.dimensions(&self.fonts, &render_data) {
-                let mut dimensions_changed = false;
-                if dimension.height != rte.layout.dimensions.height {
-                    rte.layout.dimensions.height = dimension.height;
-                    tracing::info!(
-                        "prepare_render: changed height... {}",
-                        dimension.height
-                    );
-                    dimensions_changed = true;
-                }
-
-                if dimension.width != rte.layout.dimensions.width {
-                    rte.layout.dimensions.width = dimension.width;
-                    // rte.layout.update_columns_per_font_width(state_layout);
-                    tracing::info!(
-                        "prepare_render: changed width... {}",
-                        dimension.width
-                    );
-                    dimensions_changed = true;
-                }
-
-                if dimensions_changed {
-                    tracing::info!("sugar_state: dimensions has changed");
-                }
+                rte.layout.dimensions.height = dimension.height;
+                rte.layout.dimensions.width = dimension.width;
+                // rte.layout.update_columns_per_font_width(state_layout);
             }
         }
     }
