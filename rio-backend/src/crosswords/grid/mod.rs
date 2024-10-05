@@ -510,31 +510,6 @@ impl Dimensions for (usize, usize) {
     }
 }
 
-impl Dimensions for RichTextLayout {
-    #[inline]
-    fn columns(&self) -> usize {
-        self.columns
-    }
-
-    #[inline]
-    fn screen_lines(&self) -> usize {
-        self.lines
-    }
-
-    #[inline]
-    fn total_lines(&self) -> usize {
-        self.screen_lines()
-    }
-
-    fn square_width(&self) -> f32 {
-        self.dimensions.width
-    }
-
-    fn square_height(&self) -> f32 {
-        self.dimensions.height
-    }
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub struct Indexed<T> {
     pub pos: Pos,

@@ -266,10 +266,8 @@ impl RichTextBrush {
         for rich_text in &state.rich_texts {
             if let Some(rt) = state.compositors.advanced.get_rich_text(&rich_text.id) {
                 let position = (
-                    (state.layout.margin.x * state.layout.scale_factor)
-                        + (rich_text.position[0] * state.layout.scale_factor),
-                    (state.layout.margin.top_y * state.layout.scale_factor)
-                        + (rich_text.position[1] * state.layout.scale_factor),
+                    rich_text.position[0] * state.layout.scale_factor,
+                    rich_text.position[1] * state.layout.scale_factor,
                 );
 
                 draw_layout(
@@ -319,7 +317,6 @@ impl RichTextBrush {
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut Context,
-        state: &crate::sugarloaf::state::SugarState,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // let start = std::time::Instant::now();
@@ -330,7 +327,7 @@ impl RichTextBrush {
 
         let queue = &mut ctx.queue;
 
-        let transform = orthographic_projection(state.layout.width, state.layout.height);
+        let transform = orthographic_projection(ctx.size.width, ctx.size.height);
         let transform_has_changed = transform != self.current_transform;
 
         if transform_has_changed {

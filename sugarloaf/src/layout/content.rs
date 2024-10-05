@@ -301,7 +301,6 @@ impl Content {
     pub fn update_dimensions(
         &mut self,
         state_id: &usize,
-        state_layout: &SugarloafLayout,
         advance_brush: &mut RichTextBrush,
     ) {
         let mut content = Content::new(&self.fonts);
@@ -327,7 +326,7 @@ impl Content {
 
                 if dimension.width != rte.layout.dimensions.width {
                     rte.layout.dimensions.width = dimension.width;
-                    rte.layout.update_columns_per_font_width(state_layout);
+                    // rte.layout.update_columns_per_font_width(state_layout);
                     tracing::info!(
                         "prepare_render: changed width... {}",
                         dimension.width
@@ -337,7 +336,6 @@ impl Content {
 
                 if dimensions_changed {
                     tracing::info!("sugar_state: dimensions has changed");
-                    rte.layout.update();
                 }
             }
         }

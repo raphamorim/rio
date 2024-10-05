@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::sugarloaf::Context;
 use crate::components::text::glyph::OwnedSection;
 use crate::sugarloaf::SugarloafLayout;
 use crate::sugarloaf::{PxScale, Rect};
@@ -34,6 +35,7 @@ impl Elementary {
     pub fn create_section_from_text(
         &mut self,
         sugar_text: &Text,
+        context: &mut Context,
         layout: &SugarloafLayout,
     ) -> OwnedSection {
         let text = crate::components::text::OwnedText {
@@ -61,7 +63,7 @@ impl Elementary {
                 sugar_text.position.0 * layout.scale_factor,
                 sugar_text.position.1 * layout.scale_factor,
             ),
-            bounds: (layout.width, layout.height),
+            bounds: (context.size.width, context.size.height),
             text: vec![text],
             layout: text_layout,
         }

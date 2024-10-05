@@ -59,9 +59,6 @@ impl ApplicationHandler for Application {
         let font_size = 20.;
 
         let sugarloaf_layout = SugarloafLayout::new(
-            self.width,
-            self.height,
-            (10.0, 10.0, 0.0),
             scale_factor as f32,
             font_size,
             1.0,
@@ -86,9 +83,9 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        self.rich_texts.push(sugarloaf.create_rich_text(200., 200.,));
-        self.rich_texts.push(sugarloaf.create_rich_text(200., 150.));
-        self.rich_texts.push(sugarloaf.create_rich_text(320., 150.));
+        self.rich_texts.push(sugarloaf.create_rich_text());
+        self.rich_texts.push(sugarloaf.create_rich_text());
+        self.rich_texts.push(sugarloaf.create_rich_text());
 
         sugarloaf.set_rich_text_font_size(&1, 24.0);
         sugarloaf.set_rich_text_font_size(&2, 12.0);

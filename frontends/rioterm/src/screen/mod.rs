@@ -118,7 +118,6 @@ impl Screen<'_> {
         let sugarloaf_layout = SugarloafLayout::new(
             size.width as f32,
             size.height as f32,
-            (config.padding_x, padding_y_top, padding_y_bottom),
             scale as f32,
             config.fonts.size,
             config.line_height,
@@ -209,12 +208,13 @@ impl Screen<'_> {
                 && config.navigation.color_automation.is_empty()),
         };
 
-        let rich_text_id = sugarloaf.create_rich_text(size.width as f32, size.height as f32);
+        let rich_text_id = sugarloaf.create_rich_text();
         let context_manager = context::ContextManager::start(
             (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
+            (config.padding_x, padding_y_top, padding_y_bottom),
             rich_text_id,
             context_manager_config,
             sugarloaf.rich_text_layout(&rich_text_id),
