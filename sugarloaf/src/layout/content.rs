@@ -12,7 +12,6 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
-use crate::layout::SugarloafLayout;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
