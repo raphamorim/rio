@@ -1,7 +1,7 @@
+use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::layout::SugarDimensions;
-use crate::context::Context;
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -38,29 +38,37 @@ pub struct Delta<T: Default> {
 }
 
 pub struct ContextGrid<T: EventListener> {
-    pub context: ContextGridItem<T>,
+    pub current: usize,
     pub margin: Delta<f32>,
+    inner: Vec<ContextGridItem<T>>,
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(padding: (f32, f32, f32), context: Context<T>) -> Self {
         Self {
-            context: ContextGridItem::new(context),
+            inner: vec![ContextGridItem::new(context)],
+            current: 0,
             margin: Delta {
                 x: padding.0,
                 top_y: padding.1,
                 bottom_y: padding.2,
-            }
+            },
         }
     }
 
-    pub fn split_right(&mut self) {
-
+    #[inline]
+    pub fn current(&self) -> &ContextGridItem<T> {
+        &self.inner[self.current]
     }
 
-    pub fn split_down(&mut self) {
-        
+    #[inline]
+    pub fn current_mut(&mut self) -> &mut ContextGridItem<T> {
+        &mut self.inner[self.current]
     }
+
+    pub fn split_right(&mut self) {}
+
+    pub fn split_down(&mut self) {}
 }
 
 pub struct ContextGridItem<T: EventListener> {
@@ -100,9 +108,7 @@ impl<T: rio_backend::event::EventListener> Dimensions for ContextGridItem<T> {
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     fn new(context: Context<T>) -> Self {
-        Self {
-            context
-        }
+        Self { context }
     }
 
     // #[inline]

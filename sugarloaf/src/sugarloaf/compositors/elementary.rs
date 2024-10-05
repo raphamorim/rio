@@ -3,8 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::sugarloaf::Context;
 use crate::components::text::glyph::OwnedSection;
+use crate::sugarloaf::Context;
 use crate::sugarloaf::RootStyle;
 use crate::sugarloaf::{PxScale, Rect};
 use crate::{ComposedQuad, Text};

@@ -43,8 +43,8 @@ use rio_backend::crosswords::pos::{Boundary, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::{SugarloafLayout, RichTextLayout}, Sugarloaf, SugarloafErrors, SugarloafRenderer,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::{RichTextLayout, RootStyle},
+    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -115,13 +115,8 @@ impl Screen<'_> {
         let padding_y_bottom =
             padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
 
-        let sugarloaf_layout = SugarloafLayout::new(
-            size.width as f32,
-            size.height as f32,
-            scale as f32,
-            config.fonts.size,
-            config.line_height,
-        );
+        let sugarloaf_layout =
+            RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
         let mut sugarloaf_errors: Option<SugarloafErrors> = None;
 
@@ -214,8 +209,8 @@ impl Screen<'_> {
             event_proxy,
             window_id,
             0,
-            (config.padding_x, padding_y_top, padding_y_bottom),
             rich_text_id,
+            (config.padding_x, padding_y_top, padding_y_bottom),
             context_manager_config,
             sugarloaf.rich_text_layout(&rich_text_id),
             sugarloaf_errors,
@@ -366,7 +361,8 @@ impl Screen<'_> {
             FontSizeAction::Reset => 0,
         };
 
-        self.sugarloaf.set_rich_text_font_size_based_on_action(&0, action);
+        self.sugarloaf
+            .set_rich_text_font_size_based_on_action(&0, action);
 
         self.render();
         self.resize_all_contexts();
@@ -404,11 +400,12 @@ impl Screen<'_> {
         // and then eventually a render with the new layout computation.
         let layout = self.sugarloaf.rich_text_layout(&0);
         for context in self.ctx().contexts() {
-            let mut terminal = context.terminal.lock();
+            let ctx = context.current();
+            let mut terminal = ctx.context.terminal.lock();
             terminal.resize::<RichTextLayout>(layout);
             drop(terminal);
             let winsize = crate::renderer::utils::terminal_dimensions(&layout);
-            let _ = context.messenger.send_resize(winsize);
+            let _ = ctx.context.messenger.send_resize(winsize);
         }
     }
 
