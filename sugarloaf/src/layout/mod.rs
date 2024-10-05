@@ -47,57 +47,13 @@ pub struct SugarDimensions {
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RichTextLayout {
-    pub width: f32,
-    pub height: f32,
     pub line_height: f32,
     pub font_size: f32,
     pub original_font_size: f32,
-    pub columns: usize,
-    pub lines: usize,
     pub dimensions: SugarDimensions,
-    pub margin: Delta<f32>,
 }
 
 impl RichTextLayout {
-    #[inline]
-    pub fn update_columns_per_font_width(&mut self, layout: &SugarloafLayout) {
-        // SugarStack is a primitive representation of columns data
-        let current_stack_bound =
-            (self.dimensions.width * self.dimensions.scale) * self.columns as f32;
-        let expected_stack_bound = (layout.width / self.dimensions.scale)
-            - (self.dimensions.width * self.dimensions.scale);
-
-        tracing::info!("expected columns {}", self.columns);
-        if current_stack_bound < expected_stack_bound {
-            let stack_difference = ((expected_stack_bound - current_stack_bound)
-                / (self.dimensions.width * self.dimensions.scale))
-                as usize;
-            tracing::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
-            let _ = self.columns.wrapping_add(stack_difference);
-        }
-
-        if current_stack_bound > expected_stack_bound {
-            let stack_difference = ((current_stack_bound - expected_stack_bound)
-                / (self.dimensions.width * self.dimensions.scale))
-                as usize;
-            tracing::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
-            let _ = self.columns.wrapping_sub(stack_difference);
-        }
-    }
-
-    #[inline]
-    pub fn update(&mut self) {
-        let (columns, lines) = compute(
-            self.width,
-            self.height,
-            self.dimensions,
-            self.line_height,
-            self.margin,
-        );
-        self.columns = columns;
-        self.lines = lines;
-    }
-
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
         self.dimensions.width *= scale_factor;
@@ -110,24 +66,16 @@ impl RichTextLayout {
 impl Default for RichTextLayout {
     fn default() -> Self {
         Self {
-            width: 0.0,
-            height: 0.0,
             line_height: 1.0,
             font_size: 0.0,
             original_font_size: 0.0,
-            columns: MIN_COLS,
-            lines: MIN_LINES,
             dimensions: SugarDimensions::default(),
-            margin: Delta::<f32>::default(),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct SugarloafLayout {
-    pub width: f32,
-    pub height: f32,
-    pub margin: Delta<f32>,
     pub scale_factor: f32,
     pub default_rich_text: RichTextLayout,
 }
@@ -135,47 +83,14 @@ pub struct SugarloafLayout {
 impl Default for SugarloafLayout {
     fn default() -> Self {
         Self {
-            width: 0.0,
-            height: 0.0,
-            margin: Delta::<f32>::default(),
             scale_factor: 1.0,
             default_rich_text: RichTextLayout::default(),
         }
     }
 }
 
-const MIN_COLS: usize = 2;
-const MIN_LINES: usize = 1;
-
-// $ tput columns
-// $ tput lines
-#[inline]
-fn compute(
-    width: f32,
-    height: f32,
-    dimensions: SugarDimensions,
-    line_height: f32,
-    margin: Delta<f32>,
-) -> (usize, usize) {
-    let margin_x = ((margin.x) * dimensions.scale).floor();
-    let margin_spaces = margin.top_y + margin.bottom_y;
-
-    let mut lines = (height / dimensions.scale) - margin_spaces;
-    lines /= (dimensions.height / dimensions.scale) * line_height;
-    let visible_lines = std::cmp::max(lines.floor() as usize, MIN_LINES);
-
-    let mut visible_columns = (width / dimensions.scale) - margin_x;
-    visible_columns /= dimensions.width / dimensions.scale;
-    let visible_columns = std::cmp::max(visible_columns as usize, MIN_COLS);
-
-    (visible_columns, visible_lines)
-}
-
 impl SugarloafLayout {
     pub fn new(
-        width: f32,
-        height: f32,
-        padding: (f32, f32, f32),
         scale_factor: f32,
         font_size: f32,
         _line_height: f32,
@@ -184,24 +99,15 @@ impl SugarloafLayout {
         // let line_height = if line_height == 0.0 { 1.0 } else { line_height };
 
         SugarloafLayout {
-            width,
-            height,
             // dimensions: SugarDimensions {
             //     scale: scale_factor,
             //     ..SugarDimensions::default()
             // },
             // line_height,
             scale_factor,
-            margin: Delta {
-                x: padding.0,
-                top_y: padding.1,
-                bottom_y: padding.2,
-            },
             default_rich_text: RichTextLayout {
                 font_size,
                 original_font_size: font_size,
-                columns: MIN_COLS,
-                lines: MIN_LINES,
                 dimensions: SugarDimensions {
                     scale: scale_factor,
                     ..SugarDimensions::default()
@@ -209,13 +115,6 @@ impl SugarloafLayout {
                 ..RichTextLayout::default()
             },
         }
-    }
-
-    #[inline]
-    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.width = width as f32;
-        self.height = height as f32;
-        self
     }
 
     // This method will run over the new font and font_size
@@ -239,9 +138,9 @@ impl SugarloafLayout {
         //     should_apply_changes = true;
         // }
 
-        self.margin.x = margin_x;
-        self.margin.bottom_y = margin_y_bottom;
-        self.margin.top_y = margin_y_top;
+        // self.margin.x = margin_x;
+        // self.margin.bottom_y = margin_y_bottom;
+        // self.margin.top_y = margin_y_top;
 
         self
     }
