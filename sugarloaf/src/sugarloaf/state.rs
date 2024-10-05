@@ -3,7 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::compositors::advanced::calculate_dimensions;
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
@@ -57,8 +56,11 @@ impl SugarState {
 
     #[inline]
     pub fn compute_layout_font_size(&mut self, rich_text_id: &usize, operation: u8) {
-        if let Some(rte) =
-            self.compositors.advanced.content.get_state_mut(rich_text_id)
+        if let Some(rte) = self
+            .compositors
+            .advanced
+            .content
+            .get_state_mut(rich_text_id)
         {
             let should_update = match operation {
                 0 => rte.layout.reset_font_size(),
@@ -192,44 +194,12 @@ impl SugarState {
         if self.rich_text_repaint.is_empty() {
             return;
         }
-
-        let font_library = self.compositors.advanced.font_library().clone();
-
         for rich_text in &self.rich_text_repaint {
-            if let Some(rte) =
-                self.compositors.advanced.content.get_state_mut(&rich_text)
-            {
-                let mut content = Content::new(&font_library);
-                let render_data = calculate_dimensions(&mut content, &rte.layout);
-                if let Some(dimension) =
-                    advance_brush.dimensions(&font_library, &render_data)
-                {
-                    let mut dimensions_changed = false;
-                    if dimension.height != rte.layout.dimensions.height {
-                        rte.layout.dimensions.height = dimension.height;
-                        tracing::info!(
-                            "prepare_render: changed height... {}",
-                            dimension.height
-                        );
-                        dimensions_changed = true;
-                    }
-
-                    if dimension.width != rte.layout.dimensions.width {
-                        rte.layout.dimensions.width = dimension.width;
-                        rte.layout.update_columns_per_font_width(&self.layout);
-                        tracing::info!(
-                            "prepare_render: changed width... {}",
-                            dimension.width
-                        );
-                        dimensions_changed = true;
-                    }
-
-                    if dimensions_changed {
-                        tracing::info!("sugar_state: dimensions has changed");
-                        rte.layout.update(&self.layout);
-                    }
-                }
-            }
+            self.compositors.advanced.content.update_dimensions(
+                &rich_text,
+                &self.layout,
+                advance_brush,
+            );
         }
 
         self.rich_text_repaint.clear();

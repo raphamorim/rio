@@ -65,16 +65,3 @@ impl Advanced {
         self.content.create_state(rich_text_layout)
     }
 }
-
-pub fn calculate_dimensions(
-    content: &mut Content,
-    rich_text_layout: &RichTextLayout,
-) -> BuilderLine {
-    let id = content.create_state(rich_text_layout);
-    content
-        .sel(id)
-        .new_line()
-        .add_text(" ", FragmentStyle::default())
-        .build();
-    content.get_state(&id).unwrap().lines[0].clone()
-}

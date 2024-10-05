@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
@@ -11,6 +12,7 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
+use crate::layout::SugarloafLayout;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
@@ -255,6 +257,52 @@ impl Content {
         self.states
             .insert(id, BuilderState::from_layout(rich_text_layout));
         id
+    }
+
+    #[inline]
+    pub fn update_dimensions(
+        &mut self,
+        state_id: &usize,
+        state_layout: &SugarloafLayout,
+        advance_brush: &mut RichTextBrush,
+    ) {
+        let mut content = Content::new(&self.fonts);
+        if let Some(rte) = self.states.get_mut(state_id) {
+            let id = content.create_state(&rte.layout);
+            content
+                .sel(id)
+                .new_line()
+                .add_text(" ", FragmentStyle::default())
+                .build();
+            let render_data = content.get_state(&id).unwrap().lines[0].clone();
+
+            if let Some(dimension) = advance_brush.dimensions(&self.fonts, &render_data) {
+                let mut dimensions_changed = false;
+                if dimension.height != rte.layout.dimensions.height {
+                    rte.layout.dimensions.height = dimension.height;
+                    tracing::info!(
+                        "prepare_render: changed height... {}",
+                        dimension.height
+                    );
+                    dimensions_changed = true;
+                }
+
+                if dimension.width != rte.layout.dimensions.width {
+                    rte.layout.dimensions.width = dimension.width;
+                    rte.layout.update_columns_per_font_width(&state_layout);
+                    tracing::info!(
+                        "prepare_render: changed width... {}",
+                        dimension.width
+                    );
+                    dimensions_changed = true;
+                }
+
+                if dimensions_changed {
+                    tracing::info!("sugar_state: dimensions has changed");
+                    rte.layout.update(&state_layout);
+                }
+            }
+        }
     }
 
     #[inline]
