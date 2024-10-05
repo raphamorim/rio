@@ -10,7 +10,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{RootStyle, RichTextLayout};
+use crate::layout::{RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
@@ -357,8 +357,7 @@ impl Sugarloaf<'_> {
                         }
                     }
 
-                    self.rich_text_brush
-                        .render(&mut self.ctx, &mut rpass);
+                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
 
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
