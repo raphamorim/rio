@@ -1,14 +1,19 @@
+use crate::context::grid::ContextDimension;
 use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
 
 #[inline]
-pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
+pub fn screen(
+    sugarloaf: &mut Sugarloaf,
+    context_dimension: &ContextDimension,
+    content: &str,
+) {
     let blue = [0.1764706, 0.6039216, 1.0, 1.0];
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
     let black = [0.0, 0.0, 0.0, 1.0];
 
-    let layout = sugarloaf.layout();
-    let height = layout.height / layout.scale_factor;
+    let layout = sugarloaf.window_size();
+    let height = layout.height / sugarloaf.style().scale_factor;
 
     let mut objects = Vec::with_capacity(7);
 
@@ -23,12 +28,12 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
         size: [30., layout.height],
     }));
     objects.push(Object::Rect(Rect {
-        position: [15., layout.margin.top_y + 40.],
+        position: [15., context_dimension.margin.top_y + 40.],
         color: yellow,
         size: [30., layout.height],
     }));
     objects.push(Object::Rect(Rect {
-        position: [30., layout.margin.top_y + 120.],
+        position: [30., context_dimension.margin.top_y + 120.],
         color: red,
         size: [30., layout.height],
     }));

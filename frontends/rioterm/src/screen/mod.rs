@@ -15,6 +15,7 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
+use crate::context::grid::ContextDimension;
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -43,8 +44,8 @@ use rio_backend::crosswords::pos::{Boundary, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::{RichTextLayout, RootStyle},
-    Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
+    SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -204,15 +205,22 @@ impl Screen<'_> {
         };
 
         let rich_text_id = sugarloaf.create_rich_text();
+
+        let context_dimension = ContextDimension::build(
+            size.width as f32,
+            size.height as f32,
+            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            config.line_height,
+            (config.padding_x, padding_y_top, padding_y_bottom),
+        );
         let context_manager = context::ContextManager::start(
             (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
             window_id,
             0,
             rich_text_id,
-            (config.padding_x, padding_y_top, padding_y_bottom),
             context_manager_config,
-            sugarloaf.rich_text_layout(&rich_text_id),
+            context_dimension,
             sugarloaf_errors,
         )?;
 
@@ -269,17 +277,18 @@ impl Screen<'_> {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let layout = self.sugarloaf.rich_text_layout(&0);
+        let context_dimension = self.context_manager.current().dimension;
+        let style = self.sugarloaf.style();
         calculate_mouse_position(
             &self.mouse,
             display_offset,
-            layout.dimensions.scale,
-            (layout.columns, layout.lines),
-            layout.margin.x,
-            layout.margin.top_y,
+            style.scale_factor,
+            (context_dimension.columns, context_dimension.lines),
+            context_dimension.margin.x,
+            context_dimension.margin.top_y,
             (
-                layout.dimensions.width,
-                layout.dimensions.height * layout.line_height,
+                context_dimension.dimension.width,
+                context_dimension.dimension.height * style.line_height,
             ),
         )
     }
@@ -315,19 +324,19 @@ impl Screen<'_> {
         );
 
         self.sugarloaf.update_font(font_library);
-        self.sugarloaf.layout_mut().recalculate(
-            config.fonts.size,
-            config.line_height,
-            config.padding_x,
-            padding_y_top,
-            padding_y_bottom,
-        );
+        let s = self.sugarloaf.style_mut();
+        s.font_size = config.fonts.size;
+        s.line_height = config.line_height;
 
-        // self.sugarloaf.layout_mut().update();
+        let d = self.context_manager.current_mut();
+        d.dimension
+            .update_margin((config.padding_x, padding_y_top, padding_y_bottom));
+
         self.renderer = Renderer::new(config, font_library);
 
         for context in self.ctx().contexts() {
-            let mut terminal = context.terminal.lock();
+            // TODO: Should loop all
+            let mut terminal = context.current().terminal.lock();
             let cursor = self.renderer.get_cursor_state_from_ref().content;
             terminal.cursor_shape = cursor;
             terminal.default_cursor_shape = cursor;
@@ -374,6 +383,10 @@ impl Screen<'_> {
             self.clear_selection();
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
+        let d = self.context_manager.current_mut();
+        d.dimension.width = new_size.width as f32;
+        d.dimension.height = new_size.height as f32;
+        d.dimension.update();
         self.resize_all_contexts();
         self
     }
@@ -398,14 +411,13 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
-        let layout = self.sugarloaf.rich_text_layout(&0);
         for context in self.ctx().contexts() {
             let ctx = context.current();
-            let mut terminal = ctx.context.terminal.lock();
-            terminal.resize::<RichTextLayout>(layout);
+            let mut terminal = ctx.terminal.lock();
+            terminal.resize::<ContextDimension>(ctx.dimension);
             drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(&layout);
-            let _ = ctx.context.messenger.send_resize(winsize);
+            let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
+            let _ = ctx.messenger.send_resize(winsize);
         }
     }
 
@@ -944,10 +956,8 @@ impl Screen<'_> {
     pub fn create_tab(&mut self) {
         let redirect = true;
 
-        let layout = self.sugarloaf.rich_text_layout(&0);
         self.context_manager.add_context(
             redirect,
-            layout,
             (
                 &self.renderer.get_cursor_state_from_ref(),
                 self.renderer.config_has_blinking_enabled,
@@ -975,7 +985,7 @@ impl Screen<'_> {
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
-        let layout = self.sugarloaf.layout();
+        let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation.navigation,
@@ -993,14 +1003,17 @@ impl Screen<'_> {
             || previous_margin.bottom_y != padding_y_bottom
         {
             let layout = self.sugarloaf.rich_text_layout(&0);
-            self.sugarloaf.layout_mut().recalculate(
-                layout.font_size,
-                layout.line_height,
-                layout.margin.x,
+            let s = self.sugarloaf.style_mut();
+            s.font_size = layout.font_size;
+            s.line_height = layout.line_height;
+
+            let d = self.context_manager.current_mut();
+            d.dimension.update_margin((
+                d.dimension.margin.x,
                 padding_y_top,
                 padding_y_bottom,
-            );
-            // self.sugarloaf.layout_mut().update();
+            ));
+            d.dimension.update();
             self.resize_all_contexts();
         }
     }
@@ -1313,15 +1326,19 @@ impl Screen<'_> {
 
     #[inline]
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
-        let layout = self.sugarloaf.rich_text_layout(&0);
-        let scale_factor = layout.dimensions.scale;
+        let current_context = self.context_manager.current();
+        let layout = current_context.dimension;
+        let sugarloaf_layout = self
+            .sugarloaf
+            .rich_text_layout(&current_context.rich_text_id);
+        let scale_factor = layout.dimension.scale;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
 
         // Compute the height of the scrolling areas.
         let end_top = max(min_height, crate::constants::PADDING_Y as i32) as f64;
-        let text_area_bottom =
-            (crate::constants::PADDING_Y + layout.lines as f32) * layout.font_size;
+        let text_area_bottom = (crate::constants::PADDING_Y + layout.lines as f32)
+            * sugarloaf_layout.font_size;
         let start_bottom =
             min(layout.height as i32 - min_height, text_area_bottom as i32) as f64;
 
@@ -1341,21 +1358,23 @@ impl Screen<'_> {
 
     #[inline]
     pub fn contains_point(&self, x: usize, y: usize) -> bool {
-        let layout = self.sugarloaf.rich_text_layout(&0);
-        let width = layout.dimensions.width;
+        let current_context = self.context_manager.current();
+        let layout = current_context.dimension;
+        let width = layout.dimension.width;
         x <= (layout.margin.x + layout.columns as f32 * width) as usize
-            && x > (layout.margin.x * layout.dimensions.scale) as usize
-            && y <= (layout.margin.top_y * layout.dimensions.scale
-                + layout.lines as f32 * layout.dimensions.height)
+            && x > (layout.margin.x * layout.dimension.scale) as usize
+            && y <= (layout.margin.top_y * layout.dimension.scale
+                + layout.lines as f32 * layout.dimension.height)
                 as usize
             && y > layout.margin.top_y as usize
     }
 
     #[inline]
     pub fn side_by_pos(&self, x: usize) -> Side {
-        let layout = self.sugarloaf.rich_text_layout(&0);
-        let width = (layout.dimensions.width) as usize;
-        let margin_x = layout.margin.x * layout.dimensions.scale;
+        let current_context = self.context_manager.current();
+        let layout = current_context.dimension;
+        let width = (layout.dimension.width) as usize;
+        let margin_x = layout.margin.x * layout.dimension.scale;
 
         let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
@@ -1892,19 +1911,30 @@ impl Screen<'_> {
         assistant: &crate::router::routes::assistant::Assistant,
     ) {
         self.sugarloaf.clear();
-        crate::router::routes::assistant::screen(&mut self.sugarloaf, assistant);
+        crate::router::routes::assistant::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+            assistant,
+        );
         self.sugarloaf.render();
     }
 
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
-        crate::router::routes::welcome::screen(&mut self.sugarloaf);
+        crate::router::routes::welcome::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+        );
         self.sugarloaf.render();
     }
 
     pub fn render_dialog(&mut self, content: &str) {
         self.sugarloaf.clear();
-        crate::router::routes::dialog::screen(&mut self.sugarloaf, content);
+        crate::router::routes::dialog::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+            content,
+        );
         self.sugarloaf.render();
     }
 

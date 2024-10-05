@@ -724,7 +724,8 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        let layout = sugarloaf.layout();
+        let window_size = sugarloaf.window_size();
+        let scale_factor = sugarloaf.scale_factor();
         let renderable_content = context_manager.renderable_content();
         self.cursor.state = renderable_content.cursor.clone();
         let mut is_cursor_visible = self.cursor.state.is_visible();
@@ -799,7 +800,7 @@ impl Renderer {
 
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
-            (layout.width, layout.height, layout.scale_factor),
+            (window_size.width, window_size.height, scale_factor),
             &self.named_colors,
             context_manager,
             self.active_search.is_some(),
@@ -810,7 +811,7 @@ impl Renderer {
             search::draw_search_bar(
                 &mut objects,
                 &self.named_colors,
-                (layout.width, layout.height, layout.scale_factor),
+                (window_size.width, window_size.height, scale_factor),
                 active_search_content,
             );
 

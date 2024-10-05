@@ -14,6 +14,7 @@ use crate::layout::{RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
+use crate::SugarDimensions;
 use crate::{context::Context, Object};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
@@ -219,10 +220,12 @@ impl Sugarloaf<'_> {
         self
     }
 
+    #[inline]
     pub fn create_rich_text(&mut self) -> usize {
         self.state.create_rich_text()
     }
 
+    #[inline]
     pub fn clear_rich_text(&mut self, id: &usize) {
         self.state.clear_rich_text(id);
     }
@@ -236,13 +239,30 @@ impl Sugarloaf<'_> {
         self.state.compute_objects(objects);
     }
 
+    #[inline]
     pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
         self.state.get_state_layout(id)
     }
 
     #[inline]
+    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
+        self.state
+            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+    }
+
+    #[inline]
     pub fn clear(&mut self) {
         self.state.clean_screen();
+    }
+
+    #[inline]
+    pub fn window_size(&self) -> SugarloafWindowSize {
+        self.ctx.size
+    }
+
+    #[inline]
+    pub fn scale_factor(&self) -> f32 {
+        self.state.style.scale_factor
     }
 
     #[inline]
