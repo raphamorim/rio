@@ -153,10 +153,15 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
+    pub fn create_rich_text(&mut self,  width: f32, height: f32) -> usize {
+        let rich_text_layout = RichTextLayout {
+            width,
+            height,
+            ..self.layout.default_rich_text
+        };
         self.compositors
             .advanced
-            .create_rich_text(&self.layout.default_rich_text)
+            .create_rich_text(&rich_text_layout)
     }
 
     pub fn content(&mut self) -> &mut Content {
