@@ -10,7 +10,7 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::SugarloafLayout;
+use crate::layout::{SugarloafLayout, RichTextLayout};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
@@ -181,8 +181,18 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn update_font_size(&mut self, rt_id: &usize, operation: u8) {
-        self.state.compute_layout_font_size(rt_id, operation);
+    pub fn set_rich_text_font_size_based_on_action(
+        &mut self,
+        rt_id: &usize,
+        operation: u8,
+    ) {
+        self.state
+            .set_rich_text_font_size_based_on_action(rt_id, operation);
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
+        self.state.set_rich_text_font_size(rt_id, font_size);
     }
 
     #[inline]
@@ -224,6 +234,10 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn set_objects(&mut self, objects: Vec<Object>) {
         self.state.compute_objects(objects);
+    }
+
+    pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
+        self.state.get_state_layout(id)
     }
 
     #[inline]

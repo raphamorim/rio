@@ -5,7 +5,7 @@
 
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
-use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
+use crate::sugarloaf::{text, RichTextLayout, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{Content, Graphics, Object, RichText};
 
 pub struct SugarState {
@@ -42,11 +42,20 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
+        if let Some(builder_state) = self.compositors.advanced.content.get_state(id) {
+            return builder_state.layout;
+        }
+
+        self.layout.default_rich_text
+    }
+
+    #[inline]
     pub fn compute_layout_rescale(&mut self, scale: f32) {
         self.compositors.advanced.reset();
         self.layout.scale_factor = scale;
         for (id, state) in &mut self.compositors.advanced.content.states {
-            state.layout.rescale(scale).update(&self.layout);
+            state.layout.rescale(scale).update();
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
 
@@ -55,7 +64,28 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_font_size(&mut self, rich_text_id: &usize, operation: u8) {
+    pub fn set_rich_text_font_size(&mut self, rich_text_id: &usize, font_size: f32) {
+        if let Some(rte) = self
+            .compositors
+            .advanced
+            .content
+            .get_state_mut(rich_text_id)
+        {
+            rte.layout.font_size = font_size;
+            rte.update_font_size();
+
+            rte.layout.dimensions.height = 0.0;
+            rte.layout.dimensions.width = 0.0;
+            self.rich_text_repaint.push(*rich_text_id);
+        }
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size_based_on_action(
+        &mut self,
+        rich_text_id: &usize,
+        operation: u8,
+    ) {
         if let Some(rte) = self
             .compositors
             .advanced
@@ -63,9 +93,9 @@ impl SugarState {
             .get_state_mut(rich_text_id)
         {
             let should_update = match operation {
-                0 => rte.layout.reset_font_size(),
-                2 => rte.layout.increase_font_size(),
-                1 => rte.layout.decrease_font_size(),
+                0 => rte.reset_font_size(),
+                2 => rte.increase_font_size(),
+                1 => rte.decrease_font_size(),
                 _ => false,
             };
 
@@ -196,7 +226,7 @@ impl SugarState {
         }
         for rich_text in &self.rich_text_repaint {
             self.compositors.advanced.content.update_dimensions(
-                &rich_text,
+                rich_text,
                 &self.layout,
                 advance_brush,
             );

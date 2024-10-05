@@ -8,7 +8,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, content: &str) {
     let black = [0.0, 0.0, 0.0, 1.0];
 
     let layout = sugarloaf.layout();
-    let height = layout.height / layout.dimensions.scale;
+    let height = layout.height / layout.scale_factor;
 
     let mut objects = Vec::with_capacity(7);
 

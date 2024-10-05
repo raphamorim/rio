@@ -8,7 +8,7 @@
 
 use crate::font::FontLibrary;
 use crate::layout::RichTextLayout;
-use crate::layout::{BuilderLine, BuilderState, Content, FragmentStyle};
+use crate::layout::{BuilderState, Content};
 
 pub struct Advanced {
     pub content: Content,

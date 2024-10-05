@@ -58,7 +58,7 @@ pub fn padding_bottom_from_config(
 
 #[inline]
 pub fn terminal_dimensions(
-    layout: &rio_backend::sugarloaf::layout::SugarloafLayout,
+    layout: &rio_backend::sugarloaf::layout::RichTextLayout,
 ) -> teletypewriter::WinsizeBuilder {
     let width = layout.width - (layout.margin.x * 2.);
     let height = (layout.height - layout.margin.top_y) - layout.margin.bottom_y;
