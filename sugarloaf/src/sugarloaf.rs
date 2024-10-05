@@ -181,8 +181,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn update_font_size(&mut self, operation: u8) {
-        self.state.compute_layout_font_size(operation);
+    pub fn update_font_size(&mut self, rt_id: &usize, operation: u8) {
+        self.state.compute_layout_font_size(rt_id, operation);
     }
 
     #[inline]
@@ -262,7 +262,6 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_changes();
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
         self.state.compute_updates(

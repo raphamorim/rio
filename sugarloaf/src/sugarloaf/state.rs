@@ -9,16 +9,10 @@ use crate::font::FontLibrary;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
 use crate::{Content, Graphics, Object, RichText};
 
-#[derive(Debug, PartialEq)]
-pub enum SugarTreeDiff {
-    Different,
-    Repaint(Vec<usize>),
-}
-
 pub struct SugarState {
-    latest_change: SugarTreeDiff,
     objects: Vec<Object>,
     pub rich_texts: Vec<RichText>,
+    rich_text_repaint: Vec<usize>,
     pub layout: SugarloafLayout,
     pub compositors: SugarCompositors,
 }
@@ -35,7 +29,7 @@ impl SugarState {
             layout: initial_layout,
             objects: vec![],
             rich_texts: vec![],
-            latest_change: SugarTreeDiff::Different,
+            rich_text_repaint: vec![],
         };
 
         state.compositors.advanced.set_font_features(font_features);
@@ -52,44 +46,48 @@ impl SugarState {
     pub fn compute_layout_rescale(&mut self, scale: f32) {
         self.compositors.advanced.reset();
         self.layout.scale_factor = scale;
-        for state in self.compositors.advanced.content.states.values_mut() {
+        for (id, state) in &mut self.compositors.advanced.content.states {
             state.layout.rescale(scale).update(&self.layout);
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
+
+            self.rich_text_repaint.push(*id);
         }
-        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
-    pub fn compute_layout_font_size(&mut self, operation: u8) {
-        // let should_update = match operation {
-        //     0 => self.layout.reset_font_size(),
-        //     2 => self.layout.increase_font_size(),
-        //     1 => self.layout.decrease_font_size(),
-        //     _ => false,
-        // };
+    pub fn compute_layout_font_size(&mut self, rich_text_id: &usize, operation: u8) {
+        if let Some(rte) =
+            self.compositors.advanced.content.get_state_mut(rich_text_id)
+        {
+            let should_update = match operation {
+                0 => rte.layout.reset_font_size(),
+                2 => rte.layout.increase_font_size(),
+                1 => rte.layout.decrease_font_size(),
+                _ => false,
+            };
 
-        // if should_update {
-        //     self.layout.dimensions.height = 0.0;
-        //     self.layout.dimensions.width = 0.0;
-        //     // self.latest_change = SugarTreeDiff::Repaint;
-        // }
+            if should_update {
+                rte.layout.dimensions.height = 0.0;
+                rte.layout.dimensions.width = 0.0;
+                self.rich_text_repaint.push(*rich_text_id);
+            }
+        }
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
-        for state in self.compositors.advanced.content.states.values_mut() {
+        for (id, state) in &mut self.compositors.advanced.content.states {
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
+            self.rich_text_repaint.push(*id);
         }
-        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
         self.compositors.advanced.set_font_features(font_features);
-        // self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
@@ -176,86 +174,65 @@ impl SugarState {
     }
 
     #[inline]
-    // TODO: Merge it into compute_changes
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
-        // If layout is different or current has empty dimensions
-        // then current will flip with next and will try to obtain
-        // the dimensions.
-
-        match &self.latest_change {
-            SugarTreeDiff::Repaint(rich_texts) => {
-                if rich_texts.is_empty() {
-                    return;
-                }
-
-                let font_library = self.compositors.advanced.font_library().clone();
-
-                for rich_text in rich_texts {
-                    if let Some(rte) =
-                        self.compositors.advanced.content.get_state_mut(&rich_text)
-                    {
-                        let mut content = Content::new(&font_library);
-                        let render_data = calculate_dimensions(&mut content, &rte.layout);
-                        if let Some(dimension) =
-                            advance_brush.dimensions(&font_library, &render_data)
-                        {
-                            let mut dimensions_changed = false;
-                            if dimension.height != rte.layout.dimensions.height {
-                                rte.layout.dimensions.height = dimension.height;
-                                println!(
-                                    "prepare_render: changed height... {}",
-                                    dimension.height
-                                );
-                                dimensions_changed = true;
-                            }
-
-                            if dimension.width != rte.layout.dimensions.width {
-                                rte.layout.dimensions.width = dimension.width;
-                                rte.layout.update_columns_per_font_width(&self.layout);
-                                println!(
-                                    "prepare_render: changed width... {}",
-                                    dimension.width
-                                );
-                                dimensions_changed = true;
-                            }
-
-                            if dimensions_changed {
-                                println!("sugar_state: dimensions has changed");
-                                rte.layout.update(&self.layout);
-                            }
-                        }
-                    }
-                }
-            }
-            SugarTreeDiff::Different => {}
-        }
-    }
-
-    #[inline]
-    pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
-        let mut rte_to_repaint = Vec::with_capacity(self.rich_texts.len());
         for rich_text in &self.rich_texts {
             if let Some(rte) = self.compositors.advanced.content.get_state(&rich_text.id)
             {
                 if rte.layout.dimensions.width == 0.0
                     || rte.layout.dimensions.height == 0.0
                 {
-                    rte_to_repaint.push(rich_text.id);
+                    self.rich_text_repaint.push(rich_text.id);
 
                     tracing::info!("has empty dimensions, will try to find...");
                 }
             }
         }
 
-        if !rte_to_repaint.is_empty() {
-            self.latest_change = SugarTreeDiff::Repaint(rte_to_repaint);
+        if self.rich_text_repaint.is_empty() {
             return;
         }
 
-        self.latest_change = SugarTreeDiff::Different;
+        let font_library = self.compositors.advanced.font_library().clone();
 
-        tracing::info!("state compute_changes result: {:?}", self.latest_change);
+        for rich_text in &self.rich_text_repaint {
+            if let Some(rte) =
+                self.compositors.advanced.content.get_state_mut(&rich_text)
+            {
+                let mut content = Content::new(&font_library);
+                let render_data = calculate_dimensions(&mut content, &rte.layout);
+                if let Some(dimension) =
+                    advance_brush.dimensions(&font_library, &render_data)
+                {
+                    let mut dimensions_changed = false;
+                    if dimension.height != rte.layout.dimensions.height {
+                        rte.layout.dimensions.height = dimension.height;
+                        tracing::info!(
+                            "prepare_render: changed height... {}",
+                            dimension.height
+                        );
+                        dimensions_changed = true;
+                    }
+
+                    if dimension.width != rte.layout.dimensions.width {
+                        rte.layout.dimensions.width = dimension.width;
+                        rte.layout.update_columns_per_font_width(&self.layout);
+                        tracing::info!(
+                            "prepare_render: changed width... {}",
+                            dimension.width
+                        );
+                        dimensions_changed = true;
+                    }
+
+                    if dimensions_changed {
+                        tracing::info!("sugar_state: dimensions has changed");
+                        rte.layout.update(&self.layout);
+                    }
+                }
+            }
+        }
+
+        self.rich_text_repaint.clear();
     }
 }
 
