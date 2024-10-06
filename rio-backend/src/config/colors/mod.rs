@@ -482,8 +482,7 @@ impl ColorBuilder {
         let non_hex_chars = Regex::new(r"(?i)[^#a-f\d]").unwrap();
 
         // match valid 6 or 8 hex characters
-        let valid_hex_size =
-            Regex::new(r"(?i)^#?[a-f\d]{6}([a-f\d]{2})?$").unwrap();
+        let valid_hex_size = Regex::new(r"(?i)^#?[a-f\d]{6}([a-f\d]{2})?$").unwrap();
 
         if non_hex_chars.is_match(&hex) {
             return Err(String::from("Error: Character is not valid"));
@@ -738,8 +737,7 @@ mod tests {
     #[test]
     fn test_conversion_from_hex_with_alpha() {
         let color_with_alpha =
-            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_255)
-                .unwrap();
+            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_255).unwrap();
         assert_eq!(
             color_with_alpha,
             ColorBuilder {
@@ -751,8 +749,7 @@ mod tests {
         );
 
         let color_with_alpha_srgb0_1 =
-            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_1)
-                .unwrap();
+            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_1).unwrap();
         assert_eq!(
             color_with_alpha_srgb0_1,
             ColorBuilder {
