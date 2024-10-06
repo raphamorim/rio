@@ -1,6 +1,7 @@
 pub mod grid;
 pub mod renderable;
 
+use crate::context::grid::Delta;
 use crate::ansi::CursorShape;
 use crate::context::grid::ContextDimension;
 use crate::context::grid::ContextGrid;
@@ -257,6 +258,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: ContextDimension,
+        margin: Delta<f32>,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
@@ -316,7 +318,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_index: 0,
             current_route: 0,
             acc_current_route: 0,
-            contexts: vec![ContextGrid::new(initial_context)],
+            contexts: vec![ContextGrid::new(initial_context, margin)],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
             window_id,
@@ -361,7 +363,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_index: 0,
             current_route: 0,
             acc_current_route: 0,
-            contexts: vec![ContextGrid::new(initial_context)],
+            contexts: vec![ContextGrid::new(initial_context, Delta::<f32>::default())],
             capacity,
             event_proxy,
             window_id,
@@ -607,6 +609,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &self.contexts
     }
 
+    #[inline]
+    pub fn current_grid_mut(&mut self) -> &mut ContextGrid<T> {
+        &mut self.contexts[self.current_index]
+    }
+
     #[cfg(test)]
     pub fn increase_capacity(&mut self, inc_val: usize) {
         self.capacity += inc_val;
@@ -769,7 +776,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &cloned_config,
             ) {
                 Ok(new_context) => {
-                    self.contexts.push(ContextGrid::new(new_context));
+                    let previous_margin = self.contexts[self.current_index].margin;
+                    self.contexts.push(ContextGrid::new(new_context, previous_margin));
                     if redirect {
                         self.current_index = last_index;
                         self.current_route = self.current().route_id;
