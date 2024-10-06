@@ -315,7 +315,6 @@ impl Content {
             if let Some(dimension) = advance_brush.dimensions(&self.fonts, &render_data) {
                 rte.layout.dimensions.height = dimension.height;
                 rte.layout.dimensions.width = dimension.width;
-                // rte.layout.update_columns_per_font_width(state_layout);
             }
         }
     }
