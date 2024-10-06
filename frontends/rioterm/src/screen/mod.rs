@@ -9,7 +9,6 @@
 pub mod hint;
 pub mod touch;
 
-use crate::context::grid::Delta;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
@@ -17,6 +16,7 @@ use crate::bindings::{
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::ContextDimension;
+use crate::context::grid::Delta;
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -334,7 +334,11 @@ impl Screen<'_> {
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
-        self.context_manager.current_grid_mut().update_margin((config.padding_x, padding_y_top, padding_y_bottom));
+        self.context_manager.current_grid_mut().update_margin((
+            config.padding_x,
+            padding_y_top,
+            padding_y_bottom,
+        ));
 
         self.renderer = Renderer::new(config, font_library);
 
@@ -1012,11 +1016,7 @@ impl Screen<'_> {
             s.line_height = layout.line_height;
 
             let d = self.context_manager.current_grid_mut();
-            d.update_margin((
-                d.margin.x,
-                padding_y_top,
-                padding_y_bottom,
-            ));
+            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
 
             // TODO:
             // d.dimension.update();

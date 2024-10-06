@@ -1,10 +1,10 @@
 pub mod grid;
 pub mod renderable;
 
-use crate::context::grid::Delta;
 use crate::ansi::CursorShape;
 use crate::context::grid::ContextDimension;
 use crate::context::grid::ContextGrid;
+use crate::context::grid::Delta;
 use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
@@ -12,12 +12,11 @@ use crate::messenger::Messenger;
 use crate::performer::Machine;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
-use rio_backend::crosswords::CrosswordsSize;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
-use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors, Object};
+use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
@@ -114,33 +113,38 @@ pub struct ContextManager<T: EventListener> {
     pub titles: ContextManagerTitles,
 }
 
-impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
-    #[inline]
-    pub fn create_dead_context(
-        event_proxy: T,
-        window_id: WindowId,
-        route_id: usize,
-    ) -> Context<T> {
-        let size = CrosswordsSize::new(MIN_COLUMNS, MIN_LINES);
-        let terminal =
-            Crosswords::new(size, CursorShape::Block, event_proxy, window_id, route_id);
-        let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
-        let (sender, _receiver) = corcovado::channel::channel();
+pub fn create_mock_context<T: rio_backend::event::EventListener>(
+    event_proxy: T,
+    window_id: WindowId,
+    route_id: usize,
+    rich_text_id: usize,
+    dimension: ContextDimension,
+) -> Context<T> {
+    let terminal = Crosswords::new(
+        dimension,
+        CursorShape::Block,
+        event_proxy,
+        window_id,
+        route_id,
+    );
+    let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+    let (sender, _receiver) = corcovado::channel::channel();
 
-        Context {
-            route_id,
-            #[cfg(not(target_os = "windows"))]
-            main_fd: Arc::new(-1),
-            #[cfg(not(target_os = "windows"))]
-            shell_pid: 1,
-            messenger: Messenger::new(sender),
-            renderable_content: RenderableContent::default(),
-            terminal,
-            rich_text_id: 0,
-            dimension: ContextDimension::default(),
-        }
+    Context {
+        route_id,
+        #[cfg(not(target_os = "windows"))]
+        main_fd: Arc::new(-1),
+        #[cfg(not(target_os = "windows"))]
+        shell_pid: 1,
+        messenger: Messenger::new(sender),
+        renderable_content: RenderableContent::default(),
+        terminal,
+        rich_text_id,
+        dimension,
     }
+}
 
+impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     fn create_context(
         cursor_state: (&CursorState, bool),
@@ -284,10 +288,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     window_id,
                 );
 
-                ContextManager::create_dead_context(
+                create_mock_context(
                     event_proxy.clone(),
                     window_id,
                     route_id,
+                    0,
+                    ContextDimension::default(),
                 )
             }
         };
@@ -777,7 +783,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             ) {
                 Ok(new_context) => {
                     let previous_margin = self.contexts[self.current_index].margin;
-                    self.contexts.push(ContextGrid::new(new_context, previous_margin));
+                    self.contexts
+                        .push(ContextGrid::new(new_context, previous_margin));
                     if redirect {
                         self.current_index = last_index;
                         self.current_route = self.current().route_id;
