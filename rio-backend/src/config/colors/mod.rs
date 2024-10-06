@@ -479,13 +479,10 @@ impl ColorBuilder {
 
     pub fn from_hex(mut hex: String, conversion_type: Format) -> Result<Self, String> {
         let mut alpha: f64 = 1.0;
-        let _match3or4_hex = "#?[a-f\\d]{3}[a-f\\d]?";
-        let _match6or8_hex = "#?[a-f\\d]{6}([a-f\\d]{2})?";
-        let non_hex_chars = Regex::new(r"(?i)[^#a-f\\0-9]").unwrap();
+        let non_hex_chars = Regex::new(r"(?i)[^#a-f\d]").unwrap();
 
-        // ^#?[a-f\\d]{3}[a-f\\d]?$|^#?[a-f\\d]{6}([a-f\\d]{2})?$ , "i"
-        let valid_hex_size =
-            Regex::new(r"(?i)^#?[a-f\\0-9]{6}([a-f]\\0-9]{2})?$").unwrap();
+        // match valid 6 or 8 hex characters
+        let valid_hex_size = Regex::new(r"(?i)^#?[a-f\d]{6}([a-f\d]{2})?$").unwrap();
 
         if non_hex_chars.is_match(&hex) {
             return Err(String::from("Error: Character is not valid"));
@@ -498,16 +495,14 @@ impl ColorBuilder {
         hex = hex.replace('#', "");
 
         if hex.len() == 8 {
-            // split_at(6, 8)
-            let items = hex.split_at(4);
-            let alpha_from_hex = items.1.to_string().parse::<i32>().unwrap();
-            hex = items.0.to_string();
-            alpha = (alpha_from_hex / 255) as f64;
-            // hex = hex.split_at(1).0.to_string();
+            let (rgb_part, alpha_part) = hex.split_at(6);
+            let alpha_from_hex = i32::from_str_radix(alpha_part, 16).unwrap();
+            hex = rgb_part.to_string();
+            alpha = (alpha_from_hex as f64) / 255.0;
         }
 
         let rgb = decode_hex(&hex).unwrap_or_default();
-        if rgb.is_empty() || rgb.len() > 4 {
+        if rgb.is_empty() || (rgb.len() != 3 && rgb.len() != 4) {
             return Err(String::from("Error: Invalid string, not able to convert"));
         }
 
@@ -735,6 +730,60 @@ mod tests {
                 green: 255.0,
                 blue: 255.0,
                 alpha: 1.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_conversion_from_gray_hex_with_alpha() {
+        let color_with_alpha =
+            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_255).unwrap();
+        assert_eq!(
+            color_with_alpha,
+            ColorBuilder {
+                red: 21.0,
+                green: 21.0,
+                blue: 21.0,
+                alpha: 128.0 / 255.0
+            }
+        );
+
+        let color_with_alpha_srgb0_1 =
+            ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_1).unwrap();
+        assert_eq!(
+            color_with_alpha_srgb0_1,
+            ColorBuilder {
+                red: 21.0 / 255.0,
+                green: 21.0 / 255.0,
+                blue: 21.0 / 255.0,
+                alpha: 128.0 / 255.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_conversion_from_teal_hex_with_alpha() {
+        let color_with_alpha =
+            ColorBuilder::from_hex(String::from("#06a49b99"), Format::SRGB0_255).unwrap();
+        assert_eq!(
+            color_with_alpha,
+            ColorBuilder {
+                red: 6.0,
+                green: 164.0,
+                blue: 155.0,
+                alpha: 153.0 / 255.0
+            }
+        );
+
+        let color_with_alpha_srgb0_1 =
+            ColorBuilder::from_hex(String::from("#06a49b99"), Format::SRGB0_1).unwrap();
+        assert_eq!(
+            color_with_alpha_srgb0_1,
+            ColorBuilder {
+                red: 6.0 / 255.0,
+                green: 164.0 / 255.0,
+                blue: 155.0 / 255.0,
+                alpha: 153.0 / 255.0
             }
         );
     }
