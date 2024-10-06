@@ -1,7 +1,8 @@
+use rustc_hash::FxHashMap;
 use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{Object, RichText, layout::SugarDimensions};
+use rio_backend::sugarloaf::{layout::SugarDimensions, Object, RichText};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -38,28 +39,52 @@ pub struct Delta<T: Default> {
 }
 
 pub struct ContextGrid<T: EventListener> {
+    pub width: f32,
+    pub height: f32,
     pub current: usize,
     pub margin: Delta<f32>,
-    inner: Vec<Context<T>>,
+    inner: FxHashMap<usize, ContextGridItem<T>>,
+}
+
+pub struct ContextGridItem<T: EventListener> {
+    val: Context<T>,
+    right: Option<usize>,
+    down: Option<usize>,
+}
+
+impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
+    pub fn new(context: Context<T>) -> Self {
+        Self {
+            val: context,
+            right: None,
+            down: None,
+        }
+    }
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
-    pub fn new(context: Context<T>, margin: Delta<f32>,) -> Self {
+    pub fn new(context: Context<T>, margin: Delta<f32>) -> Self {
+        let width = context.dimension.width;
+        let height = context.dimension.height;
+        let mut inner = FxHashMap::default();
+        inner.insert(0, ContextGridItem::new(context));
         Self {
-            inner: vec![context],
+            inner,
             current: 0,
             margin,
+            width,
+            height,
         }
     }
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        &self.inner[self.current]
+        &self.inner[&self.current].val
     }
 
     #[inline]
     pub fn current_mut(&mut self) -> &mut Context<T> {
-        &mut self.inner[self.current]
+        &mut self.inner.get_mut(&self.current).unwrap().val
     }
 
     #[inline]
@@ -155,4 +180,73 @@ impl Dimensions for ContextDimension {
     fn square_height(&self) -> f32 {
         self.dimension.height
     }
+}
+
+// TODO: ContextGridItem should contain quad?
+//    - Qual a regra do quad?
+// TODO: Split right
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    use crate::context::create_mock_context;
+    use crate::event::VoidListener;
+    use rio_window::window::WindowId;
+
+    #[test]
+    fn test_single_context_respecting_margin_and_no_quad_creation() {
+        let margin = Delta {
+            x: 10.,
+            top_y: 20.,
+            bottom_y: 20.,
+        };
+
+        let context_dimension = ContextDimension {
+            columns: MIN_COLS,
+            lines: MIN_LINES,
+            margin: Delta::<f32>::default(),
+            dimension: SugarDimensions::default(),
+            width: 1200.0,
+            height: 800.0,
+        };
+        let rich_text_id = 1;
+        let context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            rich_text_id,
+            0,
+            context_dimension,
+        );
+        let context_width = context.dimension.width;
+        let context_height = context.dimension.height;
+        let grid = ContextGrid::<VoidListener>::new(context, margin);
+        // The first context should fill completely w/h grid
+        assert_eq!(grid.width, context_width);
+        assert_eq!(grid.height, context_height);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: rich_text_id,
+                position: [0., 0.],
+            })]
+        );
+    }
+
+    #[test]
+    fn test_single_split_right() {
+        // let window_id: WindowId = WindowId::from(0);
+
+        // let context_manager =
+        //     ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        // assert_eq!(context_manager.capacity, 5);
+
+        // let mut context_manager =
+        //     ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        // context_manager.increase_capacity(3);
+        // assert_eq!(context_manager.capacity, 8);
+    }
+
+    #[test]
+    fn test_resize() {}
 }
