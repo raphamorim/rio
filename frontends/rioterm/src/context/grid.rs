@@ -1,7 +1,7 @@
 use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::layout::SugarDimensions;
+use rio_backend::sugarloaf::{Object, RichText, layout::SugarDimensions};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -60,6 +60,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &mut self.inner[self.current]
     }
 
+    #[inline]
+    pub fn objects(&self) -> Vec<Object> {
+        vec![Object::RichText(RichText {
+            id: 0,
+            position: [0., 0.],
+        })]
+    }
+
     pub fn split_right(&mut self) {}
 
     pub fn split_down(&mut self) {}
@@ -106,32 +114,6 @@ impl ContextDimension {
             bottom_y: padding.2,
         };
     }
-
-    // #[inline]
-    // pub fn update_columns(&mut self) {
-    //     // SugarStack is a primitive representation of columns data
-    //     let current_stack_bound =
-    //         (self.dimension.width * self.dimension.scale) * self.columns as f32;
-    //     let expected_stack_bound = (self.width / self.dimension.scale)
-    //         - (self.dimension.width * self.dimension.scale);
-
-    //     tracing::info!("expected columns {}", self.columns);
-    //     if current_stack_bound < expected_stack_bound {
-    //         let stack_difference = ((expected_stack_bound - current_stack_bound)
-    //             / (self.dimension.width * self.dimension.scale))
-    //             as usize;
-    //         tracing::info!("recalculating columns due to font width, adding more {stack_difference:?} columns");
-    //         let _ = self.columns.wrapping_add(stack_difference);
-    //     }
-
-    //     if current_stack_bound > expected_stack_bound {
-    //         let stack_difference = ((current_stack_bound - expected_stack_bound)
-    //             / (self.dimension.width * self.dimension.scale))
-    //             as usize;
-    //         tracing::info!("recalculating columns due to font width, removing {stack_difference:?} columns");
-    //         let _ = self.columns.wrapping_sub(stack_difference);
-    //     }
-    // }
 
     #[inline]
     pub fn update(&mut self) {
