@@ -818,10 +818,9 @@ impl Renderer {
             self.active_search = None;
         }
 
-        objects.push(Object::RichText(RichText {
-            id: 0,
-            position: [0., 0.],
-        }));
+        for rte in context_manager.grid_objects() {
+            objects.push(rte);
+        }
 
         sugarloaf.set_objects(objects);
     }
