@@ -735,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn test_conversion_from_hex_with_alpha() {
+    fn test_conversion_from_gray_hex_with_alpha() {
         let color_with_alpha =
             ColorBuilder::from_hex(String::from("#15151580"), Format::SRGB0_255).unwrap();
         assert_eq!(
@@ -757,6 +757,33 @@ mod tests {
                 green: 21.0 / 255.0,
                 blue: 21.0 / 255.0,
                 alpha: 128.0 / 255.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_conversion_from_teal_hex_with_alpha() {
+        let color_with_alpha =
+            ColorBuilder::from_hex(String::from("#06a49b99"), Format::SRGB0_255).unwrap();
+        assert_eq!(
+            color_with_alpha,
+            ColorBuilder {
+                red: 6.0,
+                green: 164.0,
+                blue: 155.0,
+                alpha: 153.0 / 255.0
+            }
+        );
+
+        let color_with_alpha_srgb0_1 =
+            ColorBuilder::from_hex(String::from("#06a49b99"), Format::SRGB0_1).unwrap();
+        assert_eq!(
+            color_with_alpha_srgb0_1,
+            ColorBuilder {
+                red: 6.0 / 255.0,
+                green: 164.0 / 255.0,
+                blue: 155.0 / 255.0,
+                alpha: 153.0 / 255.0
             }
         );
     }
