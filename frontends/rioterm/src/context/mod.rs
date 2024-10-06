@@ -16,7 +16,7 @@ use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
-use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors};
+use rio_backend::sugarloaf::{font::SugarloafFont, SugarloafErrors, Object};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
@@ -512,6 +512,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn switch_to_settings(&mut self) {
         self.event_proxy
             .send_event(RioEvent::CreateConfigEditor, self.window_id);
+    }
+
+    #[inline]
+    pub fn grid_objects(&self) -> Vec<Object> {
+        self.contexts[self.current_index].objects()
     }
 
     #[inline]
