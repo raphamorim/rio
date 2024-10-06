@@ -9,6 +9,7 @@
 pub mod hint;
 pub mod touch;
 
+use crate::context::grid::Delta;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
@@ -211,8 +212,12 @@ impl Screen<'_> {
             size.height as f32,
             sugarloaf.get_rich_text_dimensions(&rich_text_id),
             config.line_height,
-            (config.padding_x, padding_y_top, padding_y_bottom),
         );
+        let margin = Delta {
+            x: config.padding_x,
+            top_y: padding_y_top,
+            bottom_y: padding_y_bottom,
+        };
         let context_manager = context::ContextManager::start(
             (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,
@@ -221,6 +226,7 @@ impl Screen<'_> {
             rich_text_id,
             context_manager_config,
             context_dimension,
+            margin,
             sugarloaf_errors,
         )?;
 
@@ -328,9 +334,7 @@ impl Screen<'_> {
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
-        let d = self.context_manager.current_mut();
-        d.dimension
-            .update_margin((config.padding_x, padding_y_top, padding_y_bottom));
+        self.context_manager.current_grid_mut().update_margin((config.padding_x, padding_y_top, padding_y_bottom));
 
         self.renderer = Renderer::new(config, font_library);
 
@@ -1007,13 +1011,15 @@ impl Screen<'_> {
             s.font_size = layout.font_size;
             s.line_height = layout.line_height;
 
-            let d = self.context_manager.current_mut();
-            d.dimension.update_margin((
-                d.dimension.margin.x,
+            let d = self.context_manager.current_grid_mut();
+            d.update_margin((
+                d.margin.x,
                 padding_y_top,
                 padding_y_bottom,
             ));
-            d.dimension.update();
+
+            // TODO:
+            // d.dimension.update();
             self.resize_all_contexts();
         }
     }

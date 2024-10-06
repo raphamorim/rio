@@ -39,14 +39,16 @@ pub struct Delta<T: Default> {
 
 pub struct ContextGrid<T: EventListener> {
     pub current: usize,
+    pub margin: Delta<f32>,
     inner: Vec<Context<T>>,
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
-    pub fn new(context: Context<T>) -> Self {
+    pub fn new(context: Context<T>, margin: Delta<f32>,) -> Self {
         Self {
             inner: vec![context],
             current: 0,
+            margin,
         }
     }
 
@@ -66,6 +68,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             id: 0,
             position: [0., 0.],
         })]
+    }
+
+    pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
+        self.margin = Delta {
+            x: padding.0,
+            top_y: padding.1,
+            bottom_y: padding.2,
+        };
     }
 
     pub fn split_right(&mut self) {}
@@ -89,12 +99,11 @@ impl ContextDimension {
         height: f32,
         dimension: SugarDimensions,
         line_height: f32,
-        padding: (f32, f32, f32),
     ) -> Self {
         let margin = Delta {
-            x: padding.0,
-            top_y: padding.1,
-            bottom_y: padding.2,
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
         };
         let (columns, lines) = compute(width, height, dimension, line_height, margin);
         Self {
@@ -105,14 +114,6 @@ impl ContextDimension {
             dimension,
             margin,
         }
-    }
-
-    pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
-        self.margin = Delta {
-            x: padding.0,
-            top_y: padding.1,
-            bottom_y: padding.2,
-        };
     }
 
     #[inline]
