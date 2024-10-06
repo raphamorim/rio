@@ -10,6 +10,10 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
+## 0.1.18
+
+- Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
+
 ## 0.1.17
 
 - Fix flash of white during startup on Microsoft Windows [#640](https://github.com/raphamorim/rio/issues/640).
