@@ -647,8 +647,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn remove_current_grid(&self) {
-        self.contexts.remove_current_grid();
+    pub fn remove_current_grid(&mut self) {
+        self.contexts[self.current_index].remove_current_grid();
     }
 
     #[inline]

@@ -490,38 +490,38 @@ pub mod test {
             grid.objects(),
             vec![
                 Object::Quad(ComposedQuad {
-                    color: [1.0, 0.5, 0.5, 0.5],
+                    color: [0.0, 0.0, 0.0, 0.0],
                     quad: Quad {
-                        position: [440., 5.],
-                        shadow_blur_radius: 0.0,
-                        shadow_offset: [0.0, 0.0],
-                        shadow_color: [1.0, 1.0, 0.0, 1.0],
-                        border_color: [1.0, 0.0, 1.0, 1.0],
-                        border_width: 2.0,
+                        position: [10.0, 20.0],
+                        size: [298.0, 380.0],
+                        border_color: [0.0, 0.0, 0.0, 0.0],
                         border_radius: [0.0, 0.0, 0.0, 0.0],
-                        size: [320.0, 150.0],
+                        border_width: 1.0,
+                        shadow_color: [0.0, 0.0, 0.0, 0.5],
+                        shadow_offset: [0.0, 0.0],
+                        shadow_blur_radius: 0.0
                     },
                 }),
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [10., 20.],
+                    position: [11.0, 19.0],
                 }),
                 Object::Quad(ComposedQuad {
-                    color: [1.0, 0.5, 0.5, 0.5],
+                    color: [0.0, 0.0, 0.0, 0.0],
                     quad: Quad {
-                        position: [440., 5.],
-                        shadow_blur_radius: 0.0,
-                        shadow_offset: [0.0, 0.0],
-                        shadow_color: [1.0, 1.0, 0.0, 1.0],
-                        border_color: [1.0, 0.0, 1.0, 1.0],
-                        border_width: 2.0,
+                        position: [312.0, 20.0],
+                        size: [298.0, 380.0],
+                        border_color: [0.0, 0.0, 0.0, 0.0],
                         border_radius: [0.0, 0.0, 0.0, 0.0],
-                        size: [320.0, 150.0],
+                        border_width: 1.0,
+                        shadow_color: [0.0, 0.0, 0.0, 0.5],
+                        shadow_offset: [0.0, 0.0],
+                        shadow_blur_radius: 0.0
                     },
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10., 20.],
+                    position: [313.0, 19.0]
                 }),
             ]
         );
