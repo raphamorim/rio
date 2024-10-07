@@ -1125,7 +1125,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // route.window.screen.close_tab();
             }
             Hook::SplitRight => {
-                // route.window.screen.close_tab();
+                if self.config.split.enable {
+                    route.window.screen.split_right();
+                }
             }
         }
     }
