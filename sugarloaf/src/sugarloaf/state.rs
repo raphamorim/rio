@@ -247,5 +247,3 @@ impl SugarState {
         self.rich_text_repaint.clear();
     }
 }
-
-// TODO: Write tests for compute layout updates
