@@ -731,6 +731,53 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
+    pub fn split_right(&mut self, cursor_state: (&CursorState, bool)) {
+        let mut working_dir = None;
+        if self.config.use_current_path && self.config.working_dir.is_none() {
+            #[cfg(not(target_os = "windows"))]
+            {
+                let current_context = self.current();
+                if let Ok(path) = teletypewriter::foreground_process_path(
+                    *current_context.main_fd,
+                    current_context.shell_pid,
+                ) {
+                    working_dir = Some(path.to_string_lossy().to_string());
+                }
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                // if let Ok(path) = teletypewriter::foreground_process_path() {
+                //     working_dir =
+                //         Some(path.to_string_lossy().to_string());
+                // }
+                working_dir = None;
+            }
+        }
+
+        let mut cloned_config = self.config.clone();
+        if working_dir.is_some() {
+            cloned_config.working_dir = working_dir;
+        }
+
+        match ContextManager::create_context(
+            cursor_state,
+            self.event_proxy.clone(),
+            self.window_id,
+            0,
+            self.acc_current_route,
+            self.current().dimension,
+            &cloned_config,
+        ) {
+            Ok(new_context) => {
+                self.contexts[self.current_index].split_right(new_context);
+            }
+            Err(..) => {
+                tracing::error!("not able to create a new context");
+            }
+        }
+    }
+
     #[inline]
     pub fn add_context(&mut self, redirect: bool, cursor_state: (&CursorState, bool)) {
         let mut working_dir = None;

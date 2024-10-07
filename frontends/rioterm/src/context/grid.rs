@@ -6,6 +6,8 @@ use rio_backend::sugarloaf::{layout::SugarDimensions, Object, RichText, Quad, Co
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
+const PADDING: f32 = 4.;
+
 // $ tput columns
 // $ tput lines
 #[inline]
@@ -47,6 +49,8 @@ pub struct ContextGrid<T: EventListener> {
 
 pub struct ContextGridItem<T: EventListener> {
     val: Context<T>,
+    pub width: f32,
+    pub height: f32,
     right: Option<usize>,
     down: Option<usize>,
 }
@@ -54,6 +58,8 @@ pub struct ContextGridItem<T: EventListener> {
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
         Self {
+            width: context.dimension.width,
+            height: context.dimension.height,
             val: context,
             right: None,
             down: None,
@@ -76,6 +82,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    pub fn get_grid_item(&self, index: usize) -> &ContextGridItem<T> {
+        &self.inner[index]
+    }
+
+    #[inline]
     pub fn current(&self) -> &Context<T> {
         &self.inner[self.current].val
     }
@@ -88,6 +99,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     pub fn objects(&self) -> Vec<Object> {
         let len = self.inner.len();
+        if len == 0 {
+            return vec![];
+        }
+
         let mut objects = Vec::with_capacity(len);
 
         // In case there's only 1 context then ignore quad
@@ -97,22 +112,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     id: item.val.rich_text_id,
                     position: [self.margin.x, self.margin.top_y],
                 }));
-                return objects;
             }
-        }
-
-        for item in &self.inner {
-            objects.push(Object::RichText(RichText {
-                id: item.val.rich_text_id,
-                position: [0., 0.],
-            }));
+        } else {
+            self.plot_objects(&mut objects, 0, self.margin);
         }
         objects
     }
 
-    pub fn plot_objects(&self, objects: &mut Vec<Object>) {
+    pub fn plot_objects(&self, objects: &mut Vec<Object>, index: usize, margin: Delta<f32>) {
+        if let Some(item) = self.inner.get(index) {
+            objects.push(Object::Quad(ComposedQuad {
+                color: [0.0, 0.0, 0.0, 0.0],
+                quad: Quad {
+                    position: [margin.x, margin.top_y],
+                    shadow_blur_radius: 0.0,
+                    shadow_offset: [0.0, 0.0],
+                    shadow_color: [0.0, 0.0, 0.0, 0.5],
+                    border_color: [1.0, 0.0, 1.0, 1.0],
+                    border_width: 2.0,
+                    border_radius: [0.0, 0.0, 0.0, 0.0],
+                    size: [item.width, item.height],
+                },
+            }));
 
+            objects.push(Object::RichText(RichText {
+                id: item.val.rich_text_id,
+                position: [margin.x + PADDING, margin.top_y + PADDING],
+            }));
 
+            if let Some(right_item) = item.right {
+                let new_margin = Delta {
+                    x: margin.x + item.val.dimension.width,
+                    top_y: 20.,
+                    bottom_y: 20.,
+                };
+                self.plot_objects(objects, right_item, new_margin);
+            }
+
+            // if let Some(right_item) = item.right {
+            //     self.plot_objects(objects, right_item);
+            // }
+        }
     }
 
     pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
@@ -124,15 +164,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
-        let old_width = self.inner[self.current].val.dimension.width;
-        let new_width = old_width / 2.0;
-        self.inner[self.current].val.dimension.width = new_width;
+        let old_grid_item_width = self.inner[self.current].val.dimension.width;
+        let new_grid_item_width = old_grid_item_width / 2.0;
+        // Change grid item by half
+        self.inner[self.current].width = new_grid_item_width;
+        // Move content to middle
+        self.inner[self.current].val.dimension.width = new_grid_item_width - (PADDING * 2.0);
 
         let mut new_context = ContextGridItem::new(context);
-        new_context.val.dimension.width = new_width;
+        new_context.width = new_grid_item_width;
+        new_context.val.dimension.width = new_grid_item_width - (PADDING * 2.0);
 
         self.inner.push(new_context);
-        let new_current = self.inner.len();
+        let new_current = self.inner.len() - 1;
         self.inner[self.current].right = Some(new_current);
         self.current = new_current;
     }
@@ -229,14 +273,20 @@ pub mod test {
             bottom_y: 20.,
         };
 
-        let context_dimension = ContextDimension {
-            columns: MIN_COLS,
-            lines: MIN_LINES,
-            margin: Delta::<f32>::default(),
-            dimension: SugarDimensions::default(),
-            width: 1200.0,
-            height: 800.0,
-        };
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 18.,
+                height: 9.,
+            },
+            1.0,
+            Delta::<f32>::default()
+        );
+
+        assert_eq!(context_dimension.columns, 66);
+        assert_eq!(context_dimension.lines, 88);
         let rich_text_id = 1;
         let route_id = 0;
         let context = create_mock_context(
@@ -253,7 +303,14 @@ pub mod test {
         // The first context should fill completely w/h grid
         assert_eq!(grid.width, context_width);
         assert_eq!(grid.height, context_height);
-        assert_eq!(grid.margin, context_margin);
+        // The first context should fill completely w/g grid item
+        let grid_item = grid.get_grid_item(0);
+        assert_eq!(grid_item.width, context_width);
+        assert_eq!(grid_item.height, context_height);
+
+        // Context margin should empty
+        assert_eq!(Delta::<f32>::default(), context_margin);
+        assert_eq!(grid.margin, margin);
 
         assert_eq!(
             grid.objects(),
@@ -272,14 +329,20 @@ pub mod test {
             bottom_y: 20.,
         };
 
-        let context_dimension = ContextDimension {
-            columns: MIN_COLS,
-            lines: MIN_LINES,
-            margin: Delta::<f32>::default(),
-            dimension: SugarDimensions::default(),
-            width: 1200.0,
-            height: 800.0,
-        };
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default()
+        );
+
+        assert_eq!(context_dimension.columns, 85);
+        assert_eq!(context_dimension.lines, 100);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -312,6 +375,15 @@ pub mod test {
         };
 
         let mut grid = ContextGrid::<VoidListener>::new(first_context, margin);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [10., 20.],
+            })]
+        );
+
         grid.split_right(second_context);
 
         assert_eq!(
