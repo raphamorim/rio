@@ -132,11 +132,11 @@ pub fn initialize(app: &NSApplication) {
         }),
     );
 
-    let close_tab_item_title = ns_string!("Close Tab");
-    let close_tab_item = menu_item(
+    let close_item_title = ns_string!("Close");
+    let close_item = menu_item(
         mtm,
-        close_tab_item_title,
-        Some(sel!(rioCloseTab:)),
+        close_item_title,
+        Some(sel!(rioClose:)),
         Some(KeyEquivalent {
             key: ns_string!("w"),
             masks: Some(NSEventModifierFlags::NSEventModifierFlagCommand),
@@ -207,7 +207,7 @@ pub fn initialize(app: &NSApplication) {
     app_menu_item.setSubmenu(Some(&app_menu));
     shell_menu.addItem(&create_window_item);
     shell_menu.addItem(&create_tab_item);
-    shell_menu.addItem(&close_tab_item);
+    shell_menu.addItem(&close_item);
     shell_menu.addItem(&create_split_horizontally_item);
     shell_menu.addItem(&create_split_vertical_item);
     shell_menu_item.setSubmenu(Some(&shell_menu));

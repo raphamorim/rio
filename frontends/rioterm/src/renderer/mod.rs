@@ -724,80 +724,82 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        let content = sugarloaf.content();
+
+        for grid_context in context_manager.current_grid_mut().contexts_mut() {
+            let context = grid_context.context_mut();
+            let rich_text_id = context.rich_text_id;
+            let renderable_content = context.renderable_content();
+            self.cursor.state = renderable_content.cursor.clone();
+            let mut is_cursor_visible = self.cursor.state.is_visible();
+
+            self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
+
+            // Only blink cursor if does not contain selection
+            let has_selection = self.selection_range.is_some();
+            if !has_selection && self.has_blinking_enabled() {
+                let mut should_blink = true;
+                if let Some(last_typing_time) = self.last_typing {
+                    if last_typing_time.elapsed() < Duration::from_secs(1) {
+                        should_blink = false;
+                    }
+                }
+
+                if should_blink {
+                    self.is_blinking = !self.is_blinking;
+                    is_cursor_visible = self.is_blinking;
+                }
+            }
+            let display_offset = renderable_content.display_offset;
+
+            // let mut render_strategy = &renderable_content.strategy;
+            // if has_selection {
+            //     render_strategy = &RenderableContentStrategy::Full;
+            // }
+
+            match &renderable_content.strategy {
+                RenderableContentStrategy::Full => {
+                    content.sel(rich_text_id);
+                    content.clear();
+                    for (i, row) in renderable_content.inner.iter().enumerate() {
+                        let has_cursor =
+                            is_cursor_visible && self.cursor.state.pos.row == i;
+                        self.create_line(
+                            content,
+                            row,
+                            has_cursor,
+                            None,
+                            Line((i as i32) - display_offset),
+                            hints,
+                            focused_match,
+                        );
+                    }
+                    content.build();
+                }
+                RenderableContentStrategy::Lines(lines) => {
+                    content.sel(rich_text_id);
+                    for line in lines {
+                        let line = *line;
+                        let has_cursor =
+                            is_cursor_visible && self.cursor.state.pos.row == line;
+                        content.clear_line(line);
+                        self.create_line(
+                            content,
+                            &renderable_content.inner[line],
+                            has_cursor,
+                            Some(line),
+                            Line((line as i32) - display_offset),
+                            hints,
+                            focused_match,
+                        );
+                    }
+                }
+                RenderableContentStrategy::Noop => {}
+            }
+        }
+
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let renderable_content = context_manager.renderable_content();
-        self.cursor.state = renderable_content.cursor.clone();
-        let mut is_cursor_visible = self.cursor.state.is_visible();
-
-        self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
-
-        // Only blink cursor if does not contain selection
-        let has_selection = self.selection_range.is_some();
-        if !has_selection && self.has_blinking_enabled() {
-            let mut should_blink = true;
-            if let Some(last_typing_time) = self.last_typing {
-                if last_typing_time.elapsed() < Duration::from_secs(1) {
-                    should_blink = false;
-                }
-            }
-
-            if should_blink {
-                self.is_blinking = !self.is_blinking;
-                is_cursor_visible = self.is_blinking;
-            }
-        }
-
-        let content = sugarloaf.content();
-        let display_offset = renderable_content.display_offset;
-
-        // let mut render_strategy = &renderable_content.strategy;
-        // if has_selection {
-        //     render_strategy = &RenderableContentStrategy::Full;
-        // }
-
-        // let start = std::time::Instant::now();
-        match &renderable_content.strategy {
-            RenderableContentStrategy::Full => {
-                content.sel(0);
-                content.clear();
-                for (i, row) in renderable_content.inner.iter().enumerate() {
-                    let has_cursor = is_cursor_visible && self.cursor.state.pos.row == i;
-                    self.create_line(
-                        content,
-                        row,
-                        has_cursor,
-                        None,
-                        Line((i as i32) - display_offset),
-                        hints,
-                        focused_match,
-                    );
-                }
-                content.build();
-            }
-            RenderableContentStrategy::Lines(lines) => {
-                content.sel(0);
-                for line in lines {
-                    let line = *line;
-                    let has_cursor =
-                        is_cursor_visible && self.cursor.state.pos.row == line;
-                    content.clear_line(line);
-                    self.create_line(
-                        content,
-                        &renderable_content.inner[line],
-                        has_cursor,
-                        Some(line),
-                        Line((line as i32) - display_offset),
-                        hints,
-                        focused_match,
-                    );
-                }
-            }
-            RenderableContentStrategy::Noop => {}
-        }
-        // let duration = start.elapsed();
-        // println!("Total loop rows: {:?}", duration);
-
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
             (window_size.width, window_size.height, scale_factor),

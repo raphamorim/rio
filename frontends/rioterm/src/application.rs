@@ -1118,8 +1118,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.create_tab();
                 }
             }
-            Hook::CloseTab => {
-                route.window.screen.close_tab();
+            Hook::Close => {
+                route.window.screen.close_split_or_tab();
             }
             Hook::SplitDown => {
                 // route.window.screen.close_tab();

@@ -203,6 +203,7 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names
             should_update_titles: !(is_collapsed
                 && config.navigation.color_automation.is_empty()),
+            split_colors: (config.colors.split, config.colors.split_active),
         };
 
         let rich_text_id = sugarloaf.create_rich_text();
@@ -963,7 +964,9 @@ impl Screen<'_> {
     }
 
     pub fn split_right(&mut self) {
+        let rich_text_id = self.sugarloaf.create_rich_text();
         self.context_manager.split_right(
+            rich_text_id,
             (
                 &self.renderer.get_cursor_state_from_ref(),
                 self.renderer.config_has_blinking_enabled,
@@ -976,8 +979,10 @@ impl Screen<'_> {
     pub fn create_tab(&mut self) {
         let redirect = true;
 
+        let rich_text_id = self.sugarloaf.create_rich_text();
         self.context_manager.add_context(
             redirect,
+            rich_text_id,
             (
                 &self.renderer.get_cursor_state_from_ref(),
                 self.renderer.config_has_blinking_enabled,
@@ -988,6 +993,14 @@ impl Screen<'_> {
         self.cancel_search();
         self.resize_top_or_bottom_line(num_tabs);
         self.render();
+    }
+
+    pub fn close_split_or_tab(&mut self) {
+        self.clear_selection();
+
+        if self.context_manager.current_grid_len() > 1 {
+            self.context_manager.remove_current_grid();
+        }
     }
 
     pub fn close_tab(&mut self) {
