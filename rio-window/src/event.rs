@@ -140,7 +140,7 @@ impl<T> Event<T> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Hook {
     CreateTab,
-    CloseTab,
+    Close,
     Copy,
     Paste,
     SplitDown,

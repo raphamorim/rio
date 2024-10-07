@@ -141,6 +141,20 @@ pub fn dim_black() -> ColorArray {
 }
 
 #[inline]
+pub fn split() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#292527"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
+pub fn split_active() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#12d0ff"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
 pub fn dim_blue() -> ColorArray {
     ColorBuilder::from_hex(String::from("#0E91B7"), Format::SRGB0_1)
         .unwrap()
