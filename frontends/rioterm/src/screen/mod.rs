@@ -207,17 +207,18 @@ impl Screen<'_> {
 
         let rich_text_id = sugarloaf.create_rich_text();
 
-        let context_dimension = ContextDimension::build(
-            size.width as f32,
-            size.height as f32,
-            sugarloaf.get_rich_text_dimensions(&rich_text_id),
-            config.line_height,
-        );
         let margin = Delta {
             x: config.padding_x,
             top_y: padding_y_top,
             bottom_y: padding_y_bottom,
         };
+        let context_dimension = ContextDimension::build(
+            size.width as f32,
+            size.height as f32,
+            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            config.line_height,
+            margin,
+        );
         let context_manager = context::ContextManager::start(
             (&renderer.get_cursor_state(), config.cursor.blinking),
             event_proxy,

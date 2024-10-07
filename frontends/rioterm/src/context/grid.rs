@@ -1,8 +1,7 @@
-use rustc_hash::FxHashMap;
 use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{layout::SugarDimensions, Object, RichText};
+use rio_backend::sugarloaf::{layout::SugarDimensions, Object, RichText, Quad, ComposedQuad};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -43,7 +42,7 @@ pub struct ContextGrid<T: EventListener> {
     pub height: f32,
     pub current: usize,
     pub margin: Delta<f32>,
-    inner: FxHashMap<usize, ContextGridItem<T>>,
+    inner: Vec<ContextGridItem<T>>,
 }
 
 pub struct ContextGridItem<T: EventListener> {
@@ -66,8 +65,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(context: Context<T>, margin: Delta<f32>) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
-        let mut inner = FxHashMap::default();
-        inner.insert(0, ContextGridItem::new(context));
+        let inner = vec![ContextGridItem::new(context)];
         Self {
             inner,
             current: 0,
@@ -79,20 +77,42 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        &self.inner[&self.current].val
+        &self.inner[self.current].val
     }
 
     #[inline]
     pub fn current_mut(&mut self) -> &mut Context<T> {
-        &mut self.inner.get_mut(&self.current).unwrap().val
+        &mut self.inner[self.current].val
     }
 
     #[inline]
     pub fn objects(&self) -> Vec<Object> {
-        vec![Object::RichText(RichText {
-            id: 0,
-            position: [0., 0.],
-        })]
+        let len = self.inner.len();
+        let mut objects = Vec::with_capacity(len);
+
+        // In case there's only 1 context then ignore quad
+        if len == 1 {
+            if let Some(item) = self.inner.get(0) {
+                objects.push(Object::RichText(RichText {
+                    id: item.val.rich_text_id,
+                    position: [self.margin.x, self.margin.top_y],
+                }));
+                return objects;
+            }
+        }
+
+        for item in &self.inner {
+            objects.push(Object::RichText(RichText {
+                id: item.val.rich_text_id,
+                position: [0., 0.],
+            }));
+        }
+        objects
+    }
+
+    pub fn plot_objects(&self, objects: &mut Vec<Object>) {
+
+
     }
 
     pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
@@ -103,7 +123,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
     }
 
-    pub fn split_right(&mut self) {}
+    pub fn split_right(&mut self, context: Context<T>) {
+        let old_width = self.inner[self.current].val.dimension.width;
+        let new_width = old_width / 2.0;
+        self.inner[self.current].val.dimension.width = new_width;
+
+        let mut new_context = ContextGridItem::new(context);
+        new_context.val.dimension.width = new_width;
+
+        self.inner.push(new_context);
+        let new_current = self.inner.len();
+        self.inner[self.current].right = Some(new_current);
+        self.current = new_current;
+    }
 
     pub fn split_down(&mut self) {}
 }
@@ -124,12 +156,8 @@ impl ContextDimension {
         height: f32,
         dimension: SugarDimensions,
         line_height: f32,
+        margin: Delta<f32>,
     ) -> Self {
-        let margin = Delta {
-            x: 0.,
-            top_y: 0.,
-            bottom_y: 0.,
-        };
         let (columns, lines) = compute(width, height, dimension, line_height, margin);
         Self {
             width,
@@ -210,41 +238,121 @@ pub mod test {
             height: 800.0,
         };
         let rich_text_id = 1;
+        let route_id = 0;
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
+            route_id,
             rich_text_id,
-            0,
             context_dimension,
         );
         let context_width = context.dimension.width;
         let context_height = context.dimension.height;
+        let context_margin = context.dimension.margin;
         let grid = ContextGrid::<VoidListener>::new(context, margin);
         // The first context should fill completely w/h grid
         assert_eq!(grid.width, context_width);
         assert_eq!(grid.height, context_height);
+        assert_eq!(grid.margin, context_margin);
 
         assert_eq!(
             grid.objects(),
             vec![Object::RichText(RichText {
                 id: rich_text_id,
-                position: [0., 0.],
+                position: [10., 20.],
             })]
         );
     }
 
     #[test]
     fn test_single_split_right() {
-        // let window_id: WindowId = WindowId::from(0);
+        let margin = Delta {
+            x: 10.,
+            top_y: 20.,
+            bottom_y: 20.,
+        };
 
-        // let context_manager =
-        //     ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        // assert_eq!(context_manager.capacity, 5);
+        let context_dimension = ContextDimension {
+            columns: MIN_COLS,
+            lines: MIN_LINES,
+            margin: Delta::<f32>::default(),
+            dimension: SugarDimensions::default(),
+            width: 1200.0,
+            height: 800.0,
+        };
 
-        // let mut context_manager =
-        //     ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
-        // context_manager.increase_capacity(3);
-        // assert_eq!(context_manager.capacity, 8);
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id
+            )
+        };
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, margin);
+        grid.split_right(second_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::Quad(ComposedQuad {
+                    color: [1.0, 0.5, 0.5, 0.5],
+                    quad: Quad {
+                        position: [440., 5.],
+                        shadow_blur_radius: 0.0,
+                        shadow_offset: [0.0, 0.0],
+                        shadow_color: [1.0, 1.0, 0.0, 1.0],
+                        border_color: [1.0, 0.0, 1.0, 1.0],
+                        border_width: 2.0,
+                        border_radius: [0.0, 0.0, 0.0, 0.0],
+                        size: [320.0, 150.0],
+                    },
+                }),
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [10., 20.],
+                }),
+                Object::Quad(ComposedQuad {
+                    color: [1.0, 0.5, 0.5, 0.5],
+                    quad: Quad {
+                        position: [440., 5.],
+                        shadow_blur_radius: 0.0,
+                        shadow_offset: [0.0, 0.0],
+                        shadow_color: [1.0, 1.0, 0.0, 1.0],
+                        border_color: [1.0, 0.0, 1.0, 1.0],
+                        border_width: 2.0,
+                        border_radius: [0.0, 0.0, 0.0, 0.0],
+                        size: [320.0, 150.0],
+                    },
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [10., 20.],
+                }),
+            ]
+        );
     }
 
     #[test]
