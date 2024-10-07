@@ -962,6 +962,17 @@ impl Screen<'_> {
         ignore_chars.unwrap_or(false)
     }
 
+    pub fn split_right(&mut self) {
+        self.context_manager.split_right(
+            (
+                &self.renderer.get_cursor_state_from_ref(),
+                self.renderer.config_has_blinking_enabled,
+            ),
+        );
+
+        self.render();
+    }
+
     pub fn create_tab(&mut self) {
         let redirect = true;
 
