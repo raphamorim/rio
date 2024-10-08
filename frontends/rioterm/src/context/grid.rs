@@ -123,6 +123,32 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    pub fn select_next_split(&mut self) {
+        if self.inner.len() == 1 {
+            return;
+        }
+
+        if self.current >= self.inner.len() - 1 {
+            self.current = 0;
+        } else {
+            self.current += 1;
+        }
+    }
+
+    #[inline]
+    pub fn select_prev_split(&mut self) {
+        if self.inner.len() == 1 {
+            return;
+        }
+
+        if self.current == 0 {
+            self.current = self.inner.len() - 1;
+        } else {
+            self.current -= 1;
+        }
+    }
+
+    #[inline]
     pub fn current(&self) -> &Context<T> {
         &self.inner[self.current].val
     }
