@@ -203,7 +203,7 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names
             should_update_titles: !(is_collapsed
                 && config.navigation.color_automation.is_empty()),
-            split_colors: (config.colors.split, config.colors.split_active),
+            split_color: config.colors.split,
         };
 
         let rich_text_id = sugarloaf.create_rich_text();

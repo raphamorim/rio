@@ -2,13 +2,13 @@ use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, ComposedQuad, Object, Quad, RichText,
+    layout::SugarDimensions, Rect, ComposedQuad, Object, Quad, RichText,
 };
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
-const PADDING: f32 = 4.;
+const PADDING: f32 = 2.;
 
 // $ tput columns
 // $ tput lines
@@ -47,14 +47,11 @@ pub struct ContextGrid<T: EventListener> {
     pub current: usize,
     pub margin: Delta<f32>,
     border_color: [f32; 4],
-    active_border_color: [f32; 4],
     inner: Vec<ContextGridItem<T>>,
 }
 
 pub struct ContextGridItem<T: EventListener> {
     val: Context<T>,
-    pub width: f32,
-    pub height: f32,
     right: Option<usize>,
     down: Option<usize>,
 }
@@ -62,8 +59,6 @@ pub struct ContextGridItem<T: EventListener> {
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
         Self {
-            width: context.dimension.width,
-            height: context.dimension.height,
             val: context,
             right: None,
             down: None,
@@ -88,10 +83,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(
         context: Context<T>,
         margin: Delta<f32>,
-        split_colors: ([f32; 4], [f32; 4]),
+        border_color: [f32; 4],
     ) -> Self {
-        let border_color = split_colors.0;
-        let active_border_color = split_colors.1;
         let width = context.dimension.width;
         let height = context.dimension.height;
         let inner = vec![ContextGridItem::new(context)];
@@ -102,7 +95,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             width,
             height,
             border_color,
-            active_border_color,
         }
     }
 
@@ -188,44 +180,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         margin: Delta<f32>,
     ) {
         if let Some(item) = self.inner.get(index) {
-            let border_color = if index == self.current {
-                self.active_border_color
-            } else {
-                self.border_color
-            };
-
-            let border_width = 1.0;
-
-            objects.push(Object::Quad(ComposedQuad {
-                color: [0.0, 0.0, 0.0, 0.0],
-                quad: Quad {
-                    position: [margin.x, margin.top_y],
-                    shadow_blur_radius: 0.0,
-                    shadow_offset: [0.0, 0.0],
-                    shadow_color: [0.0, 0.0, 0.0, 0.5],
-                    border_color,
-                    border_width: 1.0,
-                    border_radius: [0.0, 0.0, 0.0, 0.0],
-                    size: [
-                        item.width / item.val.dimension.dimension.scale,
-                        item.height / item.val.dimension.dimension.scale,
-                    ],
-                },
-            }));
-
             objects.push(Object::RichText(RichText {
                 id: item.val.rich_text_id,
-                position: [margin.x + border_width, margin.top_y - border_width],
+                position: [margin.x, margin.top_y],
             }));
 
             if let Some(right_item) = item.right {
                 let new_margin = Delta {
                     x: margin.x
                         + PADDING
-                        + (item.width / item.val.dimension.dimension.scale),
+                        + (item.val.dimension.width / item.val.dimension.dimension.scale),
                     top_y: margin.top_y,
                     bottom_y: margin.bottom_y,
                 };
+
+                objects.push(Object::Rect(Rect {
+                    position: [new_margin.x - PADDING, new_margin.top_y],
+                    color: self.border_color,
+                    size: [
+                        2. / item.val.dimension.dimension.scale,
+                        item.val.dimension.height / item.val.dimension.dimension.scale,
+                    ],
+                }));
+
                 self.plot_objects(objects, right_item, new_margin);
             }
 
@@ -234,9 +211,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     x: margin.x,
                     top_y: margin.top_y
                         + PADDING
-                        + (item.height / item.val.dimension.dimension.scale),
+                        + (item.val.dimension.height / item.val.dimension.dimension.scale),
                     bottom_y: margin.bottom_y,
                 };
+
+                 objects.push(Object::Rect(Rect {
+                    position: [new_margin.x, new_margin.top_y - PADDING],
+                    color: self.border_color,
+                    size: [
+                        item.val.dimension.width,
+                        2. / item.val.dimension.dimension.scale,
+                    ],
+                }));
+
                 self.plot_objects(objects, down_item, new_margin);
             }
         }
@@ -257,15 +244,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let should_change_height = self.inner.len() == 1;
 
         if should_change_height {
-            self.inner[self.current].height -= self.margin.top_y
+            self.inner[self.current].val.dimension.height -= self.margin.top_y
                 * self.inner[self.current].val.dimension.dimension.scale;
             // self.inner[self.current].val.dimension.height -= PADDING * 2.0;
         }
 
-        let old_grid_item_width = self.inner[self.current].width;
+        let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_width = (old_grid_item_width / 2.0) - PADDING;
-        // Change grid item by half
-        self.inner[self.current].width = new_grid_item_width;
         // Move content to middle
         self.inner[self.current]
             .val
@@ -281,8 +266,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.inner[self.current].val.messenger.send_resize(winsize);
 
         let mut new_context = ContextGridItem::new(context);
-        new_context.width = new_grid_item_width;
-        new_context.height = self.inner[self.current].height;
+        new_context.val.dimension.height = self.inner[self.current].val.dimension.height;
 
         new_context
             .val
@@ -314,10 +298,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         //     // self.inner[self.current].val.dimension.height -= PADDING * 2.0;
         // }
 
-        let old_grid_item_height = self.inner[self.current].height;
+        let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let new_grid_item_height = (old_grid_item_height / 2.0) - PADDING;
-        // Change grid item by half
-        self.inner[self.current].height = new_grid_item_height;
         // Move content to middle
         self.inner[self.current]
             .val
@@ -333,7 +315,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.inner[self.current].val.messenger.send_resize(winsize);
 
         let mut new_context = ContextGridItem::new(context);
-        new_context.height = new_grid_item_height;
         // new_context.height = self.inner[self.current].height;
 
         new_context
@@ -492,10 +473,6 @@ pub mod test {
         // The first context should fill completely w/h grid
         assert_eq!(grid.width, context_width);
         assert_eq!(grid.height, context_height);
-        // The first context should fill completely w/g grid item
-        let grid_item = grid.get_grid_item(0);
-        assert_eq!(grid_item.width, context_width);
-        assert_eq!(grid_item.height, context_height);
 
         // Context margin should empty
         assert_eq!(Delta::<f32>::default(), context_margin);
