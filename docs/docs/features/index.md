@@ -18,5 +18,6 @@ Short introduction of Rio terminal features.
 - [Color automation for navigation](/docs/features/color-automation-for-navigation)
 - [Sixel protocol](/docs/features/sixel-protocol)
 - [Spawn or Fork](/docs/features/spawn-or-fork)
+- [Split panels](/docs/features/split-panels)
 
 Note: Many other features are in development.
