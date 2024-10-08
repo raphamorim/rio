@@ -201,9 +201,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 self.plot_objects(objects, right_item, new_margin);
             }
 
-            // if let Some(right_item) = item.right {
-            //     self.plot_objects(objects, right_item);
-            // }
+            if let Some(down_item) = item.down {
+                let new_margin = Delta {
+                    x: margin.x,
+                    top_y: margin.top_y + PADDING + (item.height / item.val.dimension.dimension.scale),
+                    bottom_y: margin.bottom_y,
+                };
+                self.plot_objects(objects, down_item, new_margin);
+            }
         }
     }
 
@@ -269,7 +274,57 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.current = new_current;
     }
 
-    pub fn split_down(&mut self) {}
+    pub fn split_down(&mut self, context: Context<T>) {
+        // If we are moving from first to second context, needs to change height
+        // let should_change_height = self.inner.len() == 1;
+
+        // if should_change_height {
+        //     self.inner[self.current].height -= self.margin.top_y
+        //         * self.inner[self.current].val.dimension.dimension.scale;
+        //     // self.inner[self.current].val.dimension.height -= PADDING * 2.0;
+        // }
+
+        let old_grid_item_height = self.inner[self.current].height;
+        let new_grid_item_height = (old_grid_item_height / 2.0) - PADDING;
+        // Change grid item by half
+        self.inner[self.current].height = new_grid_item_height;
+        // Move content to middle
+        self.inner[self.current]
+            .val
+            .dimension
+            .update_height(new_grid_item_height - (PADDING * 2.0));
+
+        let mut terminal = self.inner[self.current].val.terminal.lock();
+        terminal.resize::<ContextDimension>(self.inner[self.current].val.dimension);
+        drop(terminal);
+        let winsize = crate::renderer::utils::terminal_dimensions(
+            &self.inner[self.current].val.dimension,
+        );
+        let _ = self.inner[self.current].val.messenger.send_resize(winsize);
+
+        let mut new_context = ContextGridItem::new(context);
+        new_context.height = new_grid_item_height;
+        // new_context.height = self.inner[self.current].height;
+
+        new_context
+            .val
+            .dimension
+            .update_height(new_grid_item_height - (PADDING * 2.0));
+
+        self.inner.push(new_context);
+        let new_current = self.inner.len() - 1;
+
+        let mut terminal = self.inner[new_current].val.terminal.lock();
+        terminal.resize::<ContextDimension>(self.inner[new_current].val.dimension);
+        drop(terminal);
+        let winsize = crate::renderer::utils::terminal_dimensions(
+            &self.inner[new_current].val.dimension,
+        );
+        let _ = self.inner[new_current].val.messenger.send_resize(winsize);
+
+        self.inner[self.current].down = Some(new_current);
+        self.current = new_current;
+    }
 }
 
 #[derive(Default, Copy, Clone)]
@@ -303,6 +358,14 @@ impl ContextDimension {
 
     pub fn update_width(&mut self, width: f32) {
         self.width = width;
+        let (columns, lines) =
+            compute(self.width, self.height, self.dimension, 1.0, self.margin);
+        self.columns = columns;
+        self.lines = lines;
+    }
+
+    pub fn update_height(&mut self, height: f32) {
+        self.height = height;
         let (columns, lines) =
             compute(self.width, self.height, self.dimension, 1.0, self.margin);
         self.columns = columns;
@@ -417,6 +480,7 @@ pub mod test {
         );
     }
 
+    // TODO: add test for multiple split right
     #[test]
     fn test_single_split_right() {
         let margin = Delta {
