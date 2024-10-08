@@ -978,7 +978,7 @@ impl Screen<'_> {
                 self.renderer.config_has_blinking_enabled,
             ),
             false,
-            config
+            config,
         );
 
         self.render();
@@ -1006,7 +1006,7 @@ impl Screen<'_> {
                 &self.renderer.get_cursor_state_from_ref(),
                 self.renderer.config_has_blinking_enabled,
             ),
-            true
+            true,
         );
 
         self.render();

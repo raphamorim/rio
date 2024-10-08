@@ -73,6 +73,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
+    #[allow(unused)]
     pub fn context(&self) -> &Context<T> {
         &self.val
     }
@@ -111,6 +112,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn contexts(&self) -> &Vec<ContextGridItem<T>> {
         &self.inner
     }
@@ -204,7 +206,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Some(down_item) = item.down {
                 let new_margin = Delta {
                     x: margin.x,
-                    top_y: margin.top_y + PADDING + (item.height / item.val.dimension.dimension.scale),
+                    top_y: margin.top_y
+                        + PADDING
+                        + (item.height / item.val.dimension.dimension.scale),
                     bottom_y: margin.bottom_y,
                 };
                 self.plot_objects(objects, down_item, new_margin);
