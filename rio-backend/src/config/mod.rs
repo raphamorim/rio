@@ -4,7 +4,6 @@ pub mod defaults;
 pub mod keyboard;
 pub mod navigation;
 pub mod renderer;
-pub mod split;
 pub mod theme;
 pub mod window;
 
@@ -14,7 +13,6 @@ use crate::config::defaults::*;
 use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
-use crate::config::split::Split;
 use crate::config::window::Window;
 use colors::Colors;
 use serde::{Deserialize, Serialize};
@@ -79,8 +77,6 @@ pub struct Config {
     pub cursor: CursorConfig,
     #[serde(default = "Navigation::default")]
     pub navigation: Navigation,
-    #[serde(default = "Split::default")]
-    pub split: Split,
     #[serde(default = "Window::default")]
     pub window: Window,
     #[serde(default = "default_shell")]
@@ -436,7 +432,6 @@ impl Default for Config {
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
             navigation: Navigation::default(),
-            split: Split::default(),
             option_as_alt: default_option_as_alt(),
             padding_x: f32::default(),
             padding_y: default_padding_y(),
