@@ -250,12 +250,7 @@ impl Router<'_> {
         self.config_route = Some(id);
     }
 
-    pub fn open_config_split(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        event_proxy: EventProxy,
-        config: &RioConfig,
-    ) {
+    pub fn open_config_split(&mut self, config: &RioConfig) {
         let current_config: RioConfig = config.clone();
         let editor = config.editor.clone();
         let mut args = editor.args;
