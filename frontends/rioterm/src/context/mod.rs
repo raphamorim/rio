@@ -757,10 +757,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
-    pub fn split_right(
+    pub fn split(
         &mut self,
         rich_text_id: usize,
         cursor_state: (&CursorState, bool),
+        split_down: bool,
     ) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
@@ -800,7 +801,62 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &cloned_config,
         ) {
             Ok(new_context) => {
-                self.contexts[self.current_index].split_right(new_context);
+                if split_down {
+                    self.contexts[self.current_index].split_down(new_context);
+                } else {
+                    self.contexts[self.current_index].split_right(new_context);
+                }
+            }
+            Err(..) => {
+                tracing::error!("not able to create a new context");
+            }
+        }
+    }
+
+    pub fn split_from_config(
+        &mut self,
+        rich_text_id: usize,
+        cursor_state: (&CursorState, bool),
+        split_down: bool,
+        config: rio_backend::config::Config,
+    ) {
+        let (shell, working_dir) = process_open_url(
+            config.shell.to_owned(),
+            config.working_dir.to_owned(),
+            config.editor.to_owned(),
+            None,
+        );
+
+        let context_manager_config = ContextManagerConfig {
+            use_current_path: config.navigation.use_current_path,
+            shell,
+            working_dir,
+            spawn_performer: true,
+            #[cfg(not(target_os = "windows"))]
+            use_fork: config.use_fork,
+            is_native: config.navigation.is_native(),
+            // When navigation is collapsed and does not contain any color rule
+            // does not make sense fetch for foreground process names
+            should_update_titles: !(config.navigation.is_collapsed_mode()
+                && config.navigation.color_automation.is_empty()),
+            split_colors: (config.colors.split, config.colors.split_active),
+        };
+
+        match ContextManager::create_context(
+            cursor_state,
+            self.event_proxy.clone(),
+            self.window_id,
+            self.acc_current_route,
+            rich_text_id,
+            self.current().dimension,
+            &context_manager_config,
+        ) {
+            Ok(new_context) => {
+                if split_down {
+                    self.contexts[self.current_index].split_down(new_context);
+                } else {
+                    self.contexts[self.current_index].split_right(new_context);
+                }
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");

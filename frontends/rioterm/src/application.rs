@@ -480,11 +480,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                self.router.open_config_window(
-                    event_loop,
-                    self.event_proxy.clone(),
-                    &self.config,
-                );
+                if self.config.split.enable {
+                    self.router.open_config_split(
+                        event_loop,
+                        self.event_proxy.clone(),
+                        &self.config,
+                    );
+                } else {
+                    self.router.open_config_window(
+                        event_loop,
+                        self.event_proxy.clone(),
+                        &self.config,
+                    );
+                }
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -1082,11 +1090,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
-        self.router.open_config_window(
-            event_loop,
-            self.event_proxy.clone(),
-            &self.config,
-        );
+        if self.config.split.enable {
+            self.router.open_config_split(
+                event_loop,
+                self.event_proxy.clone(),
+                &self.config,
+            );
+        } else {
+            self.router.open_config_window(
+                event_loop,
+                self.event_proxy.clone(),
+                &self.config,
+            );
+        }
     }
 
     fn hook_event(&mut self, _event_loop: &ActiveEventLoop, hook: &Hook) {
@@ -1122,7 +1138,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.close_split_or_tab();
             }
             Hook::SplitDown => {
-                // route.window.screen.close_tab();
+                if self.config.split.enable {
+                    route.window.screen.split_down();
+                }
             }
             Hook::SplitRight => {
                 if self.config.split.enable {
