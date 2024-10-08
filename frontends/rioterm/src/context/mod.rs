@@ -76,7 +76,7 @@ pub struct ContextManagerConfig {
     pub use_current_path: bool,
     pub is_native: bool,
     pub should_update_titles: bool,
-    pub split_colors: ([f32; 4], [f32; 4]),
+    pub split_color: [f32; 4],
 }
 
 pub struct ContextManagerTitles {
@@ -344,7 +344,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             contexts: vec![ContextGrid::new(
                 initial_context,
                 margin,
-                ctx_config.split_colors,
+                ctx_config.split_color,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -372,7 +372,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             is_native: false,
             should_update_titles: false,
             use_current_path: false,
-            split_colors: ([0., 0., 0., 0.], [0., 0., 0., 0.]),
+            split_color: [0., 0., 0., 0.],
         };
         let initial_context = ContextManager::create_context(
             (&CursorState::new('_'), false),
@@ -394,7 +394,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             contexts: vec![ContextGrid::new(
                 initial_context,
                 Delta::<f32>::default(),
-                config.split_colors,
+                config.split_color,
             )],
             capacity,
             event_proxy,
@@ -850,7 +850,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_titles: !(config.navigation.is_collapsed_mode()
                 && config.navigation.color_automation.is_empty()),
-            split_colors: (config.colors.split, config.colors.split_active),
+            split_color: config.colors.split,
         };
 
         match ContextManager::create_context(
@@ -935,7 +935,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     self.contexts.push(ContextGrid::new(
                         new_context,
                         previous_margin,
-                        self.config.split_colors,
+                        self.config.split_color,
                     ));
                     if redirect {
                         self.current_index = last_index;
