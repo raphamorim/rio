@@ -468,7 +468,7 @@ pub mod test {
         let grid = ContextGrid::<VoidListener>::new(
             context,
             margin,
-            ([0., 0., 0., 0.], [0., 0., 0., 0.]),
+            [0., 0., 0., 0.],
         );
         // The first context should fill completely w/h grid
         assert_eq!(grid.width, context_width);
@@ -544,7 +544,7 @@ pub mod test {
         let mut grid = ContextGrid::<VoidListener>::new(
             first_context,
             margin,
-            ([0., 0., 0., 0.], [0., 0., 0., 0.]),
+            [0., 0., 0., 0.],
         );
 
         assert_eq!(
