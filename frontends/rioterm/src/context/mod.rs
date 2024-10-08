@@ -657,6 +657,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn current_grid(&mut self) -> &ContextGrid<T> {
         &self.contexts[self.current_index]
     }

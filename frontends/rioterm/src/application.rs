@@ -481,11 +481,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
                 if self.config.split.enable {
-                    self.router.open_config_split(
-                        event_loop,
-                        self.event_proxy.clone(),
-                        &self.config,
-                    );
+                    self.router.open_config_split(&self.config);
                 } else {
                     self.router.open_config_window(
                         event_loop,
@@ -1091,11 +1087,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
         if self.config.split.enable {
-            self.router.open_config_split(
-                event_loop,
-                self.event_proxy.clone(),
-                &self.config,
-            );
+            self.router.open_config_split(&self.config);
         } else {
             self.router.open_config_window(
                 event_loop,
