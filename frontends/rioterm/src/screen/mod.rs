@@ -798,6 +798,12 @@ impl Screen<'_> {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
                         self.render();
                     }
+                    Act::SplitRight => {
+                        self.split_right();
+                    }
+                    Act::SplitDown => {
+                        self.split_down();
+                    }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
@@ -963,14 +969,44 @@ impl Screen<'_> {
         ignore_chars.unwrap_or(false)
     }
 
-    pub fn split_right(&mut self) {
+    pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split_right(
+        self.context_manager.split_from_config(
             rich_text_id,
             (
                 &self.renderer.get_cursor_state_from_ref(),
                 self.renderer.config_has_blinking_enabled,
             ),
+            false,
+            config
+        );
+
+        self.render();
+    }
+
+    pub fn split_right(&mut self) {
+        let rich_text_id = self.sugarloaf.create_rich_text();
+        self.context_manager.split(
+            rich_text_id,
+            (
+                &self.renderer.get_cursor_state_from_ref(),
+                self.renderer.config_has_blinking_enabled,
+            ),
+            false,
+        );
+
+        self.render();
+    }
+
+    pub fn split_down(&mut self) {
+        let rich_text_id = self.sugarloaf.create_rich_text();
+        self.context_manager.split(
+            rich_text_id,
+            (
+                &self.renderer.get_cursor_state_from_ref(),
+                self.renderer.config_has_blinking_enabled,
+            ),
+            true
         );
 
         self.render();
