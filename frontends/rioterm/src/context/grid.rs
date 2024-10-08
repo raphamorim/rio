@@ -2,7 +2,7 @@ use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Rect, ComposedQuad, Object, Quad, RichText,
+    layout::SugarDimensions, ComposedQuad, Object, Quad, Rect, RichText,
 };
 
 const MIN_COLS: usize = 2;
@@ -80,11 +80,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
-    pub fn new(
-        context: Context<T>,
-        margin: Delta<f32>,
-        border_color: [f32; 4],
-    ) -> Self {
+    pub fn new(context: Context<T>, margin: Delta<f32>, border_color: [f32; 4]) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
         let inner = vec![ContextGridItem::new(context)];
@@ -211,11 +207,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     x: margin.x,
                     top_y: margin.top_y
                         + PADDING
-                        + (item.val.dimension.height / item.val.dimension.dimension.scale),
+                        + (item.val.dimension.height
+                            / item.val.dimension.dimension.scale),
                     bottom_y: margin.bottom_y,
                 };
 
-                 objects.push(Object::Rect(Rect {
+                objects.push(Object::Rect(Rect {
                     position: [new_margin.x, new_margin.top_y - PADDING],
                     color: self.border_color,
                     size: [
@@ -465,11 +462,7 @@ pub mod test {
         let context_width = context.dimension.width;
         let context_height = context.dimension.height;
         let context_margin = context.dimension.margin;
-        let grid = ContextGrid::<VoidListener>::new(
-            context,
-            margin,
-            [0., 0., 0., 0.],
-        );
+        let grid = ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
         // The first context should fill completely w/h grid
         assert_eq!(grid.width, context_width);
         assert_eq!(grid.height, context_height);
@@ -541,11 +534,8 @@ pub mod test {
             )
         };
 
-        let mut grid = ContextGrid::<VoidListener>::new(
-            first_context,
-            margin,
-            [0., 0., 0., 0.],
-        );
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
 
         assert_eq!(
             grid.objects(),

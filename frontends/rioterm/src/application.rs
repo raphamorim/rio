@@ -480,7 +480,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                if self.config.split.enable {
+                if self.config.navigation.use_split {
                     self.router.open_config_split(&self.config);
                 } else {
                     self.router.open_config_window(
@@ -1086,7 +1086,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
-        if self.config.split.enable {
+        if self.config.navigation.use_split {
             self.router.open_config_split(&self.config);
         } else {
             self.router.open_config_window(
@@ -1130,12 +1130,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.close_split_or_tab();
             }
             Hook::SplitDown => {
-                if self.config.split.enable {
+                if self.config.navigation.use_split {
                     route.window.screen.split_down();
                 }
             }
             Hook::SplitRight => {
-                if self.config.split.enable {
+                if self.config.navigation.use_split {
                     route.window.screen.split_right();
                 }
             }
