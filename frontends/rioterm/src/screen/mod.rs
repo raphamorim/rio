@@ -176,7 +176,7 @@ impl Screen<'_> {
         let bindings = crate::bindings::default_key_bindings(
             config.bindings.keys.to_owned(),
             config.navigation.has_navigation_key_bindings(),
-            config.split.enable,
+            config.navigation.use_split,
             config.keyboard,
         );
         let ime = Ime::new();
