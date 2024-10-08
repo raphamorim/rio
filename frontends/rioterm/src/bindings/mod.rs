@@ -247,6 +247,10 @@ impl From<String> for Action {
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
+            "splitright" => Some(Action::SplitRight),
+            "splitdown" => Some(Action::SplitDown),
+            "selectnextsplit" => Some(Action::SelectNextSplit),
+            "selectprevsplit" => Some(Action::SelectPrevSplit),
             "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
@@ -448,6 +452,9 @@ pub enum Action {
 
     /// Split vertically
     SplitDown,
+
+    SelectNextSplit,
+    SelectPrevSplit,
 
     /// Allow receiving char input.
     ReceiveChar,
@@ -1095,6 +1102,8 @@ pub fn platform_key_bindings(
             KeyBinding;
             "d", ModifiersState::SUPER; Action::SplitRight;
             "d", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SplitDown;
+            "]", ModifiersState::SUPER; Action::SelectNextSplit;
+            "[", ModifiersState::SUPER; Action::SelectPrevSplit;
         ));
     }
 
