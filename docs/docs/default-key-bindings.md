@@ -34,6 +34,10 @@ language: 'en'
 | Select the last tab    | `Command + 9`          |
 | Search forward         | `Command + f`          |
 | Search backward        | `Command + b`          |
+| Split right    		 | `Command + d`          |
+| Split down    		 | `Command + Shift + d`  |
+| Select next split      | `Command + ]`          |
+| Select prev split      | `Command + [`          |
 
 ### Windows
 
