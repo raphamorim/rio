@@ -309,7 +309,9 @@ impl Screen<'_> {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let layout = self.sugarloaf.rich_text_layout(&self.context_manager.current().rich_text_id);
+        let layout = self
+            .sugarloaf
+            .rich_text_layout(&self.context_manager.current().rich_text_id);
         let scale_f64 = layout.dimensions.scale as f64;
         pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
     }
@@ -380,8 +382,10 @@ impl Screen<'_> {
             FontSizeAction::Reset => 0,
         };
 
-        self.sugarloaf
-            .set_rich_text_font_size_based_on_action(&self.context_manager.current().rich_text_id, action);
+        self.sugarloaf.set_rich_text_font_size_based_on_action(
+            &self.context_manager.current().rich_text_id,
+            action,
+        );
 
         self.render();
         self.resize_all_contexts();
@@ -938,6 +942,16 @@ impl Screen<'_> {
                     Act::HideOtherApplications => {
                         self.context_manager.hide_other_apps();
                     }
+                    Act::SelectNextSplit => {
+                        self.cancel_search();
+                        self.context_manager.select_next_split();
+                        self.render();
+                    }
+                    Act::SelectPrevSplit => {
+                        self.cancel_search();
+                        self.context_manager.select_prev_split();
+                        self.render();
+                    }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
                         self.cancel_search();
@@ -1071,7 +1085,9 @@ impl Screen<'_> {
         if previous_margin.top_y != padding_y_top
             || previous_margin.bottom_y != padding_y_bottom
         {
-            let layout = self.sugarloaf.rich_text_layout(&self.context_manager.current().rich_text_id);
+            let layout = self
+                .sugarloaf
+                .rich_text_layout(&self.context_manager.current().rich_text_id);
             let s = self.sugarloaf.style_mut();
             s.font_size = layout.font_size;
             s.line_height = layout.line_height;
@@ -1851,7 +1867,9 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = self.sugarloaf.rich_text_layout(&self.context_manager.current().rich_text_id);
+        let layout = self
+            .sugarloaf
+            .rich_text_layout(&self.context_manager.current().rich_text_id);
         let width = layout.dimensions.width as f64;
         let height = layout.dimensions.height as f64;
         let mode = self.get_mode();

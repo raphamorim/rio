@@ -492,6 +492,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn select_next_split(&mut self) {
+        self.contexts[self.current_index].select_next_split();
+    }
+
+    #[inline]
+    pub fn select_prev_split(&mut self) {
+        self.contexts[self.current_index].select_prev_split();
+    }
+
+    #[inline]
     pub fn select_tab(&mut self, tab_index: usize) {
         if self.config.is_native {
             self.event_proxy
