@@ -13,12 +13,20 @@ pub enum RenderableContentStrategy {
     Lines(HashSet<usize>),
 }
 
+#[derive(Default, Clone)]
+pub struct Cursor {
+    pub state: CursorState,
+    pub content: char,
+    pub content_ref: char,
+    pub is_ime_enabled: bool,
+}
+
 #[derive(Default)]
 pub struct RenderableContent {
     pub inner: Vec<Row<Square>>,
     pub display_offset: i32,
     // TODO: Should not use default
-    pub cursor: CursorState,
+    pub cursor: Cursor,
     pub has_blinking_enabled: bool,
     pub strategy: RenderableContentStrategy,
 }
@@ -34,7 +42,7 @@ impl RenderableContent {
     ) {
         self.inner = rows.clone();
         self.strategy = RenderableContentStrategy::Full;
-        self.cursor = cursor;
+        self.cursor.state = cursor;
         self.has_blinking_enabled = has_blinking_enabled;
         self.display_offset = display_offset as i32;
 

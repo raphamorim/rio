@@ -17,6 +17,7 @@ use crate::bindings::{
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::ContextDimension;
 use crate::context::grid::Delta;
+use crate::context::renderable::Cursor;
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -25,7 +26,6 @@ use crate::crosswords::{
     vi_mode::ViMotion,
     Mode,
 };
-use crate::ime::Ime;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::{
     utils::{padding_bottom_from_config, padding_top_from_config},
@@ -41,7 +41,7 @@ use rio_backend::config::{
     colors::term::List,
     renderer::{Backend as RendererBackend, Performance as RendererPerformance},
 };
-use rio_backend::crosswords::pos::{Boundary, Direction, Line};
+use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
@@ -82,7 +82,6 @@ pub struct Screen<'screen> {
     pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
-    pub ime: Ime,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -179,7 +178,6 @@ impl Screen<'_> {
             config.navigation.use_split,
             config.keyboard,
         );
-        let ime = Ime::new();
 
         let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
@@ -220,8 +218,17 @@ impl Screen<'_> {
             config.line_height,
             margin,
         );
+
+        let cursor = Cursor {
+            content: config.cursor.shape.into(),
+            content_ref: config.cursor.shape.into(),
+            state: CursorState::new(config.cursor.shape.into()),
+            is_ime_enabled: false,
+        };
+
         let context_manager = context::ContextManager::start(
-            (&renderer.get_cursor_state(), config.cursor.blinking),
+            // config.cursor.blinking
+            (&cursor, config.cursor.blinking),
             event_proxy,
             window_id,
             0,
@@ -248,7 +255,6 @@ impl Screen<'_> {
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
-            ime,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
@@ -349,9 +355,9 @@ impl Screen<'_> {
         for context in self.ctx().contexts() {
             // TODO: Should loop all
             let mut terminal = context.current().terminal.lock();
-            let cursor = self.renderer.get_cursor_state_from_ref().content;
-            terminal.cursor_shape = cursor;
-            terminal.default_cursor_shape = cursor;
+            let shape = config.cursor.shape.into();
+            terminal.cursor_shape = shape;
+            terminal.default_cursor_shape = shape;
             terminal.blinking_cursor = config.cursor.blinking;
             drop(terminal);
         }
@@ -482,7 +488,7 @@ impl Screen<'_> {
         // 2. In case IME has preedit then also should drop the key processing
         let is_kitty_keyboard_enabled = self.renderer.is_kitty_keyboard_enabled;
         if !is_kitty_keyboard_enabled && key.state == ElementState::Released
-            || self.ime.preedit().is_some()
+            || self.context_manager.current().ime.preedit().is_some()
         {
             return;
         }
@@ -985,43 +991,22 @@ impl Screen<'_> {
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split_from_config(
-            rich_text_id,
-            (
-                &self.renderer.get_cursor_state_from_ref(),
-                self.renderer.config_has_blinking_enabled,
-            ),
-            false,
-            config,
-        );
+        self.context_manager
+            .split_from_config(rich_text_id, false, config);
 
         self.render();
     }
 
     pub fn split_right(&mut self) {
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(
-            rich_text_id,
-            (
-                &self.renderer.get_cursor_state_from_ref(),
-                self.renderer.config_has_blinking_enabled,
-            ),
-            false,
-        );
+        self.context_manager.split(rich_text_id, false);
 
         self.render();
     }
 
     pub fn split_down(&mut self) {
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(
-            rich_text_id,
-            (
-                &self.renderer.get_cursor_state_from_ref(),
-                self.renderer.config_has_blinking_enabled,
-            ),
-            true,
-        );
+        self.context_manager.split(rich_text_id, true);
 
         self.render();
     }
@@ -1030,14 +1015,7 @@ impl Screen<'_> {
         let redirect = true;
 
         let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.add_context(
-            redirect,
-            rich_text_id,
-            (
-                &self.renderer.get_cursor_state_from_ref(),
-                self.renderer.config_has_blinking_enabled,
-            ),
-        );
+        self.context_manager.add_context(redirect, rich_text_id);
 
         let num_tabs = self.ctx().len();
         self.cancel_search();
@@ -2047,7 +2025,6 @@ impl Screen<'_> {
             None
         };
 
-        self.renderer.set_ime(self.ime.preedit());
         self.renderer.prepare_term(
             &mut self.sugarloaf,
             &mut self.context_manager,

@@ -971,16 +971,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
                         };
 
-                        if route.window.screen.ime.preedit() != preedit.as_ref() {
-                            route.window.screen.ime.set_preedit(preedit);
+                        if route.window.screen.context_manager.current().ime.preedit()
+                            != preedit.as_ref()
+                        {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
+                                .ime
+                                .set_preedit(preedit);
                             route.request_redraw();
                         }
                     }
                     Ime::Enabled => {
-                        route.window.screen.ime.set_enabled(true);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(true);
                     }
                     Ime::Disabled => {
-                        route.window.screen.ime.set_enabled(false);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(false);
                     }
                 }
             }

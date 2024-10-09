@@ -5,13 +5,15 @@ use crate::ansi::CursorShape;
 use crate::context::grid::ContextDimension;
 use crate::context::grid::ContextGrid;
 use crate::context::grid::Delta;
-use crate::crosswords::pos::CursorState;
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
+use crate::ime::Ime;
 use crate::messenger::Messenger;
 use crate::performer::Machine;
+use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
+use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -41,6 +43,7 @@ pub struct Context<T: EventListener> {
     pub shell_pid: u32,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
+    pub ime: Ime,
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
@@ -53,6 +56,21 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn renderable_content(&mut self) -> &RenderableContent {
+        let mut has_ime = false;
+        if let Some(preedit) = self.ime.preedit() {
+            if let Some(content) = preedit.text.chars().next() {
+                self.renderable_content.cursor.content = content;
+                self.renderable_content.cursor.is_ime_enabled = true;
+                has_ime = true;
+            }
+        }
+
+        if !has_ime {
+            self.renderable_content.cursor.is_ime_enabled = false;
+            self.renderable_content.cursor.content =
+                self.renderable_content.cursor.content_ref;
+        }
+
         let terminal = self.terminal.lock();
         self.renderable_content.update(
             terminal.visible_rows(),
@@ -63,6 +81,16 @@ impl<T: EventListener> Context<T> {
         drop(terminal);
 
         &self.renderable_content
+    }
+
+    #[inline]
+    pub fn cursor_from_ref(&self) -> Cursor {
+        Cursor {
+            state: CursorState::new(self.renderable_content.cursor.content_ref),
+            content: self.renderable_content.cursor.content_ref,
+            content_ref: self.renderable_content.cursor.content_ref,
+            is_ime_enabled: false,
+        }
     }
 }
 
@@ -158,13 +186,14 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
         terminal,
         rich_text_id,
         dimension,
+        ime: Ime::new(),
     }
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     fn create_context(
-        cursor_state: (&CursorState, bool),
+        cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
         route_id: usize,
@@ -177,7 +206,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let mut terminal = Crosswords::new(
             dimension,
-            cursor_state.0.content,
+            CursorShape::from_char(cursor_state.0.content),
             event_proxy.clone(),
             window_id,
             route_id,
@@ -266,13 +295,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             rich_text_id,
             renderable_content: RenderableContent::default(),
             dimension,
+            ime: Ime::new(),
         })
     }
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn start(
-        cursor_state: (&CursorState, bool),
+        cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
         route_id: usize,
@@ -375,7 +405,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             split_color: [0., 0., 0., 0.],
         };
         let initial_context = ContextManager::create_context(
-            (&CursorState::new('_'), false),
+            (&Cursor::default(), false),
             event_proxy.clone(),
             window_id,
             0,
@@ -768,12 +798,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
-    pub fn split(
-        &mut self,
-        rich_text_id: usize,
-        cursor_state: (&CursorState, bool),
-        split_down: bool,
-    ) {
+    pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
             #[cfg(not(target_os = "windows"))]
@@ -802,8 +827,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cloned_config.working_dir = working_dir;
         }
 
+        let current = self.current();
+        let cursor = current.cursor_from_ref();
+
         match ContextManager::create_context(
-            cursor_state,
+            (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
             self.acc_current_route,
@@ -827,7 +855,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn split_from_config(
         &mut self,
         rich_text_id: usize,
-        cursor_state: (&CursorState, bool),
         split_down: bool,
         config: rio_backend::config::Config,
     ) {
@@ -853,8 +880,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             split_color: config.colors.split,
         };
 
+        let current = self.current();
+        let cursor = current.cursor_from_ref();
+
         match ContextManager::create_context(
-            cursor_state,
+            (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
             self.acc_current_route,
@@ -876,12 +906,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn add_context(
-        &mut self,
-        redirect: bool,
-        rich_text_id: usize,
-        cursor_state: (&CursorState, bool),
-    ) {
+    pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
         let mut working_dir = None;
         if self.config.use_current_path && self.config.working_dir.is_none() {
             #[cfg(not(target_os = "windows"))]
@@ -921,8 +946,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
 
             self.acc_current_route += 1;
+            let current = self.current();
+            let cursor = current.cursor_from_ref();
             match ContextManager::create_context(
-                cursor_state,
+                (&cursor, current.renderable_content.has_blinking_enabled),
                 self.event_proxy.clone(),
                 self.window_id,
                 self.acc_current_route,
@@ -1009,12 +1036,12 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = false;
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 0);
 
         let should_redirect = true;
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
     }
@@ -1028,17 +1055,13 @@ pub mod test {
         assert_eq!(context_manager.capacity, 3);
         assert_eq!(context_manager.current_index, 0);
         let should_redirect = false;
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.len(), 2);
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.len(), 3);
 
         for _ in 0..20 {
-            context_manager.add_context(
-                should_redirect,
-                0,
-                (&CursorState::new('_'), false),
-            );
+            context_manager.add_context(should_redirect, 0);
         }
 
         assert_eq!(context_manager.len(), 3);
@@ -1053,7 +1076,7 @@ pub mod test {
             ContextManager::start_with_capacity(8, VoidListener {}, window_id).unwrap();
         let should_redirect = true;
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.current_index, 1);
         context_manager.set_current(0);
         assert_eq!(context_manager.current_index, 0);
@@ -1061,8 +1084,8 @@ pub mod test {
         assert_eq!(context_manager.capacity, 8);
 
         let should_redirect = false;
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
         context_manager.set_current(3);
         assert_eq!(context_manager.current_index, 3);
 
@@ -1078,8 +1101,8 @@ pub mod test {
             ContextManager::start_with_capacity(3, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.len(), 3);
 
         assert_eq!(context_manager.current_index, 0);
@@ -1101,10 +1124,10 @@ pub mod test {
             ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
 
         context_manager.close_current_context();
         context_manager.close_current_context();
@@ -1114,7 +1137,7 @@ pub mod test {
         assert_eq!(context_manager.len(), 1);
         assert_eq!(context_manager.current_index, 0);
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
 
         assert_eq!(context_manager.len(), 2);
         context_manager.set_current(1);
@@ -1132,8 +1155,8 @@ pub mod test {
             ContextManager::start_with_capacity(2, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.len(), 2);
         assert_eq!(context_manager.current_index, 0);
 
@@ -1153,11 +1176,11 @@ pub mod test {
             ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
         let should_redirect = false;
 
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
-        context_manager.add_context(should_redirect, 0, (&CursorState::new('_'), false));
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.len(), 5);
         assert_eq!(context_manager.current_index, 0);
 
