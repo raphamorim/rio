@@ -3,10 +3,11 @@ mod search;
 pub mod utils;
 
 use crate::ansi::CursorShape;
+use crate::context::renderable::Cursor;
 use crate::context::renderable::RenderableContentStrategy;
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
-use crate::crosswords::pos::{Column, CursorState, Line, Pos};
+use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::ime::Preedit;
 use crate::screen::hint::HintMatches;
@@ -19,8 +20,8 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Object, RichText, Stretch,
-    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -29,23 +30,15 @@ use std::time::{Duration, Instant};
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
 
-struct Cursor {
-    state: CursorState,
-    content: char,
-    content_ref: char,
-}
-
 pub struct Renderer {
     #[allow(unused)]
     pub option_as_alt: String,
-    is_ime_enabled: bool,
     is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
     pub last_typing: Option<Instant>,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
-    cursor: Cursor,
     pub selection_range: Option<SelectionRange>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
@@ -97,7 +90,6 @@ impl Renderer {
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
-            is_ime_enabled: false,
             is_vi_mode_enabled: false,
             is_blinking: false,
             last_typing: None,
@@ -115,11 +107,6 @@ impl Renderer {
             named_colors,
             dynamic_background,
             active_search: None,
-            cursor: Cursor {
-                content: config.cursor.shape.into(),
-                content_ref: config.cursor.shape.into(),
-                state: CursorState::new(config.cursor.shape.into()),
-            },
             font_cache: FxHashMap::default(),
             font_context: font_context.clone(),
         }
@@ -128,16 +115,6 @@ impl Renderer {
     #[inline]
     pub fn has_blinking_enabled(&self) -> bool {
         self.config_has_blinking_enabled && self.term_has_blinking_enabled
-    }
-
-    #[inline]
-    pub fn get_cursor_state_from_ref(&self) -> CursorState {
-        CursorState::new(self.cursor.content_ref)
-    }
-
-    #[inline]
-    pub fn get_cursor_state(&self) -> CursorState {
-        self.cursor.state.clone()
     }
 
     #[inline]
@@ -272,6 +249,7 @@ impl Renderer {
         has_cursor: bool,
         line_opt: Option<usize>,
         line: Line,
+        cursor: &Cursor,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
@@ -288,8 +266,8 @@ impl Renderer {
             }
 
             let (mut style, square_content) =
-                if has_cursor && column == self.cursor.state.pos.col {
-                    self.create_cursor_style(square)
+                if has_cursor && column == cursor.state.pos.col {
+                    self.create_cursor_style(square, cursor)
                 } else {
                     self.create_style(square)
                 };
@@ -600,7 +578,11 @@ impl Renderer {
     // }
 
     #[inline]
-    fn create_cursor_style(&self, square: &Square) -> (FragmentStyle, char) {
+    fn create_cursor_style(
+        &self,
+        square: &Square,
+        cursor: &Cursor,
+    ) -> (FragmentStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
             square.flags.contains(Flags::BOLD_ITALIC),
@@ -615,8 +597,8 @@ impl Renderer {
         let mut color = self.compute_color(&square.fg, square.flags);
         let mut background_color = self.compute_bg_color(square);
         // If IME is enabled we get the current content to cursor
-        let content = if self.is_ime_enabled {
-            self.cursor.content
+        let content = if cursor.is_ime_enabled {
+            cursor.content
         } else {
             square.c
         };
@@ -629,19 +611,18 @@ impl Renderer {
             && background_color[0] == self.dynamic_background.0[0]
             && background_color[1] == self.dynamic_background.0[1]
             && background_color[2] == self.dynamic_background.0[2];
-        let background_color = if has_dynamic_background
-            && self.cursor.state.content != CursorShape::Block
-        {
-            None
-        } else {
-            Some(background_color)
-        };
+        let background_color =
+            if has_dynamic_background && cursor.state.content != CursorShape::Block {
+                None
+            } else {
+                Some(background_color)
+            };
 
         // If IME is or cursor is block enabled, put background color
         // when cursor is over the character
         match (
-            self.is_ime_enabled,
-            self.cursor.state.content == CursorShape::Block,
+            cursor.is_ime_enabled,
+            cursor.state.content == CursorShape::Block,
         ) {
             (_, true) => {
                 color = self.named_colors.background.0;
@@ -669,7 +650,7 @@ impl Renderer {
         style.decoration = decoration;
         style.decoration_color = decoration_color;
 
-        match self.cursor.state.content {
+        match cursor.state.content {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
@@ -690,20 +671,6 @@ impl Renderer {
         }
 
         (style, content)
-    }
-
-    #[inline]
-    pub fn set_ime(&mut self, ime_preedit: Option<&Preedit>) {
-        if let Some(preedit) = ime_preedit {
-            if let Some(content) = preedit.text.chars().next() {
-                self.cursor.content = content;
-                self.is_ime_enabled = true;
-                return;
-            }
-        }
-
-        self.is_ime_enabled = false;
-        self.cursor.content = self.cursor.content_ref;
     }
 
     #[inline]
@@ -730,8 +697,7 @@ impl Renderer {
             let context = grid_context.context_mut();
             let rich_text_id = context.rich_text_id;
             let renderable_content = context.renderable_content();
-            self.cursor.state = renderable_content.cursor.clone();
-            let mut is_cursor_visible = self.cursor.state.is_visible();
+            let mut is_cursor_visible = renderable_content.cursor.state.is_visible();
 
             self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
 
@@ -762,14 +728,15 @@ impl Renderer {
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in renderable_content.inner.iter().enumerate() {
-                        let has_cursor =
-                            is_cursor_visible && self.cursor.state.pos.row == i;
+                        let has_cursor = is_cursor_visible
+                            && renderable_content.cursor.state.pos.row == i;
                         self.create_line(
                             content,
                             row,
                             has_cursor,
                             None,
                             Line((i as i32) - display_offset),
+                            &renderable_content.cursor,
                             hints,
                             focused_match,
                         );
@@ -780,8 +747,8 @@ impl Renderer {
                     content.sel(rich_text_id);
                     for line in lines {
                         let line = *line;
-                        let has_cursor =
-                            is_cursor_visible && self.cursor.state.pos.row == line;
+                        let has_cursor = is_cursor_visible
+                            && renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
                         self.create_line(
                             content,
@@ -789,6 +756,7 @@ impl Renderer {
                             has_cursor,
                             Some(line),
                             Line((line as i32) - display_offset),
+                            &renderable_content.cursor,
                             hints,
                             focused_match,
                         );
