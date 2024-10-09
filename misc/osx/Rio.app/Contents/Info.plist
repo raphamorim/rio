@@ -153,5 +153,7 @@
   <string>A program running inside Rio requires elevated privileges.</string>
   <key>TICapsLockLanguageSwitchCapable</key>
   <true/>
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
 </dict>
 </plist>
