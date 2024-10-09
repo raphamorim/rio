@@ -112,14 +112,18 @@ impl Context<'_> {
         let (device, queue) = {
             {
                 if let Ok(result) = futures::executor::block_on(
-                    adapter.request_device(&wgpu::DeviceDescriptor::default(), None),
+                    adapter.request_device(&wgpu::DeviceDescriptor {
+                        label: None,
+                        required_features: wgpu::Features::SHADER_F16,
+                        required_limits: wgpu::Limits::downlevel_defaults(),
+                    }, None),
                 ) {
                     result
                 } else {
                     // These downlevel limits will allow the code to run on all possible hardware
                     futures::executor::block_on(adapter.request_device(
                         &wgpu::DeviceDescriptor {
-                            memory_hints: wgpu::MemoryHints::Performance,
+                            // memory_hints: wgpu::MemoryHints::Performance,
                             label: None,
                             required_features: wgpu::Features::empty(),
                             required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
