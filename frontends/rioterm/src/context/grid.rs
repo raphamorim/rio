@@ -234,6 +234,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
     }
 
+    pub fn resize(&mut self, new_width: f32, new_height: f32) {
+        let mut width_difference = new_width - self.width;
+        let mut height_difference = new_height - self.height;
+        self.width = new_width;
+        self.height = new_height;
+
+        for context in &self.inner {
+            if context.right.is_some() {
+                width_difference /= 2.0;
+            }
+
+            if context.down.is_some() {
+                height_difference /= 2.0;
+            }
+        }
+
+        for context in &mut self.inner {
+            let width_to_add = if context.right.is_some() {
+                width_difference
+            } else {
+                0.0
+            };
+
+            let height_to_add = if context.right.is_some() {
+                height_difference
+            } else {
+                0.0
+            };
+
+            let current_width = context.val.dimension.width;
+            context.val.dimension.update_width(current_width + width_to_add);
+
+            let current_height = context.val.dimension.height;
+            context.val.dimension.update_height(current_height + height_to_add);
+
+            let mut terminal = context.val.terminal.lock();
+            terminal.resize::<ContextDimension>(context.val.dimension);
+            drop(terminal);
+            let winsize = crate::renderer::utils::terminal_dimensions(
+                &context.val.dimension,
+            );
+            let _ = context.val.messenger.send_resize(winsize);
+        }
+
+    }
+
     pub fn remove_current_grid(&mut self) {}
 
     pub fn split_right(&mut self, context: Context<T>) {
@@ -480,9 +526,8 @@ pub mod test {
         );
     }
 
-    // TODO: add test for multiple split right
     #[test]
-    fn test_single_split_right() {
+    fn test_split_right() {
         let margin = Delta {
             x: 10.,
             top_y: 20.,
@@ -535,7 +580,7 @@ pub mod test {
         };
 
         let mut grid =
-            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+            ContextGrid::<VoidListener>::new(first_context, margin, [1., 0., 0., 0.]);
 
         assert_eq!(
             grid.objects(),
@@ -544,50 +589,303 @@ pub mod test {
                 position: [10., 20.],
             })]
         );
-
         grid.split_right(second_context);
 
         assert_eq!(
             grid.objects(),
             vec![
-                Object::Quad(ComposedQuad {
-                    color: [0.0, 0.0, 0.0, 0.0],
-                    quad: Quad {
-                        position: [10.0, 20.0],
-                        size: [298.0, 380.0],
-                        border_color: [0.0, 0.0, 0.0, 0.0],
-                        border_radius: [0.0, 0.0, 0.0, 0.0],
-                        border_width: 1.0,
-                        shadow_color: [0.0, 0.0, 0.0, 0.5],
-                        shadow_offset: [0.0, 0.0],
-                        shadow_blur_radius: 0.0
-                    },
-                }),
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [11.0, 19.0],
+                    position: [10.0, 20.0],
                 }),
-                Object::Quad(ComposedQuad {
-                    color: [0.0, 0.0, 0.0, 0.0],
-                    quad: Quad {
-                        position: [312.0, 20.0],
-                        size: [298.0, 380.0],
-                        border_color: [0.0, 0.0, 0.0, 0.0],
-                        border_radius: [0.0, 0.0, 0.0, 0.0],
-                        border_width: 1.0,
-                        shadow_color: [0.0, 0.0, 0.0, 0.5],
-                        shadow_offset: [0.0, 0.0],
-                        shadow_blur_radius: 0.0
-                    },
+                Object::Rect(Rect {
+                    position: [307.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [313.0, 19.0]
+                    position: [309.0, 20.0]
+                }),
+            ]
+        );
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+
+        grid.split_right(third_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [10.0, 20.0],
+                }),
+                Object::Rect(Rect {
+                    position: [307.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [309.0, 20.0]
+                }),
+                Object::Rect(Rect {
+                    position: [10.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [456.5, 20.0]
                 }),
             ]
         );
     }
 
     #[test]
-    fn test_resize() {}
+    fn test_split_down() {
+        let margin = Delta {
+            x: 10.,
+            top_y: 20.,
+            bottom_y: 20.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 85);
+        assert_eq!(context_dimension.lines, 100);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 1., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [10., 20.],
+            })]
+        );
+        grid.split_down(second_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [10.0, 20.0],
+                }),
+                Object::Rect(Rect {
+                    position: [10.0, 217.0], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [10.0, 219.0]
+                }),
+            ]
+        );
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+
+        grid.split_down(third_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [10.0, 20.0],
+                }),
+                Object::Rect(Rect {
+                    position: [10.0, 217.0], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [10.0, 219.0]
+                }),
+                Object::Rect(Rect {
+                    position: [10.0, 314.5], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [10.0, 316.5]
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_resize() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_right(second_context);
+        grid.split_down(third_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [0.0, 0.0],
+                }),
+                Object::Rect(Rect {
+                    position: [147.0, 0.0], color: [0.0, 0.0, 0.0, 0.0], size: [1.0, 300.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [149.0, 0.0]
+                }),
+                Object::Rect(Rect {
+                    position: [149.0, 147.0], color: [0.0, 0.0, 0.0, 0.0], size: [294.0, 1.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [149.0, 149.0]
+                }),
+            ]
+        );
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        grid.resize(1200.0, 600.0);
+    }
 }
