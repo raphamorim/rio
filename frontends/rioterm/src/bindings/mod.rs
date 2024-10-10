@@ -247,6 +247,10 @@ impl From<String> for Action {
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
+            "splitright" => Some(Action::SplitRight),
+            "splitdown" => Some(Action::SplitDown),
+            "selectnextsplit" => Some(Action::SelectNextSplit),
+            "selectprevsplit" => Some(Action::SelectPrevSplit),
             "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
@@ -443,6 +447,15 @@ pub enum Action {
     /// Start a backward buffer search.
     SearchBackward,
 
+    /// Split horizontally
+    SplitRight,
+
+    /// Split vertically
+    SplitDown,
+
+    SelectNextSplit,
+    SelectPrevSplit,
+
     /// Allow receiving char input.
     ReceiveChar,
 
@@ -555,6 +568,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 pub fn default_key_bindings(
     unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
@@ -815,6 +829,7 @@ pub fn default_key_bindings(
 
     bindings.extend(platform_key_bindings(
         use_navigation_key_bindings,
+        use_splits,
         config_keyboard,
     ));
 
@@ -1008,6 +1023,7 @@ pub fn config_key_bindings(
 #[cfg(all(target_os = "macos", not(test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
@@ -1081,6 +1097,16 @@ pub fn platform_key_bindings(
         ));
     }
 
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "d", ModifiersState::SUPER; Action::SplitRight;
+            "d", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SplitDown;
+            "]", ModifiersState::SUPER; Action::SelectNextSplit;
+            "[", ModifiersState::SUPER; Action::SelectPrevSplit;
+        ));
+    }
+
     key_bindings
 }
 
@@ -1088,6 +1114,7 @@ pub fn platform_key_bindings(
 #[cfg(not(any(target_os = "macos", target_os = "windows", test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     _: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
@@ -1141,6 +1168,7 @@ pub fn platform_key_bindings(
 #[cfg(all(target_os = "windows", not(test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     _: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
@@ -1196,7 +1224,7 @@ pub fn platform_key_bindings(
 }
 
 #[cfg(test)]
-pub fn platform_key_bindings(_: bool, _: ConfigKeyboard) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(_: bool, _: bool, _: ConfigKeyboard) -> Vec<KeyBinding> {
     vec![]
 }
 

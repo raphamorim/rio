@@ -401,9 +401,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let layout = route.window.screen.sugarloaf.layout();
+                    let dimension =
+                        route.window.screen.context_manager.current().dimension;
                     let text =
-                        format(crate::renderer::utils::terminal_dimensions(&layout));
+                        format(crate::renderer::utils::terminal_dimensions(&dimension));
                     route
                         .window
                         .screen
@@ -479,11 +480,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                self.router.open_config_window(
-                    event_loop,
-                    self.event_proxy.clone(),
-                    &self.config,
-                );
+                if self.config.navigation.use_split {
+                    self.router.open_config_split(&self.config);
+                } else {
+                    self.router.open_config_window(
+                        event_loop,
+                        self.event_proxy.clone(),
+                        &self.config,
+                    );
+                }
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -608,11 +613,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                self.router.routes.remove(&window_id);
-
                 if self.config.confirm_before_quit {
+                    if cfg!(not(target_os = "macos")) {
+                        route.confirm_quit();
+                        route.request_redraw();
+                    } else {
+                        self.router.routes.remove(&window_id);
+                    }
                     return;
                 }
+
+                self.router.routes.remove(&window_id);
 
                 if self.router.routes.is_empty() {
                     event_loop.exit();
@@ -800,7 +811,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let display_offset = route.window.screen.display_offset();
                 let old_point = route.window.screen.mouse_position(display_offset);
 
-                let layout = route.window.screen.sugarloaf.layout();
+                let layout = route.window.screen.sugarloaf.window_size();
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
@@ -883,7 +894,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let layout = route.window.screen.sugarloaf.layout();
+                        let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
                         let new_scroll_px_x = columns * layout.font_size;
                         let new_scroll_px_y = lines * layout.font_size;
                         route
@@ -958,16 +969,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
                         };
 
-                        if route.window.screen.ime.preedit() != preedit.as_ref() {
-                            route.window.screen.ime.set_preedit(preedit);
+                        if route.window.screen.context_manager.current().ime.preedit()
+                            != preedit.as_ref()
+                        {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
+                                .ime
+                                .set_preedit(preedit);
                             route.request_redraw();
                         }
                     }
                     Ime::Enabled => {
-                        route.window.screen.ime.set_enabled(true);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(true);
                     }
                     Ime::Disabled => {
-                        route.window.screen.ime.set_enabled(false);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(false);
                     }
                 }
             }
@@ -1073,11 +1104,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
-        self.router.open_config_window(
-            event_loop,
-            self.event_proxy.clone(),
-            &self.config,
-        );
+        if self.config.navigation.use_split {
+            self.router.open_config_split(&self.config);
+        } else {
+            self.router.open_config_window(
+                event_loop,
+                self.event_proxy.clone(),
+                &self.config,
+            );
+        }
     }
 
     fn hook_event(&mut self, _event_loop: &ActiveEventLoop, hook: &Hook) {
@@ -1109,9 +1144,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.create_tab();
                 }
             }
-            Hook::CloseTab => {
-                if self.config.navigation.has_navigation_key_bindings() {
-                    route.window.screen.close_tab();
+            Hook::Close => {
+                route.window.screen.close_split_or_tab();
+            }
+            Hook::SplitDown => {
+                if self.config.navigation.use_split {
+                    route.window.screen.split_down();
+                }
+            }
+            Hook::SplitRight => {
+                if self.config.navigation.use_split {
+                    route.window.screen.split_right();
                 }
             }
         }

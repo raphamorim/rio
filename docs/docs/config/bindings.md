@@ -7,7 +7,7 @@ You can see the default [default key bindings](/docs/default-key-bindings)
 
 Rio allows you to add new keybindings and overwrite any default key bindings.
 
-Keybinds are built using the following trigger fields:
+Bindings are built using the following trigger fields:
 
 | Name          | Description     |
 | ------------- | --------------- |
@@ -34,7 +34,7 @@ keys = [
 ]
 ```
 
-### [Key](#key)
+## [Key](#key)
 
 Each value in key binding will specify an identifier of the key pressed:
 
@@ -48,11 +48,11 @@ Each value in key binding will specify an identifier of the key pressed:
 - `numpadenter` `numpadadd` `numpadcomma` `numpaddivide` `numpadequals` `numpadsubtract` `numpadmultiply`
 - `numpad1` `numpad2` `numpad3` `numpad4` `numpad5` `numpad6` `numpad7` `numpad8` `numpad9` `numpad0`
 
-### [Action](#action)
+## [Action](#action)
 
 Execute a predefined action in Rio terminal.
 
-#### [Basic Actions](#basic-actions)
+### [Basic Actions](#basic-actions)
 
 | Action           | Description                                                                   |
 | :--------------- | :---------------------------------------------------------------------------- |
@@ -60,31 +60,28 @@ Execute a predefined action in Rio terminal.
 | ReceiveChar      |                                                                               |
 | ToggleVIMode     |                                                                               |
 | Paste            | Paste command                                                                 |
-| Copy             |                                                                               |
-| OpenConfigEditor |                                                                               |
+| Copy             | Copy command                                                                  |
+| OpenConfigEditor | Open configuration file on configured editor property                         |
 | ResetFontSize    |                                                                               |
 | IncreaseFontSize |                                                                               |
 | DecreaseFontSize |                                                                               |
 | Run(string)      | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
 | PasteSelection   |                                                                               |
 | ClearSelection   |                                                                               |
+| CreateWindow     | Create a Rio window instance                                                  |
+| Quit             | Exit Rio                                                                      |
 
-#### [Window Actions](#window-actions)
+### [Split Actions](#split-actions)
 
-| Action       | Description |
-| :----------- | :---------- |
-| CreateWindow |             |
-| Quit         |             |
+| Action             | Description                                                                |
+| :----------------- | :------------------------------------------------------------------------- |
+| SplitRigh       | Create a split by right side |
+| SplitDown       | Create a split by under current pane |
+| SelectNextSplit | Select next split |
+| SelectPrevSplit | Select previous split |
+| CloseSplitOrTab | Close split, if split is the last then will close the tab |
 
-#### [Pane Actions](#pane-actions)
-
-| Action            | Description |
-| :---------------- | :---------- |
-| SplitHorizontally |             |
-| SplitVertically   |             |
-| ClosePane         |             |
-
-#### [Tab Actions](#tab-actions)
+### [Tab Actions](#tab-actions)
 
 | Action               | Description                                                         |
 | :------------------- | :------------------------------------------------------------------ |
@@ -96,7 +93,7 @@ Execute a predefined action in Rio terminal.
 | SelectLastTab        |                                                                     |
 | SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)` |
 
-#### [Scroll Actions](#scroll-actions)
+### [Scroll Actions](#scroll-actions)
 
 | Action             | Description                                                                |
 | :----------------- | :------------------------------------------------------------------------- |
@@ -108,21 +105,21 @@ Execute a predefined action in Rio terminal.
 | ScrollToTop        |                                                                            |
 | ScrollToBottom     |                                                                            |
 
-### [Search](#search)
+### [Search Actions](#search-actions)
 
 | Action             | Description                                                                |
 | :----------------- | :------------------------------------------------------------------------- |
 | SearchForward      |  |
-| SearchBackward       |                                                                            |
-| SearchConfirm     |                                                                            |
-| SearchClear   |                                                                            |
-| SearchFocusNext |                                                                            |
-| SearchFocusPrevious        |                                                                            |
-| SearchDeleteWord     |                                                                            |
-| SearchHistoryNext     |                                                                            |
-| SearchHistoryPrevious     |                                                                            |
+| SearchBackward     |  |
+| SearchConfirm      |  |
+| SearchClear        |  |
+| SearchFocusNext    |  |
+| SearchFocusPrevious  | |
+| SearchDeleteWord     | |
+| SearchHistoryNext     | |
+| SearchHistoryPrevious | |
 
-### [Bytes](#bytes)
+## [Bytes](#bytes)
 
 Send a byte sequence to the running application.
 
@@ -130,7 +127,7 @@ The `bytes` field writes the specified string to the terminal. This makes
 it possible to pass escape sequences, like `PageUp` ("\x1b[5~"). Note that applications use terminfo to map escape sequences back
 to keys. It is therefore required to update the terminfo when changing an escape sequence.
 
-### [With](#with)
+## [With](#with)
 
 Key modifiers to filter binding actions
 
@@ -157,7 +154,7 @@ with = "control | shift"
     A `~` operator can be used before a mode to apply the binding whenever
     the mode is *not* active, e.g. `~Alt`. -->
 
-### [Mode](#mode)
+## [Mode](#mode)
 
 There is currently four different modes:
 
@@ -176,7 +173,7 @@ keys = [
 ]
 ```
 
-### [Text](#text)
+## [Text](#text)
 
 `text` can be used to write specific text on key press:
 
@@ -188,7 +185,7 @@ keys = [
 ]
 ```
 
-### [Overwriting](#overwriting)
+## [Overwriting](#overwriting)
 
 Bindings are always filled by default, but will be replaced when a new binding with the same triggers is defined. To unset a default binding, it can be mapped to the `ReceiveChar` action. Alternatively, you can use `None` for a no-op if you do not wish to receive input characters for that binding.
 
