@@ -9,7 +9,6 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use crate::ime::Preedit;
 use crate::screen::hint::HintMatches;
 use crate::selection::SelectionRange;
 use navigation::ScreenNavigation;
