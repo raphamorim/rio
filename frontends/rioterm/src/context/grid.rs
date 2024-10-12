@@ -195,7 +195,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     color: self.border_color,
                     size: [
                         2. / item.val.dimension.dimension.scale,
-                        item.val.dimension.height / item.val.dimension.dimension.scale,
+                        item.val.dimension.height,
                     ],
                 }));
 
@@ -240,16 +240,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.width = new_width;
         self.height = new_height;
 
-        for context in &mut self.inner {
-            let width_to_add = width_difference;
+        let mut vector = vec![(0., 0.); self.inner.len()];
+        self.resize_context(&mut vector, 0, width_difference, height_difference);
 
-            let height_to_add = height_difference;
-
+        for (index, val) in vector.into_iter().enumerate() {
+            let context = &mut self.inner[index];
             let current_width = context.val.dimension.width;
-            context.val.dimension.update_width(current_width + width_to_add);
+            context.val.dimension.update_width(current_width + val.0);
 
             let current_height = context.val.dimension.height;
-            context.val.dimension.update_height(current_height + height_to_add);
+            context.val.dimension.update_height(current_height + val.1);
 
             let mut terminal = context.val.terminal.lock();
             terminal.resize::<ContextDimension>(context.val.dimension);
@@ -259,12 +259,36 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             );
             let _ = context.val.messenger.send_resize(winsize);
         }
+    }
 
+    // TODO: It works partially, if the panels have different dimensions it gets a bit funky
+    fn resize_context(&self, vector: &mut Vec<(f32, f32)>, index: usize, available_width: f32, available_height: f32) -> (f32, f32) {
+        if let Some(item) = self.inner.get(index) {
+            let mut current_available_width = available_width;
+            let mut current_available_heigth = available_height;
+            if let Some(right_item) = item.right {
+                let (new_available_width, _) = self.resize_context(vector, right_item, available_width / 2., available_height);
+                current_available_width = new_available_width;
+            }
+
+            if let Some(down_item) = item.down {
+                let (_, new_available_heigth) = self.resize_context(vector, down_item, available_width, available_height / 2.);
+                current_available_heigth = new_available_heigth;
+            }
+
+            vector[index] = (current_available_width, current_available_heigth);
+
+            return (current_available_width, current_available_heigth);
+        }
+
+        (available_width, available_height)
     }
 
     pub fn remove_current_grid(&mut self) {}
 
     pub fn split_right(&mut self, context: Context<T>) {
+        let old_right = self.inner[self.current].right;
+
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_width = (old_grid_item_width / 2.0) - PADDING;
         self.inner[self.current]
@@ -298,17 +322,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         );
         let _ = self.inner[new_current].val.messenger.send_resize(winsize);
 
+        self.inner[new_current].right = old_right;
         self.inner[self.current].right = Some(new_current);
         self.current = new_current;
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
+        let old_down = self.inner[self.current].down;
+
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let new_grid_item_height = (old_grid_item_height / 2.0) - PADDING;
         self.inner[self.current]
             .val
             .dimension
-            .update_height(new_grid_item_height - PADDING);
+            .update_height(new_grid_item_height - (PADDING * 2.0));
 
         let mut terminal = self.inner[self.current].val.terminal.lock();
         terminal.resize::<ContextDimension>(self.inner[self.current].val.dimension);
@@ -323,7 +350,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         new_context
             .val
             .dimension
-            .update_height(new_grid_item_height - PADDING);
+            .update_height(new_grid_item_height - (PADDING * 2.0));
 
         self.inner.push(new_context);
         let new_current = self.inner.len() - 1;
@@ -336,6 +363,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         );
         let _ = self.inner[new_current].val.messenger.send_resize(winsize);
 
+        self.inner[new_current].down = old_down;
         self.inner[self.current].down = Some(new_current);
         self.current = new_current;
     }
