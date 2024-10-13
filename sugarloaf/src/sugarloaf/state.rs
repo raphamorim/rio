@@ -50,7 +50,7 @@ impl SugarState {
         self.compositors.advanced.reset();
         self.style.scale_factor = scale;
         for (id, state) in &mut self.compositors.advanced.content.states {
-            state.layout.rescale(scale);
+            state.rescale(scale);
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
 
