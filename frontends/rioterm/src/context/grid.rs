@@ -2,7 +2,7 @@ use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, ComposedQuad, Object, Quad, Rect, RichText,
+    layout::SugarDimensions, Object, Rect, RichText,
 };
 
 const MIN_COLS: usize = 2;
@@ -97,6 +97,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     pub fn get_grid_item(&self, index: usize) -> &ContextGridItem<T> {
         &self.inner[index]
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.inner.len()
     }
 
     #[inline]
@@ -284,7 +289,33 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         (available_width, available_height)
     }
 
-    pub fn remove_current_grid(&mut self) {}
+    pub fn remove_current(&mut self) {
+        let _current = &self.inner[self.current];
+
+        // let mut index = 0;
+        // for context in &self.inner {
+        //     if let Some(_right_val) = context.right {
+
+        //     }
+
+        //     if let Some(_down_val) = context.down {
+            
+        //     }
+
+        //     index += 1;
+        // }
+
+
+        println!("{:?}", self.inner[self.current].val.shell_pid);
+
+        let old = self.current;
+        // self.select_prev_split();
+        println!("{:?}", self.inner[self.current].val.shell_pid);
+        println!("{:?} {:?}", self.current, old);
+        let size = self.inner.len();
+        self.inner.swap(old, size - 1);
+        // self.inner.pop();
+    }
 
     pub fn split_right(&mut self, context: Context<T>) {
         let old_right = self.inner[self.current].right;
@@ -400,22 +431,16 @@ impl ContextDimension {
 
     pub fn update_width(&mut self, width: f32) {
         self.width = width;
-        let (columns, lines) =
-            compute(self.width, self.height, self.dimension, 1.0, self.margin);
-        self.columns = columns;
-        self.lines = lines;
+        self.update();
     }
 
     pub fn update_height(&mut self, height: f32) {
         self.height = height;
-        let (columns, lines) =
-            compute(self.width, self.height, self.dimension, 1.0, self.margin);
-        self.columns = columns;
-        self.lines = lines;
+        self.update();
     }
 
     #[inline]
-    pub fn update(&mut self) {
+    fn update(&mut self) {
         let (columns, lines) = compute(
             self.width,
             self.height,
