@@ -70,6 +70,12 @@ impl BuilderState {
         self.vars.clear();
     }
     #[inline]
+    pub fn rescale(&mut self, scale_factor: f32) {
+        self.metrics_cache.inner.clear();
+        self.scaled_font_size = self.layout.font_size * scale_factor;
+        self.layout.rescale(scale_factor);
+    }
+    #[inline]
     pub fn begin(&mut self) {
         self.lines.push(BuilderLine::default());
     }

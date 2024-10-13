@@ -2,7 +2,7 @@ use crate::context::Context;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Object, Rect, RichText,
+    layout::SugarDimensions, Object, Rect, RichText, Sugarloaf,
 };
 
 const MIN_COLS: usize = 2;
@@ -239,6 +239,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
     }
 
+    pub fn rescale(&mut self, new_scale: f32, sugarloaf: &Sugarloaf) {
+        for context in &mut self.inner {
+            let layout = sugarloaf
+                .rich_text_layout(&context.val.rich_text_id);
+            context.val.dimension.update_dimensions(layout.dimensions);
+        }
+    }
+
     pub fn resize(&mut self, new_width: f32, new_height: f32) {
         let width_difference = new_width - self.width;
         let height_difference = new_height - self.height;
@@ -436,6 +444,11 @@ impl ContextDimension {
 
     pub fn update_height(&mut self, height: f32) {
         self.height = height;
+        self.update();
+    }
+
+    pub fn update_dimensions(&mut self, dimensions: SugarDimensions) {
+        self.dimension = dimensions;
         self.update();
     }
 
