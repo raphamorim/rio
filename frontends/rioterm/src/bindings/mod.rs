@@ -237,6 +237,7 @@ impl From<String> for Action {
             "createwindow" => Some(Action::WindowCreateNew),
             "createtab" => Some(Action::TabCreateNew),
             "closetab" => Some(Action::TabCloseCurrent),
+            "closecurrenttaborsplit" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
@@ -413,6 +414,8 @@ pub enum Action {
 
     /// Close tab.
     TabCloseCurrent,
+
+    CloseCurrentSplitOrTab,
 
     /// Close all other tabs (leave only the current tab).
     TabCloseUnfocused,
@@ -1072,7 +1075,7 @@ pub fn platform_key_bindings(
             "t", ModifiersState::SUPER; Action::TabCreateNew;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
-            "w", ModifiersState::SUPER; Action::TabCloseCurrent;
+            "w", ModifiersState::SUPER; Action::CloseCurrentSplitOrTab;
             "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
             "1", ModifiersState::SUPER; Action::SelectTab(0);
@@ -1157,7 +1160,7 @@ pub fn platform_key_bindings(
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
-            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
         ));
     }
 
@@ -1214,7 +1217,7 @@ pub fn platform_key_bindings(
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
-            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
         ));

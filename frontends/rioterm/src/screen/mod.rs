@@ -817,6 +817,9 @@ impl Screen<'_> {
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();
                     }
+                    Act::CloseCurrentSplitOrTab => {
+                        self.close_split_or_tab();
+                    }
                     Act::TabCreateNew => {
                         self.create_tab();
                     }
@@ -1021,13 +1024,15 @@ impl Screen<'_> {
     }
 
     pub fn close_split_or_tab(&mut self) {
-        self.clear_selection();
-
         if self.context_manager.current_grid_len() > 1 {
+            self.clear_selection();
             self.context_manager.remove_current_grid();
+            self.render();
+        } else {
+            self.close_tab();    
         }
     }
-
+    
     pub fn close_tab(&mut self) {
         self.clear_selection();
         self.context_manager.close_current_context();

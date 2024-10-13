@@ -48,6 +48,7 @@ pub struct Context<T: EventListener> {
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
+        println!("drop {:?}", self.shell_pid);
         #[cfg(not(target_os = "windows"))]
         teletypewriter::kill_pid(self.shell_pid as i32);
     }
@@ -683,12 +684,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn current_grid_len(&self) -> usize {
-        self.contexts.len()
+        self.contexts[self.current_index].len()
     }
 
     #[inline]
     pub fn remove_current_grid(&mut self) {
-        self.contexts[self.current_index].remove_current_grid();
+        self.contexts[self.current_index].remove_current();
     }
 
     #[inline]
