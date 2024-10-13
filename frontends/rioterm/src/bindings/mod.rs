@@ -1103,10 +1103,10 @@ pub fn platform_key_bindings(
     if use_splits {
         key_bindings.extend(bindings!(
             KeyBinding;
-            "d", ModifiersState::SUPER; Action::SplitRight;
-            "d", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SplitDown;
-            "]", ModifiersState::SUPER; Action::SelectNextSplit;
-            "[", ModifiersState::SUPER; Action::SelectPrevSplit;
+            "d", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
         ));
     }
 
@@ -1122,16 +1122,16 @@ pub fn platform_key_bindings(
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
         KeyBinding;
-        "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
+        "v", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Key::Named(Insert),   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
-        "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "0", ModifiersState::CONTROL;  Action::ResetFontSize;
+        "=", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
@@ -1161,6 +1161,16 @@ pub fn platform_key_bindings(
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
             "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
+        ));
+    }
+
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "r", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
         ));
     }
 
@@ -1220,6 +1230,16 @@ pub fn platform_key_bindings(
             "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
+        ));
+    }
+
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "r", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
         ));
     }
 
