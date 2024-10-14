@@ -95,19 +95,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    pub fn get_grid_item(&self, index: usize) -> &ContextGridItem<T> {
-        &self.inner[index]
-    }
-
-    #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
-    }
-
-    #[inline]
-    #[allow(unused)]
-    pub fn contexts(&self) -> &Vec<ContextGridItem<T>> {
-        &self.inner
     }
 
     #[inline]
@@ -162,7 +151,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // In case there's only 1 context then ignore quad
         if len == 1 {
-            if let Some(item) = self.inner.get(0) {
+            if let Some(item) = self.inner.first() {
                 objects.push(Object::RichText(RichText {
                     id: item.val.rich_text_id,
                     position: [self.margin.x, self.margin.top_y],
@@ -239,7 +228,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
     }
 
-    pub fn rescale(&mut self, new_scale: f32, sugarloaf: &Sugarloaf) {
+    pub fn rescale(&mut self, sugarloaf: &Sugarloaf) {
         for context in &mut self.inner {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);

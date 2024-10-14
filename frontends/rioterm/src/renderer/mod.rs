@@ -241,6 +241,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     fn create_line(
         &mut self,
         builder: &mut Content,

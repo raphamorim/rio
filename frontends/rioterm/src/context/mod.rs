@@ -757,7 +757,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        &self.contexts[self.current_index].current()
+        self.contexts[self.current_index].current()
     }
 
     #[inline]
