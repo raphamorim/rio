@@ -355,7 +355,7 @@ impl Screen<'_> {
         for context in self.ctx().contexts() {
             // TODO: Should loop all
             let mut terminal = context.current().terminal.lock();
-            let shape = config.cursor.shape.into();
+            let shape = config.cursor.shape;
             terminal.cursor_shape = shape;
             terminal.default_cursor_shape = shape;
             terminal.blinking_cursor = config.cursor.blinking;
@@ -422,7 +422,7 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .rescale(new_scale, &self.sugarloaf);
+            .rescale(&self.sugarloaf);
         self.context_manager
             .current_grid_mut()
             .resize(new_size.width as f32, new_size.height as f32);
