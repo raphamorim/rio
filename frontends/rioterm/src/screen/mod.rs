@@ -404,7 +404,9 @@ impl Screen<'_> {
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
         self.resize_all_contexts();
-        self.context_manager.current_grid_mut().resize(new_size.width as f32, new_size.height as f32);
+        self.context_manager
+            .current_grid_mut()
+            .resize(new_size.width as f32, new_size.height as f32);
         self
     }
 
@@ -418,8 +420,12 @@ impl Screen<'_> {
         self.sugarloaf.resize(new_size.width, new_size.height);
         self.render();
         self.resize_all_contexts();
-        self.context_manager.current_grid_mut().rescale(new_scale, &self.sugarloaf);
-        self.context_manager.current_grid_mut().resize(new_size.width as f32, new_size.height as f32);
+        self.context_manager
+            .current_grid_mut()
+            .rescale(new_scale, &self.sugarloaf);
+        self.context_manager
+            .current_grid_mut()
+            .resize(new_size.width as f32, new_size.height as f32);
 
         self
     }
@@ -1031,10 +1037,10 @@ impl Screen<'_> {
             self.context_manager.remove_current_grid();
             self.render();
         } else {
-            self.close_tab();    
+            self.close_tab();
         }
     }
-    
+
     pub fn close_tab(&mut self) {
         self.clear_selection();
         self.context_manager.close_current_context();

@@ -241,8 +241,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn rescale(&mut self, new_scale: f32, sugarloaf: &Sugarloaf) {
         for context in &mut self.inner {
-            let layout = sugarloaf
-                .rich_text_layout(&context.val.rich_text_id);
+            let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
         }
     }
@@ -267,25 +266,40 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let mut terminal = context.val.terminal.lock();
             terminal.resize::<ContextDimension>(context.val.dimension);
             drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(
-                &context.val.dimension,
-            );
+            let winsize =
+                crate::renderer::utils::terminal_dimensions(&context.val.dimension);
             let _ = context.val.messenger.send_resize(winsize);
         }
     }
 
     // TODO: It works partially, if the panels have different dimensions it gets a bit funky
-    fn resize_context(&self, vector: &mut Vec<(f32, f32)>, index: usize, available_width: f32, available_height: f32) -> (f32, f32) {
+    fn resize_context(
+        &self,
+        vector: &mut Vec<(f32, f32)>,
+        index: usize,
+        available_width: f32,
+        available_height: f32,
+    ) -> (f32, f32) {
         if let Some(item) = self.inner.get(index) {
             let mut current_available_width = available_width;
             let mut current_available_heigth = available_height;
             if let Some(right_item) = item.right {
-                let (new_available_width, _) = self.resize_context(vector, right_item, available_width / 2., available_height);
+                let (new_available_width, _) = self.resize_context(
+                    vector,
+                    right_item,
+                    available_width / 2.,
+                    available_height,
+                );
                 current_available_width = new_available_width;
             }
 
             if let Some(down_item) = item.down {
-                let (_, new_available_heigth) = self.resize_context(vector, down_item, available_width, available_height / 2.);
+                let (_, new_available_heigth) = self.resize_context(
+                    vector,
+                    down_item,
+                    available_width,
+                    available_height / 2.,
+                );
                 current_available_heigth = new_available_heigth;
             }
 
@@ -307,12 +321,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         //     }
 
         //     if let Some(_down_val) = context.down {
-            
+
         //     }
 
         //     index += 1;
         // }
-
 
         println!("{:?}", self.inner[self.current].val.shell_pid);
 
@@ -625,7 +638,9 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [307.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
+                    position: [307.0, 20.0],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 380.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
@@ -649,7 +664,6 @@ pub mod test {
             )
         };
 
-
         grid.split_right(third_context);
 
         assert_eq!(
@@ -660,14 +674,18 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [307.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
+                    position: [307.0, 20.0],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 380.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [309.0, 20.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 20.0], color: [1.0, 0.0, 0.0, 0.0], size: [1.0, 380.0]
+                    position: [10.0, 20.0],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 380.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
@@ -750,7 +768,9 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 217.0], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                    position: [10.0, 217.0],
+                    color: [0.0, 0.0, 1.0, 0.0],
+                    size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
@@ -774,7 +794,6 @@ pub mod test {
             )
         };
 
-
         grid.split_down(third_context);
 
         assert_eq!(
@@ -785,14 +804,18 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 217.0], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                    position: [10.0, 217.0],
+                    color: [0.0, 0.0, 1.0, 0.0],
+                    size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [10.0, 219.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 314.5], color: [0.0, 0.0, 1.0, 0.0], size: [1200.0, 1.0]
+                    position: [10.0, 314.5],
+                    color: [0.0, 0.0, 1.0, 0.0],
+                    size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
@@ -870,7 +893,6 @@ pub mod test {
             )
         };
 
-
         let mut grid =
             ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
 
@@ -893,14 +915,18 @@ pub mod test {
                     position: [0.0, 0.0],
                 }),
                 Object::Rect(Rect {
-                    position: [147.0, 0.0], color: [0.0, 0.0, 0.0, 0.0], size: [1.0, 300.0]
+                    position: [147.0, 0.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 300.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [149.0, 0.0]
                 }),
                 Object::Rect(Rect {
-                    position: [149.0, 147.0], color: [0.0, 0.0, 0.0, 0.0], size: [294.0, 1.0]
+                    position: [149.0, 147.0],
+                    color: [0.0, 0.0, 0.0, 0.0],
+                    size: [294.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
