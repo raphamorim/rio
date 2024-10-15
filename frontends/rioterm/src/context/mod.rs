@@ -48,7 +48,6 @@ pub struct Context<T: EventListener> {
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
-        println!("drop {:?}", self.shell_pid);
         #[cfg(not(target_os = "windows"))]
         teletypewriter::kill_pid(self.shell_pid as i32);
     }
@@ -690,17 +689,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn remove_current_grid(&mut self) {
         self.contexts[self.current_index].remove_current();
+        self.current_route = self.contexts[self.current_index].current().route_id;
     }
 
     #[inline]
     pub fn current_grid_mut(&mut self) -> &mut ContextGrid<T> {
         &mut self.contexts[self.current_index]
-    }
-
-    #[inline]
-    #[allow(unused)]
-    pub fn current_grid(&mut self) -> &ContextGrid<T> {
-        &self.contexts[self.current_index]
     }
 
     #[cfg(test)]
@@ -828,6 +822,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cloned_config.working_dir = working_dir;
         }
 
+        self.acc_current_route += 1;
         let current = self.current();
         let cursor = current.cursor_from_ref();
 
@@ -846,6 +841,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 } else {
                     self.contexts[self.current_index].split_right(new_context);
                 }
+
+                self.current_route = self.acc_current_route;
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -881,6 +878,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             split_color: config.colors.split,
         };
 
+        self.acc_current_route += 1;
         let current = self.current();
         let cursor = current.cursor_from_ref();
 
@@ -899,6 +897,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 } else {
                     self.contexts[self.current_index].split_right(new_context);
                 }
+
+                self.current_route = self.acc_current_route;
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");

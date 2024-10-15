@@ -301,7 +301,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn remove_current(&mut self) {
-        let _current = &self.inner[self.current];
+        // TODO: Adjust width and height of pointing contexts
+        // TODO: Adjust right and down of pointing contexts
 
         // let mut index = 0;
         // for context in &self.inner {
@@ -316,15 +317,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         //     index += 1;
         // }
 
-        println!("{:?}", self.inner[self.current].val.shell_pid);
-
         let old = self.current;
-        // self.select_prev_split();
-        println!("{:?}", self.inner[self.current].val.shell_pid);
-        println!("{:?} {:?}", self.current, old);
-        let size = self.inner.len();
-        self.inner.swap(old, size - 1);
-        // self.inner.pop();
+        self.select_prev_split();
+        self.inner.remove(old);
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
