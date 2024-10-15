@@ -161,7 +161,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                        let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                         let event = EventPayload::new(
                             RioEventType::Rio(RioEvent::Render),
                             window_id,
@@ -265,7 +265,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         self.router.routes.remove(&window_id);
 
                         // Unschedule pending events.
-                        self.scheduler.unschedule_window(window_id);
+                        self.scheduler.unschedule_window(route_id);
 
                         if self.router.routes.is_empty() {
                             event_loop.exit();
@@ -289,21 +289,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                let timer_id = TimerId::new(Topic::Render, window_id);
-                let event =
-                    EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
+                if let Some(route) = self.router.routes.get(&window_id) {
+                    let timer_id = TimerId::new(
+                        Topic::Render,
+                        route.window.screen.ctx().current_route(),
                     );
+                    let event =
+                        EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
+
+                    if !self.scheduler.scheduled(timer_id) {
+                        self.scheduler.schedule(
+                            event,
+                            Duration::from_millis(millis),
+                            false,
+                            timer_id,
+                        );
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                     window_id,
@@ -319,7 +324,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::BlinkCursor(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::CursorBlinking, window_id);
+                let timer_id = TimerId::new(Topic::CursorBlinking, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)),
                     window_id,
@@ -938,8 +943,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         && key_event.state == ElementState::Released
                     {
                         // Scheduler must be cleaned after leave the terminal route
-                        self.scheduler
-                            .unschedule(TimerId::new(Topic::Render, window_id));
+                        self.scheduler.unschedule(TimerId::new(
+                            Topic::Render,
+                            route.window.screen.ctx().current_route(),
+                        ));
                     }
                     return;
                 }

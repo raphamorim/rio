@@ -2,7 +2,6 @@
 // which is licensed under Apache 2.0 license.
 
 use crate::event::EventPayload;
-use rio_backend::event::WindowId;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -12,11 +11,11 @@ use rio_window::event_loop::EventLoopProxy;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct TimerId {
     topic: Topic,
-    id: WindowId,
+    id: usize,
 }
 
 impl TimerId {
-    pub fn new(topic: Topic, id: WindowId) -> Self {
+    pub fn new(topic: Topic, id: usize) -> Self {
         Self { topic, id }
     }
 }
@@ -119,7 +118,7 @@ impl Scheduler {
     ///
     /// This must be called when a tab is removed to ensure that timers on intervals do not
     /// stick around forever and cause a memory leak.
-    pub fn unschedule_window(&mut self, id: WindowId) {
+    pub fn unschedule_window(&mut self, id: usize) {
         self.timers.retain(|timer| timer.id.id != id);
     }
 }
