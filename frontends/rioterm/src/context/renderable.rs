@@ -40,49 +40,39 @@ impl RenderableContent {
         cursor: CursorState,
         has_blinking_enabled: bool,
     ) {
-        self.inner = rows.clone();
-        self.strategy = RenderableContentStrategy::Full;
+        let mut diff = HashSet::with_capacity(rows.len());
+        if self.cursor.state.pos != cursor.pos {
+            // Add old row cursor
+            diff.insert(*self.cursor.state.pos.row as usize);
+            // Add new row cursor
+            diff.insert(*cursor.pos.row as usize);
+        }
         self.cursor.state = cursor;
-        self.has_blinking_enabled = has_blinking_enabled;
+        self.strategy = RenderableContentStrategy::Full;
+
+        let require_full_clone = self.display_offset != display_offset as i32 ||
+            self.has_blinking_enabled != has_blinking_enabled ||
+            self.inner.len() != rows.len();
+
         self.display_offset = display_offset as i32;
+        self.has_blinking_enabled = has_blinking_enabled;
 
-        // let mut diff = HashSet::with_capacity(rows.len());
-        // if self.cursor.pos != cursor.pos {
-        //     // Add old row cursor
-        //     diff.insert(*self.cursor.pos.row as usize);
-        //     // Add new row cursor
-        //     diff.insert(*cursor.pos.row as usize);
-        // }
-        // self.cursor = cursor;
-        // self.strategy = RenderableContentStrategy::Full;
+        if require_full_clone {
+            self.inner = rows.clone();
+            return;
+        }
 
-        // let require_full = self.display_offset != display_offset as i32 ||
-        //     self.has_blinking_enabled != has_blinking_enabled ||
-        //     self.inner.len() != rows.len();
+        for current_idx in 0..(rows.len()) {
+            if rows[current_idx] != self.inner[current_idx] {
+                self.inner[current_idx] = rows[current_idx].clone();
+                diff.insert(current_idx);
+            }
+        }
 
-        // self.display_offset = display_offset as i32;
-        // self.has_blinking_enabled = has_blinking_enabled;
-
-        // if require_full {
-        //     self.inner = rows.clone();
-        //     return;
-        // }
-
-        // let mut diff = HashSet::with_capacity(rows.len());
-        // for current_idx in 0..(rows.len()) {
-        //     if current_idx == 0 {
-        //         println!("{:?} {:?}", self.inner[current_idx], rows[current_idx]);
-        //     }
-        //     if rows[current_idx] != self.inner[current_idx] {
-        //         self.inner[current_idx] = rows[current_idx].clone();
-        //         diff.insert(current_idx);
-        //     }
-        // }
-
-        // if !diff.is_empty() {
-        //     self.strategy = RenderableContentStrategy::Lines(diff);
-        // } else {
-        //     self.strategy = RenderableContentStrategy::Noop;
-        // }
+        if !diff.is_empty() {
+            self.strategy = RenderableContentStrategy::Lines(diff);
+        } else {
+            self.strategy = RenderableContentStrategy::Noop;
+        }
     }
 }
