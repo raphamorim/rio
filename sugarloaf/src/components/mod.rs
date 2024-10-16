@@ -4,3 +4,4 @@ pub mod quad;
 pub mod rect;
 pub mod rich_text;
 pub mod text;
+pub mod filters;
