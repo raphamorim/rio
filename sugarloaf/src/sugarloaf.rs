@@ -22,7 +22,6 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
-use std::sync::Arc;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -284,26 +283,9 @@ impl Sugarloaf<'_> {
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
 
-                // WPGU doesn't allow us to use the same texture as src and dst, so we need to
-                // separate textures for src and dst. At least with the current
-                // librashader implementation.
-                let base_texture =
-                    Arc::new(self.ctx.device.create_texture(&wgpu::TextureDescriptor {
-                        label: Some("Base Texture"),
-                        size: frame.texture.size(),
-                        mip_level_count: frame.texture.mip_level_count(),
-                        sample_count: frame.texture.sample_count(),
-                        dimension: frame.texture.dimension(),
-                        format: frame.texture.format(),
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING
-                            | wgpu::TextureUsages::RENDER_ATTACHMENT
-                            | wgpu::TextureUsages::COPY_SRC
-                            | wgpu::TextureUsages::COPY_DST,
-                        view_formats: &[frame.texture.format()],
-                    }));
-
-                let base_view =
-                    base_texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
 
                 if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
@@ -341,7 +323,7 @@ impl Sugarloaf<'_> {
                             occlusion_query_set: None,
                             label: None,
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &base_view,
+                                view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load,
@@ -388,7 +370,7 @@ impl Sugarloaf<'_> {
                 self.filters_brush.render(
                     &self.ctx,
                     &mut encoder,
-                    &base_texture,
+                    &frame.texture,
                     &frame.texture,
                     self.framecount,
                 );
