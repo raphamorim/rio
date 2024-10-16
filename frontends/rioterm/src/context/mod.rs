@@ -666,8 +666,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         }
                     }
 
-                    id =
-                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
+                    id.push_str(&format!("{}{}{};", i, program, terminal_title));
                     self.titles.set_key_val(i, program, terminal_title, path);
                 }
                 self.titles.set_key(id);
@@ -681,8 +680,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    id = id.to_owned()
-                        + &(format!("{}{}{};", i, program, String::default()));
+                    id.push_str(&format!("{}{}{};", i, program, String::default()));
                     self.titles.set_key_val(
                         i,
                         program,

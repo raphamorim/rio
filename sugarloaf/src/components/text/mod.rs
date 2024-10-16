@@ -27,7 +27,7 @@ pub use glyph::{
 use crate::components::core::orthographic_projection;
 use ab_glyph::{Font, Rect};
 use core::hash::BuildHasher;
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
 use glyph::{BrushAction, BrushError, DefaultSectionHasher};
 
@@ -87,7 +87,7 @@ where
     F: Font + Sync,
     H: BuildHasher,
 {
-    fn process_queued(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue) {
+    fn process_queued(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         let pipeline = &mut self.pipeline;
 
         let mut brush_action;
@@ -98,7 +98,7 @@ where
                     let offset = [rect.min[0] as u16, rect.min[1] as u16];
                     let size = [rect.width() as u16, rect.height() as u16];
 
-                    pipeline.update_cache(queue, offset, size, tex_data);
+                    pipeline.update_cache(&queue, offset, size, tex_data);
                 },
                 Instance::from_vertex,
             );
@@ -130,7 +130,7 @@ where
 
         match brush_action.unwrap() {
             BrushAction::Draw(mut verts) => {
-                self.pipeline.upload(device, queue, &mut verts);
+                self.pipeline.upload(device, &queue, &mut verts);
             }
             BrushAction::ReDraw => {}
         };
@@ -177,7 +177,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         let device = &context.device;
-        let queue = &mut context.queue;
+        let queue = &context.queue;
         self.draw_queued_with_transform(
             device,
             queue,
@@ -200,8 +200,8 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     #[inline]
     pub fn draw_queued_with_transform<'pass>(
         &'pass mut self,
-        device: &wgpu::Device,
-        queue: &mut wgpu::Queue,
+        device: &Arc<wgpu::Device>,
+        queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
     ) {

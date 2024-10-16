@@ -27,7 +27,7 @@ impl Cache {
 
     pub fn update(
         &mut self,
-        queue: &mut wgpu::Queue,
+        queue: &wgpu::Queue,
         offset: [u16; 2],
         size: [u16; 2],
         data: &[u8],
