@@ -5,13 +5,12 @@ language: 'en'
 
 # Releases
 
-## Unreleased
-
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.1.18
+## Unreleased
 
+- Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
 
 ## 0.1.17
