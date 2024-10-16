@@ -155,9 +155,10 @@ impl Context<'_> {
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
-                // COPY_DST is required for rendering filter chains
+                // COPY_DST and COPY_SRC are required for FiltersBrush
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_DST,
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 format,
                 width: size.width as u32,
                 height: size.height as u32,
@@ -189,9 +190,10 @@ impl Context<'_> {
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
-                // COPY_DST is required for rendering filter chains
+                // COPY_DST and COPY_SRC are required for FiltersBrush
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_DST,
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 format: self.format,
                 width,
                 height,
