@@ -246,7 +246,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Exit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if self.config.confirm_before_quit {
+                    if cfg!(target_os = "macos") && self.config.confirm_before_quit {
                         route.confirm_quit();
                         route.request_redraw();
                     } else {
@@ -610,7 +610,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::CloseRequested => {
                 self.router.routes.remove(&window_id);
 
-                if self.config.confirm_before_quit {
+                if cfg!(target_os = "macos") && self.config.confirm_before_quit {
                     return;
                 }
 
