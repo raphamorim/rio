@@ -21,6 +21,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
+use std::sync::Arc;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -33,6 +34,9 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
+    pub filter_chains: Vec<librashader::runtime::wgpu::FilterChain>,
+    framecount: usize,
+    filter_intermediates: Vec<Arc<wgpu::Texture>>,
 }
 
 #[derive(Debug)]
@@ -145,6 +149,9 @@ impl Sugarloaf<'_> {
             rich_text_brush,
             text_brush,
             graphics: Graphics::default(),
+            filter_chains: Vec::default(),
+            framecount: 0,
+            filter_intermediates: Vec::default(),
         };
 
         Ok(instance)
@@ -177,6 +184,61 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
         &mut self.state.layout
+    }
+
+    #[inline]
+    pub fn update_filters(&mut self, filter_paths: &[String]) {
+        self.filter_chains.clear();
+        self.filter_intermediates.clear();
+
+        for path in filter_paths {
+            tracing::debug!("Loading filter {}", path);
+
+            match librashader::runtime::wgpu::FilterChain::load_from_path(
+                path,
+                self.ctx.device.clone(),
+                self.ctx.queue.clone(),
+                None,
+            ) {
+                Ok(f) => self.filter_chains.push(f),
+                Err(e) => tracing::error!("Failed to load filter {}: {}", path, e),
+            }
+        }
+
+        self.filter_intermediates.reserve(self.filter_chains.len());
+
+        // If we have an odd number of filters, the last filter can be
+        // renderer directly to the output texture.
+        let skip = if self.filter_chains.len() % 2 == 1 {
+            1
+        } else {
+            0
+        };
+
+        let size = wgpu::Extent3d {
+            depth_or_array_layers: 1,
+            width: self.ctx.size.width as u32,
+            height: self.ctx.size.height as u32,
+        };
+
+        for _ in self.filter_chains.iter().skip(skip) {
+            let intermediate_texture =
+                Arc::new(self.ctx.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Filter Intermediate Texture"),
+                    size: size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.ctx.format,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[self.ctx.format],
+                }));
+
+            self.filter_intermediates.push(intermediate_texture);
+        }
     }
 
     #[inline]
@@ -272,9 +334,55 @@ impl Sugarloaf<'_> {
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
 
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+                // We have two ways to render things:
+                // - If not using filters:
+                // 1. Render directly to the our next texture.
+                // - Otherwise:
+                // 1. Render the terminal into a separate texture - `first_pass_texture`.
+                // 2. Render each filter into its corresponding intermediate texture - `filter_intermediates`.
+                // 3. Copy the texture of the last filter to the output texture.
+                //
+                // WPGU doesn't allow us to use the same texture as src and dst, so we need to
+                // separate textures for src and dst. At least with the current
+                // librashader implementation.
+                //
+                // For the first filter, we will use `first_pass_texture' as the src texture,
+                // as dst texture - filter_intermediates[0].
+                // Then at the second filter as src texture we will use filter_intermediates[1],
+                // as dst texture - filter_intermediates[2] and so on. At the last filter we will
+                // render directly to the texture obtained by get_current_texture().
+
+                // Do not create this texture if we do not use filters.
+                let first_pass_texture: Option<Arc<wgpu::Texture>>;
+                let view: wgpu::TextureView;
+
+                if !self.filter_chains.is_empty() {
+                    first_pass_texture = Some(Arc::new(self.ctx.device.create_texture(
+                        &wgpu::TextureDescriptor {
+                            label: Some("First Pass Texture"),
+                            size: frame.texture.size(),
+                            mip_level_count: frame.texture.mip_level_count(),
+                            sample_count: frame.texture.sample_count(),
+                            dimension: frame.texture.dimension(),
+                            format: frame.texture.format(),
+                            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                                | wgpu::TextureUsages::COPY_SRC
+                                | wgpu::TextureUsages::COPY_DST,
+                            view_formats: &[frame.texture.format()],
+                        },
+                    )));
+
+                    view = first_pass_texture
+                        .as_ref()
+                        .unwrap()
+                        .create_view(&wgpu::TextureViewDescriptor::default())
+                } else {
+                    first_pass_texture = None;
+                    view = frame
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default());
+                }
 
                 if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
@@ -312,7 +420,7 @@ impl Sugarloaf<'_> {
                             occlusion_query_set: None,
                             label: None,
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
+                                view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load,
@@ -356,8 +464,63 @@ impl Sugarloaf<'_> {
                     self.graphics.clear_top_layer();
                 }
 
+                if !self.filter_chains.is_empty() {
+                    let view_size = librashader::runtime::Size::new(
+                        self.ctx.size.width as u32,
+                        self.ctx.size.height as u32,
+                    );
+                    let filters_count = self.filter_chains.len();
+
+                    for (idx, filter) in self.filter_chains.iter_mut().enumerate() {
+                        let src_texture: Arc<wgpu::Texture>;
+                        let dst_texture: &wgpu::Texture;
+
+                        if idx == 0 {
+                            src_texture = first_pass_texture.as_ref().unwrap().clone();
+
+                            if filters_count == 1 {
+                                dst_texture = &frame.texture;
+                            } else {
+                                dst_texture = &self.filter_intermediates[0];
+                            }
+                        } else if idx == filters_count - 1 {
+                            src_texture = self.filter_intermediates[idx - 1].clone();
+                            dst_texture = &frame.texture;
+                        } else {
+                            src_texture = self.filter_intermediates[idx - 1].clone();
+                            dst_texture = &self.filter_intermediates[idx];
+                        }
+
+                        let dst_texture_view = dst_texture
+                            .create_view(&wgpu::TextureViewDescriptor::default());
+                        let dst_output_view =
+                            librashader::runtime::wgpu::WgpuOutputView::new_from_raw(
+                                &dst_texture_view,
+                                view_size,
+                                self.ctx.format,
+                            );
+                        let dst_viewport =
+                            librashader::runtime::Viewport::new_render_target_sized_origin(
+                                dst_output_view,
+                                None,
+                            )
+                            .unwrap();
+
+                        if let Err(err) = filter.frame(
+                            src_texture,
+                            &dst_viewport,
+                            &mut encoder,
+                            self.framecount,
+                            None,
+                        ) {
+                            tracing::error!("Filter rendering failed: {err}");
+                        }
+                    }
+                }
+
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
+                self.framecount = self.framecount.wrapping_add(1);
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {
