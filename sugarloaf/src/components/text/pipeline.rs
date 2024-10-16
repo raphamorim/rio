@@ -58,7 +58,7 @@ impl Pipeline<()> {
 
     pub fn draw<'pass>(
         &'pass mut self,
-        queue: &mut wgpu::Queue,
+        queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],
         region: Option<Region>,
@@ -100,12 +100,12 @@ impl Pipeline<wgpu::DepthStencilState> {
 impl<Depth> Pipeline<Depth> {
     pub fn update_cache(
         &mut self,
-        queue: &mut wgpu::Queue,
+        queue: &wgpu::Queue,
         offset: [u16; 2],
         size: [u16; 2],
         data: &[u8],
     ) {
-        self.cache.update(queue, offset, size, data);
+        self.cache.update(&queue, offset, size, data);
     }
 
     pub fn increase_cache_size(
@@ -128,7 +128,7 @@ impl<Depth> Pipeline<Depth> {
     pub fn upload(
         &mut self,
         device: &wgpu::Device,
-        queue: &mut wgpu::Queue,
+        queue: &wgpu::Queue,
         instances: &mut [Instance],
     ) {
         if instances.is_empty() {
@@ -315,7 +315,7 @@ fn build<D>(
 
 fn draw<'pass, D>(
     pipeline: &'pass mut Pipeline<D>,
-    config: (&mut wgpu::Queue, &mut wgpu::RenderPass<'pass>),
+    config: (&wgpu::Queue, &mut wgpu::RenderPass<'pass>),
     transform: [f32; 16],
     region: Option<Region>,
 ) {

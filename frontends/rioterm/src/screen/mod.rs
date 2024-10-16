@@ -170,6 +170,8 @@ impl Screen<'_> {
             }
         };
 
+        sugarloaf.update_filters(config.renderer.filters.as_slice());
+
         let renderer = Renderer::new(config, font_library);
 
         let bindings = crate::bindings::default_key_bindings(
@@ -354,6 +356,8 @@ impl Screen<'_> {
             padding_y_bottom,
         ));
 
+        self.sugarloaf
+            .update_filters(config.renderer.filters.as_slice());
         self.renderer = Renderer::new(config, font_library);
 
         for context in self.ctx().contexts() {

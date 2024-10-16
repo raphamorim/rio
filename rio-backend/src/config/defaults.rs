@@ -282,12 +282,21 @@ pub fn default_config_file_content() -> String {
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
 #
+# • filters: A list of paths to RetroArch slang shaders
+#
+# • continuous-rendering: Configure continuous rendering
+#   - Available options: true and false.
+#       When set to true, the renderer will continuously render.
+#       When set to false, the renderer will render as rare as possible.
+#
 # Example:
 # [renderer]
 # performance = "high"
 # backend = "automatic"
 # disable-unfocused-render = false
 # level = 1
+# filters = []
+# continuous-rendering = false
 
 # Keyboard
 #

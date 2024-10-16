@@ -1,10 +1,11 @@
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
+use std::sync::Arc;
 
 pub struct Context<'a> {
-    pub device: wgpu::Device,
+    pub device: Arc<wgpu::Device>,
     pub surface: wgpu::Surface<'a>,
-    pub queue: wgpu::Queue,
+    pub queue: Arc<wgpu::Queue>,
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
     pub scale: f32,
@@ -111,9 +112,15 @@ impl Context<'_> {
 
         let (device, queue) = {
             {
-                if let Ok(result) = futures::executor::block_on(
-                    adapter.request_device(&wgpu::DeviceDescriptor::default(), None),
-                ) {
+                if let Ok(result) = futures::executor::block_on(adapter.request_device(
+                    // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
+                    &wgpu::DeviceDescriptor {
+                        required_features: wgpu::Features::empty()
+                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                        ..Default::default()
+                    },
+                    None,
+                )) {
                     result
                 } else {
                     // These downlevel limits will allow the code to run on all possible hardware
@@ -148,7 +155,9 @@ impl Context<'_> {
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                // COPY_DST is required for rendering filter chains
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_DST,
                 format,
                 width: size.width as u32,
                 height: size.height as u32,
@@ -160,8 +169,8 @@ impl Context<'_> {
         );
 
         Context {
-            device,
-            queue,
+            device: Arc::new(device),
+            queue: Arc::new(queue),
             surface,
             format,
             alpha_mode,
@@ -180,7 +189,9 @@ impl Context<'_> {
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                // COPY_DST is required for rendering filter chains
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_DST,
                 format: self.format,
                 width,
                 height,

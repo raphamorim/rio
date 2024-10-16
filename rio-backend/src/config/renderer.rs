@@ -11,6 +11,10 @@ pub struct Renderer {
     pub disable_unfocused_render: bool,
     #[serde(default = "Option::default", rename = "target-fps")]
     pub target_fps: Option<u64>,
+    #[serde(default = "Vec::default")]
+    pub filters: Vec<String>,
+    #[serde(default = "bool::default", rename = "continuous-rendering")]
+    pub continuous_rendering: bool,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -21,6 +25,8 @@ impl Default for Renderer {
             backend: Backend::default(),
             disable_unfocused_render: false,
             target_fps: None,
+            filters: Vec::default(),
+            continuous_rendering: false,
         }
     }
 }
