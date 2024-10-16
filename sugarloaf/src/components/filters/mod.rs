@@ -81,7 +81,7 @@ impl FiltersBrush {
         &mut self,
         ctx: &Context,
         encoder: &mut wgpu::CommandEncoder,
-        src_texture: &Arc<wgpu::Texture>,
+        src_texture: &wgpu::Texture,
         dst_texture: &wgpu::Texture,
         framecount: usize,
     ) {
@@ -94,6 +94,34 @@ impl FiltersBrush {
 
             return;
         }
+
+        // Some shaders can do some specific things for which WGPU (at least the Vulkan backend)
+        // requires the src and dst textures to be different, otherwise it will crash.
+        // Also librashader requires a texture to be in Arc, so we need to make a copy anyway
+        let src_texture = {
+            let new_src_texture =
+                Arc::new(ctx.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("Filters Source Texture"),
+                    size: src_texture.size(),
+                    mip_level_count: src_texture.mip_level_count(),
+                    sample_count: src_texture.sample_count(),
+                    dimension: src_texture.dimension(),
+                    format: src_texture.format(),
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING
+                        | wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[src_texture.format()],
+                }));
+
+            encoder.copy_texture_to_texture(
+                src_texture.as_image_copy(),
+                new_src_texture.as_image_copy(),
+                new_src_texture.size(),
+            );
+
+            new_src_texture
+        };
 
         let view_size = librashader::runtime::Size::new(
             ctx.size.width as u32,
