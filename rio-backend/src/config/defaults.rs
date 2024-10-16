@@ -84,9 +84,20 @@ pub fn default_theme() -> String {
 
 #[inline]
 pub fn default_editor() -> Shell {
-    Shell {
-        program: String::from("vi"),
-        args: vec![],
+    #[cfg(not(target_os = "windows"))]
+    {
+        Shell {
+            program: String::from("vi"),
+            args: vec![],
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Shell {
+            program: String::from("notepad"),
+            args: vec![],
+        }
     }
 }
 
@@ -213,7 +224,8 @@ pub fn default_config_file_content() -> String {
 
 # Editor
 #
-# Default editor is "vi".
+# Default editor on Linux and MacOS is "vi",
+# on Windows it is "notepad".
 #
 # Whenever the key binding `OpenConfigEditor` is triggered it will
 # use the value of the editor along with the rio configuration path.
