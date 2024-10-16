@@ -11,6 +11,9 @@ language: 'en'
 ## Unreleased
 
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
+- Initial split support.
+- Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
+- Major rewrite of sugarloaf font glyph logic.
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
 
