@@ -282,7 +282,7 @@ pub fn default_config_file_content() -> String {
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
 #
-# • filters: A list of paths to RetroArch slang shaders
+# • filters: A list of paths to RetroArch slang shaders. Might not work with OpenGL.
 #
 # • continuous-rendering: Configure continuous rendering
 #   - Available options: true and false.

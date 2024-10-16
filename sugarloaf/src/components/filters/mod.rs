@@ -24,6 +24,16 @@ impl FiltersBrush {
             return;
         }
 
+        let usage_caps = ctx.surface_caps().usages;
+
+        if !usage_caps.contains(wgpu::TextureUsages::COPY_DST)
+            || !usage_caps.contains(wgpu::TextureUsages::COPY_SRC)
+        {
+            tracing::warn!("The selected backend does not support the filter chains!");
+
+            return;
+        }
+
         for path in filter_paths {
             tracing::debug!("Loading filter {}", path);
 
@@ -85,13 +95,11 @@ impl FiltersBrush {
         dst_texture: &wgpu::Texture,
         framecount: usize,
     ) {
-        if self.filter_chains.is_empty() {
-            encoder.copy_texture_to_texture(
-                src_texture.as_image_copy(),
-                dst_texture.as_image_copy(),
-                dst_texture.size(),
-            );
+        let usage_caps = ctx.surface_caps().usages;
 
+        if !usage_caps.contains(wgpu::TextureUsages::COPY_SRC)
+            || !usage_caps.contains(wgpu::TextureUsages::COPY_DST)
+        {
             return;
         }
 
