@@ -8,7 +8,7 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## Unreleased
+## 0.1.18
 
 - Allow MacOS automation via events.
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
