@@ -43,10 +43,10 @@ copa = { default-features = false, version = "0.1.14" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.0.0"
-unicode-width = "0.1.13"
+unicode-width = "0.2.0"
 base64 = "0.22.1"
 image_rs = { package = "image", version = "0.25.2", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
-regex = "1.10.6"
+regex = "1.11.0"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
 swash = "0.1.18"
 serde = { version = "1.0.208", features = ["derive"] }

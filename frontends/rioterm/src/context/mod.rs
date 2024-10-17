@@ -542,11 +542,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
+        self.current_route = self.current().route_id;
     }
 
     #[inline]
     pub fn select_prev_split(&mut self) {
         self.contexts[self.current_index].select_prev_split();
+        self.current_route = self.current().route_id;
     }
 
     #[inline]
