@@ -53,6 +53,12 @@ impl CursorState {
             content: CursorShape::from_char(cursor),
         }
     }
+    pub fn new_from_self(&self) -> CursorState {
+        CursorState {
+            pos: Pos::default(),
+            content: self.content.clone(),
+        }
+    }
     pub fn is_visible(&self) -> bool {
         self.content != CursorShape::Hidden
     }
