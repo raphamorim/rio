@@ -3,14 +3,12 @@ mod search;
 pub mod utils;
 
 use crate::ansi::CursorShape;
-use crate::context::renderable::Cursor;
-use crate::context::renderable::RenderableContentStrategy;
+use crate::context::renderable::{Cursor, RenderableContent, RenderableContentStrategy};
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
-use crate::selection::SelectionRange;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
     term::{List, TermColors},
@@ -38,7 +36,6 @@ pub struct Renderer {
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
-    pub selection_range: Option<SelectionRange>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     term_has_blinking_enabled: bool,
@@ -47,13 +44,12 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
-    hyperlink_range: Option<SelectionRange>,
-    active_search: Option<String>,
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FxHashMap<
         (char, rio_backend::sugarloaf::font_introspector::Attributes),
         (usize, f32),
     >,
+    active_search: Option<String>,
 }
 
 impl Renderer {
@@ -101,8 +97,6 @@ impl Renderer {
                 color_automation,
                 config.padding_y,
             ),
-            selection_range: None,
-            hyperlink_range: None,
             named_colors,
             dynamic_background,
             active_search: None,
@@ -119,16 +113,6 @@ impl Renderer {
     #[inline]
     pub fn set_active_search(&mut self, active_search: Option<String>) {
         self.active_search = active_search;
-    }
-
-    #[inline]
-    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
-        self.hyperlink_range = hyperlink_range;
-    }
-
-    #[inline]
-    pub fn has_hyperlink_range(&self) -> bool {
-        self.hyperlink_range.is_some()
     }
 
     #[inline]
@@ -249,10 +233,13 @@ impl Renderer {
         has_cursor: bool,
         line_opt: Option<usize>,
         line: Line,
-        cursor: &Cursor,
+        renderable_content: &RenderableContent,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        let cursor = &renderable_content.cursor;
+        let hyperlink_range = renderable_content.hyperlink_range;
+        let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::default();
         let mut last_char_was_space = false;
@@ -267,15 +254,14 @@ impl Renderer {
 
             let (mut style, square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor)
+                    self.create_cursor_style(square, &cursor)
                 } else {
                     self.create_style(square)
                 };
 
-            if self.hyperlink_range.is_some()
+            if hyperlink_range.is_some()
                 && square.hyperlink().is_some()
-                && self
-                    .hyperlink_range
+                && hyperlink_range
                     .unwrap()
                     .contains(Pos::new(line, Column(column)))
             {
@@ -286,9 +272,8 @@ impl Renderer {
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
-            } else if self.selection_range.is_some()
-                && self
-                    .selection_range
+            } else if selection_range.is_some()
+                && selection_range
                     .unwrap()
                     .contains(Pos::new(line, Column(column)))
             {
@@ -674,11 +659,6 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
-        self.selection_range = selection_range;
-    }
-
-    #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
@@ -699,10 +679,11 @@ impl Renderer {
             let renderable_content = context.renderable_content();
             let mut is_cursor_visible = renderable_content.cursor.state.is_visible();
 
+            // TODO: Remove it
             self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
 
             // Only blink cursor if does not contain selection
-            let has_selection = self.selection_range.is_some();
+            let has_selection = renderable_content.selection_range.is_some();
             if !has_selection && self.has_blinking_enabled() {
                 let mut should_blink = true;
                 if let Some(last_typing_time) = self.last_typing {
@@ -718,11 +699,6 @@ impl Renderer {
             }
             let display_offset = renderable_content.display_offset;
 
-            // let mut render_strategy = &renderable_content.strategy;
-            // if has_selection {
-            //     render_strategy = &RenderableContentStrategy::Full;
-            // }
-
             match &renderable_content.strategy {
                 RenderableContentStrategy::Full => {
                     content.sel(rich_text_id);
@@ -736,7 +712,7 @@ impl Renderer {
                             has_cursor,
                             None,
                             Line((i as i32) - display_offset),
-                            &renderable_content.cursor,
+                            &renderable_content,
                             hints,
                             focused_match,
                         );
@@ -756,7 +732,7 @@ impl Renderer {
                             has_cursor,
                             Some(line),
                             Line((line as i32) - display_offset),
-                            &renderable_content.cursor,
+                            &renderable_content,
                             hints,
                             focused_match,
                         );

@@ -856,8 +856,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor(cursor_icon);
 
                     // In case hyperlink range has cleaned trigger one more render
-                    if route.window.screen.renderer.has_hyperlink_range() {
-                        route.window.screen.renderer.set_hyperlink_range(None);
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .current()
+                        .has_hyperlink_range()
+                    {
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .set_hyperlink_range(None);
                         route.window.screen.context_manager.schedule_render(60);
                     }
                 }

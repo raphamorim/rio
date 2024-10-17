@@ -1,6 +1,7 @@
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
+use rio_backend::selection::SelectionRange;
 use std::collections::HashSet;
 
 #[derive(Default, Clone, Debug)]
@@ -29,6 +30,9 @@ pub struct RenderableContent {
     pub cursor: Cursor,
     pub has_blinking_enabled: bool,
     pub strategy: RenderableContentStrategy,
+    pub selection_range: Option<SelectionRange>,
+    pub hyperlink_range: Option<SelectionRange>,
+    pub has_pending_updates: bool,
 }
 
 impl RenderableContent {
@@ -40,7 +44,8 @@ impl RenderableContent {
         cursor: CursorState,
         has_blinking_enabled: bool,
     ) {
-        let mut diff = HashSet::with_capacity(rows.len());
+        let mut diff: HashSet<usize> = HashSet::with_capacity(rows.len());
+
         if self.cursor.state.pos != cursor.pos {
             // Add old row cursor
             diff.insert(*self.cursor.state.pos.row as usize);
@@ -50,12 +55,31 @@ impl RenderableContent {
         self.cursor.state = cursor;
         self.strategy = RenderableContentStrategy::Full;
 
-        let require_full_clone = self.display_offset != display_offset as i32 ||
-            self.has_blinking_enabled != has_blinking_enabled ||
-            self.inner.len() != rows.len();
+        let require_full_clone = self.display_offset != display_offset as i32
+            || self.has_blinking_enabled != has_blinking_enabled
+            || self.has_pending_updates
+            || self.inner.len() != rows.len()
+            || self.selection_range.is_some()
+            || self.hyperlink_range.is_some();
+
+        self.has_pending_updates = false;
 
         self.display_offset = display_offset as i32;
         self.has_blinking_enabled = has_blinking_enabled;
+
+        // if let Some(selection_range) = self.selection_range {
+        // println!("{:?}", self.selection_range);
+        // for i in (*selection_range.start.row as usize)..(*selection_range.end.row as usize) {
+        //     println!("{:?}", i);
+        //     diff.insert(i);
+        // }
+        // }
+
+        // if let Some(hyperlink_range) = self.hyperlink_range {
+        // for i in (*hyperlink_range.start.row as usize)..(*hyperlink_range.end.row as usize) {
+        //     diff.insert(i);
+        // }
+        // }
 
         if require_full_clone {
             self.inner = rows.clone();
