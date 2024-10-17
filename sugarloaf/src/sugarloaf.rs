@@ -4,6 +4,7 @@ pub mod primitives;
 pub mod state;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::filters::FiltersBrush;
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
@@ -33,6 +34,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
+    filters_brush: FiltersBrush,
 }
 
 #[derive(Debug)]
@@ -133,6 +135,7 @@ impl Sugarloaf<'_> {
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
+        let filters_brush = FiltersBrush::new();
 
         let instance = Sugarloaf {
             state,
@@ -145,6 +148,7 @@ impl Sugarloaf<'_> {
             rich_text_brush,
             text_brush,
             graphics: Graphics::default(),
+            filters_brush,
         };
 
         Ok(instance)
@@ -177,6 +181,11 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
         &mut self.state.layout
+    }
+
+    #[inline]
+    pub fn update_filters(&mut self, filter_paths: &[String]) {
+        self.filters_brush.update_filters(&self.ctx, filter_paths);
     }
 
     #[inline]
@@ -272,7 +281,7 @@ impl Sugarloaf<'_> {
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
 
-                let view = &frame
+                let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -312,7 +321,7 @@ impl Sugarloaf<'_> {
                             occlusion_query_set: None,
                             label: None,
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
+                                view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load,
@@ -355,6 +364,13 @@ impl Sugarloaf<'_> {
                     self.layer_brush.end_frame();
                     self.graphics.clear_top_layer();
                 }
+
+                self.filters_brush.render(
+                    &self.ctx,
+                    &mut encoder,
+                    &frame.texture,
+                    &frame.texture,
+                );
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

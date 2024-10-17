@@ -51,6 +51,7 @@ skrifa = "0.22.3"
 yazi = { version = "0.1.6", optional = true }
 zeno = { version = "0.2.2", optional = true, default-features = false }
 futures = { workspace = true }
+librashader = { version = "0.5.1", features = ["preprocess", "runtime-wgpu", "stable"], default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 crossbeam-channel = "0.5.13"

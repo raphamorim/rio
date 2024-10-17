@@ -282,12 +282,15 @@ pub fn default_config_file_content() -> String {
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
 #
+# • filters: A list of paths to RetroArch slang shaders. Might not work with OpenGL.
+#
 # Example:
 # [renderer]
 # performance = "high"
 # backend = "automatic"
 # disable-unfocused-render = false
 # level = 1
+# filters = []
 
 # Keyboard
 #
