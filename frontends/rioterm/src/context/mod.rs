@@ -13,7 +13,6 @@ use crate::performer::Machine;
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
-use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -104,7 +103,7 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
-            state: CursorState::new(self.renderable_content.cursor.content_ref),
+            state: self.renderable_content.cursor.state.new_from_self(),
             content: self.renderable_content.cursor.content_ref,
             content_ref: self.renderable_content.cursor.content_ref,
             is_ime_enabled: false,
@@ -200,7 +199,7 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
         #[cfg(not(target_os = "windows"))]
         shell_pid: 1,
         messenger: Messenger::new(sender),
-        renderable_content: RenderableContent::default(),
+        renderable_content: RenderableContent::new(Cursor::default()),
         terminal,
         rich_text_id,
         dimension,
@@ -311,7 +310,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger,
             terminal,
             rich_text_id,
-            renderable_content: RenderableContent::default(),
+            renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
             ime: Ime::new(),
         })
@@ -980,7 +979,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.window_id,
                 self.acc_current_route,
                 rich_text_id,
-                self.current().dimension,
+                self.current_grid().grid_dimension(),
                 &cloned_config,
             ) {
                 Ok(new_context) => {

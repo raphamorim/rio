@@ -4,17 +4,14 @@ use rio_backend::crosswords::square::Square;
 use rio_backend::selection::SelectionRange;
 use std::collections::HashSet;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum RenderableContentStrategy {
-    #[allow(unused)]
     Noop,
-    #[default]
     Full,
-    #[allow(unused)]
     Lines(HashSet<usize>),
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct Cursor {
     pub state: CursorState,
     pub content: char,
@@ -22,7 +19,6 @@ pub struct Cursor {
     pub is_ime_enabled: bool,
 }
 
-#[derive(Default)]
 pub struct RenderableContent {
     pub inner: Vec<Row<Square>>,
     pub display_offset: i32,
@@ -36,6 +32,19 @@ pub struct RenderableContent {
 }
 
 impl RenderableContent {
+    pub fn new(cursor: Cursor) -> Self {
+        RenderableContent {
+            inner: vec![],
+            cursor,
+            has_blinking_enabled: false,
+            display_offset: 0,
+            strategy: RenderableContentStrategy::Noop,
+            selection_range: None,
+            hyperlink_range: None,
+            has_pending_updates: false,
+        }
+    }
+
     #[inline]
     pub fn update(
         &mut self,

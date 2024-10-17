@@ -185,6 +185,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         (&self.inner[self.current].val, margin)
     }
 
+    #[inline]
+    pub fn grid_dimension(&self) -> ContextDimension {
+        let current_context_dimension = self.inner[self.current].val.dimension;
+        ContextDimension::build(
+            self.width,
+            self.height,
+            current_context_dimension.dimension,
+            1.0,
+            self.margin,
+        )
+    }
+
     pub fn plot_objects(
         &self,
         objects: &mut Vec<Object>,
@@ -248,6 +260,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             top_y: padding.1,
             bottom_y: padding.2,
         };
+        for context in &mut self.inner {
+            context.val.dimension.update_margin(self.margin);
+        }
     }
 
     pub fn rescale(&mut self, sugarloaf: &Sugarloaf) {
@@ -463,6 +478,11 @@ impl ContextDimension {
 
     pub fn update_height(&mut self, height: f32) {
         self.height = height;
+        self.update();
+    }
+
+    pub fn update_margin(&mut self, margin: Delta<f32>) {
+        self.margin = margin;
         self.update();
     }
 
