@@ -1095,10 +1095,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::Terminal => {
                         route.window.screen.render();
-
-                        if self.config.renderer.continuous_rendering {
-                            route.request_redraw();
-                        }
                     }
                     RoutePath::ConfirmQuit => {
                         route
