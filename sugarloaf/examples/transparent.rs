@@ -8,7 +8,7 @@ use rio_window::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 use sugarloaf::components::rect::Rect;
-use sugarloaf::layout::SugarloafLayout;
+use sugarloaf::layout::RootStyle;
 use sugarloaf::{Object, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 fn main() {
@@ -28,14 +28,7 @@ fn main() {
     let font_size = 60.;
     let line_height = 1.0;
 
-    let sugarloaf_layout = SugarloafLayout::new(
-        width as f32,
-        height as f32,
-        (0.0, 0.0, 0.0),
-        scale_factor as f32,
-        font_size,
-        line_height,
-    );
+    let sugarloaf_layout = RootStyle::new(scale_factor as f32, font_size, line_height);
 
     let size = window.inner_size();
     let sugarloaf_window = SugarloafWindow {

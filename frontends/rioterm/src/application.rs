@@ -161,7 +161,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if route_id == route.window.screen.ctx().current_route() {
-                        let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                        let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                         let event = EventPayload::new(
                             RioEventType::Rio(RioEvent::Render),
                             window_id,
@@ -265,7 +265,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         self.router.routes.remove(&window_id);
 
                         // Unschedule pending events.
-                        self.scheduler.unschedule_window(window_id);
+                        self.scheduler.unschedule_window(route_id);
 
                         if self.router.routes.is_empty() {
                             event_loop.exit();
@@ -289,21 +289,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
-                let timer_id = TimerId::new(Topic::Render, window_id);
-                let event =
-                    EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(millis),
-                        false,
-                        timer_id,
+                if let Some(route) = self.router.routes.get(&window_id) {
+                    let timer_id = TimerId::new(
+                        Topic::Render,
+                        route.window.screen.ctx().current_route(),
                     );
+                    let event =
+                        EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
+
+                    if !self.scheduler.scheduled(timer_id) {
+                        self.scheduler.schedule(
+                            event,
+                            Duration::from_millis(millis),
+                            false,
+                            timer_id,
+                        );
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRenderOnRoute(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::RenderRoute, window_id);
+                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::RenderRoute(route_id)),
                     window_id,
@@ -319,7 +324,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::BlinkCursor(millis, route_id)) => {
-                let timer_id = TimerId::new(Topic::CursorBlinking, window_id);
+                let timer_id = TimerId::new(Topic::CursorBlinking, route_id);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)),
                     window_id,
@@ -401,9 +406,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::TextAreaSizeRequest(format)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let layout = route.window.screen.sugarloaf.layout();
+                    let dimension =
+                        route.window.screen.context_manager.current().dimension;
                     let text =
-                        format(crate::renderer::utils::terminal_dimensions(&layout));
+                        format(crate::renderer::utils::terminal_dimensions(&dimension));
                     route
                         .window
                         .screen
@@ -479,11 +485,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                self.router.open_config_window(
-                    event_loop,
-                    self.event_proxy.clone(),
-                    &self.config,
-                );
+                if self.config.navigation.use_split {
+                    self.router.open_config_split(&self.config);
+                } else {
+                    self.router.open_config_window(
+                        event_loop,
+                        self.event_proxy.clone(),
+                        &self.config,
+                    );
+                }
             }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
@@ -608,10 +618,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         match event {
             WindowEvent::CloseRequested => {
-                self.router.routes.remove(&window_id);
-
+                // MacOS doesn't exit the loop
                 if cfg!(target_os = "macos") && self.config.confirm_before_quit {
+                    self.router.routes.remove(&window_id);
                     return;
+                }
+
+                if self.config.confirm_before_quit {
+                    route.confirm_quit();
+                    route.request_redraw();
+                    return;
+                } else {
+                    self.router.routes.remove(&window_id);
                 }
 
                 if self.router.routes.is_empty() {
@@ -800,7 +818,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let display_offset = route.window.screen.display_offset();
                 let old_point = route.window.screen.mouse_position(display_offset);
 
-                let layout = route.window.screen.sugarloaf.layout();
+                let layout = route.window.screen.sugarloaf.window_size();
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
@@ -838,8 +856,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor(cursor_icon);
 
                     // In case hyperlink range has cleaned trigger one more render
-                    if route.window.screen.renderer.has_hyperlink_range() {
-                        route.window.screen.renderer.set_hyperlink_range(None);
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .current()
+                        .has_hyperlink_range()
+                    {
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .set_hyperlink_range(None);
                         route.window.screen.context_manager.schedule_render(60);
                     }
                 }
@@ -883,7 +912,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let layout = route.window.screen.sugarloaf.layout();
+                        let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
                         let new_scroll_px_x = columns * layout.font_size;
                         let new_scroll_px_y = lines * layout.font_size;
                         route
@@ -925,8 +954,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         && key_event.state == ElementState::Released
                     {
                         // Scheduler must be cleaned after leave the terminal route
-                        self.scheduler
-                            .unschedule(TimerId::new(Topic::Render, window_id));
+                        self.scheduler.unschedule(TimerId::new(
+                            Topic::Render,
+                            route.window.screen.ctx().current_route(),
+                        ));
                     }
                     return;
                 }
@@ -958,16 +989,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
                         };
 
-                        if route.window.screen.ime.preedit() != preedit.as_ref() {
-                            route.window.screen.ime.set_preedit(preedit);
+                        if route.window.screen.context_manager.current().ime.preedit()
+                            != preedit.as_ref()
+                        {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
+                                .ime
+                                .set_preedit(preedit);
                             route.request_redraw();
                         }
                     }
                     Ime::Enabled => {
-                        route.window.screen.ime.set_enabled(true);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(true);
                     }
                     Ime::Disabled => {
-                        route.window.screen.ime.set_enabled(false);
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .current_mut()
+                            .ime
+                            .set_enabled(false);
                     }
                 }
             }
@@ -980,12 +1031,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                // let has_regained_focus = !route.window.is_focused && focused;
-                // route.window.is_focused = focused;
+                let has_regained_focus = !route.window.is_focused && focused;
+                route.window.is_focused = focused;
 
-                // if has_regained_focus {
-                // route.request_redraw();
-                // }
+                if has_regained_focus {
+                    route.request_redraw();
+                }
 
                 route.window.screen.on_focus_change(focused);
             }
@@ -1073,11 +1124,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
-        self.router.open_config_window(
-            event_loop,
-            self.event_proxy.clone(),
-            &self.config,
-        );
+        if self.config.navigation.use_split {
+            self.router.open_config_split(&self.config);
+        } else {
+            self.router.open_config_window(
+                event_loop,
+                self.event_proxy.clone(),
+                &self.config,
+            );
+        }
     }
 
     fn hook_event(&mut self, _event_loop: &ActiveEventLoop, hook: &Hook) {
@@ -1109,9 +1164,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.create_tab();
                 }
             }
-            Hook::CloseTab => {
-                if self.config.navigation.has_navigation_key_bindings() {
-                    route.window.screen.close_tab();
+            Hook::Close => {
+                route.window.screen.close_split_or_tab();
+            }
+            Hook::SplitDown => {
+                if self.config.navigation.use_split {
+                    route.window.screen.split_down();
+                }
+            }
+            Hook::SplitRight => {
+                if self.config.navigation.use_split {
+                    route.window.screen.split_right();
                 }
             }
         }

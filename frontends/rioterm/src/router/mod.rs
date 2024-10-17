@@ -250,6 +250,36 @@ impl Router<'_> {
         self.config_route = Some(id);
     }
 
+    pub fn open_config_split(&mut self, config: &RioConfig) {
+        let current_config: RioConfig = config.clone();
+        let editor = config.editor.clone();
+        let mut args = editor.args;
+        args.push(
+            rio_backend::config::config_file_path()
+                .display()
+                .to_string(),
+        );
+        let new_config = RioConfig {
+            shell: rio_backend::config::Shell {
+                program: editor.program,
+                args,
+            },
+            ..current_config
+        };
+
+        let window_id = match self.get_focused_route() {
+            Some(window_id) => window_id,
+            None => return,
+        };
+
+        let route = match self.routes.get_mut(&window_id) {
+            Some(window) => window,
+            None => return,
+        };
+
+        route.window.screen.split_right_with_config(new_config);
+    }
+
     #[inline]
     pub fn create_window<'a>(
         &'a mut self,

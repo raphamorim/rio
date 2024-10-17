@@ -7,12 +7,10 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 use crate::font::FontLibrary;
-use crate::layout::{Content, FragmentStyle, RenderData};
-use crate::sugarloaf::SugarloafLayout;
+use crate::layout::RichTextLayout;
+use crate::layout::{BuilderState, Content};
 
 pub struct Advanced {
-    pub render_data: RenderData,
-    pub mocked_render_data: RenderData,
     pub content: Content,
 }
 
@@ -20,14 +18,12 @@ impl Advanced {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             content: Content::new(font_library),
-            render_data: RenderData::new(),
-            mocked_render_data: RenderData::new(),
         }
     }
 
     #[inline]
     pub fn reset(&mut self) {
-        self.render_data.clear();
+        // self.render_data.clear();
     }
 
     #[inline]
@@ -55,30 +51,17 @@ impl Advanced {
     }
 
     #[inline]
-    pub fn content(&mut self, scale: f32, font_size: f32) -> &mut Content {
-        self.content.build(scale, font_size);
-        &mut self.content
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.content.clear_state(id);
     }
 
     #[inline]
-    pub fn update_render_data(&mut self) {
-        self.content.resolve(&mut self.render_data);
-        self.render_data
-            .break_lines()
-            .break_without_advance_or_alignment();
+    pub fn get_rich_text(&self, id: &usize) -> Option<&BuilderState> {
+        self.content.get_state(id)
     }
 
     #[inline]
-    pub fn calculate_dimensions(&mut self, layout: &SugarloafLayout) {
-        self.mocked_render_data = RenderData::default();
-        let mut content = Content::new(self.content.font_library());
-        content.build(layout.dimensions.scale, layout.font_size);
-        content.add_text(" ", FragmentStyle::default());
-        self.mocked_render_data.clear();
-        content.resolve(&mut self.mocked_render_data);
-
-        self.mocked_render_data
-            .break_lines()
-            .break_without_advance_or_alignment()
+    pub fn create_rich_text(&mut self, rich_text_layout: &RichTextLayout) -> usize {
+        self.content.create_state(rich_text_layout)
     }
 }

@@ -195,10 +195,24 @@ declare_class!(
             }
         }
 
-        #[method(rioCloseTab:)]
+        #[method(rioClose:)]
         fn close_tab(&self, _sender: Option<&AnyObject>) {
             if self.is_launched() {
-                self.dispatch_hook(Hook::CloseTab);
+                self.dispatch_hook(Hook::Close);
+            }
+        }
+
+        #[method(rioSplitDown:)]
+        fn split_down(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitDown);
+            }
+        }
+
+        #[method(rioSplitRight:)]
+        fn split_right(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitRight);
             }
         }
 

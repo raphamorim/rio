@@ -7,6 +7,7 @@ language: 'en'
 - `clickable` - Enable click on tabs to switch.
 - `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/config/use-fork) to be set to false).
 - `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
+- `use-split` - Enable split panels feature.
 
 ```toml
 [navigation]
@@ -15,7 +16,10 @@ clickable = false
 hide-if-single = true
 use-current-path = false
 color-automation = []
+use-split = true
 ```
+
+## Mode
 
 Rio has multiple styles of showing navigation/tabs.
 
@@ -90,7 +94,18 @@ Usage:
 mode = "Plain"
 ```
 
-### Hide if is only one tab
+## Split
+
+Enable split feature. It is enabled by default.
+
+```toml
+[navigation]
+use-split = true
+```
+
+![Demo split](/assets/features/demo-split.png)
+
+## Hide if is only one tab
 
 The property `hide-if-single` hides navigation UI if there is only one tab. It does not work for `NativeTab`.
 
@@ -101,7 +116,7 @@ Default is `true`.
 hide-if-single = true
 ```
 
-### Color automation for navigation
+## Color automation for navigation
 
 Rio supports specifying the color of tabs using the `program` and `path` options.
 
@@ -119,7 +134,7 @@ color-automation = [
 ]
 ```
 
-#### Program
+### Program
 
 The example below sets `#FFFF00` as color background whenever `nvim` is running.
 
@@ -138,7 +153,7 @@ color-automation = [
 ]
 ```
 
-#### Path
+### Path
 
 The example below sets `#FFFF00` as color background when in the `/home/geg/.config/rio` path.
 
@@ -159,7 +174,7 @@ color-automation = [
 <img alt="example navigation with path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
 </p>
 
-#### Program and path
+### Program and path
 
 It is possible to use both `path` and `program` at the same time.
 
