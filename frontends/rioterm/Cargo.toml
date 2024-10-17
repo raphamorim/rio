@@ -27,7 +27,7 @@ futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.5.9", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 dirs = "5.0.1"
 notify = "6.1.1"
 rustc-hash = { workspace = true }

@@ -2067,7 +2067,14 @@ impl Screen<'_> {
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
-        if self.renderer.has_blinking_enabled() && self.selection_is_empty() {
+        if self.renderer.config_has_blinking_enabled
+            && self.selection_is_empty()
+            && self
+                .context_manager
+                .current()
+                .renderable_content
+                .has_blinking_enabled
+        {
             self.context_manager
                 .blink_cursor(self.renderer.config_blinking_interval);
         }

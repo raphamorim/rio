@@ -38,7 +38,6 @@ pub struct Renderer {
     pub navigation: ScreenNavigation,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
-    term_has_blinking_enabled: bool,
     pub is_blinking: bool,
     ignore_selection_fg_color: bool,
     // Dynamic background keep track of the original bg color and
@@ -89,7 +88,6 @@ impl Renderer {
             is_blinking: false,
             last_typing: None,
             config_has_blinking_enabled: config.cursor.blinking,
-            term_has_blinking_enabled: false,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
             navigation: ScreenNavigation::new(
@@ -103,11 +101,6 @@ impl Renderer {
             font_cache: FxHashMap::default(),
             font_context: font_context.clone(),
         }
-    }
-
-    #[inline]
-    pub fn has_blinking_enabled(&self) -> bool {
-        self.config_has_blinking_enabled && self.term_has_blinking_enabled
     }
 
     #[inline]
@@ -679,12 +672,10 @@ impl Renderer {
             let renderable_content = context.renderable_content();
             let mut is_cursor_visible = renderable_content.cursor.state.is_visible();
 
-            // TODO: Remove it
-            self.term_has_blinking_enabled = renderable_content.has_blinking_enabled;
-
             // Only blink cursor if does not contain selection
             let has_selection = renderable_content.selection_range.is_some();
-            if !has_selection && self.has_blinking_enabled() {
+
+            if !has_selection && self.config_has_blinking_enabled && renderable_content.has_blinking_enabled {
                 let mut should_blink = true;
                 if let Some(last_typing_time) = self.last_typing {
                     if last_typing_time.elapsed() < Duration::from_secs(1) {
