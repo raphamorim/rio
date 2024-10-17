@@ -247,7 +247,7 @@ impl Renderer {
 
             let (mut style, square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, &cursor)
+                    self.create_cursor_style(square, cursor)
                 } else {
                     self.create_style(square)
                 };
@@ -706,7 +706,7 @@ impl Renderer {
                             has_cursor,
                             None,
                             Line((i as i32) - display_offset),
-                            &renderable_content,
+                            renderable_content,
                             hints,
                             focused_match,
                         );
@@ -726,7 +726,7 @@ impl Renderer {
                             has_cursor,
                             Some(line),
                             Line((line as i32) - display_offset),
-                            &renderable_content,
+                            renderable_content,
                             hints,
                             focused_match,
                         );

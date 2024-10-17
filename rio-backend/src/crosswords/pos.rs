@@ -56,7 +56,7 @@ impl CursorState {
     pub fn new_from_self(&self) -> CursorState {
         CursorState {
             pos: Pos::default(),
-            content: self.content.clone(),
+            content: self.content,
         }
     }
     pub fn is_visible(&self) -> bool {
