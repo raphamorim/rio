@@ -76,26 +76,12 @@ impl RenderableContent {
         self.display_offset = display_offset as i32;
         self.has_blinking_enabled = has_blinking_enabled;
 
-        // if let Some(selection_range) = self.selection_range {
-        // println!("{:?}", self.selection_range);
-        // for i in (*selection_range.start.row as usize)..(*selection_range.end.row as usize) {
-        //     println!("{:?}", i);
-        //     diff.insert(i);
-        // }
-        // }
-
-        // if let Some(hyperlink_range) = self.hyperlink_range {
-        // for i in (*hyperlink_range.start.row as usize)..(*hyperlink_range.end.row as usize) {
-        //     diff.insert(i);
-        // }
-        // }
-
         if require_full_clone {
             self.inner = rows.clone();
             return;
         }
 
-        for current_idx in 0..(rows.len()) {
+        for (current_idx, _) in rows.iter().enumerate() {
             if rows[current_idx] != self.inner[current_idx] {
                 self.inner[current_idx] = rows[current_idx].clone();
                 diff.insert(current_idx);
