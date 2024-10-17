@@ -17,7 +17,6 @@ pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, UnderlineShape};
 use crate::SugarCursor;
-use std::borrow::Borrow;
 
 #[derive(Default)]
 pub struct RunUnderline {
@@ -130,18 +129,15 @@ impl Compositor {
 
     /// Draws a text run.
     #[inline]
-    pub fn draw_run<I>(
+    pub fn draw_run(
         &mut self,
         session: &mut GlyphCacheSession,
         rect: impl Into<Rect>,
         depth: f32,
         style: &TextRunStyle,
-        glyphs: I,
+        glyphs: &[Glyph],
         // cached_run: &mut CachedRun,
-    ) where
-        I: Iterator,
-        I::Item: Borrow<Glyph>,
-    {
+    ) {
         let rect = rect.into();
 
         let underline = match style.decoration {
@@ -167,8 +163,7 @@ impl Compositor {
         let subpx_bias = (0.125, 0.);
         let color = style.color;
 
-        for g in glyphs {
-            let glyph = g.borrow();
+        for glyph in glyphs {
             let entry = session.get(glyph.id);
             if let Some(entry) = entry {
                 if let Some(img) = session.get_image(entry.image) {

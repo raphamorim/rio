@@ -40,7 +40,7 @@ pub struct Cursor<T> {
     pub should_wrap: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CursorState {
     pub pos: Pos,
     pub content: CursorShape,
@@ -51,6 +51,12 @@ impl CursorState {
         CursorState {
             pos: Pos::default(),
             content: CursorShape::from_char(cursor),
+        }
+    }
+    pub fn new_from_self(&self) -> CursorState {
+        CursorState {
+            pos: Pos::default(),
+            content: self.content,
         }
     }
     pub fn is_visible(&self) -> bool {

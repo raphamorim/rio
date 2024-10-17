@@ -240,7 +240,7 @@ pub struct Colors {
         rename = "selection-foreground"
     )]
     pub selection_foreground: ColorArray,
-    #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
+    #[serde(default = "defaults::split", deserialize_with = "deserialize_to_arr")]
     pub split: ColorArray,
     #[serde(
         default = "defaults::search_match_background",
@@ -284,7 +284,7 @@ impl Default for Colors {
             tabs_active_foreground: defaults::tabs_active_foreground(),
             tabs_foreground: defaults::tabs_foreground(),
             cursor: defaults::cursor(),
-            split: defaults::cursor(),
+            split: defaults::split(),
             vi_cursor: defaults::vi_cursor(),
             black: defaults::black(),
             cyan: defaults::cyan(),

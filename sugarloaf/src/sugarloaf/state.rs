@@ -5,34 +5,31 @@
 
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
-use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, SugarloafLayout};
-use crate::{Content, Graphics, Object};
-
-#[derive(Debug, PartialEq)]
-pub enum SugarTreeDiff {
-    Different,
-    Repaint,
-}
+use crate::layout::RootStyle;
+use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
+use crate::SugarDimensions;
+use crate::{Content, Graphics, Object, RichText};
 
 pub struct SugarState {
-    latest_change: SugarTreeDiff,
     objects: Vec<Object>,
-    pub layout: SugarloafLayout,
+    pub rich_texts: Vec<RichText>,
+    rich_text_repaint: Vec<usize>,
+    pub style: RootStyle,
     pub compositors: SugarCompositors,
 }
 
 impl SugarState {
     pub fn new(
-        initial_layout: SugarloafLayout,
+        style: RootStyle,
         font_library: &FontLibrary,
         font_features: &Option<Vec<String>>,
     ) -> SugarState {
         let mut state = SugarState {
             compositors: SugarCompositors::new(font_library),
-            // First time computing changes should obtain dimensions
-            layout: initial_layout,
+            style,
             objects: vec![],
-            latest_change: SugarTreeDiff::Repaint,
+            rich_texts: vec![],
+            rich_text_repaint: vec![],
         };
 
         state.compositors.advanced.set_font_features(font_features);
@@ -40,62 +37,103 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_resize(&mut self, width: u32, height: u32) {
-        self.layout.resize(width, height).update();
-        self.latest_change = SugarTreeDiff::Repaint;
+    pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
+        if let Some(builder_state) = self.compositors.advanced.content.get_state(id) {
+            return builder_state.layout;
+        }
+
+        RichTextLayout::from_default_layout(&self.style)
     }
 
     #[inline]
     pub fn compute_layout_rescale(&mut self, scale: f32) {
         self.compositors.advanced.reset();
-        self.layout.rescale(scale).update();
-        self.layout.dimensions.height = 0.0;
-        self.layout.dimensions.width = 0.0;
-        self.latest_change = SugarTreeDiff::Repaint;
+        self.style.scale_factor = scale;
+        for (id, state) in &mut self.compositors.advanced.content.states {
+            state.rescale(scale);
+            state.layout.dimensions.height = 0.0;
+            state.layout.dimensions.width = 0.0;
+
+            self.rich_text_repaint.push(*id);
+        }
     }
 
     #[inline]
-    pub fn compute_layout_font_size(&mut self, operation: u8) {
-        let should_update = match operation {
-            0 => self.layout.reset_font_size(),
-            2 => self.layout.increase_font_size(),
-            1 => self.layout.decrease_font_size(),
-            _ => false,
-        };
+    pub fn set_rich_text_font_size(&mut self, rich_text_id: &usize, font_size: f32) {
+        if let Some(rte) = self
+            .compositors
+            .advanced
+            .content
+            .get_state_mut(rich_text_id)
+        {
+            rte.layout.font_size = font_size;
+            rte.update_font_size();
 
-        if should_update {
-            self.layout.update();
-            self.layout.dimensions.height = 0.0;
-            self.layout.dimensions.width = 0.0;
-            self.latest_change = SugarTreeDiff::Repaint;
+            rte.layout.dimensions.height = 0.0;
+            rte.layout.dimensions.width = 0.0;
+            self.rich_text_repaint.push(*rich_text_id);
+        }
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size_based_on_action(
+        &mut self,
+        rich_text_id: &usize,
+        operation: u8,
+    ) {
+        if let Some(rte) = self
+            .compositors
+            .advanced
+            .content
+            .get_state_mut(rich_text_id)
+        {
+            let should_update = match operation {
+                0 => rte.reset_font_size(),
+                2 => rte.increase_font_size(),
+                1 => rte.decrease_font_size(),
+                _ => false,
+            };
+
+            if should_update {
+                rte.layout.dimensions.height = 0.0;
+                rte.layout.dimensions.width = 0.0;
+                self.rich_text_repaint.push(*rich_text_id);
+            }
         }
     }
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
         self.compositors.advanced.set_fonts(fonts);
-        self.layout.dimensions.height = 0.0;
-        self.layout.dimensions.width = 0.0;
-        self.latest_change = SugarTreeDiff::Repaint;
+        for (id, state) in &mut self.compositors.advanced.content.states {
+            state.layout.dimensions.height = 0.0;
+            state.layout.dimensions.width = 0.0;
+            self.rich_text_repaint.push(*id);
+        }
     }
 
     #[inline]
     pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
         self.compositors.advanced.set_font_features(font_features);
-        self.latest_change = SugarTreeDiff::Repaint;
     }
 
     #[inline]
     pub fn clean_screen(&mut self) {
         // self.content.clear();
         self.objects.clear();
-        self.compositors.advanced.reset();
     }
 
     #[inline]
     pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
         // Block are used only with elementary renderer
+        let mut rich_texts: Vec<RichText> = vec![];
+        for obj in &new_objects {
+            if let Object::RichText(rich_text) = obj {
+                rich_texts.push(*rich_text);
+            }
+        }
         self.objects = new_objects;
+        self.rich_texts = rich_texts
     }
 
     #[inline]
@@ -105,10 +143,19 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn content(&mut self) -> &mut Content {
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.compositors.advanced.clear_rich_text(id);
+    }
+
+    #[inline]
+    pub fn create_rich_text(&mut self) -> usize {
         self.compositors
             .advanced
-            .content(self.layout.dimensions.scale, self.layout.font_size)
+            .create_rich_text(&RichTextLayout::from_default_layout(&self.style))
+    }
+
+    pub fn content(&mut self) -> &mut Content {
+        &mut self.compositors.advanced.content
     }
 
     #[inline]
@@ -134,10 +181,11 @@ impl SugarState {
             match object {
                 Object::Text(text) => {
                     elementary_brush.queue(
-                        &self
-                            .compositors
-                            .elementary
-                            .create_section_from_text(text, &self.layout),
+                        &self.compositors.elementary.create_section_from_text(
+                            text,
+                            context,
+                            &self.style,
+                        ),
                     );
                 }
                 Object::Rect(rect) => {
@@ -146,70 +194,56 @@ impl SugarState {
                 Object::Quad(composed_quad) => {
                     self.compositors.elementary.quads.push(*composed_quad);
                 }
+                Object::RichText(_rich_text) => {
+                    // self.rich_texts.push(*rich_text);
+                }
             }
         }
+    }
+
+    #[inline]
+    pub fn get_rich_text_dimensions(
+        &mut self,
+        id: &usize,
+        advance_brush: &mut RichTextBrush,
+    ) -> SugarDimensions {
+        self.compositors
+            .advanced
+            .content
+            .update_dimensions(id, advance_brush);
+        if let Some(rte) = self.compositors.advanced.content.get_state(id) {
+            return rte.layout.dimensions;
+        }
+
+        SugarDimensions::default()
     }
 
     #[inline]
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
-        // If layout is different or current has empty dimensions
-        // then current will flip with next and will try to obtain
-        // the dimensions.
-
-        if self.latest_change != SugarTreeDiff::Repaint {
-            return;
-        }
-
-        if let Some(dimension) = advance_brush.dimensions(self) {
-            let mut dimensions_changed = false;
-            if dimension.height != self.layout.dimensions.height {
-                self.layout.dimensions.height = dimension.height;
-                tracing::info!("prepare_render: changed height... {}", dimension.height);
-                dimensions_changed = true;
-            }
-
-            if dimension.width != self.layout.dimensions.width {
-                self.layout.dimensions.width = dimension.width;
-                self.layout.update_columns_per_font_width();
-                tracing::info!("prepare_render: changed width... {}", dimension.width);
-                dimensions_changed = true;
-            }
-
-            if dimensions_changed {
-                self.layout.update();
-                tracing::info!("sugar_state: dimensions has changed");
-            }
-        }
-    }
-
-    #[inline]
-    pub fn compute_changes(&mut self) {
         // If sugar dimensions are empty then need to find it
-        if self.layout.dimensions.width == 0.0 || self.layout.dimensions.height == 0.0 {
-            self.compositors.advanced.calculate_dimensions(&self.layout);
+        for rich_text in &self.rich_texts {
+            if let Some(rte) = self.compositors.advanced.content.get_state(&rich_text.id)
+            {
+                if rte.layout.dimensions.width == 0.0
+                    || rte.layout.dimensions.height == 0.0
+                {
+                    self.rich_text_repaint.push(rich_text.id);
 
-            self.compositors.advanced.update_render_data();
+                    tracing::info!("has empty dimensions, will try to find...");
+                }
+            }
+        }
 
-            self.latest_change = SugarTreeDiff::Repaint;
-            tracing::info!("has empty dimensions, will try to find...");
+        if self.rich_text_repaint.is_empty() {
             return;
         }
-
-        tracing::info!("state compute_changes result: {:?}", self.latest_change);
-
-        match &self.latest_change {
-            SugarTreeDiff::Repaint => {
-                self.compositors.advanced.calculate_dimensions(&self.layout);
-
-                self.compositors.advanced.update_render_data();
-
-                self.latest_change = SugarTreeDiff::Different;
-            }
-            SugarTreeDiff::Different => {
-                self.compositors.advanced.update_render_data();
-            }
+        for rich_text in &self.rich_text_repaint {
+            self.compositors
+                .advanced
+                .content
+                .update_dimensions(rich_text, advance_brush);
         }
+
+        self.rich_text_repaint.clear();
     }
 }
-
-// TODO: Write tests for compute layout updates

@@ -10,9 +10,11 @@ use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::SugarloafLayout;
+use crate::layout::{RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
+use crate::Content;
+use crate::SugarDimensions;
 use crate::{context::Context, Object};
 use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
@@ -117,7 +119,7 @@ impl Sugarloaf<'_> {
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
-        layout: SugarloafLayout,
+        layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
@@ -170,18 +172,28 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn layout(&self) -> SugarloafLayout {
-        self.state.layout
+    pub fn style(&self) -> RootStyle {
+        self.state.style
     }
 
     #[inline]
-    pub fn layout_mut(&mut self) -> &mut SugarloafLayout {
-        &mut self.state.layout
+    pub fn style_mut(&mut self) -> &mut RootStyle {
+        &mut self.state.style
     }
 
     #[inline]
-    pub fn update_font_size(&mut self, operation: u8) {
-        self.state.compute_layout_font_size(operation);
+    pub fn set_rich_text_font_size_based_on_action(
+        &mut self,
+        rt_id: &usize,
+        operation: u8,
+    ) {
+        self.state
+            .set_rich_text_font_size_based_on_action(rt_id, operation);
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
+        self.state.set_rich_text_font_size(rt_id, font_size);
     }
 
     #[inline]
@@ -209,7 +221,16 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn content(&mut self) -> &mut crate::Content {
+    pub fn create_rich_text(&mut self) -> usize {
+        self.state.create_rich_text()
+    }
+
+    #[inline]
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.state.clear_rich_text(id);
+    }
+
+    pub fn content(&mut self) -> &mut Content {
         self.state.content()
     }
 
@@ -219,14 +240,34 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
+        self.state.get_state_layout(id)
+    }
+
+    #[inline]
+    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
+        self.state
+            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+    }
+
+    #[inline]
     pub fn clear(&mut self) {
         self.state.clean_screen();
     }
 
     #[inline]
+    pub fn window_size(&self) -> SugarloafWindowSize {
+        self.ctx.size
+    }
+
+    #[inline]
+    pub fn scale_factor(&self) -> f32 {
+        self.state.style.scale_factor
+    }
+
+    #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
-        self.state.compute_layout_resize(width, height);
         if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
             if bottom_layer.should_fit {
                 bottom_layer.data.bounds.width = self.ctx.size.width;
@@ -254,7 +295,6 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_changes();
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
         self.state.compute_updates(
@@ -337,8 +377,7 @@ impl Sugarloaf<'_> {
                         }
                     }
 
-                    self.rich_text_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
+                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
 
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);

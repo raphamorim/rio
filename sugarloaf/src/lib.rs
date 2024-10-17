@@ -20,5 +20,6 @@ pub use crate::sugarloaf::{
 pub use components::quad::{ComposedQuad, Quad};
 pub use components::rect::Rect;
 pub use layout::{
-    Content, FragmentStyle, FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
+    Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
+    UnderlineShape,
 };

@@ -237,6 +237,7 @@ impl From<String> for Action {
             "createwindow" => Some(Action::WindowCreateNew),
             "createtab" => Some(Action::TabCreateNew),
             "closetab" => Some(Action::TabCloseCurrent),
+            "closecurrenttaborsplit" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
@@ -247,6 +248,10 @@ impl From<String> for Action {
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
             "scrolltobottom" => Some(Action::ScrollToBottom),
+            "splitright" => Some(Action::SplitRight),
+            "splitdown" => Some(Action::SplitDown),
+            "selectnextsplit" => Some(Action::SelectNextSplit),
+            "selectprevsplit" => Some(Action::SelectPrevSplit),
             "togglevimode" => Some(Action::ToggleViMode),
             "none" => Some(Action::None),
             _ => None,
@@ -410,6 +415,8 @@ pub enum Action {
     /// Close tab.
     TabCloseCurrent,
 
+    CloseCurrentSplitOrTab,
+
     /// Close all other tabs (leave only the current tab).
     TabCloseUnfocused,
 
@@ -442,6 +449,15 @@ pub enum Action {
 
     /// Start a backward buffer search.
     SearchBackward,
+
+    /// Split horizontally
+    SplitRight,
+
+    /// Split vertically
+    SplitDown,
+
+    SelectNextSplit,
+    SelectPrevSplit,
 
     /// Allow receiving char input.
     ReceiveChar,
@@ -555,6 +571,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
 pub fn default_key_bindings(
     unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
@@ -815,6 +832,7 @@ pub fn default_key_bindings(
 
     bindings.extend(platform_key_bindings(
         use_navigation_key_bindings,
+        use_splits,
         config_keyboard,
     ));
 
@@ -1008,6 +1026,7 @@ pub fn config_key_bindings(
 #[cfg(all(target_os = "macos", not(test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     config_keyboard: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
@@ -1056,7 +1075,7 @@ pub fn platform_key_bindings(
             "t", ModifiersState::SUPER; Action::TabCreateNew;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
-            "w", ModifiersState::SUPER; Action::TabCloseCurrent;
+            "w", ModifiersState::SUPER; Action::CloseCurrentSplitOrTab;
             "[", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::SUPER | ModifiersState::SHIFT; Action::SelectNextTab;
             "1", ModifiersState::SUPER; Action::SelectTab(0);
@@ -1081,6 +1100,16 @@ pub fn platform_key_bindings(
         ));
     }
 
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "d", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
+        ));
+    }
+
     key_bindings
 }
 
@@ -1088,20 +1117,21 @@ pub fn platform_key_bindings(
 #[cfg(not(any(target_os = "macos", target_os = "windows", test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     _: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
         KeyBinding;
-        "v",        ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
-        "c",        ModifiersState::CONTROL | ModifiersState::SHIFT,
+        "v", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::VI; Action::Paste;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::Copy;
+        "c", ModifiersState::CONTROL | ModifiersState::SHIFT,
             +BindingMode::VI; Action::ClearSelection;
         Key::Named(Insert),   ModifiersState::SHIFT, ~BindingMode::VI; Action::PasteSelection;
-        "0",     ModifiersState::CONTROL;  Action::ResetFontSize;
-        "=",   ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",     ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "+",      ModifiersState::CONTROL;  Action::IncreaseFontSize;
-        "-",          ModifiersState::CONTROL;  Action::DecreaseFontSize;
+        "0", ModifiersState::CONTROL;  Action::ResetFontSize;
+        "=", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "+", ModifiersState::CONTROL;  Action::IncreaseFontSize;
+        "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "-", ModifiersState::CONTROL;  Action::DecreaseFontSize;
         "n", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::WindowCreateNew;
         ",", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ConfigEditor;
@@ -1130,7 +1160,17 @@ pub fn platform_key_bindings(
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
-            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
+        ));
+    }
+
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "r", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
         ));
     }
 
@@ -1141,6 +1181,7 @@ pub fn platform_key_bindings(
 #[cfg(all(target_os = "windows", not(test)))]
 pub fn platform_key_bindings(
     use_navigation_key_bindings: bool,
+    use_splits: bool,
     _: ConfigKeyboard,
 ) -> Vec<KeyBinding> {
     let mut key_bindings = bindings!(
@@ -1186,9 +1227,19 @@ pub fn platform_key_bindings(
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
-            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCloseCurrent;
+            "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectNextTab;
+        ));
+    }
+
+    if use_splits {
+        key_bindings.extend(bindings!(
+            KeyBinding;
+            "r", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitRight;
+            "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
+            "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
+            "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
         ));
     }
 
@@ -1196,7 +1247,7 @@ pub fn platform_key_bindings(
 }
 
 #[cfg(test)]
-pub fn platform_key_bindings(_: bool, _: ConfigKeyboard) -> Vec<KeyBinding> {
+pub fn platform_key_bindings(_: bool, _: bool, _: ConfigKeyboard) -> Vec<KeyBinding> {
     vec![]
 }
 

@@ -34,6 +34,10 @@ language: 'en'
 | Select the last tab    | `Command + 9`          |
 | Search forward         | `Command + f`          |
 | Search backward        | `Command + b`          |
+| Split right    		 | `Command + d`          |
+| Split down    		 | `Command + Shift + d`  |
+| Select next split      | `Command + ]`          |
+| Select prev split      | `Command + [`          |
 
 ### Windows
 
@@ -62,6 +66,10 @@ language: 'en'
 | Select the last tab    | `Control + Shift + 9`   |
 | Search forward         | `Control + Shift + f`  |
 | Search backward        | `Control + Shift + b`  |
+| Split right    		 | `Control + Shift + r`  |
+| Split down    		 | `Control + Shift + d`  |
+| Select next split      | `Control + Shift + ]`  |
+| Select prev split      | `Control + Shift + [`  |
 
 ### Linux and BSD
 
@@ -88,8 +96,12 @@ language: 'en'
 | Select the seventh tab | `Control + Shift + 7`                                                  |
 | Select the eighth tab  | `Control + Shift + 8`                                                  |
 | Select the last tab    | `Control + Shift + 9`          |
-| Search forward          | `Control + Shift + f`  |
-| Search backward         | `Control + Shift + b`  |
+| Search forward         | `Control + Shift + f`  |
+| Search backward        | `Control + Shift + b`  |
+| Split right    		 | `Control + Shift + r`  |
+| Split down    		 | `Control + Shift + d`  |
+| Select next split      | `Control + Shift + ]`  |
+| Select prev split      | `Control + Shift + [`  |
 
 ### Search
 
