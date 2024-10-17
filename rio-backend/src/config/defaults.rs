@@ -284,11 +284,6 @@ pub fn default_config_file_content() -> String {
 #
 # • filters: A list of paths to RetroArch slang shaders. Might not work with OpenGL.
 #
-# • continuous-rendering: Configure continuous rendering
-#   - Available options: true and false.
-#       When set to true, the renderer will continuously render.
-#       When set to false, the renderer will render as rare as possible.
-#
 # Example:
 # [renderer]
 # performance = "high"
@@ -296,7 +291,6 @@ pub fn default_config_file_content() -> String {
 # disable-unfocused-render = false
 # level = 1
 # filters = []
-# continuous-rendering = false
 
 # Keyboard
 #
