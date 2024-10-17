@@ -18,6 +18,7 @@ use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
+use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -54,6 +55,23 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 }
 
 impl<T: EventListener> Context<T> {
+    #[inline]
+    pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
+        self.renderable_content.selection_range = selection_range;
+        self.renderable_content.has_pending_updates = true;
+    }
+
+    #[inline]
+    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
+        self.renderable_content.hyperlink_range = hyperlink_range;
+        self.renderable_content.has_pending_updates = true;
+    }
+
+    #[inline]
+    pub fn has_hyperlink_range(&self) -> bool {
+        self.renderable_content.hyperlink_range.is_some()
+    }
+
     #[inline]
     pub fn renderable_content(&mut self) -> &RenderableContent {
         let mut has_ime = false;

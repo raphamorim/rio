@@ -399,7 +399,13 @@ impl Screen<'_> {
 
     #[inline]
     pub fn resize(&mut self, new_size: rio_window::dpi::PhysicalSize<u32>) -> &mut Self {
-        if self.renderer.selection_range.is_some() {
+        if self
+            .context_manager
+            .current()
+            .renderable_content
+            .selection_range
+            .is_some()
+        {
             self.clear_selection();
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
@@ -688,7 +694,7 @@ impl Screen<'_> {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         let current_context = self.context_manager.current_mut();
-                        self.renderer.set_selection(None);
+                        current_context.set_selection(None);
                         let mut terminal = current_context.terminal.lock();
                         terminal.selection.take();
                         terminal.scroll_display(Scroll::Bottom);
@@ -773,14 +779,15 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ViMotion(motion) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let current_context = self.context_manager.current_mut();
+                        let mut terminal = current_context.terminal.lock();
                         if terminal.mode().contains(Mode::VI) {
                             terminal.vi_motion(*motion);
                         }
 
                         if let Some(selection) = &terminal.selection {
-                            self.renderer.set_selection(selection.to_range(&terminal));
+                            current_context.renderable_content.selection_range =
+                                selection.to_range(&terminal);
                         };
                         drop(terminal);
                         self.render();
@@ -1229,15 +1236,16 @@ impl Screen<'_> {
         let mut terminal = self.ctx().current().terminal.lock();
         terminal.selection.take();
         drop(terminal);
-        self.renderer.set_selection(None);
+        self.context_manager.current_mut().set_selection(None);
     }
 
     #[inline]
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         self.copy_selection(ClipboardType::Selection);
-        let mut terminal = self.context_manager.current().terminal.lock();
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
-        self.renderer.set_selection(selection.to_range(&terminal));
+        current.renderable_content.selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
     }
@@ -1262,7 +1270,8 @@ impl Screen<'_> {
             }
         }
 
-        let mut terminal = self.context_manager.current().terminal.lock();
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => {
                 // Make sure initial selection is not empty.
@@ -1272,14 +1281,16 @@ impl Screen<'_> {
         };
 
         selection.include_all();
-        self.renderer.set_selection(selection.to_range(&terminal));
+        current.renderable_content.selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
     }
 
     #[inline]
     pub fn update_selection(&mut self, mut pos: Pos, side: Side) {
-        let mut terminal = self.context_manager.current().terminal.lock();
+        let is_search_active = self.search_active();
+        let current = self.context_manager.current_mut();
+        let mut terminal = current.terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
             None => return,
@@ -1292,12 +1303,12 @@ impl Screen<'_> {
         selection.update(pos, side);
 
         // Move vi cursor and expand selection.
-        if terminal.mode().contains(Mode::VI) && !self.search_active() {
+        if terminal.mode().contains(Mode::VI) && !is_search_active {
             terminal.vi_mode_cursor.pos = pos;
             selection.include_all();
         }
 
-        self.renderer.set_selection(selection.to_range(&terminal));
+        current.renderable_content.selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
     }
@@ -1320,12 +1331,13 @@ impl Screen<'_> {
         let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
         drop(terminal);
 
+        let current = self.context_manager.current_mut();
         if let Some(hyperlink_range) = search_result {
-            self.renderer.set_hyperlink_range(Some(hyperlink_range));
+            current.set_hyperlink_range(Some(hyperlink_range));
             return true;
         }
 
-        self.renderer.set_hyperlink_range(None);
+        current.set_hyperlink_range(None);
         false
     }
 
@@ -1337,7 +1349,9 @@ impl Screen<'_> {
         #[cfg(not(target_os = "macos"))]
         let is_hyperlink_key_active = self.modifiers.state().alt_key();
 
-        if !is_hyperlink_key_active || !self.renderer.has_hyperlink_range() {
+        if !is_hyperlink_key_active
+            || !self.context_manager.current().has_hyperlink_range()
+        {
             return false;
         }
 
@@ -1465,7 +1479,11 @@ impl Screen<'_> {
 
     #[inline]
     pub fn selection_is_empty(&self) -> bool {
-        self.renderer.selection_range.is_none()
+        self.context_manager
+            .current()
+            .renderable_content
+            .selection_range
+            .is_none()
     }
 
     #[inline]
@@ -1622,7 +1640,7 @@ impl Screen<'_> {
         let mode = self.get_mode();
         if !mode.contains(Mode::VI) {
             // Clear selection so we do not obstruct any matches.
-            self.renderer.set_selection(None);
+            self.context_manager.current_mut().set_selection(None);
         }
 
         self.update_search();
