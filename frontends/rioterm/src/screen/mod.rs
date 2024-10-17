@@ -291,15 +291,19 @@ impl Screen<'_> {
 
     #[inline]
     pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let context_dimension = self.context_manager.current().dimension;
+        let (context, margin) = self
+            .context_manager
+            .current_grid()
+            .current_context_with_computed_dimension();
+        let context_dimension = context.dimension;
         let style = self.sugarloaf.style();
         calculate_mouse_position(
             &self.mouse,
             display_offset,
             style.scale_factor,
             (context_dimension.columns, context_dimension.lines),
-            context_dimension.margin.x,
-            context_dimension.margin.top_y,
+            margin.x,
+            margin.top_y,
             (
                 context_dimension.dimension.width,
                 context_dimension.dimension.height * style.line_height,

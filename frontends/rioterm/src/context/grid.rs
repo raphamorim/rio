@@ -163,6 +163,28 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         objects
     }
 
+    pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
+        let len = self.inner.len();
+        if len == 0 {
+            return (&self.inner[self.current].val, self.margin);
+        }
+
+        let objects = self.objects();
+        let rich_text_id = self.inner[self.current].val.rich_text_id;
+        let mut margin = self.margin;
+        for obj in objects {
+            if let Object::RichText(rich_text_obj) = obj {
+                if rich_text_obj.id == rich_text_id {
+                    margin.x = rich_text_obj.position[0] + PADDING;
+                    margin.top_y = rich_text_obj.position[1] + PADDING;
+                    break;
+                }
+            }
+        }
+
+        (&self.inner[self.current].val, margin)
+    }
+
     pub fn plot_objects(
         &self,
         objects: &mut Vec<Object>,

@@ -715,6 +715,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self.contexts[self.current_index]
     }
 
+    #[inline]
+    pub fn current_grid(&self) -> &ContextGrid<T> {
+        &self.contexts[self.current_index]
+    }
+
     #[cfg(test)]
     pub fn increase_capacity(&mut self, inc_val: usize) {
         self.capacity += inc_val;
