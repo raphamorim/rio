@@ -5,6 +5,7 @@ use std::sync::Arc;
 pub struct FiltersBrush {
     filter_chains: Vec<librashader::runtime::wgpu::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
+    framecount: usize,
 }
 
 impl FiltersBrush {
@@ -12,6 +13,7 @@ impl FiltersBrush {
         Self {
             filter_intermediates: Vec::new(),
             filter_chains: Vec::new(),
+            framecount: 0,
         }
     }
 
@@ -93,7 +95,6 @@ impl FiltersBrush {
         encoder: &mut wgpu::CommandEncoder,
         src_texture: &wgpu::Texture,
         dst_texture: &wgpu::Texture,
-        framecount: usize,
     ) {
         let usage_caps = ctx.surface_caps().usages;
 
@@ -172,11 +173,17 @@ impl FiltersBrush {
                 )
                 .unwrap();
 
-            if let Err(err) =
-                filter.frame(filter_src_texture, &dst_viewport, encoder, framecount, None)
-            {
+            if let Err(err) = filter.frame(
+                filter_src_texture,
+                &dst_viewport,
+                encoder,
+                self.framecount,
+                None,
+            ) {
                 tracing::error!("Filter rendering failed: {err}");
             }
         }
+
+        self.framecount = self.framecount.wrapping_add(1);
     }
 }

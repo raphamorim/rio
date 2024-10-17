@@ -37,7 +37,6 @@ pub struct Sugarloaf<'a> {
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
     filters_brush: FiltersBrush,
-    framecount: usize,
 }
 
 #[derive(Debug)]
@@ -152,7 +151,6 @@ impl Sugarloaf<'_> {
             text_brush,
             graphics: Graphics::default(),
             filters_brush,
-            framecount: 0,
         };
 
         Ok(instance)
@@ -410,12 +408,10 @@ impl Sugarloaf<'_> {
                     &mut encoder,
                     &frame.texture,
                     &frame.texture,
-                    self.framecount,
                 );
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
-                self.framecount = self.framecount.wrapping_add(1);
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {
