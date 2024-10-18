@@ -105,7 +105,7 @@ impl<Depth> Pipeline<Depth> {
         size: [u16; 2],
         data: &[u8],
     ) {
-        self.cache.update(&queue, offset, size, data);
+        self.cache.update(queue, offset, size, data);
     }
 
     pub fn increase_cache_size(

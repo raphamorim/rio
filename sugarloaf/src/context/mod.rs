@@ -1,11 +1,10 @@
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
-use std::sync::Arc;
 
 pub struct Context<'a> {
-    pub device: Arc<wgpu::Device>,
+    pub device: wgpu::Device,
     pub surface: wgpu::Surface<'a>,
-    pub queue: Arc<wgpu::Queue>,
+    pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
     pub scale: f32,
@@ -168,8 +167,8 @@ impl Context<'_> {
         );
 
         Context {
-            device: Arc::new(device),
-            queue: Arc::new(queue),
+            device,
+            queue,
             surface,
             format,
             alpha_mode,

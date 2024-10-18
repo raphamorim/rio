@@ -27,7 +27,7 @@ pub use glyph::{
 use crate::components::core::orthographic_projection;
 use ab_glyph::{Font, Rect};
 use core::hash::BuildHasher;
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use glyph::{BrushAction, BrushError, DefaultSectionHasher};
 
@@ -98,7 +98,7 @@ where
                     let offset = [rect.min[0] as u16, rect.min[1] as u16];
                     let size = [rect.width() as u16, rect.height() as u16];
 
-                    pipeline.update_cache(&queue, offset, size, tex_data);
+                    pipeline.update_cache(queue, offset, size, tex_data);
                 },
                 Instance::from_vertex,
             );
@@ -130,7 +130,7 @@ where
 
         match brush_action.unwrap() {
             BrushAction::Draw(mut verts) => {
-                self.pipeline.upload(device, &queue, &mut verts);
+                self.pipeline.upload(device, queue, &mut verts);
             }
             BrushAction::ReDraw => {}
         };
@@ -200,7 +200,7 @@ impl<F: Font + Sync, H: BuildHasher> GlyphBrush<(), F, H> {
     #[inline]
     pub fn draw_queued_with_transform<'pass>(
         &'pass mut self,
-        device: &Arc<wgpu::Device>,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass<'pass>,
         transform: [f32; 16],

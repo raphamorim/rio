@@ -137,7 +137,7 @@ impl Sugarloaf<'_> {
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
-        let filters_brush = FiltersBrush::new();
+        let filters_brush = FiltersBrush::default();
 
         let instance = Sugarloaf {
             state,
