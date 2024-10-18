@@ -11,6 +11,7 @@ Short introduction of Rio terminal features.
 - [Hyperlinks](/docs/features/hyperlinks)
 - [iTerm2 image protocol](/docs/features/iterm2-image-protocol)
 - [Kitty keyboard protocol](/docs/features/kitty-keyboard-protocol)
+- [RetroArch shaders](/docs/features/retroarch-shaders)
 - [Rio is fast](/docs/features/rio-is-fast)
 - [Adaptive theme](/docs/features/adaptive-theme)
 - [Multi windows](/docs/features/multi-windows)
