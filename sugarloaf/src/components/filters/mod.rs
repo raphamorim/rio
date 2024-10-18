@@ -1,22 +1,18 @@
+mod runtime;
+
 use crate::context::Context;
+use librashader_common::{Size, Viewport};
 use std::sync::Arc;
 
 /// A brush for applying RetroArch filters.
+#[derive(Default)]
 pub struct FiltersBrush {
-    filter_chains: Vec<librashader::runtime::wgpu::FilterChain>,
+    filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
     framecount: usize,
 }
 
 impl FiltersBrush {
-    pub fn new() -> Self {
-        Self {
-            filter_intermediates: Vec::new(),
-            filter_chains: Vec::new(),
-            framecount: 0,
-        }
-    }
-
     #[inline]
     pub fn update_filters(&mut self, ctx: &Context, filter_paths: &[String]) {
         self.filter_chains.clear();
@@ -39,10 +35,10 @@ impl FiltersBrush {
         for path in filter_paths {
             tracing::debug!("Loading filter {}", path);
 
-            match librashader::runtime::wgpu::FilterChain::load_from_path(
+            match crate::components::filters::runtime::FilterChain::load_from_path(
                 path,
-                ctx.device.clone(),
-                ctx.queue.clone(),
+                &ctx.device,
+                &ctx.queue,
                 None,
             ) {
                 Ok(f) => self.filter_chains.push(f),
@@ -70,7 +66,7 @@ impl FiltersBrush {
             let intermediate_texture =
                 Arc::new(ctx.device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("Filter Intermediate Texture"),
-                    size: size,
+                    size,
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
@@ -132,10 +128,7 @@ impl FiltersBrush {
             new_src_texture
         };
 
-        let view_size = librashader::runtime::Size::new(
-            ctx.size.width as u32,
-            ctx.size.height as u32,
-        );
+        let view_size = Size::new(ctx.size.width as u32, ctx.size.height as u32);
         let filters_count = self.filter_chains.len();
 
         for (idx, filter) in self.filter_chains.iter_mut().enumerate() {
@@ -161,17 +154,13 @@ impl FiltersBrush {
             let dst_texture_view =
                 filter_dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
             let dst_output_view =
-                librashader::runtime::wgpu::WgpuOutputView::new_from_raw(
+                crate::components::filters::runtime::WgpuOutputView::new_from_raw(
                     &dst_texture_view,
                     view_size,
                     ctx.format,
                 );
             let dst_viewport =
-                librashader::runtime::Viewport::new_render_target_sized_origin(
-                    dst_output_view,
-                    None,
-                )
-                .unwrap();
+                Viewport::new_render_target_sized_origin(dst_output_view, None).unwrap();
 
             if let Err(err) = filter.frame(
                 filter_src_texture,
@@ -179,6 +168,7 @@ impl FiltersBrush {
                 encoder,
                 self.framecount,
                 None,
+                ctx,
             ) {
                 tracing::error!("Filter rendering failed: {err}");
             }
