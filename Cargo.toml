@@ -18,7 +18,8 @@ authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal", "application"]
-rust-version = "1.82.0"
+# Minimal stable rust version (MSRV)
+rust-version = "1.80.1"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
