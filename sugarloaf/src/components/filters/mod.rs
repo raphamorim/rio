@@ -9,7 +9,6 @@ use std::sync::Arc;
 pub struct FiltersBrush {
     filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
-    framecount: usize,
 }
 
 impl FiltersBrush {
@@ -92,6 +91,11 @@ impl FiltersBrush {
         src_texture: &wgpu::Texture,
         dst_texture: &wgpu::Texture,
     ) {
+        let filters_count = self.filter_chains.len();
+        if filters_count == 0 {
+            return;
+        }
+
         let usage_caps = ctx.surface_caps().usages;
 
         if !usage_caps.contains(wgpu::TextureUsages::COPY_SRC)
@@ -129,8 +133,6 @@ impl FiltersBrush {
         };
 
         let view_size = Size::new(ctx.size.width as u32, ctx.size.height as u32);
-        let filters_count = self.filter_chains.len();
-
         for (idx, filter) in self.filter_chains.iter_mut().enumerate() {
             let filter_src_texture: Arc<wgpu::Texture>;
             let filter_dst_texture: &wgpu::Texture;
@@ -166,14 +168,13 @@ impl FiltersBrush {
                 filter_src_texture,
                 &dst_viewport,
                 encoder,
-                self.framecount,
+                // frame count
+                0,
                 None,
                 ctx,
             ) {
                 tracing::error!("Filter rendering failed: {err}");
             }
         }
-
-        self.framecount = self.framecount.wrapping_add(1);
     }
 }
