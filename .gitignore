@@ -15,3 +15,6 @@ NOTES
 *.ts
 *.js
 *.log
+
+# for nix users
+.direnv/
