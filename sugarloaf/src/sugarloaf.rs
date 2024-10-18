@@ -200,6 +200,7 @@ impl Sugarloaf<'_> {
         self.state.set_rich_text_font_size(rt_id, font_size);
     }
 
+    #[inline]
     pub fn update_filters(&mut self, filter_paths: &[String]) {
         self.filters_brush.update_filters(&self.ctx, filter_paths);
     }

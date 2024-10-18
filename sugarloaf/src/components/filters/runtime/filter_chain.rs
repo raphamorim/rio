@@ -129,7 +129,7 @@ impl FilterChain {
             label: Some("librashader load cmd"),
         });
         let filter_chain =
-            Self::load_from_pack_deferred(preset, &device, &queue, &mut cmd, options)?;
+            Self::load_from_pack_deferred(preset, device, queue, &mut cmd, options)?;
 
         let cmd = cmd.finish();
 
@@ -156,7 +156,7 @@ impl FilterChain {
         options: Option<&FilterChainOptionsWgpu>,
     ) -> error::Result<FilterChain> {
         let preset = ShaderPresetPack::load_from_preset::<FilterChainError>(preset)?;
-        Self::load_from_pack_deferred(preset, &device, &queue, cmd, options)
+        Self::load_from_pack_deferred(preset, device, queue, cmd, options)
     }
 
     /// Load a filter chain from a pre-parsed `ShaderPreset`, deferring and GPU-side initialization
@@ -187,8 +187,8 @@ impl FilterChain {
             disable_cache,
         )?;
 
-        let samplers = SamplerSet::new(&device);
-        let mut mipmapper = MipmapGen::new(&device);
+        let samplers = SamplerSet::new(device);
+        let mut mipmapper = MipmapGen::new(device);
         let luts = FilterChain::load_luts(
             device,
             queue,
@@ -336,13 +336,13 @@ impl FilterChain {
 
                     let uniform_storage = UniformStorage::new_with_storage(
                         WgpuStagedBuffer::new(
-                            &device,
+                            device,
                             wgpu::BufferUsages::UNIFORM,
                             ubo_size as wgpu::BufferAddress,
                             Some("ubo"),
                         ),
                         WgpuStagedBuffer::new(
-                            &device,
+                            device,
                             wgpu::BufferUsages::UNIFORM,
                             push_size as wgpu::BufferAddress,
                             Some("push"),
@@ -360,7 +360,7 @@ impl FilterChain {
                         };
 
                     let graphics_pipeline = WgpuGraphicsPipeline::new(
-                        &device,
+                        device,
                         &wgsl,
                         &reflection,
                         render_pass_format.unwrap_or(TextureFormat::Rgba8Unorm),
@@ -390,7 +390,7 @@ impl FilterChain {
             .stack_size(10 * 1048576)
             .build()
         {
-            thread_pool.install(|| filter_creation_fn())
+            thread_pool.install(filter_creation_fn)
         } else {
             filter_creation_fn()
         };
@@ -401,10 +401,10 @@ impl FilterChain {
     }
 
     /// Records shader rendering commands to the provided command encoder.
-    pub fn frame<'a>(
+    pub fn frame(
         &mut self,
         input: Arc<wgpu::Texture>,
-        viewport: &Viewport<WgpuOutputView<'a>>,
+        viewport: &Viewport<WgpuOutputView<'_>>,
         cmd: &mut wgpu::CommandEncoder,
         frame_count: usize,
         options: Option<&FrameOptionsWgpu>,
