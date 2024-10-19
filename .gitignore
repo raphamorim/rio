@@ -17,5 +17,4 @@ release
 NOTES
 *.wasm
 *.ts
-*.js
 *.log
