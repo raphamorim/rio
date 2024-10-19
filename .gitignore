@@ -2,7 +2,7 @@
 **/*.rs.bk
 
 # required by nix
-.direnv
+.direnv/
 result/
 
 target/
@@ -15,6 +15,4 @@ release
 .jekyll-cache
 .jekyll-metadata
 NOTES
-*.wasm
-*.ts
 *.log
