@@ -42,13 +42,12 @@ ordered-float = "4.2.0"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
-ab_glyph = "0.2.28"
+ab_glyph = "0.2.29"
 linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
 lru = "0.12.4"
 skrifa = "0.22.3"
-ttf-parser = "0.25.0"
 yazi = { version = "0.1.6", optional = true }
 zeno = { version = "0.2.2", optional = true, default-features = false }
 futures = { workspace = true }
@@ -71,7 +70,7 @@ twox-hash = { version = "1.6.3", default-features = false, features = ["std"] }
 memmap2 = { version = "0.9.3" }
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-ttf-parser = { version = "0.21.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names"]}
+ttf-parser = { version = "0.25.0" }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.3", default-features = false }
