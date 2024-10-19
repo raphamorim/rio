@@ -1,7 +1,3 @@
-[alias]
-test-config = "test --release -p rio-config --"
-test-rio = "test --release -p rioterm --"
-
 [target.wasm32-unknown-unknown]
 rustflags = [
     # Enabled unstable APIs from web_sys
