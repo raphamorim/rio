@@ -442,7 +442,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct ContextDimension {
     pub width: f32,
     pub height: f32,
@@ -450,6 +450,19 @@ pub struct ContextDimension {
     pub lines: usize,
     pub dimension: SugarDimensions,
     pub margin: Delta<f32>,
+}
+
+impl Default for ContextDimension {
+    fn default() -> ContextDimension {
+        ContextDimension {
+            width: 0.,
+            height: 0.,
+            columns: MIN_COLS,
+            lines: MIN_LINES,
+            dimension: SugarDimensions::default(),
+            margin: Delta::<f32>::default(),
+        }
+    }
 }
 
 impl ContextDimension {
