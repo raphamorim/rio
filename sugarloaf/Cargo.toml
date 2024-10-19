@@ -48,6 +48,7 @@ xi-unicode = "0.3.0"
 approx = "0.5.1"
 lru = "0.12.4"
 skrifa = "0.22.3"
+ttf-parser = "0.25.0"
 yazi = { version = "0.1.6", optional = true }
 zeno = { version = "0.2.2", optional = true, default-features = false }
 futures = { workspace = true }
