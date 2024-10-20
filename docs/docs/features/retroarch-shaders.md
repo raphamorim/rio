@@ -3,7 +3,7 @@ title: 'RetroArch shaders'
 language: 'en'
 ---
 
-Rio allow to configure filters based on RetroArch shaders: ![https://github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
+Rio allow to configure filters based on RetroArch shaders: [github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
 
 ```toml
 [renderer]
