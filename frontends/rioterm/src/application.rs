@@ -106,7 +106,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             // Fix is only for windows with opacity that aren't being computed at all
             if self.config.window.opacity < 1. || self.config.window.blur {
                 for (_id, route) in self.router.routes.iter_mut() {
-                    route.update_config(&self.config, &self.router.font_library);
+                    route.update_config(&self.config, &self.router.font_library, false);
 
                     route.request_redraw();
                 }
@@ -179,6 +179,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
+                let timer_id = TimerId::new(Topic::UpdateConfig, 0);
+                let event = EventPayload::new(
+                    RioEventType::Rio(RioEvent::UpdateConfig),
+                    window_id,
+                );
+
+                if !self.scheduler.scheduled(timer_id) {
+                    self.scheduler.schedule(
+                        event,
+                        Duration::from_millis(250),
+                        false,
+                        timer_id,
+                    );
+                }
+            }
             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     let mut terminal =
@@ -234,7 +250,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                     }
 
-                    route.update_config(&self.config, &self.router.font_library);
+                    route.update_config(
+                        &self.config,
+                        &self.router.font_library,
+                        has_font_updates,
+                    );
                     route.window.configure_window(&self.config);
 
                     if let Some(error) = &config_error {
@@ -1047,10 +1067,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ThemeChanged(new_theme) => {
                 update_colors_based_on_theme(&mut self.config, Some(new_theme));
-                route
-                    .window
-                    .screen
-                    .update_config(&self.config, &self.router.font_library);
+                route.window.screen.update_config(
+                    &self.config,
+                    &self.router.font_library,
+                    false,
+                );
                 route.window.configure_window(&self.config);
             }
 

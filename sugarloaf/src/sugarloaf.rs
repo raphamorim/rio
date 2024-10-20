@@ -160,9 +160,9 @@ impl Sugarloaf<'_> {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
 
-        self.rich_text_brush.reset();
         self.state.reset_compositors();
-        self.state.set_fonts(font_library);
+        self.state
+            .set_fonts(font_library, &mut self.rich_text_brush);
     }
 
     #[inline]
@@ -191,13 +191,17 @@ impl Sugarloaf<'_> {
         rt_id: &usize,
         operation: u8,
     ) {
-        self.state
-            .set_rich_text_font_size_based_on_action(rt_id, operation);
+        self.state.set_rich_text_font_size_based_on_action(
+            rt_id,
+            operation,
+            &mut self.rich_text_brush,
+        );
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state.set_rich_text_font_size(rt_id, font_size);
+        self.state
+            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
     }
 
     #[inline]
@@ -288,7 +292,8 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.scale = scale;
-        self.state.compute_layout_rescale(scale);
+        self.state
+            .compute_layout_rescale(scale, &mut self.rich_text_brush);
         if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
             if bottom_layer.should_fit {
                 bottom_layer.data.bounds.width = self.ctx.size.width;

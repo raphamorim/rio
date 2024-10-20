@@ -9,11 +9,12 @@ use crate::layout::RootStyle;
 use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
 use crate::SugarDimensions;
 use crate::{Content, Graphics, Object, RichText};
+use std::collections::HashSet;
 
 pub struct SugarState {
     objects: Vec<Object>,
     pub rich_texts: Vec<RichText>,
-    rich_text_repaint: Vec<usize>,
+    rich_text_repaint: HashSet<usize>,
     pub style: RootStyle,
     pub compositors: SugarCompositors,
 }
@@ -29,7 +30,7 @@ impl SugarState {
             style,
             objects: vec![],
             rich_texts: vec![],
-            rich_text_repaint: vec![],
+            rich_text_repaint: HashSet::default(),
         };
 
         state.compositors.advanced.set_font_features(font_features);
@@ -46,20 +47,30 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_rescale(&mut self, scale: f32) {
-        self.compositors.advanced.reset();
+    pub fn compute_layout_rescale(
+        &mut self,
+        scale: f32,
+        advance_brush: &mut RichTextBrush,
+    ) {
         self.style.scale_factor = scale;
         for (id, state) in &mut self.compositors.advanced.content.states {
             state.rescale(scale);
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
 
-            self.rich_text_repaint.push(*id);
+            self.rich_text_repaint.insert(*id);
         }
+
+        self.process_rich_text_repaint(advance_brush);
     }
 
     #[inline]
-    pub fn set_rich_text_font_size(&mut self, rich_text_id: &usize, font_size: f32) {
+    pub fn set_rich_text_font_size(
+        &mut self,
+        rich_text_id: &usize,
+        font_size: f32,
+        advance_brush: &mut RichTextBrush,
+    ) {
         if let Some(rte) = self
             .compositors
             .advanced
@@ -71,8 +82,10 @@ impl SugarState {
 
             rte.layout.dimensions.height = 0.0;
             rte.layout.dimensions.width = 0.0;
-            self.rich_text_repaint.push(*rich_text_id);
+            self.rich_text_repaint.insert(*rich_text_id);
         }
+
+        self.process_rich_text_repaint(advance_brush);
     }
 
     #[inline]
@@ -80,6 +93,7 @@ impl SugarState {
         &mut self,
         rich_text_id: &usize,
         operation: u8,
+        advance_brush: &mut RichTextBrush,
     ) {
         if let Some(rte) = self
             .compositors
@@ -97,19 +111,34 @@ impl SugarState {
             if should_update {
                 rte.layout.dimensions.height = 0.0;
                 rte.layout.dimensions.width = 0.0;
-                self.rich_text_repaint.push(*rich_text_id);
+                self.rich_text_repaint.insert(*rich_text_id);
             }
         }
+
+        self.process_rich_text_repaint(advance_brush);
+    }
+
+    fn process_rich_text_repaint(&mut self, advance_brush: &mut RichTextBrush) {
+        for rich_text in &self.rich_text_repaint {
+            self.compositors
+                .advanced
+                .content
+                .update_dimensions(rich_text, advance_brush);
+        }
+
+        self.rich_text_repaint.clear();
     }
 
     #[inline]
-    pub fn set_fonts(&mut self, fonts: &FontLibrary) {
+    pub fn set_fonts(&mut self, fonts: &FontLibrary, advance_brush: &mut RichTextBrush) {
         self.compositors.advanced.set_fonts(fonts);
         for (id, state) in &mut self.compositors.advanced.content.states {
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
-            self.rich_text_repaint.push(*id);
+            self.rich_text_repaint.insert(*id);
         }
+
+        self.process_rich_text_repaint(advance_brush);
     }
 
     #[inline]
@@ -139,7 +168,6 @@ impl SugarState {
     #[inline]
     pub fn reset_compositors(&mut self) {
         self.compositors.elementary.clean();
-        self.compositors.advanced.reset();
     }
 
     #[inline]
@@ -227,7 +255,7 @@ impl SugarState {
                 if rte.layout.dimensions.width == 0.0
                     || rte.layout.dimensions.height == 0.0
                 {
-                    self.rich_text_repaint.push(rich_text.id);
+                    self.rich_text_repaint.insert(rich_text.id);
 
                     tracing::info!("has empty dimensions, will try to find...");
                 }

@@ -61,8 +61,11 @@ impl Route<'_> {
         &mut self,
         config: &RioConfig,
         db: &rio_backend::sugarloaf::font::FontLibrary,
+        should_update_font: bool,
     ) {
-        self.window.screen.update_config(config, db);
+        self.window
+            .screen
+            .update_config(config, db, should_update_font);
     }
 
     #[inline]
