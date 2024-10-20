@@ -1,3 +1,4 @@
+use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
@@ -43,6 +44,16 @@ impl RenderableContent {
             hyperlink_range: None,
             has_pending_updates: false,
         }
+    }
+
+    pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
+        let cursor = Cursor {
+            content: config_cursor.shape.into(),
+            content_ref: config_cursor.shape.into(),
+            state: CursorState::new(config_cursor.shape.into()),
+            is_ime_enabled: false,
+        };
+        Self::new(cursor)
     }
 
     #[inline]

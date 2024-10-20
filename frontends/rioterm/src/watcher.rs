@@ -41,7 +41,7 @@ pub fn configuration_file_updates<
                             "config directory has dispatched an event {event:?}"
                         );
                         event_proxy.send_event(
-                            RioEvent::UpdateConfig,
+                            RioEvent::PrepareUpdateConfig,
                             rio_backend::event::WindowId::from(0),
                         );
                     }

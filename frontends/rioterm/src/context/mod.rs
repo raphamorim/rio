@@ -466,6 +466,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // it means we need to clean the context with the specified route_id.
         // If there's no context then should return true and kill the window.
         if !self.contexts.is_empty() {
+            // In case Grid has more than one item
+            if self.current_grid().len() > 1 {
+                if self.current().route_id == route_id {
+                    self.remove_current_grid();
+                }
+
+                return false;
+            }
+
+            // In case Grid has only one item
             if let Some(index_to_remove) = self
                 .contexts
                 .iter()
@@ -694,8 +704,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn contexts(&self) -> &Vec<ContextGrid<T>> {
-        &self.contexts
+    pub fn contexts_mut(&mut self) -> &mut Vec<ContextGrid<T>> {
+        &mut self.contexts
     }
 
     #[inline]
