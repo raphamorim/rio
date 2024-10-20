@@ -52,7 +52,7 @@ target-fps = 120
 
 ## Filter
 
-Rio allow to configure filters based on RetroArch shaders: ![https://github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
+Rio allow to configure filters based on RetroArch shaders: [github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
 
 Note: Filters does not work with `GL` backend.
 
