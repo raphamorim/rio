@@ -23,6 +23,7 @@ language: 'en'
 - Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
+- Introduced `renderer.strategy`, options are `Events` and `Continuous`.
 
 ## 0.1.17
 

@@ -63,4 +63,13 @@ filters = [
 ]
 ```
 
-![Demo shaders 2](/assets/features/demo-retroarch-2.png) 
+![Demo shaders 2](/assets/features/demo-retroarch-2.png)
+
+## Strategy
+
+Strategy property defines how Rio will render, by default it follows Event driven (`Events`), but you can change it to a continuous loop (that will consume more CPU) by changing to `Continuous`.
+
+```toml
+[renderer]
+strategy = "events"
+```

@@ -153,27 +153,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if self.config.renderer.disable_unfocused_render
-                        && !route.window.is_focused
-                    {
-                        return;
-                    }
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            return;
+                        }
 
-                    if route_id == route.window.screen.ctx().current_route() {
-                        let timer_id = TimerId::new(Topic::RenderRoute, route_id);
-                        let event = EventPayload::new(
-                            RioEventType::Rio(RioEvent::Render),
-                            window_id,
-                        );
+                        if route_id == route.window.screen.ctx().current_route() {
+                            let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
 
-                        if !self.scheduler.scheduled(timer_id) {
-                            if let Some(limit) = route.window.wait_until() {
-                                route.window.start_render_timestamp();
-                                self.scheduler.schedule(event, limit, false, timer_id);
-                            } else {
-                                route.window.start_render_timestamp();
-                                route.request_redraw();
+                            if !self.scheduler.scheduled(timer_id) {
+                                if let Some(limit) = route.window.wait_until() {
+                                    route.window.start_render_timestamp();
+                                    self.scheduler
+                                        .schedule(event, limit, false, timer_id);
+                                } else {
+                                    route.window.start_render_timestamp();
+                                    route.request_redraw();
+                                }
                             }
                         }
                     }
@@ -1126,6 +1129,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
+
+                if self.config.renderer.strategy.is_continuous()
+                    && !self.config.renderer.disable_unfocused_render
+                    && route.window.is_focused
+                {
+                    route.request_frame(&mut self.scheduler);
+                }
 
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
