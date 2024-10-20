@@ -2,12 +2,14 @@ pub mod routes;
 mod window;
 use crate::event::EventProxy;
 use crate::router::window::{configure_window, create_window_builder};
+use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::{Screen, ScreenWindowProperties};
 use assistant::Assistant;
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_backend::event::{EventPayload, RioEvent, RioEventType};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -54,6 +56,23 @@ impl Route<'_> {
     #[inline]
     pub fn request_redraw(&mut self) {
         self.window.winit_window.request_redraw();
+    }
+
+    pub fn request_frame(&mut self, scheduler: &mut Scheduler) {
+        let timer_id =
+            TimerId::new(Topic::RenderRoute, self.window.screen.ctx().current_route());
+        let event = EventPayload::new(
+            RioEventType::Rio(RioEvent::Render),
+            self.window.winit_window.id(),
+        );
+
+        if let Some(limit) = self.window.wait_until() {
+            self.window.start_render_timestamp();
+            scheduler.schedule(event, limit, false, timer_id);
+        } else {
+            self.window.start_render_timestamp();
+            self.request_redraw();
+        }
     }
 
     #[inline]
