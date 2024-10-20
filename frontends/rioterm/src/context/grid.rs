@@ -338,23 +338,100 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn remove_current(&mut self) {
-        // TODO: Adjust width and height of pointing contexts
-        // TODO: Adjust right and down of pointing contexts
+        // TODO: If a context is removed need to update the reference next/prev to all dependents
 
-        // let mut index = 0;
-        // for context in &self.inner {
-        //     if let Some(_right_val) = context.right {
+        let mut parent_context = None;
+        for (index, context) in self.inner.iter().enumerate() {
+            if let Some(right_val) = context.right {
+                if right_val == self.current {
+                    parent_context = Some((true, index));
+                    break;
+                }
+            }
 
-        //     }
-
-        //     if let Some(_down_val) = context.down {
-
-        //     }
-
-        //     index += 1;
-        // }
+            if let Some(down_val) = context.down {
+                if down_val == self.current {
+                    parent_context = Some((false, index));
+                    break;
+                }
+            }
+        }
 
         let old = self.current;
+        let old_width = self.inner[old].val.dimension.width;
+        let old_height = self.inner[old].val.dimension.height;
+
+        if let Some((is_right, parent_index)) = parent_context {
+            if is_right {
+                let parent_width = self.inner[parent_index].val.dimension.width;
+                self.inner[parent_index]
+                    .val
+                    .dimension
+                    .update_width(parent_width + old_width);
+                self.inner[parent_index].right = None;
+            } else {
+                let parent_height = self.inner[parent_index].val.dimension.height;
+                self.inner[parent_index]
+                    .val
+                    .dimension
+                    .update_height(parent_height + old_height);
+                self.inner[parent_index].down = None;
+            }
+
+            let mut terminal = self.inner[parent_index].val.terminal.lock();
+            terminal.resize::<ContextDimension>(self.inner[parent_index].val.dimension);
+            drop(terminal);
+            let winsize = crate::renderer::utils::terminal_dimensions(
+                &self.inner[parent_index].val.dimension,
+            );
+            let _ = self.inner[parent_index].val.messenger.send_resize(winsize);
+
+            self.current = parent_index;
+            self.inner.remove(old);
+            return;
+        }
+
+        // In case there is no parenting, needs to validate if it has children
+        if let Some(right_val) = self.inner[old].right {
+            let right_width = self.inner[right_val].val.dimension.width;
+            self.inner[right_val]
+                .val
+                .dimension
+                .update_width(right_width + old_width);
+
+            let mut terminal = self.inner[right_val].val.terminal.lock();
+            terminal.resize::<ContextDimension>(self.inner[right_val].val.dimension);
+            drop(terminal);
+            let winsize = crate::renderer::utils::terminal_dimensions(
+                &self.inner[right_val].val.dimension,
+            );
+            let _ = self.inner[right_val].val.messenger.send_resize(winsize);
+
+            self.current = right_val.wrapping_sub(1);
+            self.inner.remove(old);
+            return;
+        }
+
+        if let Some(down_val) = self.inner[old].down {
+            let down_height = self.inner[down_val].val.dimension.height;
+            self.inner[down_val]
+                .val
+                .dimension
+                .update_height(down_height + old_height);
+
+            let mut terminal = self.inner[down_val].val.terminal.lock();
+            terminal.resize::<ContextDimension>(self.inner[down_val].val.dimension);
+            drop(terminal);
+            let winsize = crate::renderer::utils::terminal_dimensions(
+                &self.inner[down_val].val.dimension,
+            );
+            let _ = self.inner[down_val].val.messenger.send_resize(winsize);
+
+            self.current = down_val.wrapping_sub(1);
+            self.inner.remove(old);
+            return;
+        }
+
         self.select_prev_split();
         self.inner.remove(old);
     }
