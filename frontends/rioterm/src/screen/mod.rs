@@ -428,10 +428,11 @@ impl Screen<'_> {
             self.clear_selection();
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
             .resize(new_size.width as f32, new_size.height as f32);
+
+        self.resize_all_contexts();
         self
     }
 
