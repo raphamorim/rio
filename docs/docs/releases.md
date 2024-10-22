@@ -15,6 +15,7 @@ language: 'en'
 	- Sugarloaf: Removal of some unnecessary processing on shaping logic.
 	- Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
 - *Breaking:* Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
+- Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
 - Allow MacOS automation via events.
 - Fix: Configuration updates triggered multiple times on one save.
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).

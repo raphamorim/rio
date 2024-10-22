@@ -9,6 +9,13 @@ Prebuilt binaries for Windows:
 
 - [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v0.1.15/Rio-installer.msi)
 - [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.1.15/Rio-portable.exe)
+
+- Using WinGet package manager:
+
+```sh
+winget install -e --id raphamorim.rio
+```
+
 - [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
 
 ```sh
