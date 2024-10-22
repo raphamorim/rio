@@ -408,6 +408,10 @@ impl Screen<'_> {
             action,
         );
 
+        self.context_manager
+            .current_grid_mut()
+            .update_dimensions(&self.sugarloaf);
+
         self.render();
         self.resize_all_contexts();
     }
