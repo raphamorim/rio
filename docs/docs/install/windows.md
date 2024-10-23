@@ -22,6 +22,8 @@ winget install -e --id raphamorim.rio
 choco install rio-terminal
 ```
 
+- Using MINGW package manager: [packages.msys2.org/base/mingw-w64-rio](https://packages.msys2.org/base/mingw-w64-rio)
+
 There's a few things to note about the installer and the portable version:
 
 - The browser will ask if you want to keep the file, click "Keep" to save the installer/executable on your computer.
