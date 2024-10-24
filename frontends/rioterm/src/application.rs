@@ -985,7 +985,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                route.window.screen.renderer.last_typing = Some(Instant::now());
+                route.window.screen.context_manager.set_last_typing();
                 route.window.screen.process_key_event(&key_event);
 
                 if key_event.state == ElementState::Released

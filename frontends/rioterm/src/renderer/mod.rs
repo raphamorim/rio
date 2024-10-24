@@ -22,7 +22,6 @@ use rio_backend::sugarloaf::{
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
@@ -32,13 +31,11 @@ pub struct Renderer {
     pub option_as_alt: String,
     is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
-    pub last_typing: Option<Instant>,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
-    pub is_blinking: bool,
     ignore_selection_fg_color: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
@@ -85,8 +82,6 @@ impl Renderer {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_vi_mode_enabled: false,
-            is_blinking: false,
-            last_typing: None,
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -670,27 +665,9 @@ impl Renderer {
             let context = grid_context.context_mut();
             let rich_text_id = context.rich_text_id;
             let renderable_content = context.renderable_content();
-            let mut is_cursor_visible = renderable_content.cursor.state.is_visible();
+            let is_cursor_visible = renderable_content.is_cursor_visible
+                && renderable_content.cursor.state.is_visible();
 
-            // Only blink cursor if does not contain selection
-            let has_selection = renderable_content.selection_range.is_some();
-
-            if !has_selection
-                && self.config_has_blinking_enabled
-                && renderable_content.has_blinking_enabled
-            {
-                let mut should_blink = true;
-                if let Some(last_typing_time) = self.last_typing {
-                    if last_typing_time.elapsed() < Duration::from_secs(1) {
-                        should_blink = false;
-                    }
-                }
-
-                if should_blink {
-                    self.is_blinking = !self.is_blinking;
-                    is_cursor_visible = self.is_blinking;
-                }
-            }
             let display_offset = renderable_content.display_offset;
 
             match &renderable_content.strategy {
