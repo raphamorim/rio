@@ -549,6 +549,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn set_last_typing(&mut self) {
+        self.current_mut().renderable_content.last_typing = Some(Instant::now());
+    }
+
+    #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
         self.current_route = self.current().route_id;
