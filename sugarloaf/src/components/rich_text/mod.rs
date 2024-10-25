@@ -3,6 +3,7 @@ mod compositor;
 mod image_cache;
 pub mod text;
 
+use std::collections::HashSet;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
@@ -438,7 +439,7 @@ fn draw_layout(
         current_font_size,
     );
 
-    let mut last_rendered_graphic = None;
+    let mut last_rendered_graphic = HashSet::new();
     let mut line_y = 0. + y;
     for line in lines {
         if line.render_data.runs.is_empty() {
@@ -498,7 +499,7 @@ fn draw_layout(
             }
 
             if let Some(graphic) = run.span.media {
-                if last_rendered_graphic != Some(graphic.id) {
+                if !last_rendered_graphic.contains(&graphic.id) {
                     let offset_x = graphic.offset_x as f32;
                     let offset_y = graphic.offset_y as f32;
 
@@ -509,7 +510,7 @@ fn draw_layout(
                         width: None,
                         height: None,
                     });
-                    last_rendered_graphic = Some(graphic.id);
+                    last_rendered_graphic.insert(graphic.id);
                 }
             }
 

@@ -831,8 +831,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
-        let mut working_dir = None;
-        if self.config.use_current_path && self.config.working_dir.is_none() {
+        let mut working_dir = self.config.working_dir.clone();
+        if self.config.use_current_path {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
