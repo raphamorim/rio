@@ -90,6 +90,8 @@ impl RenderableContent {
             if should_blink {
                 self.is_cursor_visible = !self.is_cursor_visible;
                 diff.insert(*self.cursor.state.pos.row as usize);
+            } else {
+                self.is_cursor_visible = true;
             }
         }
 

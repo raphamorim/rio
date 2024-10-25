@@ -338,8 +338,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn remove_current(&mut self) {
-        // TODO: If a context is removed need to update the reference next/prev to all dependents
-
         let mut parent_context = None;
         for (index, context) in self.inner.iter().enumerate() {
             if let Some(right_val) = context.right {
@@ -369,6 +367,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     .dimension
                     .update_width(parent_width + old_width);
                 self.inner[parent_index].right = None;
+
+                // If current has right items then need to inherit
+                if let Some(current_right) = self.inner[self.current].right {
+                    self.inner[parent_index].right = Some(current_right);
+                }
             } else {
                 let parent_height = self.inner[parent_index].val.dimension.height;
                 self.inner[parent_index]
@@ -376,6 +379,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     .dimension
                     .update_height(parent_height + old_height);
                 self.inner[parent_index].down = None;
+
+                // If current has down items then need to inherit
+                if let Some(current_down) = self.inner[self.current].down {
+                    self.inner[parent_index].down = Some(current_down);
+                }
             }
 
             let mut terminal = self.inner[parent_index].val.terminal.lock();
@@ -387,7 +395,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[parent_index].val.messenger.send_resize(winsize);
 
             self.current = parent_index;
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
@@ -408,7 +416,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[right_val].val.messenger.send_resize(winsize);
 
             self.current = right_val.wrapping_sub(1);
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
@@ -428,12 +436,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[down_val].val.messenger.send_resize(winsize);
 
             self.current = down_val.wrapping_sub(1);
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
         self.select_prev_split();
-        self.inner.remove(old);
+        self.remove_index(old);
+    }
+
+    fn remove_index(&mut self, index: usize) {
+        for context in &mut self.inner {
+            if let Some(right_val) = context.right {
+                if right_val > index {
+                    context.right = Some(right_val.wrapping_sub(1));
+                }
+            }
+
+            if let Some(down_val) = context.down {
+                if down_val > index {
+                    context.down = Some(down_val.wrapping_sub(1));
+                }
+            }
+        }
+        self.inner.remove(index);
     }
 
     pub fn split_right(&mut self, context: Context<T>) {

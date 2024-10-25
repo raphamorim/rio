@@ -224,6 +224,7 @@ impl Renderer {
         renderable_content: &RenderableContent,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
+        is_active: bool,
     ) {
         let cursor = &renderable_content.cursor;
         let hyperlink_range = renderable_content.hyperlink_range;
@@ -242,7 +243,7 @@ impl Renderer {
 
             let (mut style, square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor)
+                    self.create_cursor_style(square, cursor, is_active)
                 } else {
                     self.create_style(square)
                 };
@@ -555,6 +556,7 @@ impl Renderer {
         &self,
         square: &Square,
         cursor: &Cursor,
+        is_active: bool,
     ) -> (FragmentStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
@@ -584,18 +586,19 @@ impl Renderer {
             && background_color[0] == self.dynamic_background.0[0]
             && background_color[1] == self.dynamic_background.0[1]
             && background_color[2] == self.dynamic_background.0[2];
-        let background_color =
-            if has_dynamic_background && cursor.state.content != CursorShape::Block {
-                None
-            } else {
-                Some(background_color)
-            };
+        let background_color = if has_dynamic_background
+            && (cursor.state.content != CursorShape::Block && is_active)
+        {
+            None
+        } else {
+            Some(background_color)
+        };
 
         // If IME is or cursor is block enabled, put background color
         // when cursor is over the character
         match (
             cursor.is_ime_enabled,
-            cursor.state.content == CursorShape::Block,
+            (cursor.state.content == CursorShape::Block || !is_active),
         ) {
             (_, true) => {
                 color = self.named_colors.background.0;
@@ -643,6 +646,11 @@ impl Renderer {
             CursorShape::Hidden => {}
         }
 
+        if !is_active {
+            style.decoration = None;
+            style.cursor = Some(SugarCursor::UnfilledBlock(cursor_color));
+        }
+
         (style, content)
     }
 
@@ -660,13 +668,19 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let content = sugarloaf.content();
+        let grid = context_manager.current_grid_mut();
+        let active_index = grid.current;
 
-        for grid_context in context_manager.current_grid_mut().contexts_mut() {
+        for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
+            let is_active = active_index == index;
             let context = grid_context.context_mut();
             let rich_text_id = context.rich_text_id;
             let renderable_content = context.renderable_content();
-            let is_cursor_visible = renderable_content.is_cursor_visible
+            let mut is_cursor_visible = renderable_content.is_cursor_visible
                 && renderable_content.cursor.state.is_visible();
+            if !is_active && renderable_content.cursor.state.is_visible() {
+                is_cursor_visible = true;
+            }
 
             let display_offset = renderable_content.display_offset;
 
@@ -686,6 +700,7 @@ impl Renderer {
                             renderable_content,
                             hints,
                             focused_match,
+                            is_active,
                         );
                     }
                     content.build();
@@ -706,6 +721,7 @@ impl Renderer {
                             renderable_content,
                             hints,
                             focused_match,
+                            is_active,
                         );
                     }
                 }
