@@ -1076,6 +1076,11 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    #[inline]
+    pub fn mark_line_damaged(&mut self, line: Line) {
+        self.damage.damage_line(line.0 as usize, 0, self.columns() - 1);
+    }
+
     pub fn selection_to_string(&self) -> Option<String> {
         let selection_range = self.selection.as_ref().and_then(|s| s.to_range(self))?;
         let SelectionRange { start, end, .. } = selection_range;
@@ -2059,7 +2064,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => {
                 tracing::trace!("Reporting primary device attributes");
                 let text = String::from("\x1b[?62;4;6;22c");
-                // let text = String::from("\x1b[?62;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
@@ -2775,10 +2779,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 cell.set_graphics(graphics);
                 *cell_ref = cell;
-
-                self.damage
-                    .damage_point(Pos::new((line.0 as usize).into(), Column(left)));
             }
+
+            self.mark_line_damaged(line);
 
             if scrolling && offset_y < height.saturating_sub(cell_height as u16) {
                 self.linefeed();
@@ -2883,11 +2886,11 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
     }
 
     fn square_width(&self) -> f32 {
-        0.
+        self.graphics.cell_width
     }
 
     fn square_height(&self) -> f32 {
-        0.
+        self.graphics.cell_height
     }
 }
 

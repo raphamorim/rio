@@ -537,20 +537,6 @@ impl Renderer {
         }
     }
 
-    // #[inline]
-    // #[allow(dead_code)]
-    // fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-    //     let media = &square.graphics().unwrap()[0].texture;
-    //     Sugar {
-    //         media: Some(SugarGraphic {
-    //             id: media.id,
-    //             width: media.width,
-    //             height: media.height,
-    //         }),
-    //         ..Sugar::default()
-    //     }
-    // }
-
     #[inline]
     fn create_cursor_style(
         &self,
