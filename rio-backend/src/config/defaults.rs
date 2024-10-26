@@ -213,7 +213,7 @@ pub fn default_config_file_content() -> String {
 # shape - Default cursor shape is 'block'
 # Other available options are: 'underline', 'beam' or 'hidden'
 #
-# blinking - Whether the cursor blinks. The default is true
+# blinking - Whether the cursor blinks. The default is false
 #
 # blinking-interval - Cursor update on milliseconds interval
 #
