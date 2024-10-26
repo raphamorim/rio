@@ -3,7 +3,6 @@ mod compositor;
 mod image_cache;
 pub mod text;
 
-use std::collections::HashSet;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
@@ -12,6 +11,7 @@ use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{Compositor, DisplayList, Rect, Vertex};
+use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
