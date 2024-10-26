@@ -1470,7 +1470,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_private_mode(&mut self, mode: PrivateMode) {
-        tracing::info!("Reporting private mode {mode:?}");
+        info!("Reporting private mode {mode:?}");
         let state = match mode {
             PrivateMode::Named(mode) => match mode {
                 NamedPrivateMode::CursorKeys => {
@@ -2612,10 +2612,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(parser) = parser {
             match parser.finish() {
                 Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette)),
-                Err(err) => tracing::warn!("Failed to parse Sixel data: {}", err),
+                Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
         } else {
-            tracing::warn!("Failed to sixel_graphic_finish");
+            warn!("Failed to sixel_graphic_finish");
         }
     }
 
