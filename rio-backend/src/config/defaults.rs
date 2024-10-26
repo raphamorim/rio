@@ -313,7 +313,7 @@ pub fn default_config_file_content() -> String {
 #
 # You can also set family on root to overwrite all fonts
 # [fonts]
-#   family = "cascadiamono"
+# family = "cascadiamono"
 #
 # You can also specify extra fonts to load
 # [fonts]
