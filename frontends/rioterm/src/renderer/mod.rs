@@ -634,7 +634,7 @@ impl Renderer {
 
         if !is_active {
             style.decoration = None;
-            style.cursor = Some(SugarCursor::UnfilledBlock(cursor_color));
+            style.cursor = Some(SugarCursor::HollowBlock(cursor_color));
         }
 
         (style, content)

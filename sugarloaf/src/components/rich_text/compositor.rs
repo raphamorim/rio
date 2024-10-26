@@ -210,7 +210,7 @@ impl Compositor {
                     &cursor_color,
                 );
             }
-            Some(SugarCursor::UnfilledBlock(cursor_color)) => {
+            Some(SugarCursor::HollowBlock(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, rect.width, style.line_height),
                     depth,
