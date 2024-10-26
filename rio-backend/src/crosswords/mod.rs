@@ -60,7 +60,7 @@ use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
 use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
-use tracing::{debug, info, warn, trace};
+use tracing::{debug, info, trace, warn};
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -1078,7 +1078,8 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn mark_line_damaged(&mut self, line: Line) {
-        self.damage.damage_line(line.0 as usize, 0, self.columns() - 1);
+        self.damage
+            .damage_line(line.0 as usize, 0, self.columns() - 1);
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
@@ -1546,7 +1547,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn goto(&mut self, line: Line, col: Column) {
-
         trace!("Going to: line={}, col={}", line, col);
         let (y_offset, max_y) = if self.mode.contains(Mode::ORIGIN) {
             (self.scroll_region.start, self.scroll_region.end - 1)

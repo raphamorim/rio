@@ -198,7 +198,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
         // Update display offset when not pinned to active area.
         if self.display_offset != 0 {
-            self.display_offset = min(self.display_offset + positions, self.max_scroll_limit);
+            self.display_offset =
+                min(self.display_offset + positions, self.max_scroll_limit);
         }
 
         // Only rotate the entire history if the active region starts at the top.
@@ -238,7 +239,6 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             self.raw[i].reset(&self.cursor.template);
         }
     }
-
 
     pub fn clear_viewport<D>(&mut self)
     where

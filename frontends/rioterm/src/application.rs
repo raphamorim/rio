@@ -200,8 +200,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.context_manager.current_mut().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     let graphics = terminal.graphics_take_queues();
                     drop(terminal);
                     if let Some(graphic_queues) = graphics {
@@ -380,8 +385,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Scroll(scroll)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.context_manager.current_mut().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     terminal.scroll_display(scroll);
                     drop(terminal);
                 }
