@@ -2597,6 +2597,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(parser) = &mut self.graphics.sixel_parser {
             parser.put(byte)
         } else {
+            self.sixel_graphic_reset();
             Err(sixel::Error::NonExistentParser)
         }
     }
