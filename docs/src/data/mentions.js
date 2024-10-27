@@ -102,6 +102,16 @@ const MENTIONS = [
       </>
     ),
   },
+  {
+    url: 'https://fosstodon.org/@orhun/113375636616878019',
+    username: 'Orhun Parmaksız',
+    source: '/rio/assets/mentions/orhun.png',
+    quote: (
+      <>
+        One of the few terminal emulators out there with kickass features!
+      </>
+    ),
+  },
 ];
 
 export default MENTIONS;
