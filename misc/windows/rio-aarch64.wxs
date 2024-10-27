@@ -23,7 +23,7 @@
       <!-- Application binaries -->
       <DirectoryRef Id="RioProgramFiles">
          <Component Id="RioExe">
-            <File Id="RioExeFile" Source=".\target\release\rio.exe" Name="rio.exe" KeyPath="yes" />
+            <File Id="RioExeFile" Source=".\target\aarch64-pc-windows-msvc\release\rio.exe" Name="rio.exe" KeyPath="yes" />
          </Component>
       </DirectoryRef>
       <DirectoryRef Id="RioProgramMenu">
