@@ -12,7 +12,6 @@ const PADDING: f32 = 4.;
 
 // $ tput columns
 // $ tput lines
-#[inline]
 fn compute(
     width: f32,
     height: f32,
@@ -349,6 +348,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         (available_width, available_height)
     }
 
+    fn request_resize(&mut self, index: usize) {
+        let mut terminal = self.inner[index].val.terminal.lock();
+        terminal.resize::<ContextDimension>(self.inner[index].val.dimension);
+        drop(terminal);
+        let winsize =
+            crate::renderer::utils::terminal_dimensions(&self.inner[index].val.dimension);
+        let _ = self.inner[index].val.messenger.send_resize(winsize);
+    }
+
     pub fn remove_current(&mut self) {
         let mut parent_context = None;
         for (index, context) in self.inner.iter().enumerate() {
@@ -367,93 +375,89 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        let old = self.current;
-        let old_width = self.inner[old].val.dimension.width;
-        let old_height = self.inner[old].val.dimension.height;
+        let to_be_removed = self.current;
+        let to_be_removed_width = self.inner[to_be_removed].val.dimension.width;
+        let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
 
+        // If index to be removed is owned by a parent context
         if let Some((is_right, parent_index)) = parent_context {
+            let mut next_current = parent_index;
             if is_right {
-                let parent_width = self.inner[parent_index].val.dimension.width;
-                self.inner[parent_index]
-                    .val
-                    .dimension
-                    .update_width(parent_width + old_width + PADDING);
-                self.inner[parent_index].right = None;
+                // If current has down items then need to inherit
+                if let Some(current_down) = self.inner[self.current].down {
+                    self.inner[current_down]
+                        .val
+                        .dimension
+                        .increase_height(to_be_removed_height + (PADDING * 2.0));
 
-                // If current has right items then need to inherit
-                if let Some(current_right) = self.inner[self.current].right {
-                    self.inner[parent_index].right = Some(current_right);
+                    self.request_resize(current_down);
+
+                    next_current = current_down.wrapping_sub(1);
+                    self.inner[parent_index].right = Some(next_current);
+
+                // If current has no down items then check right items to inherit
+                } else {
+                    let parent_width = self.inner[parent_index].val.dimension.width;
+                    self.inner[parent_index]
+                        .val
+                        .dimension
+                        .update_width(parent_width + to_be_removed_width + PADDING);
+                    self.inner[parent_index].right = None;
+
+                    if let Some(current_right) = self.inner[self.current].right {
+                        self.inner[parent_index].right = Some(current_right);
+                    }
+
+                    self.request_resize(parent_index);
                 }
             } else {
                 let parent_height = self.inner[parent_index].val.dimension.height;
                 self.inner[parent_index]
                     .val
                     .dimension
-                    .update_height(parent_height + old_height);
+                    .update_height(parent_height + to_be_removed_height);
                 self.inner[parent_index].down = None;
 
                 // If current has down items then need to inherit
                 if let Some(current_down) = self.inner[self.current].down {
                     self.inner[parent_index].down = Some(current_down);
                 }
+
+                self.request_resize(parent_index);
             }
 
-            let mut terminal = self.inner[parent_index].val.terminal.lock();
-            terminal.resize::<ContextDimension>(self.inner[parent_index].val.dimension);
-            drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(
-                &self.inner[parent_index].val.dimension,
-            );
-            let _ = self.inner[parent_index].val.messenger.send_resize(winsize);
-
-            self.current = parent_index;
-            self.remove_index(old);
+            self.remove_index(to_be_removed);
+            self.current = next_current;
             return;
         }
 
         // In case there is no parenting, needs to validate if it has children
-        if let Some(right_val) = self.inner[old].right {
+        if let Some(right_val) = self.inner[to_be_removed].right {
             let right_width = self.inner[right_val].val.dimension.width;
             self.inner[right_val]
                 .val
                 .dimension
-                .update_width(right_width + old_width + PADDING);
+                .update_width(right_width + to_be_removed_width + PADDING);
 
-            let mut terminal = self.inner[right_val].val.terminal.lock();
-            terminal.resize::<ContextDimension>(self.inner[right_val].val.dimension);
-            drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(
-                &self.inner[right_val].val.dimension,
-            );
-            let _ = self.inner[right_val].val.messenger.send_resize(winsize);
-
-            self.current = right_val.wrapping_sub(1);
-            self.remove_index(old);
+            self.request_resize(right_val);
+            self.remove_index(to_be_removed);
             return;
         }
 
-        if let Some(down_val) = self.inner[old].down {
+        if let Some(down_val) = self.inner[to_be_removed].down {
             let down_height = self.inner[down_val].val.dimension.height;
             self.inner[down_val]
                 .val
                 .dimension
-                .update_height(down_height + old_height);
+                .update_height(down_height + to_be_removed_height);
 
-            let mut terminal = self.inner[down_val].val.terminal.lock();
-            terminal.resize::<ContextDimension>(self.inner[down_val].val.dimension);
-            drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(
-                &self.inner[down_val].val.dimension,
-            );
-            let _ = self.inner[down_val].val.messenger.send_resize(winsize);
-
-            self.current = down_val.wrapping_sub(1);
-            self.remove_index(old);
+            self.request_resize(down_val);
+            self.remove_index(to_be_removed);
             return;
         }
 
         self.select_prev_split();
-        self.remove_index(old);
+        self.remove_index(to_be_removed);
     }
 
     fn remove_index(&mut self, index: usize) {
@@ -474,83 +478,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
-        let old_right = self.inner[self.current].right;
-
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_width = old_grid_item_width / 2.0;
         self.inner[self.current]
             .val
             .dimension
             .update_width(new_grid_item_width - PADDING);
-
-        let mut terminal = self.inner[self.current].val.terminal.lock();
-        terminal.resize::<ContextDimension>(self.inner[self.current].val.dimension);
-        drop(terminal);
-        let winsize = crate::renderer::utils::terminal_dimensions(
-            &self.inner[self.current].val.dimension,
-        );
-        let _ = self.inner[self.current].val.messenger.send_resize(winsize);
+        self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
 
-        new_context
-            .val
-            .dimension
-            .update_width(new_grid_item_width - PADDING);
+        new_context.val.dimension.update_width(new_grid_item_width);
 
         self.inner.push(new_context);
         let new_current = self.inner.len() - 1;
 
-        let mut terminal = self.inner[new_current].val.terminal.lock();
-        terminal.resize::<ContextDimension>(self.inner[new_current].val.dimension);
-        drop(terminal);
-        let winsize = crate::renderer::utils::terminal_dimensions(
-            &self.inner[new_current].val.dimension,
-        );
-        let _ = self.inner[new_current].val.messenger.send_resize(winsize);
-
-        self.inner[new_current].right = old_right;
+        self.request_resize(new_current);
         self.inner[self.current].right = Some(new_current);
         self.current = new_current;
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
-        let old_down = self.inner[self.current].down;
-
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
+        let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
         self.inner[self.current]
             .val
             .dimension
             .update_height(new_grid_item_height - (PADDING * 2.0));
-
-        let mut terminal = self.inner[self.current].val.terminal.lock();
-        terminal.resize::<ContextDimension>(self.inner[self.current].val.dimension);
-        drop(terminal);
-        let winsize = crate::renderer::utils::terminal_dimensions(
-            &self.inner[self.current].val.dimension,
-        );
-        let _ = self.inner[self.current].val.messenger.send_resize(winsize);
+        self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
-
         new_context
             .val
             .dimension
-            .update_height(new_grid_item_height - (PADDING * 2.0));
+            .update_height(new_grid_item_height);
+        new_context.val.dimension.update_width(old_grid_item_width);
 
         self.inner.push(new_context);
         let new_current = self.inner.len() - 1;
+        self.request_resize(new_current);
 
-        let mut terminal = self.inner[new_current].val.terminal.lock();
-        terminal.resize::<ContextDimension>(self.inner[new_current].val.dimension);
-        drop(terminal);
-        let winsize = crate::renderer::utils::terminal_dimensions(
-            &self.inner[new_current].val.dimension,
-        );
-        let _ = self.inner[new_current].val.messenger.send_resize(winsize);
-
-        self.inner[new_current].down = old_down;
         self.inner[self.current].down = Some(new_current);
         self.current = new_current;
     }
@@ -598,21 +566,31 @@ impl ContextDimension {
         }
     }
 
+    #[inline]
     pub fn update_width(&mut self, width: f32) {
         self.width = width;
         self.update();
     }
 
+    #[inline]
     pub fn update_height(&mut self, height: f32) {
         self.height = height;
         self.update();
     }
 
+    #[inline]
+    pub fn increase_height(&mut self, acc_height: f32) {
+        self.height += acc_height;
+        self.update();
+    }
+
+    #[inline]
     pub fn update_margin(&mut self, margin: Delta<f32>) {
         self.margin = margin;
         self.update();
     }
 
+    #[inline]
     pub fn update_dimensions(&mut self, dimensions: SugarDimensions) {
         self.dimension = dimensions;
         self.update();
@@ -836,13 +814,13 @@ pub mod test {
                     position: [312.0, 20.0]
                 }),
                 Object::Rect(Rect {
-                    position: [459.0, 20.0],
+                    position: [460.0, 20.0],
                     color: [1.0, 0.0, 0.0, 0.0],
                     size: [1.0, 800.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [463.0, 20.0]
+                    position: [464.0, 20.0]
                 }),
             ]
         );
@@ -966,13 +944,13 @@ pub mod test {
                     position: [10.0, 220.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 314.0],
+                    position: [10.0, 316.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [10.0, 318.0]
+                    position: [10.0, 320.0]
                 }),
             ]
         );
@@ -1097,7 +1075,7 @@ pub mod test {
     }
 
     #[test]
-    fn test_remove_side_by_side() {
+    fn test_remove_right_without_children() {
         let margin = Delta {
             x: 0.,
             top_y: 0.,
@@ -1160,18 +1138,20 @@ pub mod test {
             })]
         );
 
-        grid.split_right(second_context);
-
         assert_eq!(grid.width, 600.0);
         assert_eq!(grid.height, 600.0);
+        assert_eq!(grid.current().dimension.width, 600.);
 
-        let expected_width = (600. / 2.) - PADDING;
+        grid.split_right(second_context);
 
-        assert_eq!(grid.current().dimension.width, expected_width);
+        let new_expected_width = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.width, new_expected_width);
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        assert_eq!(grid.current().dimension.width, expected_width);
+        let old_expected_width = (600. / 2.) - PADDING;
+        assert_eq!(grid.current().dimension.width, old_expected_width);
         assert_eq!(grid.current_index(), 0);
 
         grid.select_next_split();
@@ -1180,12 +1160,12 @@ pub mod test {
         grid.remove_current();
 
         assert_eq!(grid.current_index(), 0);
-        let expected_width = 600. - PADDING;
-        assert_eq!(grid.current().dimension.width, expected_width);
+        // Whenever return to one should drop padding
+        assert_eq!(grid.current().dimension.width, 600.);
     }
 
     #[test]
-    fn test_remove_current_move_child_from_right() {
+    fn test_remove_right_with_children() {
         let margin = Delta {
             x: 0.,
             top_y: 0.,
@@ -1253,13 +1233,15 @@ pub mod test {
         assert_eq!(grid.width, 600.0);
         assert_eq!(grid.height, 600.0);
 
-        let expected_width = (600. / 2.) - PADDING;
+        let new_context_expected_width = 600. / 2.;
 
-        assert_eq!(grid.current().dimension.width, expected_width);
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        assert_eq!(grid.current().dimension.width, expected_width);
+
+        let old_context_expected_width = (600. / 2.) - PADDING;
+        assert_eq!(grid.current().dimension.width, old_context_expected_width);
         assert_eq!(grid.current_index(), 0);
 
         let current_index = grid.current_index();
@@ -1269,11 +1251,123 @@ pub mod test {
         grid.remove_current();
 
         assert_eq!(grid.current_index(), 0);
-        let expected_width = 600. - PADDING;
+        // Whenever return to one should drop padding
+        let expected_width = 600.;
         assert_eq!(grid.current().dimension.width, expected_width);
 
         let current_index = grid.current_index();
         assert_eq!(grid.contexts()[current_index].right, None);
         assert_eq!(grid.contexts()[current_index].down, None);
+    }
+
+    #[test]
+    fn test_remove_right_with_down_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_right(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_width = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
+        assert_eq!(grid.current_index(), 1);
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_down(third_context);
+        assert_eq!(grid.current_index(), 2);
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
+        assert_eq!(grid.current().dimension.height, 300.);
+
+        // Move back
+        grid.select_prev_split();
+
+        assert_eq!(grid.current_index(), 1);
+        assert_eq!(grid.current().rich_text_id, second_context_id);
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
+        assert_eq!(grid.current().dimension.height, 292.);
+
+        // Remove the current should actually make right being down
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 1);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
+        assert_eq!(grid.current().dimension.height, 600.);
     }
 }
