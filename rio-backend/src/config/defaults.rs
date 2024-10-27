@@ -311,7 +311,7 @@ pub fn default_config_file_content() -> String {
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# You can also set family on root to overwrite all fonts
+# You can also set family on root to overwrite all fonts.
 # [fonts]
 # family = "cascadiamono"
 #
@@ -325,6 +325,10 @@ pub fn default_config_file_content() -> String {
 #
 # Note: Font features do not have support to live reload on configuration,
 # so to reflect your changes, you will need to close and reopen Rio.
+#
+# You can also disable font hinting. Font hinting is enabled by default.
+# [fonts]
+# hinting = false
 #
 # Example:
 # [fonts]
