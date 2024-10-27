@@ -478,6 +478,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
+        let old_right = self.inner[self.current].right;
+
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_width = old_grid_item_width / 2.0;
         self.inner[self.current]
@@ -494,11 +496,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let new_current = self.inner.len() - 1;
 
         self.request_resize(new_current);
+        self.inner[new_current].right = old_right;
         self.inner[self.current].right = Some(new_current);
         self.current = new_current;
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
+        let old_down = self.inner[self.current].down;
+
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
@@ -519,6 +524,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let new_current = self.inner.len() - 1;
         self.request_resize(new_current);
 
+        self.inner[new_current].down = old_down;
         self.inner[self.current].down = Some(new_current);
         self.current = new_current;
     }
