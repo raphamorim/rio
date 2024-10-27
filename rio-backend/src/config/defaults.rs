@@ -213,7 +213,7 @@ pub fn default_config_file_content() -> String {
 # shape - Default cursor shape is 'block'
 # Other available options are: 'underline', 'beam' or 'hidden'
 #
-# blinking - Whether the cursor blinks. The default is true
+# blinking - Whether the cursor blinks. The default is false
 #
 # blinking-interval - Cursor update on milliseconds interval
 #
@@ -313,7 +313,7 @@ pub fn default_config_file_content() -> String {
 #
 # You can also set family on root to overwrite all fonts
 # [fonts]
-#   family = "cascadiamono"
+# family = "cascadiamono"
 #
 # You can also specify extra fonts to load
 # [fonts]
