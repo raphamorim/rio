@@ -87,3 +87,14 @@ y = 0.0
 ```
 
 ![Demo image as background](/assets/demos/demo-background-image-partial.png)
+
+### MacOS: Unified titlebar
+
+You can use MacOS unified titlebar by config, it's disabled by default.
+
+```toml
+[window]
+macos-use-unified-titlebar = false
+```
+
+![Demo unified titlebar](/assets/demos/demo-macos-unified-titlebar.png)

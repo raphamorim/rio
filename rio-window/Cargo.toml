@@ -104,6 +104,7 @@ features = [
     "NSScreen",
     "NSTextInputClient",
     "NSTextInputContext",
+    "NSToolbar",
     "NSView",
     "NSWindow",
     "NSWindowScripting",

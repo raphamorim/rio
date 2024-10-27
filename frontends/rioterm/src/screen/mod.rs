@@ -110,8 +110,12 @@ impl Screen<'_> {
         let raw_display_handle = window_properties.raw_display_handle;
         let window_id = window_properties.window_id;
 
-        let padding_y_top =
-            padding_top_from_config(&config.navigation, config.padding_y[0], 1);
+        let padding_y_top = padding_top_from_config(
+            &config.navigation,
+            config.padding_y[0],
+            1,
+            config.window.macos_use_unified_titlebar,
+        );
         let padding_y_bottom =
             padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
 
@@ -336,8 +340,12 @@ impl Screen<'_> {
         should_update_font_library: bool,
     ) {
         let num_tabs = self.ctx().len();
-        let padding_y_top =
-            padding_top_from_config(&config.navigation, config.padding_y[0], num_tabs);
+        let padding_y_top = padding_top_from_config(
+            &config.navigation,
+            config.padding_y[0],
+            num_tabs,
+            config.window.macos_use_unified_titlebar,
+        );
         let padding_y_bottom = padding_bottom_from_config(
             &config.navigation,
             config.padding_y[1],
@@ -1091,6 +1099,7 @@ impl Screen<'_> {
             &self.renderer.navigation.navigation,
             self.renderer.navigation.padding_y[0],
             num_tabs,
+            self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &self.renderer.navigation.navigation,

@@ -81,7 +81,9 @@ pub fn create_window_builder(
 
         if config.navigation.is_native() {
             if let Some(identifier) = tab_id {
-                window_builder = window_builder.with_tabbing_identifier(identifier);
+                window_builder = window_builder
+                    .with_tabbing_identifier(identifier)
+                    .with_unified_titlebar(config.window.macos_use_unified_titlebar);
             }
         } else {
             window_builder = window_builder
