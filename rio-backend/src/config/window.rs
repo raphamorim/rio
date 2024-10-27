@@ -55,6 +55,8 @@ pub struct Window {
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
     pub decorations: Decorations,
+    #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
+    pub macos_use_unified_titlebar: bool,
 }
 
 impl Default for Window {
@@ -67,6 +69,7 @@ impl Default for Window {
             background_image: None,
             decorations: Decorations::default(),
             blur: false,
+            macos_use_unified_titlebar: false,
         }
     }
 }

@@ -9,6 +9,7 @@ pub fn padding_top_from_config(
     navigation: &Navigation,
     padding_y_top: f32,
     num_tabs: usize,
+    #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
     let default_padding = constants::PADDING_Y + padding_y_top;
 
@@ -24,7 +25,12 @@ pub fn padding_top_from_config(
     #[cfg(target_os = "macos")]
     {
         if navigation.mode == NavigationMode::NativeTab {
-            return 0.0 + padding_y_top;
+            let additional = if macos_use_unified_titlebar {
+                constants::ADDITIONAL_PADDING_Y_ON_UNIFIED_TITLEBAR
+            } else {
+                0.0
+            };
+            return additional + padding_y_top;
         } else if navigation.hide_if_single && num_tabs == 1 {
             return default_padding;
         }

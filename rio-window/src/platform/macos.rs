@@ -94,6 +94,12 @@ pub trait WindowExtMacOS {
 
     /// Getter for the [`WindowExtMacOS::set_option_as_alt`].
     fn option_as_alt(&self) -> OptionAsAlt;
+
+    /// Makes the titlebar bigger, effectively adding more space around the
+    /// window controls if the titlebar is invisible.
+    fn set_unified_titlebar(&self, unified_titlebar: bool);
+    /// Getter for the [`WindowExtMacOS::set_unified_titlebar`].
+    fn unified_titlebar(&self) -> bool;
 }
 
 impl WindowExtMacOS for Window {
@@ -178,6 +184,17 @@ impl WindowExtMacOS for Window {
     fn option_as_alt(&self) -> OptionAsAlt {
         self.window.maybe_wait_on_main(|w| w.option_as_alt())
     }
+
+    #[inline]
+    fn set_unified_titlebar(&self, unified_titlebar: bool) {
+        self.window
+            .maybe_wait_on_main(|w| w.set_unified_titlebar(unified_titlebar))
+    }
+
+    #[inline]
+    fn unified_titlebar(&self) -> bool {
+        self.window.maybe_wait_on_main(|w| w.unified_titlebar())
+    }
 }
 
 /// Corresponds to `NSApplicationActivationPolicy`.
@@ -231,6 +248,8 @@ pub trait WindowAttributesExtMacOS {
     ///
     /// See [`WindowExtMacOS::set_option_as_alt`] for details on what this means if set.
     fn with_option_as_alt(self, option_as_alt: OptionAsAlt) -> Self;
+    /// See [`WindowExtMacOS::set_unified_titlebar`] for details on what this means if set.
+    fn with_unified_titlebar(self, unified_titlebar: bool) -> Self;
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
@@ -303,6 +322,12 @@ impl WindowAttributesExtMacOS for WindowAttributes {
     #[inline]
     fn with_option_as_alt(mut self, option_as_alt: OptionAsAlt) -> Self {
         self.platform_specific.option_as_alt = option_as_alt;
+        self
+    }
+
+    #[inline]
+    fn with_unified_titlebar(mut self, unified_titlebar: bool) -> Self {
+        self.platform_specific.unified_titlebar = unified_titlebar;
         self
     }
 }

@@ -17,7 +17,9 @@ language: 'en'
 - *Breaking:* Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
 - Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
 - Microsoft Windows: [Rio terminal is now available on MINGW packages](https://github.com/msys2/MINGW-packages/pull/22248).
+- Microsoft Windows: Rio support on ARM architecture by [@andreban](https://github.com/andreban).
 - Allow MacOS automation via events.
+- MacOS: Support titlebar unified: `window.macos-use-unified-titlebar = false`,
 - Support disable font hinting: `fonts.hinting = false`.
 - Fix: Configuration updates triggered multiple times on one save.
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
