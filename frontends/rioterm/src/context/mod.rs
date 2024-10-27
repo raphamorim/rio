@@ -549,6 +549,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn set_last_typing(&mut self) {
+        self.current_mut().renderable_content.last_typing = Some(Instant::now());
+    }
+
+    #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
         self.current_route = self.current().route_id;
@@ -826,8 +831,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
-        let mut working_dir = None;
-        if self.config.use_current_path && self.config.working_dir.is_none() {
+        let mut working_dir = self.config.working_dir.clone();
+        if self.config.use_current_path {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
@@ -940,8 +945,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
-        let mut working_dir = None;
-        if self.config.use_current_path && self.config.working_dir.is_none() {
+        let mut working_dir = self.config.working_dir.clone();
+        if self.config.use_current_path {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();

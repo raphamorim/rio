@@ -4,6 +4,7 @@ use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
 use rio_backend::selection::SelectionRange;
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub enum RenderableContentStrategy {
@@ -30,6 +31,8 @@ pub struct RenderableContent {
     pub selection_range: Option<SelectionRange>,
     pub hyperlink_range: Option<SelectionRange>,
     pub has_pending_updates: bool,
+    pub last_typing: Option<Instant>,
+    pub is_cursor_visible: bool,
 }
 
 impl RenderableContent {
@@ -43,6 +46,8 @@ impl RenderableContent {
             selection_range: None,
             hyperlink_range: None,
             has_pending_updates: false,
+            last_typing: None,
+            is_cursor_visible: true,
         }
     }
 
@@ -65,7 +70,6 @@ impl RenderableContent {
         has_blinking_enabled: bool,
     ) {
         let mut diff: HashSet<usize> = HashSet::with_capacity(rows.len());
-
         if self.cursor.state.pos != cursor.pos {
             // Add old row cursor
             diff.insert(*self.cursor.state.pos.row as usize);
@@ -73,13 +77,31 @@ impl RenderableContent {
             diff.insert(*cursor.pos.row as usize);
         }
         self.cursor.state = cursor;
+
+        let has_selection = self.selection_range.is_some();
+        if !has_selection && has_blinking_enabled {
+            let mut should_blink = true;
+            if let Some(last_typing_time) = self.last_typing {
+                if last_typing_time.elapsed() < Duration::from_secs(1) {
+                    should_blink = false;
+                }
+            }
+
+            if should_blink {
+                self.is_cursor_visible = !self.is_cursor_visible;
+                diff.insert(*self.cursor.state.pos.row as usize);
+            } else {
+                self.is_cursor_visible = true;
+            }
+        }
+
         self.strategy = RenderableContentStrategy::Full;
 
         let require_full_clone = self.display_offset != display_offset as i32
             || self.has_blinking_enabled != has_blinking_enabled
             || self.has_pending_updates
             || self.inner.len() != rows.len()
-            || self.selection_range.is_some()
+            || has_selection
             || self.hyperlink_range.is_some();
 
         self.has_pending_updates = false;

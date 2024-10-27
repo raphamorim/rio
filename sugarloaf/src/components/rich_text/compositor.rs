@@ -210,6 +210,26 @@ impl Compositor {
                     &cursor_color,
                 );
             }
+            Some(SugarCursor::HollowBlock(cursor_color)) => {
+                self.batches.add_rect(
+                    &Rect::new(rect.x, style.topline, rect.width, style.line_height),
+                    depth,
+                    &cursor_color,
+                );
+
+                if let Some(bg_color) = style.background_color {
+                    self.batches.add_rect(
+                        &Rect::new(
+                            rect.x + 2.0,
+                            style.topline + 2.0,
+                            rect.width - 4.0,
+                            style.line_height - 4.0,
+                        ),
+                        depth,
+                        &bg_color,
+                    );
+                }
+            }
             Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
                     &Rect::new(rect.x, style.topline, 3.0, style.line_height),

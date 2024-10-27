@@ -200,8 +200,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.ctx().current().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     let graphics = terminal.graphics_take_queues();
                     drop(terminal);
                     if let Some(graphic_queues) = graphics {
@@ -380,8 +385,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Scroll(scroll)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.ctx().current().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     terminal.scroll_display(scroll);
                     drop(terminal);
                 }
@@ -478,33 +488,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // it also reaches for the foreground process path if
                     // config.use_current_path is true
                     // For these case we need to make a workaround
-                    //
-                    // TODO: Reimplement this flow
-                    let mut should_revert_to_previous_config: Option<
-                        rio_backend::config::Config,
-                    > = None;
-                    if working_dir_overwrite.is_some() {
-                        let current_config = &self.config;
-                        should_revert_to_previous_config = Some(current_config.clone());
-
-                        let config = rio_backend::config::Config {
+                    let config = if working_dir_overwrite.is_some() {
+                        rio_backend::config::Config {
                             working_dir: working_dir_overwrite,
-                            ..current_config.clone()
-                        };
-                        self.config = config;
-                    }
+                            ..self.config.clone()
+                        }
+                    } else {
+                        self.config.clone()
+                    };
 
                     self.router.create_native_tab(
                         event_loop,
                         self.event_proxy.clone(),
-                        &self.config,
+                        &config,
                         Some(&route.window.winit_window.tabbing_identifier()),
                         None,
                     );
-
-                    if let Some(old_config) = should_revert_to_previous_config {
-                        self.config = old_config;
-                    }
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
@@ -985,7 +984,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                route.window.screen.renderer.last_typing = Some(Instant::now());
+                route.window.screen.context_manager.set_last_typing();
                 route.window.screen.process_key_event(&key_event);
 
                 if key_event.state == ElementState::Released

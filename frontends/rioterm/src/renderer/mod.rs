@@ -22,7 +22,6 @@ use rio_backend::sugarloaf::{
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
@@ -32,13 +31,11 @@ pub struct Renderer {
     pub option_as_alt: String,
     is_vi_mode_enabled: bool,
     pub is_kitty_keyboard_enabled: bool,
-    pub last_typing: Option<Instant>,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
-    pub is_blinking: bool,
     ignore_selection_fg_color: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
@@ -85,8 +82,6 @@ impl Renderer {
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_vi_mode_enabled: false,
-            is_blinking: false,
-            last_typing: None,
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -229,6 +224,7 @@ impl Renderer {
         renderable_content: &RenderableContent,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
+        is_active: bool,
     ) {
         let cursor = &renderable_content.cursor;
         let hyperlink_range = renderable_content.hyperlink_range;
@@ -247,7 +243,7 @@ impl Renderer {
 
             let (mut style, square_content) =
                 if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor)
+                    self.create_cursor_style(square, cursor, is_active)
                 } else {
                     self.create_style(square)
                 };
@@ -541,25 +537,12 @@ impl Renderer {
         }
     }
 
-    // #[inline]
-    // #[allow(dead_code)]
-    // fn create_graphic_sugar(&self, square: &Square) -> Sugar {
-    //     let media = &square.graphics().unwrap()[0].texture;
-    //     Sugar {
-    //         media: Some(SugarGraphic {
-    //             id: media.id,
-    //             width: media.width,
-    //             height: media.height,
-    //         }),
-    //         ..Sugar::default()
-    //     }
-    // }
-
     #[inline]
     fn create_cursor_style(
         &self,
         square: &Square,
         cursor: &Cursor,
+        is_active: bool,
     ) -> (FragmentStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
@@ -589,18 +572,19 @@ impl Renderer {
             && background_color[0] == self.dynamic_background.0[0]
             && background_color[1] == self.dynamic_background.0[1]
             && background_color[2] == self.dynamic_background.0[2];
-        let background_color =
-            if has_dynamic_background && cursor.state.content != CursorShape::Block {
-                None
-            } else {
-                Some(background_color)
-            };
+        let background_color = if has_dynamic_background
+            && (cursor.state.content != CursorShape::Block && is_active)
+        {
+            None
+        } else {
+            Some(background_color)
+        };
 
         // If IME is or cursor is block enabled, put background color
         // when cursor is over the character
         match (
             cursor.is_ime_enabled,
-            cursor.state.content == CursorShape::Block,
+            (cursor.state.content == CursorShape::Block || !is_active),
         ) {
             (_, true) => {
                 color = self.named_colors.background.0;
@@ -648,6 +632,11 @@ impl Renderer {
             CursorShape::Hidden => {}
         }
 
+        if !is_active {
+            style.decoration = None;
+            style.cursor = Some(SugarCursor::HollowBlock(cursor_color));
+        }
+
         (style, content)
     }
 
@@ -665,32 +654,20 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let content = sugarloaf.content();
+        let grid = context_manager.current_grid_mut();
+        let active_index = grid.current;
 
-        for grid_context in context_manager.current_grid_mut().contexts_mut() {
+        for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
+            let is_active = active_index == index;
             let context = grid_context.context_mut();
             let rich_text_id = context.rich_text_id;
             let renderable_content = context.renderable_content();
-            let mut is_cursor_visible = renderable_content.cursor.state.is_visible();
-
-            // Only blink cursor if does not contain selection
-            let has_selection = renderable_content.selection_range.is_some();
-
-            if !has_selection
-                && self.config_has_blinking_enabled
-                && renderable_content.has_blinking_enabled
-            {
-                let mut should_blink = true;
-                if let Some(last_typing_time) = self.last_typing {
-                    if last_typing_time.elapsed() < Duration::from_secs(1) {
-                        should_blink = false;
-                    }
-                }
-
-                if should_blink {
-                    self.is_blinking = !self.is_blinking;
-                    is_cursor_visible = self.is_blinking;
-                }
+            let mut is_cursor_visible = renderable_content.is_cursor_visible
+                && renderable_content.cursor.state.is_visible();
+            if !is_active && renderable_content.cursor.state.is_visible() {
+                is_cursor_visible = true;
             }
+
             let display_offset = renderable_content.display_offset;
 
             match &renderable_content.strategy {
@@ -709,6 +686,7 @@ impl Renderer {
                             renderable_content,
                             hints,
                             focused_match,
+                            is_active,
                         );
                     }
                     content.build();
@@ -729,6 +707,7 @@ impl Renderer {
                             renderable_content,
                             hints,
                             focused_match,
+                            is_active,
                         );
                     }
                 }

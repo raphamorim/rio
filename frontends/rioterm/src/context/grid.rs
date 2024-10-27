@@ -8,7 +8,7 @@ use rio_backend::sugarloaf::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
-const PADDING: f32 = 2.;
+const PADDING: f32 = 4.;
 
 // $ tput columns
 // $ tput lines
@@ -105,6 +105,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    #[allow(unused)]
+    pub fn contexts(&mut self) -> &Vec<ContextGridItem<T>> {
+        &self.inner
+    }
+
+    #[inline]
     pub fn select_next_split(&mut self) {
         if self.inner.len() == 1 {
             return;
@@ -128,6 +134,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         } else {
             self.current -= 1;
         }
+    }
+
+    #[inline]
+    #[allow(unused)]
+    pub fn current_index(&self) -> usize {
+        self.current
     }
 
     #[inline]
@@ -338,8 +350,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn remove_current(&mut self) {
-        // TODO: If a context is removed need to update the reference next/prev to all dependents
-
         let mut parent_context = None;
         for (index, context) in self.inner.iter().enumerate() {
             if let Some(right_val) = context.right {
@@ -367,8 +377,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 self.inner[parent_index]
                     .val
                     .dimension
-                    .update_width(parent_width + old_width);
+                    .update_width(parent_width + old_width + PADDING);
                 self.inner[parent_index].right = None;
+
+                // If current has right items then need to inherit
+                if let Some(current_right) = self.inner[self.current].right {
+                    self.inner[parent_index].right = Some(current_right);
+                }
             } else {
                 let parent_height = self.inner[parent_index].val.dimension.height;
                 self.inner[parent_index]
@@ -376,6 +391,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     .dimension
                     .update_height(parent_height + old_height);
                 self.inner[parent_index].down = None;
+
+                // If current has down items then need to inherit
+                if let Some(current_down) = self.inner[self.current].down {
+                    self.inner[parent_index].down = Some(current_down);
+                }
             }
 
             let mut terminal = self.inner[parent_index].val.terminal.lock();
@@ -387,7 +407,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[parent_index].val.messenger.send_resize(winsize);
 
             self.current = parent_index;
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
@@ -397,7 +417,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.inner[right_val]
                 .val
                 .dimension
-                .update_width(right_width + old_width);
+                .update_width(right_width + old_width + PADDING);
 
             let mut terminal = self.inner[right_val].val.terminal.lock();
             terminal.resize::<ContextDimension>(self.inner[right_val].val.dimension);
@@ -408,7 +428,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[right_val].val.messenger.send_resize(winsize);
 
             self.current = right_val.wrapping_sub(1);
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
@@ -428,19 +448,36 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.inner[down_val].val.messenger.send_resize(winsize);
 
             self.current = down_val.wrapping_sub(1);
-            self.inner.remove(old);
+            self.remove_index(old);
             return;
         }
 
         self.select_prev_split();
-        self.inner.remove(old);
+        self.remove_index(old);
+    }
+
+    fn remove_index(&mut self, index: usize) {
+        for context in &mut self.inner {
+            if let Some(right_val) = context.right {
+                if right_val > index {
+                    context.right = Some(right_val.wrapping_sub(1));
+                }
+            }
+
+            if let Some(down_val) = context.down {
+                if down_val > index {
+                    context.down = Some(down_val.wrapping_sub(1));
+                }
+            }
+        }
+        self.inner.remove(index);
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
         let old_right = self.inner[self.current].right;
 
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
-        let new_grid_item_width = (old_grid_item_width / 2.0) - PADDING;
+        let new_grid_item_width = old_grid_item_width / 2.0;
         self.inner[self.current]
             .val
             .dimension
@@ -481,7 +518,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_down = self.inner[self.current].down;
 
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
-        let new_grid_item_height = (old_grid_item_height / 2.0) - PADDING;
+        let new_grid_item_height = old_grid_item_height / 2.0;
         self.inner[self.current]
             .val
             .dimension
@@ -760,7 +797,7 @@ pub mod test {
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [310.0, 20.0]
+                    position: [312.0, 20.0]
                 }),
             ]
         );
@@ -796,16 +833,16 @@ pub mod test {
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [310.0, 20.0]
+                    position: [312.0, 20.0]
                 }),
                 Object::Rect(Rect {
-                    position: [457.0, 20.0],
+                    position: [459.0, 20.0],
                     color: [1.0, 0.0, 0.0, 0.0],
                     size: [1.0, 800.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [459.0, 20.0]
+                    position: [463.0, 20.0]
                 }),
             ]
         );
@@ -884,13 +921,13 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 217.0],
+                    position: [10.0, 216.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 219.0]
+                    position: [10.0, 220.0]
                 }),
             ]
         );
@@ -920,22 +957,22 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 217.0],
+                    position: [10.0, 216.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 219.0]
+                    position: [10.0, 220.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 314.5],
+                    position: [10.0, 314.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [10.0, 316.5]
+                    position: [10.0, 318.0]
                 }),
             ]
         );
@@ -1057,5 +1094,186 @@ pub mod test {
         grid.resize(1200.0, 600.0);
 
         // TODO: Finish test
+    }
+
+    #[test]
+    fn test_remove_side_by_side() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, _second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_right(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let expected_width = (600. / 2.) - PADDING;
+
+        assert_eq!(grid.current().dimension.width, expected_width);
+        assert_eq!(grid.current_index(), 1);
+
+        grid.select_prev_split();
+        assert_eq!(grid.current().dimension.width, expected_width);
+        assert_eq!(grid.current_index(), 0);
+
+        grid.select_next_split();
+        assert_eq!(grid.current_index(), 1);
+
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 0);
+        let expected_width = 600. - PADDING;
+        assert_eq!(grid.current().dimension.width, expected_width);
+    }
+
+    #[test]
+    fn test_remove_current_move_child_from_right() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, _second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_right(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let expected_width = (600. / 2.) - PADDING;
+
+        assert_eq!(grid.current().dimension.width, expected_width);
+        assert_eq!(grid.current_index(), 1);
+
+        grid.select_prev_split();
+        assert_eq!(grid.current().dimension.width, expected_width);
+        assert_eq!(grid.current_index(), 0);
+
+        let current_index = grid.current_index();
+        assert_eq!(grid.contexts()[current_index].right, Some(1));
+        assert_eq!(grid.contexts()[current_index].down, None);
+
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 0);
+        let expected_width = 600. - PADDING;
+        assert_eq!(grid.current().dimension.width, expected_width);
+
+        let current_index = grid.current_index();
+        assert_eq!(grid.contexts()[current_index].right, None);
+        assert_eq!(grid.contexts()[current_index].down, None);
     }
 }

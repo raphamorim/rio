@@ -1234,7 +1234,7 @@ impl Screen<'_> {
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {
-        let terminal = self.ctx().current().terminal.lock();
+        let terminal = self.context_manager.current_mut().terminal.lock();
         let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
             Some(text) => text,
             None => return,
@@ -1252,7 +1252,7 @@ impl Screen<'_> {
     #[inline]
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.selection.take();
         drop(terminal);
         self.context_manager.current_mut().set_selection(None);
@@ -1455,7 +1455,7 @@ impl Screen<'_> {
             return;
         };
 
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.scroll_display(Scroll::Delta((delta / step) as i32));
         drop(terminal);
     }
@@ -1530,7 +1530,7 @@ impl Screen<'_> {
         };
 
         // Move vi mode cursor to mouse click position.
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         if terminal.mode().contains(Mode::VI) {
             terminal.vi_mode_cursor.pos = point;
         }
@@ -1704,7 +1704,7 @@ impl Screen<'_> {
 
         // Reset display offset and cursor position.
         {
-            let mut terminal = self.ctx().current().terminal.lock();
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
             terminal.vi_mode_cursor.pos = self.search_state.origin;
             terminal
                 .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
@@ -1971,7 +1971,7 @@ impl Screen<'_> {
                 / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
-                let mut terminal = self.ctx().current().terminal.lock();
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.scroll_display(Scroll::Delta(lines));
                 drop(terminal);
             }

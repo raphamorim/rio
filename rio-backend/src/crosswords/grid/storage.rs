@@ -81,7 +81,6 @@ impl<T> Storage<T> {
     }
 
     /// Increase the number of lines in the buffer.
-    #[allow(dead_code)]
     #[inline]
     pub fn grow_visible_lines(&mut self, next: usize)
     where
@@ -98,7 +97,6 @@ impl<T> Storage<T> {
     }
 
     /// Decrease the number of lines in the buffer.
-    #[allow(dead_code)]
     #[inline]
     pub fn shrink_visible_lines(&mut self, next: usize) {
         // Shrink the size without removing any lines.
@@ -110,7 +108,6 @@ impl<T> Storage<T> {
     }
 
     /// Shrink the number of lines in the buffer.
-    #[allow(dead_code)]
     #[inline]
     pub fn shrink_lines(&mut self, shrinkage: usize) {
         self.len -= shrinkage;
@@ -150,7 +147,6 @@ impl<T> Storage<T> {
         self.len
     }
 
-    #[allow(dead_code)]
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
@@ -203,14 +199,12 @@ impl<T> Storage<T> {
     /// This is a faster, specialized version of [`rotate_left`].
     ///
     /// [`rotate_left`]: https://doc.rust-lang.org/std/vec/struct.Vec.html#method.rotate_left
-    #[allow(dead_code)]
     #[inline]
     pub fn rotate_down(&mut self, count: usize) {
         self.zero = (self.zero + count) % self.inner.len();
     }
 
     /// Update the raw storage buffer.
-    #[allow(dead_code)]
     #[inline]
     pub fn replace_inner(&mut self, vec: Vec<Row<T>>) {
         self.len = vec.len();
@@ -219,7 +213,6 @@ impl<T> Storage<T> {
     }
 
     /// Remove all rows from storage.
-    #[allow(dead_code)]
     #[inline]
     pub fn take_all(&mut self) -> Vec<Row<T>> {
         self.truncate();
