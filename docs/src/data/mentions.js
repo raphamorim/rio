@@ -3,6 +3,26 @@
 /** @satisfies {import('@site/src/components/MentionsSection/index').MentionCardProps[]} */
 const MENTIONS = [
   {
+    url: 'https://fosstodon.org/@orhun/113375636616878019',
+    username: 'Orhun Parmaksız',
+    source: '/rio/assets/mentions/orhun.png',
+    quote: (
+      <>
+        One of the few terminal emulators out there with kickass features!
+      </>
+    ),
+  },
+  {
+    url: 'https://x.com/kristoferlund/status/1850287561295692226',
+    username: 'Kristofer Lund',
+    source: '/rio/assets/mentions/kristoferlund.jpg',
+    quote: (
+      <>
+        Love Rio terminal by @raphamorims! Written in Rust = super fast, plus has kick-ass features like this. 👊💥
+      </>
+    ),
+  },
+  {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
     username: '@jaijams',
     source: '/rio/assets/mentions/jaijams.jpg',
@@ -99,16 +119,6 @@ const MENTIONS = [
     quote: (
       <>
         It is a privilege to be invited to beta test Rio! It has brought me closer to the code of the project, and I have learned a lot about how to develop a terminal emulator.
-      </>
-    ),
-  },
-  {
-    url: 'https://fosstodon.org/@orhun/113375636616878019',
-    username: 'Orhun Parmaksız',
-    source: '/rio/assets/mentions/orhun.png',
-    quote: (
-      <>
-        One of the few terminal emulators out there with kickass features!
       </>
     ),
   },
