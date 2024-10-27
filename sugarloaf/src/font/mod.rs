@@ -123,6 +123,7 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub inner: FxHashMap<usize, FontData>,
     pub stash: LruCache<usize, SharedData>,
+    pub hinting: bool,
 }
 
 impl Default for FontLibraryData {
@@ -131,6 +132,7 @@ impl Default for FontLibraryData {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: FxHashMap::default(),
             stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
+            hinting: true,
         }
     }
 }
@@ -243,6 +245,9 @@ impl FontLibraryData {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
+        // Configure hinting through spec
+        self.hinting = spec.hinting;
+
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
         // If fonts.family does exist it will overwrite all families

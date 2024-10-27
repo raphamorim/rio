@@ -40,6 +40,11 @@ pub fn default_font_size() -> f32 {
     14.
 }
 
+#[inline]
+pub fn default_font_hinting() -> bool {
+    true
+}
+
 fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
 }
@@ -80,6 +85,8 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
+    #[serde(default = "default_font_hinting")]
+    pub hinting: bool,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
     #[serde(default = "Option::default")]
@@ -104,6 +111,7 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             features: None,
+            hinting: true,
             size: default_font_size(),
             family: None,
             emoji: None,

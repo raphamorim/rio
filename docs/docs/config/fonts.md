@@ -81,6 +81,15 @@ In case you would like to change:
 # family = "Noto Color Emoji"
 ```
 
+## Hinting
+
+Enable or disable font hinting. It is enabled by default.
+
+```toml
+[fonts]
+hinting = true
+```
+
 ## User interface
 
 You can specify user interface font on Rio.

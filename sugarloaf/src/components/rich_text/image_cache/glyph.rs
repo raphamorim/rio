@@ -126,6 +126,7 @@ impl<'a> GlyphCacheSession<'a> {
 
         self.scaled_image.data.clear();
         let mut font_library_data = self.font_library.inner.lock();
+        let enable_hint = font_library_data.hinting;
         let font_data = font_library_data.get(&self.font);
         let should_embolden = font_data.should_embolden;
         let should_italicize = font_data.should_italicize;
@@ -140,7 +141,7 @@ impl<'a> GlyphCacheSession<'a> {
                 // As a result Apple's Quartz text renderer, which is targeted for Retina displays,
                 // now ignores font hint information completely.
                 // .hint(!IS_MACOS)
-                .hint(true)
+                .hint(enable_hint)
                 .size(self.quant_size.into())
                 // .normalized_coords(coords)
                 .build();
