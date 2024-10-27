@@ -18,6 +18,7 @@ language: 'en'
 - Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
 - Microsoft Windows: [Rio terminal is now available on MINGW packages](https://github.com/msys2/MINGW-packages/pull/22248).
 - Allow MacOS automation via events.
+- Support disable font hinting: `fonts.hinting = false`.
 - Fix: Configuration updates triggered multiple times on one save.
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
