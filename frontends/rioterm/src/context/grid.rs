@@ -388,7 +388,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.inner[current_down]
                         .val
                         .dimension
-                        .increase_height(to_be_removed_height + (PADDING * 2.0));
+                        .increase_height(to_be_removed_height + PADDING);
 
                     self.request_resize(current_down);
 
@@ -411,19 +411,34 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.request_resize(parent_index);
                 }
             } else {
-                let parent_height = self.inner[parent_index].val.dimension.height;
-                self.inner[parent_index]
-                    .val
-                    .dimension
-                    .update_height(parent_height + to_be_removed_height);
-                self.inner[parent_index].down = None;
+                // If current has right items then need to inherit
+                if let Some(current_right) = self.inner[self.current].right {
+                    self.inner[current_right]
+                        .val
+                        .dimension
+                        .increase_width(to_be_removed_width + PADDING);
 
-                // If current has down items then need to inherit
-                if let Some(current_down) = self.inner[self.current].down {
-                    self.inner[parent_index].down = Some(current_down);
+                    self.request_resize(current_right);
+
+                    next_current = current_right.wrapping_sub(1);
+                    self.inner[parent_index].down = Some(next_current);
+
+                // If current has no right items then check right items to inherit
+                } else {
+                    let parent_height = self.inner[parent_index].val.dimension.height;
+                    self.inner[parent_index]
+                        .val
+                        .dimension
+                        .update_height(parent_height + to_be_removed_height + PADDING);
+                    self.inner[parent_index].down = None;
+
+                    // If current has down items then need to inherit
+                    if let Some(current_down) = self.inner[self.current].down {
+                        self.inner[parent_index].down = Some(current_down);
+                    }
+
+                    self.request_resize(parent_index);
                 }
-
-                self.request_resize(parent_index);
             }
 
             self.remove_index(to_be_removed);
@@ -449,7 +464,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.inner[down_val]
                 .val
                 .dimension
-                .update_height(down_height + to_be_removed_height);
+                .update_height(down_height + to_be_removed_height + PADDING);
 
             self.request_resize(down_val);
             self.remove_index(to_be_removed);
@@ -480,6 +495,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn split_right(&mut self, context: Context<T>) {
         let old_right = self.inner[self.current].right;
 
+        let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_width = old_grid_item_width / 2.0;
         self.inner[self.current]
@@ -491,6 +507,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut new_context = ContextGridItem::new(context);
 
         new_context.val.dimension.update_width(new_grid_item_width);
+        new_context
+            .val
+            .dimension
+            .update_height(old_grid_item_height);
 
         self.inner.push(new_context);
         let new_current = self.inner.len() - 1;
@@ -510,7 +530,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.inner[self.current]
             .val
             .dimension
-            .update_height(new_grid_item_height - (PADDING * 2.0));
+            .update_height(new_grid_item_height - PADDING);
         self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
@@ -575,6 +595,12 @@ impl ContextDimension {
     #[inline]
     pub fn update_width(&mut self, width: f32) {
         self.width = width;
+        self.update();
+    }
+
+    #[inline]
+    pub fn increase_width(&mut self, acc_width: f32) {
+        self.width += acc_width;
         self.update();
     }
 
@@ -905,13 +931,13 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 216.0],
+                    position: [10.0, 218.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 220.0]
+                    position: [10.0, 222.0]
                 }),
             ]
         );
@@ -941,22 +967,22 @@ pub mod test {
                     position: [10.0, 20.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 216.0],
+                    position: [10.0, 218.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 220.0]
+                    position: [10.0, 222.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 316.0],
+                    position: [10.0, 320.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [10.0, 320.0]
+                    position: [10.0, 324.0]
                 }),
             ]
         );
@@ -1366,7 +1392,7 @@ pub mod test {
         assert_eq!(grid.current_index(), 1);
         assert_eq!(grid.current().rich_text_id, second_context_id);
         assert_eq!(grid.current().dimension.width, new_context_expected_width);
-        assert_eq!(grid.current().dimension.height, 292.);
+        assert_eq!(grid.current().dimension.height, 296.);
 
         // Remove the current should actually make right being down
         grid.remove_current();
@@ -1375,5 +1401,302 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         assert_eq!(grid.current().dimension.width, new_context_expected_width);
         assert_eq!(grid.current().dimension.height, 600.);
+    }
+
+    #[test]
+    fn test_remove_down_without_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, _second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+        assert_eq!(grid.current().dimension.width, 600.);
+
+        grid.split_down(second_context);
+
+        let new_expected_width = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.height, new_expected_width);
+        assert_eq!(grid.current_index(), 1);
+
+        grid.select_prev_split();
+        let old_expected_width = (600. / 2.) - PADDING;
+        assert_eq!(grid.current().dimension.height, old_expected_width);
+        assert_eq!(grid.current_index(), 0);
+
+        grid.select_next_split();
+        assert_eq!(grid.current_index(), 1);
+
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 0);
+        // Whenever return to one should drop padding
+        assert_eq!(grid.current().dimension.height, 600.);
+    }
+
+    #[test]
+    fn test_remove_down_with_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, _second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_down(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_height = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current_index(), 1);
+
+        grid.select_prev_split();
+
+        let old_context_expected_height = (600. / 2.) - PADDING;
+        assert_eq!(grid.current().dimension.height, old_context_expected_height);
+        assert_eq!(grid.current_index(), 0);
+
+        let current_index = grid.current_index();
+        assert_eq!(grid.contexts()[current_index].down, Some(1));
+        assert_eq!(grid.contexts()[current_index].right, None);
+
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 0);
+        // Whenever return to one should drop padding
+        let expected_height = 600.;
+        assert_eq!(grid.current().dimension.height, expected_height);
+
+        let current_index = grid.current_index();
+        assert_eq!(grid.contexts()[current_index].down, None);
+        assert_eq!(grid.contexts()[current_index].right, None);
+    }
+
+    #[test]
+    fn test_remove_down_with_right_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_down(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_height = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current_index(), 1);
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_right(third_context);
+        assert_eq!(grid.current_index(), 2);
+        assert_eq!(grid.current().dimension.width, new_context_expected_height);
+        assert_eq!(grid.current().dimension.height, 300.);
+
+        // Move back
+        grid.select_prev_split();
+
+        assert_eq!(grid.current_index(), 1);
+        assert_eq!(grid.current().rich_text_id, second_context_id);
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current().dimension.width, 296.);
+
+        // Remove the current should actually make down being down
+        grid.remove_current();
+
+        assert_eq!(grid.current_index(), 1);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current().dimension.width, 600.);
     }
 }
