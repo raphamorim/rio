@@ -623,6 +623,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn select_route_from_current_grid(&mut self) {
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
     pub fn grid_objects(&self) -> Vec<Object> {
         self.contexts[self.current_index].objects()
     }
