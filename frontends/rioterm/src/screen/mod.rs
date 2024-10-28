@@ -295,11 +295,20 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let (context, margin) = self
+    pub fn select_current_based_on_mouse(&mut self) {
+        if self
             .context_manager
-            .current_grid()
-            .current_context_with_computed_dimension();
+            .current_grid_mut()
+            .select_current_based_on_mouse(&self.mouse)
+        {
+            self.context_manager.select_route_from_current_grid();
+        }
+    }
+
+    #[inline]
+    pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
         let context_dimension = context.dimension;
         let style = self.sugarloaf.style();
         calculate_mouse_position(

@@ -1,4 +1,5 @@
 use crate::context::Context;
+use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
@@ -176,7 +177,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
         let len = self.inner.len();
-        if len == 0 {
+        if len <= 1 {
             return (&self.inner[self.current].val, self.margin);
         }
 
@@ -194,6 +195,58 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         (&self.inner[self.current].val, margin)
+    }
+
+    #[inline]
+    pub fn select_current_based_on_mouse(&mut self, mouse: &Mouse) -> bool {
+        let len = self.inner.len();
+        if len <= 1 {
+            return false;
+        }
+
+        let objects = self.objects();
+        let mut select_new_current = None;
+        for obj in objects {
+            if let Object::RichText(rich_text_obj) = obj {
+                if let Some(position) = self.find_by_rich_text_id(rich_text_obj.id) {
+                    let scaled_position_x = rich_text_obj.position[0]
+                        * self.inner[position].val.dimension.dimension.scale;
+                    let scaled_position_y = rich_text_obj.position[1]
+                        * self.inner[position].val.dimension.dimension.scale;
+                    if mouse.x >= scaled_position_x as usize
+                        && mouse.y >= scaled_position_y as usize
+                    {
+                        // println!("{:?} {:?} {:?}", mouse.x <= (scaled_position_x + self.inner[position].val.dimension.width) as usize, mouse.x, scaled_position_x + self.inner[position].val.dimension.width);
+                        // println!("{:?} {:?} {:?}", mouse.y <= (scaled_position_y + self.inner[position].val.dimension.height) as usize, mouse.y, scaled_position_y + self.inner[position].val.dimension.height);
+                        if mouse.x
+                            <= (scaled_position_x
+                                + self.inner[position].val.dimension.width)
+                                as usize
+                            && mouse.y
+                                <= (scaled_position_y
+                                    + self.inner[position].val.dimension.height)
+                                    as usize
+                        {
+                            select_new_current = Some(position);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(new_current) = select_new_current {
+            self.current = new_current;
+            return true;
+        }
+
+        false
+    }
+
+    pub fn find_by_rich_text_id(&self, searched_rich_text_id: usize) -> Option<usize> {
+        self.inner
+            .iter()
+            .position(|context| context.val.rich_text_id == searched_rich_text_id)
     }
 
     #[inline]
@@ -1698,5 +1751,121 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         assert_eq!(grid.current().dimension.height, new_context_expected_height);
         assert_eq!(grid.current().dimension.width, 600.);
+    }
+
+    #[test]
+    fn test_select_current_based_on_mouse() {
+        let mut mouse = Mouse::default();
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.select_current_based_on_mouse(&mouse);
+        // On first should always return first item
+        assert_eq!(grid.current_index(), 0);
+
+        grid.split_down(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_height = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current_index(), 1);
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_right(third_context);
+        assert_eq!(grid.current_index(), 2);
+        assert_eq!(grid.current().dimension.width, new_context_expected_height);
+        assert_eq!(grid.current().dimension.height, 300.);
+
+        grid.select_current_based_on_mouse(&mouse);
+        assert_eq!(grid.current_index(), 0);
+        assert_eq!(grid.current().rich_text_id, 0);
+
+        mouse.y = (new_context_expected_height + PADDING) as usize;
+        grid.select_current_based_on_mouse(&mouse);
+
+        assert_eq!(grid.current_index(), 1);
+        assert_eq!(grid.current().rich_text_id, second_context_id);
+
+        mouse.x = 304;
+        grid.select_current_based_on_mouse(&mouse);
+
+        assert_eq!(grid.current_index(), 2);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
     }
 }

@@ -703,6 +703,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match state {
                     ElementState::Pressed => {
+                        // In case need to switch grid current
+                        route.window.screen.select_current_based_on_mouse();
+
                         if route.window.screen.trigger_hyperlink() {
                             return;
                         }
