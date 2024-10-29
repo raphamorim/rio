@@ -784,9 +784,9 @@ pub mod test {
     #[test]
     fn test_split_right() {
         let margin = Delta {
-            x: 10.,
-            top_y: 20.,
-            bottom_y: 20.,
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
         };
 
         let context_dimension = ContextDimension::build(
@@ -841,7 +841,7 @@ pub mod test {
             grid.objects(),
             vec![Object::RichText(RichText {
                 id: first_context_id,
-                position: [10., 20.],
+                position: [0., 0.],
             })]
         );
         grid.split_right(second_context);
@@ -851,16 +851,16 @@ pub mod test {
             vec![
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [10.0, 20.0],
+                    position: [0.0, 0.0],
                 }),
                 Object::Rect(Rect {
-                    position: [308.0, 20.0],
+                    position: [298.0, 0.0],
                     color: [1.0, 0.0, 0.0, 0.0],
                     size: [1.0, 800.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [312.0, 20.0]
+                    position: [302.0, 0.0]
                 }),
             ]
         );
@@ -887,25 +887,25 @@ pub mod test {
             vec![
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [10.0, 20.0],
+                    position: [0.0, 0.0],
                 }),
                 Object::Rect(Rect {
-                    position: [308.0, 20.0],
+                    position: [298.0, 0.0],
                     color: [1.0, 0.0, 0.0, 0.0],
                     size: [1.0, 800.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [312.0, 20.0]
+                    position: [302.0, 0.0]
                 }),
                 Object::Rect(Rect {
-                    position: [460.0, 20.0],
+                    position: [450.0, 0.0],
                     color: [1.0, 0.0, 0.0, 0.0],
                     size: [1.0, 800.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [464.0, 20.0]
+                    position: [454.0, 0.0]
                 }),
             ]
         );
@@ -914,9 +914,9 @@ pub mod test {
     #[test]
     fn test_split_down() {
         let margin = Delta {
-            x: 10.,
-            top_y: 20.,
-            bottom_y: 20.,
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
         };
 
         let context_dimension = ContextDimension::build(
@@ -971,7 +971,7 @@ pub mod test {
             grid.objects(),
             vec![Object::RichText(RichText {
                 id: first_context_id,
-                position: [10., 20.],
+                position: [0., 0.],
             })]
         );
         grid.split_down(second_context);
@@ -981,16 +981,16 @@ pub mod test {
             vec![
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [10.0, 20.0],
+                    position: [0.0, 0.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 218.0],
+                    position: [0.0, 198.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 222.0]
+                    position: [0.0, 202.0]
                 }),
             ]
         );
@@ -1017,25 +1017,25 @@ pub mod test {
             vec![
                 Object::RichText(RichText {
                     id: first_context_id,
-                    position: [10.0, 20.0],
+                    position: [0.0, 0.0],
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 218.0],
+                    position: [0.0, 198.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [10.0, 222.0]
+                    position: [0.0, 202.0]
                 }),
                 Object::Rect(Rect {
-                    position: [10.0, 320.0],
+                    position: [0.0, 300.0],
                     color: [0.0, 0.0, 1.0, 0.0],
                     size: [1200.0, 1.0]
                 }),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [10.0, 324.0]
+                    position: [0.0, 304.0]
                 }),
             ]
         );
