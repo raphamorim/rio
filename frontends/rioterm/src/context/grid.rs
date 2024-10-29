@@ -20,7 +20,7 @@ fn compute(
     line_height: f32,
     margin: Delta<f32>,
 ) -> (usize, usize) {
-    let margin_x = ((margin.x) * dimensions.scale).floor();
+    let margin_x = (margin.x * dimensions.scale).floor();
     let margin_spaces = margin.top_y + margin.bottom_y;
 
     let mut lines = (height / dimensions.scale) - margin_spaces;
@@ -547,14 +547,26 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn split_right(&mut self, context: Context<T>) {
         let old_right = self.inner[self.current].right;
+        // let margin_x = self.margin.x;
 
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
-        let old_grid_item_width = self.inner[self.current].val.dimension.width;
+        let old_grid_item_width =
+            self.inner[self.current].val.dimension.width - self.margin.x;
         let new_grid_item_width = old_grid_item_width / 2.0;
         self.inner[self.current]
             .val
             .dimension
             .update_width(new_grid_item_width - PADDING);
+
+        // The current dimension margin should reset
+        // otherwise will add a space before the rect
+        let mut new_margin = self.margin;
+        new_margin.x = 0.;
+        self.inner[self.current]
+            .val
+            .dimension
+            .update_margin(new_margin);
+
         self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
@@ -572,6 +584,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.inner[new_current].right = old_right;
         self.inner[self.current].right = Some(new_current);
         self.current = new_current;
+
+        // In case the new context does not have right
+        // it means it's the last one, for this case
+        // whenever a margin exists then we need to add
+        // half of margin to respect margin.x border on
+        // the right side.
+        if self.inner[self.current].right.is_none() {
+            new_margin.x = self.margin.x / 2.0;
+            self.inner[self.current]
+                .val
+                .dimension
+                .update_margin(new_margin);
+        }
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
@@ -906,6 +931,237 @@ pub mod test {
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [454.0, 0.0]
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_split_right_with_margin() {
+        let margin = Delta {
+            x: 20.,
+            top_y: 30.,
+            bottom_y: 40.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [1., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [margin.x, margin.top_y],
+            })]
+        );
+        grid.split_right(second_context);
+
+        /*
+            > before split:
+            20  (600/20)
+                |------|
+
+        Available width should compute with margin
+        so should be 600 - 20 = 580, then will be:
+        289 + 4 (PADDING) + 290
+
+            > after split:
+            10  (289/0)   (4)  (290/10)
+                |----------|----------|
+
+        Margin should be splitted between first columns
+        items and last columns items
+        */
+
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 290.);
+        assert_eq!(contexts[1].val.dimension.margin.x, 10.);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                }),
+                Object::Rect(Rect {
+                    position: [163.0, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [167.0, margin.top_y]
+                }),
+            ]
+        );
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_right(third_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                }),
+                Object::Rect(Rect {
+                    position: [163.0, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [167.0, margin.top_y]
+                }),
+                Object::Rect(Rect {
+                    position: [232.5, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [236.5, margin.top_y]
+                }),
+            ]
+        );
+
+        // Last context should be updated with half of x
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 131.);
+        assert_eq!(contexts[1].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[2].val.dimension.width, 135.);
+        assert_eq!(contexts[2].val.dimension.margin.x, 10.);
+
+        let (fourth_context, fourth_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.select_prev_split();
+        grid.split_right(fourth_context);
+
+        // If the split right happens in not the last
+        // then should not update margin to half of x
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 51.5);
+        assert_eq!(contexts[1].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[3].val.dimension.width, 55.5);
+        assert_eq!(contexts[3].val.dimension.margin.x, 0.);
+
+        // 2 is the last one
+        assert_eq!(contexts[2].val.dimension.width, 135.0);
+        assert_eq!(contexts[2].val.dimension.margin.x, 10.);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                }),
+                Object::Rect(Rect {
+                    position: [163.0, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [167.0, margin.top_y]
+                }),
+                Object::Rect(Rect {
+                    position: [192.75, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [196.75, margin.top_y]
+                }),
+                Object::Rect(Rect {
+                    position: [224.5, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: fourth_context_id,
+                    position: [228.5, margin.top_y]
                 }),
             ]
         );
