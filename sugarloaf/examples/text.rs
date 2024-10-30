@@ -13,7 +13,7 @@ use sugarloaf::{
 };
 
 fn main() {
-    let width = 400.0;
+    let width = 600.0;
     let height = 400.0;
     let window_event_loop = rio_window::event_loop::EventLoop::new().unwrap();
     let mut application = Application::new(&window_event_loop, width, height);
@@ -54,7 +54,7 @@ impl ApplicationHandler for Application {
         let window = active_event_loop.create_window(window_attribute).unwrap();
 
         let scale_factor = window.scale_factor();
-        let font_size = 25.;
+        let font_size = 24.;
 
         let sugarloaf_layout = RootStyle::new(scale_factor as f32, font_size, 1.0);
 
@@ -117,8 +117,9 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
-                content.sel(0);
+                content.sel(0).clear();
                 content
+                    .new_line()
                     .add_text(
                         "Sugarloaf",
                         FragmentStyle {
@@ -263,11 +264,12 @@ impl ApplicationHandler for Application {
                             background_color: Some([0.5, 0.5, 1.0, 1.0]),
                             ..FragmentStyle::default()
                         },
-                    );
+                    )
+                    .build();
 
                 sugarloaf.set_objects(vec![Object::RichText(RichText {
                     id: 0,
-                    position: [0., 0.],
+                    position: [10., 0.],
                 })]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

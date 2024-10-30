@@ -440,12 +440,12 @@ impl Content {
     ) -> &mut Content {
         if let Some(state) = self.states.get_mut(id) {
             let current_line = state.current_line();
-            let line = &mut state.lines[current_line];
-
-            line.fragments.push(FragmentData {
-                content: text.to_string(),
-                style,
-            });
+            if let Some(line) = &mut state.lines.get_mut(current_line) {
+                line.fragments.push(FragmentData {
+                    content: text.to_string(),
+                    style,
+                });
+            }
         }
 
         self
