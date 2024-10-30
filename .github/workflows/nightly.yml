@@ -90,7 +90,7 @@ jobs:
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          cache-all-crates: true
+          key: ${{matrix.target}}
       - run: sudo apt install rename
       - run: rustup toolchain install stable --profile minimal
       - run: cargo install cargo-deb
