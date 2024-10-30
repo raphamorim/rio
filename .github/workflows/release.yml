@@ -52,6 +52,7 @@ jobs:
 
       - run: sudo apt install rename
       - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-unknown-linux-gnu
+      - run: rustup default stable-${{ matrix.target }}-unknown-linux-gnu
       - run: cargo install cargo-deb
       - run: mkdir -p release
       - run: make release-debian-x11
