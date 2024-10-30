@@ -39,6 +39,12 @@ jobs:
       contents: write
       discussions: write
 
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+          - target: aarch64
+
     steps:
       - uses: actions/checkout@v4
       - name: rust cache
