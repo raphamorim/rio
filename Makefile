@@ -24,7 +24,7 @@ docs-build:
 	cd $(DOCS_DIR) && npm ci && npm run build
 
 run:
-	cargo run --release
+	cargo run -p rioterm --release
 
 dev:
 	cargo run -p rioterm
@@ -40,7 +40,7 @@ dev-debug-x11:
 
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib
-	cd rio-wasm && make run
+	cd rio-wasm && make run -p sugarloaf-wasm
 
 dev-watch:
 	#cargo install cargo-watch
