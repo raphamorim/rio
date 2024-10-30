@@ -81,9 +81,7 @@ jobs:
 
     strategy:
       matrix:
-        include:
-          - target: x86_64
-          - target: aarch64
+        target: [x86_64, aarch64]
 
     steps:
       - uses: actions/checkout@v3
