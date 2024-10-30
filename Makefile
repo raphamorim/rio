@@ -40,7 +40,7 @@ dev-debug-x11:
 
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib
-	cd rio-wasm && make run -p sugarloaf-wasm
+	cargo run -p rioterm-wasm
 
 dev-watch:
 	#cargo install cargo-watch
