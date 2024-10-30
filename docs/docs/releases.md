@@ -8,7 +8,7 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.1.18
+## 0.2.0 (unreleased)
 
 - Performance gains!
 	- Sugarloaf: Major rewrite of font glyph logic.

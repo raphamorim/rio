@@ -429,7 +429,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let to_be_removed = self.current;
-        let to_be_removed_width = self.inner[to_be_removed].val.dimension.width;
+        let to_be_removed_width =
+            self.inner[to_be_removed].val.dimension.width + self.margin.x;
         let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
 
         // If index to be removed is owned by a parent context
@@ -459,6 +460,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
                     if let Some(current_right) = self.inner[self.current].right {
                         self.inner[parent_index].right = Some(current_right);
+                    } else {
+                        // If current has right items then need to inherit margin x
+                        let to_be_removed_margin =
+                            self.inner[to_be_removed].val.dimension.margin;
+                        if to_be_removed_margin.x > 0. {
+                            self.inner[parent_index]
+                                .val
+                                .dimension
+                                .update_margin(to_be_removed_margin);
+                        }
                     }
 
                     self.request_resize(parent_index);
@@ -1098,7 +1109,7 @@ pub mod test {
         assert_eq!(contexts[2].val.dimension.margin.x, 10.);
 
         let (fourth_context, fourth_context_id) = {
-            let rich_text_id = 2;
+            let rich_text_id = 3;
             let route_id = 0;
             (
                 create_mock_context(
@@ -1151,7 +1162,7 @@ pub mod test {
                     size: [1.0, 600.0]
                 }),
                 Object::RichText(RichText {
-                    id: third_context_id,
+                    id: fourth_context_id,
                     position: [196.75, margin.top_y]
                 }),
                 Object::Rect(Rect {
@@ -1160,11 +1171,216 @@ pub mod test {
                     size: [1.0, 600.0]
                 }),
                 Object::RichText(RichText {
-                    id: fourth_context_id,
+                    id: third_context_id,
                     position: [228.5, margin.top_y]
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn test_remove_right_with_margin() {
+        let margin = Delta {
+            x: 20.,
+            top_y: 30.,
+            bottom_y: 40.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [1., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [margin.x, margin.top_y],
+            })]
+        );
+        grid.split_right(second_context);
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fourth_context, fourth_context_id) = {
+            let rich_text_id = 3;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_right(third_context);
+
+        let first_expected_dimension = (286., 0.);
+        let second_expected_dimension = (131., 0.);
+        let third_expected_dimension = (135., 10.);
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, first_expected_dimension.0);
+        assert_eq!(
+            contexts[0].val.dimension.margin.x,
+            first_expected_dimension.1
+        );
+        assert_eq!(contexts[1].val.dimension.width, second_expected_dimension.0);
+        assert_eq!(
+            contexts[1].val.dimension.margin.x,
+            second_expected_dimension.1
+        );
+        assert_eq!(contexts[2].val.dimension.width, third_expected_dimension.0);
+        assert_eq!(
+            contexts[2].val.dimension.margin.x,
+            third_expected_dimension.1
+        );
+
+        grid.select_prev_split();
+        grid.split_right(fourth_context);
+
+        // If the split right happens in not the last
+        // then should not update margin to half of x
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 51.5);
+        assert_eq!(contexts[1].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[3].val.dimension.width, 55.5);
+        assert_eq!(contexts[3].val.dimension.margin.x, 0.);
+
+        // 2 is the last one
+        assert_eq!(contexts[2].val.dimension.width, 135.0);
+        assert_eq!(contexts[2].val.dimension.margin.x, 10.);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                }),
+                Object::Rect(Rect {
+                    position: [163.0, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [167.0, margin.top_y]
+                }),
+                Object::Rect(Rect {
+                    position: [192.75, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: fourth_context_id,
+                    position: [196.75, margin.top_y]
+                }),
+                Object::Rect(Rect {
+                    position: [224.5, margin.top_y],
+                    color: [1.0, 0.0, 0.0, 0.0],
+                    size: [1.0, 600.0]
+                }),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [228.5, margin.top_y]
+                }),
+            ]
+        );
+
+        grid.remove_current();
+
+        // If the split right happens in not the last
+        // then should not update margin to half of x
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, first_expected_dimension.0);
+        assert_eq!(
+            contexts[0].val.dimension.margin.x,
+            first_expected_dimension.1
+        );
+        assert_eq!(contexts[1].val.dimension.width, second_expected_dimension.0);
+        assert_eq!(
+            contexts[1].val.dimension.margin.x,
+            second_expected_dimension.1
+        );
+        assert_eq!(contexts[2].val.dimension.width, third_expected_dimension.0);
+        assert_eq!(
+            contexts[2].val.dimension.margin.x,
+            third_expected_dimension.1
+        );
+
+        assert_eq!(grid.current_index(), 1);
+        grid.select_next_split();
+        assert_eq!(grid.current_index(), 2);
+
+        // Margin x should move to last
+        grid.remove_current();
+        let contexts = grid.contexts();
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 290.);
+        assert_eq!(contexts[1].val.dimension.margin.x, 10.);
     }
 
     #[test]
