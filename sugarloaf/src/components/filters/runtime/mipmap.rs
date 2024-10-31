@@ -22,13 +22,13 @@ impl MipmapGen {
             layout: None,
             vertex: wgpu::VertexState {
                 module: shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(format.into())],
             }),

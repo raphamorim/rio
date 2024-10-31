@@ -32,7 +32,6 @@ use librashader_runtime::render_target::RenderTarget;
 use librashader_runtime::scaling::ScaleFramebuffer;
 use wgpu::{Device, TextureFormat};
 
-use crate::components::filters::runtime::error;
 use crate::components::filters::runtime::error::FilterChainError;
 use crate::components::filters::runtime::filter_pass::FilterPass;
 use crate::components::filters::runtime::framebuffer::WgpuOutputView;
@@ -44,6 +43,7 @@ use crate::components::filters::runtime::options::{
 };
 use crate::components::filters::runtime::samplers::SamplerSet;
 use crate::components::filters::runtime::texture::{InputImage, OwnedImage};
+use crate::components::filters::runtime::{error, format_from_image_to_texture};
 
 mod compile {
     use super::*;
@@ -288,11 +288,15 @@ impl FilterChain {
             if back.image.size() != input.size() || input.format() != back.image.format()
             {
                 // old back will get dropped.. do we need to defer?
+                let size = input.size();
                 let _old_back = std::mem::replace(
                     &mut back,
                     OwnedImage::new(
                         &context.device,
-                        input.size().into(),
+                        Size {
+                            width: size.width,
+                            height: size.height,
+                        },
                         1,
                         input.format(),
                     ),
@@ -354,9 +358,9 @@ impl FilterChain {
 
                     let render_pass_format: Option<TextureFormat> =
                         if let Some(format) = config.meta.get_format_override() {
-                            format.into()
+                            format_from_image_to_texture(&format)
                         } else {
-                            config.data.format.into()
+                            format_from_image_to_texture(&config.data.format)
                         };
 
                     let graphics_pipeline = WgpuGraphicsPipeline::new(
@@ -457,11 +461,23 @@ impl FilterChain {
             &mut self.feedback_framebuffers,
         );
 
+        let source_size = source.image.size();
+        let source_size = Size {
+            width: source_size.width,
+            height: source_size.height,
+        };
+
+        let original_size = original.image.size();
+        let original_size = Size {
+            width: original_size.width,
+            height: original_size.height,
+        };
+
         // rescale render buffers to ensure all bindings are valid.
         OwnedImage::scale_framebuffers_with_context(
-            source.image.size().into(),
+            source_size,
             viewport.output.size,
-            original.image.size().into(),
+            original_size,
             &mut self.output_framebuffers,
             &mut self.feedback_framebuffers,
             passes,

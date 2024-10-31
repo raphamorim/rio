@@ -32,7 +32,11 @@ impl LutTexture {
     ) -> LutTexture {
         let texture = device.create_texture(&TextureDescriptor {
             label: Some(&config.name),
-            size: image.size.into(),
+            size: wgpu::Extent3d {
+                width: image.size.width,
+                height: image.size.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: if config.mipmap {
                 image.size.calculate_miplevels()
             } else {
@@ -61,10 +65,20 @@ impl LutTexture {
                 bytes_per_row: Some(4 * image.size.width),
                 rows_per_image: None,
             },
-            image.size.into(),
+            wgpu::Extent3d {
+                width: image.size.width,
+                height: image.size.height,
+                depth_or_array_layers: 1,
+            },
         );
 
         if config.mipmap {
+            let wgpu_size = texture.size();
+            let size = Size {
+                width: wgpu_size.width,
+                height: wgpu_size.height,
+            };
+
             mipmapper.generate_mipmaps(
                 device,
                 cmd,
@@ -74,7 +88,7 @@ impl LutTexture {
                     config.filter_mode,
                     config.filter_mode,
                 ),
-                Size::<u32>::from(texture.size()).calculate_miplevels(),
+                size.calculate_miplevels(),
             );
         }
 

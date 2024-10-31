@@ -44,16 +44,33 @@ impl SamplerSet {
         for wrap_mode in wrap_modes {
             for filter_mode in &[FilterMode::Linear, FilterMode::Nearest] {
                 for mipmap_filter in &[FilterMode::Linear, FilterMode::Nearest] {
+                    let wgpu_wrap_mode = match wrap_mode {
+                        WrapMode::ClampToBorder => wgpu::AddressMode::ClampToBorder,
+                        WrapMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
+                        WrapMode::Repeat => wgpu::AddressMode::Repeat,
+                        WrapMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
+                    };
+
+                    let wgpu_filter_mode = match filter_mode {
+                        FilterMode::Linear => wgpu::FilterMode::Linear,
+                        FilterMode::Nearest => wgpu::FilterMode::Nearest,
+                    };
+
+                    let wgpu_mipmap_filter = match mipmap_filter {
+                        FilterMode::Linear => wgpu::FilterMode::Linear,
+                        FilterMode::Nearest => wgpu::FilterMode::Nearest,
+                    };
+
                     samplers.insert(
                         (*wrap_mode, *filter_mode, *mipmap_filter),
                         Arc::new(device.create_sampler(&SamplerDescriptor {
                             label: None,
-                            address_mode_u: (*wrap_mode).into(),
-                            address_mode_v: (*wrap_mode).into(),
-                            address_mode_w: (*wrap_mode).into(),
-                            mag_filter: (*filter_mode).into(),
-                            min_filter: (*filter_mode).into(),
-                            mipmap_filter: (*mipmap_filter).into(),
+                            address_mode_u: wgpu_wrap_mode,
+                            address_mode_v: wgpu_wrap_mode,
+                            address_mode_w: wgpu_wrap_mode,
+                            mag_filter: wgpu_filter_mode,
+                            min_filter: wgpu_filter_mode,
+                            mipmap_filter: wgpu_mipmap_filter,
                             lod_min_clamp: 0.0,
                             lod_max_clamp: 1000.0,
                             compare: None,

@@ -42,8 +42,12 @@ impl<'a> From<&'a OwnedImage> for WgpuOutputView<'a> {
 
 impl From<&wgpu::Texture> for WgpuOutputView<'static> {
     fn from(image: &wgpu::Texture) -> Self {
+        let image_size = image.size();
         Self {
-            size: image.size().into(),
+            size: Size {
+                width: image_size.width,
+                height: image_size.height,
+            },
             view: Handle::Owned(image.create_view(&TextureViewDescriptor::default())),
             format: image.format(),
         }

@@ -48,7 +48,11 @@ pub struct FilterPass {
 
 impl TextureInput for InputImage {
     fn size(&self) -> Size<u32> {
-        self.image.size().into()
+        let size = self.image.size();
+        Size {
+            width: size.width,
+            height: size.height,
+        }
     }
 }
 
