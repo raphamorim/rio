@@ -54,13 +54,13 @@ yazi = { version = "0.1.6", optional = true }
 zeno = { version = "0.2.2", optional = true, default-features = false }
 futures = { workspace = true }
 
-librashader-common = { features = ["wgpu"], version = "0.5.1" }
-librashader-presets = { version = "0.5.1" }
-librashader-preprocess = { version = "0.5.1" }
-librashader-pack = { version = "0.5.1" }
+librashader-common = "0.5.1"
+librashader-presets = "0.5.1"
+librashader-preprocess = "0.5.1"
+librashader-pack = "0.5.1"
 librashader-reflect = { version = "0.5.1", features = ["stable", "wgsl"], default-features = false }
-librashader-runtime = {  version = "0.5.1" }
-librashader-cache = { version = "0.5.1" }
+librashader-runtime = "0.5.1"
+librashader-cache = "0.5.1"
 thiserror = "1.0.50"
 array-concat = "0.5.2"
 
