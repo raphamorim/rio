@@ -22,7 +22,6 @@ use windows_sys::Win32::Devices::HumanInterfaceDevice::MOUSE_MOVE_RELATIVE;
 use windows_sys::Win32::Foundation::{
     GetLastError, FALSE, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WAIT_FAILED, WPARAM,
 };
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromRect, MonitorFromWindow, RedrawWindow, ScreenToClient,
     ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT, SC_SCREENSAVE,
@@ -32,7 +31,6 @@ use windows_sys::Win32::System::Threading::{
     CreateWaitableTimerExW, GetCurrentThreadId, SetWaitableTimer,
     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE, TIMER_ALL_ACCESS,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentThreadId, INFINITE};
 use windows_sys::Win32::UI::Controls::{HOVER_DEFAULT, WM_MOUSELEAVE};
 use windows_sys::Win32::UI::Input::Ime::{
     GCS_COMPSTR, GCS_RESULTSTR, ISC_SHOWUICOMPOSITIONWINDOW,
@@ -393,7 +391,7 @@ impl<T: 'static> EventLoop<T> {
     /// Parameter timeout is optional. This method would wait for the smaller timeout
     /// between the argument and a timeout from control flow.
     fn wait_for_messages(&mut self, timeout: Option<Duration>) {
-        let runner = &self.window_target.runner_shared;
+        let runner = &self.window_target.p.runner_shared;
 
         // We aim to be consistent with the MacOS backend which has a RunLoop
         // observer that will dispatch AboutToWait when about to wait for
@@ -476,10 +474,10 @@ impl<T: 'static> EventLoop<T> {
     }
 }
 
-impl Drop for EventLoop {
+impl<T> Drop for EventLoop<T> {
     fn drop(&mut self) {
         unsafe {
-            DestroyWindow(self.window_target.thread_msg_target);
+            DestroyWindow(self.window_target.p.thread_msg_target);
         }
     }
 }
