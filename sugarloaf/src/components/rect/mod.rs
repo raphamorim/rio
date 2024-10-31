@@ -167,13 +167,13 @@ impl RectBrush {
             vertex: wgpu::VertexState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &vertex_buffers,
             },
             fragment: Some(wgpu::FragmentState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: BLEND,

@@ -144,7 +144,7 @@ impl QuadBrush {
                     vertex: wgpu::VertexState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
-                        entry_point: "composed_quad_vs_main",
+                        entry_point: Some("composed_quad_vs_main"),
                         buffers: &[wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<ComposedQuad>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
@@ -173,7 +173,7 @@ impl QuadBrush {
                     fragment: Some(wgpu::FragmentState {
                         compilation_options: wgpu::PipelineCompilationOptions::default(),
                         module: &shader,
-                        entry_point: "composed_quad_fs_main",
+                        entry_point: Some("composed_quad_fs_main"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: context.format,
                             blend: Some(wgpu::BlendState {

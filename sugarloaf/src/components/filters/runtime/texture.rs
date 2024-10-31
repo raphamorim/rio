@@ -5,7 +5,7 @@
 
 use crate::components::filters::runtime::error::FilterChainError;
 use crate::components::filters::runtime::mipmap::MipmapGen;
-use crate::components::filters::runtime::WgpuOutputView;
+use crate::components::filters::runtime::{format_from_image_to_texture, WgpuOutputView};
 use librashader_common::{FilterMode, GetSize, ImageFormat, Size, WrapMode};
 use librashader_presets::Scale2D;
 use librashader_runtime::scaling::{MipmapSize, ScaleFramebuffer, ViewportSize};
@@ -45,7 +45,11 @@ impl OwnedImage {
     ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
-            size: size.into(),
+            size: wgpu::Extent3d {
+                width: size.width,
+                height: size.height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: std::cmp::min(max_miplevels, size.calculate_miplevels()),
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -116,7 +120,11 @@ impl OwnedImage {
         source: &wgpu::Texture,
         device: &wgpu::Device,
     ) {
-        let source_size = source.size().into();
+        let source_size = source.size();
+        let source_size = Size {
+            width: source_size.width,
+            height: source_size.height,
+        };
         if source.format() != self.image.format() || self.size != source_size {
             let mut new =
                 OwnedImage::new(device, source_size, self.max_miplevels, source.format());
@@ -158,7 +166,7 @@ impl ScaleFramebuffer for OwnedImage {
         should_mipmap: bool,
         device: &Self::Context,
     ) -> Result<Size<u32>, Self::Error> {
-        let format: Option<wgpu::TextureFormat> = format.into();
+        let format: Option<wgpu::TextureFormat> = format_from_image_to_texture(&format);
         let format = format.unwrap_or(TextureFormat::Bgra8Unorm);
         Ok(self.scale(
             device,
