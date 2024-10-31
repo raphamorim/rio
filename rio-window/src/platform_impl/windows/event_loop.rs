@@ -183,7 +183,6 @@ impl Default for PlatformSpecificEventLoopAttributes {
             any_thread: false,
             dpi_aware: true,
             msg_hook: None,
-            high_resolution_timer: None,
         }
     }
 }
@@ -236,6 +235,7 @@ impl<T: 'static> EventLoop<T> {
                 _marker: PhantomData,
             },
             msg_hook: attributes.msg_hook.take(),
+            high_resolution_timer: None,
         })
     }
 
