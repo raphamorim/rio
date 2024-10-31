@@ -428,7 +428,7 @@ impl<T: 'static> EventLoop<T> {
         // initializing a `MSG` struct (it can be uninitialized memory for the C
         // API) and there's no API to construct or initialize a `MSG`. This
         // is the simplest way avoid uninitialized memory in Rust
-        let mut msg: MSG = unsafe { mem::zeroed() };
+        let mut msg = unsafe { mem::zeroed() };
 
         loop {
             unsafe {
