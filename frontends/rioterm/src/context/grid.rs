@@ -236,6 +236,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         if let Some(new_current) = select_new_current {
+            // Reset old cursor to hollow
+            self.inner[self.current].val.renderable_content.mark_pending_updates();
+
             self.current = new_current;
             return true;
         }

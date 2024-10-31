@@ -51,6 +51,11 @@ impl RenderableContent {
         }
     }
 
+    #[inline]
+    pub fn mark_pending_updates(&mut self) {
+        self.has_pending_updates = true;
+    }
+
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
         let cursor = Cursor {
             content: config_cursor.shape.into(),
