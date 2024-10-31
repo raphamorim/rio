@@ -17,7 +17,11 @@
 
 Demo usage of Rio terminal on MacOS:
 
+> Demo with split and CRT
+
 ![Demo Rio 0.2.0 on MacOS](docs/static/assets/posts/0.2.0/demo-rio.png)
+
+> Demo with default configuration
 
 ![Demo Rio on MacOS](docs/static/assets/posts/0.1.0/demo-rio.png)
 
