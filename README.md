@@ -25,7 +25,7 @@
 
 > Demo with blurred background on Linux
 
-![Demo blurred background](docs/static/assets/images/demos-nixos-blur-dfa4b67dda6acce0ed64d810d3276bac.png)
+![Demo blurred background](docs/static/assets/demos/demos-nixos-blur.png)
 
 ## About
 
