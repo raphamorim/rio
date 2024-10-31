@@ -15,15 +15,17 @@
 | Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows/) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
-Demo usage of Rio terminal on MacOS:
-
-> Demo with split and CRT
+> Demo with split and CRT on MacOS
 
 ![Demo Rio 0.2.0 on MacOS](docs/static/assets/posts/0.2.0/demo-rio.png)
 
-> Demo with default configuration
+> Demo with default configuration on MacOS
 
 ![Demo Rio on MacOS](docs/static/assets/posts/0.1.0/demo-rio.png)
+
+> Demo with blurred background on Linux
+
+![Demo blurred background](docs/static/assets/images/demos-nixos-blur-dfa4b67dda6acce0ed64d810d3276bac.png)
 
 ## About
 
