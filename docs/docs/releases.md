@@ -30,6 +30,7 @@ language: 'en'
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
 - Introduced `renderer.strategy`, options are `Events` and `Continuous`.
+- Microsoft Windows: make `ControlFlow::WaitUntil` work more precisely using `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`.
 - Updated wgpu to `23.0.0`.
 
 ## 0.1.17
