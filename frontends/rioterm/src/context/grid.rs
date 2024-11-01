@@ -2450,7 +2450,7 @@ pub mod test {
         };
 
         let (fourth_context, fourth_context_id) = {
-            let rich_text_id = 2;
+            let rich_text_id = 3;
             let route_id = 0;
             (
                 create_mock_context(
@@ -2522,7 +2522,76 @@ pub mod test {
         // Now let's create a more complex case
         // |3.---------|.2---------|
         // |5.-|6.-|7.-|.4---------|
+
+        let (fifth_context, fifth_context_id) = {
+            let rich_text_id = 4;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (sixth_context, sixth_context_id) = {
+            let rich_text_id = 5;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (seventh_context, seventh_context_id) = {
+            let rich_text_id = 6;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_down(fifth_context);
+        grid.split_right(sixth_context);
+        grid.split_right(seventh_context);
+
+        assert_eq!(grid.current_index(), 5);
+        assert_eq!(grid.current().rich_text_id, seventh_context_id);
+
+        // Current:
+        // |3.---------|.2---------|
+        // |5.-|6.-|7.-|.4---------|
         //
+        // Now if we move back to 3. and remove it:
+        // Should move 5, 6 and 7 to top.
+        //
+        // |5.-|6.-|7.-|.2---------|
+        // |---|---|---|.4---------|
+        grid.select_next_split();
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        let current_index = grid.current_index();
+        let down = grid.contexts()[current_index].down;
+        assert_eq!(grid.contexts()[down.unwrap_or_default()].val.rich_text_id, fifth_context_id);
+
+        grid.remove_current();
+        assert_eq!(grid.current().rich_text_id, fifth_context_id);
     }
 
     #[test]
