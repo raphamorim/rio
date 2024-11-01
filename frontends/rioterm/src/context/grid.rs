@@ -2588,7 +2588,10 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         let current_index = grid.current_index();
         let down = grid.contexts()[current_index].down;
-        assert_eq!(grid.contexts()[down.unwrap_or_default()].val.rich_text_id, fifth_context_id);
+        assert_eq!(
+            grid.contexts()[down.unwrap_or_default()].val.rich_text_id,
+            fifth_context_id
+        );
 
         grid.remove_current();
         assert_eq!(grid.current().rich_text_id, fifth_context_id);

@@ -41,11 +41,22 @@ impl SamplerSet {
             WrapMode::Repeat,
             WrapMode::MirroredRepeat,
         ];
+
+        let has_clamp_to_border = device
+            .features()
+            .contains(wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER);
+
         for wrap_mode in wrap_modes {
             for filter_mode in &[FilterMode::Linear, FilterMode::Nearest] {
                 for mipmap_filter in &[FilterMode::Linear, FilterMode::Nearest] {
                     let wgpu_wrap_mode = match wrap_mode {
-                        WrapMode::ClampToBorder => wgpu::AddressMode::ClampToBorder,
+                        WrapMode::ClampToBorder => {
+                            if !has_clamp_to_border {
+                                wgpu::AddressMode::ClampToEdge
+                            } else {
+                                wgpu::AddressMode::ClampToBorder
+                            }
+                        }
                         WrapMode::ClampToEdge => wgpu::AddressMode::ClampToEdge,
                         WrapMode::Repeat => wgpu::AddressMode::Repeat,
                         WrapMode::MirroredRepeat => wgpu::AddressMode::MirrorRepeat,
