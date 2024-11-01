@@ -1,10 +1,12 @@
 name: Nightly
 
-on:
-  workflow_dispatch:
-  schedule:
-    # 00:00 every day
-    - cron: '0 0 * * *'
+on: [push, pull_request]
+
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     # 00:00 every day
+#     - cron: '0 0 * * *'
 
 env:
   CARGO_TERM_COLOR: always
