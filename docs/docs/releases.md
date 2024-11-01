@@ -31,6 +31,7 @@ language: 'en'
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
 - Introduced `renderer.strategy`, options are `Events` and `Continuous`.
 - Microsoft Windows: make `ControlFlow::WaitUntil` work more precisely using `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`.
+- Fix: Window output lost when rio loses focus [#706](https://github.com/raphamorim/rio/issues/706).
 - Updated wgpu to `23.0.0`.
 
 ## 0.1.17
