@@ -417,107 +417,126 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn remove_current(&mut self) {
-        let mut parent_context = None;
-        for (index, context) in self.inner.iter().enumerate() {
-            if let Some(right_val) = context.right {
-                if right_val == self.current {
-                    parent_context = Some((true, index));
-                    break;
-                }
-            }
-
-            if let Some(down_val) = context.down {
-                if down_val == self.current {
-                    parent_context = Some((false, index));
-                    break;
-                }
-            }
-        }
-
+        // Note: if is to_be_removed is first item then do not look for parenting,
+        // should not exist an item without parenting and isn't zero as index
         let to_be_removed = self.current;
         let to_be_removed_width =
             self.inner[to_be_removed].val.dimension.width + self.margin.x;
         let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
 
-        // If index to be removed is owned by a parent context
-        if let Some((is_right, parent_index)) = parent_context {
-            let mut next_current = parent_index;
-            if is_right {
-                // If current has down items then need to inherit
-                if let Some(current_down) = self.inner[self.current].down {
-                    self.inner[current_down]
-                        .val
-                        .dimension
-                        .increase_height(to_be_removed_height + PADDING);
-
-                    self.request_resize(current_down);
-
-                    next_current = current_down.wrapping_sub(1);
-                    self.inner[parent_index].right = Some(next_current);
-
-                // If current has no down items then check right items to inherit
-                } else {
-                    let parent_width = self.inner[parent_index].val.dimension.width;
-                    self.inner[parent_index]
-                        .val
-                        .dimension
-                        .update_width(parent_width + to_be_removed_width + PADDING);
-                    self.inner[parent_index].right = None;
-
-                    if let Some(current_right) = self.inner[self.current].right {
-                        self.inner[parent_index].right = Some(current_right);
-                    } else {
-                        // If current has right items then need to inherit margin x
-                        let to_be_removed_margin =
-                            self.inner[to_be_removed].val.dimension.margin;
-                        if to_be_removed_margin.x > 0. {
-                            self.inner[parent_index]
-                                .val
-                                .dimension
-                                .update_margin(to_be_removed_margin);
-                        }
+        if to_be_removed > 0 {
+            let mut parent_context = None;
+            for (index, context) in self.inner.iter().enumerate() {
+                if let Some(right_val) = context.right {
+                    if right_val == self.current {
+                        parent_context = Some((true, index));
+                        break;
                     }
-
-                    self.request_resize(parent_index);
                 }
-            } else {
-                // If current has right items then need to inherit
-                if let Some(current_right) = self.inner[self.current].right {
-                    self.inner[current_right]
-                        .val
-                        .dimension
-                        .increase_width(to_be_removed_width + PADDING);
 
-                    self.request_resize(current_right);
-
-                    next_current = current_right.wrapping_sub(1);
-                    self.inner[parent_index].down = Some(next_current);
-
-                // If current has no right items then check right items to inherit
-                } else {
-                    let parent_height = self.inner[parent_index].val.dimension.height;
-                    self.inner[parent_index]
-                        .val
-                        .dimension
-                        .update_height(parent_height + to_be_removed_height + PADDING);
-                    self.inner[parent_index].down = None;
-
-                    // If current has down items then need to inherit
-                    if let Some(current_down) = self.inner[self.current].down {
-                        self.inner[parent_index].down = Some(current_down);
+                if let Some(down_val) = context.down {
+                    if down_val == self.current {
+                        parent_context = Some((false, index));
+                        break;
                     }
-
-                    self.request_resize(parent_index);
                 }
             }
 
-            self.remove_index(to_be_removed);
-            self.current = next_current;
-            return;
+            // If index to be removed is owned by a parent context
+            if let Some((is_right, parent_index)) = parent_context {
+                let mut next_current = parent_index;
+                if is_right {
+                    // If current has down items then need to inherit
+                    if let Some(current_down) = self.inner[self.current].down {
+                        self.inner[current_down]
+                            .val
+                            .dimension
+                            .increase_height(to_be_removed_height + PADDING);
+
+                        self.request_resize(current_down);
+
+                        next_current = current_down.wrapping_sub(1);
+                        self.inner[parent_index].right = Some(next_current);
+
+                    // If current has no down items then check right items to inherit
+                    } else {
+                        let parent_width = self.inner[parent_index].val.dimension.width;
+                        self.inner[parent_index]
+                            .val
+                            .dimension
+                            .update_width(parent_width + to_be_removed_width + PADDING);
+                        self.inner[parent_index].right = None;
+
+                        if let Some(current_right) = self.inner[self.current].right {
+                            self.inner[parent_index].right = Some(current_right);
+                        } else {
+                            // If current has right items then need to inherit margin x
+                            let to_be_removed_margin =
+                                self.inner[to_be_removed].val.dimension.margin;
+                            if to_be_removed_margin.x > 0. {
+                                self.inner[parent_index]
+                                    .val
+                                    .dimension
+                                    .update_margin(to_be_removed_margin);
+                            }
+                        }
+
+                        self.request_resize(parent_index);
+                    }
+                } else {
+                    // If current has right items then need to inherit
+                    if let Some(current_right) = self.inner[self.current].right {
+                        self.inner[current_right]
+                            .val
+                            .dimension
+                            .increase_width(to_be_removed_width + PADDING);
+
+                        self.request_resize(current_right);
+
+                        next_current = current_right.wrapping_sub(1);
+                        self.inner[parent_index].down = Some(next_current);
+
+                    // If current has no right items then check right items to inherit
+                    } else {
+                        let parent_height = self.inner[parent_index].val.dimension.height;
+                        self.inner[parent_index].val.dimension.update_height(
+                            parent_height + to_be_removed_height + PADDING,
+                        );
+                        self.inner[parent_index].down = None;
+
+                        // If current has down items then need to inherit
+                        if let Some(current_down) = self.inner[self.current].down {
+                            self.inner[parent_index].down = Some(current_down);
+                        }
+
+                        self.request_resize(parent_index);
+                    }
+                }
+
+                self.remove_index(to_be_removed);
+                self.current = next_current;
+                return;
+            }
         }
 
         // In case there is no parenting, needs to validate if it has children
-        if let Some(right_val) = self.inner[to_be_removed].right {
+        // Down items always have priority over right
+        if let Some(down_val) = self.inner[to_be_removed].down {
+            let down_height = self.inner[down_val].val.dimension.height;
+            self.inner[down_val]
+                .val
+                .dimension
+                .update_height(down_height + to_be_removed_height + PADDING);
+
+            if let Some(right_val) = self.inner[to_be_removed].right {
+                self.inner[down_val].right = Some(right_val);
+            }
+
+            self.inner.swap(to_be_removed, down_val);
+
+            self.request_resize(to_be_removed);
+            self.remove_index(down_val);
+        } else if let Some(right_val) = self.inner[to_be_removed].right {
             let right_width = self.inner[right_val].val.dimension.width;
             self.inner[right_val]
                 .val
@@ -526,23 +545,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             self.request_resize(right_val);
             self.remove_index(to_be_removed);
-            return;
         }
-
-        if let Some(down_val) = self.inner[to_be_removed].down {
-            let down_height = self.inner[down_val].val.dimension.height;
-            self.inner[down_val]
-                .val
-                .dimension
-                .update_height(down_height + to_be_removed_height + PADDING);
-
-            self.request_resize(down_val);
-            self.remove_index(to_be_removed);
-            return;
-        }
-
-        self.select_prev_split();
-        self.remove_index(to_be_removed);
     }
 
     fn remove_index(&mut self, index: usize) {
@@ -1182,6 +1185,153 @@ pub mod test {
                 }),
             ]
         );
+    }
+
+    #[test]
+    fn test_split_right_with_margin_inside_parent() {
+        let margin = Delta {
+            x: 20.,
+            top_y: 30.,
+            bottom_y: 40.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, _second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [1., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [margin.x, margin.top_y],
+            })]
+        );
+
+        let (third_context, _third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fourth_context, _fourth_context_id) = {
+            let rich_text_id = 3;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fifth_context, _fifth_context_id) = {
+            let rich_text_id = 3;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.split_right(second_context);
+        grid.select_prev_split();
+        grid.split_down(third_context);
+        grid.split_right(fourth_context);
+        grid.split_right(fifth_context);
+
+        // If the split right happens in not the last
+        // then should not update margin to half of x
+
+        assert_eq!(grid.current_index(), 4);
+
+        // |1.--------------|2.------------|
+        // |3.----|4.--|5.--|--------------|
+        let contexts = grid.contexts();
+        assert_eq!(contexts.len(), 5);
+        assert_eq!(contexts[0].val.dimension.width, 286.);
+        assert_eq!(contexts[0].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[1].val.dimension.width, 290.);
+        assert_eq!(contexts[1].val.dimension.margin.x, 10.);
+        assert_eq!(contexts[2].val.dimension.width, 129.0);
+        assert_eq!(contexts[2].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[3].val.dimension.width, 52.5);
+        assert_eq!(contexts[3].val.dimension.margin.x, 0.);
+        assert_eq!(contexts[4].val.dimension.width, 56.5);
+
+        // Fifth context should not have any margin x
+        // TODO:
+        // assert_eq!(contexts[4].val.dimension.margin.x, 0.);
+
+        grid.remove_current();
+        assert_eq!(grid.current_index(), 3);
+        let contexts = grid.contexts();
+        assert_eq!(contexts[1].val.dimension.margin.x, 10.);
+        // Fourth context should not have any margin x
+        // TODO:
+        // assert_eq!(contexts[3].val.dimension.margin.x, 0.);
     }
 
     #[test]
@@ -2229,6 +2379,150 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         assert_eq!(grid.current().dimension.height, new_context_expected_height);
         assert_eq!(grid.current().dimension.width, 600.);
+    }
+
+    #[test]
+    fn test_remove_context_without_parents_but_with_right_and_down_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fourth_context, fourth_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        grid.split_right(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_width = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.width, new_context_expected_width);
+        assert_eq!(grid.current().rich_text_id, second_context_id);
+        assert_eq!(grid.current_index(), 1);
+
+        // Move back
+        grid.select_prev_split();
+        grid.split_down(third_context);
+        assert_eq!(grid.current_index(), 2);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        assert_eq!(grid.current().dimension.width, 296.);
+        assert_eq!(grid.current().dimension.height, 300.);
+
+        grid.split_right(fourth_context);
+
+        assert_eq!(grid.current_index(), 3);
+        assert_eq!(grid.current().rich_text_id, fourth_context_id);
+
+        grid.select_next_split();
+        assert_eq!(grid.current_index(), 0);
+        assert_eq!(grid.current().rich_text_id, 0);
+
+        // Active is 1
+        // |1.----|.2----|
+        // |3.----|.4----|
+
+        // Remove the current should actually make right being down
+        grid.remove_current();
+        let current_index = grid.current_index();
+        // Move third context to first position
+        assert_eq!(current_index, 0);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        assert_eq!(grid.contexts()[current_index].right, Some(1));
+
+        // Result:
+        // |3.----|.2----|
+        // |------|.4----|
+
+        // Now let's create a more complex case
+        // |3.---------|.2---------|
+        // |5.-|6.-|7.-|.4---------|
+        //
     }
 
     #[test]
