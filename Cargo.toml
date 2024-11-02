@@ -65,7 +65,7 @@ tracing = "0.1.40"
 objc = "0.2.7"
 
 [profile.release]
-lto = true
+lto = "thin"
 strip = true
 debug = "limited"
 codegen-units = 1
