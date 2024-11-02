@@ -5,3 +5,5 @@ rustflags = [
 ]
 runner = 'wasm-bindgen-test-runner'
 
+[target.x86_64-pc-windows-gnu]
+lto = true  
