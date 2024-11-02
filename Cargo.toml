@@ -76,3 +76,7 @@ split-debuginfo = "unpacked"
 lto = false
 incremental = true
 opt-level = 0
+
+[target.x86_64-pc-windows-gnu.profile.release]
+lto = true  
+
