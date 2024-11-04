@@ -455,6 +455,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
                         let to_be_remove_right = self.inner[to_be_removed].right;
 
+                        // This case is different than other case because we
+                        // remove index first to update all children before set
+                        // stuff
                         self.request_resize(current_down);
                         self.remove_index(to_be_removed);
                         next_current = current_down.wrapping_sub(1);
@@ -487,16 +490,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         // If to be removed context had a right value
                         if let Some(right_val) = to_be_remove_right {
                             if let Some(last_right_val) = last_right {
-                                self.inner[last_right_val].right = Some(right_val);
+                                self.inner[last_right_val].right =
+                                    Some(right_val.wrapping_sub(1));
                             } else {
-                                self.inner[next_current].right = Some(right_val);
+                                self.inner[next_current].right =
+                                    Some(right_val.wrapping_sub(1));
                             }
                         }
 
-                        // Isn't necessary to run right = current_down - 1 since
-                        // remove index will take of it automatically by decreasing
-                        // everything by 1
-                        // self.inner[parent_index].right = Some(current_down);
+                        self.inner[parent_index].right = Some(next_current);
                         self.current = next_current;
                         return;
                     // If current has no down items then check right items to inherit
@@ -2696,11 +2698,14 @@ pub mod test {
         grid.select_prev_split();
 
         assert_eq!(grid.current().rich_text_id, third_context_id);
+
+        let current_index = grid.current_index();
         let right = grid.contexts()[current_index].right;
         assert_eq!(
             grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
             fourth_context_id
         );
+        let current_index = grid.current_index();
         let down = grid.contexts()[current_index].down;
         assert_eq!(
             grid.contexts()[down.unwrap_or_default()].val.rich_text_id,
@@ -2736,20 +2741,30 @@ pub mod test {
         let current_index = grid.current_index();
         assert_eq!(current_index, 0);
         let right = grid.contexts()[current_index].right;
+        assert_eq!(right, Some(3));
         assert_eq!(
             grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
             fifth_context_id
         );
-        assert_eq!(right, Some(3));
 
-        // grid.select_next_split();
-        // assert_eq!(grid.current().rich_text_id, sixth_context_id);
+        // Let's go to 6 to check if leads to 4
+        //
+        // |1.-----|.5-|6.-|4.-----|
+        // |2.-----|---|---|-------|
 
-        // let right = grid.contexts()[current_index].right;
-        // assert_eq!(
-        //     grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
-        //     fourth_context_id
-        // );
+        grid.select_next_split();
+        grid.select_next_split();
+        grid.select_next_split();
+        grid.select_next_split();
+
+        assert_eq!(grid.current().rich_text_id, sixth_context_id);
+        let current_index = grid.current_index();
+        let right = grid.contexts()[current_index].right;
+        assert_eq!(right, Some(2));
+        assert_eq!(
+            grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
+            fourth_context_id
+        );
     }
 
     #[test]
