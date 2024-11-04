@@ -453,11 +453,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                             .dimension
                             .increase_height(to_be_removed_height + PADDING);
 
+                        let to_be_remove_right = self.inner[to_be_removed].right;
+
                         self.request_resize(current_down);
-
+                        self.remove_index(to_be_removed);
                         next_current = current_down.wrapping_sub(1);
-                        self.inner[parent_index].right = Some(next_current);
 
+                        // If the bottom item had also we need to place
+                        // to_be_removed_right on the last right
+                        let mut last_right = None;
+                        if to_be_remove_right.is_some() {
+                            let mut right_ptr = self.inner[next_current].right;
+                            while right_ptr.is_some() {
+                                last_right = right_ptr;
+
+                                if let Some(last_right_val) = last_right {
+                                    let last_right_height =
+                                        self.inner[last_right_val].val.dimension.height;
+                                    self.inner[last_right_val]
+                                        .val
+                                        .dimension
+                                        .update_height(
+                                            last_right_height
+                                                + to_be_removed_height
+                                                + PADDING,
+                                        );
+                                    self.request_resize(last_right_val);
+                                    right_ptr = self.inner[last_right_val].right;
+                                }
+                            }
+                        }
+
+                        // If to be removed context had a right value
+                        if let Some(right_val) = to_be_remove_right {
+                            if let Some(last_right_val) = last_right {
+                                self.inner[last_right_val].right = Some(right_val);
+                            } else {
+                                self.inner[next_current].right = Some(right_val);
+                            }
+                        }
+
+                        // Isn't necessary to run right = current_down - 1 since
+                        // remove index will take of it automatically by decreasing
+                        // everything by 1
+                        // self.inner[parent_index].right = Some(current_down);
+                        self.current = next_current;
+                        return;
                     // If current has no down items then check right items to inherit
                     } else {
                         let parent_width = self.inner[parent_index].val.dimension.width;
@@ -637,6 +678,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn remove_index(&mut self, index: usize) {
+        // If an index is in the middle, example 6th
+        // then [0,1,2,3,4,5,6,7,8,9,10]
+        //
+        // will mark from 6th and on to reduce -1
+        // being [0,1,2,3,4,5,5,6,7,8,9]
+        //
+        // and then remove 6th
+        // [0,1,2,3,4,5,6,7,8,9]
         for context in &mut self.inner {
             if let Some(right_val) = context.right {
                 if right_val > index {
@@ -2467,6 +2516,240 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         assert_eq!(grid.current().dimension.height, new_context_expected_height);
         assert_eq!(grid.current().dimension.width, 600.);
+    }
+
+    #[test]
+    fn test_remove_context_with_parent_but_down_children() {
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            600.0,
+            600.0,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 42);
+        assert_eq!(context_dimension.lines, 75);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 3;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fourth_context, fourth_context_id) = {
+            let rich_text_id = 4;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (fifth_context, fifth_context_id) = {
+            let rich_text_id = 5;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (sixth_context, sixth_context_id) = {
+            let rich_text_id = 6;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 0., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+
+        // The test is to validate the removal of a context with parenting however
+        // should move to up the down items
+        //
+        // Test setup
+        //
+        // |1.-----|.3-----|4.-----|
+        // |2.-----|.5-|6.-|-------|
+
+        grid.split_down(second_context);
+
+        assert_eq!(grid.width, 600.0);
+        assert_eq!(grid.height, 600.0);
+
+        let new_context_expected_height = 600. / 2.;
+
+        assert_eq!(grid.current().dimension.height, new_context_expected_height);
+        assert_eq!(grid.current().rich_text_id, second_context_id);
+        assert_eq!(grid.current_index(), 1);
+
+        grid.select_prev_split();
+        assert_eq!(grid.current().rich_text_id, first_context_id);
+
+        grid.split_right(third_context);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+
+        grid.split_right(fourth_context);
+        assert_eq!(grid.current().rich_text_id, fourth_context_id);
+
+        let current_index = grid.current_index();
+        assert_eq!(current_index, 3);
+        assert_eq!(grid.contexts()[current_index].down, None);
+
+        // So far we have:
+        //
+        // |1.-----|.3-----|4.-----|
+        // |2.-----|-------|-------|
+
+        grid.select_prev_split();
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        let current_index = grid.current_index();
+        assert_eq!(current_index, 2);
+        assert_eq!(grid.contexts()[current_index].down, None);
+
+        grid.split_down(fifth_context);
+        assert_eq!(grid.current().rich_text_id, fifth_context_id);
+
+        grid.split_right(sixth_context);
+        assert_eq!(grid.current().rich_text_id, sixth_context_id);
+
+        grid.select_prev_split();
+        grid.select_prev_split();
+        grid.select_prev_split();
+
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        let right = grid.contexts()[current_index].right;
+        assert_eq!(
+            grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
+            fourth_context_id
+        );
+        let down = grid.contexts()[current_index].down;
+        assert_eq!(
+            grid.contexts()[down.unwrap_or_default()].val.rich_text_id,
+            fifth_context_id
+        );
+        // Setup complete, now we have 3 as active as well
+        //
+        // |1.-----|.3-----|4.-----|
+        // |2.-----|.5-|6.-|-------|
+        //
+        // If we remove 3 then should be
+        //
+        // |1.-----|.5-|6.-|4.-----|
+        // |2.-----|---|---|-------|
+
+        grid.remove_current();
+
+        // Check if current is 5 and next is 6
+        assert_eq!(grid.current().rich_text_id, fifth_context_id);
+        let current_index = grid.current_index();
+        let right = grid.contexts()[current_index].right;
+        assert_eq!(
+            grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
+            sixth_context_id
+        );
+
+        // Let's go back to 1 to check if leads to 5
+        grid.select_prev_split();
+        grid.select_prev_split();
+        grid.select_prev_split();
+
+        assert_eq!(grid.current().rich_text_id, first_context_id);
+        let current_index = grid.current_index();
+        assert_eq!(current_index, 0);
+        let right = grid.contexts()[current_index].right;
+        assert_eq!(
+            grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
+            fifth_context_id
+        );
+        assert_eq!(right, Some(3));
+
+        // grid.select_next_split();
+        // assert_eq!(grid.current().rich_text_id, sixth_context_id);
+
+        // let right = grid.contexts()[current_index].right;
+        // assert_eq!(
+        //     grid.contexts()[right.unwrap_or_default()].val.rich_text_id,
+        //     fourth_context_id
+        // );
     }
 
     #[test]
