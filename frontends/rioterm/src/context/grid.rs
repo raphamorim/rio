@@ -719,7 +719,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
-        let mut new_margin = Delta::<f32>::default();
+        let mut new_margin = self.inner[self.current].val.dimension.margin;
+        new_margin.x = 0.0;
         self.inner[self.current]
             .val
             .dimension
@@ -771,7 +772,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
-        let mut new_margin = Delta::<f32>::default();
+        let mut new_margin = self.inner[self.current].val.dimension.margin;
+        new_margin.bottom_y = 0.0;
         self.inner[self.current]
             .val
             .dimension
@@ -800,7 +802,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // half of margin to respect margin.top_y and margin.bottom_y
         // borders on the bottom side.
         if self.inner[self.current].down.is_none() {
-            new_margin.top_y = self.margin.top_y;
             new_margin.bottom_y = self.margin.bottom_y;
             self.inner[self.current]
                 .val
@@ -1644,20 +1645,20 @@ pub mod test {
         assert_eq!(contexts[1].val.dimension.margin.top_y, 0.);
         assert_eq!(contexts[1].val.dimension.margin.bottom_y, 0.);
 
-        assert_eq!(contexts[2].val.rich_text_id, third_context_id);
-        assert_eq!(contexts[2].val.dimension.height, 150.0);
-        assert_eq!(contexts[2].val.dimension.margin.top_y, 0.);
-        assert_eq!(contexts[2].val.dimension.margin.bottom_y, 0.);
-
-        assert_eq!(contexts[3].val.rich_text_id, fourth_context_id);
-        assert_eq!(contexts[3].val.dimension.height, 150.0);
-        assert_eq!(contexts[3].val.dimension.margin.top_y, 0.);
-        assert_eq!(contexts[3].val.dimension.margin.bottom_y, 0.);
-
         assert_eq!(contexts[4].val.rich_text_id, fifth_context_id);
         assert_eq!(contexts[4].val.dimension.height, 146.0);
         assert_eq!(contexts[4].val.dimension.margin.top_y, 0.);
         assert_eq!(contexts[4].val.dimension.margin.bottom_y, 0.);
+
+        assert_eq!(contexts[2].val.rich_text_id, third_context_id);
+        assert_eq!(contexts[2].val.dimension.height, 150.0);
+        assert_eq!(contexts[2].val.dimension.margin.top_y, 0.);
+        assert_eq!(contexts[2].val.dimension.margin.bottom_y, 40.);
+
+        assert_eq!(contexts[3].val.rich_text_id, fourth_context_id);
+        assert_eq!(contexts[3].val.dimension.height, 150.0);
+        assert_eq!(contexts[3].val.dimension.margin.top_y, 0.);
+        assert_eq!(contexts[3].val.dimension.margin.bottom_y, 40.);
 
         // Fifth context should not have any margin x
         // TODO:
