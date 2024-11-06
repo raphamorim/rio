@@ -3,7 +3,7 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Object, Rect, RichText, Sugarloaf,
+    layout::SugarDimensions, ComposedQuad, Object, Quad, RichText, Sugarloaf,
 };
 
 const MIN_COLS: usize = 2;
@@ -32,6 +32,23 @@ fn compute(
     let visible_columns = std::cmp::max(visible_columns as usize, MIN_COLS);
 
     (visible_columns, visible_lines)
+}
+
+#[inline]
+fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
+    Object::Quad(ComposedQuad {
+        color,
+        quad: Quad {
+            position,
+            shadow_blur_radius: 0.0,
+            shadow_offset: [0.0, 0.0],
+            shadow_color: [0.0, 0.0, 0.0, 0.0],
+            border_color: [0.0, 0.0, 0.0, 0.0],
+            border_width: 0.0,
+            border_radius: [0.0, 0.0, 0.0, 0.0],
+            size,
+        },
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -279,47 +296,46 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 position: [margin.x, margin.top_y],
             }));
 
-            if let Some(right_item) = item.right {
-                let new_margin = Delta {
-                    x: margin.x
-                        + PADDING
-                        + (item.val.dimension.width / item.val.dimension.dimension.scale),
-                    top_y: margin.top_y,
-                    bottom_y: margin.bottom_y,
-                };
+            let new_margin = Delta {
+                x: margin.x,
+                top_y: margin.top_y
+                    + PADDING
+                    + (item.val.dimension.height / item.val.dimension.dimension.scale),
+                bottom_y: margin.bottom_y,
+            };
 
-                objects.push(Object::Rect(Rect {
-                    position: [new_margin.x - PADDING, new_margin.top_y],
-                    color: self.border_color,
-                    size: [
-                        2. / item.val.dimension.dimension.scale,
-                        item.val.dimension.height,
-                    ],
-                }));
-
-                self.plot_objects(objects, right_item, new_margin);
-            }
+            objects.push(create_border(
+                self.border_color,
+                [new_margin.x, new_margin.top_y - PADDING],
+                [
+                    item.val.dimension.width / item.val.dimension.dimension.scale,
+                    2. / item.val.dimension.dimension.scale,
+                ],
+            ));
 
             if let Some(down_item) = item.down {
-                let new_margin = Delta {
-                    x: margin.x,
-                    top_y: margin.top_y
-                        + PADDING
-                        + (item.val.dimension.height
-                            / item.val.dimension.dimension.scale),
-                    bottom_y: margin.bottom_y,
-                };
-
-                objects.push(Object::Rect(Rect {
-                    position: [new_margin.x, new_margin.top_y - PADDING],
-                    color: self.border_color,
-                    size: [
-                        item.val.dimension.width,
-                        2. / item.val.dimension.dimension.scale,
-                    ],
-                }));
-
                 self.plot_objects(objects, down_item, new_margin);
+            }
+
+            let new_margin = Delta {
+                x: margin.x
+                    + PADDING
+                    + (item.val.dimension.width / item.val.dimension.dimension.scale),
+                top_y: margin.top_y,
+                bottom_y: margin.bottom_y,
+            };
+
+            objects.push(create_border(
+                self.border_color,
+                [new_margin.x - PADDING, new_margin.top_y],
+                [
+                    2. / item.val.dimension.dimension.scale,
+                    item.val.dimension.height / item.val.dimension.dimension.scale,
+                ],
+            ));
+
+            if let Some(right_item) = item.right {
+                self.plot_objects(objects, right_item, new_margin);
             }
         }
     }
@@ -935,8 +951,10 @@ impl Dimensions for ContextDimension {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    // Easier to test big structs
     use crate::context::create_mock_context;
     use crate::event::VoidListener;
+    use pretty_assertions::assert_eq;
     use rio_window::window::WindowId;
 
     #[test]
@@ -1063,15 +1081,14 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                Object::Rect(Rect {
-                    position: [298.0, 0.0],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 800.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 400.0], [298., 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [298.0, 0.0], [1.0, 400.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [302.0, 0.0]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [302.0, 400.0], [300.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [602.0, 0.0], [1.0, 400.0]),
             ]
         );
 
@@ -1099,24 +1116,20 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                Object::Rect(Rect {
-                    position: [298.0, 0.0],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 800.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 400.0], [298., 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [298.0, 0.0], [1.0, 400.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [302.0, 0.0]
                 }),
-                Object::Rect(Rect {
-                    position: [450.0, 0.0],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 800.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [302.0, 400.0], [148.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [450.0, 0.0], [1.0, 400.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [454.0, 0.0]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [454.0, 400.0], [150.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [604.0, 0.0], [1.0, 400.0]),
             ]
         );
     }
@@ -1216,15 +1229,14 @@ pub mod test {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
                 }),
-                Object::Rect(Rect {
-                    position: [163.0, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [167.0, margin.top_y]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [145.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [312.0, margin.top_y], [1.0, 300.0]),
             ]
         );
 
@@ -1252,24 +1264,20 @@ pub mod test {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
                 }),
-                Object::Rect(Rect {
-                    position: [163.0, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [167.0, margin.top_y]
                 }),
-                Object::Rect(Rect {
-                    position: [232.5, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [65.5, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [232.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [236.5, margin.top_y]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [236.5, 330.0], [67.5, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [304.0, margin.top_y], [1.0, 300.0]),
             ]
         );
 
@@ -1321,33 +1329,26 @@ pub mod test {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
                 }),
-                Object::Rect(Rect {
-                    position: [163.0, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [167.0, margin.top_y]
                 }),
-                Object::Rect(Rect {
-                    position: [192.75, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [25.75, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: fourth_context_id,
                     position: [196.75, margin.top_y]
                 }),
-                Object::Rect(Rect {
-                    position: [224.5, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.0], [27.75, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [228.5, margin.top_y]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.0], [67.5, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
             ]
         );
     }
@@ -1661,10 +1662,161 @@ pub mod test {
         assert_eq!(contexts[3].val.dimension.margin.bottom_y, 40.);
 
         // Fifth context should not have any margin x
-        // TODO:
-        // Removal
+        // TODO: Removal
+        // grid.remove_current();
+    }
 
-        grid.remove_current();
+    #[test]
+    // https://github.com/raphamorim/rio/issues/760
+    fn test_split_issue_760() {
+        let width = 1200.;
+        let height = 800.;
+
+        let margin = Delta {
+            x: 0.,
+            top_y: 0.,
+            bottom_y: 0.,
+        };
+
+        let context_dimension = ContextDimension::build(
+            width,
+            height,
+            SugarDimensions {
+                scale: 2.,
+                width: 14.,
+                height: 8.,
+            },
+            1.0,
+            Delta::<f32>::default(),
+        );
+
+        assert_eq!(context_dimension.columns, 85);
+        assert_eq!(context_dimension.lines, 100);
+
+        let (first_context, first_context_id) = {
+            let rich_text_id = 0;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let (second_context, second_context_id) = {
+            let rich_text_id = 1;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(first_context, margin, [0., 0., 1., 0.]);
+
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: first_context_id,
+                position: [0., 0.],
+            })]
+        );
+        grid.split_down(second_context);
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [0.0, 0.0],
+                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [0.0, 202.0]
+                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 0.0], [1.0, 198.0]),
+            ]
+        );
+
+        let (third_context, third_context_id) = {
+            let rich_text_id = 2;
+            let route_id = 0;
+            (
+                create_mock_context(
+                    VoidListener {},
+                    WindowId::from(0),
+                    route_id,
+                    rich_text_id,
+                    context_dimension,
+                ),
+                rich_text_id,
+            )
+        };
+
+        grid.select_prev_split();
+        assert_eq!(grid.current().rich_text_id, first_context_id);
+        assert_eq!(grid.current_index(), 0);
+        grid.split_right(third_context);
+        assert_eq!(grid.current().rich_text_id, third_context_id);
+        assert_eq!(grid.current_index(), 2);
+
+        let contexts = grid.contexts();
+
+        // Check their respective width
+        assert_eq!(contexts[0].val.dimension.width, (width / 2.) - PADDING);
+        assert_eq!(contexts[1].val.dimension.width, width);
+        assert_eq!(contexts[2].val.dimension.width, width / 2.);
+
+        // Check their respective height
+        let top_height = (height / 2.) - PADDING;
+        assert_eq!(contexts[0].val.dimension.height, top_height);
+        assert_eq!(contexts[1].val.dimension.height, height / 2.);
+        assert_eq!(contexts[2].val.dimension.height, top_height);
+
+        // [RichText(RichText { id: 0, position: [0.0, 0.0] }),
+        // Rect(Rect { position: [298.0, 0.0], color: [0.0, 0.0, 1.0, 0.0], size: [1.0, 396.0] }),
+        // RichText(RichText { id: 2, position: [302.0, 0.0] }),
+        // Rect(Rect { position: [0.0, 198.0], color: [0.0, 0.0, 1.0, 0.0], size: [596.0, 1.0] }),
+        // RichText(RichText { id: 1, position: [0.0, 202.0] })]
+
+        assert_eq!(
+            grid.objects(),
+            vec![
+                Object::RichText(RichText {
+                    id: first_context_id,
+                    position: [0.0, 0.0],
+                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [298.0, 1.0]),
+                Object::RichText(RichText {
+                    id: second_context_id,
+                    position: [0.0, 202.0]
+                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [298.0, 0.0], [1.0, 198.0]),
+                Object::RichText(RichText {
+                    id: third_context_id,
+                    position: [302.0, 0.0]
+                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [302.0, 198.0], [300.0, 1.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [602.0, 0.0], [1.0, 198.0]),
+            ]
+        );
     }
 
     #[test]
@@ -1808,33 +1960,26 @@ pub mod test {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
                 }),
-                Object::Rect(Rect {
-                    position: [163.0, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.], [143.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [167.0, margin.top_y]
                 }),
-                Object::Rect(Rect {
-                    position: [192.75, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.], [25.75, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: fourth_context_id,
                     position: [196.75, margin.top_y]
                 }),
-                Object::Rect(Rect {
-                    position: [224.5, margin.top_y],
-                    color: [1.0, 0.0, 0.0, 0.0],
-                    size: [1.0, 600.0]
-                }),
+                create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.], [27.75, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [228.5, margin.top_y]
                 }),
+                create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.], [67.5, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
             ]
         );
 
@@ -1944,15 +2089,14 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                Object::Rect(Rect {
-                    position: [0.0, 198.0],
-                    color: [0.0, 0.0, 1.0, 0.0],
-                    size: [1200.0, 1.0]
-                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [0.0, 202.0]
                 }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 0.0], [1.0, 198.0]),
             ]
         );
 
@@ -1980,24 +2124,20 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                Object::Rect(Rect {
-                    position: [0.0, 198.0],
-                    color: [0.0, 0.0, 1.0, 0.0],
-                    size: [1200.0, 1.0]
-                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
                     position: [0.0, 202.0]
                 }),
-                Object::Rect(Rect {
-                    position: [0.0, 300.0],
-                    color: [0.0, 0.0, 1.0, 0.0],
-                    size: [1200.0, 1.0]
-                }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 300.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
                     position: [0.0, 304.0]
                 }),
+                create_border([0.0, 0.0, 1.0, 0.0], [0.0, 404.0], [600.0, 1.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 304.0], [1.0, 100.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 98.0]),
+                create_border([0.0, 0.0, 1.0, 0.0], [600.0, 0.0], [1.0, 198.0]),
             ]
         );
     }
