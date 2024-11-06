@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub struct FiltersBrush {
     filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
+    framecount: usize,
 }
 
 impl FiltersBrush {
@@ -164,12 +165,13 @@ impl FiltersBrush {
             let dst_viewport =
                 Viewport::new_render_target_sized_origin(dst_output_view, None).unwrap();
 
+            let _ = self.framecount.wrapping_add(1);
             if let Err(err) = filter.frame(
                 filter_src_texture,
                 &dst_viewport,
                 encoder,
                 // frame count
-                0,
+                self.framecount,
                 None,
                 ctx,
             ) {
