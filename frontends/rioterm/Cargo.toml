@@ -21,6 +21,9 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "registry"]
 wgpu = { workspace = true }
 rio-backend = { workspace = true }
 
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = { workspace = true }
 futures = { workspace = true }
