@@ -4923,9 +4923,9 @@ checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yazi"
-version = "0.1.6"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c94451ac9513335b5e23d7a8a2b61a7102398b8cca5160829d313e84c9d98be1"
+checksum = "f7773623574268945095a9008f1583f7feac95bf1c4c406de5c98d02e0c0eb98"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"

@@ -50,8 +50,8 @@ lru = "0.12.5"
 skrifa = "0.24.1"
 halfbrown = "0.2.4"
 num-traits = "0.2.15"
-yazi = { version = "0.1.6", optional = true }
-zeno = { version = "0.2.2", optional = true, default-features = false }
+yazi = { version = "0.2.0", optional = true }
+zeno = { version = "0.2.3", optional = true, default-features = false }
 futures = { workspace = true }
 
 librashader-common = "0.5.1"
