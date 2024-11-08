@@ -46,8 +46,8 @@ ab_glyph = "0.2.29"
 linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
-lru = "0.12.4"
-skrifa = "0.22.3"
+lru = "0.12.5"
+skrifa = "0.24.1"
 halfbrown = "0.2.4"
 num-traits = "0.2.15"
 yazi = { version = "0.1.6", optional = true }
@@ -69,17 +69,17 @@ crossbeam-channel = "0.5.13"
 crossbeam-deque = "0.8.5"
 rayon = "1.10.0"
 twox-hash = { version = "1.6.3", default-features = false, features = ["std"] }
-memmap2 = { version = "0.9.3" }
+memmap2 = { workspace = true }
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 ttf-parser = { version = "0.25.0" }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
-fontconfig-parser = { version = "0.5.3", default-features = false }
+fontconfig-parser = { version = "0.5.7", default-features = false }
 
 [dev-dependencies]
 rio-window = { workspace = true }
-image = "0.24.6"
+image = "0.25.5"
 png = "0.17.8"
 deflate = "1.0.0"
 criterion = "0.5.1"
