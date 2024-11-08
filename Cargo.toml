@@ -44,7 +44,7 @@ parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elisio
 rustc-hash = "2.0.0"
 unicode-width = "0.2.0"
 base64 = "0.22.1"
-image_rs = { package = "image", version = "0.25.2", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
+image_rs = { package = "image", version = "0.25.5", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
 regex = "1.11.1"
 bytemuck = { version = "1.17.0", features = [ "derive" ] }
 swash = "0.1.18"
@@ -63,6 +63,7 @@ iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
 tracing = "0.1.40"
 objc = "0.2.7"
+memmap2 = "0.9.3"
 
 [profile.release]
 lto = true
