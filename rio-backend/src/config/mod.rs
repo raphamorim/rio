@@ -36,6 +36,19 @@ pub struct Shell {
     pub args: Vec<String>,
 }
 
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Platform {
+    pub linux: Option<PlatformConfig>,
+    pub windows: Option<PlatformConfig>,
+    pub macos: Option<PlatformConfig>,
+}
+
+/// Other platform specific configuration options can be added here.
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PlatformConfig {
+    shell: Option<Shell>,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Scroll {
     pub multiplier: f64,
@@ -81,6 +94,8 @@ pub struct Config {
     pub window: Window,
     #[serde(default = "default_shell")]
     pub shell: Shell,
+    #[serde(default = "Platform::default")]
+    pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
     #[serde(default = "Keyboard::default")]
@@ -414,6 +429,25 @@ impl Config {
             Err(ConfigError::PathNotFound)
         }
     }
+
+    pub fn get_shell(&self) -> &Shell {
+        #[cfg(windows)]
+        if let Some(ref win) = self.platform.windows {
+            return win.shell.as_ref().unwrap_or(&self.shell);
+        }
+
+        #[cfg(target_os = "linux")]
+        if let Some(ref linux) = self.platform.linux {
+            return linux.shell.as_ref().unwrap_or(&self.shell);
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(ref macos) = self.platform.macos {
+            return macos.shell.as_ref().unwrap_or(&self.shell);
+        }
+
+        &self.shell
+    }
 }
 
 impl Default for Config {
@@ -437,6 +471,7 @@ impl Default for Config {
             padding_y: default_padding_y(),
             renderer: Renderer::default(),
             shell: default_shell(),
+            platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
             window: Window::default(),

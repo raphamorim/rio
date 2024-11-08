@@ -903,7 +903,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         config: rio_backend::config::Config,
     ) {
         let (shell, working_dir) = process_open_url(
-            config.shell.to_owned(),
+            config.get_shell().to_owned(),
             config.working_dir.to_owned(),
             config.editor.to_owned(),
             None,
