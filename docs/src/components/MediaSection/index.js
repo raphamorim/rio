@@ -12,7 +12,7 @@ export default function MentionsSection() {
         <Translate>Latest video update</Translate>
       </Heading>
       <div className={clsx('row', styles.media)}>
-        <iframe width="100%" height="400px" src="https://www.youtube-nocookie.com/embed/VPYYy1bnw1Y?si=xVDr7GPB1X_gIOuA&amp;controls=0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        <iframe width="100%" height="500" src="https://www.youtube.com/embed/gS7Nmc8LsAU?si=MyCNZ0DZ09k2laKs" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
       </div>
     </section>
   );
