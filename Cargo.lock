@@ -54,9 +54,9 @@ dependencies = [
 
 [[package]]
 name = "allocator-api2"
-version = "0.2.18"
+version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+checksum = "611cc2ae7d2e242c457e4be7f97036b8ad9ca152b499f53faf99b1ed8fc2553f"
 
 [[package]]
 name = "android_system_properties"
@@ -350,7 +350,7 @@ dependencies = [
  "polling",
  "rustix",
  "slab",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -1348,7 +1348,7 @@ dependencies = [
  "glslang-sys",
  "rustc-hash 2.0.0",
  "smartstring",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -1397,7 +1397,7 @@ checksum = "c151a2a5ef800297b4e79efa4f4bec035c5f51d5ae587287c9b952bdf734cacd"
 dependencies = [
  "log 0.4.22",
  "presser",
- "thiserror",
+ "thiserror 1.0.68",
  "windows 0.58.0",
 ]
 
@@ -1852,7 +1852,7 @@ dependencies = [
  "persy",
  "platform-dirs",
  "serde",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -1878,7 +1878,7 @@ dependencies = [
  "librashader-preprocess",
  "librashader-presets",
  "rayon",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -1891,7 +1891,7 @@ dependencies = [
  "librashader-common",
  "nom",
  "serde",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -1907,7 +1907,7 @@ dependencies = [
  "once_cell",
  "regex",
  "serde",
- "thiserror",
+ "thiserror 1.0.68",
  "vec_extract_if_polyfill",
 ]
 
@@ -1930,7 +1930,7 @@ dependencies = [
  "serde",
  "spirv",
  "spirv-cross2",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -2142,7 +2142,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "spirv",
  "termcolor",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -2162,7 +2162,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "spirv",
  "termcolor",
- "thiserror",
+ "thiserror 1.0.68",
  "unicode-xid",
 ]
 
@@ -2491,7 +2491,7 @@ dependencies = [
  "fs2",
  "linked-hash-map",
  "rand 0.8.5",
- "thiserror",
+ "thiserror 1.0.68",
  "unsigned-varint",
  "zigzag",
 ]
@@ -2808,7 +2808,7 @@ checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
 dependencies = [
  "getrandom",
  "libredox",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -3216,7 +3216,7 @@ dependencies = [
  "log 0.4.22",
  "memmap2",
  "rustix",
- "thiserror",
+ "thiserror 1.0.68",
  "wayland-backend",
  "wayland-client",
  "wayland-csd-frame",
@@ -3312,7 +3312,7 @@ dependencies = [
  "spirv",
  "spirv-cross-sys",
  "spirv-cross2-derive",
- "thiserror",
+ "thiserror 1.0.68",
 ]
 
 [[package]]
@@ -3391,7 +3391,7 @@ dependencies = [
  "serde",
  "skrifa",
  "slotmap",
- "thiserror",
+ "thiserror 2.0.1",
  "tinyvec",
  "tracing",
  "ttf-parser",
@@ -3475,7 +3475,16 @@ version = "1.0.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02dd99dc800bbb97186339685293e1cc5d9df1f8fae2d0aecd9ff1c77efea892"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.68",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c1e40dd48a282ae8edc36c732cbc219144b87fb6a4c7316d611c6b1f06ec0c"
+dependencies = [
+ "thiserror-impl 2.0.1",
 ]
 
 [[package]]
@@ -3483,6 +3492,17 @@ name = "thiserror-impl"
 version = "1.0.68"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7c61ec9a6f64d2793d8a45faba21efbe3ced62a886d44c36a009b2b519b4c7e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "874aa7e446f1da8d9c3a5c95b1c5eb41d800045252121dc7f8e0ba370cee55f5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4104,7 +4124,7 @@ dependencies = [
  "raw-window-handle",
  "rustc-hash 1.1.0",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.68",
  "wgpu-hal",
  "wgpu-types",
 ]
@@ -4146,7 +4166,7 @@ dependencies = [
  "renderdoc-sys",
  "rustc-hash 1.1.0",
  "smallvec",
- "thiserror",
+ "thiserror 1.0.68",
  "wasm-bindgen",
  "web-sys",
  "wgpu-types",

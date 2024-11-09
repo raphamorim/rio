@@ -61,7 +61,7 @@ librashader-pack = "0.5.1"
 librashader-reflect = { version = "0.5.1", features = ["stable", "wgsl"], default-features = false }
 librashader-runtime = "0.5.1"
 librashader-cache = "0.5.1"
-thiserror = "1.0.50"
+thiserror = "2.0.1"
 array-concat = "0.5.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
