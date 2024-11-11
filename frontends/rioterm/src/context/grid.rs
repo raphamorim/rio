@@ -9,7 +9,7 @@ use rio_backend::sugarloaf::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
-const PADDING: f32 = 4.;
+const PADDING: f32 = 2.;
 
 // $ tput columns
 // $ tput lines
@@ -200,12 +200,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let objects = self.objects();
         let rich_text_id = self.inner[self.current].val.rich_text_id;
+        let scale = self.inner[self.current].val.dimension.dimension.scale;
+        let scaled_padding = PADDING * scale;
+
         let mut margin = self.margin;
         for obj in objects {
             if let Object::RichText(rich_text_obj) = obj {
                 if rich_text_obj.id == rich_text_id {
-                    margin.x = rich_text_obj.position[0] + PADDING;
-                    margin.top_y = rich_text_obj.position[1] + PADDING;
+                    margin.x = rich_text_obj.position[0] + scaled_padding;
+                    margin.top_y = rich_text_obj.position[1] + scaled_padding;
                     break;
                 }
             }
@@ -296,20 +299,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 position: [margin.x, margin.top_y],
             }));
 
+            let scale = self.inner[self.current].val.dimension.dimension.scale;
+            let scaled_padding = PADDING * scale;
+
             let new_margin = Delta {
                 x: margin.x,
                 top_y: margin.top_y
-                    + PADDING
+                    + scaled_padding
                     + (item.val.dimension.height / item.val.dimension.dimension.scale),
                 bottom_y: margin.bottom_y,
             };
 
             objects.push(create_border(
                 self.border_color,
-                [new_margin.x, new_margin.top_y - PADDING],
+                [new_margin.x, new_margin.top_y - scaled_padding],
                 [
                     item.val.dimension.width / item.val.dimension.dimension.scale,
-                    2. / item.val.dimension.dimension.scale,
+                    1.,
                 ],
             ));
 
@@ -319,7 +325,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             let new_margin = Delta {
                 x: margin.x
-                    + PADDING
+                    + scaled_padding
                     + (item.val.dimension.width / item.val.dimension.dimension.scale),
                 top_y: margin.top_y,
                 bottom_y: margin.bottom_y,
@@ -327,9 +333,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             objects.push(create_border(
                 self.border_color,
-                [new_margin.x - PADDING, new_margin.top_y],
+                [new_margin.x - scaled_padding, new_margin.top_y],
                 [
-                    2. / item.val.dimension.dimension.scale,
+                    1.,
                     item.val.dimension.height / item.val.dimension.dimension.scale,
                 ],
             ));
@@ -439,6 +445,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let to_be_removed_width =
             self.inner[to_be_removed].val.dimension.width + self.margin.x;
         let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
+        let scaled_padding =
+            PADDING * self.inner[to_be_removed].val.dimension.dimension.scale;
 
         if to_be_removed > 0 {
             let mut parent_context = None;
@@ -467,7 +475,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         self.inner[current_down]
                             .val
                             .dimension
-                            .increase_height(to_be_removed_height + PADDING);
+                            .increase_height(to_be_removed_height + scaled_padding);
 
                         let to_be_remove_right = self.inner[to_be_removed].right;
 
@@ -495,7 +503,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                                         .update_height(
                                             last_right_height
                                                 + to_be_removed_height
-                                                + PADDING,
+                                                + scaled_padding,
                                         );
                                     self.request_resize(last_right_val);
                                     right_ptr = self.inner[last_right_val].right;
@@ -520,10 +528,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     // If current has no down items then check right items to inherit
                     } else {
                         let parent_width = self.inner[parent_index].val.dimension.width;
-                        self.inner[parent_index]
-                            .val
-                            .dimension
-                            .update_width(parent_width + to_be_removed_width + PADDING);
+                        self.inner[parent_index].val.dimension.update_width(
+                            parent_width + to_be_removed_width + scaled_padding,
+                        );
                         self.inner[parent_index].right = None;
 
                         if let Some(current_right) = self.inner[self.current].right {
@@ -548,7 +555,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         self.inner[current_right]
                             .val
                             .dimension
-                            .increase_width(to_be_removed_width + PADDING);
+                            .increase_width(to_be_removed_width + scaled_padding);
 
                         self.request_resize(current_right);
 
@@ -559,7 +566,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     } else {
                         let parent_height = self.inner[parent_index].val.dimension.height;
                         self.inner[parent_index].val.dimension.update_height(
-                            parent_height + to_be_removed_height + PADDING,
+                            parent_height + to_be_removed_height + scaled_padding,
                         );
                         self.inner[parent_index].down = None;
 
@@ -585,7 +592,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.inner[down_val]
                 .val
                 .dimension
-                .update_height(down_height + to_be_removed_height + PADDING);
+                .update_height(down_height + to_be_removed_height + scaled_padding);
 
             let to_be_removed_right_item = self.inner[to_be_removed].right;
 
@@ -620,7 +627,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         let last_right_height =
                             self.inner[last_right_val].val.dimension.height;
                         self.inner[last_right_val].val.dimension.update_height(
-                            last_right_height + to_be_removed_height + PADDING,
+                            last_right_height + to_be_removed_height + scaled_padding,
                         );
                         self.request_resize(last_right_val);
                         right_ptr = self.inner[last_right_val].right;
@@ -641,7 +648,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.inner[right_val]
                 .val
                 .dimension
-                .update_width(right_width + to_be_removed_width + PADDING);
+                .update_width(right_width + to_be_removed_width + scaled_padding);
 
             let to_be_removed_down_item = self.inner[to_be_removed].down;
 
@@ -676,7 +683,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         let last_down_width =
                             self.inner[last_down_val].val.dimension.width;
                         self.inner[last_down_val].val.dimension.update_width(
-                            last_down_width + to_be_removed_width + PADDING,
+                            last_down_width + to_be_removed_width + scaled_padding,
                         );
                         self.request_resize(last_down_val);
                         down_ptr = self.inner[last_down_val].down;
@@ -728,10 +735,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_width =
             self.inner[self.current].val.dimension.width - self.margin.x;
         let new_grid_item_width = old_grid_item_width / 2.0;
+        let scale = self.inner[self.current].val.dimension.dimension.scale;
+        let scaled_padding = PADDING * scale;
+
         self.inner[self.current]
             .val
             .dimension
-            .update_width(new_grid_item_width - PADDING);
+            .update_width(new_grid_item_width - scaled_padding);
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
@@ -781,10 +791,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
+        let scale = self.inner[self.current].val.dimension.dimension.scale;
+        let scaled_padding = PADDING * scale;
         self.inner[self.current]
             .val
             .dimension
-            .update_height(new_grid_item_height - PADDING);
+            .update_height(new_grid_item_height - scaled_padding);
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
@@ -1021,7 +1033,7 @@ pub mod test {
             1200.0,
             800.0,
             SugarDimensions {
-                scale: 2.,
+                scale: 1.,
                 width: 14.,
                 height: 8.,
             },
@@ -1081,14 +1093,14 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 400.0], [298., 1.0]),
-                create_border([1.0, 0.0, 0.0, 0.0], [298.0, 0.0], [1.0, 400.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [302.0, 0.0]
+                    position: [600., 0.0]
                 }),
-                create_border([1.0, 0.0, 0.0, 0.0], [302.0, 400.0], [300.0, 1.0]),
-                create_border([1.0, 0.0, 0.0, 0.0], [602.0, 0.0], [1.0, 400.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [600.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
             ]
         );
 
@@ -1116,20 +1128,20 @@ pub mod test {
                     id: first_context_id,
                     position: [0.0, 0.0],
                 }),
-                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 400.0], [298., 1.0]),
-                create_border([1.0, 0.0, 0.0, 0.0], [298.0, 0.0], [1.0, 400.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [302.0, 0.0]
+                    position: [600.0, 0.0]
                 }),
-                create_border([1.0, 0.0, 0.0, 0.0], [302.0, 400.0], [148.0, 1.0]),
-                create_border([1.0, 0.0, 0.0, 0.0], [450.0, 0.0], [1.0, 400.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [298.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [898.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [454.0, 0.0]
+                    position: [900.0, 0.0]
                 }),
-                create_border([1.0, 0.0, 0.0, 0.0], [454.0, 400.0], [150.0, 1.0]),
-                create_border([1.0, 0.0, 0.0, 0.0], [604.0, 0.0], [1.0, 400.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [900.0, 800.0], [300.0, 1.0]),
+                create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
             ]
         );
     }
@@ -1512,7 +1524,7 @@ pub mod test {
             600.0,
             600.0,
             SugarDimensions {
-                scale: 2.,
+                scale: 1.,
                 width: 14.,
                 height: 8.,
             },
@@ -1631,7 +1643,7 @@ pub mod test {
         assert_eq!(contexts.len(), 5);
 
         assert_eq!(contexts[0].val.rich_text_id, first_context_id);
-        assert_eq!(contexts[0].val.dimension.height, 296.);
+        assert_eq!(contexts[0].val.dimension.height, 298.);
         assert_eq!(contexts[0].val.dimension.margin.top_y, 0.);
         assert_eq!(contexts[0].val.dimension.margin.bottom_y, 0.);
         let first_down = contexts[0].down;
@@ -1642,12 +1654,12 @@ pub mod test {
         );
 
         assert_eq!(contexts[1].val.rich_text_id, second_context_id);
-        assert_eq!(contexts[1].val.dimension.height, 146.);
+        assert_eq!(contexts[1].val.dimension.height, 148.);
         assert_eq!(contexts[1].val.dimension.margin.top_y, 0.);
         assert_eq!(contexts[1].val.dimension.margin.bottom_y, 0.);
 
         assert_eq!(contexts[4].val.rich_text_id, fifth_context_id);
-        assert_eq!(contexts[4].val.dimension.height, 146.0);
+        assert_eq!(contexts[4].val.dimension.height, 148.0);
         assert_eq!(contexts[4].val.dimension.margin.top_y, 0.);
         assert_eq!(contexts[4].val.dimension.margin.bottom_y, 0.);
 
@@ -1777,13 +1789,18 @@ pub mod test {
 
         let contexts = grid.contexts();
 
+        let scaled_padding = PADDING * contexts[0].val.dimension.dimension.scale;
+
         // Check their respective width
-        assert_eq!(contexts[0].val.dimension.width, (width / 2.) - PADDING);
+        assert_eq!(
+            contexts[0].val.dimension.width,
+            (width / 2.) - scaled_padding
+        );
         assert_eq!(contexts[1].val.dimension.width, width);
         assert_eq!(contexts[2].val.dimension.width, width / 2.);
 
         // Check their respective height
-        let top_height = (height / 2.) - PADDING;
+        let top_height = (height / 2.) - scaled_padding;
         assert_eq!(contexts[0].val.dimension.height, top_height);
         assert_eq!(contexts[1].val.dimension.height, height / 2.);
         assert_eq!(contexts[2].val.dimension.height, top_height);
@@ -2336,7 +2353,8 @@ pub mod test {
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        let old_expected_width = (600. / 2.) - PADDING;
+        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let old_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.width, old_expected_width);
         assert_eq!(grid.current_index(), 0);
 
@@ -2426,7 +2444,8 @@ pub mod test {
 
         grid.select_prev_split();
 
-        let old_context_expected_width = (600. / 2.) - PADDING;
+        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let old_context_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.width, old_context_expected_width);
         assert_eq!(grid.current_index(), 0);
 
@@ -2633,7 +2652,8 @@ pub mod test {
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        let old_expected_width = (600. / 2.) - PADDING;
+        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let old_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.height, old_expected_width);
         assert_eq!(grid.current_index(), 0);
 
@@ -2723,7 +2743,8 @@ pub mod test {
 
         grid.select_prev_split();
 
-        let old_context_expected_height = (600. / 2.) - PADDING;
+        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let old_context_expected_height = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.height, old_context_expected_height);
         assert_eq!(grid.current_index(), 0);
 
@@ -3549,7 +3570,8 @@ pub mod test {
         assert_eq!(grid.current_index(), 0);
         assert_eq!(grid.current().rich_text_id, 0);
 
-        mouse.y = (new_context_expected_height + PADDING) as usize;
+        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        mouse.y = (new_context_expected_height + scaled_padding) as usize;
         grid.select_current_based_on_mouse(&mouse);
 
         assert_eq!(grid.current_index(), 1);
