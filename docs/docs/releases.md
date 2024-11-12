@@ -24,6 +24,7 @@ language: 'en'
 - Fix: Configuration updates triggered multiple times on one save.
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
+- Increased Linux font fallbacks list.
 - Initial split support.
 - Fix: Preserve current working directory when opening new tabs [#725](https://github.com/raphamorim/rio/issues/725).
 - Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
