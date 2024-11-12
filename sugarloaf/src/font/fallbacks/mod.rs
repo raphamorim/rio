@@ -25,8 +25,18 @@ pub fn external_fallbacks() -> Vec<String> {
 #[cfg(not(any(target_os = "macos", windows)))]
 pub fn external_fallbacks() -> Vec<String> {
     vec![
+        /* Sans-serif fallbacks */
         String::from("Noto Sans"),
+        /* More sans-serif fallbacks */
+        String::from("DejaVu Sans"),
         String::from("FreeSans"),
+        /* Mono fallbacks */
+        String::from("Noto Sans Mono"),
+        String::from("DejaVu Sans Mono"),
+        String::from("FreeMono"),
+        /* Symbols fallbacks */
+        String::from("Noto Sans Symbols"),
+        String::from("Noto Sans Symbols2"),
         // String::from("Noto Color Emoji"),
     ]
 }
