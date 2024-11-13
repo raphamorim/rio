@@ -132,7 +132,7 @@ pub struct ContextManagerConfig {
 }
 
 pub struct ContextManagerTitles {
-    last_title_update: Instant,
+    last_title_update: Option<Instant>,
     pub titles: HashMap<usize, [String; 3]>,
     pub key: String,
 }
@@ -144,11 +144,10 @@ impl ContextManagerTitles {
         terminal_title: String,
         path: String,
     ) -> ContextManagerTitles {
-        let last_title_update = Instant::now();
         ContextManagerTitles {
             key: format!("{}{}{};", idx, program, terminal_title),
             titles: HashMap::from([(idx, [program, terminal_title, path])]),
-            last_title_update,
+            last_title_update: None,
         }
     }
 
@@ -649,11 +648,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        #[cfg(unix)]
+        let interval_time = Duration::from_secs(2);
+        if self
+            .titles
+            .last_title_update
+            .map(|i| i.elapsed() > interval_time)
+            .unwrap_or(true)
         {
-            let interval_time = Duration::from_secs(2);
-            if self.titles.last_title_update.elapsed() > interval_time {
-                self.titles.last_title_update = Instant::now();
+            self.titles.last_title_update = Some(Instant::now());
+            #[cfg(unix)]
+            {
                 let mut id = String::default();
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = teletypewriter::foreground_process_name(
@@ -698,12 +702,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 }
                 self.titles.set_key(id);
             }
-        }
 
-        #[cfg(not(unix))]
-        {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
-                self.titles.last_title_update = Instant::now();
+            #[cfg(not(unix))]
+            {
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
