@@ -122,6 +122,16 @@ const MENTIONS = [
       </>
     ),
   },
+  {
+    url: 'https://x.com/mkenzo_8',
+    username: '@mkenzo_8',
+    source: '/rio/assets/mentions/mkenzo_8.jpg',
+    quote: (
+      <>
+        Rio tiene el potencial de ser de las terminales mas rápidas ⚡ y mas personalizables que hay, es una locura.
+      </>
+    ),
+  },
 ];
 
 export default MENTIONS;
