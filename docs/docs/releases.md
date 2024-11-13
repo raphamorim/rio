@@ -29,7 +29,7 @@ language: 'en'
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
 - Increased Linux font fallbacks list.
-- Initial split support.
+- Early initial split support (this feature is not yet stable).
 - Fix: Preserve current working directory when opening new tabs [#725](https://github.com/raphamorim/rio/issues/725).
 - Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
