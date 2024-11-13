@@ -698,20 +698,22 @@ impl Renderer {
                     content.sel(rich_text_id);
                     for line in lines {
                         let line = *line;
-                        let has_cursor = is_cursor_visible
-                            && renderable_content.cursor.state.pos.row == line;
-                        content.clear_line(line);
-                        self.create_line(
-                            content,
-                            &renderable_content.inner[line],
-                            has_cursor,
-                            Some(line),
-                            Line((line as i32) - display_offset),
-                            renderable_content,
-                            hints,
-                            focused_match,
-                            is_active,
-                        );
+                        if let Some(line_data) = renderable_content.inner.get(line) {
+                            let has_cursor = is_cursor_visible
+                                && renderable_content.cursor.state.pos.row == line;
+                            content.clear_line(line);
+                            self.create_line(
+                                content,
+                                line_data,
+                                has_cursor,
+                                Some(line),
+                                Line((line as i32) - display_offset),
+                                renderable_content,
+                                hints,
+                                focused_match,
+                                is_active,
+                            );
+                        }
                     }
                 }
                 RenderableContentStrategy::Noop => {}
