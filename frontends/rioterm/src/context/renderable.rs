@@ -119,6 +119,7 @@ impl RenderableContent {
             return;
         }
 
+        // inner and rows will always contains same len
         for (current_idx, _) in rows.iter().enumerate() {
             if rows[current_idx] != self.inner[current_idx] {
                 self.inner[current_idx] = rows[current_idx].clone();
