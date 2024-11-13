@@ -14,6 +14,7 @@ language: 'en'
 
 ## 0.2.0
 
+- Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
 	- Sugarloaf: Major rewrite of font glyph logic.
 	- Sugarloaf: Removal of some unnecessary processing on shaping logic.
