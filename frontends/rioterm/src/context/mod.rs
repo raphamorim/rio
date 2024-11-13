@@ -677,24 +677,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         terminal.title.to_string()
                     };
 
-                    if self.config.is_native {
-                        let window_title = if terminal_title.is_empty() {
-                            program.to_owned()
-                        } else {
-                            format!("{} ({})", terminal_title, program)
-                        };
+                    let window_title = if terminal_title.is_empty() {
+                        program.to_owned()
+                    } else {
+                        format!("{} ({})", terminal_title, program)
+                    };
 
-                        if cfg!(target_os = "macos") {
-                            self.event_proxy.send_event(
-                                RioEvent::TitleWithSubtitle(window_title, path.clone()),
-                                self.window_id,
-                            );
-                        } else {
-                            self.event_proxy.send_event(
-                                RioEvent::Title(window_title),
-                                self.window_id,
-                            );
-                        }
+                    if cfg!(target_os = "macos") {
+                        self.event_proxy.send_event(
+                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
+                            self.window_id,
+                        );
+                    } else {
+                        self.event_proxy
+                            .send_event(RioEvent::Title(window_title), self.window_id);
                     }
 
                     id.push_str(&format!("{}{}{};", i, program, terminal_title));
