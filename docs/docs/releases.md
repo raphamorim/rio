@@ -8,8 +8,13 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.2.0 (unreleased)
+## 0.2.1 (unreleased)
 
+- WIP
+
+## 0.2.0
+
+- Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
 	- Sugarloaf: Major rewrite of font glyph logic.
 	- Sugarloaf: Removal of some unnecessary processing on shaping logic.
@@ -25,7 +30,7 @@ language: 'en'
 - Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
 - Increased Linux font fallbacks list.
-- Initial split support.
+- Early initial split support (this feature is not yet stable).
 - Fix: Preserve current working directory when opening new tabs [#725](https://github.com/raphamorim/rio/issues/725).
 - Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
