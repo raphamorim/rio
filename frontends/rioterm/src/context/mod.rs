@@ -56,8 +56,15 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
+        let has_updated = (self.renderable_content.selection_range.is_none()
+            && selection_range.is_some())
+            || (self.renderable_content.selection_range.is_some()
+                && selection_range.is_none());
         self.renderable_content.selection_range = selection_range;
-        self.renderable_content.has_pending_updates = true;
+
+        if has_updated {
+            self.renderable_content.has_pending_updates = true;
+        }
     }
 
     #[inline]
