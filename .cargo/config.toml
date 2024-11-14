@@ -1,11 +1,7 @@
-[alias]
-test-config = "test --release -p rio-config --"
-test-rio = "test --release -p rioterm --"
-
 [target.wasm32-unknown-unknown]
 rustflags = [
     # Enabled unstable APIs from web_sys
-    "--cfg=web_sys_unstable_apis"
+    "--cfg=web_sys_unstable_apis",
 ]
 runner = 'wasm-bindgen-test-runner'
 

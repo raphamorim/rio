@@ -1,24 +1,62 @@
-#[derive(Debug)]
-pub struct Context {
+use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
+use crate::SugarloafRenderer;
+
+pub struct Context<'a> {
     pub device: wgpu::Device,
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'a>,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
-    pub size: winit::dpi::PhysicalSize<u32>,
+    pub size: SugarloafWindowSize,
     pub scale: f32,
+    alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
+    surface_caps: wgpu::SurfaceCapabilities,
 }
 
-impl Context {
-    pub async fn new(
-        winit_window: &winit::window::Window,
-        power_preference: wgpu::PowerPreference,
-    ) -> Context {
-        #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-        #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
+#[inline]
+#[cfg(not(target_os = "macos"))]
+fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
+    let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
 
+    // TODO: Fix formats with signs
+    // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
+    // Reason for this is currently output color space is poorly defined in wgpu and
+    // anything other than Srgb texture formats can cause undeterministic output color
+    // space selection which also causes colors to mismatch. Optionally we can whitelist
+    // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
+    // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
+    #[cfg(windows)]
+    let unsupported_formats = [
+        wgpu::TextureFormat::Rgba8Snorm,
+        wgpu::TextureFormat::Rgba16Float,
+    ];
+
+    // not reproduce-able on mac
+    #[cfg(not(windows))]
+    let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+
+    let filtered_formats: Vec<wgpu::TextureFormat> = formats
+        .iter()
+        .copied()
+        .filter(|&x| {
+            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
+        })
+        .collect();
+
+    if !filtered_formats.is_empty() {
+        filtered_formats.first().unwrap().clone_into(&mut format);
+    }
+
+    tracing::info!("Sugarloaf selected format: {format:?} from {:?}", formats);
+
+    format
+}
+
+impl Context<'_> {
+    pub fn new<'a>(
+        sugarloaf_window: SugarloafWindow,
+        renderer_config: SugarloafRenderer,
+    ) -> Context<'a> {
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
         // will be used. The following values are allowed:
@@ -29,112 +67,102 @@ impl Context {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend = wgpu::util::backend_bits_from_env().unwrap_or(default_backend);
+        let backend =
+            wgpu::util::backend_bits_from_env().unwrap_or(renderer_config.backend);
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
         });
 
-        log::info!("selected instance: {instance:?}");
+        tracing::info!("selected instance: {instance:?}");
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            log::info!("Available adapters:");
+            tracing::info!("Available adapters:");
             for a in instance.enumerate_adapters(wgpu::Backends::all()) {
-                log::info!("    {:?}", a.get_info())
+                tracing::info!("    {:?}", a.get_info())
             }
         }
 
-        log::info!("initializing the surface");
+        tracing::info!("initializing the surface");
 
-        let size = winit_window.inner_size();
-        let scale = winit_window.scale_factor();
+        let size = sugarloaf_window.size;
+        let scale = sugarloaf_window.scale;
 
-        let surface = unsafe { instance.create_surface(&winit_window).unwrap() };
-
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference,
+        let surface: wgpu::Surface<'a> =
+            instance.create_surface(sugarloaf_window).unwrap();
+        let adapter = futures::executor::block_on(instance.request_adapter(
+            &wgpu::RequestAdapterOptions {
+                power_preference: renderer_config.power_preference,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
-            })
-            .await
-            .expect("Request adapter");
+            },
+        ))
+        .expect("Request adapter");
 
-        log::info!("Selected adapter: {:?}", adapter.get_info());
+        let adapter_info = adapter.get_info();
+        tracing::info!("Selected adapter: {:?}", adapter_info);
 
-        let caps = surface.get_capabilities(&adapter);
+        let surface_caps = surface.get_capabilities(&adapter);
 
-        // TODO: Fix formats with signs
-        // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
-        // Reason for this is currently output color space is poorly defined in wgpu and
-        // anything other than Srgb texture formats can cause undeterministic output color
-        // space selection which also causes colors to mismatch. Optionally we can whitelist
-        // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
-        // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
-        #[cfg(windows)]
-        let unsupported_formats = [
-            wgpu::TextureFormat::Rgba8Snorm,
-            wgpu::TextureFormat::Rgba16Float,
-        ];
+        #[cfg(target_os = "macos")]
+        let format = wgpu::TextureFormat::Bgra8Unorm;
+        #[cfg(not(target_os = "macos"))]
+        let format = find_best_texture_format(surface_caps.formats.as_slice());
 
-        // not reproduce-able on mac
-        #[cfg(not(windows))]
-        let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
-
-        let filtered_formats: Vec<wgpu::TextureFormat> = caps
-            .formats
-            .iter()
-            .copied()
-            .filter(|&x| {
-                !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
-            })
-            .collect();
-
-        let mut format: wgpu::TextureFormat = caps.formats.first().unwrap().to_owned();
-        if !filtered_formats.is_empty() {
-            format = filtered_formats.first().unwrap().to_owned();
-        }
-
-        log::info!(
-            "Sugarloaf selected format: {format:?} from {:?}",
-            caps.formats
-        );
-        let (device, queue) = (async {
+        let (device, queue) = {
             {
-                if let Ok(result) = adapter
-                    .request_device(&wgpu::DeviceDescriptor::default(), None)
-                    .await
-                {
+                if let Ok(result) = futures::executor::block_on(adapter.request_device(
+                    // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
+                    &wgpu::DeviceDescriptor {
+                        required_features: wgpu::Features::empty()
+                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                        ..Default::default()
+                    },
+                    None,
+                )) {
                     result
                 } else {
                     // These downlevel limits will allow the code to run on all possible hardware
-                    adapter
-                        .request_device(
-                            &wgpu::DeviceDescriptor {
-                                label: None,
-                                features: wgpu::Features::empty(),
-                                limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                            },
-                            None,
-                        )
-                        .await
-                        .expect("Request device")
+                    futures::executor::block_on(adapter.request_device(
+                        &wgpu::DeviceDescriptor {
+                            memory_hints: wgpu::MemoryHints::Performance,
+                            label: None,
+                            required_features: wgpu::Features::empty(),
+                            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                        },
+                        None,
+                    ))
+                    .expect("Request device")
                 }
             }
-        })
-        .await;
+        };
+
+        let alpha_mode = if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PostMultiplied
+        } else if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PreMultiplied
+        } else {
+            wgpu::CompositeAlphaMode::Auto
+        };
 
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: Self::get_texture_usage(&surface_caps),
                 format,
-                width: size.width,
-                height: size.height,
+                width: size.width as u32,
+                height: size.height as u32,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
             },
         );
 
@@ -143,26 +171,55 @@ impl Context {
             queue,
             surface,
             format,
-            size,
-            scale: scale as f32,
-            adapter_info: adapter.get_info(),
+            alpha_mode,
+            size: SugarloafWindowSize {
+                width: size.width,
+                height: size.height,
+            },
+            scale,
+            adapter_info,
+            surface_caps,
         }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.size.width = width;
-        self.size.height = height;
+        self.size.width = width as f32;
+        self.size.height = height as f32;
+
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: Self::get_texture_usage(&self.surface_caps),
                 format: self.format,
                 width,
                 height,
                 view_formats: vec![],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                present_mode: wgpu::PresentMode::AutoVsync,
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
             },
         );
+    }
+
+    pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
+        &self.surface_caps
+    }
+
+    fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
+        let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+
+        // COPY_DST and COPY_SRC are required for FiltersBrush
+        // But some backends like OpenGL might not support COPY_DST and COPY_SRC
+        // https://github.com/emilk/egui/pull/3078
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
+            usage |= wgpu::TextureUsages::COPY_DST;
+        }
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+            usage |= wgpu::TextureUsages::COPY_SRC;
+        }
+
+        usage
     }
 }

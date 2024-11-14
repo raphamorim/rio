@@ -1,0 +1,256 @@
+[package]
+name = "rio-window"
+authors = [
+    "The winit contributors",
+    "Pierre Krieger <pierre.krieger1708@gmail.com>",
+    "Raphael Amorim <rapha850@gmail.com>"
+]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+homepage.workspace = true
+repository.workspace = true
+description = "Winit fork maintained for Rio terminal"
+
+[features]
+default = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
+x11 = ["x11-dl", "bytemuck", "percent-encoding", "xkbcommon-dl/x11", "x11rb"]
+wayland = [
+    "wayland-client",
+    "wayland-backend",
+    "wayland-protocols",
+    "wayland-protocols-plasma",
+    "sctk",
+    "ahash",
+    "memmap2",
+]
+wayland-dlopen = ["wayland-backend/dlopen"]
+wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/ab_glyph"]
+wayland-csd-adwaita-crossfont = ["sctk-adwaita", "sctk-adwaita/crossfont"]
+wayland-csd-adwaita-notitle = ["sctk-adwaita"]
+
+[build-dependencies]
+cfg_aliases = "0.2.0"
+
+[dependencies]
+bitflags = { workspace = true }
+cursor-icon = "1.1.0"
+dpi = { version = "0.1.1" }
+raw-window-handle = { workspace = true }
+smol_str = { workspace = true }
+tracing = { version = "0.1.40", default-features = false }
+
+[dev-dependencies]
+image = { version = "0.25.0", default-features = false, features = ["png"] }
+tracing = { version = "0.1.40", default-features = false, features = ["log"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+softbuffer = { version = "0.4.0", default-features = false, features = [
+    "x11",
+    "x11-dlopen",
+    "wayland",
+    "wayland-dlopen",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.0"
+objc2 = "0.5.2"
+objc = { workspace = true }
+libc = { workspace = true }
+core-graphics = "0.24.0"
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
+version = "0.2.2"
+features = [
+    "dispatch",
+    "NSArray",
+    "NSAttributedString",
+    "NSData",
+    "NSDictionary",
+    "NSDistributedNotificationCenter",
+    "NSEnumerator",
+    "NSNotification",
+    "NSObjCRuntime",
+    "NSPathUtilities",
+    "NSProcessInfo",
+    "NSRunLoop",
+    "NSString",
+    "NSThread",
+    "NSValue",
+]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
+version = "0.2.2"
+features = [
+    "NSAppearance",
+    "NSApplication",
+    "NSBitmapImageRep",
+    "NSButton",
+    "NSColor",
+    "NSControl",
+    "NSCursor",
+    "NSDragging",
+    "NSEvent",
+    "NSGraphics",
+    "NSGraphicsContext",
+    "NSImage",
+    "NSImageRep",
+    "NSMenu",
+    "NSMenuItem",
+    "NSOpenGLView",
+    "NSPasteboard",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSScreen",
+    "NSTextInputClient",
+    "NSTextInputContext",
+    "NSToolbar",
+    "NSView",
+    "NSWindow",
+    "NSWindowScripting",
+    "NSWindowTabGroup",
+    "NSWorkspace"
+]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+unicode-segmentation = "1.7.1"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows-sys]
+version = "0.52.0"
+features = [
+    "Win32_Devices_HumanInterfaceDevice",
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Media",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_Security",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Input_Pointer",
+    "Win32_UI_Input_Touch",
+    "Win32_UI_Shell",
+    "Win32_UI_TextServices",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+[target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
+ahash = { version = "0.8.7", features = ["no-rng"], optional = true }
+bytemuck = { version = "1.13.1", default-features = false, optional = true }
+calloop = "0.13.0"
+libc = { workspace = true }
+memmap2 = { workspace = true, optional = true }
+percent-encoding = { version = "2.0", optional = true }
+rustix = { version = "0.38.4", default-features = false, features = [
+    "std",
+    "system",
+    "thread",
+    "process",
+] }
+sctk = { package = "smithay-client-toolkit", version = "0.19.2", default-features = false, features = [
+    "calloop",
+], optional = true }
+sctk-adwaita = { version = "0.10.1", default-features = false, optional = true }
+wayland-backend = { version = "0.3.5", default-features = false, features = [
+    "client_system",
+], optional = true }
+wayland-client = { version = "0.31.4", optional = true }
+wayland-protocols = { version = "0.32.2", features = [
+    "staging",
+], optional = true }
+wayland-protocols-plasma = { version = "0.3.2", features = [
+    "client",
+], optional = true }
+x11-dl = { version = "2.19.1", optional = true }
+x11rb = { version = "0.13.0", default-features = false, features = [
+    "allow-unsafe-code",
+    "cursor",
+    "dl-libxcb",
+    "randr",
+    "resource_manager",
+    "xinput",
+    "xkb",
+], optional = true }
+xkbcommon-dl = "0.4.2"
+
+[target.'cfg(target_os = "redox")'.dependencies]
+orbclient = { version = "0.3.47", default-features = false }
+redox_syscall = "0.4.1"
+
+[target.'cfg(target_family = "wasm")'.dependencies.web_sys]
+package = "web-sys"
+version = "0.3.64"
+features = [
+    'AbortController',
+    'AbortSignal',
+    'Blob',
+    'console',
+    'CssStyleDeclaration',
+    'Document',
+    'DomException',
+    'DomRect',
+    'DomRectReadOnly',
+    'Element',
+    'Event',
+    'EventTarget',
+    'FocusEvent',
+    'HtmlCanvasElement',
+    'HtmlElement',
+    'HtmlImageElement',
+    'ImageBitmap',
+    'ImageBitmapOptions',
+    'ImageBitmapRenderingContext',
+    'ImageData',
+    'IntersectionObserver',
+    'IntersectionObserverEntry',
+    'KeyboardEvent',
+    'MediaQueryList',
+    'MessageChannel',
+    'MessagePort',
+    'Node',
+    'PageTransitionEvent',
+    'PointerEvent',
+    'PremultiplyAlpha',
+    'ResizeObserver',
+    'ResizeObserverBoxOptions',
+    'ResizeObserverEntry',
+    'ResizeObserverOptions',
+    'ResizeObserverSize',
+    'VisibilityState',
+    'Window',
+    'WheelEvent',
+    'Url',
+]
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+js-sys = "0.3.64"
+pin-project = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-time = "1"
+
+[target.'cfg(all(target_family = "wasm", target_feature = "atomics"))'.dependencies]
+atomic-waker = "1"
+concurrent-queue = { version = "2", default-features = false }
+
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
+console_error_panic_hook = "0.1"
+tracing-web = "0.1"
+
+[[example]]
+doc-scrape-examples = true
+name = "window"
+
+[[example]]
+name = "child_window"

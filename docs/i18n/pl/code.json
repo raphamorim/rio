@@ -1,0 +1,35 @@
+{
+  "Install": {
+    "message": "Instalacja"
+  },
+
+  "Loved by many engineers": {
+    "message": "Uwielbiany przez inżynierów"
+  },
+
+  "home.features.fast-and-fast.title": {
+    "message": "Szybki, bez kompromisów"
+  },
+  "home.features.fast-and-fast.description": {
+    "message": "Rio szczyci się wydajnością dzięki wykorzystaniu najnowszych technologii, w tym języka Rust i zaawansowanych architektur renderingu."
+  },
+  "home.features.24-bit-true-color.title": {
+    "message": "24-bitowa głębia kolorów"
+  },
+  "home.features.24-bit-true-color.description": {
+    "message": "Zwykłe terminale są ograniczone do 256 kolorów. Rio wspiera głębię \"true color\" co oznacza że może wyświetlać aż 16 milionów kolorów."
+  },
+  "home.features.images-in-terminal.title": {
+    "message": "Obrazy w terminalu"
+  },
+  "home.features.images-in-terminal.description": {
+    "message": "Rio potrafi wyświetlać obrazy w terminalu za pomocą protokołów iTerm2 i Sixel."
+  },
+  "home.features.cross-platform.title": {
+    "message": "Wieloplatformowy"
+  },
+  "home.features.cross-platform.description": {
+    "message": "Rio działa na wielu platformach: Windows, macOS, Linux i FreeBSD."
+  },
+  "home.footer.install": { "message": "Instalacja" }
+}

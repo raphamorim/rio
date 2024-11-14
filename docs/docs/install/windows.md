@@ -7,26 +7,37 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v0.0.20/Rio-installer.msi)
-- [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.0.20/Rio-portable.exe)
+- [Download Microsoft installer for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-installer-x86_64.msi)
+- [Download Microsoft executable for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-portable-x86_64.exe)
+- [Download Microsoft installer for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-installer-aarch64.msi)
+- [Download Microsoft executable for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-portable-aarch64.exe)
+
+- Using WinGet package manager:
+
+```sh
+winget install -e --id raphamorim.rio
+```
+
 - [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
 
-```bash
+```sh
 choco install rio-terminal
 ```
+
+- Using MINGW package manager: [packages.msys2.org/base/mingw-w64-rio](https://packages.msys2.org/base/mingw-w64-rio)
 
 There's a few things to note about the installer and the portable version:
 
 - The browser will ask if you want to keep the file, click "Keep" to save the installer/executable on your computer.
 - When opening the file, Windows will give you a warning, click "More info" and then "Run anyway" to run the installer/executable.
 
-If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Docs](https://raphamorim.io/rio/docs/) for more information):
+If you want to change the default shell to the new PowerShell platform, change the following line in your config file (see [Configuration file](/docs/config) for more information):
 
-```bash
+```toml
 shell = { program = "pwsh", args = ["--login"] }
 ```
 
-You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware accelaration and improve performance of the application.
+You may want to use a specific GPU on your system, specially if you're on a laptop configuration, this can enable hardware acceleration and improve performance of the application.
 To make Windows utilize a GPU for a specific application through Windows display settings, follow the instructions:
 
 1. Simultaneously press the Windows key and the letter "i" on your keyboard to open Windows Settings.

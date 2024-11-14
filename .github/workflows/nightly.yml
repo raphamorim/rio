@@ -1,0 +1,158 @@
+name: Nightly
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 00:00 every day
+    - cron: '0 0 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  GITHUB_REPOSITORY: raphamorim/rio
+  RUST_BACKTRACE: full
+  RUSTFLAGS: '-C link-arg=-s'
+  NIGHTLY_TAG: nightly
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  create_tag:
+    outputs:
+      created: ${{ steps.status.outputs.created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Delete old nightly release
+        uses: dev-drprasad/delete-tag-and-release@v1.0
+        with:
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          delete_release: true
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.1
+        with:
+          custom_tag: ${{ env.NIGHTLY_TAG }}
+          tag_prefix: ''
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - id: status
+        run: echo "created=true" >> "$GITHUB_OUTPUT"
+
+  nightly-release-macos:
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
+    runs-on: macos-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+      - name: rustup toolchain install stable --profile minimal
+        run: rustup toolchain install stable --profile minimal
+      - name: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+      - name: make release-macos
+        run: make release-macos
+      - name: Release nightly
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            release/macos-unsigned.zip
+            LICENSE
+
+  nightly-release-deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: true
+      - run: sudo apt install rename
+      - run: rustup toolchain install stable --profile minimal
+      - run: cargo install cargo-deb
+      - run: mkdir -p release
+      - run: make release-debian-x11
+      - run: make release-debian-wayland
+      - name: Release nightly
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            release/debian/x11/*
+            release/debian/wayland/*
+
+  nightly-release-windows:
+    needs: create_tag
+    if: ${{ needs.create_tag.outputs.created == 'true' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    permissions:
+      contents: write
+      discussions: write
+
+    strategy:
+      matrix:
+        include:
+          - target: x86_64
+            wix-arch: x64
+          - target: aarch64
+            wix-arch: arm64
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+          key: ${{matrix.target}}
+      - name: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-pc-windows-msvc
+        run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-pc-windows-msvc
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.0.5
+      - run: wix --version
+      - run: wix extension add WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
+      - run: cargo build --target ${{ matrix.target }}-pc-windows-msvc --release
+      - name: Crate msi installer
+        run: |
+          wix build -arch "${{ matrix.wix-arch}}" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
+          -out "./Rio-installer-${{ matrix.target }}.msi" "misc/windows/rio-${{ matrix.target }}.wxs"
+      - run: cp ./target/${{ matrix.target }}-pc-windows-msvc/release/rio.exe ./Rio-portable-${{ matrix.target }}.exe
+      - name: Release Nightly
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Nightly
+          tag_name: ${{ env.NIGHTLY_TAG }}
+          prerelease: true
+          append_body: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            ./Rio-installer-${{ matrix.target }}.msi
+            ./Rio-portable-${{ matrix.target }}.exe

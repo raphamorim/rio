@@ -1,46 +1,10 @@
-use crate::components::core::orthographic_projection;
+use crate::components::core::{orthographic_projection, uniforms::Uniforms};
 use crate::context::Context;
-use crate::Renderable;
 use bytemuck::{Pod, Zeroable};
 use std::{borrow::Cow, mem};
 use wgpu::util::DeviceExt;
 
-const MAX_INSTANCES: usize = 10_000;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Zeroable, Pod)]
-struct Uniforms {
-    transform: [f32; 16],
-    scale: f32,
-    _padding: [f32; 3],
-}
-
-impl Uniforms {
-    fn new(transformation: [f32; 16], scale: f32) -> Uniforms {
-        Self {
-            transform: transformation,
-            scale,
-            // Ref: https://github.com/iced-rs/iced/blob/bc62013b6cde52174bf4c4286939cf170bfa7760/wgpu/src/quad.rs#LL295C6-L296C68
-            // Uniforms must be aligned to their largest member,
-            // this uses a mat4x4<f32> which aligns to 16, so align to that
-            _padding: [0.0; 3],
-        }
-    }
-}
-
-impl Default for Uniforms {
-    fn default() -> Self {
-        let identity_matrix: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-            1.0,
-        ];
-        Self {
-            transform: identity_matrix,
-            scale: 1.0,
-            _padding: [0.0; 3],
-        }
-    }
-}
+const INITIAL_QUANTITY: usize = 6;
 
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
@@ -56,7 +20,7 @@ fn vertex(pos: [f32; 2]) -> Vertex {
 
 const QUAD_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, PartialEq, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Rect {
     /// The position of the [`Rect`].
@@ -105,11 +69,11 @@ pub struct RectBrush {
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
-    scale: f32,
+    supported_quantity: usize,
 }
 
-impl Renderable for RectBrush {
-    fn init(context: &Context) -> Self {
+impl RectBrush {
+    pub fn init(context: &Context) -> Self {
         let device = &context.device;
         let vertex_data = create_vertices_rect();
 
@@ -197,16 +161,19 @@ impl Renderable for RectBrush {
         ];
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            cache: None,
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &vertex_buffers,
             },
             fragment: Some(wgpu::FragmentState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: BLEND,
@@ -222,17 +189,16 @@ impl Renderable for RectBrush {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
-
+        let supported_quantity = INITIAL_QUANTITY;
         let instances = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Instances Buffer"),
-            size: mem::size_of::<Rect>() as u64 * MAX_INSTANCES as u64,
+            size: mem::size_of::<Rect>() as u64 * supported_quantity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         // Done
         RectBrush {
-            scale: context.scale,
             vertex_buf,
             index_buf,
             index_count: QUAD_INDICES.len(),
@@ -241,131 +207,73 @@ impl Renderable for RectBrush {
             pipeline,
             current_transform: [0.0; 16],
             instances,
+            supported_quantity,
         }
     }
 
-    fn update(&mut self, _event: winit::event::WindowEvent) {
-        //empty
-    }
-
-    fn resize(
-        &mut self,
-        _config: &wgpu::SurfaceConfiguration,
-        _device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-    ) {
-        // queue.write_buffer(&self.transform, 0, bytemuck::cast_slice(&IDENTITY_MATRIX));
-    }
-
-    fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        dimensions: (u32, u32),
-        instances: &[Rect],
-        ctx: &mut Context,
-    ) {
-        let transform: [f32; 16] = orthographic_projection(dimensions.0, dimensions.1);
+    #[inline]
+    pub fn resize(&mut self, ctx: &mut Context) {
+        let transform: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
         let scale = ctx.scale;
-        // let device = &ctx.device;
         let queue = &mut ctx.queue;
 
-        if transform != self.current_transform || scale != self.scale {
+        if transform != self.current_transform {
             let uniforms = Uniforms::new(transform, scale);
 
             queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
 
-            // let mut transform_view = staging_belt.write_buffer(
-            //     encoder,
-            //     &self.transform,
-            //     0,
-            //     wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64).unwrap(),
-            //     device,
-            // );
-
-            // transform_view.copy_from_slice(bytemuck::bytes_of(&uniforms));
-
             self.current_transform = transform;
-            self.scale = scale;
         }
+    }
 
+    #[inline]
+    pub fn render<'pass>(
+        &'pass mut self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        state: &crate::sugarloaf::state::SugarState,
+        ctx: &mut Context,
+    ) {
+        // let device = &ctx.device;
+        let instances = &state.compositors.elementary.rects;
         let mut i = 0;
         let total = instances.len();
 
+        if total == 0 {
+            return;
+        }
+
+        if total > self.supported_quantity {
+            self.instances.destroy();
+
+            self.supported_quantity = total;
+            self.instances = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::rect::Rect instances"),
+                size: mem::size_of::<Rect>() as u64 * self.supported_quantity as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_index_buffer(self.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+        rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+        rpass.set_vertex_buffer(1, self.instances.slice(..));
+
+        let queue = &mut ctx.queue;
         while i < total {
-            let end = (i + MAX_INSTANCES).min(total);
+            let end = (i + self.supported_quantity).min(total);
             let amount = end - i;
 
             let instance_bytes = bytemuck::cast_slice(&instances[i..end]);
 
             queue.write_buffer(&self.instances, 0, instance_bytes);
-
-            {
-                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-                // rpass.push_debug_group("Prepare data for draw.");
-                rpass.set_pipeline(&self.pipeline);
-                rpass.set_bind_group(0, &self.bind_group, &[]);
-                rpass.set_index_buffer(
-                    self.index_buf.slice(..),
-                    wgpu::IndexFormat::Uint16,
-                );
-                rpass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-                rpass.set_vertex_buffer(1, self.instances.slice(..));
-                // rpass.pop_debug_group();
-                // rpass.insert_debug_marker("Draw!");
-                rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
-                drop(rpass);
-            }
-
-            i += MAX_INSTANCES;
+            rpass.draw_indexed(0..self.index_count as u32, 0, 0..amount as u32);
+            i += self.supported_quantity;
         }
 
         // queue.submit(Some(encoder.finish()));
     }
 }
-
-// fn main() {
-// framework::run::<Example>("cube");
-// }
-
-// wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
-
-// #[test]
-// #[wasm_bindgen_test::wasm_bindgen_test]
-// fn cube() {
-//     framework::test::<Example>(framework::FrameworkRefTest {
-//         image_path: "/examples/cube/screenshot.png",
-//         width: 1024,
-//         height: 768,
-//         optional_features: wgpu::Features::default(),
-//         base_test_parameters: framework::test_common::TestParameters::default(),
-//         tolerance: 1,
-//         max_outliers: 1225, // Bounded by swiftshader
-//     });
-// }
-
-// #[test]
-// #[wasm_bindgen_test::wasm_bindgen_test]
-// fn cube_lines() {
-//     framework::test::<Example>(framework::FrameworkRefTest {
-//         image_path: "/examples/cube/screenshot-lines.png",
-//         width: 1024,
-//         height: 768,
-//         optional_features: wgpu::Features::POLYGON_MODE_LINE,
-//         base_test_parameters: framework::test_common::TestParameters::default(),
-//         tolerance: 2,
-//         max_outliers: 1250, // Bounded by swiftshader
-//     });
-// }

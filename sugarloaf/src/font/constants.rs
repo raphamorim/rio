@@ -5,73 +5,59 @@ macro_rules! font {
     };
 }
 
-pub const DEFAULT_FONT_FAMILY: &str = "cascadiamono";
-pub const DEFAULT_FONT_FAMILY_VARIANT: &str = "cascadiacode";
+pub const DEFAULT_FONT_FAMILY: &str = "cascadiacode";
 
 // Fonts:
-// CascadiaMonoPL-Bold.otf
-// CascadiaMonoPL-BoldItalic.otf
-// CascadiaMonoPL-ExtraLight.otf
-// CascadiaMonoPL-ExtraLightItalic.otf
-// CascadiaMonoPL-Italic.otf
-// CascadiaMonoPL-Light.otf
-// CascadiaMonoPL-LightItalic.otf
-// CascadiaMonoPL-Regular.otf
-// CascadiaMonoPL-SemiBold.otf
-// CascadiaMonoPL-SemiBoldItalic.otf
-// CascadiaMonoPL-SemiLight.otf
-// CascadiaMonoPL-SemiLightItalic.otf
+// CascadiaCodePL-Bold.ttf
+// CascadiaCodePL-BoldItalic.ttf
+// CascadiaCodePL-ExtraLight.ttf
+// CascadiaCodePL-ExtraLightItalic.ttf
+// CascadiaCodePL-Italic.ttf
+// CascadiaCodePL-Light.ttf
+// CascadiaCodePL-LightItalic.ttf
+// CascadiaCodePL-Regular.ttf
+// CascadiaCodePL-SemiBold.ttf
+// CascadiaCodePL-SemiBoldItalic.ttf
+// CascadiaCodePL-SemiLight.ttf
+// CascadiaCodePL-SemiLightItalic.ttf
 
 pub const FONT_CASCADIAMONO_BOLD: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Bold.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-Bold.otf");
 
 pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-BoldItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-BoldItalic.otf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLight.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-ExtraLight.otf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-ExtraLightItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-ExtraLightItalic.otf");
 
 pub const FONT_CASCADIAMONO_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Italic.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-Italic.otf");
 
 pub const FONT_CASCADIAMONO_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Light.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-Light.otf");
 
 pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-LightItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-LightItalic.otf");
 
 pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-Regular.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-Regular.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBold.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-SemiBold.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiBoldItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-SemiBoldItalic.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLight.otf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-SemiLight.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaMono/CascadiaMonoPL-SemiLightItalic.otf");
-
-// Extra
-
-pub const FONT_EMOJI: &[u8] = font!("./resources/NotoEmoji/static/NotoEmoji-Regular.ttf");
+    font!("./resources/CascadiaCode/CascadiaCodePL-SemiLightItalic.otf");
 
 pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
     font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
 
-// Not macos
-
-#[cfg(not(target_os = "macos"))]
-pub const FONT_DEJAVU_SANS: &[u8] = font!("./resources/DejaVuSans/DejaVuSans.ttf");
-
-// Not macos neither windows
-
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-pub const FONT_UNICODE_FALLBACK: &[u8] =
-    font!("./resources/chrysanthi-unicode-font/ChrysanthiUnicodeRegular-KEzo.ttf");
+pub const FONT_TWEMOJI_EMOJI: &[u8] = font!("./resources/Twemoji/Twemoji.Mozilla.ttf");

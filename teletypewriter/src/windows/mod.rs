@@ -7,16 +7,19 @@ use std::ffi::OsStr;
 use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::process::CommandExt;
+use std::process::{Command, Stdio};
 use std::sync::mpsc::TryRecvError;
 
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
+use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
 use conpty::Conpty as Backend;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
 
 pub struct Pty {
-    // XXX: Backend is required to be the first field, to ensure correct drop order. Dropping
+    // Backend is required to be the first field, to ensure correct drop order. Dropping
     // `conout` before `backend` will cause a deadlock (with Conpty).
     backend: Backend,
     conout: ReadPipe,
@@ -31,14 +34,18 @@ pub struct Pty {
 // Windows Pseudo Console (ConPTY)
 pub fn create_pty(
     shell: &str,
-    _args: Vec<String>,
+    args: Vec<String>,
     working_directory: &Option<String>,
     columns: u16,
     rows: u16,
-) -> Pty {
-    conpty::new(shell, working_directory, columns, rows)
-        .ok_or_else(|| panic!("failed to spawn conpty"))
-        .unwrap()
+) -> Result<Pty, std::io::Error> {
+    let exec = if !args.is_empty() {
+        let args = args.join(" ");
+        &format!("{shell} {args}")
+    } else {
+        shell
+    };
+    conpty::new(exec, working_directory, columns, rows)
 }
 
 impl Pty {
@@ -57,6 +64,10 @@ impl Pty {
             child_event_token: 0.into(),
             child_watcher,
         }
+    }
+
+    pub fn child_watcher(&self) -> &ChildExitWatcher {
+        &self.child_watcher
     }
 }
 
@@ -233,4 +244,19 @@ fn cmdline(shell: &str) -> String {
 /// suffixed function variants, which accept UTF-16 encoded string values.
 pub fn win32_string<S: AsRef<OsStr> + ?Sized>(value: &S) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
+}
+
+pub fn spawn_daemon<I, S>(program: &str, args: I) -> io::Result<()>
+where
+    I: IntoIterator<Item = S> + Copy,
+    S: AsRef<OsStr>,
+{
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
 }

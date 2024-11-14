@@ -565,6 +565,7 @@ impl StreamImp {
 fn read_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     let me2 = StreamImp {
+        #[allow(deref_nullptr)]
         inner: unsafe { overlapped2arc!(status.overlapped(), StreamIo, read) },
     };
 
@@ -604,6 +605,7 @@ fn write_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     trace!("finished a write {}", status.bytes_transferred());
     let me2 = StreamImp {
+        #[allow(deref_nullptr)]
         inner: unsafe { overlapped2arc!(status.overlapped(), StreamIo, write) },
     };
     let mut me = me2.inner();
@@ -857,6 +859,7 @@ impl ListenerImp {
 fn accept_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     let me2 = ListenerImp {
+        #[allow(deref_nullptr)]
         inner: unsafe { overlapped2arc!(status.overlapped(), ListenerIo, accept) },
     };
 

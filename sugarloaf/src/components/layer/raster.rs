@@ -1,9 +1,8 @@
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
 use crate::components::layer::image::{Data, Handle};
-use image as image_rs;
 
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Entry in cache corresponding to an image handle
 #[derive(Debug)]
@@ -43,19 +42,19 @@ impl Memory {
 /// Caches image raster data
 #[derive(Debug, Default)]
 pub struct Cache {
-    map: HashMap<u64, Memory>,
-    hits: HashSet<u64>,
+    map: FxHashMap<u64, Memory>,
+    hits: FxHashSet<u64>,
 }
 
 /// Tries to load an image by its [`Handle`].
 pub fn load_image(handle: &Handle) -> image_rs::ImageResult<image_rs::DynamicImage> {
     match handle.data() {
         Data::Path(path) => {
-            let image = ::image::open(path)?;
+            let image = image_rs::ImageReader::open(path)?.decode()?;
             Ok(image)
         }
         Data::Bytes(bytes) => {
-            let image = ::image::load_from_memory(bytes)?;
+            let image = image_rs::load_from_memory(bytes)?;
             Ok(image)
         }
         Data::Rgba {

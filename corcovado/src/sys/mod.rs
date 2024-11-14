@@ -1,5 +1,6 @@
 #[cfg(all(unix, not(target_os = "fuchsia")))]
-pub use self::unix::{pipe, set_nonblock, Awakener, EventedFd, Events, Io, Selector};
+pub use self::unix::{Awakener, EventedFd, Events, Selector};
+// pub use self::unix::{pipe, set_nonblock, Awakener, EventedFd, Events, Io, Selector};
 
 #[cfg(all(unix, not(target_os = "fuchsia")))]
 pub use self::unix::READY_ALL;
@@ -8,9 +9,7 @@ pub use self::unix::READY_ALL;
 pub mod unix;
 
 #[cfg(windows)]
-pub use self::windows::{
-    Awakener, Binding, Events, Overlapped, Selector, TcpListener, TcpStream, UdpSocket,
-};
+pub use self::windows::{Awakener, Binding, Events, Overlapped, Selector};
 
 #[cfg(windows)]
 mod windows;

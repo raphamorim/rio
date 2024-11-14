@@ -1,0 +1,46 @@
+{
+  "Install": {
+    "message": "インストール"
+  },
+
+  "Loved by many engineers": {
+    "message": "エンジニアから広く愛されています"
+  },
+
+  "home.features.fast-and-fast.title": {
+    "message": "超高速"
+  },
+  "home.features.fast-and-fast.description": {
+    "message": "RioはRustや高度なレンダリングアーキテクチャを活用することで圧倒的なパフォーマンスを実現しています。"
+  },
+  "home.features.24-bit-true-color.title": {
+    "message": "24ビット トゥルーカラー"
+  },
+  "home.features.24-bit-true-color.description": {
+    "message": "一般的なターミナルは256色に制限されていますが、Rioは「トゥルーカラー」に対応し、1,600万色もの豊かな色彩表現が可能です。"
+  },
+  "home.features.images-in-terminal.title": {
+    "message": "ターミナル内で画像を表示"
+  },
+  "home.features.images-in-terminal.description": {
+    "message": "SixelやiTerm2の画像プロトコルを使用し、ターミナル内で画像を表示することが可能です。"
+  },
+  "home.features.cross-platform.title": {
+    "message": "クロスプラットフォーム"
+  },
+  "home.features.cross-platform.description": {
+    "message": "RioはWindows、macOS、Linux、FreeBSDで動作するクロスプラットフォームアプリです。"
+  },
+  "home.features.font-ligatures.title": {
+    "message": "フォント合字"
+  },
+  "home.features.font-ligatures.description": {
+    "message": "よく使われる記号列や演算子の可読性を向上させるため、フォント合字に対応しています。"
+  },
+  "home.features.splits.title": {
+    "message": "画面分割"
+  },
+  "home.features.splits.description": {
+    "message": "あらゆるプラットフォームで、ターミナル画面を分割・管理することができます。"
+  }
+}

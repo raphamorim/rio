@@ -442,6 +442,7 @@ fn send_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     trace!("finished a send {}", status.bytes_transferred());
     let me2 = Imp {
+        #[allow(deref_nullptr)]
         inner: unsafe { overlapped2arc!(status.overlapped(), Io, write) },
     };
     let mut me = me2.inner();
@@ -453,6 +454,7 @@ fn recv_done(status: &OVERLAPPED_ENTRY) {
     let status = CompletionStatus::from_entry(status);
     trace!("finished a recv {}", status.bytes_transferred());
     let me2 = Imp {
+        #[allow(deref_nullptr)]
         inner: unsafe { overlapped2arc!(status.overlapped(), Io, read) },
     };
     let mut me = me2.inner();

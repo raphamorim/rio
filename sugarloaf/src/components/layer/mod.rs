@@ -2,8 +2,6 @@ mod atlas;
 mod raster;
 pub mod types;
 
-// #[cfg(feature = "svg")]
-// mod vector;
 use crate::context::Context;
 use atlas::Atlas;
 
@@ -21,8 +19,6 @@ use crate::components::core::image;
 #[derive(Debug)]
 pub struct LayerBrush {
     raster_cache: RefCell<raster::Cache>,
-    // #[cfg(feature = "svg")]
-    // vector_cache: RefCell<vector::Cache>,
     pipeline: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -189,18 +185,20 @@ impl LayerBrush {
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("iced_wgpu image shader"),
+            label: Some("layer image shader"),
             source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
                 "image.wgsl"
             ))),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            cache: None,
             label: Some("image pipeline"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[
                     wgpu::VertexBufferLayout {
                         array_stride: mem::size_of::<Vertex>() as u64,
@@ -225,8 +223,9 @@ impl LayerBrush {
                 ],
             },
             fragment: Some(wgpu::FragmentState {
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: Some(wgpu::BlendState {
@@ -270,7 +269,7 @@ impl LayerBrush {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let texture_atlas = Atlas::new(device);
+        let texture_atlas = Atlas::new(device, context.adapter_info.backend);
 
         let texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image texture atlas bind group"),
@@ -283,9 +282,6 @@ impl LayerBrush {
 
         LayerBrush {
             raster_cache: RefCell::new(raster::Cache::default()),
-
-            // #[cfg(feature = "svg")]
-            // vector_cache: RefCell::new(vector::Cache::default()),
             pipeline,
             vertices,
             indices,
@@ -295,7 +291,6 @@ impl LayerBrush {
             texture_atlas,
             texture_layout,
             constant_layout,
-
             layers: Vec::new(),
             prepare_layer: 0,
         }
@@ -308,78 +303,34 @@ impl LayerBrush {
         memory.dimensions()
     }
 
-    // #[cfg(feature = "svg")]
-    // pub fn viewport_dimensions(&self, handle: &svg::Handle) -> Size<u32> {
-    //     let mut cache = self.vector_cache.borrow_mut();
-    //     let svg = cache.load(handle);
-
-    //     svg.viewport_dimensions()
-    // }
-
     pub fn prepare(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         ctx: &mut Context,
-        images: &[types::Image],
-        // transformation: [f32; 16],
-        // _scale: f32,
+        images: &[&types::Raster],
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
         let instances: &mut Vec<Instance> = &mut Vec::new();
         let mut raster_cache = self.raster_cache.borrow_mut();
 
-        // #[cfg(feature = "svg")]
-        // let mut vector_cache = self.vector_cache.borrow_mut();
-
         for image in images {
-            match &image {
-                types::Image::Raster { handle, bounds } => {
-                    if let Some(atlas_entry) = raster_cache.upload(
-                        device,
-                        encoder,
-                        handle,
-                        &mut self.texture_atlas,
-                    ) {
-                        add_instances(
-                            [bounds.x, bounds.y],
-                            [bounds.width, bounds.height],
-                            atlas_entry,
-                            instances,
-                        );
-                    }
-                } // #[cfg(not(feature = "image"))]
-                  // types::Image::Raster { .. } => {}
-
-                  // #[cfg(feature = "svg")]
-                  // types::Image::Vector {
-                  //     handle,
-                  //     color,
-                  //     bounds,
-                  // } => {
-                  //     let size = [bounds.width, bounds.height];
-
-                  //     if let Some(atlas_entry) = vector_cache.upload(
-                  //         device,
-                  //         encoder,
-                  //         handle,
-                  //         *color,
-                  //         size,
-                  //         _scale,
-                  //         &mut self.texture_atlas,
-                  //     ) {
-                  //         add_instances(
-                  //             [bounds.x, bounds.y],
-                  //             size,
-                  //             atlas_entry,
-                  //             instances,
-                  //         );
-                  //     }
-                  // }
-                  // #[cfg(not(feature = "svg"))]
-                  // types::Image::Vector { .. } => {}
+            let bounds = image.bounds;
+            if let Some(atlas_entry) = raster_cache.upload(
+                device,
+                encoder,
+                &image.handle,
+                &mut self.texture_atlas,
+            ) {
+                add_instances(
+                    [bounds.x, bounds.y],
+                    [bounds.width, bounds.height],
+                    atlas_entry,
+                    instances,
+                );
             }
         }
 
@@ -390,7 +341,7 @@ impl LayerBrush {
         let texture_version = self.texture_atlas.layer_count();
 
         if self.texture_version != texture_version {
-            log::info!("Atlas has grown. Recreating bind group...");
+            tracing::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("image texture atlas bind group"),
@@ -417,71 +368,30 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
-    pub fn prepare_ref(
+    pub fn prepare_with_handle(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         ctx: &mut Context,
-        images: &[&types::Image],
-        // transformation: [f32; 16],
-        // _scale: f32,
+        handle: &image::Handle,
+        bounds: &Rectangle,
     ) {
-        let transformation: [f32; 16] = orthographic_projection(300, 300);
+        let transformation: [f32; 16] =
+            orthographic_projection(ctx.size.width, ctx.size.height);
         let device = &ctx.device;
         let queue = &ctx.queue;
 
         let instances: &mut Vec<Instance> = &mut Vec::new();
         let mut raster_cache = self.raster_cache.borrow_mut();
 
-        // #[cfg(feature = "svg")]
-        // let mut vector_cache = self.vector_cache.borrow_mut();
-
-        for image in images {
-            match &image {
-                types::Image::Raster { handle, bounds } => {
-                    if let Some(atlas_entry) = raster_cache.upload(
-                        device,
-                        encoder,
-                        handle,
-                        &mut self.texture_atlas,
-                    ) {
-                        add_instances(
-                            [bounds.x, bounds.y],
-                            [bounds.width, bounds.height],
-                            atlas_entry,
-                            instances,
-                        );
-                    }
-                } // #[cfg(not(feature = "image"))]
-                  // types::Image::Raster { .. } => {}
-
-                  // #[cfg(feature = "svg")]
-                  // types::Image::Vector {
-                  //     handle,
-                  //     color,
-                  //     bounds,
-                  // } => {
-                  //     let size = [bounds.width, bounds.height];
-
-                  //     if let Some(atlas_entry) = vector_cache.upload(
-                  //         device,
-                  //         encoder,
-                  //         handle,
-                  //         *color,
-                  //         size,
-                  //         _scale,
-                  //         &mut self.texture_atlas,
-                  //     ) {
-                  //         add_instances(
-                  //             [bounds.x, bounds.y],
-                  //             size,
-                  //             atlas_entry,
-                  //             instances,
-                  //         );
-                  //     }
-                  // }
-                  // #[cfg(not(feature = "svg"))]
-                  // types::Image::Vector { .. } => {}
-            }
+        if let Some(atlas_entry) =
+            raster_cache.upload(device, encoder, handle, &mut self.texture_atlas)
+        {
+            add_instances(
+                [bounds.x, bounds.y],
+                [bounds.width, bounds.height],
+                atlas_entry,
+                instances,
+            );
         }
 
         if instances.is_empty() {
@@ -491,7 +401,7 @@ impl LayerBrush {
         let texture_version = self.texture_atlas.layer_count();
 
         if self.texture_version != texture_version {
-            log::info!("Atlas has grown. Recreating bind group...");
+            tracing::info!("Atlas has grown. Recreating bind group...");
 
             self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("image texture atlas bind group"),
@@ -518,16 +428,24 @@ impl LayerBrush {
         self.prepare_layer += 1;
     }
 
+    #[inline]
     pub fn render<'a>(
         &'a self,
         layer: usize,
-        bounds: Rectangle<u32>,
         render_pass: &mut wgpu::RenderPass<'a>,
+        rect_bounds: Option<Rectangle<u32>>,
     ) {
         if let Some(layer) = self.layers.get(layer) {
             render_pass.set_pipeline(&self.pipeline);
 
-            render_pass.set_scissor_rect(bounds.x, bounds.y, bounds.width, bounds.height);
+            if let Some(bounds) = rect_bounds {
+                render_pass.set_scissor_rect(
+                    bounds.x,
+                    bounds.y,
+                    bounds.width,
+                    bounds.height,
+                );
+            }
 
             render_pass.set_bind_group(1, &self.texture, &[]);
             render_pass
@@ -549,12 +467,14 @@ impl LayerBrush {
             let mut render_pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
-                            store: true,
+                            store: wgpu::StoreOp::Store,
                         },
                     })],
                     depth_stencil_attachment: None,
@@ -578,15 +498,12 @@ impl LayerBrush {
 
             layer.render(&mut render_pass);
 
-            // drop(render_pass);
+            drop(render_pass);
         }
     }
 
     pub fn end_frame(&mut self) {
         self.raster_cache.borrow_mut().trim(&mut self.texture_atlas);
-
-        // #[cfg(feature = "svg")]
-        // self.vector_cache.borrow_mut().trim(&mut self.texture_atlas);
 
         self.prepare_layer = 0;
     }

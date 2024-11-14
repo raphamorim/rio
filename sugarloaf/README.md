@@ -1,26 +1,10 @@
 # Sugarloaf
 
-Sugarloaf is Rio rendering engine, desgined to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintaned for Rio terminal purposes but feel free to use it.
-
-### Desktop rect
-
-```bash
-cargo run --example rect
-```
-
-### Desktop text
+Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintained for Rio terminal purposes but feel free to use it.
 
 ```bash
 cargo run --example text
 ```
-
-## Examples
-
-| ![Demo sugarloaf 1](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-1.png?raw=true) | ![Demo Sugarloaf wasm](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-wasm-1.png?raw=true) |
-| ----------- | ----------- |
-| ![Demo Rect](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-rect.png?raw=true) | ![Demo sugarloaf 3](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-3.png?raw=true) |
-| ![Demo sugarloaf 4](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-4.png?raw=true) | ![Demo sugarloaf 5](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-5.png?raw=true) |
-| ![Demo sugarloaf 6](https://github.com/raphamorim/rio/blob/main/sugarloaf/resources/demo-sugarloaf-6.png?raw=true) | |
 
 ## WASM Tests
 

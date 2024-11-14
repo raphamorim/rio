@@ -12,7 +12,7 @@ use sugarloaf::tools::{create_html_canvas, get_html_canvas};
 use sugarloaf::Sugarloaf;
 use wasm_bindgen_test::*;
 
-use winit::{
+use rio_window::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
 };
@@ -20,7 +20,7 @@ use winit::{
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[cfg(target_arch = "wasm32")]
-use winit::platform::web::WindowBuilderExtWebSys;
+use rio_window::platform::web::WindowBuilderExtWebSys;
 
 fn compute_styles(
     scale_factor: f32,
@@ -43,16 +43,16 @@ async fn run() {
     let canvas_element = get_html_canvas();
 
     #[cfg(target_arch = "wasm32")]
-    let window = winit::window::WindowBuilder::new()
+    let window = rio_window::window::WindowBuilder::new()
         .with_title("sugarloaf-wasm")
-        .with_inner_size(winit::dpi::LogicalSize::new(width, height))
+        .with_inner_size(rio_window::dpi::LogicalSize::new(width, height))
         .with_resizable(false)
         .with_canvas(Some(canvas_element))
         .build(&event_loop)
         .unwrap();
 
     #[cfg(not(target_arch = "wasm32"))]
-    let window = winit::window::Window::new(&event_loop).unwrap();
+    let window = rio_window::window::Window::new(&event_loop).unwrap();
 
     let mut sugarloaf = Sugarloaf::new(
         &window,
@@ -329,7 +329,7 @@ async fn pass() {
     create_html_canvas();
 
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init().expect("could not initialize logger");
+    console_tracing::init().expect("could not initialize logger");
     wasm_bindgen_futures::spawn_local(run());
 
     // assert_eq!(1 + 1, 2);

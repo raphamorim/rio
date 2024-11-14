@@ -18,6 +18,7 @@ use std::io;
 use std::io::{Error, ErrorKind};
 use std::mem::MaybeUninit;
 use std::ops::Deref;
+use std::os::fd::OwnedFd;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -444,7 +445,7 @@ pub fn create_pty_with_spawn(
         shell_program = &user.shell;
     }
 
-    log::info!("spawn {:?} {:?}", shell_program, args);
+    tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
         let mut cmd = Command::new(shell_program);
@@ -493,9 +494,11 @@ pub fn create_pty_with_spawn(
     // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
     // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
     // error on libc::close.).
-    builder.stdin(unsafe { Stdio::from_raw_fd(child) });
-    builder.stderr(unsafe { Stdio::from_raw_fd(child) });
-    builder.stdout(unsafe { Stdio::from_raw_fd(child) });
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+
+    builder.stdin(owned_child.try_clone()?);
+    builder.stderr(owned_child.try_clone()?);
+    builder.stdout(owned_child);
 
     builder.env("USER", user.user);
     builder.env("HOME", user.home);
@@ -599,11 +602,11 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
     };
 
     if shell.is_empty() {
-        log::info!("shell configuration is empty, will retrive from env");
+        tracing::info!("shell configuration is empty, will retrieve from env");
         shell_program = &user.shell;
     }
 
-    log::info!("fork {:?}", shell_program);
+    tracing::info!("fork {:?}", shell_program);
 
     match unsafe {
         forkpty(
@@ -887,6 +890,7 @@ pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
     #[cfg(not(target_os = "macos"))]
     let name = match std::fs::read(comm_path) {
         Ok(comm_str) => String::from_utf8_lossy(&comm_str)
+            .trim_end()
             .parse()
             .unwrap_or_default(),
         Err(..) => String::from(""),

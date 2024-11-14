@@ -24,14 +24,27 @@ docs-build:
 	cd $(DOCS_DIR) && npm ci && npm run build
 
 run:
-	cargo run --release
+	cargo run -p rioterm --release
 
 dev:
-	cargo run
+	cargo run -p rioterm
+
+dev-debug:
+	RIO_LOG_LEVEL=debug make dev
+
+dev-debug-wayland:
+	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=wayland
+
+dev-debug-x11:
+	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=x11
+
+run-wasm:
+	cargo build -p rioterm --target wasm32-unknown-unknown --lib
+	cargo run -p rioterm-wasm
 
 dev-watch:
 	#cargo install cargo-watch
-	cargo watch -- cargo run
+	cargo watch -- cargo run -p rioterm
 
 install:
 	cargo fetch
@@ -43,8 +56,9 @@ build: install
 # rustup target add x86_64-apple-darwin
 # rustup target add aarch64-apple-darwin
 $(TARGET)-universal:
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
+	# Note: Catalina is 10.15 and Big Sur is 11.0
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.15" cargo build --release --target=x86_64-apple-darwin
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="11.0" cargo build --release --target=aarch64-apple-darwin
 	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
 
 app-universal: $(APP_NAME)-universal ## Create a universal Rio.app
@@ -53,8 +67,10 @@ $(APP_NAME)-%: $(TARGET)-%
 	@mkdir -p $(APP_EXTRAS_DIR)
 	@cp -fRp $(APP_TEMPLATE) $(TARGET_DIR_OSX)
 	@cp -fp $(APP_BINARY) $(APP_BINARY_DIR)
-	@tic -xe rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 	@touch -r "$(APP_BINARY)" "$(TARGET_DIR_OSX)/$(APP_NAME)"
+
+install-terminfo:
+	@tic -xe rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
@@ -62,17 +78,14 @@ release-macos: app-universal
 	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
 	mkdir -p $(RELEASE_DIR)
 	cp -rf ./target/release/osx/* ./release/
-	cd ./release && zip -r ./macos-rio.zip ./*
+	cd ./release && zip -r ./macos-unsigned.zip ./*
 
-release-macos-local: release-macos
-	rm -rf /Applications/$(APP_NAME)
-	mv ./release/$(APP_NAME) /Applications/
+release-macos-signed:
+	$(eval VERSION = $(shell echo $(version)))
+	$(if $(strip $(VERSION)),make release-macos-signed-app, make version-not-found)
 
-version-not-found:
-	@echo "Rio version was not specified"
-	@echo " - usage: $ make release-macos-signed version=0.0.0"
-
-release-macos-app-signed:
+release-macos-signed-app:
+	@make install-terminfo
 	@make app-universal
 	@echo "Releasing Rio v$(version)"
 	@codesign --force --deep --options runtime --sign "Developer ID Application: Hugo Amorim" "$(TARGET_DIR_OSX)/$(APP_NAME)"
@@ -81,8 +94,17 @@ release-macos-app-signed:
 	@xcrun notarytool submit ./release/Rio-v$(version).zip --keychain-profile "Hugo Amorim" --wait
 	rm -rf ./release/$(APP_NAME)
 	@unzip ./release/Rio-v$(version).zip -d ./release
+	@echo "Please verify if 'Rio.App/Contents/Resources/72/rio' exists before create-dmg"
 
-# e.g: make update-version old-version=0.0.13 new-version=0.0.12
+install-macos: release-macos
+	rm -rf /Applications/$(APP_NAME)
+	mv ./release/$(APP_NAME) /Applications/
+
+version-not-found:
+	@echo "Rio version was not specified"
+	@echo " - usage: $ make release-macos-signed version=0.0.0"
+
+# e.g: make update-version old-version=0.1.13 new-version=0.1.12
 update-version:
 	@echo "Switching from $(old-version) to $(new-version)"
 	find Cargo.toml -type f -exec sed -i '' 's/$(old-version)/$(new-version)/g' {} \;
@@ -93,26 +115,6 @@ update-version:
 release-macos-dmg:
 # 	Using https://www.npmjs.com/package/create-dmg
 	cd ./release && create-dmg $(APP_NAME) --dmg-title="Rio ${version}" --overwrite
-
-# 	Using https://github.com/create-dmg/create-dmg
-# 	create-dmg \
-# 		--volname "Rio" \
-#   		--volicon "$(APP_EXTRAS_DIR)/Rio-stable.icns" \
-# 		--text-size 30 \
-# 		--window-pos 200 120 \
-# 		--window-size 800 400 \
-# 		--icon-size 100 \
-# 		--icon "Rio.app" 200 190 \
-#   		--hide-extension "Rio.app" \
-#   		--app-drop-link 600 185 \
-#   		--skip-jenkins \
-# 		--background "./resources/rio-colors.png" \
-# 		./release/Rio-v0.0.0.dmg ./release/Rio.app
-# 	mv "./release/Rio $(version).dmg" "./release/Rio-v$(version).dmg"
-
-release-macos-signed:
-	$(eval VERSION = $(shell echo $(version)))
-	$(if $(strip $(VERSION)),make release-macos-app-signed, make version-not-found)
 
 bump-brew:
 	brew bump-cask-pr rio --version ${version}
@@ -130,13 +132,13 @@ release-wayland:
 # To install: sudo release/debian/rio_<version>_<architecture>_<feature>.deb
 # e.g: sudo release/debian/rio_0.0.13_arm64_wayland.deb
 release-debian-x11:
-	cargo deb -p rioterm -- --release --no-default-features --features=x11
+	cargo deb -p rioterm -- --no-default-features --features=x11
 	mkdir -p $(RELEASE_DIR)/debian/x11
 	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/x11/
 	cd $(RELEASE_DIR)/debian/x11 && rename 's/.deb/_x11.deb/g' *
 
 release-debian-wayland:
-	cargo deb -p rioterm -- --release --no-default-features --features=wayland
+	cargo deb -p rioterm -- --no-default-features --features=wayland
 	mkdir -p $(RELEASE_DIR)/debian/wayland
 	mv $(TARGET_DIR_DEBIAN)/* $(RELEASE_DIR)/debian/wayland/
 	cd $(RELEASE_DIR)/debian/wayland && rename 's/.deb/_wayland.deb/g' *
@@ -158,23 +160,18 @@ lint:
 	cargo fmt -- --check --color always
 	cargo clippy --all-targets --all-features -- -D warnings
 
-# There is errors regarding null pointers in corcovado that needs to be fixed for Windows
-test-win:
-	cargo fmt -- --check --color always
-	cargo clippy --all-targets --all-features
-	RUST_BACKTRACE=full cargo test --release
-
 test:
 	make lint
 	RUST_BACKTRACE=full cargo test --release
 
-publish-crates:
+publish-crates: build
+	cargo publish -p rio-window
 	cargo publish -p rio-proc-macros
 	cargo publish -p copa
 	cargo publish -p corcovado
 	cargo publish -p teletypewriter
 	cargo publish -p sugarloaf
-	cargo publish -p rio-config
+	cargo publish -p rio-backend
 	cargo publish -p rioterm
 
 test-renderer:

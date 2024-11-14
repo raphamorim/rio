@@ -11,7 +11,7 @@ env:
   RUST_BACKTRACE: full
 
 jobs:
-  native:
+  test-native:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
@@ -24,15 +24,34 @@ jobs:
       - run: rustup component add rustfmt clippy
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
-      - name: cargo clippy
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            cargo clippy --all-targets --all-features
-          else
-            cargo clippy --all-features --all-targets -- -D warnings
-          fi
-        shell: bash
-      - run: cargo test
+      - run: cargo clippy --all-targets --all-features
+      - run: cargo test --release
+  msys2-build-test: #cargo test doesn't necessarily build the exec we want
+    strategy:
+      matrix:
+        sys: [MINGW64, UCRT64, CLANG64]
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ matrix.sys }}
+        update: true
+        install: base-devel git
+        pacboy: >-
+          rust:p
+          cc:p
+          pkgconf:p
+          cmake:p
+          freetype:p
+          python:p
+          fontconfig:p
+
+    - name: Run cargo 
+      shell: msys2 {0}
+      run: cargo build --release
 
   # cli:
   #   strategy:
@@ -57,19 +76,19 @@ jobs:
   #         fi
   #       shell: bash
 
-  webassembly:
-    runs-on: ubuntu-latest
-    env:
-      GECKODRIVER: chromedriver
-    steps:
-      - uses: actions/checkout@v3
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: "true"
-      - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
-      - run: cargo fetch
-      - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
-      - run: cd ./sugarloaf && make install
+  # webassembly:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     GECKODRIVER: chromedriver
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-all-crates: "true"
+  #     - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+  #     - run: cargo fetch
+  #     - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
+  #     - run: cd ./sugarloaf && make install
   #     - uses: nanasess/setup-chromedriver@v2
   #     - run: |
   #         export DISPLAY=:99

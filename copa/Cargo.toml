@@ -1,21 +1,17 @@
 [package]
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 description = "Parser for implementing terminal emulators"
-repository = "https://github.com/alacritty/vte"
-documentation = "https://docs.rs/vte/"
+repository = "https://github.com/raphamorim/rio"
+documentation = "https://github.com/raphamorim/rio"
 readme = "README.md"
 license = "Apache-2.0 OR MIT"
 version = { workspace = true }
 name = "copa"
 edition = "2021"
-rust-version = "1.73.0"
 
 [dependencies]
 rio-proc-macros = { workspace = true }
-arrayvec = { version = "0.7.4", default-features = false, optional = true }
-
-[dev-dependencies]
-unicode-normalization = "0.1"
+arrayvec = { version = "0.7.6", default-features = false, optional = true }
 
 [features]
 default = ["no_std"]

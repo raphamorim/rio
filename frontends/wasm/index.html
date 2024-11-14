@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rio Terminal WebAssembly</title>
+  </head>
+  <body>
+    <script type="module">
+      import init from "./wasm/rioterm.js";
+      init()
+        .then(() => {
+          console.log("Rio terminal was loaded");
+        })
+        .catch(err => {
+          console.log(err);
+        });
+    </script>
+  </body>
+</html>

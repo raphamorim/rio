@@ -3,6 +3,15 @@
 
 extern crate alloc;
 
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "redox")]
+mod redox;
+#[cfg(target_os = "windows")]
+mod windows;
+
 pub use ttf_parser::Language;
 pub use ttf_parser::Width as Stretch;
 
@@ -26,7 +35,7 @@ impl ID {
     /// Should be used in tandem with [`Database::push_face_info`].
     #[inline]
     pub fn dummy() -> Self {
-        Self(InnerId::from(slotmap::KeyData::from_ffi(core::u64::MAX)))
+        Self(InnerId::from(slotmap::KeyData::from_ffi(u64::MAX)))
     }
 }
 
@@ -75,25 +84,18 @@ pub struct Database {
     family_monospace: String,
 }
 
+/// Create a new, empty `Database`.
+///
+/// Generic font families would be set to:
+///
+/// - `serif` - Times New Roman
+/// - `sans-serif` - Arial
+/// - `cursive` - Comic Sans MS
+/// - `fantasy` - Impact (Papyrus on macOS)
+/// - `monospace` - Courier New
 impl Default for Database {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Database {
-    /// Create a new, empty `Database`.
-    ///
-    /// Generic font families would be set to:
-    ///
-    /// - `serif` - Times New Roman
-    /// - `sans-serif` - Arial
-    /// - `cursive` - Comic Sans MS
-    /// - `fantasy` - Impact (Papyrus on macOS)
-    /// - `monospace` - Courier New
-    #[inline]
-    pub fn new() -> Self {
-        Database {
+        Self {
             faces: SlotMap::with_key(),
             family_serif: "Times New Roman".to_string(),
             family_sans_serif: "Arial".to_string(),
@@ -104,6 +106,13 @@ impl Database {
             family_fantasy: "Papyrus".to_string(),
             family_monospace: "Courier New".to_string(),
         }
+    }
+}
+
+impl Database {
+    /// Same as [Database::default].
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Loads a font data into the `Database`.
@@ -131,7 +140,7 @@ impl Database {
                         });
                         ids.push(ID(id));
                     }
-                    Err(e) => log::warn!(
+                    Err(e) => tracing::warn!(
                         "Failed to load a font face {} from source cause {}.",
                         index,
                         e
@@ -154,7 +163,7 @@ impl Database {
             match parse_face_info(source.clone(), data, index) {
                 Ok(info) => self.push_face_info(info),
                 Err(e) => {
-                    log::warn!(
+                    tracing::warn!(
                         "Failed to load a font face {} from '{}' cause {}.",
                         index,
                         path.display(),
@@ -214,7 +223,7 @@ impl Database {
                     Some("ttf") | Some("ttc") | Some("TTF") | Some("TTC")
                     | Some("otf") | Some("otc") | Some("OTF") | Some("OTC") => {
                         if let Err(e) = self.load_font_file(&path) {
-                            log::warn!(
+                            tracing::warn!(
                                 "Failed to load '{}' cause {}.",
                                 path.display(),
                                 e
@@ -232,143 +241,19 @@ impl Database {
 
     /// Attempts to load system fonts.
     ///
-    /// Supports Windows, Linux and macOS.
+    /// Supports Windows, Linux, macOS and Redox.
     pub fn load_system_fonts(&mut self) {
         #[cfg(target_os = "windows")]
-        {
-            self.load_fonts_dir("C:\\Windows\\Fonts\\");
-
-            if let Ok(ref home) = std::env::var("USERPROFILE") {
-                let home_path = std::path::Path::new(home);
-                self.load_fonts_dir(
-                    home_path.join("AppData\\Local\\Microsoft\\Windows\\Fonts"),
-                );
-                self.load_fonts_dir(
-                    home_path.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"),
-                );
-            }
-        }
+        windows::load(self);
 
         #[cfg(target_os = "macos")]
-        {
-            self.load_fonts_dir("/Library/Fonts");
-            self.load_fonts_dir("/System/Library/Fonts");
-            // Downloadable fonts, location varies on major macOS releases
-            if let Ok(dir) = std::fs::read_dir("/System/Library/AssetsV2") {
-                for entry in dir {
-                    let entry = match entry {
-                        Ok(entry) => entry,
-                        Err(_) => continue,
-                    };
-                    if entry
-                        .file_name()
-                        .to_string_lossy()
-                        .starts_with("com_apple_MobileAsset_Font")
-                    {
-                        self.load_fonts_dir(entry.path());
-                    }
-                }
-            }
-            self.load_fonts_dir("/Network/Library/Fonts");
+        macos::load(self);
 
-            if let Ok(ref home) = std::env::var("HOME") {
-                let home_path = std::path::Path::new(home);
-                self.load_fonts_dir(home_path.join("Library/Fonts"));
-            }
-        }
-
-        // Redox OS.
         #[cfg(target_os = "redox")]
-        {
-            self.load_fonts_dir("/ui/fonts");
-        }
+        redox::load(self);
 
-        // Linux.
         #[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
-        {
-            self.load_fontconfig();
-
-            self.load_fonts_dir("/usr/share/fonts/");
-            self.load_fonts_dir("/usr/local/share/fonts/");
-
-            if let Ok(ref home) = std::env::var("HOME") {
-                let home_path = std::path::Path::new(home);
-                self.load_fonts_dir(home_path.join(".fonts"));
-                self.load_fonts_dir(home_path.join(".local/share/fonts"));
-            }
-        }
-    }
-
-    #[cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))]
-    fn load_fontconfig(&mut self) {
-        use std::path::Path;
-
-        let mut fontconfig = fontconfig_parser::FontConfig::default();
-        let home = std::env::var("HOME");
-
-        if let Ok(ref config_file) = std::env::var("FONTCONFIG_FILE") {
-            let _ = fontconfig.merge_config(Path::new(config_file));
-        } else {
-            let xdg_config_home = if let Ok(val) = std::env::var("XDG_CONFIG_HOME") {
-                Some(val.into())
-            } else if let Ok(ref home) = home {
-                // according to https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
-                // $XDG_CONFIG_HOME should default to $HOME/.config if not set
-                Some(Path::new(home).join(".config"))
-            } else {
-                None
-            };
-
-            let read_global = match xdg_config_home {
-                Some(p) => fontconfig
-                    .merge_config(&p.join("fontconfig/fonts.conf"))
-                    .is_err(),
-                None => true,
-            };
-
-            if read_global {
-                let _ = fontconfig.merge_config(Path::new("/etc/fonts/local.conf"));
-            }
-            let _ = fontconfig.merge_config(Path::new("/etc/fonts/fonts.conf"));
-        }
-
-        for fontconfig_parser::Alias {
-            alias,
-            default,
-            prefer,
-            accept,
-        } in fontconfig.aliases
-        {
-            let name = prefer
-                .get(0)
-                .or_else(|| accept.get(0))
-                .or_else(|| default.get(0));
-
-            if let Some(name) = name {
-                match alias.to_lowercase().as_str() {
-                    "serif" => self.set_serif_family(name),
-                    "sans-serif" => self.set_sans_serif_family(name),
-                    "sans serif" => self.set_sans_serif_family(name),
-                    "monospace" => self.set_monospace_family(name),
-                    "cursive" => self.set_cursive_family(name),
-                    "fantasy" => self.set_fantasy_family(name),
-                    _ => {}
-                }
-            }
-        }
-
-        for dir in fontconfig.dirs {
-            let path = if dir.path.starts_with("~") {
-                if let Ok(ref home) = home {
-                    Path::new(home).join(dir.path.strip_prefix("~").unwrap())
-                } else {
-                    continue;
-                }
-            } else {
-                dir.path
-            };
-            self.load_fonts_dir(path);
-        }
+        linux::load(self);
     }
 
     /// Pushes a user-provided `FaceInfo` to the database.
@@ -820,8 +705,12 @@ fn parse_face_info(
         ttf_parser::RawFace::parse(data, index).map_err(|_| LoadError::MalformedFont)?;
     let (families, post_script_name) =
         parse_names(&raw_face).ok_or(LoadError::UnnamedFont)?;
-    let (style, weight, stretch) = parse_os2(&raw_face);
-    let monospaced = parse_post(&raw_face);
+    let (mut style, weight, stretch) = parse_os2(&raw_face);
+    let (monospaced, italic) = parse_post(&raw_face);
+
+    if style == Style::Normal && italic {
+        style = Style::Italic;
+    }
 
     Ok(FaceInfo {
         id: ID::dummy(),
@@ -953,18 +842,23 @@ fn parse_os2(raw_face: &ttf_parser::RawFace) -> (Style, Weight, Stretch) {
     (style, Weight(weight.to_number()), stretch)
 }
 
-fn parse_post(raw_face: &ttf_parser::RawFace) -> bool {
+fn parse_post(raw_face: &ttf_parser::RawFace) -> (bool, bool) {
     // We need just a single value from the `post` table, while ttf-parser will parse all.
     // Therefore we have a custom parser.
 
     const POST_TAG: ttf_parser::Tag = ttf_parser::Tag::from_bytes(b"post");
     let data = match raw_face.table(POST_TAG) {
         Some(v) => v,
-        None => return false,
+        None => return (false, false),
     };
 
     // All we care about, it that u32 at offset 12 is non-zero.
-    data.get(12..16) != Some(&[0, 0, 0, 0])
+    let monospaced = data.get(12..16) != Some(&[0, 0, 0, 0]);
+
+    // Italic angle as f16.16.
+    let italic = data.get(4..8) != Some(&[0, 0, 0, 0]);
+
+    (monospaced, italic)
 }
 
 trait NameExt {

@@ -1,6 +1,6 @@
 [package]
 name = "teletypewriter"
-description = "Rust crate to create a pseudoterminal (pty) that emulates a tty, which is a command in Unix and Unix-like operating systems to print the file name of the terminal connected to standard input. tty stands for TeleTYpewriter. This project is created and maintaned for Rio terminal purposes but feel free to use it."
+description = "Rust crate to create a pseudoterminal (pty) that emulates a tty, which is a command in Unix and Unix-like operating systems to print the file name of the terminal connected to standard input. tty stands for TeleTYpewriter. This project is created and maintained for Rio terminal purposes but feel free to use it."
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -10,13 +10,13 @@ authors = { workspace = true }
 
 [dependencies]
 libc = { workspace = true }
-dirs = "5.0"
+dirs = "5.0.1"
 corcovado = { workspace = true }
-log = "0.4.18"
+tracing = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3.10"
-iovec = "0.1.1"
+signal-hook = "0.3.17"
+iovec = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.48", features = [
@@ -28,5 +28,5 @@ windows-sys = { version = "0.48", features = [
     "Win32_System_WindowsProgramming",
     "Win32_System_IO",
 ]}
-miow = "0.5.0"
-parking_lot = "0.12"
+miow = "0.6.0"
+parking_lot = { workspace = true }

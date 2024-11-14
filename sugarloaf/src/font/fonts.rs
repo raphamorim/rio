@@ -1,74 +1,59 @@
-use crate::font::{DEFAULT_FONT_FAMILY, DEFAULT_FONT_FAMILY_VARIANT};
+use crate::font::DEFAULT_FONT_FAMILY;
 use serde::{Deserialize, Serialize};
 
-/* Example:
-
-[fonts]
-size = 18
-
-
-# You can also set family on root to overwritte all fonts
-# family = "cascadiamono"
-
-# You can also specify extra fonts to load
-# extras = [
-#   { family = "Microsoft JhengHei" },
-# ]
-
-[fonts.regular]
-family = "cascadiamono"
-style = "normal"
-weight = 400
-
-[fonts.bold]
-family = "cascadiamono"
-style = "normal"
-weight = 800
-
-[fonts.italic]
-family = "cascadiamono"
-style = "italic"
-weight = 400
-
-[fonts.bold-italic]
-family = "cascadiamono"
-style = "italic"
-weight = 800
-
-*/
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum SugarloafFontStyle {
+    #[default]
+    Normal,
+    Italic,
+}
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
     pub weight: Option<u16>,
-    pub style: Option<String>,
+    #[serde(default = "SugarloafFontStyle::default")]
+    pub style: SugarloafFontStyle,
+}
+
+impl Default for SugarloafFont {
+    fn default() -> Self {
+        Self {
+            family: default_font_family(),
+            weight: None,
+            style: SugarloafFontStyle::Normal,
+        }
+    }
 }
 
 impl SugarloafFont {
     #[inline]
     pub fn is_default_family(&self) -> bool {
         let current = self.family.replace(' ', "").trim().to_lowercase();
-        current == default_font_family() || current == default_font_family_variant()
+        current == default_font_family()
     }
 }
 
+#[inline]
 pub fn default_font_size() -> f32 {
-    18.
+    14.
+}
+
+#[inline]
+pub fn default_font_hinting() -> bool {
+    true
 }
 
 fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
 }
-fn default_font_family_variant() -> String {
-    DEFAULT_FONT_FAMILY_VARIANT.to_string()
-}
 
 pub fn default_font_regular() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: Some(400),
-        style: Some(String::from("normal")),
+        weight: Some(300),
+        style: SugarloafFontStyle::Normal,
     }
 }
 
@@ -76,15 +61,15 @@ pub fn default_font_bold() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
-        style: Some(String::from("normal")),
+        style: SugarloafFontStyle::Normal,
     }
 }
 
 pub fn default_font_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: Some(400),
-        style: Some(String::from("italic")),
+        weight: Some(300),
+        style: SugarloafFontStyle::Italic,
     }
 }
 
@@ -92,7 +77,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
-        style: Some(String::from("italic")),
+        style: SugarloafFontStyle::Italic,
     }
 }
 
@@ -100,6 +85,10 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
+    #[serde(default = "default_font_hinting")]
+    pub hinting: bool,
+    #[serde(default = "Option::default")]
+    pub features: Option<Vec<String>>,
     #[serde(default = "Option::default")]
     pub family: Option<String>,
     #[serde(default = "default_font_regular")]
@@ -110,6 +99,10 @@ pub struct SugarloafFonts {
     pub bold_italic: SugarloafFont,
     #[serde(default = "default_font_italic")]
     pub italic: SugarloafFont,
+    #[serde(default = "Option::default")]
+    pub ui: Option<SugarloafFont>,
+    #[serde(default = "Option::default")]
+    pub emoji: Option<SugarloafFont>,
     #[serde(default = "Vec::default")]
     pub extras: Vec<SugarloafFont>,
 }
@@ -117,8 +110,12 @@ pub struct SugarloafFonts {
 impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
+            features: None,
+            hinting: true,
             size: default_font_size(),
             family: None,
+            emoji: None,
+            ui: None,
             regular: default_font_regular(),
             bold: default_font_bold(),
             bold_italic: default_font_bold_italic(),

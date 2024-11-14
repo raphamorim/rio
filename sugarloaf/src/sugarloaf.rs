@@ -1,67 +1,42 @@
+pub mod compositors;
+pub mod graphics;
+pub mod primitives;
+pub mod state;
+
 use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::filters::FiltersBrush;
 use crate::components::layer::{self, LayerBrush};
+use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
+use crate::components::rich_text::RichTextBrush;
 use crate::components::text;
-use crate::context::Context;
-use crate::core::{
-    ImageProperties, RectBuilder, RepeatedSugar, Sugar, SugarStack, TextBuilder,
-};
-use crate::font::fonts::{SugarloafFont, SugarloafFonts};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::font::loader::Database;
-use crate::font::Font;
-use crate::font::{
-    FONT_ID_BOLD, FONT_ID_BOLD_ITALIC, FONT_ID_EMOJIS, FONT_ID_ICONS, FONT_ID_ITALIC,
-    FONT_ID_REGULAR, FONT_ID_SYMBOL, FONT_ID_UNICODE,
-};
-use crate::glyph::{FontId, GlyphCruncher};
-use crate::layout::SugarloafLayout;
-use ab_glyph::{self, Font as GFont, FontArc, PxScale};
+use crate::font::{fonts::SugarloafFont, FontLibrary};
+use crate::layout::{RichTextLayout, RootStyle};
+use crate::sugarloaf::graphics::{BottomLayer, Graphics};
+use crate::sugarloaf::layer::types;
+use crate::Content;
+use crate::SugarDimensions;
+use crate::{context::Context, Object};
+use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
-use std::collections::HashMap;
-use unicode_width::UnicodeWidthChar;
+use primitives::ImageProperties;
+use raw_window_handle::{
+    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
+};
+use state::SugarState;
 
-#[cfg(target_arch = "wasm32")]
-pub struct Database;
-
-pub trait Renderable: 'static + Sized {
-    fn init(context: &Context) -> Self;
-    fn resize(
-        &mut self,
-        config: &wgpu::SurfaceConfiguration,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    );
-    fn update(&mut self, event: winit::event::WindowEvent);
-    fn render(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        dimensions: (u32, u32),
-        instances: &[Rect],
-        context: &mut Context,
-    );
-}
-
-#[derive(Copy, Clone, PartialEq)]
-pub struct CachedSugar {
-    font_id: FontId,
-    char_width: f32,
-    monospaced_font_scale: Option<f32>,
-}
-
-pub struct Sugarloaf {
-    sugar_cache: HashMap<char, CachedSugar>,
-    pub ctx: Context,
-    pub layout: SugarloafLayout,
+pub struct Sugarloaf<'a> {
+    pub ctx: Context<'a>,
     text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
+    quad_brush: QuadBrush,
     layer_brush: LayerBrush,
-    rects: Vec<Rect>,
-    text_y: f32,
-    font_bound: (f32, f32),
-    fonts: SugarloafFonts,
-    is_text_monospaced: bool,
+    rich_text_brush: RichTextBrush,
+    state: state::SugarState,
+    pub background_color: Option<wgpu::Color>,
+    pub background_image: Option<ImageProperties>,
+    pub graphics: Graphics,
+    filters_brush: FiltersBrush,
 }
 
 #[derive(Debug)]
@@ -69,461 +44,125 @@ pub struct SugarloafErrors {
     pub fonts_not_found: Vec<SugarloafFont>,
 }
 
-pub struct SugarloafWithErrors {
-    pub instance: Sugarloaf,
+pub struct SugarloafWithErrors<'a> {
+    pub instance: Sugarloaf<'a>,
     pub errors: SugarloafErrors,
 }
 
-impl Debug for SugarloafWithErrors {
+impl Debug for SugarloafWithErrors<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.errors)
     }
 }
 
-impl Sugarloaf {
-    pub async fn new(
-        winit_window: &winit::window::Window,
-        power_preference: wgpu::PowerPreference,
-        fonts: SugarloafFonts,
-        layout: SugarloafLayout,
-        #[allow(unused)] db: Option<&Database>,
-    ) -> Result<Sugarloaf, SugarloafWithErrors> {
-        let ctx = Context::new(winit_window, power_preference).await;
-        let mut sugarloaf_errors = None;
+#[derive(Copy, Clone)]
+pub struct SugarloafWindowSize {
+    pub width: f32,
+    pub height: f32,
+}
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let loader = Font::load(fonts.to_owned(), db);
+pub struct SugarloafWindow {
+    pub handle: raw_window_handle::RawWindowHandle,
+    pub display: raw_window_handle::RawDisplayHandle,
+    pub size: SugarloafWindowSize,
+    pub scale: f32,
+}
+
+pub struct SugarloafRenderer {
+    pub power_preference: wgpu::PowerPreference,
+    pub backend: wgpu::Backends,
+    pub font_features: Option<Vec<String>>,
+}
+
+impl Default for SugarloafRenderer {
+    fn default() -> SugarloafRenderer {
         #[cfg(target_arch = "wasm32")]
-        let loader = Font::load(fonts.to_owned());
+        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+        #[cfg(not(target_arch = "wasm32"))]
+        let default_backend = wgpu::Backends::all();
 
-        let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
-
-        if !fonts_not_found.is_empty() {
-            sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
+        SugarloafRenderer {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            backend: default_backend,
+            font_features: None,
         }
+    }
+}
 
-        let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
-            .build(&ctx.device, ctx.format);
-        let rect_brush = RectBrush::init(&ctx);
-        let layer_brush = LayerBrush::new(&ctx);
+impl SugarloafWindow {
+    fn raw_window_handle(&self) -> raw_window_handle::RawWindowHandle {
+        self.handle
+    }
 
-        let instance = Sugarloaf {
-            sugar_cache: HashMap::new(),
-            layer_brush,
-            fonts,
-            ctx,
-            rect_brush,
-            rects: vec![],
-            text_brush,
-            text_y: 0.0,
-            font_bound: (0.0, 0.0),
-            layout,
-            is_text_monospaced,
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        self.display
+    }
+}
+
+impl HasWindowHandle for SugarloafWindow {
+    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+        let raw = self.raw_window_handle();
+        Ok(unsafe { WindowHandle::borrow_raw(raw) })
+    }
+}
+
+impl HasDisplayHandle for SugarloafWindow {
+    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+        let raw = self.raw_display_handle();
+        Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+    }
+}
+
+unsafe impl Send for SugarloafWindow {}
+unsafe impl Sync for SugarloafWindow {}
+
+impl Sugarloaf<'_> {
+    pub fn new<'a>(
+        window: SugarloafWindow,
+        renderer: SugarloafRenderer,
+        font_library: &FontLibrary,
+        layout: RootStyle,
+    ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
+        let font_features = renderer.font_features.to_owned();
+        let ctx = Context::new(window, renderer);
+
+        let text_brush = {
+            let data = { font_library.inner.lock().ui.to_owned() };
+            text::GlyphBrushBuilder::using_fonts(vec![data])
+                .build(&ctx.device, ctx.format)
         };
 
-        if let Some(errors) = sugarloaf_errors {
-            return Err(SugarloafWithErrors { instance, errors });
-        }
+        let rect_brush = RectBrush::init(&ctx);
+        let layer_brush = LayerBrush::new(&ctx);
+        let quad_brush = QuadBrush::new(&ctx);
+        let rich_text_brush = RichTextBrush::new(&ctx);
+        let state = SugarState::new(layout, font_library, &font_features);
+        let filters_brush = FiltersBrush::default();
+
+        let instance = Sugarloaf {
+            state,
+            layer_brush,
+            quad_brush,
+            ctx,
+            background_color: Some(wgpu::Color::BLACK),
+            background_image: None,
+            rect_brush,
+            rich_text_brush,
+            text_brush,
+            graphics: Graphics::default(),
+            filters_brush,
+        };
 
         Ok(instance)
     }
 
-    #[allow(unused)]
-    pub fn clear(&mut self) {
-        match self.ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
-
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("sugarloaf::init -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-                self.ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
-            }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
-            }
-        }
-    }
-
     #[inline]
-    pub fn update_font(
-        &mut self,
-        fonts: SugarloafFonts,
-        #[allow(unused)] db: Option<&Database>,
-    ) -> Option<SugarloafErrors> {
-        if self.fonts != fonts {
-            log::info!("requested a font change");
+    pub fn update_font(&mut self, font_library: &FontLibrary) {
+        tracing::info!("requested a font change");
 
-            #[cfg(not(target_arch = "wasm32"))]
-            let loader = Font::load(fonts.to_owned(), db);
-            #[cfg(target_arch = "wasm32")]
-            let loader = Font::load(fonts.to_owned());
-
-            let (is_text_monospaced, loaded_fonts, fonts_not_found) = loader;
-            if !fonts_not_found.is_empty() {
-                return Some(SugarloafErrors { fonts_not_found });
-            }
-
-            // Clean font cache per instance
-            self.sugar_cache = HashMap::new();
-
-            let text_brush = text::GlyphBrushBuilder::using_fonts(loaded_fonts)
-                .build(&self.ctx.device, self.ctx.format);
-            self.text_brush = text_brush;
-            self.fonts = fonts;
-            self.is_text_monospaced = is_text_monospaced;
-        }
-
-        None
-    }
-
-    #[inline]
-    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
-        self.ctx.resize(width, height);
-        self.layout.resize(width, height).update();
-        self
-    }
-
-    #[inline]
-    pub fn rescale(&mut self, scale: f32) -> &mut Self {
-        self.ctx.scale = scale;
-        self.layout.rescale(scale).update();
-        self
-    }
-
-    #[inline]
-    pub fn find_scale(
-        &mut self,
-        target_scale: f32,
-        content: char,
-        font_id: FontId,
-    ) -> Option<f32> {
-        let mut found = false;
-        let mut scale = self.layout.style.text_scale;
-        while !found && scale > 0.0 {
-            let width = self.get_font_bounds(content, font_id, scale).0
-                / self.layout.scale_factor;
-
-            if width <= target_scale {
-                found = true;
-            } else {
-                scale -= 1.0;
-            }
-        }
-
-        log::info!("find_scale: {:?} {:?} {}", content, font_id, scale);
-        Some(scale)
-    }
-
-    #[inline]
-    pub fn get_font_id(&mut self, sugar: &mut Sugar) -> CachedSugar {
-        if let Some(cached_sugar) = self.sugar_cache.get(&sugar.content) {
-            return *cached_sugar;
-        }
-
-        #[allow(clippy::unnecessary_to_owned)]
-        let fonts: &[FontArc] = &self.text_brush.fonts().to_owned();
-        let mut font_id = FontId(FONT_ID_REGULAR);
-
-        for (idx, _font_arc) in fonts.iter().enumerate() {
-            let found_glyph_id = fonts[idx].glyph_id(sugar.content);
-            if found_glyph_id != ab_glyph::GlyphId(0) {
-                font_id = FontId(idx);
-                break;
-            }
-        }
-
-        let mut monospaced_font_scale = None;
-        let char_width = sugar.content.width().unwrap_or(1) as f32;
-
-        let mut scale_target: f32 = 0.;
-
-        match font_id {
-            // Icons will look for width 1
-            FontId(FONT_ID_ICONS) => {
-                scale_target = self.layout.sugarwidth;
-            }
-
-            FontId(FONT_ID_UNICODE) | FontId(FONT_ID_SYMBOL) => {
-                scale_target = if char_width > 1. {
-                    self.layout.sugarwidth * 2.0
-                } else {
-                    self.layout.sugarwidth
-                };
-            }
-
-            FontId(FONT_ID_EMOJIS) => {
-                scale_target = self.layout.sugarwidth * 2.0;
-            }
-
-            FontId(FONT_ID_REGULAR) => {
-                if !self.is_text_monospaced {
-                    log::warn!("aligning non monospaced font {}", sugar.content);
-                    scale_target = if char_width > 1. {
-                        self.layout.sugarwidth * 2.
-                    } else {
-                        self.layout.sugarwidth
-                    };
-                }
-            }
-
-            // Emojis does not need since it's loaded as monospaced
-            // Text font only need for cases where it's not monospaced
-            FontId(_) => {}
-        }
-
-        if scale_target != 0.0 {
-            monospaced_font_scale = self.find_scale(scale_target, sugar.content, font_id);
-        }
-
-        let cached_sugar = CachedSugar {
-            font_id,
-            char_width,
-            monospaced_font_scale,
-        };
-
-        self.sugar_cache.insert(
-            sugar.content,
-            CachedSugar {
-                font_id,
-                char_width,
-                monospaced_font_scale,
-            },
-        );
-
-        cached_sugar
-    }
-
-    #[inline]
-    pub fn stack(&mut self, mut stack: SugarStack) {
-        let mut x = 0.;
-        let mod_pos_y = self.layout.style.screen_position.1;
-        let mod_text_y = self.layout.scaled_sugarheight / 2.;
-
-        let sugar_x = self.layout.scaled_sugarwidth;
-        let sugar_width = self.layout.sugarwidth * 2.;
-
-        let mut rect_builder = RectBuilder::new(0);
-        let mut text_builder = TextBuilder::new(FontId(FONT_ID_REGULAR));
-        let mut repeated = RepeatedSugar::new(0);
-
-        let text_bound = self.layout.sugarheight * self.ctx.scale;
-        if self.text_y == 0.0 {
-            self.text_y = self.layout.style.screen_position.1;
-        }
-
-        let size = stack.len();
-        for i in 0..size {
-            let mut add_pos_x = sugar_x;
-            let mut sugar_char_width = 1.;
-            let rect_pos_x = self.layout.style.screen_position.0 + x;
-
-            let cached_sugar: CachedSugar = self.get_font_id(&mut stack[i]);
-            if i < size - 1
-                && cached_sugar.char_width <= 1.
-                && stack[i].content == stack[i + 1].content
-                && stack[i].foreground_color == stack[i + 1].foreground_color
-                && stack[i].background_color == stack[i + 1].background_color
-                && stack[i].decoration.is_none()
-                && stack[i + 1].decoration.is_none()
-            {
-                repeated.set(&stack[i], rect_pos_x, mod_text_y + self.text_y + mod_pos_y);
-                x += add_pos_x;
-                continue;
-            }
-
-            repeated.set_reset_on_next();
-
-            let mut font_id = cached_sugar.font_id;
-            let mut is_text_font = false;
-            if cached_sugar.font_id == FontId(FONT_ID_REGULAR) {
-                if let Some(style) = &stack[i].style {
-                    if style.is_bold_italic {
-                        font_id = FontId(FONT_ID_BOLD_ITALIC);
-                    } else if style.is_bold {
-                        font_id = FontId(FONT_ID_BOLD);
-                    } else if style.is_italic {
-                        font_id = FontId(FONT_ID_ITALIC);
-                    }
-                }
-                is_text_font = true;
-            }
-
-            if cached_sugar.char_width > 1. {
-                sugar_char_width += 1.;
-                add_pos_x += sugar_x;
-            }
-
-            let mut scale = self.layout.style.text_scale;
-            if let Some(new_scale) = cached_sugar.monospaced_font_scale {
-                scale = new_scale;
-            }
-
-            let rect_pos_y = self.text_y + mod_pos_y;
-            let width_bound = sugar_width * sugar_char_width;
-
-            let quantity = if repeated.count() > 0 {
-                1 + repeated.count()
-            } else {
-                1
-            };
-
-            let sugar_str: String = if quantity > 1 {
-                repeated.content_str.to_owned()
-            } else {
-                stack[i].content.to_string()
-            };
-
-            let section_pos_x = if quantity > 1 {
-                repeated.pos_x
-            } else {
-                rect_pos_x
-            };
-
-            let section_pos_y = if quantity > 1 {
-                repeated.pos_y
-            } else {
-                mod_text_y + self.text_y + mod_pos_y
-            };
-
-            let is_last = i == size - 1;
-            let has_different_color_font = text_builder.has_initialized
-                && (text_builder.font_id != font_id
-                    || text_builder.color != stack[i].foreground_color);
-
-            // If the font_id is different from TextBuilder, OR is the last item of the stack,
-            // OR does the text builder color is different than current sugar needs to wrap up
-            // the text builder and also queue the current stack item.
-            //
-            // TODO: Accept diferent colors
-            if !is_text_font || is_last || has_different_color_font {
-                if text_builder.has_initialized {
-                    let text = crate::components::text::OwnedText {
-                        text: text_builder.content.to_owned(),
-                        scale: PxScale::from(text_builder.scale),
-                        font_id: text_builder.font_id,
-                        extra: crate::components::text::Extra {
-                            color: text_builder.color,
-                            z: 0.0,
-                        },
-                    };
-
-                    let section = crate::components::text::OwnedSection {
-                        screen_position: (text_builder.pos_x, section_pos_y),
-                        bounds: (text_builder.width_bound, text_bound),
-                        text: vec![text],
-                        layout: crate::glyph::Layout::default_single_line()
-                            .v_align(crate::glyph::VerticalAlign::Center)
-                            .h_align(crate::glyph::HorizontalAlign::Left),
-                    };
-
-                    self.text_brush.queue(&section);
-                    text_builder.reset();
-                }
-
-                let text = crate::components::text::OwnedText {
-                    text: sugar_str,
-                    scale: PxScale::from(scale),
-                    font_id,
-                    extra: crate::components::text::Extra {
-                        color: stack[i].foreground_color,
-                        z: 0.0,
-                    },
-                };
-
-                let section = crate::components::text::OwnedSection {
-                    screen_position: (section_pos_x, section_pos_y),
-                    bounds: (width_bound * quantity as f32, text_bound),
-                    text: vec![text],
-                    layout: crate::glyph::Layout::default_single_line()
-                        .v_align(crate::glyph::VerticalAlign::Center)
-                        .h_align(crate::glyph::HorizontalAlign::Left),
-                };
-
-                self.text_brush.queue(&section);
-            } else {
-                text_builder.add(
-                    &sugar_str,
-                    scale,
-                    stack[i].foreground_color,
-                    section_pos_x,
-                    width_bound * quantity as f32,
-                    font_id,
-                );
-            }
-
-            let scaled_rect_pos_x = section_pos_x / self.ctx.scale;
-            let scaled_rect_pos_y = rect_pos_y / self.ctx.scale;
-
-            // The decoration cannot be added before the rect otherwise can lead
-            // to issues in the renderer, therefore we need check if decoration does exists
-            if let Some(decoration) = &stack[i].decoration {
-                if rect_builder.quantity >= 1 {
-                    self.rects.push(rect_builder.build());
-                }
-
-                self.rects.push(Rect {
-                    position: [scaled_rect_pos_x, scaled_rect_pos_y],
-                    color: stack[i].background_color,
-                    size: [width_bound * quantity as f32, self.layout.sugarheight],
-                });
-
-                let dec_pos_y = (scaled_rect_pos_y)
-                    + (decoration.relative_position.1 * self.layout.line_height);
-                self.rects.push(Rect {
-                    position: [
-                        (scaled_rect_pos_x
-                            + (add_pos_x * decoration.relative_position.0)
-                                / self.ctx.scale),
-                        dec_pos_y,
-                    ],
-                    color: decoration.color,
-                    size: [
-                        (width_bound * decoration.size.0),
-                        (self.layout.sugarheight) * decoration.size.1,
-                    ],
-                });
-            } else {
-                rect_builder.add(
-                    scaled_rect_pos_x,
-                    scaled_rect_pos_y,
-                    stack[i].background_color,
-                    width_bound * quantity as f32,
-                    self.layout.sugarheight,
-                );
-
-                // If the next rect background color is different the push rect
-                if is_last || rect_builder.color != stack[i + 1].background_color {
-                    self.rects.push(rect_builder.build());
-                }
-            }
-
-            if repeated.reset_on_next() {
-                repeated.reset();
-            }
-
-            x += add_pos_x;
-        }
-
-        self.text_y += self.layout.scaled_sugarheight;
+        self.state.reset_compositors();
+        self.state
+            .set_fonts(font_library, &mut self.rich_text_brush);
     }
 
     #[inline]
@@ -537,184 +176,149 @@ impl Sugarloaf {
     }
 
     #[inline]
-    pub fn get_font_bounds(
-        &mut self,
-        content: char,
-        font_id: FontId,
-        scale: f32,
-    ) -> (f32, f32) {
-        let text = crate::components::text::Text {
-            text: &content.to_owned().to_string(),
-            scale: PxScale::from(scale),
-            font_id,
-            extra: crate::components::text::Extra {
-                color: [0., 0., 0., 0.],
-                z: 0.0,
-            },
-        };
-
-        let section = &crate::components::text::Section {
-            screen_position: (0., 0.),
-            bounds: (scale, scale),
-            text: vec![text],
-            layout: crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left),
-        };
-
-        self.text_brush.queue(section);
-
-        if let Some(rect) = self.text_brush.glyph_bounds(section) {
-            let width = rect.max.x - rect.min.x;
-            let height = rect.max.y - rect.min.y;
-            return (width, height * self.layout.line_height);
-        }
-
-        (0., 0.)
+    pub fn style(&self) -> RootStyle {
+        self.state.style
     }
 
     #[inline]
-    pub fn set_background_color(&mut self, color: wgpu::Color) -> &mut Self {
-        self.layout.background_color = color;
+    pub fn style_mut(&mut self) -> &mut RootStyle {
+        &mut self.state.style
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size_based_on_action(
+        &mut self,
+        rt_id: &usize,
+        operation: u8,
+    ) {
+        self.state.set_rich_text_font_size_based_on_action(
+            rt_id,
+            operation,
+            &mut self.rich_text_brush,
+        );
+    }
+
+    #[inline]
+    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
+        self.state
+            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+    }
+
+    #[inline]
+    pub fn update_filters(&mut self, filter_paths: &[String]) {
+        self.filters_brush.update_filters(&self.ctx, filter_paths);
+    }
+
+    #[inline]
+    pub fn set_background_color(&mut self, color: Option<wgpu::Color>) -> &mut Self {
+        self.background_color = color;
         self
     }
 
     #[inline]
     pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
         let handle = Handle::from_path(image.path.to_owned());
-        self.layout.background_image = Some(layer::types::Image::Raster {
-            handle,
-            bounds: Rectangle {
-                width: image.width,
-                height: image.height,
-                x: image.x,
-                y: image.y,
+        self.graphics.bottom_layer = Some(BottomLayer {
+            should_fit: image.width.is_none() && image.height.is_none(),
+            data: types::Raster {
+                handle,
+                bounds: Rectangle {
+                    width: image.width.unwrap_or(self.ctx.size.width),
+                    height: image.height.unwrap_or(self.ctx.size.height),
+                    x: image.x,
+                    y: image.y,
+                },
             },
         });
         self
     }
 
-    /// calculate_bounds is a fake render operation that defines font bounds
-    /// is an important function to figure out the cursor dimensions and background color
-    /// but should be used as minimal as possible.
-    ///
-    /// For example: It is used in Rio terminal only in the initialization and
-    /// configuration updates that leads to layout recalculation.
-    ///
     #[inline]
-    pub fn calculate_bounds(&mut self) {
-        self.reset_state();
-        self.rects = vec![];
+    pub fn create_rich_text(&mut self) -> usize {
+        self.state.create_rich_text()
+    }
 
-        match self.ctx.surface.get_current_texture() {
-            Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
+    #[inline]
+    pub fn clear_rich_text(&mut self, id: &usize) {
+        self.state.clear_rich_text(id);
+    }
 
-                let view = &frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
+    pub fn content(&mut self) -> &mut Content {
+        self.state.content()
+    }
 
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("sugarloaf::init -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
+    #[inline]
+    pub fn set_objects(&mut self, objects: Vec<Object>) {
+        self.state.compute_objects(objects);
+    }
 
-                // Every time a font size change the cached bounds also changes
-                self.sugar_cache = HashMap::new();
+    #[inline]
+    pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
+        self.state.get_state_layout(id)
+    }
 
-                let text_scale = self.layout.style.text_scale;
-                // Bounds are defined in runtime
-                if self.is_text_monospaced {
-                    self.font_bound =
-                        self.get_font_bounds(' ', FontId(FONT_ID_REGULAR), text_scale);
-                } else {
-                    self.font_bound =
-                        self.get_font_bounds('-', FontId(FONT_ID_REGULAR), text_scale);
-                }
+    #[inline]
+    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
+        self.state
+            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+    }
 
-                self.layout.scaled_sugarwidth = self.font_bound.0;
-                self.layout.scaled_sugarheight = self.font_bound.1;
+    #[inline]
+    pub fn clear(&mut self) {
+        self.state.clean_screen();
+    }
 
-                self.layout.sugarwidth = self.layout.scaled_sugarwidth / self.ctx.scale;
-                self.layout.sugarheight = self.layout.scaled_sugarheight / self.ctx.scale;
+    #[inline]
+    pub fn window_size(&self) -> SugarloafWindowSize {
+        self.ctx.size
+    }
 
-                self.layout.update_columns_per_font_width();
+    #[inline]
+    pub fn scale_factor(&self) -> f32 {
+        self.state.style.scale_factor
+    }
 
-                self.ctx.queue.submit(Some(encoder.finish()));
-                frame.present();
-            }
-            Err(error) => {
-                if error == wgpu::SurfaceError::OutOfMemory {
-                    panic!("Swapchain error: {error}. Rendering cannot continue.")
-                }
+    #[inline]
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.ctx.resize(width, height);
+        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+            if bottom_layer.should_fit {
+                bottom_layer.data.bounds.width = self.ctx.size.width;
+                bottom_layer.data.bounds.height = self.ctx.size.height;
             }
         }
     }
 
     #[inline]
-    fn reset_state(&mut self) {
-        self.text_y = 0.0;
+    pub fn rescale(&mut self, scale: f32) {
+        self.ctx.scale = scale;
+        self.state
+            .compute_layout_rescale(scale, &mut self.rich_text_brush);
+        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+            if bottom_layer.should_fit {
+                bottom_layer.data.bounds.width = self.ctx.size.width;
+                bottom_layer.data.bounds.height = self.ctx.size.height;
+            }
+        }
     }
 
     #[inline]
-    pub fn pile_rects(&mut self, mut instances: Vec<Rect>) -> &mut Self {
-        self.rects.append(&mut instances);
-        self
-    }
-
-    #[inline]
-    pub fn text(
-        &mut self,
-        pos: (f32, f32),
-        text_str: String,
-        font_id_usize: usize,
-        scale: f32,
-        color: [f32; 4],
-        single_line: bool,
-    ) -> &mut Self {
-        let font_id = FontId(font_id_usize);
-
-        let text = crate::components::text::Text {
-            text: &text_str,
-            scale: PxScale::from(scale * self.ctx.scale),
-            font_id,
-            extra: crate::components::text::Extra { color, z: 0.0 },
-        };
-
-        let layout = if single_line {
-            crate::glyph::Layout::default_single_line()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
-        } else {
-            crate::glyph::Layout::default()
-                .v_align(crate::glyph::VerticalAlign::Center)
-                .h_align(crate::glyph::HorizontalAlign::Left)
-        };
-
-        let section = &crate::components::text::Section {
-            screen_position: (pos.0 * self.ctx.scale, pos.1 * self.ctx.scale),
-            bounds: (self.layout.width, self.layout.height),
-            text: vec![text],
-            layout,
-        };
-
-        self.text_brush.queue(section);
-        self
+    pub fn reset(&mut self) {
+        self.state.reset_compositors();
     }
 
     #[inline]
     pub fn render(&mut self) {
-        self.reset_state();
+        self.state.compute_dimensions(&mut self.rich_text_brush);
+
+        self.state.compute_updates(
+            &mut self.rich_text_brush,
+            &mut self.text_brush,
+            &mut self.rect_brush,
+            &mut self.quad_brush,
+            &mut self.ctx,
+            &mut self.graphics,
+        );
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -722,47 +326,95 @@ impl Sugarloaf {
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
 
-                let view = &frame
+                let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("sugarloaf::render -> Clear frame"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(self.layout.background_color),
-                            store: true,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                });
-
-                if let Some(bg_image) = &self.layout.background_image {
-                    self.layer_brush.prepare_ref(
-                        &mut encoder,
-                        &mut self.ctx,
-                        &[bg_image],
-                    );
-
+                if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
-                        .render_with_encoder(0, view, &mut encoder, None);
+                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
                 }
 
-                self.rect_brush.render(
+                if self.graphics.has_graphics_on_top_layer() {
+                    for request in &self.graphics.top_layer {
+                        if let Some(entry) = self.graphics.get(&request.id) {
+                            self.layer_brush.prepare_with_handle(
+                                &mut encoder,
+                                &mut self.ctx,
+                                &entry.handle,
+                                &Rectangle {
+                                    width: request.width.unwrap_or(entry.width),
+                                    height: request.height.unwrap_or(entry.height),
+                                    x: request.pos_x,
+                                    y: request.pos_y,
+                                },
+                            );
+                        }
+                    }
+                }
+
+                {
+                    let load = if let Some(background_color) = self.background_color {
+                        wgpu::LoadOp::Clear(background_color)
+                    } else {
+                        wgpu::LoadOp::Load
+                    };
+
+                    let mut rpass =
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            label: None,
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load,
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                        });
+
+                    if self.graphics.bottom_layer.is_some() {
+                        self.layer_brush.render(0, &mut rpass, None);
+                    }
+
+                    if self.graphics.has_graphics_on_top_layer() {
+                        let range_request = if self.graphics.bottom_layer.is_some() {
+                            1..(self.graphics.top_layer.len() + 1)
+                        } else {
+                            0..self.graphics.top_layer.len()
+                        };
+                        for request in range_request {
+                            self.layer_brush.render(request, &mut rpass, None);
+                        }
+                    }
+
+                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
+
+                    self.quad_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
+
+                    self.rect_brush
+                        .render(&mut rpass, &self.state, &mut self.ctx);
+
+                    self.text_brush.render(&mut self.ctx, &mut rpass);
+                }
+
+                if self.graphics.bottom_layer.is_some()
+                    || self.graphics.has_graphics_on_top_layer()
+                {
+                    self.layer_brush.end_frame();
+                    self.graphics.clear_top_layer();
+                }
+
+                self.filters_brush.render(
+                    &self.ctx,
                     &mut encoder,
-                    view,
-                    (self.ctx.size.width, self.ctx.size.height),
-                    &self.rects,
-                    &mut self.ctx,
+                    &frame.texture,
+                    &frame.texture,
                 );
-
-                self.rects = vec![];
-
-                let _ = self
-                    .text_brush
-                    .draw_queued(&mut self.ctx, &mut encoder, view);
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
@@ -773,5 +425,6 @@ impl Sugarloaf {
                 }
             }
         }
+        self.reset();
     }
 }

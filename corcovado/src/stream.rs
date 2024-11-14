@@ -96,7 +96,7 @@ impl UnixStream {
     ///
     /// The returned `UnixStream` is a reference to the same stream that this
     /// object references. Both handles will read and write the same stream of
-    /// data, and options set on one stream will be propogated to the other
+    /// data, and options set on one stream will be propagated to the other
     /// stream.
     pub fn try_clone(&self) -> io::Result<UnixStream> {
         self.inner.try_clone().map(|s| UnixStream { inner: s })
@@ -141,7 +141,7 @@ impl UnixStream {
     pub fn read_bufs(&self, bufs: &mut [&mut IoVec]) -> io::Result<usize> {
         unsafe {
             let slice = as_os_slice_mut(bufs);
-            let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
+            let len = cmp::min(<libc::c_int>::MAX as usize, slice.len());
             let rc =
                 libc::readv(self.inner.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {
@@ -167,7 +167,7 @@ impl UnixStream {
     pub fn write_bufs(&self, bufs: &[&IoVec]) -> io::Result<usize> {
         unsafe {
             let slice = as_os_slice(bufs);
-            let len = cmp::min(<libc::c_int>::max_value() as usize, slice.len());
+            let len = cmp::min(<libc::c_int>::MAX as usize, slice.len());
             let rc =
                 libc::writev(self.inner.as_raw_fd(), slice.as_ptr(), len as libc::c_int);
             if rc < 0 {

@@ -10,8 +10,8 @@ use std::sync::atomic::Ordering::{self, AcqRel, Acquire, Relaxed, Release, SeqCs
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use std::{fmt, io, ptr, usize};
-use std::{isize, mem, ops};
+use std::{fmt, io, ptr};
+use std::{mem, ops};
 use {sys, Token};
 
 // Poll is backed by two readiness queues. The first is a system readiness queue
@@ -778,7 +778,7 @@ impl Poll {
     // #     try_main().unwrap();
     // # }
     // ```
-    pub fn register<E: ?Sized>(
+    pub fn register<E>(
         &self,
         handle: &E,
         token: Token,
@@ -786,7 +786,7 @@ impl Poll {
         opts: PollOpt,
     ) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         validate_args(token)?;
 
@@ -856,7 +856,7 @@ impl Poll {
     // [`register`]: #method.register
     // [`readable`]: struct.Ready.html#method.readable
     // [`writable`]: struct.Ready.html#method.writable
-    pub fn reregister<E: ?Sized>(
+    pub fn reregister<E>(
         &self,
         handle: &E,
         token: Token,
@@ -864,7 +864,7 @@ impl Poll {
         opts: PollOpt,
     ) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         validate_args(token)?;
 
@@ -919,9 +919,9 @@ impl Poll {
     // #     try_main().unwrap();
     // # }
     // ```
-    pub fn deregister<E: ?Sized>(&self, handle: &E) -> io::Result<()>
+    pub fn deregister<E>(&self, handle: &E) -> io::Result<()>
     where
-        E: Evented,
+        E: Evented + ?Sized,
     {
         trace!("deregistering handle with poller");
 
@@ -1183,7 +1183,7 @@ impl Poll {
     }
 
     #[inline]
-    #[cfg_attr(feature = "cargo-clippy", allow(clippy::if_same_then_else))]
+    #[allow(clippy::if_same_then_else)]
     fn poll2(
         &self,
         events: &mut Events,
@@ -2090,7 +2090,7 @@ impl RegistrationInner {
         self.update_lock.store(false, Release);
 
         if !state.is_queued() && next.is_queued() {
-            // We are responsible for enqueing the node.
+            // We are responsible for enqueuing the node.
             enqueue_with_wakeup(queue, self)?;
         }
 
@@ -2186,7 +2186,7 @@ impl ReadinessQueue {
         if dst.len() == dst.capacity() {
             // If `dst` is already full, the readiness queue won't be drained.
             // This might result in `sleep_marker` staying in the queue and
-            // unecessary pipe writes occuring.
+            // unnecessary pipe writes occurring.
             self.inner.clear_sleep_marker();
         }
 

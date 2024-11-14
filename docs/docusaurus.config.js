@@ -1,13 +1,26 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const lightCodeTheme = require('prism-react-renderer/themes/github');
-const darkCodeTheme = require('prism-react-renderer/themes/dracula');
+const { themes } = require('prism-react-renderer');
+const lightCodeTheme = themes.github;
+const darkCodeTheme = themes.dracula;
+
+const defaultLocale = 'en';
+const CURRENT_LOCALE = process.env.DOCUSAURUS_CURRENT_LOCALE ?? defaultLocale;
+
+const tagline = {
+  en: 'A modern terminal for the 21st century.',
+  ko: '21세기의 현대적인 터미널.',
+  'pt-br': 'Terminal moderno para o século 21',
+  es: 'Una terminal moderna para el siglo 21.',
+  pl: 'Nowoczesny terminal na miarę XXI wieku.',
+  ja: '21世紀のモダンターミナル'
+};
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
-  title: 'Meet Rio | Rio Terminal',
-  tagline: 'A modern terminal for the 21st century.',
+  title: 'Rio Terminal',
+  tagline: tagline[CURRENT_LOCALE],
   favicon: '/assets/rio-logo.ico',
   url: 'https://raphamorim.io',
   baseUrl: '/rio',
@@ -16,9 +29,34 @@ const config = {
   onBrokenLinks: 'throw',
   onBrokenMarkdownLinks: 'warn',
   i18n: {
-    defaultLocale: 'en',
-    locales: ['en'],
+    defaultLocale,
+    locales: ['en', 'ko', 'pt-br', 'es', 'pl', 'ja'],
   },
+
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.googleapis.com',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'preconnect',
+        href: 'https://fonts.gstatic.com',
+        crossorigin: 'anonymous',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&display=swap',
+      },
+    },
+  ],
 
   presets: [
     [
@@ -27,21 +65,25 @@ const config = {
       ({
         docs: {
           sidebarPath: require.resolve('./sidebars.js'),
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/raphamorim/rio/tree/main/docs/',
+          editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
+          disableVersioning: false,
         },
         blog: {
           showReadingTime: true,
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/raphamorim/rio/tree/main/docs/',
+          editUrl: 'https://github.com/raphamorim/rio/tree/main/docs/',
         },
         theme: {
-          customCss: require.resolve('./src/css/custom.css'),
+          customCss: [
+            require.resolve('react-tweet/theme.css'),
+            require.resolve('./src/css/custom.css'),
+          ],
         },
+        // gtag: {
+        //   trackingID: '---------',
+        //   anonymizeIP: true,
+        // },
       }),
     ],
   ],
@@ -53,23 +95,28 @@ const config = {
       image: '/assets/banner.png',
       navbar: {
         logo: {
-          src: '/assets/rio-logo-512-512.png',
+          src: '/assets/rio-logo.svg',
         },
         items: [
-		  {to: '/docs/install', label: 'Install', position: 'left'},
-		  {to: '/docs/documentation', label: 'Docs', position: 'left'},
-		  {to: '/docs/features', label: 'Features', position: 'left'},
-          {to: '/blog', label: 'Blog', position: 'left'},
+          { to: '/docs/install', label: 'Install', position: 'left' },
+          { to: '/docs/config', label: 'Config', position: 'left', },
+          { to: '/docs/features', label: 'Features', position: 'left' },
+          { to: '/docs/releases', label: 'Releases', position: 'left' },
+          { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            href: 'https://discord.gg/zRvJjmKGwS',
+            label: 'Discord',
+            position: 'left',
+          },
+          {
+            type: 'localeDropdown',
+            position: 'right',
+          },
           {
             href: 'https://github.com/raphamorim/rio',
             label: 'GitHub',
             position: 'right',
             // image: '/assets/github-mark.svg',
-          },
-          {
-            href: 'https://discord.gg/zRvJjmKGwS',
-            label: 'Discord',
-            position: 'left',
           },
         ],
       },
@@ -77,15 +124,15 @@ const config = {
         style: 'dark',
         links: [
           {
-			      title: 'Docs',
+            title: 'Docs',
             items: [
               {
                 label: 'Install',
                 to: '/docs/install',
               },
               {
-                label: 'Docs',
-                to: '/docs/documentation',
+                label: 'Config',
+                to: '/docs/config',
               },
               {
                 label: 'Features',
@@ -125,6 +172,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
+        additionalLanguages: ['bash', 'toml'],
       },
 
       colorMode: {
@@ -136,10 +184,19 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'If you use Rio terminal please consider support via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
+          'Support Rio via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
         backgroundColor: '#f712ff',
         textColor: '#FFFFFF',
         isCloseable: true,
+      },
+
+      algolia: {
+        // The application ID provided by Algolia
+        appId: '6KTBGQQMEX',
+        // Public API key: it is safe to commit it
+        apiKey: 'debd45deb1f0785248bdde28ec768d5a',
+        indexName: 'raphamorim',
+        debug: false,
       },
     }),
 };
