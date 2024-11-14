@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@docusaurus/core": "^3.5.2",
+    "@docusaurus/plugin-google-gtag": "^3.6.1",
     "@docusaurus/preset-classic": "^3.5.2",
     "@docusaurus/theme-search-algolia": "^3.5.2",
     "@mdx-js/react": "3.0.0",
