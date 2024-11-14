@@ -10,7 +10,9 @@ language: 'en'
 
 ## 0.2.1 (unreleased)
 
-- WIP
+- Fix: Grey triangle in the titlebar [#778](https://github.com/raphamorim/rio/issues/778)
+- Update window title straight away ([#779](https://github.com/raphamorim/rio/pull/779) by [@hunger](https://github.com/hunger))
+- Always update the title on windows and MacOS ([#780](https://github.com/raphamorim/rio/pull/780) by [@hunger](https://github.com/hunger))
 
 ## 0.2.0
 
