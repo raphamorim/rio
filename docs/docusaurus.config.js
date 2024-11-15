@@ -14,7 +14,9 @@ const tagline = {
   'pt-br': 'Terminal moderno para o século 21',
   es: 'Una terminal moderna para el siglo 21.',
   pl: 'Nowoczesny terminal na miarę XXI wieku.',
-  ja: '21世紀のモダンターミナル'
+  ja: '21世紀のモダンターミナル',
+  'zh-hans': '21 世纪的现代终端',
+  'zh-hant': '21 世紀的現代終端',
 };
 
 /** @type {import('@docusaurus/types').Config} */
@@ -30,7 +32,7 @@ const config = {
   onBrokenMarkdownLinks: 'warn',
   i18n: {
     defaultLocale,
-    locales: ['en', 'ko', 'pt-br', 'es', 'pl', 'ja'],
+    locales: ['en', 'ko', 'pt-br', 'es', 'pl', 'ja', 'zh-hans', 'zh-hant'],
   },
 
   headTags: [
