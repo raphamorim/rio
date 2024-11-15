@@ -88,23 +88,6 @@ const config = {
     ],
   ],
 
-  plugins: [
-    [
-      "@dipakparmar/docusaurus-plugin-umami",
-      /** @type {import('@dipakparmar/docusaurus-plugin-umami').Options} */
-      ({
-        websiteID: "866f410a-7800-4d32-844f-80373325f764", // Required
-        analyticsDomain: "raphamorim.io", // Required
-        // scriptName: "", // Optional
-        // dataHostURL: "", // Optional
-        dataAutoTrack: true, // Optional
-        dataDoNotTrack: true, // Optional
-        dataCache: true, // Optional
-        // dataDomains: "", // comma separated list of domains, *Recommended*
-      }),
-    ],
-  ],
-
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
