@@ -47,21 +47,25 @@ features = []
 [fonts.regular]
 family = "cascadiacode"
 style = "normal"
+width = "Normal"
 weight = 400
 
 [fonts.bold]
 family = "cascadiacode"
 style = "normal"
+width = "Normal"
 weight = 800
 
 [fonts.italic]
 family = "cascadiacode"
 style = "italic"
+width = "Normal"
 weight = 400
 
 [fonts.bold-italic]
 family = "cascadiacode"
 style = "italic"
+width = "Normal"
 weight = 800
 ```
 
