@@ -1,0 +1,30 @@
+{
+  "item.label.Install": {
+    "message": "安裝",
+    "description": "Navbar item with label Install"
+  },
+  "item.label.Config": {
+    "message": "配置",
+    "description": "Navbar item with label Config"
+  },
+  "item.label.Features": {
+    "message": "功能",
+    "description": "Navbar item with label Features"
+  },
+  "item.label.Releases": {
+    "message": "發行",
+    "description": "Navbar item with label Releases"
+  },
+  "item.label.Blog": {
+    "message": "部落格",
+    "description": "Navbar item with label Blog"
+  },
+  "item.label.Discord": {
+    "message": "Discord",
+    "description": "Navbar item with label Discord"
+  },
+  "item.label.GitHub": {
+    "message": "GitHub",
+    "description": "Navbar item with label GitHub"
+  }
+}

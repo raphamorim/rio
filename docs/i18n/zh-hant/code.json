@@ -1,0 +1,46 @@
+{
+  "Install": {
+    "message": "安裝"
+  },
+
+  "Loved by many engineers": {
+    "message": "被許多工程師喜愛"
+  },
+
+  "home.features.fast-and-fast.title": {
+    "message": "極速效能"
+  },
+  "home.features.fast-and-fast.description": {
+    "message": "Rio 使用 Rust 等最新技術和先進的渲染架構，實現極速效能。"
+  },
+  "home.features.24-bit-true-color.title": {
+    "message": "24 位真彩色"
+  },
+  "home.features.24-bit-true-color.description": {
+    "message": "一般終端僅支援 256 色，而 Rio 支援真彩色，可顯示多達 1600 萬種顏色。"
+  },
+  "home.features.images-in-terminal.title": {
+    "message": "終端內顯示影象"
+  },
+  "home.features.images-in-terminal.description": {
+    "message": "使用 Sixel 或 iTerm2 的影象協議，可以在終端內顯示影象。"
+  },
+  "home.features.cross-platform.title": {
+    "message": "跨平臺"
+  },
+  "home.features.cross-platform.description": {
+    "message": "Rio 是跨平臺應用程式，支援 Windows、macOS、Linux 和 FreeBSD。"
+  },
+  "home.features.font-ligatures.title": {
+    "message": "連字"
+  },
+  "home.features.font-ligatures.description": {
+    "message": "Rio 支援連字，以提高常用符號和運算子的可讀性。"
+  },
+  "home.features.splits.title": {
+    "message": "視窗分割"
+  },
+  "home.features.splits.description": {
+    "message": "在任何平臺上分割和管理終端機視窗區塊。"
+  }
+}
