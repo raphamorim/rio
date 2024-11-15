@@ -188,7 +188,7 @@ impl Screen<'_> {
         let is_native = config.navigation.is_native();
 
         let (shell, working_dir) = process_open_url(
-            config.get_shell().to_owned(),
+            config.shell.to_owned(),
             config.working_dir.to_owned(),
             config.editor.to_owned(),
             open_url.as_deref(),
