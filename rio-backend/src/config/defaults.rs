@@ -456,6 +456,27 @@ pub fn default_config_file_content() -> String {
 #   { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 # ]
 
+# Platform
+#
+# Rio now allows you to have different configurations per OS
+# You can write ovewrite properties like `Shell`, `Navigation`
+# and `Window`.
+#
+# Example:
+# [shell]
+# # default (in this case will be used only on MacOS)
+# program = "/bin/fish"
+# args = ["--login"]
+#
+# [platform]
+# # Microsoft Windows overwrite
+# windows.shell.program = "pwsh"
+# windows.shell.args = ["-l"]
+#
+# # Linux overwrite
+# linux.shell.program = "tmux"
+# linux.shell.args = ["new-session", "-c", "/var/www"]
+
 # Log level
 #
 # This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default.

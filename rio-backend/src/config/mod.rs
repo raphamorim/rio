@@ -47,6 +47,8 @@ pub struct Platform {
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct PlatformConfig {
     shell: Option<Shell>,
+    navigation: Option<Navigation>,
+    window: Option<Window>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -430,23 +432,35 @@ impl Config {
         }
     }
 
-    pub fn get_shell(&self) -> &Shell {
+    pub fn overwrite_based_on_platform(&mut self) {
         #[cfg(windows)]
-        if let Some(ref win) = self.platform.windows {
-            return win.shell.as_ref().unwrap_or(&self.shell);
+        if let Some(windows) = &self.platform.windows {
+            self.overwrite_with_platform_config(windows.clone());
         }
 
         #[cfg(target_os = "linux")]
-        if let Some(ref linux) = self.platform.linux {
-            return linux.shell.as_ref().unwrap_or(&self.shell);
+        if let Some(linux) = &self.platform.linux {
+            self.overwrite_with_platform_config(linux.clone());
         }
 
         #[cfg(target_os = "macos")]
-        if let Some(ref macos) = self.platform.macos {
-            return macos.shell.as_ref().unwrap_or(&self.shell);
+        if let Some(macos) = &self.platform.macos {
+            self.overwrite_with_platform_config(macos.clone());
+        }
+    }
+
+    fn overwrite_with_platform_config(&mut self, platform_config: PlatformConfig) {
+        if let Some(shell_overwrite) = &platform_config.shell {
+            self.shell = shell_overwrite.clone();
         }
 
-        &self.shell
+        if let Some(window_overwrite) = &platform_config.window {
+            self.window = window_overwrite.clone();
+        }
+
+        if let Some(navigation_overwrite) = &platform_config.navigation {
+            self.navigation = navigation_overwrite.clone();
+        }
     }
 }
 

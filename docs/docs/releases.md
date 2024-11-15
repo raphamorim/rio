@@ -10,6 +10,25 @@ language: 'en'
 
 ## 0.2.1 (unreleased)
 
+- Support to multiconfiguration. Rio now allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation` and `Window`.
+
+Example:
+
+```toml
+[shell]
+# default (in this case will be used only on MacOS)
+program = "/bin/fish"
+args = ["--login"]
+
+[platform]
+# Microsoft Windows overwrite
+windows.shell.program = "pwsh"
+windows.shell.args = ["-l"]
+
+# Linux overwrite
+linux.shell.program = "tmux"
+linux.shell.args = ["new-session", "-c", "/var/www"]
+```
 - Fix: Grey triangle in the titlebar [#778](https://github.com/raphamorim/rio/issues/778)
 - Update window title straight away ([#779](https://github.com/raphamorim/rio/pull/779) by [@hunger](https://github.com/hunger))
 - Always update the title on windows and MacOS ([#780](https://github.com/raphamorim/rio/pull/780) by [@hunger](https://github.com/hunger))

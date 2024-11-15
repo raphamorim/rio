@@ -151,6 +151,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(err) => (rio_backend::config::Config::default(), Some(err)),
     };
 
+    // Read platform property and overwrite values per OS
+    //
+    // [shell]
+    // # default (in this case will be used on MacOS/Linux)
+    // program = "/bin/fish"
+    // args = ["--login"]
+    //
+    // [platform]
+    // # Microsoft Windows overwrite
+    // windows.shell.program = "pwsh"
+    // windows.shell.args = ["-l"]
+    config.overwrite_based_on_platform();
+
     {
         let log_to_file = args.window_options.terminal_options.enable_log_file;
         if let Err(e) = setup_logs_by_filter_level(
