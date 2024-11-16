@@ -38,7 +38,7 @@ twox-hash = { version = "1.6.3", default-features = false }
 image_rs = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
-ordered-float = "4.2.0"
+ordered-float = "4.5.0"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
@@ -47,9 +47,9 @@ linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
 lru = "0.12.5"
-skrifa = "0.24.1"
-halfbrown = "0.2.4"
-num-traits = "0.2.15"
+skrifa = "0.25.0"
+halfbrown = "0.2.5"
+num-traits = "0.2.19"
 yazi = { version = "0.2.0", optional = true }
 zeno = { version = "0.2.3", optional = true, default-features = false }
 futures = { workspace = true }
