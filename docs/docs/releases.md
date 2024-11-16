@@ -10,6 +10,7 @@ language: 'en'
 
 ## 0.2.1 (unreleased)
 
+- Fix: Search seems broken in 0.2.0 [#785](https://github.com/raphamorim/rio/issues/785).
 - Regular font is now 400 as default weight.
 - Support to chooseing font width [#507](https://github.com/raphamorim/rio/issues/507).
 - Support to multiconfiguration. Rio now allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation` and `Window`.
