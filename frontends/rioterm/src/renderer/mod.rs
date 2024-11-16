@@ -672,8 +672,13 @@ impl Renderer {
             }
 
             let display_offset = renderable_content.display_offset;
+            let strategy = if is_active && hints.is_some() {
+                &RenderableContentStrategy::Full
+            } else {
+                &renderable_content.strategy
+            };
 
-            match &renderable_content.strategy {
+            match strategy {
                 RenderableContentStrategy::Full => {
                     content.sel(rich_text_id);
                     content.clear();
