@@ -23,6 +23,16 @@ const MENTIONS = [
     ),
   },
   {
+    url: 'https://mas.to/@appelgriebsch@fosstodon.org/113491434980520006',
+    username: 'Andreas Gerlach',
+    source: '/rio/assets/mentions/andreasgerlach.jpeg',
+    quote: (
+      <>
+        With the recent release of #rio earlier this week it has all the features and polish I need on daily basis, so it became my daily driver immediately....  thanks so much @mustache
+      </>
+    ),
+  },
+  {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
     username: '@jaijams',
     source: '/rio/assets/mentions/jaijams.jpg',
