@@ -8,7 +8,11 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.2.1 (unreleased)
+## 0.2.2 (unreleased)
+
+- TBD
+
+## 0.2.1
 
 - Fix: Search seems broken in 0.2.0 [#785](https://github.com/raphamorim/rio/issues/785).
 - Regular font is now 400 as default weight.
