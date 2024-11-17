@@ -575,7 +575,16 @@ name = "copa"
 version = "0.2.1"
 dependencies = [
  "arrayvec",
- "rio-proc-macros",
+ "rio-proc-macros 0.2.1",
+]
+
+[[package]]
+name = "copa"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab94aa05e4f46e8792af4156b85de1dff857c2cddd904137f8ffea3551fc02e4"
+dependencies = [
+ "rio-proc-macros 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2877,7 +2886,7 @@ dependencies = [
  "base64",
  "bitflags 2.6.0",
  "bytemuck",
- "copa",
+ "copa 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "copypasta",
  "corcovado",
  "cursor-icon",
@@ -2903,6 +2912,16 @@ dependencies = [
 [[package]]
 name = "rio-proc-macros"
 version = "0.2.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "rio-proc-macros"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "799dc14ea9255125cbec19f473cd09289794599d916a68873152fd468aa7ba8a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2967,7 +2986,7 @@ dependencies = [
  "ahash",
  "bitflags 2.6.0",
  "clap",
- "copa",
+ "copa 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "corcovado",
  "dirs",
  "futures",
