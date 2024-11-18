@@ -142,6 +142,16 @@ const MENTIONS = [
       </>
     ),
   },
+  {
+    url: 'https://x.com/pedronauck',
+    username: '@pedronauck',
+    source: '/rio/assets/mentions/pedronauck.jpg',
+    quote: (
+      <>
+        Rapha is not only one of the most talented programmers I've ever met but also one of the best friends I've had in my life. It’s no surprise to me that Rio embodies such exceptional quality and speed. As a terminal emulator, Rio has set a new standard—it’s unquestionably the go-to solution.
+      </>
+    ),
+  }
 ];
 
 export default MENTIONS;
