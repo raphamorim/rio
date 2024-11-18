@@ -123,6 +123,8 @@ pub struct Navigation {
     pub hide_if_single: bool,
     #[serde(default = "default_bool_true", rename = "use-split")]
     pub use_split: bool,
+    #[serde(default = "default_bool_true", rename = "open-config-with-split")]
+    pub open_config_with_split: bool,
 }
 
 impl Default for Navigation {
@@ -135,6 +137,7 @@ impl Default for Navigation {
             use_terminal_title: false,
             hide_if_single: true,
             use_split: true,
+            open_config_with_split: true,
         }
     }
 }

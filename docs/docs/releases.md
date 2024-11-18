@@ -10,7 +10,8 @@ language: 'en'
 
 ## 0.2.2 (unreleased)
 
-- TBD
+- Fix iterm2 image protocol.
+- Introduce `navigation.open-config-with-split`.
 
 ## 0.2.1
 
