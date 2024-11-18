@@ -14,6 +14,6 @@ rio-proc-macros = { workspace = true }
 arrayvec = { version = "0.7.6", default-features = false, optional = true }
 
 [features]
-default = ["no_std"]
+default = []
 no_std = ["arrayvec"]
 nightly = []
