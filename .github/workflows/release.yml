@@ -102,3 +102,21 @@ jobs:
           files: |
             ./Rio-installer-${{ matrix.target }}.msi
             ./Rio-portable-${{ matrix.target }}.exe
+
+  publish-winget:
+    runs-on: windows-latest
+    needs: release-windows
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: raphamorim.rio
+          token: ${{ secrets.WINGET_TOKEN }}
+          installers-regex: '\.msi$' # Only .msi files
+
