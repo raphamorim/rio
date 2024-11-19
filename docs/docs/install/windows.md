@@ -7,13 +7,24 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- [Download Microsoft installer](https://github.com/raphamorim/rio/releases/download/v0.1.15/Rio-installer.msi)
-- [Download Microsoft executable](https://github.com/raphamorim/rio/releases/download/v0.1.15/Rio-portable.exe)
+- [Download Microsoft installer for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-installer-x86_64.msi)
+- [Download Microsoft executable for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-portable-x86_64.exe)
+- [Download Microsoft installer for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-installer-aarch64.msi)
+- [Download Microsoft executable for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.0/Rio-portable-aarch64.exe)
+
+- Using WinGet package manager:
+
+```sh
+winget install -e --id raphamorim.rio
+```
+
 - [Using Chocolatey package manager](https://community.chocolatey.org/packages/rio-terminal)
 
 ```sh
 choco install rio-terminal
 ```
+
+- Using MINGW package manager: [packages.msys2.org/base/mingw-w64-rio](https://packages.msys2.org/base/mingw-w64-rio)
 
 There's a few things to note about the installer and the portable version:
 

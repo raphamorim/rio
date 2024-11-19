@@ -23,7 +23,7 @@ impl Advanced {
 
     #[inline]
     pub fn reset(&mut self) {
-        // self.render_data.clear();
+        self.content.clear_all();
     }
 
     #[inline]
@@ -33,7 +33,7 @@ impl Advanced {
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary) {
-        self.content = Content::new(fonts);
+        self.content.set_font_library(fonts);
     }
 
     #[inline]

@@ -15,9 +15,13 @@
 | Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows/) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
-Demo usage of Rio terminal on MacOS:
+> Demo with split and CRT on MacOS
 
-![Demo Rio on MacOS](docs/static/assets/posts/0.1.0/demo-rio.png)
+![Demo Rio 0.2.0 on MacOS](docs/static/assets/posts/0.2.0/demo-rio.png)
+
+> Demo with blurred background on Linux
+
+![Demo blurred background](docs/static/assets/demos/demos-nixos-blur.png)
 
 ## About
 
@@ -41,3 +45,7 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 - The legacy Rio logo was made using _Adobe Sketchbook_ on iPad (between versions 0.0.1 between 0.0.18).
 - WA was built originally from a fork from [Macroquad](https://github.com/not-fl3/macroquad) which is licensed under MIT license.
 - https://github.com/servo/core-foundation-rs/blob/d4ce710182f1756c9d874ab917283fe1a1b7a011/cocoa/src/appkit.rs#L1447
+
+## Minimal stable rust version
+
+Rio's MSRV is 1.80.1.

@@ -8,18 +8,66 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.1.18
+## 0.2.2 (unreleased)
 
+- Fix iterm2 image protocol.
+- Introduce `navigation.open-config-with-split`.
+
+## 0.2.1
+
+- Fix: Search seems broken in 0.2.0 [#785](https://github.com/raphamorim/rio/issues/785).
+- Regular font is now 400 as default weight.
+- Support to chooseing font width [#507](https://github.com/raphamorim/rio/issues/507).
+- Support to multiconfiguration. Rio now allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation` and `Window`.
+
+Example:
+
+```toml
+[shell]
+# default (in this case will be used only on MacOS)
+program = "/bin/fish"
+args = ["--login"]
+
+[platform]
+# Microsoft Windows overwrite
+windows.shell.program = "pwsh"
+windows.shell.args = ["-l"]
+
+# Linux overwrite
+linux.shell.program = "tmux"
+linux.shell.args = ["new-session", "-c", "/var/www"]
+```
+- Fix: Grey triangle in the titlebar [#778](https://github.com/raphamorim/rio/issues/778)
+- Update window title straight away ([#779](https://github.com/raphamorim/rio/pull/779) by [@hunger](https://github.com/hunger))
+- Always update the title on windows and MacOS ([#780](https://github.com/raphamorim/rio/pull/780) by [@hunger](https://github.com/hunger))
+
+## 0.2.0
+
+- Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
 	- Sugarloaf: Major rewrite of font glyph logic.
 	- Sugarloaf: Removal of some unnecessary processing on shaping logic.
 	- Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
+- *Breaking:* Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
+- Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
+- Microsoft Windows: [Rio terminal is now available on MINGW packages](https://github.com/msys2/MINGW-packages/pull/22248).
+- Microsoft Windows: Rio support on ARM architecture by [@andreban](https://github.com/andreban).
 - Allow MacOS automation via events.
+- MacOS: Support titlebar unified: `window.macos-use-unified-titlebar = false`,
+- Support disable font hinting: `fonts.hinting = false`.
+- Fix: Configuration updates triggered multiple times on one save.
+- Support to RetroArch shaders [@igorsaux](https://github.com/igorsaux).
 - Fix: Set notepad as a default editor on Windows by [@igorsaux](https://github.com/igorsaux).
-- Initial split support.
+- Increased Linux font fallbacks list.
+- Early initial split support (this feature is not yet stable).
+- Fix: Preserve current working directory when opening new tabs [#725](https://github.com/raphamorim/rio/issues/725).
 - Added `SplitDown`, `SplitRight`, `CloseSplitOrTab`, `SelectNextSplit` and `SelectPrevSplit` actions.
 - Fix: Window doesn't receive mouse events on Windows 11 by [@igorsaux](https://github.com/igorsaux).
 - Support to hex RGBA (example: `#43ff64d9`) on colors/theme by [@bio](https://github.com/bio) on [#696](https://github.com/raphamorim/rio/pull/696).
+- Introduced `renderer.strategy`, options are `Events` and `Continuous`.
+- Microsoft Windows: make `ControlFlow::WaitUntil` work more precisely using `CREATE_WAITABLE_TIMER_HIGH_RESOLUTION`.
+- Fix: Window output lost when rio loses focus [#706](https://github.com/raphamorim/rio/issues/706).
+- Updated wgpu to `23.0.0`.
 
 ## 0.1.17
 

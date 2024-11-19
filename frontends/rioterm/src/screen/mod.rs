@@ -15,9 +15,8 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
-use crate::context::grid::ContextDimension;
-use crate::context::grid::Delta;
-use crate::context::renderable::Cursor;
+use crate::context::grid::{ContextDimension, Delta};
+use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -111,8 +110,12 @@ impl Screen<'_> {
         let raw_display_handle = window_properties.raw_display_handle;
         let window_id = window_properties.window_id;
 
-        let padding_y_top =
-            padding_top_from_config(&config.navigation, config.padding_y[0], 1);
+        let padding_y_top = padding_top_from_config(
+            &config.navigation,
+            config.padding_y[0],
+            1,
+            config.window.macos_use_unified_titlebar,
+        );
         let padding_y_bottom =
             padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
 
@@ -169,6 +172,8 @@ impl Screen<'_> {
                 instance_with_errors.instance
             }
         };
+
+        sugarloaf.update_filters(config.renderer.filters.as_slice());
 
         let renderer = Renderer::new(config, font_library);
 
@@ -290,11 +295,20 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn mouse_position(&self, display_offset: usize) -> Pos {
-        let (context, margin) = self
+    pub fn select_current_based_on_mouse(&mut self) {
+        if self
             .context_manager
-            .current_grid()
-            .current_context_with_computed_dimension();
+            .current_grid_mut()
+            .select_current_based_on_mouse(&self.mouse)
+        {
+            self.context_manager.select_route_from_current_grid();
+        }
+    }
+
+    #[inline]
+    pub fn mouse_position(&self, display_offset: usize) -> Pos {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
         let context_dimension = context.dimension;
         let style = self.sugarloaf.style();
         calculate_mouse_position(
@@ -332,10 +346,15 @@ impl Screen<'_> {
         &mut self,
         config: &rio_backend::config::Config,
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
+        should_update_font_library: bool,
     ) {
         let num_tabs = self.ctx().len();
-        let padding_y_top =
-            padding_top_from_config(&config.navigation, config.padding_y[0], num_tabs);
+        let padding_y_top = padding_top_from_config(
+            &config.navigation,
+            config.padding_y[0],
+            num_tabs,
+            config.window.macos_use_unified_titlebar,
+        );
         let padding_y_bottom = padding_bottom_from_config(
             &config.navigation,
             config.padding_y[1],
@@ -343,27 +362,37 @@ impl Screen<'_> {
             self.search_active(),
         );
 
-        self.sugarloaf.update_font(font_library);
+        if should_update_font_library {
+            self.sugarloaf.update_font(font_library);
+        }
         let s = self.sugarloaf.style_mut();
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
-        self.context_manager.current_grid_mut().update_margin((
-            config.padding_x,
-            padding_y_top,
-            padding_y_bottom,
-        ));
-
+        self.sugarloaf
+            .update_filters(config.renderer.filters.as_slice());
         self.renderer = Renderer::new(config, font_library);
 
-        for context in self.ctx().contexts() {
-            // TODO: Should loop all
-            let mut terminal = context.current().terminal.lock();
-            let shape = config.cursor.shape;
-            terminal.cursor_shape = shape;
-            terminal.default_cursor_shape = shape;
-            terminal.blinking_cursor = config.cursor.blinking;
-            drop(terminal);
+        for context_grid in self.context_manager.contexts_mut() {
+            context_grid.update_margin((
+                config.padding_x,
+                padding_y_top,
+                padding_y_bottom,
+            ));
+
+            context_grid.update_dimensions(&self.sugarloaf);
+
+            for current_context in context_grid.contexts_mut() {
+                let current_context = current_context.context_mut();
+                let mut terminal = current_context.terminal.lock();
+                current_context.renderable_content =
+                    RenderableContent::from_cursor_config(&config.cursor);
+                let shape = config.cursor.shape;
+                terminal.cursor_shape = shape;
+                terminal.default_cursor_shape = shape;
+                terminal.blinking_cursor = config.cursor.blinking;
+                drop(terminal);
+            }
         }
 
         self.mouse
@@ -380,7 +409,6 @@ impl Screen<'_> {
             self.sugarloaf.set_background_image(image);
         }
 
-        self.render();
         self.resize_all_contexts();
     }
 
@@ -396,6 +424,10 @@ impl Screen<'_> {
             &self.context_manager.current().rich_text_id,
             action,
         );
+
+        self.context_manager
+            .current_grid_mut()
+            .update_dimensions(&self.sugarloaf);
 
         self.render();
         self.resize_all_contexts();
@@ -413,10 +445,11 @@ impl Screen<'_> {
             self.clear_selection();
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
             .resize(new_size.width as f32, new_size.height as f32);
+
+        self.resize_all_contexts();
         self
     }
 
@@ -432,7 +465,7 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .rescale(&self.sugarloaf);
+            .update_dimensions(&self.sugarloaf);
         self.context_manager
             .current_grid_mut()
             .resize(new_size.width as f32, new_size.height as f32);
@@ -446,13 +479,15 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
-        for context in self.ctx().contexts() {
-            let ctx = context.current();
-            let mut terminal = ctx.terminal.lock();
-            terminal.resize::<ContextDimension>(ctx.dimension);
-            drop(terminal);
-            let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
-            let _ = ctx.messenger.send_resize(winsize);
+        for context_grid in self.context_manager.contexts_mut() {
+            for context in context_grid.contexts_mut() {
+                let ctx = context.context_mut();
+                let mut terminal = ctx.terminal.lock();
+                terminal.resize::<ContextDimension>(ctx.dimension);
+                drop(terminal);
+                let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
+                let _ = ctx.messenger.send_resize(winsize);
+            }
         }
     }
 
@@ -1073,6 +1108,7 @@ impl Screen<'_> {
             &self.renderer.navigation.navigation,
             self.renderer.navigation.padding_y[0],
             num_tabs,
+            self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &self.renderer.navigation.navigation,
@@ -1093,9 +1129,6 @@ impl Screen<'_> {
 
             let d = self.context_manager.current_grid_mut();
             d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
-
-            // TODO:
-            // d.dimension.update();
             self.resize_all_contexts();
         }
     }
@@ -1219,7 +1252,7 @@ impl Screen<'_> {
     }
 
     pub fn copy_selection(&mut self, ty: ClipboardType) {
-        let terminal = self.ctx().current().terminal.lock();
+        let terminal = self.context_manager.current_mut().terminal.lock();
         let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
             Some(text) => text,
             None => return,
@@ -1237,7 +1270,7 @@ impl Screen<'_> {
     #[inline]
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.selection.take();
         drop(terminal);
         self.context_manager.current_mut().set_selection(None);
@@ -1440,7 +1473,7 @@ impl Screen<'_> {
             return;
         };
 
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.scroll_display(Scroll::Delta((delta / step) as i32));
         drop(terminal);
     }
@@ -1515,7 +1548,7 @@ impl Screen<'_> {
         };
 
         // Move vi mode cursor to mouse click position.
-        let mut terminal = self.ctx().current().terminal.lock();
+        let mut terminal = self.context_manager.current_mut().terminal.lock();
         if terminal.mode().contains(Mode::VI) {
             terminal.vi_mode_cursor.pos = point;
         }
@@ -1689,7 +1722,7 @@ impl Screen<'_> {
 
         // Reset display offset and cursor position.
         {
-            let mut terminal = self.ctx().current().terminal.lock();
+            let mut terminal = self.context_manager.current_mut().terminal.lock();
             terminal.vi_mode_cursor.pos = self.search_state.origin;
             terminal
                 .scroll_display(Scroll::Delta(self.search_state.display_offset_delta));
@@ -1956,7 +1989,7 @@ impl Screen<'_> {
                 / layout.dimensions.height as f64) as i32;
 
             if lines != 0 {
-                let mut terminal = self.ctx().current().terminal.lock();
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.scroll_display(Scroll::Delta(lines));
                 drop(terminal);
             }

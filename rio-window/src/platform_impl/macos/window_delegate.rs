@@ -10,10 +10,10 @@ use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClas
 use objc2_app_kit::{
     NSAppKitVersionNumber, NSAppKitVersionNumber10_12, NSAppearance, NSApplication,
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSDraggingDestination,
-    NSFilenamesPboardType, NSPasteboard, NSRequestUserAttentionType, NSScreen, NSView,
-    NSWindowButton, NSWindowDelegate, NSWindowFullScreenButton, NSWindowLevel,
+    NSFilenamesPboardType, NSPasteboard, NSRequestUserAttentionType, NSScreen, NSToolbar,
+    NSView, NSWindowButton, NSWindowDelegate, NSWindowFullScreenButton, NSWindowLevel,
     NSWindowOcclusionState, NSWindowOrderingMode, NSWindowSharingType, NSWindowStyleMask,
-    NSWindowTabbingMode, NSWindowTitleVisibility,
+    NSWindowTabbingMode, NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     ns_string, CGFloat, MainThreadMarker, NSArray, NSCopying,
@@ -53,6 +53,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub accepts_first_mouse: bool,
     pub tabbing_identifier: Option<String>,
     pub option_as_alt: OptionAsAlt,
+    pub unified_titlebar: bool,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -70,6 +71,7 @@ impl Default for PlatformSpecificWindowAttributes {
             accepts_first_mouse: true,
             tabbing_identifier: None,
             option_as_alt: Default::default(),
+            unified_titlebar: false,
         }
     }
 }
@@ -563,6 +565,15 @@ fn new_window(
         }
         if attrs.platform_specific.movable_by_window_background {
             window.setMovableByWindowBackground(true);
+        }
+
+        if attrs.platform_specific.unified_titlebar {
+            unsafe {
+                // The toolbar style is ignored if there is no toolbar, so it is
+                // necessary to add one.
+                window.setToolbar(Some(&NSToolbar::new(mtm)));
+                window.setToolbarStyle(NSWindowToolbarStyle::Unified);
+            }
         }
 
         if !attrs.enabled_buttons.contains(WindowButtons::MAXIMIZE) {
@@ -1142,7 +1153,7 @@ impl WindowDelegate {
         let mtm = MainThreadMarker::from(self);
         let event = NSApplication::sharedApplication(mtm)
             .currentEvent()
-            .unwrap();
+            .ok_or(ExternalError::Ignored)?;
         self.window().performWindowDragWithEvent(&event);
         Ok(())
     }
@@ -1833,6 +1844,32 @@ impl WindowExtMacOS for WindowDelegate {
 
     fn option_as_alt(&self) -> OptionAsAlt {
         self.view().option_as_alt()
+    }
+
+    fn set_unified_titlebar(&self, unified_titlebar: bool) {
+        let window = self.window();
+        if unified_titlebar {
+            let mtm = MainThreadMarker::from(self);
+            unsafe {
+                // The toolbar style is ignored if there is no toolbar, so it is
+                // necessary to add one.
+                window.setToolbar(Some(&NSToolbar::new(mtm)));
+                window.setToolbarStyle(NSWindowToolbarStyle::Unified);
+            }
+        } else {
+            unsafe {
+                window.setToolbar(None);
+                window.setToolbarStyle(NSWindowToolbarStyle::Automatic);
+            }
+        }
+    }
+
+    fn unified_titlebar(&self) -> bool {
+        let window = self.window();
+        unsafe {
+            window.toolbar().is_some()
+                && window.toolbarStyle() == NSWindowToolbarStyle::Unified
+        }
     }
 }
 

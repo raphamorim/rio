@@ -3,6 +3,36 @@
 /** @satisfies {import('@site/src/components/MentionsSection/index').MentionCardProps[]} */
 const MENTIONS = [
   {
+    url: 'https://fosstodon.org/@orhun/113375636616878019',
+    username: 'Orhun Parmaksız',
+    source: '/rio/assets/mentions/orhun.png',
+    quote: (
+      <>
+        One of the few terminal emulators out there with kickass features!
+      </>
+    ),
+  },
+  {
+    url: 'https://x.com/kristoferlund/status/1850287561295692226',
+    username: 'Kristofer Lund',
+    source: '/rio/assets/mentions/kristoferlund.jpg',
+    quote: (
+      <>
+        Love Rio terminal by @raphamorims! Written in Rust = super fast, plus has kick-ass features like this. 👊💥
+      </>
+    ),
+  },
+  {
+    url: 'https://mas.to/@appelgriebsch@fosstodon.org/113491434980520006',
+    username: 'Andreas Gerlach',
+    source: '/rio/assets/mentions/andreasgerlach.jpeg',
+    quote: (
+      <>
+        With the recent release of #rio earlier this week it has all the features and polish I need on daily basis, so it became my daily driver immediately....  thanks so much @mustache
+      </>
+    ),
+  },
+  {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
     username: '@jaijams',
     source: '/rio/assets/mentions/jaijams.jpg',
@@ -102,6 +132,26 @@ const MENTIONS = [
       </>
     ),
   },
+  {
+    url: 'https://x.com/mkenzo_8',
+    username: '@mkenzo_8',
+    source: '/rio/assets/mentions/mkenzo_8.jpg',
+    quote: (
+      <>
+        Rio tiene el potencial de ser de las terminales mas rápidas ⚡ y mas personalizables que hay, es una locura.
+      </>
+    ),
+  },
+  {
+    url: 'https://x.com/pedronauck',
+    username: '@pedronauck',
+    source: '/rio/assets/mentions/pedronauck.jpg',
+    quote: (
+      <>
+        Rapha is not only one of the most talented programmers I've ever met but also one of the best friends I've had in my life. It’s no surprise to me that Rio embodies such exceptional quality and speed. As a terminal emulator, Rio has set a new standard—it’s unquestionably the go-to solution.
+      </>
+    ),
+  }
 ];
 
 export default MENTIONS;

@@ -5,7 +5,6 @@ on:
   pull_request:
     branches:
       - main
-      - 0.0.x
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
@@ -13,7 +12,6 @@ on:
   push:
     branches:
       - main
-      - 0.0.x
     paths:
       - '**/*.rs'
       - '.github/workflows/nix-build.yml'
@@ -29,4 +27,4 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
       - name: Run `nix build`
-        run: nix build
+        run: nix build --max-jobs auto --build-max-jobs auto --print-build-logs

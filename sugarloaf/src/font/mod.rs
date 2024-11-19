@@ -7,7 +7,7 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
-use crate::font::fonts::SugarloafFontStyle;
+use crate::font::fonts::{SugarloafFontStyle, SugarloafFontWidth};
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -123,6 +123,7 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub inner: FxHashMap<usize, FontData>,
     pub stash: LruCache<usize, SharedData>,
+    pub hinting: bool,
 }
 
 impl Default for FontLibraryData {
@@ -131,6 +132,7 @@ impl Default for FontLibraryData {
             ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: FxHashMap::default(),
             stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
+            hinting: true,
         }
     }
 }
@@ -243,6 +245,9 @@ impl FontLibraryData {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load(&mut self, mut spec: SugarloafFonts) -> Vec<SugarloafFont> {
+        // Configure hinting through spec
+        self.hinting = spec.hinting;
+
         let mut fonts_not_fount: Vec<SugarloafFont> = vec![];
 
         // If fonts.family does exist it will overwrite all families
@@ -351,6 +356,7 @@ impl FontLibraryData {
                     family: extra_font.family,
                     style: extra_font.style,
                     weight: extra_font.weight,
+                    width: extra_font.width,
                 },
                 true,
                 true,
@@ -560,6 +566,32 @@ fn find_font(
 
         if let Some(weight) = font_spec.weight {
             query.weight = crate::font::loader::Weight(weight);
+        }
+
+        if let Some(ref width) = font_spec.width {
+            query.stretch = match width {
+                SugarloafFontWidth::UltraCondensed => {
+                    crate::font::loader::Stretch::UltraCondensed
+                }
+                SugarloafFontWidth::ExtraCondensed => {
+                    crate::font::loader::Stretch::ExtraCondensed
+                }
+                SugarloafFontWidth::Condensed => crate::font::loader::Stretch::Condensed,
+                SugarloafFontWidth::SemiCondensed => {
+                    crate::font::loader::Stretch::SemiCondensed
+                }
+                SugarloafFontWidth::Normal => crate::font::loader::Stretch::Normal,
+                SugarloafFontWidth::SemiExpanded => {
+                    crate::font::loader::Stretch::SemiExpanded
+                }
+                SugarloafFontWidth::Expanded => crate::font::loader::Stretch::Expanded,
+                SugarloafFontWidth::ExtraExpanded => {
+                    crate::font::loader::Stretch::ExtraExpanded
+                }
+                SugarloafFontWidth::UltraExpanded => {
+                    crate::font::loader::Stretch::UltraExpanded
+                }
+            };
         }
 
         query.style = match font_spec.style {

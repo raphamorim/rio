@@ -3,10 +3,19 @@ title: 'renderer'
 language: 'en'
 ---
 
+## Performance
+
 - `Performance` - Set WGPU rendering performance
 
   - `High`: Adapter that has the highest performance. This is often a discrete GPU.
   - `Low`: Adapter that uses the least possible power. This is often an integrated GPU.
+
+```toml
+[renderer]
+performance = "High"
+```
+
+## Backend
 
 - `Backend` - Set WGPU rendering backend
 
@@ -16,16 +25,51 @@ language: 'en'
   - `DX12`: Supported on Windows 10
   - `Metal`: Supported on macOS/iOS
 
-- `disable-unfocused-render` - This property disable renderer processes while Rio is unfocused.
+```toml
+[renderer]
+backend = "Automatic"
+```
 
-- `max-fps` - Limits the maximum number of frames per second that rio terminal will attempt to draw. If you set as `0` then this limit will be ignored. The default on MacOS is 180 and all other platforms is 90.
+## Disable unfocused render
 
-Example:
+This property disable renderer processes while Rio is unfocused.
+
+Default is false.
 
 ```toml
 [renderer]
-performance = "High"
-backend = "Automatic"
 disable-unfocused-render = false
-max-fps = 180
+```
+
+## Target FPS
+
+This configuration is disabled by default but if isLimits the maximum number of frames per second that rio terminal will attempt to draw on a specific frame per second interval.
+
+```toml
+[renderer]
+target-fps = 120
+```
+
+## Filter
+
+Rio allow to configure filters based on RetroArch shaders: [github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
+
+Note: Filters does not work with `GL` backend.
+
+```toml
+[renderer]
+filters = [
+  "/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp"
+]
+```
+
+![Demo shaders 2](/assets/features/demo-retroarch-2.png)
+
+## Strategy
+
+Strategy property defines how Rio will render, by default it follows Event driven (`Events`), but you can change it to a continuous loop (that will consume more CPU) by changing to `Continuous`.
+
+```toml
+[renderer]
+strategy = "events"
 ```

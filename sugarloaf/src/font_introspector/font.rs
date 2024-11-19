@@ -81,7 +81,7 @@ impl<'a> FontDataRef<'a> {
 /// [`LocalizedString`](super::LocalizedString)s (including names, copyright information
 /// and other metadata).
 ///
-/// ```
+/// ```ignore
 /// fn print_localized_strings(font_path: &str) -> Option<()> {
 ///     use sugarloaf::font_introspector::FontRef;
 ///     // Read the full font file
@@ -107,7 +107,7 @@ impl<'a> FontDataRef<'a> {
 /// Regardless of the complexity of your management strategy, the basic pattern remains
 /// the same, so we'll build a simple `Font` struct here that can load fonts from a
 /// file using a basic `Vec<u8>` as a backing store.
-/// ```
+/// ```ignore
 /// use sugarloaf::font_introspector::{Attributes, CacheKey, Charmap, FontRef};
 ///
 /// pub struct Font {

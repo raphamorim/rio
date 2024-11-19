@@ -56,8 +56,15 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
+        let has_updated = (self.renderable_content.selection_range.is_none()
+            && selection_range.is_some())
+            || (self.renderable_content.selection_range.is_some()
+                && selection_range.is_none());
         self.renderable_content.selection_range = selection_range;
-        self.renderable_content.has_pending_updates = true;
+
+        if has_updated {
+            self.renderable_content.has_pending_updates = true;
+        }
     }
 
     #[inline]
@@ -125,7 +132,7 @@ pub struct ContextManagerConfig {
 }
 
 pub struct ContextManagerTitles {
-    last_title_update: Instant,
+    last_title_update: Option<Instant>,
     pub titles: HashMap<usize, [String; 3]>,
     pub key: String,
 }
@@ -137,11 +144,10 @@ impl ContextManagerTitles {
         terminal_title: String,
         path: String,
     ) -> ContextManagerTitles {
-        let last_title_update = Instant::now();
         ContextManagerTitles {
             key: format!("{}{}{};", idx, program, terminal_title),
             titles: HashMap::from([(idx, [program, terminal_title, path])]),
-            last_title_update,
+            last_title_update: None,
         }
     }
 
@@ -466,6 +472,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // it means we need to clean the context with the specified route_id.
         // If there's no context then should return true and kill the window.
         if !self.contexts.is_empty() {
+            // In case Grid has more than one item
+            if self.current_grid().len() > 1 {
+                if self.current().route_id == route_id {
+                    self.remove_current_grid();
+                }
+
+                return false;
+            }
+
+            // In case Grid has only one item
             if let Some(index_to_remove) = self
                 .contexts
                 .iter()
@@ -539,6 +555,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn set_last_typing(&mut self) {
+        self.current_mut().renderable_content.last_typing = Some(Instant::now());
+    }
+
+    #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
         self.current_route = self.current().route_id;
@@ -608,6 +629,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn select_route_from_current_grid(&mut self) {
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
     pub fn grid_objects(&self) -> Vec<Object> {
         self.contexts[self.current_index].objects()
     }
@@ -622,11 +648,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        #[cfg(unix)]
+        let interval_time = Duration::from_secs(2);
+        if self
+            .titles
+            .last_title_update
+            .map(|i| i.elapsed() > interval_time)
+            .unwrap_or(true)
         {
-            let interval_time = Duration::from_secs(2);
-            if self.titles.last_title_update.elapsed() > interval_time {
-                self.titles.last_title_update = Instant::now();
+            self.titles.last_title_update = Some(Instant::now());
+            #[cfg(unix)]
+            {
                 let mut id = String::default();
                 for (i, context) in self.contexts.iter_mut().enumerate() {
                     let program = teletypewriter::foreground_process_name(
@@ -646,43 +677,34 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         terminal.title.to_string()
                     };
 
-                    if self.config.is_native {
-                        let window_title = if terminal_title.is_empty() {
-                            program.to_owned()
-                        } else {
-                            format!("{} ({})", terminal_title, program)
-                        };
+                    let window_title = if terminal_title.is_empty() {
+                        program.to_owned()
+                    } else {
+                        format!("{} ({})", terminal_title, program)
+                    };
 
-                        if cfg!(target_os = "macos") {
-                            self.event_proxy.send_event(
-                                RioEvent::TitleWithSubtitle(window_title, path.clone()),
-                                self.window_id,
-                            );
-                        } else {
-                            self.event_proxy.send_event(
-                                RioEvent::Title(window_title),
-                                self.window_id,
-                            );
-                        }
+                    if cfg!(target_os = "macos") {
+                        self.event_proxy.send_event(
+                            RioEvent::TitleWithSubtitle(window_title, path.clone()),
+                            self.window_id,
+                        );
+                    } else {
+                        self.event_proxy
+                            .send_event(RioEvent::Title(window_title), self.window_id);
                     }
 
-                    id =
-                        id.to_owned() + &(format!("{}{}{};", i, program, terminal_title));
+                    id.push_str(&format!("{}{}{};", i, program, terminal_title));
                     self.titles.set_key_val(i, program, terminal_title, path);
                 }
                 self.titles.set_key(id);
             }
-        }
 
-        #[cfg(not(unix))]
-        {
-            if self.titles.last_title_update.elapsed() > Duration::from_secs(2) {
-                self.titles.last_title_update = Instant::now();
+            #[cfg(not(unix))]
+            {
                 let mut id = String::from("");
                 for (i, _context) in self.contexts.iter().enumerate() {
                     let program = self.config.shell.program.to_owned();
-                    id = id.to_owned()
-                        + &(format!("{}{}{};", i, program, String::default()));
+                    id.push_str(&format!("{}{}{};", i, program, String::default()));
                     self.titles.set_key_val(
                         i,
                         program,
@@ -696,8 +718,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn contexts(&self) -> &Vec<ContextGrid<T>> {
-        &self.contexts
+    pub fn contexts_mut(&mut self) -> &mut Vec<ContextGrid<T>> {
+        &mut self.contexts
     }
 
     #[inline]
@@ -818,8 +840,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
-        let mut working_dir = None;
-        if self.config.use_current_path && self.config.working_dir.is_none() {
+        let mut working_dir = self.config.working_dir.clone();
+        if self.config.use_current_path {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
@@ -932,8 +954,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
-        let mut working_dir = None;
-        if self.config.use_current_path && self.config.working_dir.is_none() {
+        let mut working_dir = self.config.working_dir.clone();
+        if self.config.use_current_path {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();

@@ -10,11 +10,12 @@ pub struct Context<'a> {
     pub scale: f32,
     alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
+    surface_caps: wgpu::SurfaceCapabilities,
 }
 
 #[inline]
 #[cfg(not(target_os = "macos"))]
-fn find_best_texture_format(formats: Vec<wgpu::TextureFormat>) -> wgpu::TextureFormat {
+fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
     let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
 
     // TODO: Fix formats with signs
@@ -102,18 +103,24 @@ impl Context<'_> {
         let adapter_info = adapter.get_info();
         tracing::info!("Selected adapter: {:?}", adapter_info);
 
-        let caps = surface.get_capabilities(&adapter);
+        let surface_caps = surface.get_capabilities(&adapter);
 
         #[cfg(target_os = "macos")]
         let format = wgpu::TextureFormat::Bgra8Unorm;
         #[cfg(not(target_os = "macos"))]
-        let format = find_best_texture_format(caps.formats);
+        let format = find_best_texture_format(surface_caps.formats.as_slice());
 
         let (device, queue) = {
             {
-                if let Ok(result) = futures::executor::block_on(
-                    adapter.request_device(&wgpu::DeviceDescriptor::default(), None),
-                ) {
+                if let Ok(result) = futures::executor::block_on(adapter.request_device(
+                    // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
+                    &wgpu::DeviceDescriptor {
+                        required_features: wgpu::Features::empty()
+                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                        ..Default::default()
+                    },
+                    None,
+                )) {
                     result
                 } else {
                     // These downlevel limits will allow the code to run on all possible hardware
@@ -131,12 +138,12 @@ impl Context<'_> {
             }
         };
 
-        let alpha_mode = if caps
+        let alpha_mode = if surface_caps
             .alpha_modes
             .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
         {
             wgpu::CompositeAlphaMode::PostMultiplied
-        } else if caps
+        } else if surface_caps
             .alpha_modes
             .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
         {
@@ -148,7 +155,7 @@ impl Context<'_> {
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: Self::get_texture_usage(&surface_caps),
                 format,
                 width: size.width as u32,
                 height: size.height as u32,
@@ -171,16 +178,18 @@ impl Context<'_> {
             },
             scale,
             adapter_info,
+            surface_caps,
         }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.size.width = width as f32;
         self.size.height = height as f32;
+
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: Self::get_texture_usage(&self.surface_caps),
                 format: self.format,
                 width,
                 height,
@@ -190,5 +199,27 @@ impl Context<'_> {
                 desired_maximum_frame_latency: 2,
             },
         );
+    }
+
+    pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
+        &self.surface_caps
+    }
+
+    fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
+        let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+
+        // COPY_DST and COPY_SRC are required for FiltersBrush
+        // But some backends like OpenGL might not support COPY_DST and COPY_SRC
+        // https://github.com/emilk/egui/pull/3078
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
+            usage |= wgpu::TextureUsages::COPY_DST;
+        }
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+            usage |= wgpu::TextureUsages::COPY_SRC;
+        }
+
+        usage
     }
 }

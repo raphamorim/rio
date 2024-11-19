@@ -106,7 +106,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             // Fix is only for windows with opacity that aren't being computed at all
             if self.config.window.opacity < 1. || self.config.window.blur {
                 for (_id, route) in self.router.routes.iter_mut() {
-                    route.update_config(&self.config, &self.router.font_library);
+                    route.update_config(&self.config, &self.router.font_library, false);
 
                     route.request_redraw();
                 }
@@ -153,36 +153,60 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if self.config.renderer.disable_unfocused_render
-                        && !route.window.is_focused
-                    {
-                        return;
-                    }
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            return;
+                        }
 
-                    if route_id == route.window.screen.ctx().current_route() {
-                        let timer_id = TimerId::new(Topic::RenderRoute, route_id);
-                        let event = EventPayload::new(
-                            RioEventType::Rio(RioEvent::Render),
-                            window_id,
-                        );
+                        if route_id == route.window.screen.ctx().current_route() {
+                            let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
 
-                        if !self.scheduler.scheduled(timer_id) {
-                            if let Some(limit) = route.window.wait_until() {
-                                route.window.start_render_timestamp();
-                                self.scheduler.schedule(event, limit, false, timer_id);
-                            } else {
-                                route.window.start_render_timestamp();
-                                route.request_redraw();
+                            if !self.scheduler.scheduled(timer_id) {
+                                if let Some(limit) = route.window.wait_until() {
+                                    route.window.start_render_timestamp();
+                                    self.scheduler
+                                        .schedule(event, limit, false, timer_id);
+                                } else {
+                                    route.window.start_render_timestamp();
+                                    route.request_redraw();
+                                }
                             }
                         }
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
+                let timer_id = TimerId::new(Topic::UpdateConfig, 0);
+                let event = EventPayload::new(
+                    RioEventType::Rio(RioEvent::UpdateConfig),
+                    window_id,
+                );
+
+                if !self.scheduler.scheduled(timer_id) {
+                    self.scheduler.schedule(
+                        event,
+                        Duration::from_millis(250),
+                        false,
+                        timer_id,
+                    );
+                }
+            }
             RioEventType::Rio(RioEvent::UpdateGraphicLibrary) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.ctx().current().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     let graphics = terminal.graphics_take_queues();
                     drop(terminal);
                     if let Some(graphic_queues) = graphics {
@@ -234,7 +258,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                     }
 
-                    route.update_config(&self.config, &self.router.font_library);
+                    route.update_config(
+                        &self.config,
+                        &self.router.font_library,
+                        has_font_updates,
+                    );
                     route.window.configure_window(&self.config);
 
                     if let Some(error) = &config_error {
@@ -357,8 +385,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Scroll(scroll)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let mut terminal =
-                        route.window.screen.ctx().current().terminal.lock();
+                    let mut terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_mut()
+                        .terminal
+                        .lock();
                     terminal.scroll_display(scroll);
                     drop(terminal);
                 }
@@ -455,37 +488,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // it also reaches for the foreground process path if
                     // config.use_current_path is true
                     // For these case we need to make a workaround
-                    //
-                    // TODO: Reimplement this flow
-                    let mut should_revert_to_previous_config: Option<
-                        rio_backend::config::Config,
-                    > = None;
-                    if working_dir_overwrite.is_some() {
-                        let current_config = &self.config;
-                        should_revert_to_previous_config = Some(current_config.clone());
-
-                        let config = rio_backend::config::Config {
+                    let config = if working_dir_overwrite.is_some() {
+                        rio_backend::config::Config {
                             working_dir: working_dir_overwrite,
-                            ..current_config.clone()
-                        };
-                        self.config = config;
-                    }
+                            ..self.config.clone()
+                        }
+                    } else {
+                        self.config.clone()
+                    };
 
                     self.router.create_native_tab(
                         event_loop,
                         self.event_proxy.clone(),
-                        &self.config,
+                        &config,
                         Some(&route.window.winit_window.tabbing_identifier()),
                         None,
                     );
-
-                    if let Some(old_config) = should_revert_to_previous_config {
-                        self.config = old_config;
-                    }
                 }
             }
             RioEventType::Rio(RioEvent::CreateConfigEditor) => {
-                if self.config.navigation.use_split {
+                if self.config.navigation.open_config_with_split {
                     self.router.open_config_split(&self.config);
                 } else {
                     self.router.open_config_window(
@@ -681,6 +703,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match state {
                     ElementState::Pressed => {
+                        // In case need to switch grid current
+                        route.window.screen.select_current_based_on_mouse();
+
                         if route.window.screen.trigger_hyperlink() {
                             return;
                         }
@@ -962,7 +987,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                route.window.screen.renderer.last_typing = Some(Instant::now());
+                route.window.screen.context_manager.set_last_typing();
                 route.window.screen.process_key_event(&key_event);
 
                 if key_event.state == ElementState::Released
@@ -1047,10 +1072,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ThemeChanged(new_theme) => {
                 update_colors_based_on_theme(&mut self.config, Some(new_theme));
-                route
-                    .window
-                    .screen
-                    .update_config(&self.config, &self.router.font_library);
+                route.window.screen.update_config(
+                    &self.config,
+                    &self.router.font_library,
+                    false,
+                );
                 route.window.configure_window(&self.config);
             }
 
@@ -1106,6 +1132,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
+                if self.config.renderer.strategy.is_continuous()
+                    && !self.config.renderer.disable_unfocused_render
+                    && route.window.is_focused
+                {
+                    route.request_frame(&mut self.scheduler);
+                }
+
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
             _ => {}
@@ -1124,7 +1157,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn open_config(&mut self, event_loop: &ActiveEventLoop) {
-        if self.config.navigation.use_split {
+        if self.config.navigation.open_config_with_split {
             self.router.open_config_split(&self.config);
         } else {
             self.router.open_config_window(

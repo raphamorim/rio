@@ -277,6 +277,15 @@ impl Content {
     }
 
     #[inline]
+    pub fn set_font_library(&mut self, font_library: &FontLibrary) {
+        self.fonts = font_library.clone();
+        self.word_cache = WordCache::new();
+        for line in self.states.values_mut() {
+            line.metrics_cache = MetricsCache::default();
+        }
+    }
+
+    #[inline]
     pub fn get_state(&self, state_id: &usize) -> Option<&BuilderState> {
         self.states.get(state_id)
     }
@@ -374,6 +383,16 @@ impl Content {
     }
 
     #[inline]
+    pub fn clear_all(&mut self) -> &mut Content {
+        for state in &mut self.states.values_mut() {
+            state.clear();
+            state.begin();
+        }
+
+        self
+    }
+
+    #[inline]
     pub fn clear(&mut self) -> &mut Content {
         if let Some(selector) = self.selector {
             return self.clear_with_id(&selector);
@@ -421,12 +440,12 @@ impl Content {
     ) -> &mut Content {
         if let Some(state) = self.states.get_mut(id) {
             let current_line = state.current_line();
-            let line = &mut state.lines[current_line];
-
-            line.fragments.push(FragmentData {
-                content: text.to_string(),
-                style,
-            });
+            if let Some(line) = &mut state.lines.get_mut(current_line) {
+                line.fragments.push(FragmentData {
+                    content: text.to_string(),
+                    style,
+                });
+            }
         }
 
         self

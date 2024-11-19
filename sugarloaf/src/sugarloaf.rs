@@ -4,6 +4,7 @@ pub mod primitives;
 pub mod state;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::filters::FiltersBrush;
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
@@ -35,6 +36,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
+    filters_brush: FiltersBrush,
 }
 
 #[derive(Debug)]
@@ -135,6 +137,7 @@ impl Sugarloaf<'_> {
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
+        let filters_brush = FiltersBrush::default();
 
         let instance = Sugarloaf {
             state,
@@ -147,6 +150,7 @@ impl Sugarloaf<'_> {
             rich_text_brush,
             text_brush,
             graphics: Graphics::default(),
+            filters_brush,
         };
 
         Ok(instance)
@@ -156,9 +160,9 @@ impl Sugarloaf<'_> {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
 
-        self.rich_text_brush.reset();
         self.state.reset_compositors();
-        self.state.set_fonts(font_library);
+        self.state
+            .set_fonts(font_library, &mut self.rich_text_brush);
     }
 
     #[inline]
@@ -187,13 +191,22 @@ impl Sugarloaf<'_> {
         rt_id: &usize,
         operation: u8,
     ) {
-        self.state
-            .set_rich_text_font_size_based_on_action(rt_id, operation);
+        self.state.set_rich_text_font_size_based_on_action(
+            rt_id,
+            operation,
+            &mut self.rich_text_brush,
+        );
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state.set_rich_text_font_size(rt_id, font_size);
+        self.state
+            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+    }
+
+    #[inline]
+    pub fn update_filters(&mut self, filter_paths: &[String]) {
+        self.filters_brush.update_filters(&self.ctx, filter_paths);
     }
 
     #[inline]
@@ -279,7 +292,8 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.scale = scale;
-        self.state.compute_layout_rescale(scale);
+        self.state
+            .compute_layout_rescale(scale, &mut self.rich_text_brush);
         if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
             if bottom_layer.should_fit {
                 bottom_layer.data.bounds.width = self.ctx.size.width;
@@ -312,7 +326,7 @@ impl Sugarloaf<'_> {
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
 
-                let view = &frame
+                let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -352,7 +366,7 @@ impl Sugarloaf<'_> {
                             occlusion_query_set: None,
                             label: None,
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view,
+                                view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
                                     load,
@@ -394,6 +408,13 @@ impl Sugarloaf<'_> {
                     self.layer_brush.end_frame();
                     self.graphics.clear_top_layer();
                 }
+
+                self.filters_brush.render(
+                    &self.ctx,
+                    &mut encoder,
+                    &frame.texture,
+                    &frame.texture,
+                );
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();

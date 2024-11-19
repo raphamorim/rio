@@ -8,6 +8,7 @@ language: 'en'
 - `use-current-path` - Use same path whenever a new tab is created (Note: requires [`use-fork`](/docs/config/use-fork) to be set to false).
 - `color-automation` - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 - `use-split` - Enable split panels feature.
+- `open-config-with-split` - Enable split for open configuration file.
 
 ```toml
 [navigation]
@@ -17,6 +18,7 @@ hide-if-single = true
 use-current-path = false
 color-automation = []
 use-split = true
+open-config-with-split = true
 ```
 
 ## Mode
@@ -101,6 +103,15 @@ Enable split feature. It is enabled by default.
 ```toml
 [navigation]
 use-split = true
+```
+
+## Open config with split
+
+Enable open configuration file by split. It is enabled by default.
+
+```toml
+[navigation]
+open-config-with-split = true
 ```
 
 ![Demo split](/assets/features/demo-split.png)

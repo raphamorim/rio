@@ -11,6 +11,7 @@ use crate::layout::SugarDimensions;
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{Compositor, DisplayList, Rect, Vertex};
+use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
@@ -177,7 +178,7 @@ impl RichTextBrush {
             vertex: wgpu::VertexState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: mem::size_of::<Vertex>() as u64,
                     // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
@@ -193,7 +194,7 @@ impl RichTextBrush {
             fragment: Some(wgpu::FragmentState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: context.format,
                     blend: BLEND,
@@ -438,7 +439,7 @@ fn draw_layout(
         current_font_size,
     );
 
-    let mut last_rendered_graphic = None;
+    let mut last_rendered_graphic = HashSet::new();
     let mut line_y = 0. + y;
     for line in lines {
         if line.render_data.runs.is_empty() {
@@ -498,7 +499,7 @@ fn draw_layout(
             }
 
             if let Some(graphic) = run.span.media {
-                if last_rendered_graphic != Some(graphic.id) {
+                if !last_rendered_graphic.contains(&graphic.id) {
                     let offset_x = graphic.offset_x as f32;
                     let offset_y = graphic.offset_y as f32;
 
@@ -509,7 +510,7 @@ fn draw_layout(
                         width: None,
                         height: None,
                     });
-                    last_rendered_graphic = Some(graphic.id);
+                    last_rendered_graphic.insert(graphic.id);
                 }
             }
 

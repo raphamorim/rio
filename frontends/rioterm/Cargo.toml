@@ -21,6 +21,9 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "registry"]
 wgpu = { workspace = true }
 rio-backend = { workspace = true }
 
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = { workspace = true }
 futures = { workspace = true }
@@ -29,7 +32,7 @@ regex = { workspace = true }
 raw-window-handle = { workspace = true }
 clap = { version = "4.5.20", features = ["derive"] }
 dirs = "5.0.1"
-notify = "6.1.1"
+notify = "7.0.0"
 rustc-hash = { workspace = true }
 image_rs = { workspace = true }
 libc = { workspace = true }
@@ -38,7 +41,7 @@ serde = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
-url = "2.5.2"
+url = "2.5.3"
 rio-window = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -60,7 +60,7 @@ use std::option::Option;
 use std::ptr;
 use std::sync::Arc;
 use sugarloaf::{GraphicData, MAX_GRAPHIC_DIMENSIONS};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 use unicode_width::UnicodeWidthChar;
 use vi_mode::{ViModeCursor, ViMotion};
 
@@ -399,7 +399,7 @@ where
     colors: List,
     pub title: String,
     damage: TermDamageState,
-    graphics: Graphics,
+    pub graphics: Graphics,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -1076,6 +1076,12 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    #[inline]
+    pub fn mark_line_damaged(&mut self, line: Line) {
+        self.damage
+            .damage_line(line.0 as usize, 0, self.columns() - 1);
+    }
+
     pub fn selection_to_string(&self) -> Option<String> {
         let selection_range = self.selection.as_ref().and_then(|s| s.to_range(self))?;
         let SelectionRange { start, end, .. } = selection_range;
@@ -1262,7 +1268,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::trace!("Setting public mode: {:?}", mode);
+        trace!("Setting public mode: {:?}", mode);
         match mode {
             NamedMode::Insert => self.mode.insert(Mode::INSERT),
             NamedMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
@@ -1279,7 +1285,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::trace!("Setting public mode: {:?}", mode);
+        trace!("Setting public mode: {:?}", mode);
         match mode {
             NamedMode::Insert => {
                 self.mode.remove(Mode::INSERT);
@@ -1291,7 +1297,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_mode(&mut self, mode: AnsiMode) {
-        tracing::trace!("Reporting mode {mode:?}");
+        trace!("Reporting mode {mode:?}");
         let state = match mode {
             AnsiMode::Named(mode) => match mode {
                 NamedMode::Insert => self.mode.contains(Mode::INSERT).into(),
@@ -1337,7 +1343,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::trace!("Setting private mode: {:?}", mode);
+        trace!("Setting private mode: {:?}", mode);
         match mode {
             NamedPrivateMode::UrgencyHints => self.mode.insert(Mode::URGENCY_HINTS),
             NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
@@ -1420,7 +1426,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        tracing::trace!("Unsetting private mode: {:?}", mode);
+        trace!("Unsetting private mode: {:?}", mode);
         match mode {
             NamedPrivateMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
             NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
@@ -1465,7 +1471,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_private_mode(&mut self, mode: PrivateMode) {
-        tracing::info!("Reporting private mode {mode:?}");
+        info!("Reporting private mode {mode:?}");
         let state = match mode {
             PrivateMode::Named(mode) => match mode {
                 NamedPrivateMode::CursorKeys => {
@@ -1541,6 +1547,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn goto(&mut self, line: Line, col: Column) {
+        trace!("Going to: line={}, col={}", line, col);
         let (y_offset, max_y) = if self.mode.contains(Mode::ORIGIN) {
             (self.scroll_region.start, self.scroll_region.end - 1)
         } else {
@@ -1667,11 +1674,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_title(&mut self) {
-        tracing::trace!("Pushing '{:?}' onto title stack", self.title);
+        trace!("Pushing '{:?}' onto title stack", self.title);
 
         if self.title_stack.len() >= TITLE_STACK_MAX_DEPTH {
             let removed = self.title_stack.remove(0);
-            tracing::trace!(
+            trace!(
                 "Removing '{:?}' from bottom of title stack that exceeds its maximum depth",
                 removed
             );
@@ -1682,10 +1689,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn pop_title(&mut self) {
-        tracing::trace!("Attempting to pop title from stack...");
+        trace!("Attempting to pop title from stack...");
 
         if let Some(popped) = self.title_stack.pop() {
-            tracing::trace!("Title '{:?}' popped from stack", popped);
+            trace!("Title '{:?}' popped from stack", popped);
             self.set_title(Some(popped));
         }
     }
@@ -1823,6 +1830,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
+        trace!("Setting attribute: {:?}", attr);
         let cursor = &mut self.grid.cursor;
         match attr {
             Attr::Foreground(color) => cursor.template.fg = color,
@@ -1911,13 +1919,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_keypad_application_mode(&mut self) {
-        tracing::trace!("Setting keypad application mode");
+        trace!("Setting keypad application mode");
         self.mode.insert(Mode::APP_KEYPAD);
     }
 
     #[inline]
     fn unset_keypad_application_mode(&mut self) {
-        tracing::trace!("Unsetting keypad application mode");
+        trace!("Unsetting keypad application mode");
         self.mode.remove(Mode::APP_KEYPAD);
     }
 
@@ -1946,7 +1954,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         index: pos::CharsetIndex,
         charset: pos::StandardCharset,
     ) {
-        tracing::trace!("Configuring charset {:?} as {:?}", index, charset);
+        trace!("Configuring charset {:?} as {:?}", index, charset);
         self.grid.cursor.charsets[index] = charset;
     }
 
@@ -2057,14 +2065,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn identify_terminal(&mut self, intermediate: Option<char>) {
         match intermediate {
             None => {
-                tracing::trace!("Reporting primary device attributes");
+                trace!("Reporting primary device attributes");
                 let text = String::from("\x1b[?62;4;6;22c");
-                // let text = String::from("\x1b[?62;6;22c");
                 self.event_proxy
                     .send_event(RioEvent::PtyWrite(text), self.window_id);
             }
             Some('>') => {
-                tracing::trace!("Reporting secondary device attributes");
+                trace!("Reporting secondary device attributes");
                 let version = version_number(env!("CARGO_PKG_VERSION"));
                 let text = format!("\x1b[>0;{version};1c");
                 self.event_proxy
@@ -2124,7 +2131,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn device_status(&mut self, arg: usize) {
-        tracing::trace!("Reporting device status: {}", arg);
+        trace!("Reporting device status: {}", arg);
         match arg {
             5 => {
                 let text = String::from("\x1b[0n");
@@ -2359,6 +2366,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn carriage_return(&mut self) {
+        trace!("Carriage return");
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
         self.damage
@@ -2369,7 +2377,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
-        tracing::trace!("[unimplemented] Moving forward {} tabs", count);
+        trace!("[unimplemented] Moving forward {} tabs", count);
     }
 
     #[inline]
@@ -2379,6 +2387,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn restore_cursor_position(&mut self) {
+        trace!("Restoring cursor position");
+
         self.damage_cursor();
         self.grid.cursor = self.grid.saved_cursor.clone();
         self.damage_cursor();
@@ -2587,6 +2597,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(parser) = &mut self.graphics.sixel_parser {
             parser.put(byte)
         } else {
+            self.sixel_graphic_reset();
             Err(sixel::Error::NonExistentParser)
         }
     }
@@ -2602,10 +2613,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(parser) = parser {
             match parser.finish() {
                 Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette)),
-                Err(err) => tracing::warn!("Failed to parse Sixel data: {}", err),
+                Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
         } else {
-            tracing::warn!("Failed to sixel_graphic_finish");
+            warn!("Failed to sixel_graphic_finish");
         }
     }
 
@@ -2775,10 +2786,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 cell.set_graphics(graphics);
                 *cell_ref = cell;
-
-                self.damage
-                    .damage_point(Pos::new((line.0 as usize).into(), Column(left)));
             }
+
+            self.mark_line_damaged(line);
 
             if scrolling && offset_y < height.saturating_sub(cell_height as u16) {
                 self.linefeed();
@@ -2883,11 +2893,11 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
     }
 
     fn square_width(&self) -> f32 {
-        0.
+        self.graphics.cell_width
     }
 
     fn square_height(&self) -> f32 {
-        0.
+        self.graphics.cell_height
     }
 }
 

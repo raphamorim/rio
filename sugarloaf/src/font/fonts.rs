@@ -8,13 +8,30 @@ pub enum SugarloafFontStyle {
     Italic,
 }
 
+#[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
+pub enum SugarloafFontWidth {
+    UltraCondensed,
+    ExtraCondensed,
+    Condensed,
+    SemiCondensed,
+    #[default]
+    Normal,
+    SemiExpanded,
+    Expanded,
+    ExtraExpanded,
+    UltraExpanded,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFont {
     #[serde(default = "default_font_family")]
     pub family: String,
+    #[serde(default = "Option::default")]
     pub weight: Option<u16>,
     #[serde(default = "SugarloafFontStyle::default")]
     pub style: SugarloafFontStyle,
+    #[serde(default = "Option::default")]
+    pub width: Option<SugarloafFontWidth>,
 }
 
 impl Default for SugarloafFont {
@@ -23,6 +40,7 @@ impl Default for SugarloafFont {
             family: default_font_family(),
             weight: None,
             style: SugarloafFontStyle::Normal,
+            width: None,
         }
     }
 }
@@ -40,6 +58,11 @@ pub fn default_font_size() -> f32 {
     14.
 }
 
+#[inline]
+pub fn default_font_hinting() -> bool {
+    true
+}
+
 fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
 }
@@ -47,8 +70,9 @@ fn default_font_family() -> String {
 pub fn default_font_regular() -> SugarloafFont {
     SugarloafFont {
         family: default_font_family(),
-        weight: Some(300),
+        weight: Some(400),
         style: SugarloafFontStyle::Normal,
+        width: None,
     }
 }
 
@@ -57,6 +81,7 @@ pub fn default_font_bold() -> SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
         style: SugarloafFontStyle::Normal,
+        width: None,
     }
 }
 
@@ -65,6 +90,7 @@ pub fn default_font_italic() -> SugarloafFont {
         family: default_font_family(),
         weight: Some(300),
         style: SugarloafFontStyle::Italic,
+        width: None,
     }
 }
 
@@ -73,6 +99,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
         family: default_font_family(),
         weight: Some(800),
         style: SugarloafFontStyle::Italic,
+        width: None,
     }
 }
 
@@ -80,6 +107,8 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
+    #[serde(default = "default_font_hinting")]
+    pub hinting: bool,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
     #[serde(default = "Option::default")]
@@ -104,6 +133,7 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             features: None,
+            hinting: true,
             size: default_font_size(),
             family: None,
             emoji: None,

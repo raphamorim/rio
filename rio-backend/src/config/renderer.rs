@@ -11,6 +11,31 @@ pub struct Renderer {
     pub disable_unfocused_render: bool,
     #[serde(default = "Option::default", rename = "target-fps")]
     pub target_fps: Option<u64>,
+    #[serde(default = "Vec::default")]
+    pub filters: Vec<String>,
+    #[serde(default = "RendererStategy::default")]
+    pub strategy: RendererStategy,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum RendererStategy {
+    #[default]
+    #[serde(alias = "events")]
+    Events,
+    #[serde(alias = "continuous")]
+    Continuous,
+}
+
+impl RendererStategy {
+    #[inline]
+    pub fn is_continuous(&self) -> bool {
+        self == &RendererStategy::Continuous
+    }
+
+    #[inline]
+    pub fn is_event_based(&self) -> bool {
+        self == &RendererStategy::Events
+    }
 }
 
 #[allow(clippy::derivable_impls)]
@@ -21,6 +46,8 @@ impl Default for Renderer {
             backend: Backend::default(),
             disable_unfocused_render: false,
             target_fps: None,
+            filters: Vec::default(),
+            strategy: RendererStategy::Events,
         }
     }
 }

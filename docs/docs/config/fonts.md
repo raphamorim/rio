@@ -47,21 +47,25 @@ features = []
 [fonts.regular]
 family = "cascadiacode"
 style = "normal"
+width = "Normal"
 weight = 400
 
 [fonts.bold]
 family = "cascadiacode"
 style = "normal"
+width = "Normal"
 weight = 800
 
 [fonts.italic]
 family = "cascadiacode"
 style = "italic"
+width = "Normal"
 weight = 400
 
 [fonts.bold-italic]
 family = "cascadiacode"
 style = "italic"
+width = "Normal"
 weight = 800
 ```
 
@@ -79,6 +83,15 @@ In case you would like to change:
 # In case you have Noto Color Emoji installed
 # [fonts.emoji]
 # family = "Noto Color Emoji"
+```
+
+## Hinting
+
+Enable or disable font hinting. It is enabled by default.
+
+```toml
+[fonts]
+hinting = true
 ```
 
 ## User interface

@@ -48,6 +48,7 @@ pub enum ClickState {
 pub enum RioEvent {
     PrepareRender(u64),
     PrepareRenderOnRoute(u64, usize),
+    PrepareUpdateConfig,
     /// New terminal content available.
     Render,
     /// New terminal content available per route.
@@ -159,6 +160,7 @@ impl Debug for RioEvent {
             }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
+            RioEvent::PrepareUpdateConfig => write!(f, "PrepareUpdateConfig"),
             RioEvent::PrepareRender(millis) => write!(f, "PrepareRender({millis})"),
             RioEvent::PrepareRenderOnRoute(millis, route) => {
                 write!(f, "PrepareRender({millis} on route {route})")

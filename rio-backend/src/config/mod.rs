@@ -36,6 +36,21 @@ pub struct Shell {
     pub args: Vec<String>,
 }
 
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct Platform {
+    pub linux: Option<PlatformConfig>,
+    pub windows: Option<PlatformConfig>,
+    pub macos: Option<PlatformConfig>,
+}
+
+/// Other platform specific configuration options can be added here.
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct PlatformConfig {
+    shell: Option<Shell>,
+    navigation: Option<Navigation>,
+    window: Option<Window>,
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Scroll {
     pub multiplier: f64,
@@ -81,6 +96,8 @@ pub struct Config {
     pub window: Window,
     #[serde(default = "default_shell")]
     pub shell: Shell,
+    #[serde(default = "Platform::default")]
+    pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
     #[serde(default = "Keyboard::default")]
@@ -414,6 +431,37 @@ impl Config {
             Err(ConfigError::PathNotFound)
         }
     }
+
+    pub fn overwrite_based_on_platform(&mut self) {
+        #[cfg(windows)]
+        if let Some(windows) = &self.platform.windows {
+            self.overwrite_with_platform_config(windows.clone());
+        }
+
+        #[cfg(target_os = "linux")]
+        if let Some(linux) = &self.platform.linux {
+            self.overwrite_with_platform_config(linux.clone());
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(macos) = &self.platform.macos {
+            self.overwrite_with_platform_config(macos.clone());
+        }
+    }
+
+    fn overwrite_with_platform_config(&mut self, platform_config: PlatformConfig) {
+        if let Some(shell_overwrite) = &platform_config.shell {
+            self.shell = shell_overwrite.clone();
+        }
+
+        if let Some(window_overwrite) = &platform_config.window {
+            self.window = window_overwrite.clone();
+        }
+
+        if let Some(navigation_overwrite) = &platform_config.navigation {
+            self.navigation = navigation_overwrite.clone();
+        }
+    }
 }
 
 impl Default for Config {
@@ -437,6 +485,7 @@ impl Default for Config {
             padding_y: default_padding_y(),
             renderer: Renderer::default(),
             shell: default_shell(),
+            platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
             window: Window::default(),

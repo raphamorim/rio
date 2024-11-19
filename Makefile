@@ -24,7 +24,7 @@ docs-build:
 	cd $(DOCS_DIR) && npm ci && npm run build
 
 run:
-	cargo run --release
+	cargo run -p rioterm --release
 
 dev:
 	cargo run -p rioterm
@@ -40,7 +40,7 @@ dev-debug-x11:
 
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib
-	cd rio-wasm && make run
+	cargo run -p rioterm-wasm
 
 dev-watch:
 	#cargo install cargo-watch
@@ -56,8 +56,9 @@ build: install
 # rustup target add x86_64-apple-darwin
 # rustup target add aarch64-apple-darwin
 $(TARGET)-universal:
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
-	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
+	# Note: Catalina is 10.15 and Big Sur is 11.0
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="10.15" cargo build --release --target=x86_64-apple-darwin
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="11.0" cargo build --release --target=aarch64-apple-darwin
 	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
 
 app-universal: $(APP_NAME)-universal ## Create a universal Rio.app

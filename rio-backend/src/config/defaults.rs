@@ -213,7 +213,7 @@ pub fn default_config_file_content() -> String {
 # shape - Default cursor shape is 'block'
 # Other available options are: 'underline', 'beam' or 'hidden'
 #
-# blinking - Whether the cursor blinks. The default is true
+# blinking - Whether the cursor blinks. The default is false
 #
 # blinking-interval - Cursor update on milliseconds interval
 #
@@ -282,12 +282,15 @@ pub fn default_config_file_content() -> String {
 #       will be done like enable font ligatures or emoji support.
 #       For more information please check the docs.
 #
+# • filters: A list of paths to RetroArch slang shaders. Might not work with OpenGL.
+#
 # Example:
 # [renderer]
 # performance = "high"
 # backend = "automatic"
 # disable-unfocused-render = false
 # level = 1
+# filters = []
 
 # Keyboard
 #
@@ -308,9 +311,9 @@ pub fn default_config_file_content() -> String {
 # Note: You can set different font families but Rio terminal
 # will always look for regular font bounds whene
 #
-# You can also set family on root to overwrite all fonts
+# You can also set family on root to overwrite all fonts.
 # [fonts]
-#   family = "cascadiamono"
+# family = "cascadiamono"
 #
 # You can also specify extra fonts to load
 # [fonts]
@@ -322,6 +325,10 @@ pub fn default_config_file_content() -> String {
 #
 # Note: Font features do not have support to live reload on configuration,
 # so to reflect your changes, you will need to close and reopen Rio.
+#
+# You can also disable font hinting. Font hinting is enabled by default.
+# [fonts]
+# hinting = false
 #
 # Example:
 # [fonts]
@@ -448,6 +455,27 @@ pub fn default_config_file_content() -> String {
 #   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
 #   { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
 # ]
+
+# Platform
+#
+# Rio now allows you to have different configurations per OS
+# You can write ovewrite properties like `Shell`, `Navigation`
+# and `Window`.
+#
+# Example:
+# [shell]
+# # default (in this case will be used only on MacOS)
+# program = "/bin/fish"
+# args = ["--login"]
+#
+# [platform]
+# # Microsoft Windows overwrite
+# windows.shell.program = "pwsh"
+# windows.shell.args = ["-l"]
+#
+# # Linux overwrite
+# linux.shell.program = "tmux"
+# linux.shell.args = ["new-session", "-c", "/var/www"]
 
 # Log level
 #

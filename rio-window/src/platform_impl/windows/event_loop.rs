@@ -6,6 +6,9 @@ use std::cell::Cell;
 use std::collections::VecDeque;
 use std::ffi::c_void;
 use std::marker::PhantomData;
+use std::os::windows::io::{
+    AsRawHandle as _, FromRawHandle as _, OwnedHandle, RawHandle,
+};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -16,13 +19,18 @@ use std::{mem, panic, ptr};
 use crate::utils::Lazy;
 
 use windows_sys::Win32::Devices::HumanInterfaceDevice::MOUSE_MOVE_RELATIVE;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{
+    GetLastError, FALSE, HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WAIT_FAILED, WPARAM,
+};
 use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromRect, MonitorFromWindow, RedrawWindow, ScreenToClient,
     ValidateRect, MONITORINFO, MONITOR_DEFAULTTONULL, RDW_INTERNALPAINT, SC_SCREENSAVE,
 };
 use windows_sys::Win32::System::Ole::RevokeDragDrop;
-use windows_sys::Win32::System::Threading::{GetCurrentThreadId, INFINITE};
+use windows_sys::Win32::System::Threading::{
+    CreateWaitableTimerExW, GetCurrentThreadId, SetWaitableTimer,
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE, TIMER_ALL_ACCESS,
+};
 use windows_sys::Win32::UI::Controls::{HOVER_DEFAULT, WM_MOUSELEAVE};
 use windows_sys::Win32::UI::Input::Ime::{
     GCS_COMPSTR, GCS_RESULTSTR, ISC_SHOWUICOMPOSITIONWINDOW,
@@ -40,25 +48,25 @@ use windows_sys::Win32::UI::Input::Touch::{
 use windows_sys::Win32::UI::Input::{RAWINPUT, RIM_TYPEKEYBOARD, RIM_TYPEMOUSE};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-    GetCursorPos, GetMenu, GetMessageW, KillTimer, LoadCursorW, PeekMessageW,
-    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetTimer,
-    SetWindowPos, TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE,
-    GWL_USERDATA, HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, NCCALCSIZE_PARAMS,
-    PM_REMOVE, PT_PEN, PT_TOUCH, RI_MOUSE_HWHEEL, RI_MOUSE_WHEEL, SC_MINIMIZE,
-    SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
-    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_CAPTURECHANGED, WM_CLOSE,
-    WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE,
-    WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
-    WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE,
-    WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT, WM_POINTERDOWN,
-    WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
-    WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING, WM_XBUTTONDOWN,
-    WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
+    GetCursorPos, GetMenu, LoadCursorW, MsgWaitForMultipleObjectsEx, PeekMessageW,
+    PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
+    TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
+    HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
+    NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLEVENTS, RI_MOUSE_HWHEEL,
+    RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE,
+    SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
+    WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
+    WM_CAPTURECHANGED, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DPICHANGED, WM_ENTERSIZEMOVE,
+    WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUT_DEVICE_CHANGE,
+    WM_KEYDOWN, WM_KEYUP, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MENUCHAR, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCLBUTTONDOWN, WM_PAINT,
+    WM_POINTERDOWN, WM_POINTERUP, WM_POINTERUPDATE, WM_RBUTTONDOWN, WM_RBUTTONUP,
+    WM_SETCURSOR, WM_SETFOCUS, WM_SETTINGCHANGE, WM_SIZE, WM_SIZING, WM_SYSCOMMAND,
+    WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WS_OVERLAPPED, WS_POPUP, WS_VISIBLE,
 };
 
 use crate::dpi::{PhysicalPosition, PhysicalSize};
@@ -157,6 +165,10 @@ pub struct EventLoop<T: 'static> {
     user_event_receiver: Receiver<T>,
     window_target: RootAEL,
     msg_hook: Option<Box<dyn FnMut(*const c_void) -> bool + 'static>>,
+    // It is a timer used on timed waits.
+    // It is created lazily in case if we have `ControlFlow::WaitUntil`.
+    // Keep it as a field to avoid recreating it on every `ControlFlow::WaitUntil`.
+    high_resolution_timer: Option<OwnedHandle>,
 }
 
 pub(crate) struct PlatformSpecificEventLoopAttributes {
@@ -223,6 +235,7 @@ impl<T: 'static> EventLoop<T> {
                 _marker: PhantomData,
             },
             msg_hook: attributes.msg_hook.take(),
+            high_resolution_timer: None,
         })
     }
 
@@ -271,7 +284,9 @@ impl<T: 'static> EventLoop<T> {
         }
 
         let exit_code = loop {
-            self.wait_and_dispatch_message(None);
+            self.wait_for_messages(None);
+            // wait_for_messages calls user application before and after waiting
+            // so it may have decided to exit.
 
             if let Some(code) = self.exit_code() {
                 break code;
@@ -335,7 +350,11 @@ impl<T: 'static> EventLoop<T> {
             }
         }
 
-        self.wait_and_dispatch_message(timeout);
+        if self.exit_code().is_none() {
+            self.wait_for_messages(timeout);
+        }
+        // wait_for_messages calls user application before and after waiting
+        // so it may have decided to exit.
 
         if self.exit_code().is_none() {
             self.dispatch_peeked_messages();
@@ -366,102 +385,31 @@ impl<T: 'static> EventLoop<T> {
         status
     }
 
-    /// Wait for one message and dispatch it, optionally with a timeout
-    fn wait_and_dispatch_message(&mut self, timeout: Option<Duration>) {
-        fn get_msg_with_timeout(msg: &mut MSG, timeout: Option<Duration>) -> PumpStatus {
-            unsafe {
-                // A timeout of None means wait indefinitely (so we don't need to call SetTimer)
-                let timer_id =
-                    timeout.map(|timeout| SetTimer(0, 0, dur2timeout(timeout), None));
-                let get_status = GetMessageW(msg, 0, 0, 0);
-                if let Some(timer_id) = timer_id {
-                    KillTimer(0, timer_id);
-                }
-                // A return value of 0 implies `WM_QUIT`
-                if get_status == 0 {
-                    PumpStatus::Exit(0)
-                } else {
-                    PumpStatus::Continue
-                }
-            }
-        }
-
-        /// Fetch the next MSG either via PeekMessage or GetMessage depending on whether the
-        /// requested timeout is `ZERO` (and so we don't want to block)
-        ///
-        /// Returns `None` if no MSG was read, else a `Continue` or `Exit` status
-        fn wait_for_msg(msg: &mut MSG, timeout: Option<Duration>) -> Option<PumpStatus> {
-            if timeout == Some(Duration::ZERO) {
-                unsafe {
-                    if PeekMessageW(msg, 0, 0, 0, PM_REMOVE) != 0 {
-                        Some(PumpStatus::Continue)
-                    } else {
-                        None
-                    }
-                }
-            } else {
-                Some(get_msg_with_timeout(msg, timeout))
-            }
-        }
-
+    /// Waits until new event messages arrive to be peeked.
+    /// Doesn't peek messages itself.
+    ///
+    /// Parameter timeout is optional. This method would wait for the smaller timeout
+    /// between the argument and a timeout from control flow.
+    fn wait_for_messages(&mut self, timeout: Option<Duration>) {
         let runner = &self.window_target.p.runner_shared;
 
         // We aim to be consistent with the MacOS backend which has a RunLoop
         // observer that will dispatch AboutToWait when about to wait for
         // events, and NewEvents after the RunLoop wakes up.
         //
-        // We emulate similar behaviour by treating `GetMessage` as our wait
+        // We emulate similar behaviour by treating `MsgWaitForMultipleObjectsEx` as our wait
         // point and wake up point (when it returns) and we drain all other
         // pending messages via `PeekMessage` until we come back to "wait" via
-        // `GetMessage`
+        // `MsgWaitForMultipleObjectsEx`.
         //
         runner.prepare_wait();
-
-        let control_flow_timeout = match runner.control_flow() {
-            ControlFlow::Wait => None,
-            ControlFlow::Poll => Some(Duration::ZERO),
-            ControlFlow::WaitUntil(wait_deadline) => {
-                let start = Instant::now();
-                Some(wait_deadline.saturating_duration_since(start))
-            }
-        };
-        let timeout = min_timeout(control_flow_timeout, timeout);
-
-        // # Safety
-        // The Windows API has no documented requirement for bitwise
-        // initializing a `MSG` struct (it can be uninitialized memory for the C
-        // API) and there's no API to construct or initialize a `MSG`. This
-        // is the simplest way avoid uninitialized memory in Rust
-        let mut msg = unsafe { mem::zeroed() };
-        let msg_status = wait_for_msg(&mut msg, timeout);
-
+        wait_for_messages_impl(
+            &mut self.high_resolution_timer,
+            runner.control_flow(),
+            timeout,
+        );
         // Before we potentially exit, make sure to consistently emit an event for the wake up
         runner.wakeup();
-
-        match msg_status {
-            None => {} // No MSG to dispatch
-            Some(PumpStatus::Exit(code)) => {
-                runner.set_exit_code(code);
-            }
-            Some(PumpStatus::Continue) => {
-                unsafe {
-                    let handled = if let Some(callback) = self.msg_hook.as_deref_mut() {
-                        callback(&mut msg as *mut _ as *mut _)
-                    } else {
-                        false
-                    };
-                    if !handled {
-                        TranslateMessage(&msg);
-                        DispatchMessageW(&msg);
-                    }
-                }
-
-                if let Err(payload) = runner.take_panic_error() {
-                    runner.reset_runner();
-                    panic::resume_unwind(payload);
-                }
-            }
-        }
     }
 
     /// Dispatch all queued messages via `PeekMessageW`
@@ -480,7 +428,7 @@ impl<T: 'static> EventLoop<T> {
         // initializing a `MSG` struct (it can be uninitialized memory for the C
         // API) and there's no API to construct or initialize a `MSG`. This
         // is the simplest way avoid uninitialized memory in Rust
-        let mut msg = unsafe { mem::zeroed() };
+        let mut msg: MSG = unsafe { mem::zeroed() };
 
         loop {
             unsafe {
@@ -523,6 +471,14 @@ impl<T: 'static> EventLoop<T> {
 
     fn exit_code(&self) -> Option<i32> {
         self.window_target.p.exit_code()
+    }
+}
+
+impl<T> Drop for EventLoop<T> {
+    fn drop(&mut self) {
+        unsafe {
+            DestroyWindow(self.window_target.p.thread_msg_target);
+        }
     }
 }
 
@@ -695,10 +651,157 @@ fn dur2timeout(dur: Duration) -> u32 {
         .unwrap_or(INFINITE)
 }
 
-impl<T> Drop for EventLoop<T> {
-    fn drop(&mut self) {
-        unsafe {
-            DestroyWindow(self.window_target.p.thread_msg_target);
+/// Set upper limit for waiting time to avoid overflows.
+/// I chose 50 days as a limit because it is used in dur2timeout.
+const FIFTY_DAYS: Duration = Duration::from_secs(50_u64 * 24 * 60 * 60);
+/// Waitable timers use 100 ns intervals to indicate due time.
+/// <https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-setwaitabletimer#parameters>
+/// And there is no point waiting using other ways for such small timings
+/// because they are even less precise (can overshoot by few ms).
+const MIN_WAIT: Duration = Duration::from_nanos(100);
+
+fn create_high_resolution_timer() -> Option<OwnedHandle> {
+    unsafe {
+        let handle: HANDLE = CreateWaitableTimerExW(
+            ptr::null(),
+            ptr::null(),
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            TIMER_ALL_ACCESS,
+        );
+        // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION is supported only after
+        // Win10 1803 but it is already default option for rustc
+        // (std uses it to implement `std::thread::sleep`).
+        if handle == 0 {
+            None
+        } else {
+            Some(OwnedHandle::from_raw_handle(handle as *mut c_void))
+        }
+    }
+}
+
+/// This function should not return error if parameters are valid
+/// but there is no guarantee about that at MSDN docs
+/// so we return result of GetLastError if fail.
+///
+/// ## Safety
+///
+/// timer must be a valid timer handle created by [create_high_resolution_timer].
+/// timeout divided by 100 nanoseconds must be more than 0 and less than i64::MAX.
+unsafe fn set_high_resolution_timer(
+    timer: RawHandle,
+    timeout: Duration,
+) -> Result<(), u32> {
+    const INTERVAL_NS: u32 = MIN_WAIT.subsec_nanos();
+    const INTERVALS_IN_SEC: u64 =
+        (Duration::from_secs(1).as_nanos() / INTERVAL_NS as u128) as u64;
+    let intervals_to_wait: u64 = timeout.as_secs() * INTERVALS_IN_SEC
+        + u64::from(timeout.subsec_nanos() / INTERVAL_NS);
+    debug_assert!(
+        intervals_to_wait < i64::MAX as u64,
+        "Must be called with smaller duration",
+    );
+    // Use negative time to indicate relative time.
+    let due_time: i64 = -(intervals_to_wait as i64);
+    unsafe {
+        let set_result =
+            SetWaitableTimer(timer as HANDLE, &due_time, 0, None, ptr::null(), FALSE);
+        if set_result != FALSE {
+            Ok(())
+        } else {
+            Err(GetLastError())
+        }
+    }
+}
+
+/// Implementation detail of [EventLoop::wait_for_messages].
+///
+/// Does actual system-level waiting and doesn't process any messages itself,
+/// including winits internal notifications about waiting and new messages arrival.
+fn wait_for_messages_impl(
+    high_resolution_timer: &mut Option<OwnedHandle>,
+    control_flow: ControlFlow,
+    timeout: Option<Duration>,
+) {
+    let timeout = {
+        let control_flow_timeout = match control_flow {
+            ControlFlow::Wait => None,
+            ControlFlow::Poll => Some(Duration::ZERO),
+            ControlFlow::WaitUntil(wait_deadline) => {
+                let start = Instant::now();
+                Some(wait_deadline.saturating_duration_since(start))
+            }
+        };
+        let timeout = min_timeout(timeout, control_flow_timeout);
+        if timeout == Some(Duration::ZERO) {
+            // Do not wait if we don't have time.
+            return;
+        }
+        // Now we decided to wait so need to do some clamping
+        // to avoid problems with overflow and calling WinAPI with invalid parameters.
+        timeout
+            .map(|t| t.min(FIFTY_DAYS))
+            // If timeout is less than minimally supported by Windows,
+            // increase it to that minimum. Who want less than microsecond delays anyway?
+            .map(|t| t.max(MIN_WAIT))
+    };
+
+    if timeout.is_some() && high_resolution_timer.is_none() {
+        *high_resolution_timer = create_high_resolution_timer();
+    }
+
+    let high_resolution_timer: Option<RawHandle> = high_resolution_timer
+        .as_ref()
+        .map(OwnedHandle::as_raw_handle);
+
+    let use_timer: bool;
+    if let (Some(handle), Some(timeout)) = (high_resolution_timer, timeout) {
+        let res = unsafe {
+            // Safety: handle can be Some only if we succeeded in creating high resolution
+            // timer. We properly clamped timeout so it can be used as argument
+            // to timer.
+            set_high_resolution_timer(handle, timeout)
+        };
+        if let Err(error_code) = res {
+            // We successfully got timer but failed to set it?
+            // Should be some bug in our code.
+            tracing::trace!(
+                "Failed to set high resolution timer: last error {}",
+                error_code
+            );
+            use_timer = false;
+        } else {
+            use_timer = true;
+        }
+    } else {
+        use_timer = false;
+    }
+
+    unsafe {
+        // Either:
+        //  1. User wants to wait indefinely if timeout is not set.
+        //  2. We failed to get and set high resolution timer and we need something instead of it.
+        let wait_duration_ms = timeout.map(dur2timeout).unwrap_or(INFINITE);
+
+        let (num_handles, raw_handles) = if use_timer {
+            (1, [high_resolution_timer.unwrap()])
+        } else {
+            (0, [ptr::null_mut()])
+        };
+
+        let result = MsgWaitForMultipleObjectsEx(
+            num_handles,
+            raw_handles.as_ptr() as *const _,
+            wait_duration_ms,
+            QS_ALLEVENTS,
+            MWMO_INPUTAVAILABLE,
+        );
+        if result == WAIT_FAILED {
+            // Well, nothing smart to do in such case.
+            // Treat it as spurious wake up.
+            tracing::warn!(
+                "Failed to MsgWaitForMultipleObjectsEx: error code {}",
+                GetLastError(),
+            );
         }
     }
 }

@@ -1,6 +1,7 @@
 name: Release Docs
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
