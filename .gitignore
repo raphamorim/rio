@@ -16,3 +16,6 @@ release
 .jekyll-metadata
 NOTES
 *.log
+
+# for nix users
+.direnv/
