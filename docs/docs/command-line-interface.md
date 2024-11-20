@@ -16,6 +16,7 @@ Options:
   -w, --working-dir <WORKING_DIR>  Start the shell in the specified working directory
       --write-config [<PATH>]      Writes the config to a given path or the default location
       --log-file                   Writes the logs to a file inside the config directory
+      --title <TITLE>              Start window with specified title
   -h, --help                       Print help
   -V, --version                    Print version
 ```

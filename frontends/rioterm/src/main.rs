@@ -181,6 +181,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
             config.working_dir = Some(working_dir_cli);
         }
+
+        config.window.initial_title = args.window_options.terminal_options.title;
     }
 
     #[cfg(target_os = "linux")]
