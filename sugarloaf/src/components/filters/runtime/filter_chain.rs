@@ -4,6 +4,7 @@
 // https://github.com/SnowflakePowered/librashader/blob/master/LICENSE.md
 
 use librashader_common::map::FastHashMap;
+use librashader_presets::ShaderFeatures;
 use librashader_presets::ShaderPreset;
 use librashader_reflect::back::targets::WGSL;
 use librashader_reflect::back::{CompileReflectShader, CompileShader};
@@ -97,12 +98,13 @@ impl FilterChain {
     /// Load the shader preset at the given path into a filter chain.
     pub fn load_from_path(
         path: impl AsRef<Path>,
+        features: ShaderFeatures,
         device: &Device,
         queue: &wgpu::Queue,
         options: Option<&FilterChainOptionsWgpu>,
     ) -> error::Result<FilterChain> {
         // load passes from preset
-        let preset = ShaderPreset::try_parse(path)?;
+        let preset = ShaderPreset::try_parse(path, features)?;
 
         Self::load_from_preset(preset, device, queue, options)
     }

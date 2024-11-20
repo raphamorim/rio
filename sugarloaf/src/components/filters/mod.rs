@@ -2,6 +2,7 @@ mod runtime;
 
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
+use librashader_presets::ShaderFeatures;
 use std::sync::Arc;
 
 /// A brush for applying RetroArch filters.
@@ -37,6 +38,7 @@ impl FiltersBrush {
 
             match crate::components::filters::runtime::FilterChain::load_from_path(
                 path,
+                ShaderFeatures::NONE,
                 &ctx.device,
                 &ctx.queue,
                 None,
