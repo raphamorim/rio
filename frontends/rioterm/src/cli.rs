@@ -39,7 +39,7 @@ pub struct TerminalOptions {
     #[clap(long)]
     pub enable_log_file: bool,
 
-    /// Start windown with specified title
+    /// Start window with specified title
     #[clap(long)]
     pub title: Option<String>,
 }
