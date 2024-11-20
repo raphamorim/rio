@@ -78,7 +78,23 @@ in
         cmake
         autoPatchelfHook
       ];
+    
+    postInstall = ''
+      install -D -m 644 misc/rio.desktop -t $out/share/applications
+      install -D -m 644 misc/logo.svg \
+                        $out/share/icons/hicolor/scalable/apps/rio.svg
+  
+      # Install terminfo files
+      install -dm 755 "$out/share/terminfo/r/"
+      tic -xe rio,rio-direct -o "$out/share/terminfo" misc/rio.terminfo
+    '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
+      mkdir $out/Applications/
+      mv misc/osx/Rio.app/ $out/Applications/
+      mkdir $out/Applications/Rio.app/Contents/MacOS/
+      ln -s $out/bin/rio $out/Applications/Rio.app/Contents/MacOS/
+    '';
 
+    
     buildNoDefaultFeatures = true;
     buildFeatures = ["x11" "wayland"];
     meta = {
