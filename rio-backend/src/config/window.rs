@@ -57,7 +57,7 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
-    #[serde(skip_serializing)]
+    #[serde(rename = "initial-title", skip_serializing)]
     pub initial_title: Option<String>,
 }
 
