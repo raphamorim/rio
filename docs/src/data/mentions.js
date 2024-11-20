@@ -33,6 +33,16 @@ const MENTIONS = [
     ),
   },
   {
+    url: 'https://x.com/pikuma/status/1859327979869909260',
+    username: 'pikuma.com',
+    source: '/rio/assets/mentions/pikuma.jpg',
+    quote: (
+      <>
+        I've been using #Rio terminal by @raphamorims this week and it's super nice. Very easy to use and config.
+      </>
+    ),
+  },
+  {
     url: 'https://twitter.com/jaijams/status/1716815864975270005',
     username: '@jaijams',
     source: '/rio/assets/mentions/jaijams.jpg',
