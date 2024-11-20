@@ -33,6 +33,7 @@ pub enum ConfigError {
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {
     pub program: String,
+    #[serde(default)]
     pub args: Vec<String>,
 }
 
@@ -1003,6 +1004,19 @@ mod tests {
 
         assert_eq!(result.shell.program, "/bin/fish");
         assert_eq!(result.shell.args, ["--hello"]);
+    }
+
+    #[test]
+    fn test_shell_no_args() {
+        let result = create_temporary_config(
+            "change-shell-and-editor-no-args",
+            r#"
+            shell = { program = "/bin/fish" }
+        "#,
+        );
+
+        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.args, Vec::<&str>::new());
     }
 
     #[test]
