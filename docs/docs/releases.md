@@ -11,6 +11,8 @@ language: 'en'
 ## 0.2.2 (unreleased)
 
 - Fix iterm2 image protocol.
+- Fix runtime error after changing to a specific retroarch shader on windows [#788](https://github.com/raphamorim/rio/issues/788) by [@chyyran](https://github.com/chyyran).
+- Makes editor.args and shell.args optional in config.toml [#801](https://github.com/raphamorim/rio/pull/803) by [@Nylme](https://github.com/Nylme).
 - Introduce `navigation.open-config-with-split`.
 
 ## 0.2.1
