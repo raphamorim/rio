@@ -1009,13 +1009,13 @@ mod tests {
     #[test]
     fn test_shell_no_args() {
         let result = create_temporary_config(
-            "change-shell-and-editor",
+            "change-shell-and-editor-no-args",
             r#"
-            shell = { program = "/bin/bash" }
+            shell = { program = "/bin/fish" }
         "#,
         );
 
-        assert_eq!(result.shell.program, "/bin/bash");
+        assert_eq!(result.shell.program, "/bin/fish");
         assert_eq!(result.shell.args, Vec::<&str>::new());
     }
 
