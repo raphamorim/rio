@@ -57,6 +57,8 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
+    #[serde(skip_serializing)]
+    pub title: Option<String>,
 }
 
 impl Default for Window {
@@ -70,6 +72,7 @@ impl Default for Window {
             decorations: Decorations::default(),
             blur: false,
             macos_use_unified_titlebar: false,
+            title: None,
         }
     }
 }
