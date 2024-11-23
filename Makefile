@@ -170,9 +170,5 @@ publish-crates: build
 	cargo publish -p copa
 	cargo publish -p corcovado
 	cargo publish -p teletypewriter
-	cargo publish -p sugarloaf
 	cargo publish -p rio-backend
 	cargo publish -p rioterm
-
-test-renderer:
-	cd ./sugarloaf && make test
