@@ -38,7 +38,7 @@ corcovado = { path = "corcovado", version = "0.2.1" }
 wa = { path = "wa", version = "0.1.7" }
 
 # sugarloaf = { path = "../sugarloaf", version = "0.2.1" }
-sugarloaf = "0.2.1"
+sugarloaf = "0.2.2"
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.0.0"
