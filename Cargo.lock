@@ -203,27 +203,12 @@ dependencies = [
 
 [[package]]
 name = "bit-set"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0481a0e032742109b1133a095184ee93d88f3dc9e0d28a5d033dc77a073f44f"
-dependencies = [
- "bit-vec 0.7.0",
-]
-
-[[package]]
-name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
 dependencies = [
- "bit-vec 0.8.0",
+ "bit-vec",
 ]
-
-[[package]]
-name = "bit-vec"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2c54ff287cfc0a34f38a6b832ea1bd8e448a330b3e40a50859e6488bee07f22"
 
 [[package]]
 name = "bit-vec"
@@ -1825,9 +1810,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-cache"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6e9027ac58b3fda9b8072737dff0ce38db49c2daf73308072e5b2d33a832ef7"
+checksum = "af354438a48fa685da478d0f9a3464acacdb522f6d6e81814d1e6de587635c3a"
 dependencies = [
  "bincode",
  "blake3",
@@ -1837,15 +1822,16 @@ dependencies = [
  "persy",
  "platform-dirs",
  "serde",
- "thiserror 1.0.68",
+ "thiserror 2.0.1",
 ]
 
 [[package]]
 name = "librashader-common"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f864ae711eebbba99dc3a674ebed13dcd46bf1537a13a102f9c98d89387c40c2"
+checksum = "718d887336505eaf7bace926312bfcbb3403a2203996ea0c9945b487ade1357e"
 dependencies = [
+ "bitflags 2.6.0",
  "halfbrown",
  "num-traits",
  "rustc-hash 2.0.0",
@@ -1855,35 +1841,35 @@ dependencies = [
 
 [[package]]
 name = "librashader-pack"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c47110b7f0756c22713392602b6d555087241a245de25d8561a5b726877ffb9a"
+checksum = "10b1c3e775527a4a6e4eaef8cc2f0320a52373c46a5fcfc95cd78cc449d4d4e2"
 dependencies = [
  "image",
  "librashader-preprocess",
  "librashader-presets",
  "rayon",
- "thiserror 1.0.68",
+ "thiserror 2.0.1",
 ]
 
 [[package]]
 name = "librashader-preprocess"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad2fe98e3b738746306f303c5eb900de94fcc680d8ca4005ac853c29b3c1968"
+checksum = "5f447318c57b82434510f3c159f7e4b15438e2e8a1ce3c170b77b3899d78ec09"
 dependencies = [
  "encoding_rs",
  "librashader-common",
  "nom",
  "serde",
- "thiserror 1.0.68",
+ "thiserror 2.0.1",
 ]
 
 [[package]]
 name = "librashader-presets"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2063c4e3f9e42e134543d6bfb15a2c79dafa0cc29d6ee3159774e88d84fe461"
+checksum = "1bd75eef028fa580ee457cbf913d8017f908cc92908b71eed43ce56f8d5d1340"
 dependencies = [
  "librashader-common",
  "nom",
@@ -1892,15 +1878,15 @@ dependencies = [
  "once_cell",
  "regex",
  "serde",
- "thiserror 1.0.68",
+ "thiserror 2.0.1",
  "vec_extract_if_polyfill",
 ]
 
 [[package]]
 name = "librashader-reflect"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d7d27947c53a1a87869aca9102efbd08bb73c0f8dbca60ea23da8708cd071d5"
+checksum = "1affb4bb102a73cdb99d843b9466696854f54b600f4d419a2414663b04c308e9"
 dependencies = [
  "bitflags 2.6.0",
  "bytemuck",
@@ -1909,20 +1895,20 @@ dependencies = [
  "librashader-pack",
  "librashader-preprocess",
  "librashader-presets",
- "naga 22.1.0",
+ "naga",
  "rspirv",
  "rustc-hash 2.0.0",
  "serde",
  "spirv",
  "spirv-cross2",
- "thiserror 1.0.68",
+ "thiserror 2.0.1",
 ]
 
 [[package]]
 name = "librashader-runtime"
-version = "0.5.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b585e89c867bdce240296f3812350d0417b6afc2ce9aa2c05e623cb608fdc278"
+checksum = "78903004fca35dd7fea9bf69fd30708813a39f3c6089a36fd00abd603514aa7a"
 dependencies = [
  "arc-swap",
  "array-concat",
@@ -2112,38 +2098,19 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "22.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bd5a652b6faf21496f2cfd88fc49989c8db0825d1f6746b1a71a6ede24a63ad"
-dependencies = [
- "arrayvec",
- "bit-set 0.6.0",
- "bitflags 2.6.0",
- "cfg_aliases 0.1.1",
- "codespan-reporting",
- "indexmap",
- "log 0.4.22",
- "petgraph",
- "rustc-hash 1.1.0",
- "spirv",
- "termcolor",
- "thiserror 1.0.68",
-]
-
-[[package]]
-name = "naga"
 version = "23.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d5941e45a15b53aad4375eedf02033adb7a28931eedc31117faffa52e6a857e"
 dependencies = [
  "arrayvec",
- "bit-set 0.8.0",
+ "bit-set",
  "bitflags 2.6.0",
  "cfg_aliases 0.1.1",
  "codespan-reporting",
  "hexf-parse",
  "indexmap",
  "log 0.4.22",
+ "petgraph",
  "rustc-hash 1.1.0",
  "spirv",
  "termcolor",
@@ -3337,9 +3304,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80132248e11c68f2c6a9c740f155a99f90377f54a24c4b05820d0a9ca29e0d9d"
+checksum = "6869c6771b7d2639f879a97303e51319372839bb335efb9f0cbbdae973f5cb68"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -4073,7 +4040,7 @@ dependencies = [
  "document-features",
  "js-sys",
  "log 0.4.22",
- "naga 23.0.0",
+ "naga",
  "parking_lot",
  "profiling",
  "raw-window-handle",
@@ -4094,13 +4061,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e0c68e7b6322a03ee5b83fcd92caeac5c2a932f6457818179f4652ad2a9c065"
 dependencies = [
  "arrayvec",
- "bit-vec 0.8.0",
+ "bit-vec",
  "bitflags 2.6.0",
  "cfg_aliases 0.1.1",
  "document-features",
  "indexmap",
  "log 0.4.22",
- "naga 23.0.0",
+ "naga",
  "once_cell",
  "parking_lot",
  "profiling",
@@ -4121,7 +4088,7 @@ dependencies = [
  "android_system_properties",
  "arrayvec",
  "ash",
- "bit-set 0.8.0",
+ "bit-set",
  "bitflags 2.6.0",
  "block",
  "bytemuck",
@@ -4138,7 +4105,7 @@ dependencies = [
  "libloading",
  "log 0.4.22",
  "metal",
- "naga 23.0.0",
+ "naga",
  "ndk-sys",
  "objc",
  "once_cell",
