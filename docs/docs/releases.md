@@ -8,7 +8,11 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.2.2 (unreleased)
+## 0.2.3 (unreleased)
+
+- TBD
+
+## 0.2.2
 
 - Fix iterm2 image protocol.
 - Allow setting initial window title [#806](https://github.com/raphamorim/rio/pull/806) by [@xsadia](https://github.com/xsadia).
