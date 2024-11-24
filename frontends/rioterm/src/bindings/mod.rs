@@ -253,6 +253,7 @@ impl From<String> for Action {
             "selectnextsplit" => Some(Action::SelectNextSplit),
             "selectprevsplit" => Some(Action::SelectPrevSplit),
             "togglevimode" => Some(Action::ToggleViMode),
+            "togglefullscreen" => Some(Action::ToggleFullscreen),
             "none" => Some(Action::None),
             _ => None,
         };

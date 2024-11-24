@@ -10,7 +10,7 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
-- TBD
+- Add `ToggleFullscreen` to configurable actions.
 
 ## 0.2.2
 
