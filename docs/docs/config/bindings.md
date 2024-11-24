@@ -56,20 +56,21 @@ Execute a predefined action in Rio terminal.
 
 | Action           | Description                                                                   |
 | :--------------- | :---------------------------------------------------------------------------- |
-| None             |                                                                               |
-| ReceiveChar      |                                                                               |
-| ToggleVIMode     |                                                                               |
-| Paste            | Paste command                                                                 |
-| Copy             | Copy command                                                                  |
-| OpenConfigEditor | Open configuration file on configured editor property                         |
-| ResetFontSize    |                                                                               |
-| IncreaseFontSize |                                                                               |
-| DecreaseFontSize |                                                                               |
+| None             | |
+| ReceiveChar      | |
+| ToggleVIMode     | |
+| Paste            | Paste command |
+| Copy             | Copy command |
+| OpenConfigEditor | Open configuration file on configured editor property |
+| ResetFontSize    | |
+| IncreaseFontSize | |
+| DecreaseFontSize | |
 | Run(string)      | Example: Running command `Run(code)` or `Run(code ~/.config/rio/config.toml)` |
-| PasteSelection   |                                                                               |
-| ClearSelection   |                                                                               |
-| CreateWindow     | Create a Rio window instance                                                  |
-| Quit             | Exit Rio                                                                      |
+| PasteSelection   | |
+| ClearSelection   | |
+| CreateWindow     | Create a Rio window instance |
+| Quit             | Exit Rio |
+| ToggleFullscreen | Toggle fullscreen |
 
 ### [Split Actions](#split-actions)
 
