@@ -10,6 +10,7 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
 
 ## 0.2.2

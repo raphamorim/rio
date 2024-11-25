@@ -3,7 +3,7 @@ title: 'platform'
 language: 'en'
 ---
 
-Rio allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation` and `Window`.
+Rio allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation`, `Renderer` and `Window`.
 
 Example:
 
