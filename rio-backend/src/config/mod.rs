@@ -50,6 +50,7 @@ pub struct PlatformConfig {
     shell: Option<Shell>,
     navigation: Option<Navigation>,
     window: Option<Window>,
+    renderer: Option<Renderer>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -461,6 +462,10 @@ impl Config {
 
         if let Some(navigation_overwrite) = &platform_config.navigation {
             self.navigation = navigation_overwrite.clone();
+        }
+
+        if let Some(renderer_overwrite) = &platform_config.renderer {
+            self.renderer = renderer_overwrite.clone();
         }
     }
 }
