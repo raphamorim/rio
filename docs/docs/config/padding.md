@@ -13,7 +13,7 @@ padding-x = 10
 
 ## Padding-y
 
-Define y axis padding based on a format `[top, left]`
+Define y axis padding based on a format `[top, bottom]`
 
 - Default is `[0, 0]`
 

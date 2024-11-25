@@ -294,7 +294,7 @@ args = ["-w"]
 - Fix key bindings when key is uppercased (`alt` or `shift` is inputted along).
 - Support to padding-y (ref: [#400](https://github.com/raphamorim/rio/issues/400))
 
-Define y axis padding based on a format `[top, left]`, default is `[0, 0]`.
+Define y axis padding based on a format `[top, bottom]`, default is `[0, 0]`.
 
 Example:
 
