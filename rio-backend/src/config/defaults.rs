@@ -157,7 +157,7 @@ pub fn default_config_file_content() -> String {
 
 # Padding-y
 #
-# define y axis padding based on a format [top, left]
+# define y axis padding based on a format [top, bottom]
 # (default is [0, 0])
 #
 # Example:
