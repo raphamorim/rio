@@ -3,6 +3,26 @@
 /** @satisfies {import('@site/src/components/MentionsSection/index').MentionCardProps[]} */
 const MENTIONS = [
   {
+    url: 'https://x.com/charmcli/status/1861865055370756430',
+    username: 'charmcli',
+    source: '/rio/assets/mentions/charm.jpg',
+    quote: (
+      <>
+        🌈 Rio is one of those rare software projects that delivers S+ performance while maintaining fun and playfulness at its core.
+      </>
+    ),
+  },
+  {
+    url: 'https://x.com/GoReleaser/status/1861895213091795002',
+    username: 'GoReleaser',
+    source: '/rio/assets/mentions/goreleaser.jpg',
+    quote: (
+      <>
+        Rio is pretty amazing! Excellent work by @raphamorims ✌️
+      </>
+    ),
+  },
+  {
     url: 'https://fosstodon.org/@orhun/113375636616878019',
     username: 'Orhun Parmaksız',
     source: '/rio/assets/mentions/orhun.png',
