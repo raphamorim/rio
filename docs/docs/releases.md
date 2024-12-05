@@ -10,6 +10,7 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
 
