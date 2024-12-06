@@ -1155,6 +1155,20 @@ pub(crate) fn physicalkey_to_scancode(physical_key: PhysicalKey) -> Option<u32> 
         KeyCode::AudioVolumeDown => Some(0xe02e),
         KeyCode::AudioVolumeMute => Some(0xe020),
         KeyCode::AudioVolumeUp => Some(0xe030),
+
+        // Extra from Chromium sources:
+        // https://chromium.googlesource.com/chromium/src.git/+/3e1a26c44c024d97dc9a4c09bbc6a2365398ca2c/ui/events/keycodes/dom/dom_code_data.inc
+        KeyCode::Lang4 => Some(0x0077),
+        KeyCode::Lang3 => Some(0x0078),
+        KeyCode::Undo => Some(0xe008),
+        KeyCode::Paste => Some(0xe00a),
+        KeyCode::Cut => Some(0xe017),
+        KeyCode::Copy => Some(0xe018),
+        KeyCode::Eject => Some(0xe02c),
+        KeyCode::Help => Some(0xe03b),
+        KeyCode::Sleep => Some(0xe05f),
+        KeyCode::WakeUp => Some(0xe063),
+
         _ => None,
     }
 }
@@ -1314,6 +1328,20 @@ pub(crate) fn scancode_to_physicalkey(scancode: u32) -> PhysicalKey {
         0xe02e => KeyCode::AudioVolumeDown,
         0xe020 => KeyCode::AudioVolumeMute,
         0xe030 => KeyCode::AudioVolumeUp,
+
+        // Extra from Chromium sources:
+        // https://chromium.googlesource.com/chromium/src.git/+/3e1a26c44c024d97dc9a4c09bbc6a2365398ca2c/ui/events/keycodes/dom/dom_code_data.inc
+        0x0077 => KeyCode::Lang4,
+        0x0078 => KeyCode::Lang3,
+        0xe008 => KeyCode::Undo,
+        0xe00a => KeyCode::Paste,
+        0xe017 => KeyCode::Cut,
+        0xe018 => KeyCode::Copy,
+        0xe02c => KeyCode::Eject,
+        0xe03b => KeyCode::Help,
+        0xe05f => KeyCode::Sleep,
+        0xe063 => KeyCode::WakeUp,
+
         _ => return PhysicalKey::Unidentified(NativeKeyCode::Windows(scancode as u16)),
     })
 }

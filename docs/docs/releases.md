@@ -10,6 +10,9 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
+	- On macOS, fixed the scancode conversion for audio volume keys.
+	- On macOS, fixed the scancode conversion for `IntlBackslash`.
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
