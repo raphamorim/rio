@@ -319,7 +319,7 @@ pub enum Action {
     /// Scroll
     Scroll(i32),
 
-    /// Regex keyboard hints.
+    // Regex keyboard hints.
     // Hint(Hint),
 
     // Move vi mode cursor.

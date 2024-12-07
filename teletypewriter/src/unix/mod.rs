@@ -697,19 +697,15 @@ impl Child {
     ///  gws with values that represent the size of the terminal window for which
     ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
     ///  returns zero (0).
-
     ///  The tcsetwinsize function sets the terminal window size, for the terminal
     ///  referenced by fd, to the sizes from the winsize structure pointed to by
     ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
-
     ///  The winsize structure, defined in <termios.h>, contains (at least) the
     ///  following four fields
-
     ///  unsigned short ws_row;      /* Number of rows, in characters */
     ///  unsigned short ws_col;      /* Number of columns, in characters */
     ///  unsigned short ws_xpixel;   /* Width, in pixels */
     ///  unsigned short ws_ypixel;   /* Height, in pixels */
-
     /// If the actual window size of the controlling terminal of a process
     /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
     /// simply changing the sizes using tcsetwinsize() does not necessarily
