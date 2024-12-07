@@ -211,7 +211,7 @@ impl Read for UnixStream {
     }
 }
 
-impl<'a> Read for &'a UnixStream {
+impl Read for &UnixStream {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         (&self.inner).read(bytes)
     }
@@ -227,7 +227,7 @@ impl Write for UnixStream {
     }
 }
 
-impl<'a> Write for &'a UnixStream {
+impl Write for &UnixStream {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         (&self.inner).write(bytes)
     }

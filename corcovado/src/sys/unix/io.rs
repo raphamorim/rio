@@ -97,7 +97,7 @@ impl Read for Io {
     }
 }
 
-impl<'a> Read for &'a Io {
+impl Read for &Io {
     fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
         (&self.fd).read(dst)
     }
@@ -113,7 +113,7 @@ impl Write for Io {
     }
 }
 
-impl<'a> Write for &'a Io {
+impl Write for &Io {
     fn write(&mut self, src: &[u8]) -> io::Result<usize> {
         (&self.fd).write(src)
     }

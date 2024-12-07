@@ -1514,7 +1514,7 @@ impl<'a> IntoIterator for &'a Events {
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl Iterator for Iter<'_> {
     type Item = Event;
 
     fn next(&mut self) -> Option<Event> {

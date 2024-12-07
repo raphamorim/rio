@@ -53,7 +53,7 @@ const MAX_OSC_RAW: usize = 1024;
 
 struct VtUtf8Receiver<'a, P: Perform>(&'a mut P, &'a mut State);
 
-impl<'a, P: Perform> utf8::Receiver for VtUtf8Receiver<'a, P> {
+impl<P: Perform> utf8::Receiver for VtUtf8Receiver<'_, P> {
     fn codepoint(&mut self, c: char) {
         self.0.print(c);
         *self.1 = State::Ground;

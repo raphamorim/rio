@@ -80,7 +80,7 @@ impl IndexMut<NamedColor> for TermColors {
 #[derive(Copy, Debug, Clone)]
 pub struct List([ColorArray; COUNT]);
 
-impl<'a> From<&'a TermColors> for List {
+impl From<&TermColors> for List {
     fn from(_colors: &TermColors) -> List {
         // Type inference fails without this annotation.
         let mut list = List([ColorArray::default(); COUNT]);

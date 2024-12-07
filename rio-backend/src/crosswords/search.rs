@@ -721,7 +721,7 @@ impl<'a, T: event::EventListener> RegexIter<'a, T> {
     }
 }
 
-impl<'a, T: event::EventListener> Iterator for RegexIter<'a, T> {
+impl<T: event::EventListener> Iterator for RegexIter<'_, T> {
     type Item = Match;
 
     fn next(&mut self) -> Option<Self::Item> {

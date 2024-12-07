@@ -92,7 +92,7 @@ use {io, poll, Poll, PollOpt, Ready, Token};
 /// [`Poll::register`]: ../struct.Poll.html#method.register
 pub struct EventedFd<'a>(pub &'a RawFd);
 
-impl<'a> Evented for EventedFd<'a> {
+impl Evented for EventedFd<'_> {
     fn register(
         &self,
         poll: &Poll,

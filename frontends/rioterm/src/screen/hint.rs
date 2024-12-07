@@ -71,7 +71,7 @@ impl<'a> HintMatches<'a> {
     }
 }
 
-impl<'a> Deref for HintMatches<'a> {
+impl Deref for HintMatches<'_> {
     type Target = [Match];
 
     fn deref(&self) -> &Self::Target {
