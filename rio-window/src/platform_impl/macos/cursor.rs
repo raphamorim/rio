@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use objc2::rc::Retained;
 use objc2::runtime::Sel;
-use objc2::{msg_send_id, sel, ClassType};
+use objc2::{msg_send, msg_send_id, sel, ClassType};
 use objc2_app_kit::{NSBitmapImageRep, NSCursor, NSDeviceRGBColorSpace, NSImage};
 use objc2_foundation::{
     ns_string, NSData, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint,
@@ -67,7 +67,7 @@ pub(crate) fn default_cursor() -> Retained<NSCursor> {
 
 unsafe fn try_cursor_from_selector(sel: Sel) -> Option<Retained<NSCursor>> {
     let cls = NSCursor::class();
-    if cls.responds_to(sel) {
+    if msg_send![cls, respondsToSelector: sel] {
         let cursor: Retained<NSCursor> =
             unsafe { msg_send_id![cls, performSelector: sel] };
         Some(cursor)
