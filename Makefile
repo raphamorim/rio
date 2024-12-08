@@ -166,6 +166,7 @@ test:
 
 publish-crates: build
 	cargo publish -p rio-window
+	cargo publish -p sugarloaf
 	cargo publish -p rio-proc-macros
 	cargo publish -p copa
 	cargo publish -p corcovado
