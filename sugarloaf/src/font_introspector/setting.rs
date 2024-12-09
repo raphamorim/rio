@@ -2,23 +2,15 @@ use super::{tag_from_bytes, tag_from_str_lossy, Tag};
 use core::fmt;
 
 /// Setting combining a tag and a value for features and variations.
-#[derive(Copy, Clone, Default, Debug)]
-pub struct Setting<T: Copy> {
+#[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
+pub struct Setting<T> {
     /// The tag that identifies the setting.
     pub tag: Tag,
     /// The value for the setting.
     pub value: T,
 }
 
-impl<T: Copy + PartialEq> PartialEq for Setting<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.tag == other.tag && self.value == other.value
-    }
-}
-
-impl<T: Copy + PartialEq> Eq for Setting<T> {}
-
-impl<T: Copy + fmt::Display> fmt::Display for Setting<T> {
+impl<T: fmt::Display> fmt::Display for Setting<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bytes = self.tag.to_be_bytes();
         let tag_name = core::str::from_utf8(&bytes).unwrap_or("");
@@ -74,7 +66,7 @@ impl Setting<f32> {
     }
 }
 
-impl<T: Copy> From<(Tag, T)> for Setting<T> {
+impl<T> From<(Tag, T)> for Setting<T> {
     fn from(v: (Tag, T)) -> Self {
         Self {
             tag: v.0,
@@ -110,7 +102,7 @@ impl<T: Copy> From<&(&[u8; 4], T)> for Setting<T> {
     }
 }
 
-impl<T: Copy> From<(&str, T)> for Setting<T> {
+impl<T> From<(&str, T)> for Setting<T> {
     fn from(v: (&str, T)) -> Self {
         Self {
             tag: tag_from_str_lossy(v.0),
