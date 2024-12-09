@@ -1,10 +1,12 @@
 name: Nightly
 
-on:
-  workflow_dispatch:
-  schedule:
-    # 00:00 every day
-    - cron: '0 0 * * *'
+on: [push, pull_request]
+
+# on:
+#   workflow_dispatch:
+#   schedule:
+#     # 00:00 every day
+#     - cron: '0 0 * * *'
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,14 +28,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Delete old nightly release
-        uses: dev-drprasad/delete-tag-and-release@v1.0
+        uses: dev-drprasad/delete-tag-and-release@v1.1
         with:
           tag_name: ${{ env.NIGHTLY_TAG }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           delete_release: true
       - name: Bump version and push tag
         id: tag_version
-        uses: mathieudutour/github-tag-action@v6.1
+        uses: mathieudutour/github-tag-action@v6.2
         with:
           custom_tag: ${{ env.NIGHTLY_TAG }}
           tag_prefix: ''
@@ -74,10 +76,14 @@ jobs:
             LICENSE
 
   nightly-release-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
       discussions: write
+
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
 
     steps:
       - uses: actions/checkout@v3
@@ -86,9 +92,12 @@ jobs:
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
+          cache-on-failure: true
           cache-all-crates: true
+          key: ${{matrix.target}}
       - run: sudo apt install rename
-      - run: rustup toolchain install stable --profile minimal
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-unknown-linux-gnu
+      - run: rustup default stable-${{ matrix.target }}-unknown-linux-gnu
       - run: cargo install cargo-deb
       - run: mkdir -p release
       - run: make release-debian-x11

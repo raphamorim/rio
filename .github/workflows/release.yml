@@ -39,15 +39,20 @@ jobs:
       contents: write
       discussions: write
 
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+
     steps:
       - uses: actions/checkout@v4
       - name: rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          cache-all-crates: true
+          key: ${{matrix.target}}
 
       - run: sudo apt install rename
-      - run: rustup toolchain install stable --profile minimal
+      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-unknown-linux-gnu
+      - run: rustup default stable-${{ matrix.target }}-unknown-linux-gnu
       - run: cargo install cargo-deb
       - run: mkdir -p release
       - run: make release-debian-x11
@@ -82,7 +87,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{matrix.target}}          
+          key: ${{matrix.target}}
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.5
       - run: wix --version
