@@ -74,9 +74,9 @@ Execute a predefined action in Rio terminal.
 
 ### [Split Actions](#split-actions)
 
-| Action             | Description                                                                |
-| :----------------- | :------------------------------------------------------------------------- |
-| SplitRigh       | Create a split by right side |
+| Action          | Description                                                                |
+| :-------------- | :------------------------------------------------------------------------- |
+| SplitRight      | Create a split by right side |
 | SplitDown       | Create a split by under current pane |
 | SelectNextSplit | Select next split |
 | SelectPrevSplit | Select previous split |
