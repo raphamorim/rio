@@ -1,0 +1,107 @@
+# This is an example .goreleaser.yml file with some sensible defaults.
+# Make sure to check the documentation at https://goreleaser.com
+
+# The lines below are called `modelines`. See `:help modeline`
+# Feel free to remove those if you don't want/need to use them.
+# yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+# before:
+# hooks:
+# if you don't do these things before calling goreleaser, it might be a
+# good idea to do them here:
+# - rustup default stable
+# - cargo install --locked cargo-zigbuild
+# - cargo fetch --locked
+
+metadata:
+    maintainers:
+        - Raphael Amorim <rapha850 at gmail dot com>
+    license: MIT
+    description: A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.
+    homepage: https://raphamorim.io/rio/
+
+builds:
+    - id: darwin-and-windows
+      builder: rust
+      flags:
+          # - --release
+          - -p=rioterm
+          - -vv
+      env:
+          - MACOSX_DEPLOYMENT_TARGET="11.0"
+          # - RUST_BACKTRACE=1
+      targets:
+          # - x86_64-apple-darwin
+          # - x86_64-pc-windows-gnu
+          - aarch64-apple-darwin
+
+    - id: wayland
+      builder: rust
+      # dir: ./frontends/rioterm/
+      flags:
+          - -p=rioterm
+          - --release
+          - --no-default-features
+          - --features=wayland
+      targets:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+
+    - id: x11
+      builder: rust
+      # dir: ./frontends/rioterm/
+      flags:
+          - -p=rioterm
+          - --release
+          - --no-default-features
+          - --features=x11
+      targets:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+
+universal_binaries:
+    - replace: true
+
+nfpms:
+    - formats:
+          - deb
+          - apk
+          - rpm
+      contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/rio.terminfo
+            dst: /usr/share/info/rio.terminfo
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+
+archives:
+    - format: tar.gz
+      # this name template makes the OS and Arch compatible with the results of `uname`.
+      name_template: >-
+          {{ .ProjectName }}_
+          {{- title .Os }}_
+          {{- if eq .Arch "amd64" }}x86_64
+          {{- else if eq .Arch "386" }}i386
+          {{- else }}{{ .Arch }}{{ end }}
+      # use zip for windows archives
+      format_overrides:
+          - goos: windows
+            format: zip
+
+changelog:
+    sort: asc
+    filters:
+        exclude:
+            - "^docs:"
+            - "^test:"
+
+release:
+    footer: >-
+
+        ---
+
+        Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

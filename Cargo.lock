@@ -2741,6 +2741,16 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69a3c6d6cacf48eb4f7d069dfd59c7d6b655b7a008a0b461176e0a29ae73db95"
+dependencies = [
+ "bytemuck",
+ "font-types",
+]
+
+[[package]]
+name = "read-fonts"
 version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4b40e5383c077b9eb19c80c64d47d1369479a136aeae9a23c3ea43e970407b"
@@ -2859,7 +2869,7 @@ dependencies = [
  "rustc-hash 2.1.0",
  "serde",
  "smallvec",
- "sugarloaf",
+ "sugarloaf 0.2.2",
  "teletypewriter",
  "toml",
  "tracing",
@@ -3174,12 +3184,22 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "skrifa"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "261784bf7b71ef6bc347f765de6c8e32e952104d5c4fc2cd4070872fce8c3e81"
+dependencies = [
+ "bytemuck",
+ "read-fonts 0.24.0",
+]
+
+[[package]]
+name = "skrifa"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3a16eb047396452019439e1d6eca13581c141275b7d743f0262f79d65c09c70"
 dependencies = [
  "bytemuck",
- "read-fonts",
+ "read-fonts 0.25.2",
 ]
 
 [[package]]
@@ -3368,6 +3388,61 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6869c6771b7d2639f879a97303e51319372839bb335efb9f0cbbdae973f5cb68"
+dependencies = [
+ "ab_glyph",
+ "approx",
+ "array-concat",
+ "bytemuck",
+ "console_error_panic_hook",
+ "console_log",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "fontconfig-parser",
+ "futures",
+ "guillotiere",
+ "halfbrown",
+ "image",
+ "js-sys",
+ "librashader-cache",
+ "librashader-common",
+ "librashader-pack",
+ "librashader-preprocess",
+ "librashader-presets",
+ "librashader-reflect",
+ "librashader-runtime",
+ "linked-hash-map",
+ "lru",
+ "memmap2",
+ "num-traits",
+ "ordered-float",
+ "parking_lot",
+ "raw-window-handle",
+ "rayon",
+ "rustc-hash 2.1.0",
+ "serde",
+ "skrifa 0.25.0",
+ "slotmap",
+ "thiserror 2.0.3",
+ "tinyvec",
+ "tracing",
+ "ttf-parser",
+ "twox-hash",
+ "unicode-width 0.2.0",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "wgpu",
+ "xi-unicode",
+ "yazi",
+ "zeno",
+]
+
+[[package]]
+name = "sugarloaf"
 version = "0.2.3"
 dependencies = [
  "ab_glyph",
@@ -3405,7 +3480,7 @@ dependencies = [
  "rio-window 0.2.2",
  "rustc-hash 2.1.0",
  "serde",
- "skrifa",
+ "skrifa 0.26.2",
  "slotmap",
  "thiserror 2.0.3",
  "tinyvec",
