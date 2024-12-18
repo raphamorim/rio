@@ -448,13 +448,15 @@ fn draw_layout(
 
         let first_run = &line.render_data.runs[0];
         let ascent = first_run.ascent.round();
-        let descent = first_run.descent.round();
-        let leading = (first_run.leading).round() * 2.;
+        // let descent = first_run.descent.round();
+        // let leading = (first_run.leading).round() * 2.;
         let mut px = x + 0.0;
-        let baseline = line_y + ascent;
-        line_y = baseline + descent;
+        // let baseline = line_y + ascent;
+        // line_y = baseline + descent;
+        line_y = line_y + rect.height;
         let py = line_y;
-        let line_height = ascent + descent + leading;
+        // let line_height = ascent + descent + leading;
+        let line_height = rect.height;
         for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;

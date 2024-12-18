@@ -328,7 +328,7 @@ impl Content {
             let render_data = content.get_state(&id).unwrap().lines[0].clone();
 
             if let Some(dimension) = advance_brush.dimensions(&self.fonts, &render_data) {
-                rte.layout.dimensions.height = dimension.height;
+                rte.layout.dimensions.height = dimension.height * rte.layout.line_height;
                 rte.layout.dimensions.width = dimension.width;
             }
         }
