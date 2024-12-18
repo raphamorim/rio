@@ -9,7 +9,7 @@ use rio_window::{
 use std::error::Error;
 use sugarloaf::{
     layout::RootStyle, FragmentStyle, FragmentStyleDecoration, Object, RichText,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    Sugarloaf, SugarCursor, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
@@ -264,6 +264,15 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.5, 0.5, 1.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .add_text(
+                        "?",
+                        FragmentStyle {
+                            color: [0.5, 0.5, 1.0, 1.0],
+                            background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                            cursor: Some(SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
                             ..FragmentStyle::default()
                         },
                     )
