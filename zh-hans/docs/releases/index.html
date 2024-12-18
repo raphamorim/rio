@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/zh-hans/assets/css/styles.b8da69d8.css">
-<script src="/rio/zh-hans/assets/js/runtime~main.0e2c9410.js" defer="defer"></script>
+<script src="/rio/zh-hans/assets/js/runtime~main.fc6a965e.js" defer="defer"></script>
 <script src="/rio/zh-hans/assets/js/main.0331d8d8.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -66,6 +66,7 @@
 <li>Microsoft Windows: <a href="https://github.com/microsoft/winget-pkgs/pull/184792" target="_blank" rel="noopener noreferrer">Rio terminal is now available on WinGet packages</a>.</li>
 <li>Microsoft Windows: <a href="https://github.com/msys2/MINGW-packages/pull/22248" target="_blank" rel="noopener noreferrer">Rio terminal is now available on MINGW packages</a>.</li>
 <li>Microsoft Windows: Rio support on ARM architecture by <a href="https://github.com/andreban" target="_blank" rel="noopener noreferrer">@andreban</a>.</li>
+<li>Debian: Added ARM architecture <code>.deb</code> packages to GitHub releases.</li>
 <li>Allow MacOS automation via events.</li>
 <li>MacOS: Support titlebar unified: <code>window.macos-use-unified-titlebar = false</code>,</li>
 <li>Support disable font hinting: <code>fonts.hinting = false</code>.</li>
@@ -274,7 +275,7 @@
 <ul>
 <li>Update swash (0.1.18), ab_glyph (0.2.28) and remove double hashmap implementation.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="013">0.1.3<a href="#013" class="hash-link" aria-label="0.1.3的直接链接" title="0.1.3的直接链接">  ​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="013">0.1.3<a href="#013" class="hash-link" aria-label="0.1.3的直接链接" title="0.1.3的直接链接">​</a></h2>
 <ul>
 <li>Added support to font features (ref: #548 #551)</li>
 </ul>
@@ -364,7 +365,7 @@
 <li>Update rust version to 1.77.2.</li>
 <li>Initial touch support by <a href="https://github.com/androw" target="_blank" rel="noopener noreferrer">@androw</a> <a href="https://github.com/raphamorim/rio/pull/226" target="_blank" rel="noopener noreferrer">#226</a></li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0036">0.0.36<a href="#0036" class="hash-link" aria-label="0.0.36的直接链接" title="0.0.36的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0036">0.0.36<a href="#0036" class="hash-link" aria-label="0.0.36的直接链接" title="0.0.36的直接链接"> ​</a></h2>
 <ul>
 <li>fixes for x11 freeze issue.</li>
 <li>update winit to 0.29.15.</li>
@@ -658,7 +659,7 @@
 <li>Fix scroll when copying text outside of offset.</li>
 <li>Fix copy key bindings.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0013">0.0.13<a href="#0013" class="hash-link" aria-label="0.0.13的直接链接" title="0.0.13的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0013">0.0.13<a href="#0013" class="hash-link" aria-label="0.0.13的直接链接" title="0.0.13的直 接链接">​</a></h2>
 <ul>
 <li>Fix Fuzzy Finder issue (<a href="https://github.com/raphamorim/rio/issues/132" target="_blank" rel="noopener noreferrer">#132</a>).</li>
 <li>Introduce Copa (Alacritty&#x27;s VTE forked version to introduce new sequences/instructions in next versions).</li>
@@ -758,7 +759,7 @@
 <p>before:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">performance</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;High&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">style</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">font-size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;lucario&quot;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="复制代码到剪贴板" title="复制" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p>now:</p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">performance</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;High&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;lucario&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">font-size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="复  制代码到剪贴板" title="复制" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">performance</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;High&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;lucario&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">font-size</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token number">18</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="复制代码到剪贴板" title="复制" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Fix Background color not entirely set on vim <a href="https://github.com/raphamorim/rio/issues/88" target="_blank" rel="noopener noreferrer">#88</a></li>
 <li>Scroll now works for x11 and wayland.</li>
