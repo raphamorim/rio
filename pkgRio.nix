@@ -67,8 +67,6 @@ in
     buildInputs = rlinkLibs;
     runtimeDependencies = rlinkLibs;
 
-    doCheck = false;
-
     nativeBuildInputs =
       [
         ncurses
