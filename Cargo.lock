@@ -557,7 +557,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "copa"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -579,7 +579,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -1059,9 +1059,9 @@ checksum = "f81ec6369c545a7d40e4589b5597581fa1c441fe1cce96dd1de43159910a36a2"
 
 [[package]]
 name = "font-types"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1185c9e351b6569630888b6abe7475190ce084b59b615861ce5352d9a9f6226a"
+checksum = "11c3a23a5a151afb1f74ea797f8c300dee41eff9ee3cb1bf94ed316d860c46b3"
 dependencies = [
  "bytemuck",
 ]
@@ -1331,7 +1331,7 @@ checksum = "b4cc03ec3cde52c8e698ed6c0ed415afca69d6f89bf62034753c08e8a3bfb18f"
 dependencies = [
  "bitflags 2.6.0",
  "glslang-sys",
- "rustc-hash 2.0.0",
+ "rustc-hash 2.1.0",
  "smartstring",
  "thiserror 1.0.69",
 ]
@@ -1849,7 +1849,7 @@ dependencies = [
  "bitflags 2.6.0",
  "halfbrown",
  "num-traits",
- "rustc-hash 2.0.0",
+ "rustc-hash 2.1.0",
  "serde",
  "smartstring",
 ]
@@ -1912,7 +1912,7 @@ dependencies = [
  "librashader-presets",
  "naga",
  "rspirv",
- "rustc-hash 2.0.0",
+ "rustc-hash 2.1.0",
  "serde",
  "spirv",
  "spirv-cross2",
@@ -2741,9 +2741,9 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.24.0"
+version = "0.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69a3c6d6cacf48eb4f7d069dfd59c7d6b655b7a008a0b461176e0a29ae73db95"
+checksum = "be4b40e5383c077b9eb19c80c64d47d1369479a136aeae9a23c3ea43e970407b"
 dependencies = [
  "bytemuck",
  "font-types",
@@ -2839,7 +2839,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "base64",
  "bitflags 2.6.0",
@@ -2855,8 +2855,8 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "regex-automata 0.4.9",
- "rio-window 0.2.2",
- "rustc-hash 2.0.0",
+ "rio-window 0.2.3",
+ "rustc-hash 2.1.0",
  "serde",
  "smallvec",
  "sugarloaf",
@@ -2869,62 +2869,10 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "proc-macro2",
  "quote",
-]
-
-[[package]]
-name = "rio-window"
-version = "0.2.2"
-dependencies = [
- "ahash",
- "atomic-waker",
- "bitflags 2.6.0",
- "bytemuck",
- "calloop",
- "cfg_aliases 0.2.1",
- "concurrent-queue",
- "console_error_panic_hook",
- "core-foundation 0.10.0",
- "core-graphics 0.24.0",
- "cursor-icon",
- "dpi",
- "image",
- "js-sys",
- "libc",
- "memmap2",
- "objc",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "orbclient",
- "percent-encoding",
- "pin-project",
- "raw-window-handle",
- "redox_syscall 0.4.1",
- "rustix",
- "sctk-adwaita",
- "smithay-client-toolkit",
- "smol_str",
- "softbuffer",
- "tracing",
- "tracing-subscriber",
- "tracing-web",
- "unicode-segmentation",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wayland-backend",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-plasma",
- "web-sys",
- "web-time",
- "windows-sys 0.52.0",
- "x11-dl",
- "x11rb",
- "xkbcommon-dl",
 ]
 
 [[package]]
@@ -2977,8 +2925,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "rio-window"
+version = "0.2.3"
+dependencies = [
+ "ahash",
+ "atomic-waker",
+ "bitflags 2.6.0",
+ "bytemuck",
+ "calloop",
+ "cfg_aliases 0.2.1",
+ "concurrent-queue",
+ "console_error_panic_hook",
+ "core-foundation 0.10.0",
+ "core-graphics 0.24.0",
+ "cursor-icon",
+ "dpi",
+ "image",
+ "js-sys",
+ "libc",
+ "memmap2",
+ "objc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "orbclient",
+ "percent-encoding",
+ "pin-project",
+ "raw-window-handle",
+ "redox_syscall 0.4.1",
+ "rustix",
+ "sctk-adwaita",
+ "smithay-client-toolkit",
+ "smol_str",
+ "softbuffer",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-web",
+ "unicode-segmentation",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-plasma",
+ "web-sys",
+ "web-time",
+ "windows-sys 0.52.0",
+ "x11-dl",
+ "x11rb",
+ "xkbcommon-dl",
+]
+
+[[package]]
 name = "rioterm"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ahash",
  "bitflags 2.6.0",
@@ -2996,8 +2996,8 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "rio-backend",
- "rio-window 0.2.2",
- "rustc-hash 2.0.0",
+ "rio-window 0.2.3",
+ "rustc-hash 2.1.0",
  "serde",
  "teletypewriter",
  "tinyvec",
@@ -3033,9 +3033,9 @@ checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
+checksum = "c7fb8039b3032c191086b10f11f319a6e99e1e82889c5cc6046f515c9db1d497"
 
 [[package]]
 name = "rustix"
@@ -3174,9 +3174,9 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "skrifa"
-version = "0.25.0"
+version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "261784bf7b71ef6bc347f765de6c8e32e952104d5c4fc2cd4070872fce8c3e81"
+checksum = "d3a16eb047396452019439e1d6eca13581c141275b7d743f0262f79d65c09c70"
 dependencies = [
  "bytemuck",
  "read-fonts",
@@ -3368,7 +3368,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ab_glyph",
  "approx",
@@ -3402,8 +3402,8 @@ dependencies = [
  "png",
  "raw-window-handle",
  "rayon",
- "rio-window 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustc-hash 2.0.0",
+ "rio-window 0.2.2",
+ "rustc-hash 2.1.0",
  "serde",
  "skrifa",
  "slotmap",
@@ -3453,7 +3453,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "corcovado",
  "dirs",
@@ -3655,9 +3655,9 @@ dependencies = [
 
 [[package]]
 name = "tracing"
-version = "0.1.40"
+version = "0.1.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3523ab5a71916ccf420eebdf5521fcef02141234bbc0b8a49f2fdc4544364ef"
+checksum = "784e0ac535deb450455cbfa28a6f0df145ea1bb7ae51b821cf5e7927fdcfbdd0"
 dependencies = [
  "log 0.4.22",
  "pin-project-lite",
@@ -3667,9 +3667,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-attributes"
-version = "0.1.27"
+version = "0.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34704c8d6ebcbc939824180af020566b01a7c01f80641264eba0999f6c2b6be7"
+checksum = "395ae124c09f9e6918a2310af6038fba074bcf474ac352496d5910dd59a2226d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3678,9 +3678,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-core"
-version = "0.1.32"
+version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
+checksum = "e672c95779cf947c5311f83787af4fa8fffd12fb27e4993211a84bdfd9610f9c"
 dependencies = [
  "once_cell",
  "valuable",
@@ -3836,7 +3836,7 @@ checksum = "9dcc60c0624df774c82a0ef104151231d37da4962957d691c011c852b2473314"
 
 [[package]]
 name = "wa"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bitflags 2.6.0",
  "fnv",

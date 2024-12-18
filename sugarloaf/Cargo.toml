@@ -30,12 +30,12 @@ targets = [
 
 [dependencies]
 wgpu = { workspace = true }
-bytemuck = { version = "1.17.0", features = [ "derive" ] }
-tracing = "0.1.40"
+bytemuck = { workspace = true }
+tracing = { workspace = true }
 serde = { version = "1.0.208", features = ["derive"] }
 twox-hash = { version = "1.6.3", default-features = false }
 image_rs = { package = "image", version = "0.25.5", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
-unicode-width = "0.2.0"
+unicode-width = { workspace = true }
 guillotiere = "0.6.2"
 ordered-float = "4.5.0"
 rustc-hash = "2.0.0"
@@ -46,7 +46,7 @@ linked-hash-map = "0.5.6"
 xi-unicode = "0.3.0"
 approx = "0.5.1"
 lru = "0.12.5"
-skrifa = "0.25.0"
+skrifa = "0.26.2"
 halfbrown = "0.2.5"
 num-traits = "0.2.19"
 yazi = { version = "0.2.0", optional = true }
