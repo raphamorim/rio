@@ -447,7 +447,7 @@ fn draw_layout(
         }
 
         let first_run = &line.render_data.runs[0];
-        // let ascent = first_run.ascent.round();
+        let ascent = first_run.ascent.round();
         // let descent = first_run.descent.round();
         // let leading = (first_run.leading).round() * 2.;
         let mut px = x + 0.0;
@@ -480,7 +480,7 @@ fn draw_layout(
                 cursor: run.span.cursor,
                 background_color: run.span.background_color,
                 baseline: py,
-                topline: py - rect.height,
+                topline: py - ascent,
                 line_height,
                 advance: px - run_x,
                 decoration: run.span.decoration,
