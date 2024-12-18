@@ -10,6 +10,11 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
+- On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
+	- On macOS, fixed the scancode conversion for audio volume keys.
+	- On macOS, fixed the scancode conversion for `IntlBackslash`.
+- Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
 

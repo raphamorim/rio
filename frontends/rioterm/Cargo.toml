@@ -77,7 +77,7 @@ wayland = [
 ]
 
 [package.metadata.deb]
-name = "rio"
+name = "rioterm"
 maintainer = "Raphael Amorim <rapha850@gmail.com>"
 copyright = "2024, Raphael Amorim <rapha850@gmail.com>"
 depends = "$auto"

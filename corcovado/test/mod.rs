@@ -138,9 +138,11 @@ mod ports {
         unsafe {
             // If the atomic was never used, set it to the initial port
             #[allow(deprecated)]
+            #[allow(static_mut_refs)]
             NEXT_PORT.compare_and_swap(0, FIRST_PORT, SeqCst);
 
             // Get and increment the port list
+            #[allow(static_mut_refs)]
             NEXT_PORT.fetch_add(1, SeqCst)
         }
     }

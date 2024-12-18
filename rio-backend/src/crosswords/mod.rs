@@ -2796,7 +2796,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-            let graphic_columns = (graphic.width + cell_width - 1) / cell_width;
+            let graphic_columns = graphic.width.div_ceil(cell_width);
             self.move_forward(Column(graphic_columns));
         } else if scrolling {
             self.linefeed();
