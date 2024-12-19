@@ -84,15 +84,16 @@ Execute a predefined action in Rio terminal.
 
 ### [Tab Actions](#tab-actions)
 
-| Action               | Description                                                         |
-| :------------------- | :------------------------------------------------------------------ |
-| CreateTab            |                                                                     |
-| CloseTab             |                                                                     |
-| CloseUnfocusedTabs   |                                                                     |
-| SelectPrevTab        |                                                                     |
-| SelectNextTab        |                                                                     |
-| SelectLastTab        |                                                                     |
-| SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)` |
+| Action               | Description                                                             |
+| :------------------- | :---------------------------------------------------------------------- |
+| CreateTab            |                                                                         |
+| CloseTab             |                                                                         |
+| CloseUnfocusedTabs   |                                                                         |
+| SelectPrevTab        |                                                                         |
+| SelectNextTab        |                                                                         |
+| SelectLastTab        |                                                                         |
+| MoveCurrentTabToPrev | Move the current focused tab to the previous slot if any is available   |
+| SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)`     |
 
 ### [Scroll Actions](#scroll-actions)
 
