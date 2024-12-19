@@ -1028,6 +1028,18 @@ impl Screen<'_> {
                         self.context_manager.switch_to_next();
                         self.render();
                     }
+                    Act::MoveCurrentTabToPrev => {
+                        self.cancel_search();
+                        self.clear_selection();
+                        self.context_manager.move_current_to_prev();
+                        self.render();
+                    }
+                    Act::MoveCurrentTabToNext => {
+                        self.cancel_search();
+                        self.clear_selection();
+                        self.context_manager.move_current_to_next();
+                        self.render();
+                    }
                     Act::SelectPrevTab => {
                         self.cancel_search();
                         self.clear_selection();
