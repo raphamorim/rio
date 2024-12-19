@@ -22,6 +22,7 @@ use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
+use std::os::fd::IntoRawFd;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -837,6 +838,32 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.current_route = self.current().route_id;
+    }
+
+    #[inline]
+    pub fn move_current_to_prev(&mut self) {
+        let len = self.contexts.len();
+        if len <= 1 {
+            return;
+        }
+
+        let current = self.current_index;
+        let target_index = if current == 0 { len - 1 } else { current - 1 };
+        self.contexts.swap(current, target_index);
+        self.select_tab(target_index);
+    }
+
+    #[inline]
+    pub fn move_current_to_next(&mut self) {
+        let len = self.contexts.len();
+        if len <= 1 {
+            return;
+        }
+
+        let current = self.current_index;
+        let target_index = if current == len - 1 { 0 } else { current + 1 };
+        self.contexts.swap(current, target_index);
+        self.select_tab(target_index);
     }
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
