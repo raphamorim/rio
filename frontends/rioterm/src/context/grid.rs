@@ -1000,25 +1000,26 @@ pub mod test {
             rich_text_id,
             context_dimension,
         );
-        // let context_width = context.dimension.width;
-        // let context_height = context.dimension.height;
-        // let context_margin = context.dimension.margin;
-        // let grid = ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
-        // // The first context should fill completely w/h grid
-        // assert_eq!(grid.width, context_width);
-        // assert_eq!(grid.height, context_height);
+        panic!("does even pass?");
+        let context_width = context.dimension.width;
+        let context_height = context.dimension.height;
+        let context_margin = context.dimension.margin;
+        let grid = ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
+        // The first context should fill completely w/h grid
+        assert_eq!(grid.width, context_width);
+        assert_eq!(grid.height, context_height);
 
-        // // Context margin should empty
-        // assert_eq!(Delta::<f32>::default(), context_margin);
-        // assert_eq!(grid.margin, margin);
+        // Context margin should empty
+        assert_eq!(Delta::<f32>::default(), context_margin);
+        assert_eq!(grid.margin, margin);
 
-        // assert_eq!(
-        //     grid.objects(),
-        //     vec![Object::RichText(RichText {
-        //         id: rich_text_id,
-        //         position: [10., 20.],
-        //     })]
-        // );
+        assert_eq!(
+            grid.objects(),
+            vec![Object::RichText(RichText {
+                id: rich_text_id,
+                position: [10., 20.],
+            })]
+        );
     }
 
     // #[test]
