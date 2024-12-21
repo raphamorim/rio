@@ -991,7 +991,7 @@ pub mod test {
 
         assert_eq!(context_dimension.columns, 66);
         assert_eq!(context_dimension.lines, 88);
-        let rich_text_id = 1;
+        let rich_text_id = 0;
         let route_id = 0;
         let context = create_mock_context(
             VoidListener {},

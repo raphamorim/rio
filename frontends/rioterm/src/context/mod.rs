@@ -197,7 +197,9 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
     );
     let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
-    panic!("aaaaa");
+    let messenger = Messenger::new(sender);
+    let renderable_content = RenderableContent::new(Cursor::default());
+    panic!("aaaa");
 
     Context {
         route_id,
@@ -205,8 +207,8 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
         main_fd: Arc::new(-1),
         #[cfg(not(target_os = "windows"))]
         shell_pid: 1,
-        messenger: Messenger::new(sender),
-        renderable_content: RenderableContent::new(Cursor::default()),
+        messenger,
+        renderable_content,
         terminal,
         rich_text_id,
         dimension,
