@@ -199,7 +199,6 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
     let (sender, _receiver) = corcovado::channel::channel();
     let messenger = Messenger::new(sender);
     let renderable_content = RenderableContent::new(Cursor::default());
-    panic!("aaaa");
 
     Context {
         route_id,
