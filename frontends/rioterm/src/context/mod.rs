@@ -197,6 +197,7 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
     );
     let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
+    panic!("aaaaa");
 
     Context {
         route_id,
