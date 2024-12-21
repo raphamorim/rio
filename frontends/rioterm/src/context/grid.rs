@@ -433,14 +433,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut terminal = self.inner[index].val.terminal.lock();
         terminal.resize::<ContextDimension>(self.inner[index].val.dimension);
         drop(terminal);
-        let winsize =
+        let _winsize =
             crate::renderer::utils::terminal_dimensions(&self.inner[index].val.dimension);
-        match self.inner[index].val.messenger.send_resize(winsize) {
-            Ok(_) => {}
-            Err(a) => {
-                println!("{:?}", a);
-            }
-        }
+        // let _ = self.inner[index].val.messenger.send_resize(winsize);
     }
 
     pub fn remove_current(&mut self) {
