@@ -991,15 +991,15 @@ pub mod test {
 
         assert_eq!(context_dimension.columns, 66);
         assert_eq!(context_dimension.lines, 88);
-        // let rich_text_id = 1;
-        // let route_id = 0;
-        // let context = create_mock_context(
-        //     VoidListener {},
-        //     WindowId::from(0),
-        //     route_id,
-        //     rich_text_id,
-        //     context_dimension,
-        // );
+        let rich_text_id = 1;
+        let route_id = 0;
+        let context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            route_id,
+            rich_text_id,
+            context_dimension,
+        );
         // let context_width = context.dimension.width;
         // let context_height = context.dimension.height;
         // let context_margin = context.dimension.margin;
