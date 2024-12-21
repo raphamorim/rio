@@ -435,7 +435,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         drop(terminal);
         let winsize =
             crate::renderer::utils::terminal_dimensions(&self.inner[index].val.dimension);
-        let _ = self.inner[index].val.messenger.send_resize(winsize);
+        match self.inner[index].val.messenger.send_resize(winsize) {
+            Ok(_) => {}
+            Err(a) => {
+                println!("{:?}", a);
+            }
+        }
     }
 
     pub fn remove_current(&mut self) {
