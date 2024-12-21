@@ -1,23 +1,19 @@
 name: Nix Build
 
-on: [push, pull_request]
-
-# on:
-#   workflow_dispatch:
-#   pull_request:
-#     branches:
-#       - main
-#     paths:
-#       - '**/*.rs'
-#       - '.github/workflows/nix-build.yml'
-#       - 'nix/**'
-#   push:
-#     branches:
-#       - main
-#     paths:
-#       - '**/*.rs'
-#       - '.github/workflows/nix-build.yml'
-#       - 'nix/**'
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '**/*.rs'
+      - '.github/workflows/nix-build.yml'
+      - 'nix/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.rs'
+      - '.github/workflows/nix-build.yml'
+      - 'nix/**'
 
 jobs:
   lints:
