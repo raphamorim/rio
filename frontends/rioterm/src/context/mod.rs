@@ -240,7 +240,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let pty;
         #[cfg(not(target_os = "windows"))]
         {
-            // if config.use_fork {
+            if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
@@ -253,22 +253,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         return Err(Box::new(err));
                     }
                 }
-            // } else {
-            //     tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
-            //     pty = match create_pty_with_spawn(
-            //         &Cow::Borrowed(&config.shell.program),
-            //         config.shell.args.clone(),
-            //         &config.working_dir,
-            //         cols,
-            //         rows,
-            //     ) {
-            //         Ok(created_pty) => created_pty,
-            //         Err(err) => {
-            //             tracing::error!("{err:?}");
-            //             return Err(Box::new(err));
-            //         }
-            //     }
-            // };
+            } else {
+                tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
+                pty = match create_pty_with_spawn(
+                    &Cow::Borrowed(&config.shell.program),
+                    config.shell.args.clone(),
+                    &config.working_dir,
+                    cols,
+                    rows,
+                ) {
+                    Ok(created_pty) => created_pty,
+                    Err(err) => {
+                        tracing::error!("{err:?}");
+                        return Err(Box::new(err));
+                    }
+                }
+            };
         }
 
         #[cfg(not(target_os = "windows"))]
