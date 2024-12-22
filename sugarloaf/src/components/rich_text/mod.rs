@@ -453,10 +453,10 @@ fn draw_layout(
         let mut px = x + 0.0;
         // let baseline = line_y + ascent;
         // line_y = baseline + descent;
-        line_y = line_y + rect.height;
+        line_y = line_y + rect.height * 2.0;
         let py = line_y;
         // let line_height = ascent + descent + leading;
-        let line_height = rect.height;
+        let line_height = rect.height * 2.0;
         for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;
