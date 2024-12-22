@@ -247,32 +247,6 @@ pub fn create_mock_context<
         &config,
     )
     .unwrap()
-
-    // let terminal = Crosswords::new(
-    //     dimension,
-    //     CursorShape::Block,
-    //     event_proxy,
-    //     window_id,
-    //     route_id,
-    // );
-    // let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
-    // let (sender, _receiver) = corcovado::channel::channel();
-    // let messenger = Messenger::new(sender);
-    // let renderable_content = RenderableContent::new(Cursor::default());
-
-    // Context {
-    //     route_id,
-    //     #[cfg(not(target_os = "windows"))]
-    //     main_fd: Arc::new(-1),
-    //     #[cfg(not(target_os = "windows"))]
-    //     shell_pid: 1,
-    //     messenger,
-    //     renderable_content,
-    //     terminal,
-    //     rich_text_id,
-    //     dimension,
-    //     ime: Ime::new(),
-    // }
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
