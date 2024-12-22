@@ -105,8 +105,8 @@ impl Default for RootStyle {
 
 impl RootStyle {
     pub fn new(scale_factor: f32, font_size: f32, line_height: f32) -> RootStyle {
-        // Line height can never be zero
-        // let line_height = if line_height == 0.0 { 1.0 } else { line_height };
+        // Line height cannot be under 1
+        let line_height = if line_height <= 1.0 { 1.0 } else { line_height };
 
         RootStyle {
             scale_factor,

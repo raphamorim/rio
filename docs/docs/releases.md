@@ -10,8 +10,9 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
-- Fixed Nix build [#853](https://github.com/raphamorim/rio/pull/853).
-- Support for Unicode 16 characters.
+- Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
+- Support to line height.
+- Fixed: Unremovable bottom padding when using line-height [#449](https://github.com/raphamorim/rio/issues/449).
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
 - Introduce `SwitchCurrentTabToPrev` and `SwitchCurrentTabToNext` actions [#854](https://github.com/raphamorim/rio/pull/854/files) by [@agjini](https://github.com/agjini).
 - On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
