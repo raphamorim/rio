@@ -181,38 +181,62 @@ pub struct ContextManager<T: EventListener> {
     pub titles: ContextManagerTitles,
 }
 
-pub fn create_mock_context<T: rio_backend::event::EventListener>(
+pub fn create_mock_context<T: rio_backend::event::EventListener + Clone + std::marker::Send + 'static>(
     event_proxy: T,
     window_id: WindowId,
     route_id: usize,
     rich_text_id: usize,
     dimension: ContextDimension,
 ) -> Context<T> {
-    let terminal = Crosswords::new(
-        dimension,
-        CursorShape::Block,
-        event_proxy,
+    let config = ContextManagerConfig {
+        #[cfg(not(target_os = "windows"))]
+        use_fork: true,
+        working_dir: None,
+        shell: Shell {
+            program: std::env::var("SHELL").unwrap_or("bash".to_string()),
+            args: vec![],
+        },
+        spawn_performer: false,
+        is_native: false,
+        should_update_titles: false,
+        use_current_path: false,
+        split_color: [0., 0., 0., 0.],
+    };
+    ContextManager::create_context(
+        (&Cursor::default(), false),
+        event_proxy.clone(),
         window_id,
         route_id,
-    );
-    let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
-    let (sender, _receiver) = corcovado::channel::channel();
-    let messenger = Messenger::new(sender);
-    let renderable_content = RenderableContent::new(Cursor::default());
-
-    Context {
-        route_id,
-        #[cfg(not(target_os = "windows"))]
-        main_fd: Arc::new(-1),
-        #[cfg(not(target_os = "windows"))]
-        shell_pid: 1,
-        messenger,
-        renderable_content,
-        terminal,
         rich_text_id,
         dimension,
-        ime: Ime::new(),
-    }
+        &config,
+    ).unwrap()
+
+    // let terminal = Crosswords::new(
+    //     dimension,
+    //     CursorShape::Block,
+    //     event_proxy,
+    //     window_id,
+    //     route_id,
+    // );
+    // let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+    // let (sender, _receiver) = corcovado::channel::channel();
+    // let messenger = Messenger::new(sender);
+    // let renderable_content = RenderableContent::new(Cursor::default());
+
+    // Context {
+    //     route_id,
+    //     #[cfg(not(target_os = "windows"))]
+    //     main_fd: Arc::new(-1),
+    //     #[cfg(not(target_os = "windows"))]
+    //     shell_pid: 1,
+    //     messenger,
+    //     renderable_content,
+    //     terminal,
+    //     rich_text_id,
+    //     dimension,
+    //     ime: Ime::new(),
+    // }
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
