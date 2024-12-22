@@ -181,7 +181,42 @@ pub struct ContextManager<T: EventListener> {
     pub titles: ContextManagerTitles,
 }
 
-pub fn create_mock_context<T: rio_backend::event::EventListener + Clone + std::marker::Send + 'static>(
+pub fn create_dead_context<T: rio_backend::event::EventListener>(
+    event_proxy: T,
+    window_id: WindowId,
+    route_id: usize,
+    rich_text_id: usize,
+    dimension: ContextDimension,
+) -> Context<T> {
+    let terminal = Crosswords::new(
+        dimension,
+        CursorShape::Block,
+        event_proxy,
+        window_id,
+        route_id,
+    );
+    let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+    let (sender, _receiver) = corcovado::channel::channel();
+
+    Context {
+        route_id,
+        #[cfg(not(target_os = "windows"))]
+        main_fd: Arc::new(-1),
+        #[cfg(not(target_os = "windows"))]
+        shell_pid: 1,
+        messenger: Messenger::new(sender),
+        renderable_content: RenderableContent::new(Cursor::default()),
+        terminal,
+        rich_text_id,
+        dimension,
+        ime: Ime::new(),
+    }
+}
+
+#[cfg(test)]
+pub fn create_mock_context<
+    T: rio_backend::event::EventListener + Clone + std::marker::Send + 'static,
+>(
     event_proxy: T,
     window_id: WindowId,
     route_id: usize,
@@ -210,7 +245,8 @@ pub fn create_mock_context<T: rio_backend::event::EventListener + Clone + std::m
         rich_text_id,
         dimension,
         &config,
-    ).unwrap()
+    )
+    .unwrap()
 
     // let terminal = Crosswords::new(
     //     dimension,
@@ -384,7 +420,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     window_id,
                 );
 
-                create_mock_context(
+                create_dead_context(
                     event_proxy.clone(),
                     window_id,
                     route_id,
