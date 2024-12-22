@@ -1,15 +1,15 @@
+use rio_window::keyboard::{Key, NamedKey};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_window::application::ApplicationHandler;
-use rio_window::event_loop::ControlFlow;
-use rio_window::event_loop::{ActiveEventLoop, DeviceEvents};
+use rio_window::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
 use rio_window::window::{Window, WindowId};
 use rio_window::{
-    dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::WindowAttributes,
+    dpi::LogicalSize, event::{WindowEvent, ElementState}, event_loop::EventLoop, window::WindowAttributes,
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, FragmentStyleDecoration, Object, RichText,
-    Sugarloaf, SugarCursor, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    layout::RootStyle, FragmentStyle, Object, RichText,
+    Sugarloaf, SugarCursor, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -25,6 +25,7 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
+    line_height: f32,
 }
 
 impl Application {
@@ -36,6 +37,7 @@ impl Application {
             window: None,
             width,
             height,
+            line_height: 2.0,
         }
     }
 
@@ -56,9 +58,8 @@ impl ApplicationHandler for Application {
         let scale_factor = window.scale_factor();
         let font_size = 24.;
 
-        let line_height = 2.0;
         let sugarloaf_layout =
-            RootStyle::new(scale_factor as f32, font_size, line_height);
+            RootStyle::new(scale_factor as f32, font_size, self.line_height);
 
         let size = window.inner_size();
         let sugarloaf_window = SugarloafWindow {
@@ -79,7 +80,7 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        sugarloaf.set_background_color(Some(wgpu::Color::RED));
+        sugarloaf.set_background_color(Some(wgpu::Color::BLUE));
         sugarloaf.create_rich_text();
         window.request_redraw();
 
@@ -117,100 +118,44 @@ impl ApplicationHandler for Application {
                 sugarloaf.resize(new_size.width, new_size.height);
                 window.request_redraw();
             }
+            WindowEvent::KeyboardInput {
+                is_synthetic: false,
+                event: key_event,
+                ..
+            } => {
+                if key_event.state == ElementState::Pressed {
+                    match key_event.logical_key.as_ref() {
+                        Key::Named(NamedKey::ArrowUp) => {
+                            self.line_height += 0.1;
+                            window.request_redraw();
+                        }
+                        Key::Named(NamedKey::ArrowDown) => {
+                            if self.line_height > 1.0 {
+                                self.line_height -= 0.1;
+                                window.request_redraw();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
                 content.sel(0).clear();
                 content
                     .new_line()
                     .add_text(
-                        "Sugarloaf",
-                        FragmentStyle {
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .new_line()
-                    .add_text(
-                        "│㏑¼",
+                        &format!("current line_height: {:?}", self.line_height),
                         FragmentStyle {
                             color: [0.0, 0.0, 0.0, 1.0],
                             background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                            width: 2.0,
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        "🥶",
-                        FragmentStyle {
-                            color: [1.0, 0.0, 1.0, 1.0],
-                            background_color: Some([0.3, 0.5, 1.0, 1.0]),
-                            width: 2.0,
                             ..FragmentStyle::default()
                         },
                     )
                     .new_line()
                     .add_text(
-                        "│regular -> ",
+                        "press arrow up to increase",
                         FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
-                                UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
-                                    is_doubled: false,
-                                    shape: UnderlineShape::Regular,
-                                },
-                            )),
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        " ",
-                        FragmentStyle {
-                            decoration: None,
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        "|still|",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
-                                UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
-                                    is_doubled: false,
-                                    shape: UnderlineShape::Regular,
-                                },
-                            )),
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        " ",
-                        FragmentStyle {
-                            decoration: None,
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        "│curly",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
-                                UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
-                                    is_doubled: false,
-                                    shape: UnderlineShape::Curly,
-                                },
-                            )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
                             ..FragmentStyle::default()
@@ -218,43 +163,10 @@ impl ApplicationHandler for Application {
                     )
                     .new_line()
                     .add_text(
-                        "│dashed",
+                        "press arrow down to decrease",
                         FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
-                                UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
-                                    is_doubled: false,
-                                    shape: UnderlineShape::Dashed,
-                                },
-                            )),
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        " ",
-                        FragmentStyle {
-                            decoration: None,
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .add_text(
-                        "dotted",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
-                                UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
-                                    is_doubled: false,
-                                    shape: UnderlineShape::Dotted,
-                                },
-                            )),
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            color: [0.0, 0.0, 0.0, 1.0],
+                            background_color: Some([1.0, 1.0, 1.0, 1.0]),
                             ..FragmentStyle::default()
                         },
                     )
@@ -263,7 +175,7 @@ impl ApplicationHandler for Application {
                         "│ \u{E0B6}Hello There!\u{e0b4}",
                         FragmentStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.5, 0.5, 1.0, 1.0]),
+                            background_color: Some([1.0, 0.5, 1.0, 1.0]),
                             ..FragmentStyle::default()
                         },
                     )
