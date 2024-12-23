@@ -15,8 +15,9 @@ use renderable::RenderableContent;
 use rio_backend::config::Shell;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
-use rio_backend::event::EventListener;
+use rio_backend::event::RioEventType;
 use rio_backend::event::WindowId;
+use rio_backend::event::{EventListener, EventPayload};
 use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
@@ -560,6 +561,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn mark_pending_updates(&mut self) {
+        self.contexts[self.current_index]
+            .current_mut()
+            .renderable_content
+            .mark_pending_updates();
+    }
+
+    #[inline]
     pub fn report_error_fonts_not_found(&mut self, fonts_not_found: Vec<SugarloafFont>) {
         if !fonts_not_found.is_empty() {
             self.event_proxy.send_event(
@@ -597,14 +606,26 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn select_next_split(&mut self) {
+        // Make the cursor in the current split hollow before changing to new split
+        self.mark_pending_updates();
+        EventPayload::new(RioEventType::Rio(RioEvent::Render), self.window_id);
         self.contexts[self.current_index].select_next_split();
         self.current_route = self.current().route_id;
+        // Make the cursor in the new current split filled
+        self.mark_pending_updates();
+        EventPayload::new(RioEventType::Rio(RioEvent::Render), self.window_id);
     }
 
     #[inline]
     pub fn select_prev_split(&mut self) {
+        // Make the cursor in the current split hollow before changing to new split
+        self.mark_pending_updates();
+        EventPayload::new(RioEventType::Rio(RioEvent::Render), self.window_id);
         self.contexts[self.current_index].select_prev_split();
         self.current_route = self.current().route_id;
+        // Make the cursor in the new current split filled
+        self.mark_pending_updates();
+        EventPayload::new(RioEventType::Rio(RioEvent::Render), self.window_id);
     }
 
     #[inline]
