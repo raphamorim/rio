@@ -188,7 +188,7 @@ impl ApplicationHandler for Application {
                         "?",
                         FragmentStyle {
                             color: [0.5, 0.5, 1.0, 1.0],
-                            background_color: Some([1.0, 1.0, 1.0, 1.0]),
+                            background_color: Some([1.0, 0.5, 1.0, 1.0]),
                             cursor: Some(SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
                             ..FragmentStyle::default()
                         },

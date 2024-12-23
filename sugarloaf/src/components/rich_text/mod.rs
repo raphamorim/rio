@@ -413,7 +413,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibrary,
     rect: &SugarDimensions,
-    custom_line_height: &f32,
+    line_height_mod: &f32,
     graphics: &mut Graphics,
 ) {
     // let start = std::time::Instant::now();
@@ -455,11 +455,10 @@ fn draw_layout(
         let mut px = x + 0.0;
         let baseline = line_y + ascent;
         line_y = baseline + descent;
-        // line_y = line_y;
+        let line_height_without_mod = ascent + descent + leading;
+        let line_height = line_height_without_mod * line_height_mod;
+
         let py = line_y;
-        let line_height_calc = ascent + descent + leading;
-        let line_height = line_height_calc * custom_line_height;
-        // let line_height = rect.height * line_height;
         for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;
@@ -485,6 +484,7 @@ fn draw_layout(
                 baseline: py,
                 topline: py - ascent,
                 line_height,
+                line_height_without_mod,
                 advance: px - run_x,
                 decoration: run.span.decoration,
                 decoration_color: run.span.decoration_color,
@@ -528,10 +528,9 @@ fn draw_layout(
             );
         }
 
-        if custom_line_height > &1.0 {
-            line_y += line_height - line_height_calc;
+        if line_height_mod > &1.0 {
+            line_y += line_height - line_height_without_mod;
         }
-        // line_y += line_height;
     }
 
     // let duration = start.elapsed();
@@ -605,6 +604,7 @@ fn fetch_dimensions(
             baseline: py,
             topline: py - ascent,
             line_height,
+            line_height_without_mod: line_height,
             advance: px - run_x,
             decoration: None,
             decoration_color: None,
