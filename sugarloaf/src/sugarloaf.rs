@@ -205,6 +205,11 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn set_rich_text_line_height(&mut self, rt_id: &usize, line_height: f32) {
+        self.state.set_rich_text_line_height(rt_id, line_height);
+    }
+
+    #[inline]
     pub fn update_filters(&mut self, filter_paths: &[String]) {
         self.filters_brush.update_filters(&self.ctx, filter_paths);
     }

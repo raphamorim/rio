@@ -278,6 +278,7 @@ impl RichTextBrush {
                     position,
                     library,
                     &rt.layout.dimensions,
+                    &rt.layout.line_height,
                     graphics,
                 );
             }
@@ -412,6 +413,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibrary,
     rect: &SugarDimensions,
+    custom_line_height: &f32,
     graphics: &mut Graphics,
 ) {
     // let start = std::time::Instant::now();
@@ -448,15 +450,16 @@ fn draw_layout(
 
         let first_run = &line.render_data.runs[0];
         let ascent = first_run.ascent.round();
-        // let descent = first_run.descent.round();
-        // let leading = (first_run.leading).round() * 2.;
+        let descent = first_run.descent.round();
+        let leading = (first_run.leading).round() * 2.;
         let mut px = x + 0.0;
-        // let baseline = line_y + ascent;
-        // line_y = baseline + descent;
-        line_y = line_y + rect.height * 2.0;
+        let baseline = line_y + ascent;
+        line_y = baseline + descent;
+        // line_y = line_y;
         let py = line_y;
-        // let line_height = ascent + descent + leading;
-        let line_height = rect.height * 2.0;
+        let line_height_calc = ascent + descent + leading;
+        let line_height = line_height_calc * custom_line_height;
+        // let line_height = rect.height * line_height;
         for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;
@@ -524,6 +527,11 @@ fn draw_layout(
                 &glyphs,
             );
         }
+
+        if custom_line_height > &1.0 {
+            line_y += line_height - line_height_calc;
+        }
+        // line_y += line_height;
     }
 
     // let duration = start.elapsed();

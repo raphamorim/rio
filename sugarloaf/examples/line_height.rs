@@ -1,15 +1,18 @@
-use rio_window::keyboard::{Key, NamedKey};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_window::application::ApplicationHandler;
 use rio_window::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents};
+use rio_window::keyboard::{Key, NamedKey};
 use rio_window::window::{Window, WindowId};
 use rio_window::{
-    dpi::LogicalSize, event::{WindowEvent, ElementState}, event_loop::EventLoop, window::WindowAttributes,
+    dpi::LogicalSize,
+    event::{ElementState, WindowEvent},
+    event_loop::EventLoop,
+    window::WindowAttributes,
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, RichText,
-    Sugarloaf, SugarCursor, SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Object, RichText, SugarCursor, Sugarloaf,
+    SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -127,11 +130,13 @@ impl ApplicationHandler for Application {
                     match key_event.logical_key.as_ref() {
                         Key::Named(NamedKey::ArrowUp) => {
                             self.line_height += 0.1;
+                            sugarloaf.set_rich_text_line_height(&0, self.line_height);
                             window.request_redraw();
                         }
                         Key::Named(NamedKey::ArrowDown) => {
                             if self.line_height > 1.0 {
                                 self.line_height -= 0.1;
+                                sugarloaf.set_rich_text_line_height(&0, self.line_height);
                                 window.request_redraw();
                             }
                         }
