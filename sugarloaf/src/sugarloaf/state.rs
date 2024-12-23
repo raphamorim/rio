@@ -118,6 +118,18 @@ impl SugarState {
         self.process_rich_text_repaint(advance_brush);
     }
 
+    #[inline]
+    pub fn set_rich_text_line_height(&mut self, rich_text_id: &usize, line_height: f32) {
+        if let Some(rte) = self
+            .compositors
+            .advanced
+            .content
+            .get_state_mut(rich_text_id)
+        {
+            rte.layout.line_height = line_height;
+        }
+    }
+
     fn process_rich_text_repaint(&mut self, advance_brush: &mut RichTextBrush) {
         for rich_text in &self.rich_text_repaint {
             self.compositors
