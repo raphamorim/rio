@@ -18,6 +18,7 @@ language: 'en'
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
+- Always emit `1` for the first parameter when having modifiers in kitty keyboard protocol.
 
 ## 0.2.2
 
