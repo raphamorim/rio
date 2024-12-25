@@ -19,6 +19,7 @@ language: 'en'
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
 - Always emit `1` for the first parameter when having modifiers in kitty keyboard protocol.
+- Microsoft Windows: fix the event loop not waking on accessibility requests.
 
 ## 0.2.2
 
