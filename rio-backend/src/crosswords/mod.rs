@@ -2348,6 +2348,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let cell = self.grid.cursor_square();
             if cell.c == ' ' {
                 cell.c = c;
+                self.damage_cursor();
             }
 
             loop {
@@ -2377,7 +2378,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
-        trace!("[unimplemented] Moving forward {} tabs", count);
+        trace!("Moving forward {} tabs", count);
+
+        self.put_tab(count);
     }
 
     #[inline]
