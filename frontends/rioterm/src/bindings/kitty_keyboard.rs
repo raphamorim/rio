@@ -56,7 +56,7 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     let sequence_base = context
         .try_build_numpad(key)
         .or_else(|| context.try_build_named_kitty(key))
-        .or_else(|| context.try_build_named_normal(&key, associated_text.is_some()))
+        .or_else(|| context.try_build_named_normal(key, associated_text.is_some()))
         .or_else(|| context.try_build_control_char_or_mod(key, &mut modifiers))
         .or_else(|| context.try_build_textual(key, associated_text));
 

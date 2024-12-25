@@ -52,7 +52,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     PostMessageW, RegisterClassExW, RegisterWindowMessageA, SetCursor, SetWindowPos,
     TranslateMessage, CREATESTRUCTW, GIDC_ARRIVAL, GIDC_REMOVAL, GWL_STYLE, GWL_USERDATA,
     HTCAPTION, HTCLIENT, MINMAXINFO, MNC_CLOSE, MSG, MWMO_INPUTAVAILABLE,
-    NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLEVENTS, RI_MOUSE_HWHEEL,
+    NCCALCSIZE_PARAMS, PM_REMOVE, PT_PEN, PT_TOUCH, QS_ALLINPUT, RI_MOUSE_HWHEEL,
     RI_MOUSE_WHEEL, SC_MINIMIZE, SC_RESTORE, SIZE_MAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE,
     SWP_NOSIZE, SWP_NOZORDER, WHEEL_DELTA, WINDOWPOS, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
     WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
@@ -788,11 +788,12 @@ fn wait_for_messages_impl(
             (0, [ptr::null_mut()])
         };
 
+        // We must use `QS_ALLINPUT` to wake on accessibility messages.
         let result = MsgWaitForMultipleObjectsEx(
             num_handles,
             raw_handles.as_ptr() as *const _,
             wait_duration_ms,
-            QS_ALLEVENTS,
+            QS_ALLINPUT,
             MWMO_INPUTAVAILABLE,
         );
         if result == WAIT_FAILED {
