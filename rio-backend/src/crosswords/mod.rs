@@ -2403,7 +2403,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage.damage_line(line, old_col, self.grid.cursor.pos.col.0);
+        self.damage
+            .damage_line(line, old_col, self.grid.cursor.pos.col.0);
     }
 
     #[inline]
