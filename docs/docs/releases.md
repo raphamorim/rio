@@ -18,7 +18,7 @@ language: 'en'
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
-- Support for `CSI n I` (Cursor Forward Tabulation) to move the cursor forward by a specified number of tabs.
+- Escape sequence to move cursor forward tabs ( CSI Ps I ).
 - Always emit `1` for the first parameter when having modifiers in kitty keyboard protocol.
 - Microsoft Windows: fix the event loop not waking on accessibility requests.
 
