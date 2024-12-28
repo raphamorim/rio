@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ja/assets/css/styles.b8da69d8.css">
-<script src="/rio/ja/assets/js/runtime~main.0f0c707f.js" defer="defer"></script>
+<script src="/rio/ja/assets/js/runtime~main.bc2d78fb.js" defer="defer"></script>
 <script src="/rio/ja/assets/js/main.cbcf51ad.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -30,6 +30,7 @@
 <li>Kitty keyboard protocol is now enabled by default.</li>
 <li>Allow <code>Renderer</code> to be configured cross-platform by <code>Platform</code> property.</li>
 <li>Add <code>ToggleFullscreen</code> to configurable actions.</li>
+<li>Escape sequence to move cursor forward tabs ( CSI Ps I ).</li>
 <li>Always emit <code>1</code> for the first parameter when having modifiers in kitty keyboard protocol.</li>
 <li>Microsoft Windows: fix the event loop not waking on accessibility requests.</li>
 </ul>
@@ -273,7 +274,7 @@
 </ul>
 <p>Define y axis padding based on a format <code>[top, bottom]</code>, default is <code>[0, 0]</code>.</p>
 <p>Example:</p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">padding-y</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token number">30</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token number">10</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコ  ードをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">padding-y</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token number">30</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token number">10</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコードをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Update swash (0.1.18), ab_glyph (0.2.28) and remove double hashmap implementation.</li>
 </ul>
