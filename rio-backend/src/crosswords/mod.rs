@@ -1594,11 +1594,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_backward_tabs(&mut self, count: u16) {
-        self.damage_cursor();
+        trace!("Moving backward {} tabs", count);
 
         let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
+
+            if col == 0 {
+                break;
+            }
+
             for i in (0..(col.0)).rev() {
                 if self.tabs[Column(i)] {
                     col = Column(i);
@@ -2348,7 +2353,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let cell = self.grid.cursor_square();
             if cell.c == ' ' {
                 cell.c = c;
-                self.damage_cursor();
             }
 
             loop {
@@ -2379,8 +2383,27 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
         trace!("Moving forward {} tabs", count);
+        let num_cols = self.columns();
+        let old_col = self.grid.cursor.pos.col.0;
+        for _ in 0..count {
+            let mut col = self.grid.cursor.pos.col;
 
-        self.put_tab(count);
+            if col == num_cols - 1 {
+                break;
+            }
+
+            for i in col.0 + 1..num_cols {
+                col = Column(i);
+                if self.tabs[col] {
+                    break;
+                }
+            }
+
+            self.grid.cursor.pos.col = col;
+        }
+
+        let line = self.grid.cursor.pos.row.0 as usize;
+        self.damage.damage_line(line, old_col, self.grid.cursor.pos.col.0);
     }
 
     #[inline]
