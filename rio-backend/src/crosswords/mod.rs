@@ -110,6 +110,8 @@ bitflags! {
         const SIXEL_DISPLAY             = 1 << 28;
         const SIXEL_PRIV_PALETTE        = 1 << 29;
         const SIXEL_CURSOR_TO_THE_RIGHT = 1 << 31;
+        const LEADER                    = 1 << 30;
+        const ANY                 = u32::MAX;
     }
 }
 
