@@ -22,7 +22,6 @@ use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::error::Error;
-use std::os::fd::IntoRawFd;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -1270,5 +1269,91 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
         context_manager.switch_to_next();
         assert_eq!(context_manager.current_index, 1);
+    }
+
+    #[test]
+    fn test_move_current_to_next() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.current_mut().rich_text_id = 1;
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+        
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+    }
+    
+    #[test]
+    fn test_move_current_to_prev() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.current_mut().rich_text_id = 1;
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
     }
 }
