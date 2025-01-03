@@ -12,6 +12,7 @@ language: 'en'
 
 - Fixed Nix build [#853](https://github.com/raphamorim/rio/pull/853).
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
+- Introduce `SwitchCurrentTabToPrev` and `SwitchCurrentTabToNext` actions [#854](https://github.com/raphamorim/rio/pull/854/files) by [@agjini](https://github.com/agjini).
 - On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
 	- On macOS, fixed the scancode conversion for audio volume keys.
 	- On macOS, fixed the scancode conversion for `IntlBackslash`.
