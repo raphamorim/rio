@@ -505,7 +505,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3538270d33cc669650c4b093848450d380def10c331d38c768e34cac80576e6e"
 dependencies = [
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width",
 ]
 
 [[package]]
@@ -2863,7 +2863,7 @@ dependencies = [
  "teletypewriter",
  "toml",
  "tracing",
- "unicode-width 0.2.0",
+ "unicode-width-16",
  "wgpu",
 ]
 
@@ -3003,7 +3003,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "tracing-subscriber",
- "unicode-width 0.2.0",
+ "unicode-width-16",
  "url",
  "wgpu",
  "windows-sys 0.52.0",
@@ -3412,7 +3412,7 @@ dependencies = [
  "tracing",
  "ttf-parser",
  "twox-hash",
- "unicode-width 0.2.0",
+ "unicode-width-16",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
@@ -3764,10 +3764,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
-name = "unicode-width"
-version = "0.2.0"
+name = "unicode-width-16"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc81956842c57dac11422a97c3b8195a1ff727f06e85c84ed2e8aa277c9a0fd"
+checksum = "9eba15036aa0f5bf8ed6cd12a624ddb61fd50b0779b1c05d89b663bcaed7b5c2"
 
 [[package]]
 name = "unicode-xid"
