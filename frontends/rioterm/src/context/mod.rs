@@ -1328,7 +1328,7 @@ pub mod test {
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 1);
         assert_eq!(context_manager.current().rich_text_id, 1);
-        
+
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 2);
         assert_eq!(context_manager.current().rich_text_id, 1);
@@ -1336,7 +1336,7 @@ pub mod test {
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 3);
         assert_eq!(context_manager.current().rich_text_id, 1);
-        
+
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 4);
         assert_eq!(context_manager.current().rich_text_id, 1);
@@ -1344,12 +1344,12 @@ pub mod test {
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 0);
         assert_eq!(context_manager.current().rich_text_id, 1);
-        
+
         context_manager.move_current_to_next();
         assert_eq!(context_manager.current_index, 1);
         assert_eq!(context_manager.current().rich_text_id, 1);
     }
-    
+
     #[test]
     fn test_move_current_to_prev() {
         let window_id = WindowId::from(0);
