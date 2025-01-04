@@ -42,7 +42,8 @@ sugarloaf = { path = "sugarloaf", version = "0.2.2" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.1.0"
-unicode-width = "0.2.0"
+# unicode-width = "0.2.0"
+unicode-width = { package = "unicode-width-16", version = "0.1.0" }
 base64 = "0.22.1"
 image_rs = { package = "image", version = "0.25.5", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
 regex = "1.11.1"
