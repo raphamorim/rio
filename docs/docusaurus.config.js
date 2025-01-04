@@ -82,10 +82,10 @@ const config = {
             require.resolve('./src/css/custom.css'),
           ],
         },
-        // gtag: {
-        //   trackingID: '---------',
-        //   anonymizeIP: true,
-        // },
+        gtag: {
+          trackingID: 'G-6MKJ1X7CFS',
+          anonymizeIP: true,
+        },
       }),
     ],
   ],
