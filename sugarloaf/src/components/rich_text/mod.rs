@@ -278,6 +278,7 @@ impl RichTextBrush {
                     position,
                     library,
                     &rt.layout.dimensions,
+                    &rt.layout.line_height,
                     graphics,
                 );
             }
@@ -412,6 +413,7 @@ fn draw_layout(
     pos: (f32, f32),
     font_library: &FontLibrary,
     rect: &SugarDimensions,
+    line_height_mod: &f32,
     graphics: &mut Graphics,
 ) {
     // let start = std::time::Instant::now();
@@ -453,8 +455,10 @@ fn draw_layout(
         let mut px = x + 0.0;
         let baseline = line_y + ascent;
         line_y = baseline + descent;
+        let line_height_without_mod = ascent + descent + leading;
+        let line_height = line_height_without_mod * line_height_mod;
+
         let py = line_y;
-        let line_height = ascent + descent + leading;
         for run in &line.render_data.runs {
             glyphs.clear();
             let font = run.span.font_id;
@@ -480,6 +484,7 @@ fn draw_layout(
                 baseline: py,
                 topline: py - ascent,
                 line_height,
+                line_height_without_mod,
                 advance: px - run_x,
                 decoration: run.span.decoration,
                 decoration_color: run.span.decoration_color,
@@ -521,6 +526,10 @@ fn draw_layout(
                 &style,
                 &glyphs,
             );
+        }
+
+        if line_height_mod > &1.0 {
+            line_y += line_height - line_height_without_mod;
         }
     }
 
@@ -595,6 +604,7 @@ fn fetch_dimensions(
             baseline: py,
             topline: py - ascent,
             line_height,
+            line_height_without_mod: line_height,
             advance: px - run_x,
             decoration: None,
             decoration_color: None,
