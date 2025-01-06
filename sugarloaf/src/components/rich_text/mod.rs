@@ -7,7 +7,7 @@ use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
 use crate::font::FontLibrary;
-use crate::layout::SugarDimensions;
+use crate::layout::{RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{Compositor, DisplayList, Rect, Vertex};
@@ -277,8 +277,7 @@ impl RichTextBrush {
                     &rt.lines,
                     position,
                     library,
-                    &rt.layout.dimensions,
-                    &rt.layout.line_height,
+                    &rt.layout,
                     graphics,
                 );
             }
@@ -412,10 +411,11 @@ fn draw_layout(
     lines: &Vec<crate::layout::BuilderLine>,
     pos: (f32, f32),
     font_library: &FontLibrary,
-    rect: &SugarDimensions,
-    line_height_mod: &f32,
+    rte_layout: &RichTextLayout,
     graphics: &mut Graphics,
 ) {
+    let rect = &rte_layout.dimensions;
+    let line_height_mod = &rte_layout.line_height;
     // let start = std::time::Instant::now();
     let (x, y) = pos;
     let (image_cache, glyphs_cache) = caches;
@@ -458,6 +458,13 @@ fn draw_layout(
         let line_height_without_mod = ascent + descent + leading;
         let line_height = line_height_without_mod * line_height_mod;
 
+        // If line height is 10. and and modifier is 1.5, then 5
+        let padding_y = if line_height_mod > &1. {
+            (line_height - line_height_without_mod) / 2.
+        } else {
+            0.
+        };
+
         let py = line_y;
         for run in &line.render_data.runs {
             glyphs.clear();
@@ -467,7 +474,7 @@ fn draw_layout(
             let run_x = px;
             for glyph in &run.glyphs {
                 let x = px;
-                let y = py;
+                let y = py + padding_y;
                 px += rect.width * char_width;
                 glyphs.push(Glyph {
                     id: glyph.simple_data().0,
@@ -483,6 +490,7 @@ fn draw_layout(
                 background_color: run.span.background_color,
                 baseline: py,
                 topline: py - ascent,
+                padding_y,
                 line_height,
                 line_height_without_mod,
                 advance: px - run_x,
@@ -602,6 +610,7 @@ fn fetch_dimensions(
             cursor: run.span.cursor,
             background_color: None,
             baseline: py,
+            padding_y: 0.,
             topline: py - ascent,
             line_height,
             line_height_without_mod: line_height,

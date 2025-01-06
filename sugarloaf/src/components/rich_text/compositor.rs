@@ -207,7 +207,7 @@ impl Compositor {
                 self.batches.add_rect(
                     &Rect::new(
                         rect.x,
-                        style.topline,
+                        style.topline + style.padding_y,
                         rect.width,
                         style.line_height_without_mod,
                     ),
@@ -219,7 +219,7 @@ impl Compositor {
                 self.batches.add_rect(
                     &Rect::new(
                         rect.x,
-                        style.topline,
+                        style.topline + style.padding_y,
                         rect.width,
                         style.line_height_without_mod,
                     ),
@@ -231,7 +231,7 @@ impl Compositor {
                     self.batches.add_rect(
                         &Rect::new(
                             rect.x + 2.0,
-                            style.topline + 2.0,
+                            style.topline + style.padding_y + 2.0,
                             rect.width - 4.0,
                             style.line_height_without_mod - 4.0,
                         ),
