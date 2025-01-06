@@ -357,6 +357,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    pub fn update_line_height(&mut self, line_height: f32) {
+        for context in &mut self.inner {
+            context.val.dimension.update_line_height(line_height);
+        }
+    }
+
     pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
         for context in &mut self.inner {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
@@ -913,6 +919,12 @@ impl ContextDimension {
     #[inline]
     pub fn update_margin(&mut self, margin: Delta<f32>) {
         self.margin = margin;
+        self.update();
+    }
+
+    #[inline]
+    pub fn update_line_height(&mut self, line_height: f32) {
+        self.line_height = line_height;
         self.update();
     }
 
