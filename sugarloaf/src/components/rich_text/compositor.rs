@@ -242,7 +242,12 @@ impl Compositor {
             }
             Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
-                    &Rect::new(rect.x, style.topline, 3.0, style.line_height_without_mod),
+                    &Rect::new(
+                        rect.x,
+                        style.topline + style.padding_y,
+                        3.0,
+                        style.line_height_without_mod,
+                    ),
                     depth,
                     &cursor_color,
                 );
