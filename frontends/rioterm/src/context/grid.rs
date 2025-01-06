@@ -849,6 +849,7 @@ pub struct ContextDimension {
     pub lines: usize,
     pub dimension: SugarDimensions,
     pub margin: Delta<f32>,
+    pub line_height: f32,
 }
 
 impl Default for ContextDimension {
@@ -858,6 +859,7 @@ impl Default for ContextDimension {
             height: 0.,
             columns: MIN_COLS,
             lines: MIN_LINES,
+            line_height: 1.,
             dimension: SugarDimensions::default(),
             margin: Delta::<f32>::default(),
         }
@@ -880,6 +882,7 @@ impl ContextDimension {
             lines,
             dimension,
             margin,
+            line_height,
         }
     }
 
@@ -925,8 +928,7 @@ impl ContextDimension {
             self.width,
             self.height,
             self.dimension,
-            // self.line_height,
-            1.0,
+            self.line_height,
             self.margin,
         );
 
