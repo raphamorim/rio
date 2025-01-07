@@ -213,7 +213,7 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
             winit_window.set_corner_preference(preference);
         }
     }
-    if let Some(title) = &config.window.initial_title {
+    if let Some(title) = &config.title.placeholder {
         winit_window.set_title(title);
     }
 
