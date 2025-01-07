@@ -11,12 +11,13 @@ language: 'en'
 ## 0.2.3 (unreleased)
 
 - Rio now allows you to configure window title through configuration via template. Possible options:
-	- `TITLE`: terminal title via OSC sequences for setting terminal title
-	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-	- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`)
-	- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
-	- `COLUMNS`: current columns
-	- `LINES`: current lines
+	- `TITLE`: terminal title via OSC sequences for setting terminal title.
+	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...).
+	- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`).
+	- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`).
+	- `COLUMNS`: current columns.
+	- `LINES`: current lines.
+		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
 - Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
 - Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).
