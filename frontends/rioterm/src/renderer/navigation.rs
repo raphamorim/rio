@@ -1,7 +1,9 @@
 use crate::constants::*;
+use crate::context::title::ContextTitle;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
 use rio_backend::sugarloaf::{Object, Rect, Text};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
 pub struct ScreenNavigation {
@@ -134,7 +136,7 @@ impl ScreenNavigation {
     #[inline]
     pub fn bookmark(
         &mut self,
-        titles: &HashMap<usize, [String; 3]>,
+        titles: &FxHashMap<usize, ContextTitle>,
         colors: &Colors,
         len: usize,
         hide_if_single: bool,
@@ -154,9 +156,11 @@ impl ScreenNavigation {
             }
 
             if let Some(title) = titles.get(&i) {
-                if let Some(color_overwrite) =
-                    get_color_overwrite(&self.color_automation, &title[0], &title[2])
-                {
+                if let Some(color_overwrite) = get_color_overwrite(
+                    &self.color_automation,
+                    &title.content,
+                    &title.current_path,
+                ) {
                     color = *color_overwrite;
                 }
             }
@@ -174,7 +178,7 @@ impl ScreenNavigation {
     #[inline]
     pub fn tab(
         &mut self,
-        titles: &HashMap<usize, [String; 3]>,
+        titles: &FxHashMap<usize, ContextTitle>,
         colors: &Colors,
         len: usize,
         position_y: f32,
@@ -216,15 +220,13 @@ impl ScreenNavigation {
 
             let mut name = String::from("tab");
             if let Some(title) = titles.get(&i) {
-                if title[1].is_empty() {
-                    name = title[0].to_string();
-                } else {
-                    name = format!("{} ({})", title[0], title[1]);
-                }
+                name = title.content.to_owned();
 
-                if let Some(color_overwrite) =
-                    get_color_overwrite(&self.color_automation, &title[0], &title[2])
-                {
+                if let Some(color_overwrite) = get_color_overwrite(
+                    &self.color_automation,
+                    &title.content,
+                    &title.current_path,
+                ) {
                     foreground_color = colors.tabs;
                     background_color = *color_overwrite;
                 }

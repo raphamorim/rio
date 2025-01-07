@@ -7,13 +7,15 @@ Rio allows you to configure window and tabs title through configuration via temp
 
 - `content` - Configure window title using template
 
-  - Default: `{{ TITLE || PROGRAM }}`
+  - Default: `{{ title || program }}`
 
 - `placeholder` - Configure initial title
   
   - Default: `▲`
 
 ## content
+
+Note: Variables are not case sensitive.
 
 Possible options:
 
@@ -37,7 +39,7 @@ Result: `fish - .../Documents/a/rio`.
 
 ```toml
 [title]
-content = "{{ PROGRAM }} ({{COLUMNS}}x{{LINES}})"
+content = "{{ program }} ({{columns}}x{{lines}})"
 ```
 
 Result: `fish (85x23)`.
