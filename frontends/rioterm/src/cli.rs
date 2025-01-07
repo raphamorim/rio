@@ -40,8 +40,8 @@ pub struct TerminalOptions {
     pub enable_log_file: bool,
 
     /// Start window with specified title
-    #[clap(long)]
-    pub title: Option<String>,
+    #[clap(long, name = "initial-title")]
+    pub initial_title: Option<String>,
 }
 
 impl TerminalOptions {

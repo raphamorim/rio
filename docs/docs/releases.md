@@ -10,6 +10,13 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- Rio now allows you to configure window title through configuration via template. Possible options:
+	- `TITLE`: terminal title via OSC sequences for setting terminal title
+	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
+	- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`)
+	- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+	- `COLUMNS`: current columns
+	- `LINES`: current lines
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
 - Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
 - Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).
@@ -17,6 +24,7 @@ language: 'en'
 - Support to `window.windows-use-no-redirection-bitmap` (This sets `WS_EX_NOREDIRECTIONBITMAP`).
 - Support for Unicode 16 characters.
 - Support to line height.
+- Renamed `--title` to `--initial-title` on CLI.
 - Fixed: Deb package name 'rio' conflicts with existing one in Ubuntu [#876](https://github.com/raphamorim/rio/issues/876).
 - Fixed: Unremovable bottom padding when using line-height [#449](https://github.com/raphamorim/rio/issues/449).
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.

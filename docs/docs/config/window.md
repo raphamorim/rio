@@ -9,6 +9,14 @@ Define the initial window width.
 
 - Default: `600`
 
+- `initial-title` - Configure initial title
+  
+  - Default: `▲`
+
+- `title` - Configure window title using template
+
+  - Default: `{{ PROGRAM }} - {{ ABSOLUTE_PATH }}`
+
 Example:
 
 ```toml
@@ -88,7 +96,24 @@ Example:
 ```toml
 [window]
 decorations = "Enabled"
+initial-title = "▲"
+title = "{{ PROGRAM }} - {{ PATH_ABSOLUTE }}"
 ```
+
+### Configure window title
+
+Rio allows you to configure window title through configuration via template.
+
+Note: This configuration is not valid for tab title.
+
+Possible options:
+
+- `TITLE`: terminal title via OSC sequences for setting terminal title
+- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
+- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`)
+- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+- `COLUMNS`: current columns
+- `LINES`: current lines
 
 ### Using blur and background opacity:
 
