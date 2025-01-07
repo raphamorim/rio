@@ -1,5 +1,6 @@
 pub mod grid;
 pub mod renderable;
+mod title;
 
 use crate::ansi::CursorShape;
 use crate::context::grid::ContextDimension;
