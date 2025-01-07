@@ -207,6 +207,7 @@ impl Screen<'_> {
             should_update_titles: !(is_collapsed
                 && config.navigation.color_automation.is_empty()),
             split_color: config.colors.split,
+            title: config.title.clone(),
         };
 
         let rich_text_id = sugarloaf.create_rich_text();

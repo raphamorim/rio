@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::defaults::{default_title_placeholder, default_title_content};
+use super::defaults::{default_title_content, default_title_placeholder};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Title {
