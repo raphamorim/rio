@@ -1,5 +1,10 @@
 use crate::context::Context;
 
+// TODO:
+// Regex {{x}} entries, then validate if x contains "||"
+// if it does split per "||" then evaluate first to last item (y)
+// until y is not empty
+
 #[inline]
 fn update_title<T: rio_backend::event::EventListener>(
     template: String,
