@@ -64,6 +64,7 @@ console_error_panic_hook = "0.1.7"
 tracing = "0.1.41"
 objc = "0.2.7"
 memmap2 = "0.9.5"
+url = "2.5.4"
 
 [profile.release]
 lto = true

@@ -406,6 +406,7 @@ where
     pub window_id: WindowId,
     pub route_id: usize,
     title_stack: Vec<String>,
+    current_directory: Option<std::path::PathBuf>,
     hyperlink_re: regex::Regex,
 
     // The stack for the keyboard modes.
@@ -461,6 +462,7 @@ impl<U: EventListener> Crosswords<U> {
             window_id,
             route_id,
             title_stack: Default::default(),
+            current_directory: None,
             keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_stack: Default::default(),
         }
@@ -1905,6 +1907,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn set_title(&mut self, title: Option<String>) {
         self.title = title.unwrap_or_default();
+    }
+
+    fn set_current_directory(&mut self, path: std::path::PathBuf) {
+        trace!("Setting working directory {:?}", path);
+        self.current_directory = Some(path);
     }
 
     #[inline]

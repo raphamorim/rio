@@ -138,6 +138,9 @@ pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
 
+    /// OSC to set current directory.
+    fn set_current_directory(&mut self, _: std::path::PathBuf) {}
+
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
 
@@ -648,6 +651,22 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                     }
                 }
             }
+
+            // Inform current directory.
+            b"7" => {
+                if let Ok(s) = std::str::from_utf8(params[1]) {
+                    if let Ok(url) = url::Url::parse(s) {
+                        let path = url.path();
+
+                        // NB the path coming from Url has a leading slash; must slice that off
+                        // in windows.
+                        #[cfg(windows)]
+                        let path = &path[1..];
+
+                        self.handler.set_current_directory(path.into());
+                    }
+                }
+            },
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
