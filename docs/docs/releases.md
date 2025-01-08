@@ -18,7 +18,7 @@ language: 'en'
 	- `TITLE`: terminal title via OSC sequences for setting terminal title
 	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
 	- `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-	- `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+	<!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
 	- `COLUMNS`: current columns
 	- `LINES`: current lines
 		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
