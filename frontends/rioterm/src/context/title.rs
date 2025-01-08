@@ -56,8 +56,8 @@ impl ContextManagerTitles {
 
 // - `TITLE`: terminal title via OSC sequences for setting terminal title
 // - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-// - `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`)
-// - `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+// - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
+// - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
 // - `COLUMNS`: current columns
 // - `LINES`: current lines
 
@@ -104,15 +104,20 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                         terminal.title.to_string()
                     };
 
-                    println!("{:?}", terminal_title);
-
                     // In case it has a fallback and title is empty
                     // or
                     // In case is the last then we need to erase variables either way
-                    if variables.len() <= 1 || i == variables.len() - 1 {
+                    let is_only_one = variables.len() == 1;
+                    let is_last = i == variables.len() - 1;
+                    if is_only_one || is_last {
                         new_template =
                             new_template.replace(to_replace_str, &terminal_title);
-                    } else if !terminal_title.is_empty() {
+                        continue;
+                    }
+
+                    if !terminal_title.is_empty() {
+                        new_template =
+                            new_template.replace(to_replace_str, &terminal_title);
                         matched = true;
                     }
                 }
@@ -127,7 +132,7 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                         new_template = new_template.replace(to_replace_str, &program);
                     }
                 }
-                "path_absolute" => {
+                "absolute_path" => {
                     #[cfg(unix)]
                     {
                         let path = teletypewriter::foreground_process_path(
@@ -260,13 +265,24 @@ pub mod test {
         );
 
         assert_eq!(
-            update_title("{{ columns || title }}", &context),
-            String::from("66")
+            update_title("{{ title || title }}", &context),
+            String::from("")
+        );
+
+        // let's modify title to actually be something
+        {
+            let mut term = context.terminal.lock();
+            term.title = "Something".to_string();
+        };
+
+        assert_eq!(
+            update_title("{{ title || columns }}", &context),
+            String::from("Something")
         );
 
         assert_eq!(
-            update_title("{{ title || title }}", &context),
-            String::from("")
+            update_title("{{ columns || title }}", &context),
+            String::from("66")
         );
     }
 }
