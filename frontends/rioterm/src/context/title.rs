@@ -130,6 +130,7 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                         );
 
                         new_template = new_template.replace(to_replace_str, &program);
+                        matched = true;
                     }
                 }
                 "absolute_path" => {
@@ -142,7 +143,20 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                         .map(|p| p.to_string_lossy().to_string())
                         .unwrap_or_default();
 
-                        new_template = new_template.replace(to_replace_str, &path);
+                        // In case it has a fallback and path is empty
+                        // or
+                        // In case is the last then we need to erase variables either way
+                        let is_only_one = variables.len() == 1;
+                        let is_last = i == variables.len() - 1;
+                        if is_only_one || is_last {
+                            new_template = new_template.replace(to_replace_str, &path);
+                            continue;
+                        }
+
+                        if !path.is_empty() {
+                            new_template = new_template.replace(to_replace_str, &path);
+                            matched = true;
+                        }
                     }
                 }
                 // TODO:
@@ -283,6 +297,11 @@ pub mod test {
         assert_eq!(
             update_title("{{ columns || title }}", &context),
             String::from("66")
+        );
+
+        assert_eq!(
+            update_title("{{ absolute_path || title }}", &context),
+            String::from("Something")
         );
     }
 }
