@@ -10,7 +10,3 @@ Rio supports integrating with the shell through the following means:
 - OSC 1337 Escape sequences to set user vars for tracking additional shell state.
 
 OSC is escape sequence jargon for Operating System Command.
-
-
-
-

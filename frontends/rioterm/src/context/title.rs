@@ -216,7 +216,7 @@ pub mod test {
             String::from("hello 88 AbC")
         );
         assert_eq!(
-            update_title("{{ columns }}x{{lines}", &context),
+            update_title("{{ columns }}x{{lines}}", &context),
             String::from("66x88")
         );
 
