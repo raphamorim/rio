@@ -2864,6 +2864,7 @@ dependencies = [
  "toml",
  "tracing",
  "unicode-width-16",
+ "url",
  "wgpu",
 ]
 
