@@ -15,14 +15,14 @@ Rio allows you to configure window and tabs title through configuration via temp
 
 ## content
 
-Note: Variables are not case sensitive.
+Note: **Variables are not case sensitive.**
 
 Possible options:
 
 - `TITLE`: terminal title via OSC sequences for setting terminal title
 - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`)
-- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+- `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
+- `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
 - `COLUMNS`: current columns
 - `LINES`: current lines
 
@@ -30,7 +30,7 @@ Possible options:
 
 ```toml
 [title]
-content = "{{ PROGRAM }} - {{ PATH_ABSOLUTE }}"
+content = "{{ PROGRAM }} - {{ ABSOLUTE_PATH }}"
 ```
 
 Result: `fish - .../Documents/a/rio`.

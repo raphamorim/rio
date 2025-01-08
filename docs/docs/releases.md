@@ -15,12 +15,12 @@ language: 'en'
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
 - Rio now allows you to configure window title through configuration via template. Possible options:
-	- `TITLE`: terminal title via OSC sequences for setting terminal title.
-	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...).
-	- `PATH_ABSOLUTE`: (e.g `/Users/rapha/Documents/a/rio`).
-	- `PATH_RELATIVE`: (e.g `.../Documents/a/rio`, `~/Documents/a`).
-	- `COLUMNS`: current columns.
-	- `LINES`: current lines.
+	- `TITLE`: terminal title via OSC sequences for setting terminal title
+	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
+	- `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
+	- `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`)
+	- `COLUMNS`: current columns
+	- `LINES`: current lines
 		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
 - Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
