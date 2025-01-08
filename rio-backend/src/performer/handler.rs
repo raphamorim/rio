@@ -666,7 +666,7 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                         self.handler.set_current_directory(path.into());
                     }
                 }
-            },
+            }
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
