@@ -3,7 +3,7 @@ title: 'developer'
 language: 'en'
 ---
 
-This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default.
+This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default. The level may be `DEBUG`, `INFO`, `TRACE`, `ERROR`, `WARN` or `OFF`.
 
 ```toml
 [developer]
