@@ -1887,6 +1887,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .flags
                     .insert(square::Flags::DASHED_UNDERLINE);
             }
+            Attr::CancelBlink => {
+                info!("Term got unhandled attr: {:?}", attr);
+            }
             Attr::CancelUnderline => {
                 cursor.template.flags.remove(square::Flags::ALL_UNDERLINES)
             }
