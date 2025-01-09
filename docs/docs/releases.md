@@ -11,6 +11,10 @@ language: 'en'
 ## 0.2.3 (unreleased)
 
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
+- Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
+- Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).
+- Support to `window.windows-use-undecorated-shadow` (default is enabled).
+- Support to `window.windows-use-no-redirection-bitmap` (This sets `WS_EX_NOREDIRECTIONBITMAP`).
 - Support for Unicode 16 characters.
 - Support to line height.
 - Fixed: Deb package name 'rio' conflicts with existing one in Ubuntu [#876](https://github.com/raphamorim/rio/issues/876).
