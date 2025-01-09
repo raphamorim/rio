@@ -73,6 +73,24 @@ pub fn create_window_builder(
         window_builder = window_builder.with_name(APPLICATION_ID, "");
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        use rio_window::platform::windows::WindowAttributesExtWindows;
+        if let Some(use_undecorated_shadow) = config.window.windows_use_undecorated_shadow
+        {
+            window_builder =
+                window_builder.with_undecorated_shadow(use_undecorated_shadow);
+        }
+
+        if let Some(use_no_redirection_bitmap) =
+            config.window.windows_use_no_redirection_bitmap
+        {
+            // This sets WS_EX_NOREDIRECTIONBITMAP.
+            window_builder =
+                window_builder.with_no_redirection_bitmap(use_no_redirection_bitmap);
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         use rio_window::platform::macos::WindowAttributesExtMacOS;
@@ -165,9 +183,36 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
             bg_color.b,
             config.window.opacity as f64,
         );
-        winit_window.set_has_shadow(!is_transparent);
+
+        if !config.window.macos_use_shadow {
+            winit_window.set_has_shadow(false);
+        }
     }
 
+    #[cfg(target_os = "windows")]
+    {
+        use rio_backend::config::window::WindowsCornerPreference;
+        use rio_window::platform::windows::WindowExtWindows;
+
+        if let Some(with_corner_preference) = &config.window.windows_corner_preference {
+            let preference = match with_corner_preference {
+                WindowsCornerPreference::Default => {
+                    rio_window::platform::windows::CornerPreference::Default
+                }
+                WindowsCornerPreference::DoNotRound => {
+                    rio_window::platform::windows::CornerPreference::DoNotRound
+                }
+                WindowsCornerPreference::Round => {
+                    rio_window::platform::windows::CornerPreference::Round
+                }
+                WindowsCornerPreference::RoundSmall => {
+                    rio_window::platform::windows::CornerPreference::RoundSmall
+                }
+            };
+
+            winit_window.set_corner_preference(preference);
+        }
+    }
     if let Some(title) = &config.window.initial_title {
         winit_window.set_title(title);
     }
