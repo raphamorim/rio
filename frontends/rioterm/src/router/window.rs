@@ -76,17 +76,19 @@ pub fn create_window_builder(
     #[cfg(target_os = "windows")]
     {
         use rio_window::platform::windows::WindowAttributesExtWindows;
-        if !config.window.windows_with_undecorated_shadow {
+        if let Some(use_undecorated_shadow) =
+            config.window.windows_use_undecorated_shadow
+        {
             window_builder = window_builder
-                .with_undecorated_shadow(config.window.windows_with_undecorated_shadow);
+                .with_undecorated_shadow(config.window.use_undecorated_shadow);
         }
 
-        if let Some(with_no_redirection_bitmap) =
-            config.window.windows_with_no_redirection_bitmap
+        if let Some(use_no_redirection_bitmap) =
+            config.window.windows_use_no_redirection_bitmap
         {
             // This sets WS_EX_NOREDIRECTIONBITMAP.
             window_builder = window_builder
-                .with_no_redirection_bitmap(config.window.with_no_redirection_bitmap);
+                .with_no_redirection_bitmap(config.window.use_no_redirection_bitmap);
         }
     }
 

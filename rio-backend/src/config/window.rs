@@ -75,9 +75,9 @@ pub struct Window {
     pub initial_title: Option<String>,
     #[serde(
         rename = "windows-use-undecorated-shadow",
-        default = "default_bool_true"
+        default = "Option::default"
     )]
-    pub windows_use_undecorated_shadow: bool,
+    pub windows_use_undecorated_shadow: Option<bool>,
     #[serde(
         rename = "windows-use-no-redirection-bitmap",
         default = "Option::default"
@@ -100,7 +100,7 @@ impl Default for Window {
             macos_use_unified_titlebar: false,
             macos_use_shadow: true,
             initial_title: None,
-            windows_use_undecorated_shadow: true,
+            windows_use_undecorated_shadow: None,
             windows_use_no_redirection_bitmap: None,
             windows_corner_preference: None,
         }
