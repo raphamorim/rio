@@ -40,6 +40,18 @@ impl Default for Decorations {
 }
 
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
+pub enum WindowsCornerPreference {
+    #[serde(alias = "default")]
+    Default = 0,
+    #[serde(alias = "donotround")]
+    DoNotRound = 1,
+    #[serde(alias = "round")]
+    Round = 2,
+    #[serde(alias = "roundsmall")]
+    RoundSmall = 3,
+}
+
+#[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
     #[serde(default = "default_window_width")]
     pub width: i32,
@@ -57,8 +69,19 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
+    #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
+    pub macos_use_shadow: bool,
     #[serde(rename = "initial-title", skip_serializing)]
     pub initial_title: Option<String>,
+    #[serde(rename = "windows-use-undecorated-shadow", default = "Option::default")]
+    pub windows_use_undecorated_shadow: Option<bool>,
+    #[serde(
+        rename = "windows-use-no-redirection-bitmap",
+        default = "Option::default"
+    )]
+    pub windows_use_no_redirection_bitmap: Option<bool>,
+    #[serde(rename = "windows-corner-preference", default = "Option::default")]
+    pub windows_corner_preference: Option<WindowsCornerPreference>,
 }
 
 impl Default for Window {
@@ -72,7 +95,11 @@ impl Default for Window {
             decorations: Decorations::default(),
             blur: false,
             macos_use_unified_titlebar: false,
+            macos_use_shadow: true,
             initial_title: None,
+            windows_use_undecorated_shadow: None,
+            windows_use_no_redirection_bitmap: None,
+            windows_corner_preference: None,
         }
     }
 }
