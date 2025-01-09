@@ -1898,7 +1898,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
             Attr::CancelStrike => cursor.template.flags.remove(square::Flags::STRIKEOUT),
             // _ => {
-                // warn!("Term got unhandled attr: {:?}", attr);
+            // warn!("Term got unhandled attr: {:?}", attr);
             // }
         }
     }
