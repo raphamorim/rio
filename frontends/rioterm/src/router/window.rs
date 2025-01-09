@@ -75,7 +75,7 @@ pub fn create_window_builder(
 
     #[cfg(target_os = "windows")]
     {
-        use rio_window::platform::macos::WindowExtWindows;
+        use rio_window::platform::windows::WindowAttributesExtWindows;
         if !config.window.windows_with_undecorated_shadow {
             window_builder = window_builder
                 .with_undecorated_shadow(config.window.windows_with_undecorated_shadow);
@@ -191,7 +191,7 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
     #[cfg(target_os = "windows")]
     {
         use rio_backend::config::window::WindowsCornerPreference;
-        use rio_window::platform::macos::WindowExtWindows;
+        use rio_window::platform::windows::WindowExtWindows;
 
         if let Some(with_corner_preference) = &config.window.windows_corner_preference {
             let preference = match with_corner_preference {
