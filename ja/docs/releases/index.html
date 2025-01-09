@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ja/assets/css/styles.b8da69d8.css">
-<script src="/rio/ja/assets/js/runtime~main.95e756bc.js" defer="defer"></script>
+<script src="/rio/ja/assets/js/runtime~main.3b9e0b32.js" defer="defer"></script>
 <script src="/rio/ja/assets/js/main.8734414f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -24,6 +24,10 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="023-unreleased">0.2.3 (unreleased)<a href="#023-unreleased" class="hash-link" aria-label="0.2.3 (unreleased) への直接リンク" title="0.2.3 (unreleased) への直接リンク">​</a></h2>
 <ul>
 <li>Fixed: Nix build <a href="https://github.com/raphamorim/rio/pull/853" target="_blank" rel="noopener noreferrer">#853</a>.</li>
+<li>Support to <code>window.macos-use-shadow</code> (enable or disable shadow on MacOS).</li>
+<li>Support to <code>window.windows-corner-preference</code> (options: <code>Default</code>, <code>DoNotRound</code>,<code>Round</code> and <code>RoundSmall</code>).</li>
+<li>Support to <code>window.windows-use-undecorated-shadow</code> (default is enabled).</li>
+<li>Support to <code>window.windows-use-no-redirection-bitmap</code> (This sets <code>WS_EX_NOREDIRECTIONBITMAP</code>).</li>
 <li>Support for Unicode 16 characters.</li>
 <li>Support to line height.</li>
 <li>Fixed: Deb package name &#x27;rio&#x27; conflicts with existing one in Ubuntu <a href="https://github.com/raphamorim/rio/issues/876" target="_blank" rel="noopener noreferrer">#876</a>.</li>
@@ -224,7 +228,7 @@
 <li>Fix scale update on transitioning between screens with different DPI.</li>
 <li>Support a short variant (<code>-w</code>) for <code>--working-dir</code> argument.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="018">0.1.8<a href="#018" class="hash-link" aria-label="0.1.8 への直接リンク" title="0.1.8 へ の直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="018">0.1.8<a href="#018" class="hash-link" aria-label="0.1.8 への直接リンク" title="0.1.8 への直接リンク">​</a></h2>
 <ul>
 <li><strong>breaking:</strong> Introduced a new property in theme called <code>tabs-active-highlight</code>, default color is <code>#ff00ff</code>.</li>
 <li><strong>breaking:</strong> Removed breadcrumb navigation.</li>
@@ -307,7 +311,7 @@
 <li>Wayland: avoid crashing when compositor is misbehaving. (ref: raphamorim/winit 22522c9b37e9734c9a2408fae8d34b2599ff4574).</li>
 <li>Performance upgrades for lines rendered previously.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1 への直接リ  ンク" title="0.1.1 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1 への直接リンク" title="0.1.1 への直接リンク">​</a></h2>
 <ul>
 <li>Fix the validation errors whenever a surface is used with the vulkan backend.</li>
 <li>Clean up weak references to texture views and bind groups to prevent memory leaks.</li>
@@ -425,7 +429,7 @@
 <p>Introduction of new configuration property called <code>keyboard</code>.</p>
 </li>
 </ul>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">keyboard</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">use-kitty-keyboard-protocol</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-ctlseqs-alt</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコー ドをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">keyboard</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">use-kitty-keyboard-protocol</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-ctlseqs-alt</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコードをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>
 <p>Introduction of <code>keyboard.disable-ctlseqs-alt</code>: Disable ctlseqs with ALT keys. It is useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys</p>
@@ -523,7 +527,7 @@
 <li>Actions <code>ScrollLineUp</code> and <code>ScrollLineDown</code> have been removed in favor of the new Scroll API:</li>
 </ul>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">bindings</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">keys</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">	</span><span class="token comment" style="color:rgb(98, 114, 164)"># Scroll up 8 lines</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">	</span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">key</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;up&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">with</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;super&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">action</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;Scroll(8)&quot;</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">	</span><span class="token comment" style="color:rgb(98, 114, 164)"># Scroll down 5 lines</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain">	</span><span class="token punctuation" style="color:rgb(248, 248, 242)">{</span><span class="token plain"> </span><span class="token key property">key</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;down&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">with</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;super&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token key property">action</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;Scroll(-5)&quot;</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">}</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコードをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="other-changes">Other changes<a href="#other-changes" class="hash-link" aria-label="Other changes への直接リンク" title="Other changes への直接リンク">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="other-changes">Other changes<a href="#other-changes" class="hash-link" aria-label="Other changes への直接リンク" title="Other changes への直接リ  ンク">​</a></h4>
 <ul>
 <li>Rendering performance small improvements towards to Sugar text for regular font, dropped in redundancy processing (avg 68ms to 22ms with tests using 155x94 without repetition like <code>vim Cargo.lock</code>).</li>
 <li>Rendering performance small improvements towards to Sugar rect calculation, dropped in redundancy processing. Now Sugarloaf computes better Rects duplication in a line. It gains significant performance for large screens (avg ~12ms).</li>
@@ -609,7 +613,7 @@
 <li>Implemented <code>TERM_PROGRAM</code> and <code>TERM_PROGRAM_VERSION</code> (Ref: <a href="https://github.com/raphamorim/rio/issues/200" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/200</a>).</li>
 <li>Whenever native tabs is on disable macos deadzone logic.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0018">0.0.18<a href="#0018" class="hash-link" aria-label="0.0.18 への直接リンク" title="0.0.18 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0018">0.0.18<a href="#0018" class="hash-link" aria-label="0.0.18 への直接リンク" title="0.0.18 への直接リ  ンク">​</a></h2>
 <ul>
 <li>Upgraded to Rust 1.72.0.</li>
 <li>Fix delete key inputs square character.</li>
@@ -639,7 +643,7 @@
 <li>Support startup notify protocol to raise initial window on Wayland/X11.</li>
 <li>Fix Double-tap by touchpad on the titlebar doesn&#x27;t maximize/unmaximize the window in GNOME 44, Wayland.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0016">0.0.16<a href="#0016" class="hash-link" aria-label="0.0.16 へ  の直接リンク" title="0.0.16 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0016">0.0.16<a href="#0016" class="hash-link" aria-label="0.0.16 への直接リンク" title="0.0.16 への直接リンク">​</a></h2>
 <ul>
 <li>Fix tab/breadcrumb bug introduced in 0.0.15</li>
 <li>Introduce new configuration property: <code>navigation.macos-hide-window-button</code>.</li>
@@ -720,7 +724,7 @@
 <li>Rio creates <code>.deb</code> packages (canary and release).</li>
 <li>Binary size optimization (ref: <a href="https://github.com/raphamorim/rio/pull/152" target="_blank" rel="noopener noreferrer">#152</a>) by [@OlshaMB]</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="009">0.0.9<a href="#009" class="hash-link" aria-label="0.0.9 への直接リンク" title="0.0.9 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="009">0.0.9<a href="#009" class="hash-link" aria-label="0.0.9 への直接リ ンク" title="0.0.9 への直接リンク">​</a></h2>
 <ul>
 <li>Created &quot;rio&quot; terminfo.</li>
 <li>Breaking changes for configuration file regarding <code>Advanced</code>. The configuration <code>Advanced</code> has moved to root level and <code>disable-render-when-unfocused</code> renamed to <code>disable-unfocused-render</code>.</li>

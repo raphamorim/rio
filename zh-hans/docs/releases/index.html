@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/zh-hans/assets/css/styles.b8da69d8.css">
-<script src="/rio/zh-hans/assets/js/runtime~main.175110d7.js" defer="defer"></script>
+<script src="/rio/zh-hans/assets/js/runtime~main.9dc8be5d.js" defer="defer"></script>
 <script src="/rio/zh-hans/assets/js/main.4fea2b86.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -24,6 +24,10 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="023-unreleased">0.2.3 (unreleased)<a href="#023-unreleased" class="hash-link" aria-label="0.2.3 (unreleased)的直接链接" title="0.2.3 (unreleased)的直接链接">​</a></h2>
 <ul>
 <li>Fixed: Nix build <a href="https://github.com/raphamorim/rio/pull/853" target="_blank" rel="noopener noreferrer">#853</a>.</li>
+<li>Support to <code>window.macos-use-shadow</code> (enable or disable shadow on MacOS).</li>
+<li>Support to <code>window.windows-corner-preference</code> (options: <code>Default</code>, <code>DoNotRound</code>,<code>Round</code> and <code>RoundSmall</code>).</li>
+<li>Support to <code>window.windows-use-undecorated-shadow</code> (default is enabled).</li>
+<li>Support to <code>window.windows-use-no-redirection-bitmap</code> (This sets <code>WS_EX_NOREDIRECTIONBITMAP</code>).</li>
 <li>Support for Unicode 16 characters.</li>
 <li>Support to line height.</li>
 <li>Fixed: Deb package name &#x27;rio&#x27; conflicts with existing one in Ubuntu <a href="https://github.com/raphamorim/rio/issues/876" target="_blank" rel="noopener noreferrer">#876</a>.</li>
@@ -364,7 +368,7 @@
 <ul>
 <li>Minor fix on fixed transparency on backgrounds for Welcome/Dialog.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0038">0.0.38<a href="#0038" class="hash-link" aria-label="0.0.38的  直接链接" title="0.0.38的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0038">0.0.38<a href="#0038" class="hash-link" aria-label="0.0.38的直接链接" title="0.0.38的直接链接">​</a></h2>
 <ul>
 <li>Corrections for transparency and blur for MacOS windows.</li>
 <li>Apply dynamic background logic only for images and keep alpha channel on background.</li>
