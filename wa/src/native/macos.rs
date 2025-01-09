@@ -674,7 +674,7 @@ unsafe fn view_base_decl(decl: &mut ClassDecl) {
     ) {
         tracing::info!("insert_text_replacement_range");
         let string = nsstring_to_string(astring);
-        let is_control = string.chars().next().map_or(false, |c| c.is_control());
+        let is_control = string.chars().next().is_some_and(|c| c.is_control());
 
         if !is_control {
             if let Some(payload) = get_display_payload(this) {
