@@ -29,11 +29,16 @@ pub struct ChildExitWatcher {
     pid: Option<NonZeroU32>,
 }
 
+// HANDLE is not Send, so Send is not derived automatically for ChildExitWatcher, but raw pointers
+// are generally safe to send between threads as long as the type they deference to is Send, which
+// c_void is. (see https://doc.rust-lang.org/nomicon/send-and-sync.html).
+unsafe impl Send for ChildExitWatcher {}
+
 impl ChildExitWatcher {
     pub fn new(child_handle: HANDLE) -> Result<ChildExitWatcher, Error> {
         let (event_tx, event_rx) = channel::<ChildEvent>();
 
-        let mut wait_handle: HANDLE = 0;
+        let mut wait_handle: HANDLE = std::ptr::null_mut();
         let sender_ref = Box::new(event_tx);
 
         let success = unsafe {

@@ -201,7 +201,7 @@ impl Drop for EventedAnonRead {
 
         // Stop reader thread waiting for pipe contents
         unsafe {
-            CancelSynchronousIo(thread.as_raw_handle() as isize);
+            CancelSynchronousIo(thread.as_raw_handle());
         }
 
         thread
