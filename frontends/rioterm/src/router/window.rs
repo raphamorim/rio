@@ -76,8 +76,7 @@ pub fn create_window_builder(
     #[cfg(target_os = "windows")]
     {
         use rio_window::platform::windows::WindowAttributesExtWindows;
-        if let Some(use_undecorated_shadow) =
-            config.window.windows_use_undecorated_shadow
+        if let Some(use_undecorated_shadow) = config.window.windows_use_undecorated_shadow
         {
             window_builder = window_builder
                 .with_undecorated_shadow(config.window.use_undecorated_shadow);
