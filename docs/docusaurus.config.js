@@ -169,7 +169,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © 2022-${new Date().getFullYear()} Rio Terminal.`,
+        copyright: `Copyright © 2023-${new Date().getFullYear()} Rio Terminal.`,
       },
       prism: {
         theme: lightCodeTheme,
