@@ -169,7 +169,7 @@ const config = {
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Rio Terminal.`,
+        copyright: `Copyright © 2022-${new Date().getFullYear()} Rio Terminal.`,
       },
       prism: {
         theme: lightCodeTheme,
@@ -186,7 +186,7 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'Support Rio via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
+          'Support Rio terminal via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
         backgroundColor: '#f712ff',
         textColor: '#FFFFFF',
         isCloseable: true,

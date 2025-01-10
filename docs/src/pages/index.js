@@ -30,6 +30,15 @@ function HomepageHeader() {
             <Translate>Install</Translate>
           </Link>
         </div>
+        <div className={styles.actionButtonSection}>
+        <iframe
+              className={styles.githubStarButton}
+              src="https://ghbtns.com/github-btn.html?user=raphamorim&amp;repo=rio&amp;type=star&amp;count=true&amp;size=large"
+              width={160}
+              height={30}
+              title="GitHub Stars"
+            />
+        </div>
       </div>
       <div className={styles.logoContainer}>
         <div className={styles.logoBackground} />
