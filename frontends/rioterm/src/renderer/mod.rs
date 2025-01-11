@@ -276,11 +276,13 @@ impl Renderer {
                 };
                 style.background_color = Some(self.named_colors.selection_background);
             } else if search_hints.is_some()
-                && search_hints.as_mut().is_some_and(|search| {
-                    search.advance(Pos::new(line, Column(column)))
-                })
+                && search_hints
+                    .as_mut()
+                    .is_some_and(|search| search.advance(Pos::new(line, Column(column))))
             {
-                let is_focused = focused_match.as_ref().is_some_and(|fm| fm.contains(&Pos::new(line, Column(column))));
+                let is_focused = focused_match
+                    .as_ref()
+                    .is_some_and(|fm| fm.contains(&Pos::new(line, Column(column))));
                 if is_focused {
                     style.color = self.named_colors.search_focused_match_foreground;
                     style.background_color =
