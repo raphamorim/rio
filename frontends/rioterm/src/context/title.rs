@@ -66,6 +66,9 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     let program =
         teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
 
+    #[cfg(not(unix))]
+    let program = String::default();
+
     Some(ContextTitleExtra { program, path })
 }
 
