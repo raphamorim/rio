@@ -184,7 +184,6 @@ impl Screen<'_> {
             config.keyboard,
         );
 
-        let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
 
         let (shell, working_dir) = process_open_url(
