@@ -73,8 +73,9 @@ wayland = [
     "rio-backend/wayland",
     "rio-window/wayland",
     "rio-window/wayland-dlopen",
-    "rio-window/wayland-csd-adwaita-crossfont",
 ]
+
+# "rio-window/wayland-csd-adwaita-crossfont",
 
 [package.metadata.deb]
 name = "rioterm"
