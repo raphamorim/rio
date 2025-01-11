@@ -102,10 +102,7 @@ fn parse_number(input: &[u8]) -> Option<u8> {
     for c in input {
         let c = *c as char;
         if let Some(digit) = c.to_digit(10) {
-            num = match num.checked_mul(10).and_then(|v| v.checked_add(digit as u8)) {
-                Some(v) => v,
-                None => return None,
-            }
+            num = num.checked_mul(10).and_then(|v| v.checked_add(digit as u8))?
         } else {
             return None;
         }
