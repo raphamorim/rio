@@ -45,6 +45,7 @@ language: 'en'
 - Escape sequence to move cursor forward tabs ( CSI Ps I ).
 - Always emit `1` for the first parameter when having modifiers in kitty keyboard protocol.
 - Microsoft Windows: fix the event loop not waking on accessibility requests.
+- Wayland: disable title text drawn with crossfont crate, use ab_glyph crate instead.
 - Sugarloaf: Expose wgpu.
 
 ## 0.2.2
