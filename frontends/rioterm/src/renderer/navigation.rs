@@ -156,12 +156,16 @@ impl ScreenNavigation {
             }
 
             if let Some(title) = titles.get(&i) {
-                if let Some(color_overwrite) = get_color_overwrite(
-                    &self.color_automation,
-                    &title.content,
-                    &title.current_path,
-                ) {
-                    color = *color_overwrite;
+                if !self.color_automation.is_empty() {
+                    if let Some(extra) = &title.extra {
+                        if let Some(color_overwrite) = get_color_overwrite(
+                            &self.color_automation,
+                            &extra.program,
+                            &extra.path,
+                        ) {
+                            color = *color_overwrite;
+                        }
+                    }
                 }
             }
 
@@ -222,13 +226,17 @@ impl ScreenNavigation {
             if let Some(title) = titles.get(&i) {
                 name = title.content.to_owned();
 
-                if let Some(color_overwrite) = get_color_overwrite(
-                    &self.color_automation,
-                    &title.content,
-                    &title.current_path,
-                ) {
-                    foreground_color = colors.tabs;
-                    background_color = *color_overwrite;
+                if !self.color_automation.is_empty() {
+                    if let Some(extra) = &title.extra {
+                        if let Some(color_overwrite) = get_color_overwrite(
+                            &self.color_automation,
+                            &extra.program,
+                            &extra.path,
+                        ) {
+                            foreground_color = colors.tabs;
+                            background_color = *color_overwrite;
+                        }
+                    }
                 }
             }
 

@@ -202,10 +202,9 @@ impl Screen<'_> {
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
-            // When navigation is collapsed and does not contain any color rule
-            // does not make sense fetch for foreground process names
-            should_update_titles: !(is_collapsed
-                && config.navigation.color_automation.is_empty()),
+            // When navigation does not contain any color rule
+            // does not make sense fetch for foreground process names/path
+            should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title.clone(),
         };

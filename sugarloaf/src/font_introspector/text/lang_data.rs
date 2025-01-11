@@ -133,7 +133,7 @@ pub const LANG_BY_TAG3: [(u32, u32); 711] = [
 ];
 
 #[rustfmt::skip]
-pub const LANG_ENTRIES: [(&'static str, &'static str); 715] = [
+pub static LANG_ENTRIES: [(&'static str, &'static str); 715] = [
     ("Abaza", "abq"), ("Abkhazian", "ab"), ("Acoli", "ach"), ("Achi", "acr"), ("Adyghe", "ady"), ("Afrikaans", "af"), ("Afar", "aa"), ("Qimant", "ahg"), ("Aiton", "aio"), ("Akan", "ak"), ("Swiss German", "gsw"), ("Northern Altai", "atv"), ("Southern Altai", "alt"), ("Amharic", "am"), ("Old English (ca. 450-1100)", "ang"), ("Arabic", "ar"), ("Aragonese", "an"), 
     ("Aari", "aiw"), ("Marma", "rmz"), ("Rakhine", "rki"), ("Assamese", "as"), ("Asturian", "ast"), ("Tsetsaut", "txc"), ("Mattole", "mvb"), ("Wailaki", "wlk"), ("Coquille", "coq"), ("Chetco", "ctc"), ("Galice", "gce"), ("Tolowa", "tol"), ("Tututni", "tuu"), ("Kaska", "kkz"), ("Hupa", "hup"), ("Tagish", "tgx"), ("Ahtena", "aht"), 
     ("Tanaina", "tfn"), ("Lower Tanana", "taa"), ("Upper Tanana", "tau"), ("Tanacross", "tcb"), ("Upper Kuskokwim", "kuu"), ("Southern Tutchone", "tce"), ("Northern Tutchone", "ttm"), ("Tahltan", "tht"), ("Koyukon", "koy"), ("Kato", "ktw"), ("Degexit'an", "ing"), ("Kiowa Apache", "apk"), ("Jicarilla Apache", "apj"), ("Lipan Apache", "apl"), ("Mescalero-Chiricahua Apache", "apm"), ("Western Apache", "apw"), ("Navajo", "nv"), 
