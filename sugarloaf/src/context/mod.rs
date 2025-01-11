@@ -8,6 +8,7 @@ pub struct Context<'a> {
     pub format: wgpu::TextureFormat,
     pub size: SugarloafWindowSize,
     pub scale: f32,
+    pub f16_support: bool,
     alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
     surface_caps: wgpu::SurfaceCapabilities,
@@ -110,8 +111,20 @@ impl Context<'_> {
         #[cfg(not(target_os = "macos"))]
         let format = find_best_texture_format(surface_caps.formats.as_slice());
 
+        let mut f16_support = false;
+
         let (device, queue) = {
-            {
+            // First try with f16 support
+            if let Ok(result) = futures::executor::block_on(adapter.request_device(
+                &wgpu::DeviceDescriptor {
+                    label: None,
+                    required_features: wgpu::Features::SHADER_F16,
+                    ..Default::default()
+                }, None),
+            ) {
+                f16_support = true;
+                result
+            } else {
                 if let Ok(result) = futures::executor::block_on(adapter.request_device(
                     // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
                     &wgpu::DeviceDescriptor {
@@ -167,6 +180,7 @@ impl Context<'_> {
         );
 
         Context {
+            f16_support,
             device,
             queue,
             surface,
