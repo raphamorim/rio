@@ -22,6 +22,8 @@ language: 'en'
 	- `COLUMNS`: current columns
 	- `LINES`: current lines
 		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
+- Window title is now updated regardless the Navigation Mode.
+- Performance: Background and foreground data are only retrieved if is asked (either color automation is enabled or `window.title` contains any request for it).
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
 - Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
 - Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).

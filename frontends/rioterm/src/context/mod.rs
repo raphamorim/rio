@@ -6,7 +6,9 @@ use crate::ansi::CursorShape;
 use crate::context::grid::ContextDimension;
 use crate::context::grid::ContextGrid;
 use crate::context::grid::Delta;
-use crate::context::title::{update_title, ContextManagerTitles};
+use crate::context::title::{
+    create_title_extra_from_context, update_title, ContextManagerTitles,
+};
 use crate::event::sync::FairMutex;
 use crate::event::RioEvent;
 use crate::ime::Ime;
@@ -128,7 +130,7 @@ pub struct ContextManagerConfig {
     pub spawn_performer: bool,
     pub use_current_path: bool,
     pub is_native: bool,
-    pub should_update_titles: bool,
+    pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
     pub title: rio_backend::config::title::Title,
 }
@@ -198,7 +200,7 @@ pub fn create_mock_context<
         },
         spawn_performer: false,
         is_native: false,
-        should_update_titles: false,
+        should_update_title_extra: false,
         use_current_path: false,
         ..ContextManagerConfig::default()
     };
@@ -369,11 +371,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         };
 
-        let titles = ContextManagerTitles::new(
-            0,
-            String::from("tab"),
-            ctx_config.working_dir.clone().unwrap_or_default(),
-        );
+        let titles = ContextManagerTitles::new(0, String::from("tab"), None);
 
         // Sugarloaf has found errors and context need to notify it for the user
         if let Some(errors) = sugarloaf_errors {
@@ -423,7 +421,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             },
             spawn_performer: false,
             is_native: false,
-            should_update_titles: false,
+            should_update_title_extra: false,
             use_current_path: false,
             ..ContextManagerConfig::default()
         };
@@ -437,7 +435,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &config,
         )?;
 
-        let titles = ContextManagerTitles::new(0, String::new(), String::new());
+        let titles = ContextManagerTitles::new(0, String::new(), None);
 
         Ok(ContextManager {
             current_index: 0,
@@ -643,10 +641,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     pub fn update_titles(&mut self) {
-        if !self.config.should_update_titles {
-            return;
-        }
-
         let interval_time = Duration::from_secs(2);
         if self
             .titles
@@ -659,22 +653,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             for (i, context) in self.contexts.iter_mut().enumerate() {
                 let content = update_title(&self.config.title.content, context.current());
 
-                #[cfg(unix)]
-                let path = teletypewriter::foreground_process_path(
-                    *context.current().main_fd,
-                    context.current().shell_pid,
-                )
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-                #[cfg(not(unix))]
-                let path = String::default();
-
                 self.event_proxy
                     .send_event(RioEvent::Title(content.to_owned()), self.window_id);
 
                 id.push_str(&format!("{}{};", i, content));
-                self.titles.set_key_val(i, content, path);
+
+                if self.config.should_update_title_extra {
+                    self.titles.set_key_val(
+                        i,
+                        content,
+                        create_title_extra_from_context(context.current()),
+                    );
+                } else {
+                    self.titles.set_key_val(i, content, None);
+                }
             }
 
             self.titles.set_key(id);
@@ -909,8 +901,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             is_native: config.navigation.is_native(),
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names
-            should_update_titles: !(config.navigation.is_collapsed_mode()
-                && config.navigation.color_automation.is_empty()),
+            should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title,
         };

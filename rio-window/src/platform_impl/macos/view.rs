@@ -400,7 +400,7 @@ declare_class!(
                 unsafe { &*string }.to_string()
             };
 
-            let is_control = string.chars().next().map_or(false, |c| c.is_control());
+            let is_control = string.chars().next().is_some_and(|c| c.is_control());
 
             // Commit only if we have marked text.
             if unsafe { self.hasMarkedText() } && self.is_ime_enabled() && !is_control {

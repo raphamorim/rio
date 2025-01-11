@@ -1730,7 +1730,7 @@ const RECORD_INDEX1: [u16; 6304] = [
 ];
 
 #[rustfmt::skip]
-const RECORD_INDEX2: [u16; 14744] = [
+static RECORD_INDEX2: [u16; 14744] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0, 0, 0, 0, 0, 6, 6, 6, 7, 8, 9, 10, 11, 12, 13,
     14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 25, 26, 27, 27,
     27, 9, 14, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 16, 29, 17,
@@ -2685,7 +2685,7 @@ use self::{
 };
 
 #[rustfmt::skip]
-pub const RECORDS: [Record; 2035] = [
+pub static RECORDS: [Record; 2035] = [
     r(32,C::Control,B::BasicLatin,S::Common,0,Bc::BN,Jt::U,Cb::CN,Wb::XX,Lb::CM,Uc::O,Mc::O), r(32,C::Control,B::BasicLatin,S::Common,0,Bc::S,Jt::U,Cb::CN,Wb::XX,Lb::BA,Uc::O,Mc::O),
     r(32,C::Control,B::BasicLatin,S::Common,0,Bc::B,Jt::U,Cb::LF,Wb::LF,Lb::LF,Uc::O,Mc::O), r(32,C::Control,B::BasicLatin,S::Common,0,Bc::S,Jt::U,Cb::CN,Wb::NL,Lb::BK,Uc::O,Mc::O),
     r(32,C::Control,B::BasicLatin,S::Common,0,Bc::WS,Jt::U,Cb::CN,Wb::NL,Lb::BK,Uc::O,Mc::O), r(32,C::Control,B::BasicLatin,S::Common,0,Bc::B,Jt::U,Cb::CR,Wb::CR,Lb::CR,Uc::O,Mc::O),
@@ -4761,7 +4761,7 @@ pub fn decompose_compat_index(x: usize) -> usize {
     DECOMPOSE_COMPAT_INDEX2[index + offset] as usize
 }
 #[rustfmt::skip]
-pub const DECOMPOSE: [u32; 5469] = [
+pub static DECOMPOSE: [u32; 5469] = [
     0, 255, 2, 65, 768, 2, 65, 769, 2, 65, 770, 2, 65, 771, 2, 65, 776, 2, 65, 778, 2, 67, 807, 2,
     69, 768, 2, 69, 769, 2, 69, 770, 2, 69, 776, 2, 73, 768, 2, 73, 769, 2, 73, 770, 2, 73, 776, 2,
     78, 771, 2, 79, 768, 2, 79, 769, 2, 79, 770, 2, 79, 771, 2, 79, 776, 2, 85, 768, 2, 85, 769, 2,
@@ -5043,7 +5043,7 @@ pub const DECOMPOSE: [u32; 5469] = [
 ];
 
 #[rustfmt::skip]
-pub const DECOMPOSE_COMPAT: [u32; 9307] = [
+pub static DECOMPOSE_COMPAT: [u32; 9307] = [
     0, 255, 1, 32, 2, 32, 776, 1, 97, 2, 32, 772, 1, 50, 1, 51, 2, 32, 769, 1, 956, 2, 32, 807, 1,
     49, 1, 111, 3, 49, 8260, 52, 3, 49, 8260, 50, 3, 51, 8260, 52, 2, 73, 74, 2, 105, 106, 2, 76,
     183, 2, 108, 183, 2, 700, 110, 1, 115, 3, 68, 90, 780, 3, 68, 122, 780, 3, 100, 122, 780, 2,
