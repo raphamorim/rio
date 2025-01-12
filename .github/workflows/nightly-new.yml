@@ -1,4 +1,4 @@
-name: snapshot-oss
+name: releases-new
 
 # TODO: make it auto-snapshot/nightly/release (?)
 
@@ -38,7 +38,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "snapshot"
+          version: "nightly"
           args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
@@ -68,7 +68,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "snapshot"
+          version: "nightly"
           args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
@@ -97,7 +97,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "snapshot"
+          version: "nightly"
           args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
@@ -145,7 +145,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "snapshot"
+          version: "nightly"
           args: continue --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
