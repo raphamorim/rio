@@ -22,6 +22,7 @@ language: 'en'
 	- `COLUMNS`: current columns
 	- `LINES`: current lines
 		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
+- Perf improvement on text selection [#898](https://github.com/raphamorim/rio/pull/898) by [@marc2332](https://github.com/marc2332).
 - Window title is now updated regardless the Navigation Mode.
 - Performance: Background and foreground data are only retrieved if is asked (either color automation is enabled or `window.title` contains any request for it).
 - Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).

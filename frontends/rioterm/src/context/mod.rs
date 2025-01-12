@@ -505,9 +505,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn schedule_render(&mut self, scheduled_time: u64) {
+    pub fn request_render(&mut self) {
         self.event_proxy
-            .send_event(RioEvent::PrepareRender(scheduled_time), self.window_id);
+            .send_event(RioEvent::RenderRoute(self.current_route), self.window_id);
     }
 
     #[inline]
