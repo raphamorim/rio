@@ -5,6 +5,9 @@ pub mod font_introspector;
 pub mod layout;
 mod sugarloaf;
 
+// Expose WGPU
+pub use wgpu;
+
 pub use font_introspector::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{

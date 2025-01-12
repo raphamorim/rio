@@ -182,7 +182,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.working_dir = Some(working_dir_cli);
         }
 
-        config.window.initial_title = args.window_options.terminal_options.title;
+        config.title.placeholder = args.window_options.terminal_options.title_placeholder;
     }
 
     #[cfg(target_os = "linux")]

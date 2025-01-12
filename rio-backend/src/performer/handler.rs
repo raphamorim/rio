@@ -102,10 +102,9 @@ fn parse_number(input: &[u8]) -> Option<u8> {
     for c in input {
         let c = *c as char;
         if let Some(digit) = c.to_digit(10) {
-            num = match num.checked_mul(10).and_then(|v| v.checked_add(digit as u8)) {
-                Some(v) => v,
-                None => return None,
-            }
+            num = num
+                .checked_mul(10)
+                .and_then(|v| v.checked_add(digit as u8))?
         } else {
             return None;
         }
@@ -137,6 +136,9 @@ fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
+
+    /// OSC to set current directory.
+    fn set_current_directory(&mut self, _: std::path::PathBuf) {}
 
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
@@ -645,6 +647,22 @@ impl<U: Handler> copa::Perform for Performer<'_, U> {
                         );
                     } else {
                         unhandled(params);
+                    }
+                }
+            }
+
+            // Inform current directory.
+            b"7" => {
+                if let Ok(s) = std::str::from_utf8(params[1]) {
+                    if let Ok(url) = url::Url::parse(s) {
+                        let path = url.path();
+
+                        // NB the path coming from Url has a leading slash; must slice that off
+                        // in windows.
+                        #[cfg(windows)]
+                        let path = &path[1..];
+
+                        self.handler.set_current_directory(path.into());
                     }
                 }
             }

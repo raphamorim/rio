@@ -27,7 +27,7 @@ wayland = [
 ]
 wayland-dlopen = ["wayland-backend/dlopen"]
 wayland-csd-adwaita = ["sctk-adwaita", "sctk-adwaita/ab_glyph"]
-wayland-csd-adwaita-crossfont = ["sctk-adwaita", "sctk-adwaita/crossfont"]
+# wayland-csd-adwaita-crossfont = ["sctk-adwaita", "sctk-adwaita/crossfont"]
 wayland-csd-adwaita-notitle = ["sctk-adwaita"]
 
 [build-dependencies]

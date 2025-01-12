@@ -5,6 +5,7 @@ pub mod keyboard;
 pub mod navigation;
 pub mod renderer;
 pub mod theme;
+pub mod title;
 pub mod window;
 
 use crate::ansi::CursorShape;
@@ -13,6 +14,7 @@ use crate::config::defaults::*;
 use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
+use crate::config::title::Title;
 use crate::config::window::Window;
 use colors::Colors;
 use serde::{Deserialize, Serialize};
@@ -104,6 +106,8 @@ pub struct Config {
     pub use_fork: bool,
     #[serde(default = "Keyboard::default")]
     pub keyboard: Keyboard,
+    #[serde(default = "Title::default")]
+    pub title: Title,
     #[serde(default = "default_working_dir", rename = "working-dir")]
     pub working_dir: Option<String>,
     #[serde(rename = "line-height", default = "default_line_height")]
@@ -481,6 +485,7 @@ impl Default for Config {
             colors: Colors::default(),
             scroll: Scroll::default(),
             keyboard: Keyboard::default(),
+            title: Title::default(),
             developer: Developer::default(),
             env_vars: vec![],
             fonts: SugarloafFonts::default(),

@@ -184,7 +184,6 @@ impl Screen<'_> {
             config.keyboard,
         );
 
-        let is_collapsed = config.navigation.is_collapsed_mode();
         let is_native = config.navigation.is_native();
 
         let (shell, working_dir) = process_open_url(
@@ -202,11 +201,11 @@ impl Screen<'_> {
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
-            // When navigation is collapsed and does not contain any color rule
-            // does not make sense fetch for foreground process names
-            should_update_titles: !(is_collapsed
-                && config.navigation.color_automation.is_empty()),
+            // When navigation does not contain any color rule
+            // does not make sense fetch for foreground process names/path
+            should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            title: config.title.clone(),
         };
 
         let rich_text_id = sugarloaf.create_rich_text();

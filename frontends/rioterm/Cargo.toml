@@ -41,7 +41,7 @@ serde = { workspace = true }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
-url = "2.5.3"
+url = { workspace = true }
 rio-window = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -73,8 +73,9 @@ wayland = [
     "rio-backend/wayland",
     "rio-window/wayland",
     "rio-window/wayland-dlopen",
-    "rio-window/wayland-csd-adwaita-crossfont",
 ]
+
+# "rio-window/wayland-csd-adwaita-crossfont",
 
 [package.metadata.deb]
 name = "rioterm"

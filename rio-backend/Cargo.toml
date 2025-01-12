@@ -36,6 +36,7 @@ teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 wgpu = { workspace = true }
+url = { workspace = true }
 regex-automata = "0.4.7"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { version = "1.13.2", default-features = false }
