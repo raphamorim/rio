@@ -1,7 +1,10 @@
-name: nightly-oss
+name: snapshot-oss
+
+# TODO: make it auto-snapshot/nightly/release (?)
 
 on:
   workflow_dispatch:
+  pull_request:
   schedule:
     - cron: 0 0 * * *
 
@@ -35,8 +38,8 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "nightly"
-          args: release --clean --nightly --split
+          version: "snapshot"
+          args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
@@ -65,8 +68,8 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "nightly"
-          args: release --clean --nightly --split
+          version: "snapshot"
+          args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
@@ -94,8 +97,8 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "nightly"
-          args: release --clean --nightly --split
+          version: "snapshot"
+          args: release --clean --snapshot --split
         env:
           TARGET: ${{ env.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
@@ -142,7 +145,7 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser-pro
-          version: "nightly"
+          version: "snapshot"
           args: continue --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
