@@ -668,7 +668,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.request_render();
                 }
             }
 
@@ -867,7 +867,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if route.window.screen.search_nearest_hyperlink_from_pos() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.request_render();
                 } else {
                     let cursor_icon =
                         if !route.window.screen.modifiers.state().shift_key()
@@ -894,7 +894,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .context_manager
                             .current_mut()
                             .set_hyperlink_range(None);
-                        route.window.screen.context_manager.schedule_render(60);
+                        route.window.screen.context_manager.request_render();
                     }
                 }
 
@@ -906,7 +906,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         || !route.window.screen.mouse_mode())
                 {
                     route.window.screen.update_selection(point, square_side);
-                    route.window.screen.context_manager.schedule_render(60);
+                    route.window.screen.context_manager.request_render();
                 } else if square_changed
                     && route.window.screen.has_mouse_motion_and_drag()
                 {
