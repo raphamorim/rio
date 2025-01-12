@@ -32,8 +32,8 @@ jobs:
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
-          path: dist/${{ env.TARGET }}
-          key: ${{ env.TARGET }}-${{ env.sha_short }}
+          path: dist/${{ matrix.TARGET }}
+          key: ${{ matrix.TARGET }}-${{ env.sha_short }}
       - run: rustup toolchain install stable --profile minimal
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -41,7 +41,7 @@ jobs:
           version: "nightly"
           args: release --clean --snapshot --split
         env:
-          TARGET: ${{ env.TARGET }}
+          TARGET: ${{ matrix.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
   prepare-darwin:
@@ -62,8 +62,8 @@ jobs:
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
-          path: dist/${{ env.TARGET }}
-          key: ${{ env.TARGET }}-${{ env.sha_short }}
+          path: dist/${{ matrix.TARGET }}
+          key: ${{ matrix.TARGET }}-${{ env.sha_short }}
       - run: rustup toolchain install stable --profile minimal
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -71,7 +71,7 @@ jobs:
           version: "nightly"
           args: release --clean --snapshot --split
         env:
-          TARGET: ${{ env.TARGET }}
+          TARGET: ${{ matrix.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
   prepare-windows:
@@ -91,8 +91,8 @@ jobs:
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
-          path: dist/${{ env.TARGET }}
-          key: ${{ env.TARGET }}-${{ env.sha_short }}
+          path: dist/${{ matrix.TARGET }}
+          key: ${{ matrix.TARGET }}-${{ env.sha_short }}
       - run: rustup toolchain install stable --profile minimal
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -100,7 +100,7 @@ jobs:
           version: "nightly"
           args: release --clean --snapshot --split
         env:
-          TARGET: ${{ env.TARGET }}
+          TARGET: ${{ matrix.TARGET }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
 
