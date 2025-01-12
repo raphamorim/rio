@@ -1,0 +1,154 @@
+name: nightly-oss
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: 0 0 * * *
+
+permissions:
+  contents: write
+  id-token: write
+  packages: write
+
+jobs:
+  prepare-linux:
+    strategy:
+      fail-fast: true
+      matrix:
+        TARGET:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: sha_short
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: dist/${{ env.TARGET }}
+          key: ${{ env.TARGET }}-${{ env.sha_short }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: "nightly"
+          args: release --clean --nightly --split
+        env:
+          TARGET: ${{ env.TARGET }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+  prepare-darwin:
+    strategy:
+      fail-fast: true
+      matrix:
+        TARGET:
+          - x86_64-apple-darwin
+          - aarch64-apple-darwin
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: sha_short
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: dist/${{ env.TARGET }}
+          key: ${{ env.TARGET }}-${{ env.sha_short }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: "nightly"
+          args: release --clean --nightly --split
+        env:
+          TARGET: ${{ env.TARGET }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+  prepare-windows:
+    strategy:
+      fail-fast: true
+      matrix:
+        TARGET:
+          - x86_64-pc-windows-gnu
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: sha_short
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: dist/${{ env.TARGET }}
+          key: ${{ env.TARGET }}-${{ env.sha_short }}
+      - run: rustup toolchain install stable --profile minimal
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: "nightly"
+          args: release --clean --nightly --split
+        env:
+          TARGET: ${{ env.TARGET }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-linux
+      - prepare-windows
+      - prepare-darwin
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          fetch-depth: 0
+      - name: sha_short
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      # restore cache dirs
+      - uses: actions/cache@v4
+        with:
+          path: dist/x86_64-apple-darwin
+          key: x86_64-apple-darwin-${{ env.sha_short }}
+      - uses: actions/cache@v4
+        with:
+          path: dist/aarch64-apple-darwin
+          key: aarch64-apple-darwin-${{ env.sha_short }}
+      - uses: actions/cache@v4
+        with:
+          path: dist/x86_64-pc-windows-gnu
+          key: x86_64-pc-windows-gnu-${{ env.sha_short }}
+      - uses: actions/cache@v4
+        with:
+          path: dist/x86_64-unknown-linux-gnu
+          key: x86_64-unknown-linux-gnu-${{ env.sha_short }}
+      - uses: actions/cache@v4
+        with:
+          path: dist/aarch64-unknown-linux-gnu
+          key: aarch64-unknown-linux-gnu-${{ env.sha_short }}
+
+      # merge
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser-pro
+          version: "nightly"
+          args: continue --merge
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+          # MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          # MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          # MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          # MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          # MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}

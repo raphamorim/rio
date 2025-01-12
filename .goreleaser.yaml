@@ -8,14 +8,6 @@
 
 version: 2
 
-# before:
-# hooks:
-# if you don't do these things before calling goreleaser, it might be a
-# good idea to do them here:
-# - rustup default stable
-# - cargo install --locked cargo-zigbuild
-# - cargo fetch --locked
-
 metadata:
     maintainers:
         - Raphael Amorim <rapha850 at gmail dot com>
@@ -23,9 +15,13 @@ metadata:
     description: A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.
     homepage: https://raphamorim.io/rio/
 
+partial:
+    by: target
+
 builds:
     - id: darwin-and-windows
       builder: rust
+      command: build
       flags:
           - --release
           - -p=rioterm
@@ -39,6 +35,7 @@ builds:
 
     - id: wayland
       builder: rust
+      command: build
       # dir: ./frontends/rioterm/
       flags:
           - -p=rioterm
@@ -51,6 +48,7 @@ builds:
 
     - id: x11
       builder: rust
+      command: build
       # dir: ./frontends/rioterm/
       flags:
           - -p=rioterm
