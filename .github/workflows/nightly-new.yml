@@ -13,6 +13,11 @@ permissions:
   id-token: write
   packages: write
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  RUSTFLAGS: "-C link-arg=-s"
+
 jobs:
   prepare-linux:
     strategy:
