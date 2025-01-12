@@ -236,6 +236,8 @@ impl From<String> for Action {
             "decreasefontsize" => Some(Action::DecreaseFontSize),
             "createwindow" => Some(Action::WindowCreateNew),
             "createtab" => Some(Action::TabCreateNew),
+            "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
+            "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
             "closetab" => Some(Action::TabCloseCurrent),
             "closecurrenttaborsplit" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
@@ -406,6 +408,12 @@ pub enum Action {
 
     /// Create a new Rio tab.
     TabCreateNew,
+
+    /// Move current tab to previous slot.
+    MoveCurrentTabToPrev,
+
+    /// Move current tab to next slot.
+    MoveCurrentTabToNext,
 
     /// Switch to next tab.
     SelectNextTab,

@@ -151,7 +151,7 @@ impl Compositor {
             }),
             Some(FragmentStyleDecoration::Strikethrough) => Some(RunUnderline {
                 enabled: true,
-                offset: (style.line_height / 3.5).round() as i32,
+                offset: (style.line_height_without_mod / 3.5).round() as i32,
                 size: 2.0,
                 color: style.decoration_color.unwrap_or(style.color),
                 is_doubled: false,
@@ -205,14 +205,24 @@ impl Compositor {
         match style.cursor {
             Some(SugarCursor::Block(cursor_color)) => {
                 self.batches.add_rect(
-                    &Rect::new(rect.x, style.topline, rect.width, style.line_height),
+                    &Rect::new(
+                        rect.x,
+                        style.topline + style.padding_y,
+                        rect.width,
+                        style.line_height_without_mod,
+                    ),
                     depth,
                     &cursor_color,
                 );
             }
             Some(SugarCursor::HollowBlock(cursor_color)) => {
                 self.batches.add_rect(
-                    &Rect::new(rect.x, style.topline, rect.width, style.line_height),
+                    &Rect::new(
+                        rect.x,
+                        style.topline + style.padding_y,
+                        rect.width,
+                        style.line_height_without_mod,
+                    ),
                     depth,
                     &cursor_color,
                 );
@@ -221,9 +231,9 @@ impl Compositor {
                     self.batches.add_rect(
                         &Rect::new(
                             rect.x + 2.0,
-                            style.topline + 2.0,
+                            style.topline + style.padding_y + 2.0,
                             rect.width - 4.0,
-                            style.line_height - 4.0,
+                            style.line_height_without_mod - 4.0,
                         ),
                         depth,
                         &bg_color,
@@ -232,7 +242,12 @@ impl Compositor {
             }
             Some(SugarCursor::Caret(cursor_color)) => {
                 self.batches.add_rect(
-                    &Rect::new(rect.x, style.topline, 3.0, style.line_height),
+                    &Rect::new(
+                        rect.x,
+                        style.topline + style.padding_y,
+                        3.0,
+                        style.line_height_without_mod,
+                    ),
                     depth,
                     &cursor_color,
                 );
@@ -247,7 +262,7 @@ impl Compositor {
                 rect.width,
                 style.baseline,
                 depth,
-                style.line_height,
+                style.line_height_without_mod,
             );
         }
 

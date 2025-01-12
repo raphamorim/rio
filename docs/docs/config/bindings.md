@@ -74,9 +74,9 @@ Execute a predefined action in Rio terminal.
 
 ### [Split Actions](#split-actions)
 
-| Action             | Description                                                                |
-| :----------------- | :------------------------------------------------------------------------- |
-| SplitRigh       | Create a split by right side |
+| Action          | Description                                                                |
+| :-------------- | :------------------------------------------------------------------------- |
+| SplitRight      | Create a split by right side |
 | SplitDown       | Create a split by under current pane |
 | SelectNextSplit | Select next split |
 | SelectPrevSplit | Select previous split |
@@ -84,15 +84,16 @@ Execute a predefined action in Rio terminal.
 
 ### [Tab Actions](#tab-actions)
 
-| Action               | Description                                                         |
-| :------------------- | :------------------------------------------------------------------ |
-| CreateTab            |                                                                     |
-| CloseTab             |                                                                     |
-| CloseUnfocusedTabs   |                                                                     |
-| SelectPrevTab        |                                                                     |
-| SelectNextTab        |                                                                     |
-| SelectLastTab        |                                                                     |
-| SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)` |
+| Action               | Description                                                             |
+| :------------------- | :---------------------------------------------------------------------- |
+| CreateTab            |                                                                         |
+| CloseTab             |                                                                         |
+| CloseUnfocusedTabs   |                                                                         |
+| SelectPrevTab        |                                                                         |
+| SelectNextTab        |                                                                         |
+| SelectLastTab        |                                                                         |
+| MoveCurrentTabToPrev | Move the current focused tab to the previous slot if any is available   |
+| SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)`     |
 
 ### [Scroll Actions](#scroll-actions)
 

@@ -10,13 +10,26 @@ language: 'en'
 
 ## 0.2.3 (unreleased)
 
+- Fixed: Nix build [#853](https://github.com/raphamorim/rio/pull/853).
+- Support to `window.macos-use-shadow` (enable or disable shadow on MacOS).
+- Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).
+- Support to `window.windows-use-undecorated-shadow` (default is enabled).
+- Support to `window.windows-use-no-redirection-bitmap` (This sets `WS_EX_NOREDIRECTIONBITMAP`).
+- Support for Unicode 16 characters.
+- Support to line height.
+- Fixed: Deb package name 'rio' conflicts with existing one in Ubuntu [#876](https://github.com/raphamorim/rio/issues/876).
+- Fixed: Unremovable bottom padding when using line-height [#449](https://github.com/raphamorim/rio/issues/449).
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
+- Introduce `SwitchCurrentTabToPrev` and `SwitchCurrentTabToNext` actions [#854](https://github.com/raphamorim/rio/pull/854/files) by [@agjini](https://github.com/agjini).
 - On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
 	- On macOS, fixed the scancode conversion for audio volume keys.
 	- On macOS, fixed the scancode conversion for `IntlBackslash`.
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
+- Escape sequence to move cursor forward tabs ( CSI Ps I ).
+- Always emit `1` for the first parameter when having modifiers in kitty keyboard protocol.
+- Microsoft Windows: fix the event loop not waking on accessibility requests.
 
 ## 0.2.2
 

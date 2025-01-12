@@ -10,7 +10,7 @@ language: 'en'
 | Action                 | Key                                                            |
 | ---------------------- | -------------------------------------------------------------- |
 | Open configuration     | `Command + Comma (,)`                                          |
-| Toggle VI Mode         | `Alt + Shift + Space`                                          |
+| Toggle VI Mode         | `Option + Shift + Space`                                          |
 | Copy                   | `Command + C`                                                  |
 | Paste                  | `Command + V`                                                  |
 | Create new window      | `Command + N`                                                  |

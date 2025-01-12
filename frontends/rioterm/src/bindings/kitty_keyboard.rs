@@ -56,7 +56,7 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
     let sequence_base = context
         .try_build_numpad(key)
         .or_else(|| context.try_build_named_kitty(key))
-        .or_else(|| context.try_build_named_normal(key))
+        .or_else(|| context.try_build_named_normal(key, associated_text.is_some()))
         .or_else(|| context.try_build_control_char_or_mod(key, &mut modifiers))
         .or_else(|| context.try_build_textual(key, associated_text));
 
@@ -263,14 +263,21 @@ impl SequenceBuilder {
     }
 
     /// Try building from [`NamedKey`].
-    fn try_build_named_normal(&self, key: &KeyEvent) -> Option<SequenceBase> {
+    fn try_build_named_normal(
+        &self,
+        key: &KeyEvent,
+        has_associated_text: bool,
+    ) -> Option<SequenceBase> {
         let named = match key.logical_key {
             Key::Named(named) => named,
             _ => return None,
         };
 
         // The default parameter is 1, so we can omit it.
-        let one_based = if self.modifiers.is_empty() && !self.kitty_event_type {
+        let one_based = if self.modifiers.is_empty()
+            && !self.kitty_event_type
+            && !has_associated_text
+        {
             ""
         } else {
             "1"

@@ -1,14 +1,14 @@
 [workspace]
 members = [
-    "sugarloaf",
-    "teletypewriter",
-    "corcovado",
-    "copa",
-    "rio-proc-macros",
-    "rio-backend",
-    "rio-window",
-    "wa",
-    "frontends/rioterm",
+  "sugarloaf",
+  "teletypewriter",
+  "corcovado",
+  "copa",
+  "rio-proc-macros",
+  "rio-backend",
+  "rio-window",
+  "wa",
+  "frontends/rioterm"
 ]
 resolver = "2"
 
@@ -40,27 +40,17 @@ wa = { path = "wa", version = "0.1.7" }
 
 sugarloaf = { path = "sugarloaf", version = "0.2.2" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
-parking_lot = { version = "0.12.3", features = [
-    "nightly",
-    "hardware-lock-elision",
-] }
+parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
 rustc-hash = "2.1.0"
-unicode-width = "0.2.0"
+# unicode-width = "0.2.0"
+unicode-width = { package = "unicode-width-16", version = "0.1.0" }
 base64 = "0.22.1"
-image_rs = { package = "image", version = "0.25.5", default-features = false, features = [
-    "gif",
-    "jpeg",
-    "ico",
-    "png",
-    "pnm",
-    "webp",
-    "bmp",
-] }
+image_rs = { package = "image", version = "0.25.5", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
 regex = "1.11.1"
-bytemuck = { version = "1.20.0", features = ["derive"] }
-serde = { version = "1.0.208", features = ["derive"] }
+bytemuck = { version = "1.21.0", features = [ "derive" ] }
+serde = { version = "1.0.217", features = ["derive"] }
 wgpu = "23.0.1"
-libc = "0.2.161"
+libc = "0.2.169"
 smol_str = "0.3.2"
 futures = "0.3.31"
 wasm-bindgen = "0.2.87"

@@ -374,6 +374,8 @@ impl Screen<'_> {
         self.renderer = Renderer::new(config, font_library);
 
         for context_grid in self.context_manager.contexts_mut() {
+            context_grid.update_line_height(config.line_height);
+
             context_grid.update_margin((
                 config.padding_x,
                 padding_y_top,
@@ -384,6 +386,11 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut() {
                 let current_context = current_context.context_mut();
+                self.sugarloaf.set_rich_text_line_height(
+                    &current_context.rich_text_id,
+                    current_context.dimension.line_height,
+                );
+
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
@@ -1026,6 +1033,18 @@ impl Screen<'_> {
                         self.cancel_search();
                         self.clear_selection();
                         self.context_manager.switch_to_next();
+                        self.render();
+                    }
+                    Act::MoveCurrentTabToPrev => {
+                        self.cancel_search();
+                        self.clear_selection();
+                        self.context_manager.move_current_to_prev();
+                        self.render();
+                    }
+                    Act::MoveCurrentTabToNext => {
+                        self.cancel_search();
+                        self.clear_selection();
+                        self.context_manager.move_current_to_next();
                         self.render();
                     }
                     Act::SelectPrevTab => {

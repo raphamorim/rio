@@ -357,6 +357,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    pub fn update_line_height(&mut self, line_height: f32) {
+        for context in &mut self.inner {
+            context.val.dimension.update_line_height(line_height);
+        }
+    }
+
     pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
         for context in &mut self.inner {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
@@ -849,6 +855,7 @@ pub struct ContextDimension {
     pub lines: usize,
     pub dimension: SugarDimensions,
     pub margin: Delta<f32>,
+    pub line_height: f32,
 }
 
 impl Default for ContextDimension {
@@ -858,6 +865,7 @@ impl Default for ContextDimension {
             height: 0.,
             columns: MIN_COLS,
             lines: MIN_LINES,
+            line_height: 1.,
             dimension: SugarDimensions::default(),
             margin: Delta::<f32>::default(),
         }
@@ -880,6 +888,7 @@ impl ContextDimension {
             lines,
             dimension,
             margin,
+            line_height,
         }
     }
 
@@ -914,6 +923,12 @@ impl ContextDimension {
     }
 
     #[inline]
+    pub fn update_line_height(&mut self, line_height: f32) {
+        self.line_height = line_height;
+        self.update();
+    }
+
+    #[inline]
     pub fn update_dimensions(&mut self, dimensions: SugarDimensions) {
         self.dimension = dimensions;
         self.update();
@@ -925,8 +940,7 @@ impl ContextDimension {
             self.width,
             self.height,
             self.dimension,
-            // self.line_height,
-            1.0,
+            self.line_height,
             self.margin,
         );
 
@@ -991,7 +1005,7 @@ pub mod test {
 
         assert_eq!(context_dimension.columns, 66);
         assert_eq!(context_dimension.lines, 88);
-        let rich_text_id = 1;
+        let rich_text_id = 0;
         let route_id = 0;
         let context = create_mock_context(
             VoidListener {},

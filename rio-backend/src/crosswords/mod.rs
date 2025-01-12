@@ -1594,11 +1594,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_backward_tabs(&mut self, count: u16) {
-        self.damage_cursor();
+        trace!("Moving backward {} tabs", count);
 
         let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
+
+            if col == 0 {
+                break;
+            }
+
             for i in (0..(col.0)).rev() {
                 if self.tabs[Column(i)] {
                     col = Column(i);
@@ -1882,6 +1887,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .flags
                     .insert(square::Flags::DASHED_UNDERLINE);
             }
+            Attr::BlinkSlow | Attr::BlinkFast | Attr::CancelBlink => {
+                info!("Term got unhandled attr: {:?}", attr);
+            }
             Attr::CancelUnderline => {
                 cursor.template.flags.remove(square::Flags::ALL_UNDERLINES)
             }
@@ -1889,9 +1897,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             Attr::CancelHidden => cursor.template.flags.remove(square::Flags::HIDDEN),
             Attr::Strike => cursor.template.flags.insert(square::Flags::STRIKEOUT),
             Attr::CancelStrike => cursor.template.flags.remove(square::Flags::STRIKEOUT),
-            _ => {
-                warn!("Term got unhandled attr: {:?}", attr);
-            }
+            // _ => {
+            // warn!("Term got unhandled attr: {:?}", attr);
+            // }
         }
     }
 
@@ -2377,7 +2385,29 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
-        trace!("[unimplemented] Moving forward {} tabs", count);
+        trace!("Moving forward {} tabs", count);
+        let num_cols = self.columns();
+        let old_col = self.grid.cursor.pos.col.0;
+        for _ in 0..count {
+            let mut col = self.grid.cursor.pos.col;
+
+            if col == num_cols - 1 {
+                break;
+            }
+
+            for i in col.0 + 1..num_cols {
+                col = Column(i);
+                if self.tabs[col] {
+                    break;
+                }
+            }
+
+            self.grid.cursor.pos.col = col;
+        }
+
+        let line = self.grid.cursor.pos.row.0 as usize;
+        self.damage
+            .damage_line(line, old_col, self.grid.cursor.pos.col.0);
     }
 
     #[inline]

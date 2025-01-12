@@ -30,6 +30,10 @@ pub struct TextRunStyle<'a> {
     pub topline: f32,
     /// Absolute line height of the run.
     pub line_height: f32,
+    /// Padding y
+    pub padding_y: f32,
+    /// Absolute line height of the run without mod.
+    pub line_height_without_mod: f32,
     /// Total advance of the run.
     pub advance: f32,
     /// Underline style.

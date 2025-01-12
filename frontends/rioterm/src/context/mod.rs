@@ -181,7 +181,7 @@ pub struct ContextManager<T: EventListener> {
     pub titles: ContextManagerTitles,
 }
 
-pub fn create_mock_context<T: rio_backend::event::EventListener>(
+pub fn create_dead_context<T: rio_backend::event::EventListener>(
     event_proxy: T,
     window_id: WindowId,
     route_id: usize,
@@ -211,6 +211,42 @@ pub fn create_mock_context<T: rio_backend::event::EventListener>(
         dimension,
         ime: Ime::new(),
     }
+}
+
+#[cfg(test)]
+pub fn create_mock_context<
+    T: rio_backend::event::EventListener + Clone + std::marker::Send + 'static,
+>(
+    event_proxy: T,
+    window_id: WindowId,
+    route_id: usize,
+    rich_text_id: usize,
+    dimension: ContextDimension,
+) -> Context<T> {
+    let config = ContextManagerConfig {
+        #[cfg(not(target_os = "windows"))]
+        use_fork: true,
+        working_dir: None,
+        shell: Shell {
+            program: std::env::var("SHELL").unwrap_or("bash".to_string()),
+            args: vec![],
+        },
+        spawn_performer: false,
+        is_native: false,
+        should_update_titles: false,
+        use_current_path: false,
+        split_color: [0., 0., 0., 0.],
+    };
+    ContextManager::create_context(
+        (&Cursor::default(), false),
+        event_proxy.clone(),
+        window_id,
+        route_id,
+        rich_text_id,
+        dimension,
+        &config,
+    )
+    .unwrap()
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
@@ -358,7 +394,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     window_id,
                 );
 
-                create_mock_context(
+                create_dead_context(
                     event_proxy.clone(),
                     window_id,
                     route_id,
@@ -839,6 +875,32 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
+    #[inline]
+    pub fn move_current_to_prev(&mut self) {
+        let len = self.contexts.len();
+        if len <= 1 {
+            return;
+        }
+
+        let current = self.current_index;
+        let target_index = if current == 0 { len - 1 } else { current - 1 };
+        self.contexts.swap(current, target_index);
+        self.select_tab(target_index);
+    }
+
+    #[inline]
+    pub fn move_current_to_next(&mut self) {
+        let len = self.contexts.len();
+        if len <= 1 {
+            return;
+        }
+
+        let current = self.current_index;
+        let target_index = if current == len - 1 { 0 } else { current + 1 };
+        self.contexts.swap(current, target_index);
+        self.select_tab(target_index);
+    }
+
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.use_current_path {
@@ -1243,5 +1305,91 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
         context_manager.switch_to_next();
         assert_eq!(context_manager.current_index, 1);
+    }
+
+    #[test]
+    fn test_move_current_to_next() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.current_mut().rich_text_id = 1;
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_next();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+    }
+
+    #[test]
+    fn test_move_current_to_prev() {
+        let window_id = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = false;
+
+        context_manager.current_mut().rich_text_id = 1;
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 3);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 2);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 1);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 0);
+        assert_eq!(context_manager.current().rich_text_id, 1);
+
+        context_manager.move_current_to_prev();
+        assert_eq!(context_manager.current_index, 4);
+        assert_eq!(context_manager.current().rich_text_id, 1);
     }
 }
