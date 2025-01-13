@@ -33,6 +33,7 @@ language: 'en'
 - Support to `window.windows-corner-preference` (options: `Default`, `DoNotRound`,`Round` and `RoundSmall`).
 - Support to `window.windows-use-undecorated-shadow` (default is enabled).
 - Support to `window.windows-use-no-redirection-bitmap` (This sets `WS_EX_NOREDIRECTIONBITMAP`).
+- Minimal stable rust version 1.84.0.
 - Support for Unicode 16 characters.
 - Support to line height.
 - Renamed `--title` to `--title-placeholder` on CLI.
