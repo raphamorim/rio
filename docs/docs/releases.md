@@ -8,12 +8,15 @@ language: 'en'
 <!-- - Fix: MacOS Delete key doesn't work in kitty mode [#513](https://github.com/raphamorim/rio/issues/513). -->
 <!-- - Fix: Kitty keyboard protocol doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599). -->
 
-## 0.2.3 (unreleased)
+## 0.2.4 (unreleased)
 
 - Shell integration.
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+
+## 0.2.3
+
 - Rio now allows you to configure window title through configuration via template. Possible options:
 	- `TITLE`: terminal title via OSC sequences for setting terminal title
 	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
