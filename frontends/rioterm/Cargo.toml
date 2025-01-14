@@ -10,6 +10,7 @@ rust-version.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
+readme.workspace = true
 
 [[bin]]
 name = "rio"
