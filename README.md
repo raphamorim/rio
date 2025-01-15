@@ -1,8 +1,8 @@
+<img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="180px" /> 
+
 # Rio terminal
 
-> tl;dr: Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
-
-<img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="320px" />
+Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
 
