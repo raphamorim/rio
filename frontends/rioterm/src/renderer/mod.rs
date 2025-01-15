@@ -28,7 +28,6 @@ use unicode_width::UnicodeWidthChar;
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
-    pub is_kitty_keyboard_enabled: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -83,7 +82,6 @@ impl Renderer {
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
-            is_kitty_keyboard_enabled: config.keyboard.use_kitty_keyboard_protocol,
             is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
