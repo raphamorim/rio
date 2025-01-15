@@ -1,8 +1,23 @@
-<img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="200px" />
+<!-- LOGO -->
+<h1>
+<p align="center">
+  <img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="128">
+  <br>Rio
+</h1>
+  <p align="center">
+    Rio is a modern terminal built to run everywhere.
+    <br />
+    <a href="#about">About</a>
+    ·
+    <a href="https://raphamorim.io/rio/docs/install">Install</a>
+    ·
+    <a href="https://raphamorim.io/rio/docs/config">Config</a>
+    ·
+    <a href="https://github.com/sponsors/raphamorim">Sponsor</a>
+  </p>
+</p>
 
-# Rio terminal
-
-Rio is a terminal built to run everywhere, as a native desktop applications by Rust or even in the browser powered by WebAssembly.
+## Packaging
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
 
