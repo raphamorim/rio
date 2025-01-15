@@ -9,11 +9,11 @@
 pub mod hint;
 pub mod touch;
 
+use crate::bindings::kitty_keyboard::build_key_sequence;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
-use crate::bindings::kitty_keyboard::build_key_sequence;
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::{ContextDimension, Delta};
@@ -539,8 +539,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn process_key_event(&mut self, key: &rio_window::event::KeyEvent) {
-        if self.context_manager.current().ime.preedit().is_some()
-        {
+        if self.context_manager.current().ime.preedit().is_some() {
             return;
         }
 
@@ -570,7 +569,7 @@ impl Screen<'_> {
                     if !mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) =>
                 {
                     return
-                },
+                }
                 _ => build_key_sequence(key, mods, mode),
             };
 
