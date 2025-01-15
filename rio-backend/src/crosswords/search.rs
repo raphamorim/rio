@@ -565,12 +565,13 @@ impl<T: event::EventListener> Crosswords<T> {
         match self.inline_search_left(point, self.semantic_escape_chars()) {
             // If we found a match, reverse for at least one cell, skipping over wide cell spacers.
             Ok(point) => {
-                let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
+                let wide_spacer =
+                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
                 self.grid
                     .iter_from(point)
                     .find(|cell| !cell.flags.intersects(wide_spacer))
                     .map_or(point, |cell| cell.pos)
-            },
+            }
             Err(point) => point,
         }
     }
