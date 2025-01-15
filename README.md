@@ -1,4 +1,4 @@
-<img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="180px" /> 
+<img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="200px" />
 
 # Rio terminal
 
