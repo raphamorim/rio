@@ -13,6 +13,7 @@ use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
+use crate::bindings::kitty_keyboard::build_key_sequence;
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::{ContextDimension, Delta};
@@ -539,12 +540,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn process_key_event(&mut self, key: &rio_window::event::KeyEvent) {
-        // 1. In case there is a key released event and Rio is not using kitty keyboard protocol
-        // then should return drop the key processing
-        // 2. In case IME has preedit then also should drop the key processing
-        let is_kitty_keyboard_enabled = self.renderer.is_kitty_keyboard_enabled;
-        if !is_kitty_keyboard_enabled && key.state == ElementState::Released
-            || self.context_manager.current().ime.preedit().is_some()
+        if self.context_manager.current().ime.preedit().is_some()
         {
             return;
         }
@@ -552,7 +548,7 @@ impl Screen<'_> {
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
-        if is_kitty_keyboard_enabled && key.state == ElementState::Released {
+        if key.state == ElementState::Released {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
@@ -568,22 +564,15 @@ impl Screen<'_> {
                 mods & !ModifiersState::ALT
             };
 
-            let bytes: Cow<'static, [u8]> = match key.logical_key.as_ref() {
-                // NOTE: Echo the key back on release to follow kitty/foot behavior. When
-                // KEYBOARD_REPORT_ALL_KEYS_AS_ESC is used, we build proper escapes for
-                // the keys below.
-                _ if mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) => {
-                    crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
-                        .into()
-                }
-                // Winit uses different keys for `Backspace` so we explicitly specify the
-                // values, instead of using what was passed to us from it.
-                Key::Named(NamedKey::Tab) => [b'\t'].as_slice().into(),
-                Key::Named(NamedKey::Enter) => [b'\r'].as_slice().into(),
-                Key::Named(NamedKey::Backspace) => [b'\x7f'].as_slice().into(),
-                Key::Named(NamedKey::Escape) => [b'\x1b'].as_slice().into(),
-                _ => crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
-                    .into(),
+            let bytes = match key.logical_key.as_ref() {
+                Key::Named(NamedKey::Enter)
+                | Key::Named(NamedKey::Tab)
+                | Key::Named(NamedKey::Backspace)
+                    if !mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) =>
+                {
+                    return
+                },
+                _ => build_key_sequence(key, mods, mode),
             };
 
             self.ctx_mut().current_mut().messenger.send_write(bytes);
@@ -612,47 +601,18 @@ impl Screen<'_> {
             return;
         }
 
-        let bytes = if !is_kitty_keyboard_enabled {
-            // If text is empty then leave without input bytes
-            if text.is_empty() {
-                return;
-            }
+        let build_key_sequence = Self::should_build_sequence(&key, text, mode, mods);
 
+        let bytes = if build_key_sequence {
+            crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+        } else {
             let mut bytes = Vec::with_capacity(text.len() + 1);
-            if self.alt_send_esc(key, text) && text.len() == 1 {
+            if mods.alt_key() {
                 bytes.push(b'\x1b');
             }
+
             bytes.extend_from_slice(text.as_bytes());
             bytes
-        } else {
-            // We use legacy input when we have associated text with
-            // the given key and we have one of the following situations:
-            //
-            // 1. No keyboard input protocol is enabled.
-            // 2. Mode is KEYBOARD_DISAMBIGUATE_ESC_CODES, but we have text + empty or Shift
-            //    modifiers and the location of the key is not on the numpad, and it's not an `Esc`.
-            let write_legacy = !mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC)
-                && !text.is_empty()
-                && (!mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
-                    || (mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
-                        && (mods.is_empty() || mods == ModifiersState::SHIFT)
-                        && key.location != KeyLocation::Numpad
-                        // Special case escape here.
-                        && key.logical_key != Key::Named(NamedKey::Escape)));
-
-            // Handle legacy char writing.
-            if write_legacy {
-                let mut bytes = Vec::with_capacity(text.len() + 1);
-                if self.alt_send_esc(key, text) && text.len() == 1 {
-                    bytes.push(b'\x1b');
-                }
-
-                bytes.extend_from_slice(text.as_bytes());
-                bytes
-            } else {
-                // Otherwise we should build the key sequence for the given input.
-                crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
-            }
         };
 
         if !bytes.is_empty() {
@@ -660,6 +620,30 @@ impl Screen<'_> {
             self.clear_selection();
 
             self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+        }
+    }
+
+    /// Check whether we should try to build escape sequence for the [`KeyEvent`].
+    fn should_build_sequence(
+        key: &rio_window::event::KeyEvent,
+        text: &str,
+        mode: Mode,
+        mods: ModifiersState,
+    ) -> bool {
+        if mode.contains(Mode::REPORT_ALL_KEYS_AS_ESC) {
+            return true;
+        }
+
+        let disambiguate = mode.contains(Mode::DISAMBIGUATE_ESC_CODES)
+            && (key.logical_key == Key::Named(NamedKey::Escape)
+                || (!mods.is_empty() && mods != ModifiersState::SHIFT)
+                || key.location == KeyLocation::Numpad);
+
+        match key.logical_key {
+            _ if disambiguate => true,
+            // Exclude all the named keys unless they have textual representation.
+            Key::Named(named) => named.to_text().is_none(),
+            _ => text.is_empty(),
         }
     }
 

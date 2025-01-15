@@ -563,11 +563,14 @@ impl<T: event::EventListener> Crosswords<T> {
     #[must_use]
     pub fn semantic_search_left(&self, point: Pos) -> Pos {
         match self.inline_search_left(point, self.semantic_escape_chars()) {
-            Ok(point) => self
-                .grid
-                .iter_from(point)
-                .next()
-                .map_or(point, |cell| cell.pos),
+            // If we found a match, reverse for at least one cell, skipping over wide cell spacers.
+            Ok(point) => {
+                let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
+                self.grid
+                    .iter_from(point)
+                    .find(|cell| !cell.flags.intersects(wide_spacer))
+                    .map_or(point, |cell| cell.pos)
+            },
             Err(point) => point,
         }
     }
@@ -593,8 +596,7 @@ impl<T: event::EventListener> Crosswords<T> {
         let mut iter = self.grid.iter_from(point);
         let last_column = self.grid.columns() - 1;
 
-        let wide =
-            Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
+        let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         while let Some(cell) = iter.prev() {
             if cell.pos.col == last_column && !cell.flags.contains(Flags::WRAPLINE) {
                 break;
@@ -602,7 +604,7 @@ impl<T: event::EventListener> Crosswords<T> {
 
             point = cell.pos;
 
-            if !cell.flags.intersects(wide) && needles.contains(cell.c) {
+            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
                 return Ok(point);
             }
         }
@@ -615,8 +617,7 @@ impl<T: event::EventListener> Crosswords<T> {
         // Limit the starting point to the last line in the history
         point.row = max(point.row, self.grid.topmost_line());
 
-        let wide =
-            Flags::WIDE_CHAR | Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
+        let wide_spacer = Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER;
         let last_column = self.grid.columns() - 1;
 
         // Immediately stop if start point in on line break.
@@ -627,7 +628,7 @@ impl<T: event::EventListener> Crosswords<T> {
         for cell in self.grid.iter_from(point) {
             point = cell.pos;
 
-            if !cell.flags.intersects(wide) && needles.contains(cell.c) {
+            if !cell.flags.intersects(wide_spacer) && needles.contains(cell.c) {
                 return Ok(point);
             }
 
@@ -1397,5 +1398,16 @@ mod tests {
             term.regex_search_left(&mut regex, start, end),
             Some(match_start..=match_end)
         );
+    }
+
+    #[test]
+    fn fullwidth_semantic() {
+        #[rustfmt::skip]
+        let mut term = mock_term("test－x－test");
+        term.semantic_escape_chars = "－".into();
+        let start = term.semantic_search_left(Pos::new(Line(0), Column(6)));
+        let end = term.semantic_search_right(Pos::new(Line(0), Column(6)));
+        assert_eq!(start, Pos::new(Line(0), Column(6)));
+        assert_eq!(end, Pos::new(Line(0), Column(6)));
     }
 }

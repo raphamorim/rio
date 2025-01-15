@@ -10,10 +10,14 @@ language: 'en'
 
 ## 0.2.4 (unreleased)
 
+- Breaking: Rio now doesn't allow anymore disable kitty keyboard protocol.
 - Shell integration.
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+- Fullwidth semantic escape characters.
+- Fix report of Enter/Tab/Backspace in kitty keyboard.
+- Fix use-kitty-keyboard-protocol breaks F[5-12] on macOS [#904](https://github.com/raphamorim/rio/issues/904).
 
 ## 0.2.3
 
