@@ -55,7 +55,6 @@ use rio_window::event::MouseButton;
 use rio_window::keyboard::ModifiersKeyState;
 use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use std::borrow::Cow;
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::error::Error;
