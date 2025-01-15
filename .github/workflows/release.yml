@@ -34,7 +34,7 @@ jobs:
             LICENSE
 
   release-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
       discussions: write
@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{matrix.target}}          
+          key: ${{matrix.target}}
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.5
       - run: wix --version
@@ -92,8 +92,8 @@ jobs:
       - name: Crate msi installer
         run: |
           wix build -arch "${{ matrix.wix-arch}}" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
-          -out "./Rio-installer-${{ matrix.target }}.msi" "misc/windows/rio-${{ matrix.target }}.wxs"      
-      - run: cp ./target/${{ matrix.target }}-pc-windows-msvc/release/rio.exe ./Rio-portable-${{ matrix.target }}.exe      
+          -out "./Rio-installer-${{ matrix.target }}.msi" "misc/windows/rio-${{ matrix.target }}.wxs"
+      - run: cp ./target/${{ matrix.target }}-pc-windows-msvc/release/rio.exe ./Rio-portable-${{ matrix.target }}.exe
       - name: Release
         uses: softprops/action-gh-release@v1
         with:
