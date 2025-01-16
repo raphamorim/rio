@@ -376,7 +376,7 @@ fn copy_texture_to_buffer_with_aspect(
     let block_size = texture.format().block_size(Some(aspect)).unwrap();
     let mip_level = 0;
     encoder.copy_texture_to_buffer(
-        ImageCopyTexture {
+        TexelCopyTextureInfo {
             texture,
             mip_level,
             origin: Origin3d::ZERO,
