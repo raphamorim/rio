@@ -70,6 +70,7 @@ impl OwnedImage {
             mip_level_count: None,
             base_array_layer: 0,
             array_layer_count: None,
+            ..Default::default()
         });
 
         Self {

@@ -67,9 +67,8 @@ impl Context<'_> {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend =
-            wgpu::util::backend_bits_from_env().unwrap_or(renderer_config.backend);
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let backend = wgpu::Backends::from_env().unwrap_or(renderer_config.backend);
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
         });

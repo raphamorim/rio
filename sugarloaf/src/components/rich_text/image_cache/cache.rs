@@ -226,7 +226,7 @@ impl ImageCache {
 
             context.queue.write_texture(
                 // Tells wgpu where to copy the pixel data
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &new_texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
@@ -235,7 +235,7 @@ impl ImageCache {
                 // The actual pixel data
                 &self.atlas.buffer,
                 // The layout of the texture
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some((self.max_texture_size * 4).into()),
                     rows_per_image: Some((self.max_texture_size).into()),
@@ -256,7 +256,7 @@ impl ImageCache {
 
             context.queue.write_texture(
                 // Tells wgpu where to copy the pixel data
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture: &self.texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
@@ -265,7 +265,7 @@ impl ImageCache {
                 // The actual pixel data
                 &self.atlas.buffer,
                 // The layout of the texture
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some((self.max_texture_size * 4).into()),
                     rows_per_image: Some((self.max_texture_size).into()),
