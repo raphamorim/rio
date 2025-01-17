@@ -1,7 +1,7 @@
 <!-- LOGO -->
 <h1>
 <p align="center">
-  <img src="docs/static/assets/rio-logo.png" alt="Rio terminal logo" width="128">
+  <img src="https://raphamorim.io/rio/assets/rio-logo.png" alt="Rio terminal logo" width="128">
   <br>Rio Terminal
 </h1>
   <p align="center">
