@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://raphamorim.io/rio/zh-hant/blog</id>
     <title>Rio Terminal Blog</title>
-    <updated>2024-04-18T00:34:00.000Z</updated>
+    <updated>2025-01-17T15:34:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://raphamorim.io/rio/zh-hant/blog"/>
     <subtitle>Rio Terminal Blog</subtitle>
     <icon>https://raphamorim.io/rio/zh-hant/assets/rio-logo.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[New year, new look]]></title>
+        <id>https://raphamorim.io/rio/zh-hant/blog/2025/01/17/new-year-new-look</id>
+        <link href="https://raphamorim.io/rio/zh-hant/blog/2025/01/17/new-year-new-look"/>
+        <updated>2025-01-17T15:34:00.000Z</updated>
+        <summary type="html"><![CDATA[New year, new look!! There you go, Rio terminal got a new logo and icon made by Christian Rocha.]]></summary>
+        <content type="html"><![CDATA[<p>New year, new look!! There you go, Rio terminal got a new logo/icon made by <a href="https://x.com/meowgorithm" target="_blank" rel="noopener noreferrer">Christian Rocha</a>.</p>
+<table><thead><tr><th>Before</th><th>After</th></tr></thead><tbody><tr><td><img alt="Rio logo before" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Rio-terminal-logo.png/440px-Rio-terminal-logo.png" width="880px"></td><td><img decoding="async" loading="lazy" alt="Rio logo after" src="https://raphamorim.io/rio/zh-hant/assets/images/rio-logo-c13ca93614b2ac6b8007481dbde2ac14.png" width="800" height="800" class="img_ev3q"></td></tr></tbody></table>
+<p>The first logo was made by myself but lacked a chef touch that Christian masterfully gave to it!</p>
+<p>You may have already noticed on MacOS that if you're using version 0.2.23, in the upcoming versions it will be patched to Linux, BSD and Microsoft Windows.</p>
+<p>Ok, but what if I like the new logo but I am attached to the old logo? No worries, I am working on a Rio API for changing app icons via configuration and bult-in.</p>
+<p>That's it for today folks :)</p>]]></content>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Looking ahead to 0.1.0]]></title>
         <id>https://raphamorim.io/rio/zh-hant/blog/2024/04/18/looking-ahead-to-0.1.0</id>
@@ -454,7 +467,7 @@ directory of the parent process will be used.</p>
 <p>Github reference: <a href="https://github.com/Homebrew/homebrew-cask/pull/149824" target="_blank" rel="noopener noreferrer">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="homebrew-as-formula">Homebrew as Formula<a href="https://raphamorim.io/rio/zh-hant/blog/2023/07/10/release-0.0.8#homebrew-as-formula" class="hash-link" aria-label="Homebrew as Formula的直接連結" title="Homebrew as Formula的直接連結">​</a></h2>
 <p>Rio has been added as a formula <a href="https://formulae.brew.sh/formula/rio" target="_blank" rel="noopener noreferrer">formulae.brew.sh/formula/rio</a> to their package source. To install Rio with homebrew you need to run the command below:</p>
-<div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">brew update </span><span class="token operator">&amp;&amp;</span><span class="token plain"> brew </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> rio</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="複製程式碼至剪貼簿" title="複製" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-sh codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-sh codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token plain">brew update </span><span class="token operator">&amp;&amp;</span><span class="token plain"> brew </span><span class="token function" style="color:rgb(80, 250, 123)">install</span><span class="token plain"> rio</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="複製�程式碼至剪貼簿" title="複製" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p>Github reference: <a href="https://github.com/Homebrew/homebrew-core/pull/134295" target="_blank" rel="noopener noreferrer">github.com/Homebrew/homebrew-cask/pull/149824</a></p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="selection-improvements-and-increasedecrease-font-size-in-a-session">Selection improvements and increase/decrease font-size in a session<a href="https://raphamorim.io/rio/zh-hant/blog/2023/07/10/release-0.0.8#selection-improvements-and-increasedecrease-font-size-in-a-session" class="hash-link" aria-label="Selection improvements and increase/decrease font-size in a session的直接連結" title="Selection improvements and increase/decrease font-size in a session的直接連結">​</a></h2>
 <p>The version v0.0.8 has added the following missing functionalities: Scroll and select, Semantic and line selection and the ability to increase, decrease and reset font size using keyboard shortcut during session coming for Rio terminal.</p>

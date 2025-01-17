@@ -2,11 +2,24 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://raphamorim.io/rio/ja/blog</id>
     <title>Rio Terminal Blog</title>
-    <updated>2024-04-18T00:34:00.000Z</updated>
+    <updated>2025-01-17T15:34:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://raphamorim.io/rio/ja/blog"/>
     <subtitle>Rio Terminal Blog</subtitle>
     <icon>https://raphamorim.io/rio/ja/assets/rio-logo.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[New year, new look]]></title>
+        <id>https://raphamorim.io/rio/ja/blog/2025/01/17/new-year-new-look</id>
+        <link href="https://raphamorim.io/rio/ja/blog/2025/01/17/new-year-new-look"/>
+        <updated>2025-01-17T15:34:00.000Z</updated>
+        <summary type="html"><![CDATA[New year, new look!! There you go, Rio terminal got a new logo and icon made by Christian Rocha.]]></summary>
+        <content type="html"><![CDATA[<p>New year, new look!! There you go, Rio terminal got a new logo/icon made by <a href="https://x.com/meowgorithm" target="_blank" rel="noopener noreferrer">Christian Rocha</a>.</p>
+<table><thead><tr><th>Before</th><th>After</th></tr></thead><tbody><tr><td><img alt="Rio logo before" src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Rio-terminal-logo.png/440px-Rio-terminal-logo.png" width="880px"></td><td><img decoding="async" loading="lazy" alt="Rio logo after" src="https://raphamorim.io/rio/ja/assets/images/rio-logo-c13ca93614b2ac6b8007481dbde2ac14.png" width="800" height="800" class="img_ev3q"></td></tr></tbody></table>
+<p>The first logo was made by myself but lacked a chef touch that Christian masterfully gave to it!</p>
+<p>You may have already noticed on MacOS that if you're using version 0.2.23, in the upcoming versions it will be patched to Linux, BSD and Microsoft Windows.</p>
+<p>Ok, but what if I like the new logo but I am attached to the old logo? No worries, I am working on a Rio API for changing app icons via configuration and bult-in.</p>
+<p>That's it for today folks :)</p>]]></content>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Looking ahead to 0.1.0]]></title>
         <id>https://raphamorim.io/rio/ja/blog/2024/04/18/looking-ahead-to-0.1.0</id>
