@@ -63,4 +63,4 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 ## Minimal stable rust version
 
-Rio's MSRV is 1.84.0.
+Rio's MSRV is 1.80.1.

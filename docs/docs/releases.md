@@ -14,12 +14,17 @@ language: 'en'
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+
+
+## 0.2.4
+
 - Breaking: Rio now doesn't allow anymore disable kitty keyboard protocol.
 - Fullwidth semantic escape characters.
 - Fix: Relax libc requirements on ubuntu by compiling Rio in a 22.04 runner instead of 24.04 [#906](https://github.com/raphamorim/rio/pull/906) by [@marc2332](https://github.com/marc2332).
 - Fix: report of Enter/Tab/Backspace in kitty keyboard.
 - Fix: use-kitty-keyboard-protocol = true doesn't work with tmux [#599](https://github.com/raphamorim/rio/issues/599).
 - Fix: use-kitty-keyboard-protocol breaks F[5-12] on macOS [#904](https://github.com/raphamorim/rio/issues/904).
+- Downgrade MSRV to 1.80.1
 - Update wgpu to 24.0.0.
 
 ## 0.2.3
