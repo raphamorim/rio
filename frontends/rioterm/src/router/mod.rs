@@ -101,10 +101,10 @@ impl Route<'_> {
 
     #[inline]
     pub fn report_error(&mut self, error: &RioError) {
-        // if error.report == RioErrorType::ConfigurationNotFound {
-        //     self.path = RoutePath::Welcome;
-        //     return;
-        // }
+        if error.report == RioErrorType::ConfigurationNotFound {
+            self.path = RoutePath::Welcome;
+            return;
+        }
 
         self.assistant.set(error.to_owned());
         self.path = RoutePath::Assistant;
