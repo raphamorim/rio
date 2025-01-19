@@ -83,7 +83,7 @@ pub fn screen(
         if report.level == RioErrorLevel::Warning {
             objects.push(Object::Text(Text::single_line(
                 (70., context_dimension.margin.top_y + 80.),
-                String::from("(press enter twice to continue)"),
+                String::from("(press enter to continue)"),
                 18.,
                 [1., 1., 1., 1.],
             )));
