@@ -133,13 +133,13 @@ impl Route<'_> {
         }
 
         let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
-        if self.path == RoutePath::Assistant && is_enter {
-            if self.assistant.is_warning() {
+        if self.path == RoutePath::Assistant {
+            if self.assistant.is_warning() && is_enter {
                 self.assistant.clear();
                 self.path = RoutePath::Terminal;
+            } else {
+                return true;
             }
-
-            return true;
         }
 
         if self.path == RoutePath::ConfirmQuit {
@@ -147,18 +147,17 @@ impl Route<'_> {
                 self.path = RoutePath::Terminal;
             } else if is_enter {
                 self.quit();
-            }
 
-            return true;
+                return true;
+            }
         }
 
         if self.path == RoutePath::Welcome && is_enter {
             rio_backend::config::create_config_file(None);
             self.path = RoutePath::Terminal;
-            return true;
         }
 
-        true
+        false
     }
 }
 
