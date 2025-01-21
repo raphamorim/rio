@@ -74,11 +74,7 @@ pub fn default_opacity() -> f32 {
 
 #[inline]
 pub fn default_option_as_alt() -> String {
-    if cfg!(target_os = "macos") {
-        return String::from("both");
-    } else {
-        return String::from("none");
-    }
+    String::from("none")
 }
 
 #[inline]

@@ -2,7 +2,7 @@
 // SnowflakePowered/librashader is licensed under MPL-2.0
 // https://github.com/SnowflakePowered/librashader/blob/master/LICENSE.md
 
-use array_concat::concat_arrays;
+use crate::concat_arrays;
 use librashader_runtime::quad::{QuadType, VertexInput};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{Buffer, Device, RenderPass};

@@ -3251,7 +3251,6 @@ version = "0.2.4"
 dependencies = [
  "ab_glyph",
  "approx",
- "array-concat",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
