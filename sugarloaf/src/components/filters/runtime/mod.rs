@@ -28,6 +28,61 @@ pub use framebuffer::WgpuOutputView;
 pub mod error;
 pub mod options;
 
+/// Concatenates provided arrays.
+#[macro_export]
+macro_rules! concat_arrays {
+    ($( $array:expr ),*) => ({
+        #[repr(C)]
+        struct ArrayConcatDecomposed<T, A, B>(core::mem::ManuallyDrop<[T; 0]>, core::mem::ManuallyDrop<A>, core::mem::ManuallyDrop<B>);
+
+        impl<T> ArrayConcatDecomposed<T, [T; 0], [T; 0]> {
+            #[inline(always)]
+            const fn default() -> Self {
+                Self::new(core::mem::ManuallyDrop::new([]), [])
+            }
+        }
+        impl<T, A, B> ArrayConcatDecomposed<T, A, B> {
+            #[inline(always)]
+            const fn new(a: core::mem::ManuallyDrop<A>, b: B) -> Self {
+                Self(core::mem::ManuallyDrop::new([]), a, core::mem::ManuallyDrop::new(b))
+            }
+            #[inline(always)]
+            const fn concat<const N: usize>(self, v: [T; N]) -> ArrayConcatDecomposed<T, A, ArrayConcatDecomposed<T, B, [T; N]>> {
+                ArrayConcatDecomposed::new(self.1, ArrayConcatDecomposed::new(self.2, v))
+            }
+        }
+
+        #[repr(C)]
+        union ArrayConcatComposed<T, A, B, const N: usize> {
+            full: core::mem::ManuallyDrop<[T; N]>,
+            decomposed: core::mem::ManuallyDrop<ArrayConcatDecomposed<T, A, B>>,
+        }
+
+        impl<T, A, B, const N: usize> ArrayConcatComposed<T, A, B, N> {
+            const HAVE_SAME_SIZE: bool = core::mem::size_of::<[T; N]>() == core::mem::size_of::<Self>();
+
+            const PANIC: bool = !["Size mismatch"][!Self::HAVE_SAME_SIZE as usize].is_empty();
+
+            #[inline(always)]
+            const fn have_same_size(&self) -> bool {
+                Self::PANIC
+            }
+        }
+
+        let composed = ArrayConcatComposed {
+            decomposed: core::mem::ManuallyDrop::new(
+                ArrayConcatDecomposed::default()$(.concat($array))*,
+            )
+        };
+
+        // Sanity check that composed's two fields are the same size
+        composed.have_same_size();
+
+        // SAFETY: Sizes of both fields in composed are the same so this assignment should be sound
+        core::mem::ManuallyDrop::into_inner(unsafe { composed.full })
+    });
+}
+
 use librashader_runtime::impl_filter_chain_parameters;
 impl_filter_chain_parameters!(FilterChain);
 

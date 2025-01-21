@@ -599,7 +599,7 @@ impl Screen<'_> {
             return;
         }
 
-        let build_key_sequence = Self::should_build_sequence(&key, text, mode, mods);
+        let build_key_sequence = Self::should_build_sequence(key, text, mode, mods);
 
         let bytes = if build_key_sequence {
             crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
