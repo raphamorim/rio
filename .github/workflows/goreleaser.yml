@@ -42,6 +42,7 @@ jobs:
         with:
           path: dist/${{ matrix.cache-subdir || matrix.target }}
           key: goreleaser-${{ matrix.target || matrix.os }}-${{ github.sha }}
+          enableCrossOsArchive: ${{ matrix.os == 'windows-latest' }}
           lookup-only: true
           fail-on-cache-miss: false
         id: cache-check
