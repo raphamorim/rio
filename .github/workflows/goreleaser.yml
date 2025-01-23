@@ -29,6 +29,8 @@ jobs:
             partial-by: goos
             secondary_target: aarch64-pc-windows-msvc
       fail-fast: false
+    outputs:
+      cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -50,7 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-      - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
+      - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
         uses: goreleaser/goreleaser-action@v6.1.0
         with:
           distribution: goreleaser-pro
@@ -60,6 +62,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
   release:
+    # skip if cache exists for same commit, since we already released
+    if: needs.build.outputs.cache-hit != 'true'
     needs: build
     runs-on: ubuntu-latest
     steps:
