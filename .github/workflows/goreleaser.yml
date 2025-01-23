@@ -28,9 +28,9 @@ jobs:
           # - os: ubuntu-24.04-arm
           #   target: aarch64-unknown-linux-gnu
           #   partial-by: target
-          # - os: windows-latest
-          #   cache-subdir: windows
-          #   secondary_target: aarch64-pc-windows-msvc
+          - os: windows-latest
+            cache-subdir: windows
+            secondary_target: aarch64-pc-windows-msvc
       fail-fast: false
     outputs:
       cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
@@ -66,7 +66,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
   release:
-    # skip if cache exists for same commit, since we already released
+    # skip if cache exists for same commit, since we probably already released
     if: needs.build.outputs.cache-hit != 'true'
     needs: build
     runs-on: ubuntu-latest
@@ -79,11 +79,11 @@ jobs:
           key: goreleaser-macos-latest-${{ github.sha }}
           path: dist/darwin
           fail-on-cache-miss: true
-      # - uses: actions/cache@v4
-      #   with:
-      #     key: goreleaser-windows-latest-${{ github.sha }}
-      #     path: dist/windows
-      #     fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-windows-latest-${{ github.sha }}
+          path: dist/windows
+          fail-on-cache-miss: true
       # - uses: actions/cache@v4
       #   with:
       #     key: goreleaser-x86_64-unknown-linux-gnu-${{ github.sha }}
