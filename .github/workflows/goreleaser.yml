@@ -17,7 +17,7 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            partial-by: goos
+            cache-subdir: darwin
             secondary_target: x86_64-apple-darwin
           # - os: ubuntu-latest
           #   target: x86_64-unknown-linux-gnu
@@ -26,7 +26,7 @@ jobs:
           #   target: aarch64-unknown-linux-gnu
           #   partial-by: target
           - os: windows-latest
-            partial-by: goos
+            cache-subdir: windows
             secondary_target: aarch64-pc-windows-msvc
       fail-fast: false
     outputs:
@@ -37,11 +37,10 @@ jobs:
           fetch-depth: 0
       - uses: actions/cache@v4
         with:
-          path: dist/**/*
+          path: dist/${{ matrix.cache-subdir || matrix.target }}
           key: goreleaser-${{ matrix.target || matrix.os }}-${{ github.sha }}
           lookup-only: true
           fail-on-cache-miss: false
-          enableCrossOsArchive: true
         id: cache-check
       - if: matrix.os == 'macos-latest' || matrix.os == 'windows-latest'
         run: rustup target add ${{ matrix.secondary_target }}
@@ -50,7 +49,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: nightly
-          args: release --clean --split # --partial-by ${{ matrix.partial-by }}
+          args: release --clean --split # --partial-by ${{ matrix.partial-by || 'goos' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
@@ -59,7 +58,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: nightly
-          args: release --clean --split --nightly # --partial-by ${{ matrix.partial-by }}
+          args: release --clean --split --nightly # --partial-by ${{ matrix.partial-by || 'goos' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
@@ -75,27 +74,23 @@ jobs:
       - uses: actions/cache@v4
         with:
           key: goreleaser-macos-latest-${{ github.sha }}
-          path: dist/**/*
+          path: dist/darwin
           fail-on-cache-miss: true
-          enableCrossOsArchive: true
       - uses: actions/cache@v4
         with:
           key: goreleaser-windows-latest-${{ github.sha }}
-          path: dist/**/*
+          path: dist/windows
           fail-on-cache-miss: true
-          enableCrossOsArchive: true
       # - uses: actions/cache@v4
       #   with:
       #     key: goreleaser-x86_64-unknown-linux-gnu-${{ github.sha }}
-      #     path: dist/**/*
+      #     path: dist/x86_64-unknown-linux-gnu
       #     fail-on-cache-miss: true
-      #     enableCrossOsArchive: true
       # - uses: actions/cache@v4
       #   with:
       #     key: goreleaser-aarch64-unknown-linux-gnu-${{ github.sha }}
-      #     path: dist/**/*
+      #     path: dist/aarch64-unknown-linux-gnu
       #     fail-on-cache-miss: true
-      #     enableCrossOsArchive: true
       - uses: goreleaser/goreleaser-action@v6.1.0
         with:
           distribution: goreleaser-pro
