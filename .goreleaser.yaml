@@ -22,6 +22,7 @@ before:
     hooks:
         # caarlos0 will improve this soon, so we don't need `else` workaround
         - '{{ if eq .Runtime.Goos "darwin" }}tic -xe rio -o misc misc/rio.terminfo{{ else }}echo{{ end }}'
+        - '{{ if eq .Runtime.Goos "windows" }}dotnet tool install --global wix --version 5.0.2{{ else }}echo{{ end }}'
 builds:
     - id: windows-x86_64
       builder: rust
@@ -109,21 +110,21 @@ universal_binaries:
     - ids: [macos]
       replace: true
 
-msi:
-    - id: win-x64
-      name: "{{ .ProjectName }}-installer-x86_64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-x86_64]
-      extensions:
-          - WixToolset.UI.wixext/5.0.2
-          - WixToolset.Util.wixext/5.0.2
-    - id: win-arm64
-      name: "{{ .ProjectName }}-installer-aarch64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-arm64]
-      extensions:
-          - WixToolset.UI.wixext/5.0.2
-          - WixToolset.Util.wixext/5.0.2
+# msi:
+#     - id: win-x64
+#       name: "{{ .ProjectName }}-installer-x86_64"
+#       wxs: ./misc/windows/rio.wxs
+#       ids: [windows-x86_64]
+#       extensions:
+#           - WixToolset.UI.wixext/5.0.2
+#           - WixToolset.Util.wixext/5.0.2
+#     - id: win-arm64
+#       name: "{{ .ProjectName }}-installer-aarch64"
+#       wxs: ./misc/windows/rio.wxs
+#       ids: [windows-arm64]
+#       extensions:
+#           - WixToolset.UI.wixext/5.0.2
+#           - WixToolset.Util.wixext/5.0.2
 
 archives:
     - id: win-x64
