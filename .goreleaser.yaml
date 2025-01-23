@@ -71,7 +71,7 @@ builds:
     #   targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
 
 release:
-    make_latest: '{{ if .IsNightly }}false{{ else }}true{{ end }}'
+    make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
     mode: append
     prerelease: auto
     use_existing_draft: false
@@ -107,7 +107,8 @@ changelog:
 #             dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
 
 universal_binaries:
-    - replace: true
+    - ids: [macos]
+      replace: true
 
 msi:
     - id: win-x64
@@ -151,9 +152,8 @@ app_bundles:
             dst: Contents/Info.plist
 
 dmg:
-    - name: "Rio-v{{ .Version}}"
+    - name: "{{ .ProjectName }}-v{{ .Version}}"
       use: appbundle
-      replace: true
 
 metadata:
     maintainers:
