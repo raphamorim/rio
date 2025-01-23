@@ -21,7 +21,6 @@ env:
 before:
     hooks:
         # caarlos0 will improve this soon, so we don't need `else` workaround
-        - '{{ if eq .Runtime.Goos "windows" }}dotnet tool install --global wix --version 5.0.2{{ else }}echo{{ end }}'
         - '{{ if eq .Runtime.Goos "darwin" }}tic -xe rio -o misc misc/rio.terminfo{{ else }}echo{{ end }}'
 builds:
     - id: windows-x86_64
