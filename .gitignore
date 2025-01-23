@@ -19,3 +19,9 @@ NOTES
 
 # for nix users
 .direnv/
+
+# compiled terminfo files
+misc/72/
+
+# goreleaser
+dist/
