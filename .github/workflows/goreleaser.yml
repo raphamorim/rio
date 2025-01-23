@@ -41,10 +41,6 @@ jobs:
         id: cache-check
       - if: matrix.os == 'macos-latest' || matrix.os == 'windows-latest'
         run: rustup target add ${{ matrix.secondary_target }}
-      - if: matrix.os == 'macos-latest'
-        run: 
-      - if: matrix.os == 'windows-latest'
-        run:
       - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.cache-check.outputs.cache-hit != 'true'
         uses: goreleaser/goreleaser-action@v6.1.0
         with:
