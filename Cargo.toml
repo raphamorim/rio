@@ -50,7 +50,7 @@ image_rs = { package = "image", version = "0.25.5", default-features = false, fe
 regex = "1.11.1"
 bytemuck = { version = "1.21.0", features = [ "derive" ] }
 serde = { version = "1.0.217", features = ["derive"] }
-wgpu = "24.0.0"
+wgpu = "24.0.1"
 libc = "0.2.169"
 smol_str = "0.3.2"
 futures = "0.3.31"
