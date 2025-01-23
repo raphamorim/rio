@@ -110,21 +110,21 @@ universal_binaries:
     - ids: [macos]
       replace: true
 
-msi:
-    - id: win-x64
-      name: "{{ .ProjectName }}-installer-x86_64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-x86_64]
-      extensions:
-          - WixToolset.UI.wixext/4.0.5
-          - WixToolset.Util.wixext/4.0.5
-    - id: win-arm64
-      name: "{{ .ProjectName }}-installer-aarch64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-arm64]
-      extensions:
-          - WixToolset.UI.wixext/4.0.5
-          - WixToolset.Util.wixext/4.0.5
+# msi:
+#     - id: win-x64
+#       name: "{{ .ProjectName }}-installer-x86_64"
+#       wxs: ./misc/windows/rio.wxs
+#       ids: [windows-x86_64]
+#       extensions:
+#           - WixToolset.UI.wixext/4.0.5
+#           - WixToolset.Util.wixext/4.0.5
+#     - id: win-arm64
+#       name: "{{ .ProjectName }}-installer-aarch64"
+#       wxs: ./misc/windows/rio.wxs
+#       ids: [windows-arm64]
+#       extensions:
+#           - WixToolset.UI.wixext/4.0.5
+#           - WixToolset.Util.wixext/4.0.5
 
 archives:
     - id: win-x64
