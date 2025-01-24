@@ -125,6 +125,7 @@ msi:
       extensions:
           - WixToolset.UI.wixext
           - WixToolset.Util.wixext
+      extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
     - id: win-arm64
       name: "{{ .ProjectName }}-installer-aarch64"
       wxs: ./misc/windows/rio.wxs
@@ -132,18 +133,17 @@ msi:
       extensions:
           - WixToolset.UI.wixext
           - WixToolset.Util.wixext
+      extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
 
 archives:
     - id: win-x64
       formats: [binary]
       builds: [windows-x86_64]
       name_template: "{{ .ProjectName }}-portable-x86_64"
-      strip_binary_directory: true
     - id: win-arm64
       formats: [binary]
       builds: [windows-arm64]
       name_template: "{{ .ProjectName }}-portable-aarch64"
-      strip_binary_directory: true
 
 app_bundles:
     - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
