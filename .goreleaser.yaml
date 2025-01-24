@@ -30,7 +30,7 @@ before:
           cmd: wix --version
           output: true
         - if: '{{ eq .Runtime.Goos "windows" }}'
-          cmd: wix extension add WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
+          cmd: wix extension add -g WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
           output: true
 
 builds:
@@ -60,25 +60,25 @@ builds:
           - MACOSX_DEPLOYMENT_TARGET={{ if eq .Arch "amd64" }}10.15{{ else }}11.0{{ end }}
       targets: [x86_64-apple-darwin, aarch64-apple-darwin]
 
-    # - id: linux-wayland
-    #   builder: rust
-    #   command: build
-    #   flags:
-    #       - -p=rioterm
-    #       - --release
-    #       - --no-default-features
-    #       - --features=wayland
-    #   targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    - id: linux-wayland
+      builder: rust
+      command: build
+      flags:
+          - -p=rioterm
+          - --release
+          - --no-default-features
+          - --features=wayland
+      targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
 
-    # - id: linux-x11
-    #   builder: rust
-    #   command: build
-    #   flags:
-    #       - -p=rioterm
-    #       - --release
-    #       - --no-default-features
-    #       - --features=x11
-    #   targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    - id: linux-x11
+      builder: rust
+      command: build
+      flags:
+          - -p=rioterm
+          - --release
+          - --no-default-features
+          - --features=x11
+      targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
 
 release:
     make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
