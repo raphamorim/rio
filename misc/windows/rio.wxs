@@ -23,7 +23,7 @@
       <!-- Application binaries -->
       <DirectoryRef Id="RioProgramFiles">
          <Component Id="RioExe">
-            <File Id="RioExeFile" Source="{{ .Binary }}" Name="rio.exe" KeyPath="yes" />
+            <File Id="RioExeFile" Source="{{ .ArtifactPath }}" Name="rio.exe" KeyPath="yes" />
          </Component>
       </DirectoryRef>
       <DirectoryRef Id="RioProgramMenu">
