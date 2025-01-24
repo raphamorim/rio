@@ -30,7 +30,7 @@ before:
           cmd: wix --version
           output: true
         - if: '{{ eq .Runtime.Goos "windows" }}'
-          cmd: wix extension add -g WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
+          cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
           output: true
 
 builds:
