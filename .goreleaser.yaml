@@ -27,9 +27,6 @@ before:
           cmd: dotnet tool install --global wix --version 5.0.2
           output: true
         - if: '{{ eq .Runtime.Goos "windows" }}'
-          cmd: wix --version
-          output: true
-        - if: '{{ eq .Runtime.Goos "windows" }}'
           cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
           output: true
 
