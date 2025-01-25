@@ -125,7 +125,9 @@ msi:
       extensions:
           - WixToolset.UI.wixext
           - WixToolset.Util.wixext
-      extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
+      extra_files:
+        - ./misc/windows/rio.ico
+        - ./misc/windows/License.rtf
     - id: win-arm64
       name: "{{ .ProjectName }}-installer-aarch64"
       wxs: ./misc/windows/rio.wxs
@@ -133,7 +135,9 @@ msi:
       extensions:
           - WixToolset.UI.wixext
           - WixToolset.Util.wixext
-      extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
+      extra_files:
+        - ./misc/windows/rio.ico
+        - ./misc/windows/License.rtf
 
 archives:
     - id: win-x64
