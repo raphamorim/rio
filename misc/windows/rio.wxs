@@ -9,8 +9,8 @@
       InstallerVersion="200">
 
       <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-      <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
-      <Icon Id="RioIcon" SourceFile="rio.ico" />
+      <WixVariable Id="WixUILicenseRtf" Value=".\misc\windows\License.rtf" />
+      <Icon Id="RioIcon" SourceFile=".\misc\windows\rio.ico" />
       <Property Id="APPRODUCTICON" Value="RioIcon" />
       <MediaTemplate EmbedCab="yes" />
       <ui:WixUI Id="WixUI_Minimal" />
