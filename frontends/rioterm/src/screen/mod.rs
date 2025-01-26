@@ -599,6 +599,9 @@ impl Screen<'_> {
             return;
         }
 
+        // Mask `Alt` modifier from input when we won't send esc.
+        let mods = if self.alt_send_esc(&key, text) { mods } else { mods & !ModifiersState::ALT };
+
         let build_key_sequence = Self::should_build_sequence(key, text, mode, mods);
 
         let bytes = if build_key_sequence {
