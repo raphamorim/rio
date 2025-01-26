@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ko/assets/css/styles.db4fd81a.css">
-<script src="/rio/ko/assets/js/runtime~main.19fb8d30.js" defer="defer"></script>
+<script src="/rio/ko/assets/js/runtime~main.57a1b0f0.js" defer="defer"></script>
 <script src="/rio/ko/assets/js/main.86480873.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -33,7 +33,7 @@
 </li>
 <li>Fix: Block writing to the shell when rendering the <code>Assistant</code> route.</li>
 <li>Fix: Immediately render the <code>Terminal</code> route when switching from the <code>Assistant</code>, <code>ConfirmToQuit</code> or <code>Welcome</code>, thus avoiding the need to double press <code>Enter</code>.</li>
-<li>Property <code>option-as-alt</code> is now default for <code>both</code> on MacOS.</li>
+<li>Fix: MacOS Unable to type Option + Number for special characters <a href="https://github.com/raphamorim/rio/issues/916" target="_blank" rel="noopener noreferrer">#916</a>.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="024">0.2.4<a href="#024" class="hash-link" aria-label="0.2.4에 대한 직접 링크" title="0.2.4에 대한 직접 링크">​</a></h2>
 <ul>
@@ -365,7 +365,7 @@
 <li>Improvements on font loader (avoid set weight or style in the lookup if isn&#x27;t defined).</li>
 <li>Fallbacks fonts doesn&#x27;t trigger alerts anymore.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="010">0.1.0<a href="#010" class="hash-link" aria-label="0.1.0에 대한 직접 링크" title="0.1.0에   대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="010">0.1.0<a href="#010" class="hash-link" aria-label="0.1.0에 대한 직접 링크" title="0.1.0에 대한 직접 링크">​</a></h2>
 <p><strong>Breaking change: Opacity API has changed</strong></p>
 <ul>
 <li><code>background-opacity</code> has been renamed to <code>opacity</code>. It sets window background opacity.</li>
@@ -814,7 +814,7 @@
 <li>Changed default black color to <code>#4c4345</code>.</li>
 <li>Fix mouse position for when selecting text.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="007">0.0.7<a href="#007" class="hash-link" aria-label="0.0.7에 대한 직접 링크" title="0.0.7에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="007">0.0.7<a href="#007" class="hash-link" aria-label="0.0.7에 대한 직접 링크" title="0.0.7에 대한 직접   링크">​</a></h2>
 <ul>
 <li>Breaking changes for configuration file regarding <code>Style</code> property.</li>
 </ul>
