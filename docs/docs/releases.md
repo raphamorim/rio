@@ -13,7 +13,7 @@ language: 'en'
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
 - Fix: Block writing to the shell when rendering the `Assistant` route.
 - Fix: Immediately render the `Terminal` route when switching from the `Assistant`, `ConfirmToQuit` or `Welcome`, thus avoiding the need to double press `Enter`.
-- Property `option-as-alt` is now default for `both` on MacOS.
+- Fix: MacOS Unable to type Option + Number for special characters [#916](https://github.com/raphamorim/rio/issues/916).
 
 ## 0.2.4
 
