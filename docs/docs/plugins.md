@@ -14,8 +14,11 @@ In the plugin you can specify how it would work, let's write one in Rust:
 
 ```
 
-- `on_keyup()`
-- `on_keydown()`
-- `on_render()`
-- `request_render()`
-- `append_element()`
+- `onmousemove()`
+- `onmouseclick()`
+- `onmouserelease()`
+- `onkeyup()`
+- `onkeydown()`
+- `onrender()`
+- `requestrender()`
+- `appendelement()`
