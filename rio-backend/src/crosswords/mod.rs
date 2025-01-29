@@ -21,7 +21,6 @@ pub mod search;
 pub mod square;
 pub mod vi_mode;
 
-use crate::crosswords::colors::Colors;
 use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
 use crate::ansi::graphics::TextureRef;
@@ -35,11 +34,8 @@ use crate::ansi::{
     KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
 };
 use crate::clipboard::ClipboardType;
-use crate::config::colors::{
-    self,
-    term::{List, },
-    AnsiColor, ColorRgb,
-};
+use crate::config::colors::{self, term::List, AnsiColor, ColorRgb};
+use crate::crosswords::colors::Colors;
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent};

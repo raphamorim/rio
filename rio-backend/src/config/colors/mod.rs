@@ -6,6 +6,7 @@ use regex::Regex;
 use serde::Serialize;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
+use std::ops::Mul;
 
 pub type ColorWGPU = wgpu::Color;
 pub type ColorArray = [f32; 4];
@@ -16,6 +17,32 @@ pub struct ColorRgb {
     pub r: u8,
     pub g: u8,
     pub b: u8,
+}
+
+impl Mul<f32> for ColorRgb {
+    type Output = ColorRgb;
+
+    fn mul(self, rhs: f32) -> ColorRgb {
+        let result = ColorRgb {
+            r: (f32::from(self.r) * rhs).clamp(0.0, 255.0) as u8,
+            g: (f32::from(self.g) * rhs).clamp(0.0, 255.0) as u8,
+            b: (f32::from(self.b) * rhs).clamp(0.0, 255.0) as u8,
+        };
+
+        tracing::trace!(
+            "Scaling ColorRgb by {} from {:?} to {:?}",
+            rhs,
+            self,
+            result
+        );
+        result
+    }
+}
+
+impl From<&ColorRgb> for ColorArray {
+    fn from(color: &ColorRgb) -> ColorArray {
+        color.to_arr()
+    }
 }
 
 impl ColorRgb {

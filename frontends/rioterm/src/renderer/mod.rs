@@ -11,8 +11,7 @@ use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
-    term::List,
-    AnsiColor, ColorArray, Colors, NamedColor,
+    term::List, AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
@@ -26,8 +25,12 @@ use std::ops::RangeInclusive;
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
 
+/// Factor for automatic computation of dim colors.
+pub const DIM_FACTOR: f32 = 0.66;
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
+    draw_bold_text_with_light_colors: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -78,6 +81,7 @@ impl Renderer {
         }
 
         Renderer {
+            draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
@@ -530,8 +534,26 @@ impl Renderer {
                 (NamedColor::DimWhite, _) => self.named_colors.dim_white,
                 (NamedColor::DimYellow, _) => self.named_colors.dim_yellow,
             },
-            AnsiColor::Spec(rgb) => rgb.to_arr(),
-            AnsiColor::Indexed(idx) => self.colors[idx as usize],
+            AnsiColor::Spec(rgb) => match square.flags & Flags::DIM {
+                Flags::DIM => (&(rgb * DIM_FACTOR)).into(),
+                _ => (&rgb).into(),
+            },
+            AnsiColor::Indexed(idx) => {
+                let idx = match (
+                    self.draw_bold_text_with_light_colors,
+                    square.flags & Flags::DIM_BOLD,
+                    idx,
+                ) {
+                    (true, Flags::BOLD, 0..=7) => idx as usize + 8,
+                    (false, Flags::DIM, 8..=15) => idx as usize - 8,
+                    (false, Flags::DIM, 0..=7) => {
+                        NamedColor::DimBlack as usize + idx as usize
+                    }
+                    _ => idx as usize,
+                };
+
+                self.colors[idx]
+            }
         }
     }
 
