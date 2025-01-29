@@ -60,13 +60,8 @@ impl Renderer {
 
         let mut dynamic_background =
             (named_colors.background.0, named_colors.background.1, false);
-        if config.window.opacity < 1. {
-            dynamic_background.1.a = config.window.opacity as f64;
-            dynamic_background.2 = true;
-        } else if config.window.background_image.is_some() {
-            dynamic_background.1 = wgpu::Color::TRANSPARENT;
-            dynamic_background.2 = true;
-        }
+        dynamic_background.1 = wgpu::Color::TRANSPARENT;
+        dynamic_background.2 = true;
 
         let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
             HashMap::new();
@@ -110,6 +105,7 @@ impl Renderer {
 
         let mut foreground_color = self.compute_color(&square.fg, flags);
         let mut background_color = self.compute_bg_color(square);
+        background_color[3] = 0.0;
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
             ' '
