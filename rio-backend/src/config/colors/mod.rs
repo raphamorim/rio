@@ -148,113 +148,113 @@ pub struct Colors {
     #[serde(default = "defaults::white", deserialize_with = "deserialize_to_arr")]
     pub white: ColorArray,
     #[serde(
-        default = "defaults::dim_black",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-black"
     )]
-    pub dim_black: ColorArray,
+    pub dim_black: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_blue",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-blue"
     )]
-    pub dim_blue: ColorArray,
+    pub dim_blue: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_cyan",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-cyan"
     )]
-    pub dim_cyan: ColorArray,
+    pub dim_cyan: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_foreground",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-foreground"
     )]
-    pub dim_foreground: ColorArray,
+    pub dim_foreground: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_green",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-green"
     )]
-    pub dim_green: ColorArray,
+    pub dim_green: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_magenta",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-magenta"
     )]
-    pub dim_magenta: ColorArray,
+    pub dim_magenta: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_red",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-red"
     )]
-    pub dim_red: ColorArray,
+    pub dim_red: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_white",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-white"
     )]
-    pub dim_white: ColorArray,
+    pub dim_white: Option<ColorArray>,
     #[serde(
-        default = "defaults::dim_yellow",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "dim-yellow"
     )]
-    pub dim_yellow: ColorArray,
+    pub dim_yellow: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_black",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-black"
     )]
-    pub light_black: ColorArray,
+    pub light_black: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_blue",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-blue"
     )]
-    pub light_blue: ColorArray,
+    pub light_blue: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_cyan",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-cyan"
     )]
-    pub light_cyan: ColorArray,
+    pub light_cyan: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_foreground",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-foreground"
     )]
-    pub light_foreground: ColorArray,
+    pub light_foreground: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_green",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-green"
     )]
-    pub light_green: ColorArray,
+    pub light_green: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_magenta",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-magenta"
     )]
-    pub light_magenta: ColorArray,
+    pub light_magenta: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_red",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-red"
     )]
-    pub light_red: ColorArray,
+    pub light_red: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_white",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-white"
     )]
-    pub light_white: ColorArray,
+    pub light_white: Option<ColorArray>,
     #[serde(
-        default = "defaults::light_yellow",
-        deserialize_with = "deserialize_to_arr",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "light-yellow"
     )]
-    pub light_yellow: ColorArray,
+    pub light_yellow: Option<ColorArray>,
     #[serde(
         default = "defaults::selection_background",
         deserialize_with = "deserialize_to_arr",
@@ -317,24 +317,24 @@ impl Default for Colors {
             cyan: defaults::cyan(),
             magenta: defaults::magenta(),
             white: defaults::white(),
-            dim_black: defaults::dim_black(),
-            dim_blue: defaults::dim_blue(),
-            dim_cyan: defaults::dim_cyan(),
-            dim_foreground: defaults::dim_foreground(),
-            dim_green: defaults::dim_green(),
-            dim_magenta: defaults::dim_magenta(),
-            dim_red: defaults::dim_red(),
-            dim_white: defaults::dim_white(),
-            dim_yellow: defaults::dim_yellow(),
-            light_black: defaults::light_black(),
-            light_blue: defaults::light_blue(),
-            light_cyan: defaults::light_cyan(),
-            light_foreground: defaults::light_foreground(),
-            light_green: defaults::light_green(),
-            light_magenta: defaults::light_magenta(),
-            light_red: defaults::light_red(),
-            light_white: defaults::light_white(),
-            light_yellow: defaults::light_yellow(),
+            dim_black: None,
+            dim_blue: None,
+            dim_cyan: None,
+            dim_foreground: None,
+            dim_green: None,
+            dim_magenta: None,
+            dim_red: None,
+            dim_white: None,
+            dim_yellow: None,
+            light_black: None,
+            light_blue: None,
+            light_cyan: None,
+            light_foreground: None,
+            light_green: None,
+            light_magenta: None,
+            light_red: None,
+            light_white: None,
+            light_yellow: None,
             selection_background: defaults::selection_background(),
             selection_foreground: defaults::selection_foreground(),
             search_match_background: defaults::search_match_background(),
@@ -656,6 +656,19 @@ where
     let s = String::deserialize(deserializer)?;
     match ColorBuilder::from_hex(s, Format::SRGB0_1) {
         Ok(color) => Ok(color.to_arr()),
+        Err(e) => Err(serde::de::Error::custom(e)),
+    }
+}
+
+pub fn deserialize_to_arr_opt<'de, D>(
+    deserializer: D,
+) -> Result<Option<ColorArray>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match ColorBuilder::from_hex(s, Format::SRGB0_1) {
+        Ok(color) => Ok(Some(color.to_arr())),
         Err(e) => Err(serde::de::Error::custom(e)),
     }
 }
