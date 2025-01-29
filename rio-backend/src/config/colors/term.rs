@@ -1,7 +1,6 @@
+use crate::config::Colors;
 use crate::config::colors::{ColorArray, ColorBuilder, ColorRgb, Format};
 use std::ops::{Index, IndexMut};
-
-use crate::config::colors::defaults;
 use crate::config::colors::NamedColor;
 
 /// Number of terminal colors.
@@ -80,12 +79,12 @@ impl IndexMut<NamedColor> for TermColors {
 #[derive(Copy, Debug, Clone)]
 pub struct List([ColorArray; COUNT]);
 
-impl From<&TermColors> for List {
-    fn from(_colors: &TermColors) -> List {
+impl From<&Colors> for List {
+    fn from(colors: &Colors) -> List {
         // Type inference fails without this annotation.
         let mut list = List([ColorArray::default(); COUNT]);
 
-        list.fill_named();
+        list.fill_named(colors);
         list.fill_cube();
         list.fill_gray_ramp();
 
@@ -94,35 +93,35 @@ impl From<&TermColors> for List {
 }
 
 impl List {
-    pub fn fill_named(&mut self) {
-        self[NamedColor::Black] = defaults::black();
-        self[NamedColor::Red] = defaults::red();
-        self[NamedColor::Green] = defaults::green();
-        self[NamedColor::Yellow] = defaults::yellow();
-        self[NamedColor::Blue] = defaults::blue();
-        self[NamedColor::Magenta] = defaults::magenta();
-        self[NamedColor::Cyan] = defaults::cyan();
-        self[NamedColor::White] = defaults::white();
-        self[NamedColor::LightBlack] = defaults::light_black();
-        self[NamedColor::LightRed] = defaults::light_red();
-        self[NamedColor::LightGreen] = defaults::light_green();
-        self[NamedColor::LightYellow] = defaults::light_yellow();
-        self[NamedColor::LightBlue] = defaults::light_blue();
-        self[NamedColor::LightMagenta] = defaults::light_magenta();
-        self[NamedColor::LightCyan] = defaults::light_cyan();
-        self[NamedColor::LightWhite] = defaults::light_white();
-        self[NamedColor::LightForeground] = defaults::light_foreground();
-        self[NamedColor::Foreground] = defaults::foreground();
-        self[NamedColor::Background] = defaults::background().0;
-        self[NamedColor::DimForeground] = defaults::dim_foreground();
-        self[NamedColor::DimBlack] = defaults::dim_black();
-        self[NamedColor::DimRed] = defaults::dim_red();
-        self[NamedColor::DimGreen] = defaults::dim_green();
-        self[NamedColor::DimYellow] = defaults::dim_yellow();
-        self[NamedColor::DimBlue] = defaults::dim_blue();
-        self[NamedColor::DimMagenta] = defaults::dim_magenta();
-        self[NamedColor::DimCyan] = defaults::dim_cyan();
-        self[NamedColor::DimWhite] = defaults::dim_white();
+    pub fn fill_named(&mut self, colors: &Colors) {
+        self[NamedColor::Black] = colors.black;
+        self[NamedColor::Red] = colors.red;
+        self[NamedColor::Green] = colors.green;
+        self[NamedColor::Yellow] = colors.yellow;
+        self[NamedColor::Blue] = colors.blue;
+        self[NamedColor::Magenta] = colors.magenta;
+        self[NamedColor::Cyan] = colors.cyan;
+        self[NamedColor::White] = colors.white;
+        self[NamedColor::LightBlack] = colors.light_black;
+        self[NamedColor::LightRed] = colors.light_red;
+        self[NamedColor::LightGreen] = colors.light_green;
+        self[NamedColor::LightYellow] = colors.light_yellow;
+        self[NamedColor::LightBlue] = colors.light_blue;
+        self[NamedColor::LightMagenta] = colors.light_magenta;
+        self[NamedColor::LightCyan] = colors.light_cyan;
+        self[NamedColor::LightWhite] = colors.light_white;
+        self[NamedColor::LightForeground] = colors.light_foreground;
+        self[NamedColor::Foreground] = colors.foreground;
+        self[NamedColor::Background] = colors.background.0;
+        self[NamedColor::DimForeground] = colors.dim_foreground;
+        self[NamedColor::DimBlack] = colors.dim_black;
+        self[NamedColor::DimRed] = colors.dim_red;
+        self[NamedColor::DimGreen] = colors.dim_green;
+        self[NamedColor::DimYellow] = colors.dim_yellow;
+        self[NamedColor::DimBlue] = colors.dim_blue;
+        self[NamedColor::DimMagenta] = colors.dim_magenta;
+        self[NamedColor::DimCyan] = colors.dim_cyan;
+        self[NamedColor::DimWhite] = colors.dim_white;
     }
 
     pub fn fill_cube(&mut self) {

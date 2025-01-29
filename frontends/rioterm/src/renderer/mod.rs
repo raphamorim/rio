@@ -11,7 +11,7 @@ use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::{
-    term::{List, TermColors},
+    term::List,
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
@@ -54,8 +54,7 @@ impl Renderer {
         config: &Config,
         font_context: &rio_backend::sugarloaf::font::FontLibrary,
     ) -> Renderer {
-        let term_colors = TermColors::default();
-        let colors = List::from(&term_colors);
+        let colors = List::from(&config.colors);
         let named_colors = config.colors;
 
         let mut dynamic_background =
@@ -416,7 +415,6 @@ impl Renderer {
             AnsiColor::Named(ansi_name) => match (ansi_name, flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
-
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,
                 (NamedColor::Black, Flags::BOLD) => self.named_colors.light_black,
                 (NamedColor::Black, _) => self.named_colors.black,
@@ -488,7 +486,6 @@ impl Renderer {
             AnsiColor::Named(ansi_name) => match (ansi_name, square.flags) {
                 (NamedColor::Background, _) => self.named_colors.background.0,
                 (NamedColor::Cursor, _) => self.named_colors.cursor,
-
                 (NamedColor::Black, Flags::DIM) => self.named_colors.dim_black,
                 (NamedColor::Black, Flags::BOLD) => self.named_colors.light_black,
                 (NamedColor::Black, _) => self.named_colors.black,
