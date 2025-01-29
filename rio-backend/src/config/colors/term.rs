@@ -1,7 +1,7 @@
-use crate::config::Colors;
-use crate::config::colors::{ColorArray, ColorBuilder, ColorRgb, Format};
-use std::ops::{Index, IndexMut};
 use crate::config::colors::NamedColor;
+use crate::config::colors::{ColorArray, ColorBuilder, ColorRgb, Format};
+use crate::config::Colors;
+use std::ops::{Index, IndexMut};
 
 /// Number of terminal colors.
 pub const COUNT: usize = 269;

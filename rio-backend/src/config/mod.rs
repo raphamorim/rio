@@ -157,6 +157,8 @@ pub struct Config {
     pub hide_cursor_when_typing: bool,
     #[serde(default = "Renderer::default")]
     pub renderer: Renderer,
+    #[serde(default = "bool::default", rename = "draw-bold-text-with-light-colors")]
+    pub draw_bold_text_with_light_colors: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -504,6 +506,7 @@ impl Default for Config {
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
             hide_cursor_when_typing: false,
+            draw_bold_text_with_light_colors: false,
         }
     }
 }
