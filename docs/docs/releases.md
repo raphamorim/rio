@@ -11,10 +11,13 @@ language: 'en'
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
-- Introduced `draw-bold-text-with-light-colors` config, default is false.
+- Introduced `draw-bold-text-with-light-colors` config, default is `false`.
+- If light or dark colors are not specified Rio will try to convert it based on the regular color.
 - Fix: Block writing to the shell when rendering the `Assistant` route.
 - Fix: Immediately render the `Terminal` route when switching from the `Assistant`, `ConfirmToQuit` or `Welcome`, thus avoiding the need to double press `Enter`.
 - Fix: MacOS Unable to type Option + Number for special characters [#916](https://github.com/raphamorim/rio/issues/916).
+- Fix: Looking forward to having a color converter [#850](https://github.com/raphamorim/rio/issues/850).
+- Fix: Unexpected basic 16 terminal colors displayed on some apps [#464](https://github.com/raphamorim/rio/issues/464).
 
 ## 0.2.4
 
