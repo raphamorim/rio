@@ -85,7 +85,7 @@
   <key>CFBundleIconFile</key>
   <string>rio.icns</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.4</string>
+  <string>0.2.5</string>
   <key>CFBundleVersion</key>
   <string>20230528.115631</string>
   <key>CFBundleURLTypes</key>
