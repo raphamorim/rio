@@ -5,12 +5,15 @@ language: 'en'
 
 # Releases
 
-## 0.2.5 (unreleased)
+## 0.2.6 (unreleased)
 
 - Shell integration.
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+
+## 0.2.5
+
 - Introduced `draw-bold-text-with-light-colors` config, default is `false`.
 - If light or dark colors are not specified Rio will try to convert it based on the regular color.
 - Fix: Block writing to the shell when rendering the `Assistant` route.
