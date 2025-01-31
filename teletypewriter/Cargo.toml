@@ -10,7 +10,7 @@ authors = { workspace = true }
 
 [dependencies]
 libc = { workspace = true }
-dirs = "5.0.1"
+dirs = "6.0.0"
 corcovado = { workspace = true }
 tracing = { workspace = true }
 
@@ -19,7 +19,7 @@ signal-hook = "0.3.17"
 iovec = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.59.0", features = [
     "Win32_System_Console",
     "Win32_Foundation",
     "Win32_Security",

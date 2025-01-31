@@ -31,8 +31,8 @@ futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.5.20", features = ["derive"] }
-dirs = "5.0.1"
+clap = { version = "4.5.27", features = ["derive"] }
+dirs = "6.0.0"
 notify = "7.0.0"
 rustc-hash = { workspace = true }
 image_rs = { workspace = true }
@@ -49,9 +49,9 @@ rio-window = { workspace = true }
 objc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-ahash = { version = "0.8.2", default-features = false, features = ["std"] }
-tinyvec = { version = "1.6.0", features = ["alloc"] }
-windows-sys = { version = "0.52", features = [
+ahash = { version = "0.8.11", default-features = false, features = ["std"] }
+tinyvec = { version = "1.8.1", features = ["alloc"] }
+windows-sys = { version = "0.59.0", features = [
     "Win32_System_Console",
     "Win32_Foundation",
     "Win32_Security",
