@@ -210,25 +210,25 @@ features = []
 
 [fonts.regular]
 family = "cascadiacode"
-style = "normal"
+style = "Normal"
 width = "Normal"
 weight = 400
 
 [fonts.bold]
 family = "cascadiacode"
-style = "normal"
+style = "Normal"
 width = "Normal"
 weight = 800
 
 [fonts.italic]
 family = "cascadiacode"
-style = "italic"
+style = "Italic"
 width = "Normal"
 weight = 400
 
 [fonts.bold-italic]
 family = "cascadiacode"
-style = "italic"
+style = "Italic"
 width = "Normal"
 weight = 800
 ```
@@ -870,7 +870,7 @@ Result: `zsh`
 ## title.placeholder
 
 Configure initial title.
-  
+
 ```toml
 [title]
 placeholder = "▲"
@@ -1015,7 +1015,7 @@ Example:
 decorations = "Enabled"
 ```
 
-## window.macos-use-unified-titlebar 
+## window.macos-use-unified-titlebar
 
 You can use MacOS unified titlebar by config, it's disabled by default.
 
