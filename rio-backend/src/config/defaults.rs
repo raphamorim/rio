@@ -346,22 +346,22 @@ pub fn default_config_file_content() -> String {
 #
 # [fonts.regular]
 # family = "cascadiamono"
-# style = "normal"
+# style = "Normal"
 # weight = 400
 #
 # [fonts.bold]
 # family = "cascadiamono"
-# style = "normal"
+# style = "Normal"
 # weight = 800
 #
 # [fonts.italic]
 # family = "cascadiamono"
-# style = "italic"
+# style = "Italic"
 # weight = 400
 #
 # [fonts.bold-italic]
 # family = "cascadiamono"
-# style = "italic"
+# style = "Italic"
 # weight = 800
 
 # Scroll
