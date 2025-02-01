@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Clone)]
 pub enum SugarloafFontStyle {
     #[default]
+    #[serde(alias = "normal")]
     Normal,
+    #[serde(alias = "italic")]
     Italic,
 }
 
