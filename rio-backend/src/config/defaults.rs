@@ -456,7 +456,7 @@ pub fn default_config_file_content() -> String {
 # Bindings
 #
 # Create custom Key bindings for Rio terminal
-# More information in: https://raphamorim.io/rio/docs/config/bindings
+# More information in: https://raphamorim.io/rio/docs/key-bindings
 #
 # Example:
 # [bindings]
