@@ -11,6 +11,9 @@ language: 'en'
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+- Fix: 0.2.5 doesn't render grey scale font on macOS [#937](https://github.com/raphamorim/rio/issues/937).
+- Add backslash to invalid characters for URL regex.
+- fix regression introduced by 0.2.5 on light colors.
 
 ## 0.2.5
 
