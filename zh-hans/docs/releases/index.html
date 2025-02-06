@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/zh-hans/assets/css/styles.db4fd81a.css">
-<script src="/rio/zh-hans/assets/js/runtime~main.85653eb5.js" defer="defer"></script>
+<script src="/rio/zh-hans/assets/js/runtime~main.273f6cd4.js" defer="defer"></script>
 <script src="/rio/zh-hans/assets/js/main.732d63f1.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -31,6 +31,9 @@
 <li>OSC 1337 Escape sequences to set user vars for tracking additional shell state.</li>
 </ul>
 </li>
+<li>Fix: 0.2.5 doesn&#x27;t render grey scale font on macOS <a href="https://github.com/raphamorim/rio/issues/937" target="_blank" rel="noopener noreferrer">#937</a>.</li>
+<li>Add backslash to invalid characters for URL regex.</li>
+<li>fix regression introduced by 0.2.5 on light colors.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="025">0.2.5<a href="#025" class="hash-link" aria-label="0.2.5的直接链接" title="0.2.5的直接链接">​</a></h2>
 <ul>
@@ -364,7 +367,7 @@
 <li>Wayland: avoid crashing when compositor is misbehaving. (ref: raphamorim/winit 22522c9b37e9734c9a2408fae8d34b2599ff4574).</li>
 <li>Performance upgrades for lines rendered previously.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1的直接链接" title="0.1.1的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="011">0.1.1<a href="#011" class="hash-link" aria-label="0.1.1的直接 链接" title="0.1.1的直接链接">​</a></h2>
 <ul>
 <li>Fix the validation errors whenever a surface is used with the vulkan backend.</li>
 <li>Clean up weak references to texture views and bind groups to prevent memory leaks.</li>
@@ -417,7 +420,7 @@
 <li>closed: #307 default offset height is above the bottom position since update</li>
 <li>closed: #392 Box drawing issue with Berkeley Mono on MacOS</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0039">0.0.39<a href="#0039" class="hash-link" aria-label="0.0.39的直接链接" title="0.0.39的直接  链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0039">0.0.39<a href="#0039" class="hash-link" aria-label="0.0.39的直接链接" title="0.0.39的直接链接">​</a></h2>
 <ul>
 <li>Minor fix on fixed transparency on backgrounds for Welcome/Dialog.</li>
 </ul>
@@ -861,7 +864,7 @@
 <li>Fix panics if custom font is not found <a href="https://github.com/raphamorim/rio/issues/68" target="_blank" rel="noopener noreferrer">#68</a>.</li>
 <li>MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="005">0.0.5<a href="#005" class="hash-link" aria-label="0.0.5的直接链接" title="0.0.5的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="005">0.0.5<a href="#005" class="hash-link" aria-label="0.0.5的直接链接" title="0.0.5的直 接链接">​</a></h2>
 <ul>
 <li>Fix ctlseqs modifiers for bindings.</li>
 <li>Add RioEvent::ColorRequest events to write color updates on pty.</li>
@@ -887,7 +890,7 @@
 <li>Hide cursor when typing and make it visible again with scroll and cursor interactions.</li>
 <li>Implementation of paste files to string path.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="003">0.0.3<a href="#003" class="hash-link" aria-label="0.0.3的直接链接" title="0.0.3的直接链接"> ​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="003">0.0.3<a href="#003" class="hash-link" aria-label="0.0.3的直接链接" title="0.0.3的直接链接">​</a></h2>
 <ul>
 <li>Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...].</li>
 <li>Common Keybindings and keybindings for MacOS.</li>
