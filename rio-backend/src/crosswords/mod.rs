@@ -432,7 +432,7 @@ impl<U: EventListener> Crosswords<U> {
         let colors = List::from(&Colors::default());
         // Regex used for the default URL hint.
         let url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
-                         [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`]+";
+                         [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
 
         Crosswords {
             vi_mode_cursor: ViModeCursor::new(grid.cursor.pos),
