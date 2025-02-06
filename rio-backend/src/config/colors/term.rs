@@ -9,9 +9,6 @@ pub const COUNT: usize = 269;
 /// Factor for automatic computation of dim colors.
 pub const DIM_FACTOR: f32 = 0.66;
 
-/// Factor for automatic computation of light colors.
-pub const LIGHT_FACTOR: f32 = 1.12;
-
 /// > The 256 color table and its partitioning
 ///
 /// The color range of a 256 color terminal consists of 4 parts,
@@ -110,67 +107,20 @@ impl List {
         self[NamedColor::White] = colors.white;
 
         // Lights.
-        if let Some(light_black) = colors.light_black {
-            self[NamedColor::LightBlack] = light_black;
-        } else {
-            self[NamedColor::LightBlack] =
-                (ColorRgb::from_color_arr(colors.black) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(light_red) = colors.light_red {
-            self[NamedColor::LightRed] = light_red;
-        } else {
-            self[NamedColor::LightRed] =
-                (ColorRgb::from_color_arr(colors.red) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(light_green) = colors.light_green {
-            self[NamedColor::LightGreen] = light_green;
-        } else {
-            self[NamedColor::LightGreen] =
-                (ColorRgb::from_color_arr(colors.green) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(color) = colors.light_yellow {
-            self[NamedColor::LightYellow] = color;
-        } else {
-            self[NamedColor::LightYellow] =
-                (ColorRgb::from_color_arr(colors.yellow) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(color) = colors.light_blue {
-            self[NamedColor::LightBlue] = color;
-        } else {
-            self[NamedColor::LightBlue] =
-                (ColorRgb::from_color_arr(colors.blue) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(color) = colors.light_magenta {
-            self[NamedColor::LightMagenta] = color;
-        } else {
-            self[NamedColor::LightMagenta] =
-                (ColorRgb::from_color_arr(colors.magenta) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(color) = colors.light_cyan {
-            self[NamedColor::LightCyan] = color;
-        } else {
-            self[NamedColor::LightCyan] =
-                (ColorRgb::from_color_arr(colors.cyan) * LIGHT_FACTOR).to_arr();
-        }
-
-        if let Some(color) = colors.light_white {
-            self[NamedColor::LightWhite] = color;
-        } else {
-            self[NamedColor::LightWhite] =
-                (ColorRgb::from_color_arr(colors.white) * LIGHT_FACTOR).to_arr();
-        }
+        self[NamedColor::LightBlack] = colors.light_black;
+        self[NamedColor::LightRed] = colors.light_red;
+        self[NamedColor::LightGreen] = colors.light_green;
+        self[NamedColor::LightYellow] = colors.light_yellow;
+        self[NamedColor::LightBlue] = colors.light_blue;
+        self[NamedColor::LightMagenta] = colors.light_magenta;
+        self[NamedColor::LightCyan] = colors.light_cyan;
+        self[NamedColor::LightWhite] = colors.light_white;
 
         if let Some(color) = colors.light_foreground {
             self[NamedColor::LightForeground] = color;
         } else {
             self[NamedColor::LightForeground] =
-                (ColorRgb::from_color_arr(colors.foreground) * LIGHT_FACTOR).to_arr();
+                (ColorRgb::from_color_arr(colors.foreground)).to_arr();
         }
 
         // Foreground and background.
