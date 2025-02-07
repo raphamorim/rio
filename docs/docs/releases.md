@@ -16,6 +16,7 @@ language: 'en'
 - Add backslash to invalid characters for URL regex.
 - fix regression introduced by 0.2.5 on light colors.
 - fix: CMD+W open new tab but not new window occasionally [#756](https://github.com/raphamorim/rio/issues/756).
+- fix: Error getting window dimensions on Wayland [#768](https://github.com/raphamorim/rio/issues/768).
 
 ## 0.2.5
 
