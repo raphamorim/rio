@@ -437,6 +437,10 @@ impl<'a> RouteWindow<'a> {
         }
     }
 
+    pub fn set_ime_cursor_area(&mut self, pos: rio_backend::crosswords::pos::Pos) {
+        self.winit_window.set_ime_cursor_area(rio_window::dpi::LogicalPosition::new(400.0, 200.0),rio_window::dpi::LogicalSize::new(100, 100));
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn from_target<'b>(
         event_loop: &'b ActiveEventLoop,
