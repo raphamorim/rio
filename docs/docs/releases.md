@@ -12,8 +12,10 @@ language: 'en'
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
 - Fix: 0.2.5 doesn't render grey scale font on macOS [#937](https://github.com/raphamorim/rio/issues/937).
+- fix: fix duplicate tab_id by monotonic counter for unique tab IDs by [@hilaolu](https://github.com/hilaolu).
 - Add backslash to invalid characters for URL regex.
 - fix regression introduced by 0.2.5 on light colors.
+- fix: CMD+W open new tab but not new window occasionally [#756](https://github.com/raphamorim/rio/issues/756).
 
 ## 0.2.5
 
