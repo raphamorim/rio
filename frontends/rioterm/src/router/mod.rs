@@ -167,6 +167,7 @@ pub struct Router<'a> {
     pub font_library: Box<rio_backend::sugarloaf::font::FontLibrary>,
     pub config_route: Option<WindowId>,
     pub clipboard: Rc<RefCell<Clipboard>>,
+    next_tab_id: u64,
 }
 
 impl Router<'_> {
@@ -194,6 +195,7 @@ impl Router<'_> {
             config_route: None,
             font_library: Box::new(font_library),
             clipboard,
+            next_tab_id: 0,
         }
     }
 
@@ -310,7 +312,9 @@ impl Router<'_> {
         open_url: Option<String>,
     ) {
         let tab_id = if config.navigation.is_native() {
-            Some(self.routes.len().to_string())
+            let id = self.next_tab_id;
+            self.next_tab_id = self.next_tab_id.wrapping_add(1);
+            Some(id.to_string())
         } else {
             None
         };
