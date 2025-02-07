@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ko/assets/css/styles.db4fd81a.css">
-<script src="/rio/ko/assets/js/runtime~main.3c2a3570.js" defer="defer"></script>
+<script src="/rio/ko/assets/js/runtime~main.eb03bc25.js" defer="defer"></script>
 <script src="/rio/ko/assets/js/main.cb0b9cd3.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -36,6 +36,7 @@
 <li>Add backslash to invalid characters for URL regex.</li>
 <li>fix regression introduced by 0.2.5 on light colors.</li>
 <li>fix: CMD+W open new tab but not new window occasionally <a href="https://github.com/raphamorim/rio/issues/756" target="_blank" rel="noopener noreferrer">#756</a>.</li>
+<li>fix: Error getting window dimensions on Wayland <a href="https://github.com/raphamorim/rio/issues/768" target="_blank" rel="noopener noreferrer">#768</a>.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="025">0.2.5<a href="#025" class="hash-link" aria-label="0.2.5에 대한 직접 링크" title="0.2.5에 대한 직접 링크">​</a></h2>
 <ul>
@@ -299,7 +300,7 @@
 <li>Sugarloaf API has changed from <code>Sugar</code> primitives to <code>Content</code>.</li>
 <li>Fix: <code>[editor]</code> overshadow headerless parameters in default config. (Ref: #601)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="017">0.1.7<a href="#017" class="hash-link" aria-label="0.1.7에 대한 직접 링크" title="0.1.7에 대한 직접 링  크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="017">0.1.7<a href="#017" class="hash-link" aria-label="0.1.7에 대한 직접 링크" title="0.1.7에 대한 직접 링크">​</a></h2>
 <p><strong>Breaking</strong></p>
 <p>Editor property have changed from <code>String</code> to allow input arguments as well.</p>
 <p>Before:</p>
@@ -892,7 +893,7 @@
 <li>Hide cursor when typing and make it visible again with scroll and cursor interactions.</li>
 <li>Implementation of paste files to string path.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="003">0.0.3<a href="#003" class="hash-link" aria-label="0.0.3에 대한 직접 링크" title="0.0.3에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="003">0.0.3<a href="#003" class="hash-link" aria-label="0.0.3에 대한 직접  링크" title="0.0.3에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...].</li>
 <li>Common Keybindings and keybindings for MacOS.</li>
