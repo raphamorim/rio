@@ -174,7 +174,7 @@ on: [push, pull_request]
 
 >>>>>>> b683c1ee5 (let's start testing stuff)
 concurrency:
-  group: goreleaser-${{ github.event_name }}-${{ github.ref_name }}
+  group: release-${{ github.event_name }}-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
