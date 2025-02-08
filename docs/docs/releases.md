@@ -5,12 +5,15 @@ language: 'en'
 
 # Releases
 
-## 0.2.6 (unreleased)
+## 0.2.7 (unreleased)
 
 - Shell integration.
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+
+## 0.2.6
+
 - Fix: 0.2.5 doesn't render grey scale font on macOS [#937](https://github.com/raphamorim/rio/issues/937).
 - fix: fix duplicate tab_id by monotonic counter for unique tab IDs by [@hilaolu](https://github.com/hilaolu).
 - Add backslash to invalid characters for URL regex.
