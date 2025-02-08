@@ -236,16 +236,16 @@ jobs:
           key: goreleaser-windows-latest-${{ github.sha }}
           path: dist/windows
           fail-on-cache-miss: true
-      # - uses: actions/cache@v4
-      #   with:
-      #     key: goreleaser-x86_64-unknown-linux-gnu-${{ github.sha }}
-      #     path: dist/x86_64-unknown-linux-gnu
-      #     fail-on-cache-miss: true
-      # - uses: actions/cache@v4
-      #   with:
-      #     key: goreleaser-aarch64-unknown-linux-gnu-${{ github.sha }}
-      #     path: dist/aarch64-unknown-linux-gnu
-      #     fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-x86_64-unknown-linux-gnu-${{ github.sha }}
+          path: dist/x86_64-unknown-linux-gnu
+          fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-aarch64-unknown-linux-gnu-${{ github.sha }}
+          path: dist/aarch64-unknown-linux-gnu
+          fail-on-cache-miss: true
       - uses: goreleaser/goreleaser-action@v6.1.0
         with:
           distribution: goreleaser-pro
