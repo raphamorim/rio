@@ -1,5 +1,6 @@
 name: Release
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 on:
   push:
@@ -158,9 +159,24 @@ on:
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
+=======
+
+on: [push, pull_request]
+
+# on:
+#   push:
+#     branches: [ main ]
+#     tags:
+#       - 'v*.*.*'
+#   schedule:
+#     - cron: '0 0 * * *'
+#   workflow_dispatch:
+
+>>>>>>> b683c1ee5 (let's start testing stuff)
 concurrency:
   group: goreleaser-${{ github.event_name }}-${{ github.ref_name }}
   cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
