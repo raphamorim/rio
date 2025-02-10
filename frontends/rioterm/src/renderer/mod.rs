@@ -106,11 +106,16 @@ impl Renderer {
     }
 
     #[inline]
-    fn create_style(&mut self, square: &Square) -> (FragmentStyle, char) {
+    fn create_style(
+        &mut self,
+        square: &Square,
+        renderable_content: &RenderableContent,
+    ) -> (FragmentStyle, char) {
         let flags = square.flags;
 
-        let mut foreground_color = self.compute_color(&square.fg, flags);
-        let mut background_color = self.compute_bg_color(square);
+        let mut foreground_color =
+            self.compute_color(&square.fg, flags, renderable_content);
+        let mut background_color = self.compute_bg_color(square, renderable_content);
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
             ' '
@@ -143,7 +148,8 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square);
+        let (decoration, decoration_color) =
+            self.compute_decoration(square, renderable_content);
 
         (
             FragmentStyle {
@@ -162,6 +168,7 @@ impl Renderer {
     fn compute_decoration(
         &self,
         square: &Square,
+        renderable_content: &RenderableContent,
     ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
@@ -207,7 +214,8 @@ impl Renderer {
 
         if decoration.is_some() {
             if let Some(color) = square.underline_color() {
-                decoration_color = Some(self.compute_color(&color, square.flags));
+                decoration_color =
+                    Some(self.compute_color(&color, square.flags, renderable_content));
             }
         };
 
@@ -243,12 +251,13 @@ impl Renderer {
                 continue;
             }
 
-            let (mut style, square_content) =
-                if has_cursor && column == cursor.state.pos.col {
-                    self.create_cursor_style(square, cursor, is_active)
-                } else {
-                    self.create_style(square)
-                };
+            let (mut style, square_content) = if has_cursor
+                && column == cursor.state.pos.col
+            {
+                self.create_cursor_style(square, cursor, is_active, renderable_content)
+            } else {
+                self.create_style(square, renderable_content)
+            };
 
             if hyperlink_range.is_some()
                 && square.hyperlink().is_some()
@@ -269,7 +278,7 @@ impl Renderer {
                     .contains(Pos::new(line, Column(column)))
             {
                 style.color = if self.ignore_selection_fg_color {
-                    self.compute_color(&square.fg, square.flags)
+                    self.compute_color(&square.fg, square.flags, renderable_content)
                 } else {
                     self.named_colors.selection_foreground
                 };
@@ -412,7 +421,12 @@ impl Renderer {
     }
 
     #[inline]
-    fn compute_color(&self, color: &AnsiColor, flags: Flags) -> ColorArray {
+    fn compute_color(
+        &self,
+        color: &AnsiColor,
+        flags: Flags,
+        renderable_content: &RenderableContent,
+    ) -> ColorArray {
         match color {
             AnsiColor::Named(ansi) => {
                 match (
@@ -424,16 +438,18 @@ impl Renderer {
                         if ansi == &NamedColor::Foreground
                             && self.named_colors.light_foreground.is_none() =>
                     {
-                        self.colors[NamedColor::DimForeground as usize]
+                        self.color(NamedColor::DimForeground as usize, renderable_content)
                     }
                     // Draw bold text in bright colors *and* contains bold flag.
-                    (true, Flags::BOLD) => self.colors[ansi.to_light() as usize],
+                    (true, Flags::BOLD) => {
+                        self.color(ansi.to_light() as usize, renderable_content)
+                    }
                     // Cell is marked as dim and not bold.
                     (_, Flags::DIM) | (false, Flags::DIM_BOLD) => {
-                        self.colors[ansi.to_dim() as usize]
+                        self.color(ansi.to_dim() as usize, renderable_content)
                     }
                     // None of the above, keep original color..
-                    _ => self.colors[*ansi as usize],
+                    _ => self.color(*ansi as usize, renderable_content),
                 }
             }
             AnsiColor::Spec(rgb) => {
@@ -452,15 +468,19 @@ impl Renderer {
                     _ => *index as usize,
                 };
 
-                self.colors[index]
+                self.color(index, renderable_content)
             }
         }
     }
 
     #[inline]
-    fn compute_bg_color(&self, square: &Square) -> ColorArray {
+    fn compute_bg_color(
+        &self,
+        square: &Square,
+        renderable_content: &RenderableContent,
+    ) -> ColorArray {
         match square.bg {
-            AnsiColor::Named(ansi) => self.colors[ansi as usize],
+            AnsiColor::Named(ansi) => self.color(ansi as usize, renderable_content),
             AnsiColor::Spec(rgb) => match square.flags & Flags::DIM {
                 Flags::DIM => (&(rgb * DIM_FACTOR)).into(),
                 _ => (&rgb).into(),
@@ -479,7 +499,7 @@ impl Renderer {
                     _ => idx as usize,
                 };
 
-                self.colors[idx]
+                self.color(idx, renderable_content)
             }
         }
     }
@@ -490,6 +510,7 @@ impl Renderer {
         square: &Square,
         cursor: &Cursor,
         is_active: bool,
+        renderable_content: &RenderableContent,
     ) -> (FragmentStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
@@ -502,8 +523,8 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        let mut color = self.compute_color(&square.fg, square.flags);
-        let mut background_color = self.compute_bg_color(square);
+        let mut color = self.compute_color(&square.fg, square.flags, renderable_content);
+        let mut background_color = self.compute_bg_color(square, renderable_content);
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
@@ -550,12 +571,14 @@ impl Renderer {
         };
 
         let cursor_color = if !self.is_vi_mode_enabled {
-            self.named_colors.cursor
+            renderable_content.colors[NamedColor::Cursor]
+                .unwrap_or(self.named_colors.cursor)
         } else {
             self.named_colors.vi_cursor
         };
 
-        let (decoration, decoration_color) = self.compute_decoration(square);
+        let (decoration, decoration_color) =
+            self.compute_decoration(square, renderable_content);
         style.decoration = decoration;
         style.decoration_color = decoration_color;
 
@@ -590,6 +613,16 @@ impl Renderer {
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
+    }
+
+    // Get the RGB value for a color index.
+    #[inline]
+    pub fn color(
+        &self,
+        color: usize,
+        renderable_content: &RenderableContent,
+    ) -> ColorArray {
+        renderable_content.colors[color].unwrap_or(self.colors[color])
     }
 
     #[inline]

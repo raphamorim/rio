@@ -37,9 +37,8 @@ use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
-use rio_backend::config::{
-    colors::term::List,
-    renderer::{Backend as RendererBackend, Performance as RendererPerformance},
+use rio_backend::config::renderer::{
+    Backend as RendererBackend, Performance as RendererPerformance,
 };
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
@@ -524,15 +523,6 @@ impl Screen<'_> {
     pub fn get_mode(&self) -> Mode {
         let terminal = self.ctx().current().terminal.lock();
         let mode = terminal.mode();
-        drop(terminal);
-        mode
-    }
-
-    #[inline]
-    #[allow(unused)]
-    pub fn colors(&mut self) -> List {
-        let terminal = self.ctx().current().terminal.lock();
-        let mode = terminal.colors();
         drop(terminal);
         mode
     }

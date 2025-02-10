@@ -103,6 +103,8 @@ impl<T: EventListener> Context<T> {
             terminal.visible_rows(),
             terminal.display_offset(),
             terminal.cursor(),
+            terminal.is_fully_damaged(),
+            terminal.colors,
             terminal.blinking_cursor,
         );
         drop(terminal);

@@ -1,3 +1,4 @@
+use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
@@ -26,6 +27,7 @@ pub struct RenderableContent {
     pub display_offset: i32,
     // TODO: Should not use default
     pub cursor: Cursor,
+    pub colors: TermColors,
     pub has_blinking_enabled: bool,
     pub strategy: RenderableContentStrategy,
     pub selection_range: Option<SelectionRange>,
@@ -39,6 +41,7 @@ impl RenderableContent {
     pub fn new(cursor: Cursor) -> Self {
         RenderableContent {
             inner: vec![],
+            colors: TermColors::default(),
             cursor,
             has_blinking_enabled: false,
             display_offset: 0,
@@ -72,6 +75,8 @@ impl RenderableContent {
         rows: Vec<Row<Square>>,
         display_offset: usize,
         cursor: CursorState,
+        is_fully_damaged: bool,
+        colors: TermColors,
         has_blinking_enabled: bool,
     ) {
         let mut diff: HashSet<usize> = HashSet::with_capacity(rows.len());
@@ -102,17 +107,23 @@ impl RenderableContent {
 
         self.strategy = RenderableContentStrategy::Full;
 
-        let require_full_clone = self.display_offset != display_offset as i32
+        let require_full_clone = is_fully_damaged
+            || self.display_offset != display_offset as i32
             || self.has_blinking_enabled != has_blinking_enabled
             || self.has_pending_updates
             || self.inner.len() != rows.len()
             || has_selection
+            || self.colors != colors
             || self.hyperlink_range.is_some();
 
         self.has_pending_updates = false;
 
         self.display_offset = display_offset as i32;
         self.has_blinking_enabled = has_blinking_enabled;
+
+        if is_fully_damaged {
+            self.colors = colors;
+        }
 
         if require_full_clone {
             self.inner = rows.clone();

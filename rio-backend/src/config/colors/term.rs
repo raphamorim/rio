@@ -38,7 +38,7 @@ pub const DIM_FACTOR: f32 = 0.66;
 /// You get them when not setting any other color or disabling other colors
 /// (i.e. print '\e[m').
 
-#[derive(Copy, Debug, Clone)]
+#[derive(Copy, Debug, Clone, PartialEq)]
 pub struct TermColors([Option<ColorArray>; COUNT]);
 
 impl Default for TermColors {
