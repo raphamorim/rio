@@ -34,8 +34,8 @@ use crate::ansi::{
     KeyboardModesApplyBehavior, LineClearMode, TabulationClearMode,
 };
 use crate::clipboard::ClipboardType;
-use crate::config::colors::{self, term::List, AnsiColor, ColorRgb};
-use crate::crosswords::colors::Colors;
+use crate::config::colors::{self, AnsiColor, ColorRgb};
+use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent};
@@ -392,8 +392,7 @@ where
     tabs: TabStops,
     event_proxy: U,
     pub selection: Option<Selection>,
-    #[allow(dead_code)]
-    colors: List,
+    pub colors: TermColors,
     pub title: String,
     damage: TermDamageState,
     pub graphics: Graphics,
@@ -428,8 +427,7 @@ impl<U: EventListener> Crosswords<U> {
 
         let scroll_region = Line(0)..Line(rows as i32);
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
-        // let term_colors = TermColors::default();
-        let colors = List::from(&Colors::default());
+        let term_colors = TermColors::default();
         // Regex used for the default URL hint.
         let url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
                          [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
@@ -443,7 +441,7 @@ impl<U: EventListener> Crosswords<U> {
             active_charset: CharsetIndex::default(),
             scroll_region,
             event_proxy,
-            colors,
+            colors: term_colors,
             hyperlink_re: regex::Regex::new(url_regex).unwrap(),
             title: String::from(""),
             tabs: TabStops::new(cols),
@@ -467,6 +465,11 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn mark_fully_damaged(&mut self) {
         self.damage.is_fully_damaged = true;
+    }
+
+    #[inline]
+    pub fn is_fully_damaged(&self) -> bool {
+        self.damage.is_fully_damaged
     }
 
     #[allow(dead_code)]
@@ -514,8 +517,8 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    pub fn colors(&self) -> List {
-        self.colors
+    pub fn colors(&self) -> &TermColors {
+        &self.colors
     }
 
     /// Get queues to update graphic data. If both queues are empty, it returns
@@ -2294,23 +2297,25 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     /// Set the indexed color value.
     #[inline]
-    fn set_color(&mut self, _index: usize, _color: ColorRgb) {
+    fn set_color(&mut self, index: usize, color: ColorRgb) {
         // Damage terminal if the color changed and it's not the cursor.
-        // if index != NamedColor::Cursor as usize && self.colors[index] != Some(color) {
-        // self.mark_fully_damaged();
-        // }
+        let color_arr = color.to_arr();
 
-        // self.colors[index] = Some(color);
+        if index != NamedColor::Cursor as usize && self.colors[index] != Some(color_arr) {
+            self.mark_fully_damaged();
+        }
+
+        self.colors[index] = Some(color_arr);
     }
 
     #[inline]
-    fn reset_color(&mut self, _index: usize) {
+    fn reset_color(&mut self, index: usize) {
         // Damage terminal if the color changed and it's not the cursor.
-        // if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
-        // self.mark_fully_damaged();
-        // }
+        if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
+            self.mark_fully_damaged();
+        }
 
-        // self.colors[index] = None;
+        self.colors[index] = None;
     }
 
     #[inline]
