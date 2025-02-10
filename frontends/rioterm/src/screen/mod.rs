@@ -243,11 +243,7 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") {
-            sugarloaf.set_background_color(None);
-        } else {
-            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
-        }
+        sugarloaf.set_background_color(None);
 
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);

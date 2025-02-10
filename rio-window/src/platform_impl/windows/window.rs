@@ -137,7 +137,19 @@ impl Window {
         });
     }
 
-    pub fn set_blur(&self, _blur: bool) {}
+    pub fn set_blur(&self, blur: bool) {
+        if true { // use blur
+            let window = self.window;
+            unsafe {
+                DwmSetWindowAttribute(
+                    window,
+                    DWMWA_SYSTEMBACKDROP_TYPE as _,
+                    &BackdropType::TransientWindow as *const _ as _,
+                    4,
+                );
+            }
+        }
+    }
 
     #[inline]
     pub fn set_visible(&self, visible: bool) {
