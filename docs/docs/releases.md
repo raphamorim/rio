@@ -12,6 +12,7 @@ language: 'en'
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
 - Shifted key reported without a shift when using kitty keyboard protocol.
+- fix: Changing release and nightly build Ubuntu runners for x86 (`ubuntu-latest` to `ubuntu-22.04`) and arm (`ubuntu-24.04-arm` to `ubuntu-22.04-arm`)
 
 ## 0.2.6
 
