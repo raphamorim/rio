@@ -453,23 +453,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::ColorRequest(index, format)) => {
-                // TODO: colors could be coming terminal as well
-                // if colors has been declaratively changed
-                // Rio doesn't cover this case yet.
-                //
-                // In the future should try first get
-                // from Crosswords then state colors
-                // screen.colors()[index] or screen.renderer.colors[index]
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let color = route.window.screen.renderer.colors[index];
-                    let rgb = ColorRgb::from_color_arr(color);
+                    let terminal = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current()
+                        .terminal
+                        .lock();
+                    let color: ColorRgb = match terminal.colors()[index] {
+                        Some(color) => ColorRgb::from_color_arr(color),
+                        // Ignore cursor color requests unless it was changed.
+                        None if index
+                            == crate::crosswords::NamedColor::Cursor as usize =>
+                        {
+                            return
+                        }
+                        None => ColorRgb::from_color_arr(
+                            route.window.screen.renderer.colors[index],
+                        ),
+                    };
+
+                    drop(terminal);
+
                     route
                         .window
                         .screen
                         .ctx_mut()
                         .current_mut()
                         .messenger
-                        .send_bytes(format(rgb).into_bytes());
+                        .send_bytes(format(color).into_bytes());
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
