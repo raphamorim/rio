@@ -5,14 +5,18 @@ language: 'en'
 
 # Releases
 
-## 0.2.7 (unreleased)
+## 0.2.8 (unreleased)
 
 - Shell integration.
 	- OSC 7 Escape sequences to advise the terminal of the working directory.
 	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+
+## 0.2.7
+
 - Shifted key reported without a shift when using kitty keyboard protocol.
 - fix: Set cursor color via ANSI escape sequence [#945](https://github.com/raphamorim/rio/issues/945).
+- fix: Can the "base 16" colors be changed at runtime through Ansi escape sequences? [#188](https://github.com/raphamorim/rio/issues/188)
 - fix: Changing release and nightly build Ubuntu runners for x86 (`ubuntu-latest` to `ubuntu-22.04`) and arm (`ubuntu-24.04-arm` to `ubuntu-22.04-arm`)
 
 ## 0.2.6
