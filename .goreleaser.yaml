@@ -101,7 +101,7 @@ changelog:
 
 nfpms:
   - formats: [deb]
-    id: linux-arm64-wayland
+    builds: [linux-arm64-wayland]
     file_name_template: rio_{{ .Version }}-1_arm64_wayland.deb
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -115,7 +115,7 @@ nfpms:
     section: admin
     priority: optional
   - formats: [deb]
-    id: linux-arm64-x11
+    builds: [linux-arm64-x11]
     file_name_template: rio_{{ .Version }}-1_arm64_x11.deb
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -129,7 +129,7 @@ nfpms:
     section: admin
     priority: optional
   - formats: [deb]
-    id: linux-x64-wayland
+    builds: [linux-x64-wayland]
     file_name_template: rio_{{ .Version }}-1_amd64_wayland.deb
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -143,7 +143,7 @@ nfpms:
     section: admin
     priority: optional
   - formats: [deb]
-    id: linux-x64-x11
+    builds: [linux-x64-x11]
     file_name_template: rio_{{ .Version }}-1_amd64_x11.deb
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
