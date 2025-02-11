@@ -4,171 +4,206 @@
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
 # todo: winget, cargo publish... and maybe? other package managers... also some announcers???
-# Linux builds will be enabled once @caarlos0 adds --partial-by flag to goreleaser-pro
 
 version: 2
 
 partial:
-    by: goos # manually overriden to `target` in ci for linux builds
+  by: goos
 
 report_sizes: true
 
 env:
-    - RUSTFLAGS=-C link-arg=-s
-    - CARGO_TERM_COLOR=always
-    - RUST_BACKTRACE=full
+  - RUSTFLAGS=-C link-arg=-s
+  - CARGO_TERM_COLOR=always
+  - RUST_BACKTRACE=full
 
 before:
-    hooks:
-        - if: '{{ eq .Runtime.Goos "darwin" }}'
-          cmd: tic -xe rio -o misc misc/rio.terminfo
-          output: true
-        - if: '{{ eq .Runtime.Goos "windows" }}'
-          cmd: dotnet tool install --global wix --version 5.0.2
-          output: true
-        - if: '{{ eq .Runtime.Goos "windows" }}'
-          cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
-          output: true
+  hooks:
+    - if: '{{ eq .Runtime.Goos "darwin" }}'
+      cmd: tic -xe rio -o misc misc/rio.terminfo
+      output: true
+    - if: '{{ eq .Runtime.Goos "windows" }}'
+      cmd: dotnet tool install --global wix --version 5.0.2
+      output: true
+    - if: '{{ eq .Runtime.Goos "windows" }}'
+      cmd: wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
+      output: true
 
 builds:
-    - id: windows-x86_64
-      builder: rust
-      command: build
-      flags:
-          - --release
-          - -p=rioterm
-      targets: [x86_64-pc-windows-msvc]
+  - id: windows-x86_64
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm]
+    targets: [x86_64-pc-windows-msvc]
 
-    - id: windows-arm64
-      builder: rust
-      command: build
-      flags:
-          - --release
-          - -p=rioterm
-      targets: [aarch64-pc-windows-msvc]
+  - id: windows-arm64
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm]
+    targets: [aarch64-pc-windows-msvc]
 
-    - id: macos
-      builder: rust
-      command: build
-      flags:
-          - --release
-          - -p=rioterm
-      env:
-          - MACOSX_DEPLOYMENT_TARGET={{ if eq .Arch "amd64" }}10.15{{ else }}11.0{{ end }}
-      targets: [x86_64-apple-darwin, aarch64-apple-darwin]
+  - id: macos
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm]
+    env:
+      - MACOSX_DEPLOYMENT_TARGET={{ if eq .Arch "amd64" }}10.15{{ else }}11.0{{ end }}
+    targets: [x86_64-apple-darwin, aarch64-apple-darwin]
 
-    - id: linux-wayland
-      builder: rust
-      command: build
-      flags:
-          - -p=rioterm
-          - --release
-          - --no-default-features
-          - --features=wayland
-      targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+  - id: linux-arm64-wayland
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm, --no-default-features, --features=wayland]
+    targets: [aarch64-unknown-linux-gnu]
 
-    - id: linux-x11
-      builder: rust
-      command: build
-      flags:
-          - -p=rioterm
-          - --release
-          - --no-default-features
-          - --features=x11
-      targets: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+  - id: linux-arm64-x11
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm, --no-default-features, --features=x11]
+    targets: [aarch64-unknown-linux-gnu]
+
+  - id: linux-x64-wayland
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm, --no-default-features, --features=wayland]
+    targets: [x86_64-unknown-linux-gnu]
+
+  - id: linux-x64-x11
+    builder: rust
+    command: build
+    flags: [--release, -p=rioterm, --no-default-features, --features=x11]
+    targets: [x86_64-unknown-linux-gnu]
 
 release:
-    make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
-    mode: append
-    prerelease: auto
-    use_existing_draft: false
-    replace_existing_draft: false
-    replace_existing_artifacts: true
-    include_meta: false
-    github:
-        owner: vedantmgoyal9 # raphaelamorim
-        name: rio
-    footer: >-
-        ---
-        Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
+  make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
+  mode: append
+  prerelease: auto
+  use_existing_draft: false
+  replace_existing_draft: false
+  replace_existing_artifacts: true
+  include_meta: false
+  github:
+    owner: vedantmgoyal9 # raphaelamorim
+    name: rio
+  footer: >-
+    ---
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
 
 nightly:
-    version_template: "{{ incminor .Version }}-nightly"
-    tag_name: nightly
-    publish_release: true
-    keep_single_release: true
+  version_template: "{{ incminor .Version }}-nightly"
+  tag_name: nightly
+  publish_release: true
+  keep_single_release: true
 
 # left for @caarlos0, i wasn't able to make it work
 changelog:
-    disable: true
+  disable: true
 
-# nfpms:
-#     - formats:
-#           - deb
-#       contents:
-#           - src: ./misc/rio.desktop
-#             dst: /usr/share/applications/rio.desktop
-#           - src: ./misc/rio.terminfo
-#             dst: /usr/share/info/rio.terminfo
-#           - src: ./misc/logo.svg
-#             dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+nfpms:
+  - formats: [deb]
+    id: linux-arm64-wayland
+    file_name_template: rio_{{ .Version }}-1_arm64_wayland.deb
+    package_name: rioterm
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    contents:
+      - src: ./misc/rio.desktop
+        dst: /usr/share/applications/rio.desktop
+      - src: ./misc/rio.terminfo
+        dst: /usr/share/info/rio.terminfo
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+    section: admin
+    priority: optional
+  - formats: [deb]
+    id: linux-arm64-x11
+    file_name_template: rio_{{ .Version }}-1_arm64_x11.deb
+    package_name: rioterm
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    contents:
+      - src: ./misc/rio.desktop
+        dst: /usr/share/applications/rio.desktop
+      - src: ./misc/rio.terminfo
+        dst: /usr/share/info/rio.terminfo
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+    section: admin
+    priority: optional
+  - formats: [deb]
+    id: linux-x64-wayland
+    file_name_template: rio_{{ .Version }}-1_amd64_wayland.deb
+    package_name: rioterm
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    contents:
+      - src: ./misc/rio.desktop
+        dst: /usr/share/applications/rio.desktop
+      - src: ./misc/rio.terminfo
+        dst: /usr/share/info/rio.terminfo
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+    section: admin
+    priority: optional
+  - formats: [deb]
+    id: linux-x64-x11
+    file_name_template: rio_{{ .Version }}-1_amd64_x11.deb
+    package_name: rioterm
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    contents:
+      - src: ./misc/rio.desktop
+        dst: /usr/share/applications/rio.desktop
+      - src: ./misc/rio.terminfo
+        dst: /usr/share/info/rio.terminfo
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
+    section: admin
+    priority: optional
 
 universal_binaries:
-    - ids: [macos]
-      replace: true
+  - ids: [macos]
+    replace: true
 
 msi:
-    - id: win-x64
-      name: "{{ .ProjectName }}-installer-x86_64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-x86_64]
-      extensions:
-          - WixToolset.UI.wixext
-          - WixToolset.Util.wixext
-      extra_files:
-        - ./misc/windows/rio.ico
-        - ./misc/windows/License.rtf
-    - id: win-arm64
-      name: "{{ .ProjectName }}-installer-aarch64"
-      wxs: ./misc/windows/rio.wxs
-      ids: [windows-arm64]
-      extensions:
-          - WixToolset.UI.wixext
-          - WixToolset.Util.wixext
-      extra_files:
-        - ./misc/windows/rio.ico
-        - ./misc/windows/License.rtf
+  - id: win-x64
+    name: "{{ .ProjectName }}-installer-x86_64"
+    wxs: ./misc/windows/rio.wxs
+    ids: [windows-x86_64]
+    extensions: [WixToolset.UI.wixext, WixToolset.Util.wixext]
+    extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
+  - id: win-arm64
+    name: "{{ .ProjectName }}-installer-aarch64"
+    wxs: ./misc/windows/rio.wxs
+    ids: [windows-arm64]
+    extensions: [WixToolset.UI.wixext, WixToolset.Util.wixext]
+    extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
 
 archives:
-    - id: win-x64
-      formats: [binary]
-      builds: [windows-x86_64]
-      name_template: "{{ .ProjectName }}-portable-x86_64"
-    - id: win-arm64
-      formats: [binary]
-      builds: [windows-arm64]
-      name_template: "{{ .ProjectName }}-portable-aarch64"
+  - id: win-x64
+    formats: [binary]
+    builds: [windows-x86_64]
+    name_template: "{{ .ProjectName }}-portable-x86_64"
+  - id: win-arm64
+    formats: [binary]
+    builds: [windows-arm64]
+    name_template: "{{ .ProjectName }}-portable-aarch64"
 
 app_bundles:
-    - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
-      bundle: com.raphaelamorim.rio
-      extra_files:
-          - src: ./misc/72/rio
-            dst: Contents/Resources/72/rio
-          # releases made prior to goreleaser integration included the classic icon
-          - src: ./misc/osx/Rio.app/Contents/Resources/icon-classic.icns
-            dst: Contents/Resources/icon-classic.icns
-      templated_extra_files:
-          - src: ./misc/osx/Rio.app/Contents/Info.plist
-            dst: Contents/Info.plist
+  - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
+    bundle: com.raphaelamorim.rio
+    extra_files:
+      - src: ./misc/72/rio
+        dst: Contents/Resources/72/rio
+      # releases made before goreleaser integration included the classic icon
+      - src: ./misc/osx/Rio.app/Contents/Resources/icon-classic.icns
+        dst: Contents/Resources/icon-classic.icns
+    templated_extra_files:
+      - src: ./misc/osx/Rio.app/Contents/Info.plist
+        dst: Contents/Info.plist
 
 dmg:
-    - name: "{{ .ProjectName }}-v{{ .Version}}"
-      use: appbundle
+  - name: "{{ .ProjectName }}-v{{ .Version}}"
+    use: appbundle
 
 metadata:
-    maintainers:
-        - Raphael Amorim <rapha850 at gmail dot com>
-    license: MIT
-    description: A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.
-    homepage: https://raphamorim.io/rio/
+  maintainers: [Raphael Amorim <rapha850 at gmail dot com>]
+  license: MIT
+  description: A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers.
+  homepage: https://raphamorim.io/rio
