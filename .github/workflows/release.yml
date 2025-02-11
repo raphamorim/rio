@@ -8,7 +8,7 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 concurrency:
-  group: goreleaser-${{ github.event_name }}-${{ github.ref_name }}
+  group: release-${{ github.event_name }}-${{ github.ref_name }}
   cancel-in-progress: true
 jobs:
   build:
@@ -88,12 +88,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           key: goreleaser-ubuntu-22.04-${{ github.sha }}
-          path: dist/x86_64-unknown-linux-gnu
+          path: dist/linux
           fail-on-cache-miss: true
       - uses: actions/cache@v4
         with:
           key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
-          path: dist/aarch64-unknown-linux-gnu
+          path: dist/linux
           fail-on-cache-miss: true
       - uses: goreleaser/goreleaser-action@v6.1.0
         with:
