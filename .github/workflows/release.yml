@@ -90,8 +90,12 @@ jobs:
           key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
-      # rename linux to linux-arm64, to avoid cache restore conflicts
-      - run: mv dist/linux dist/linux-arm64
+      - name: workaround to avoid conflicts b/w linux x64/arm64 caches
+        run: |
+          # rename linux to linux-arm64, to avoid cache restore conflicts
+          mv dist/linux dist/linux-arm64
+          # update paths in artifacts.json (dist/linux -> dist/linux-arm64)
+          sed -i 's/dist\/linux/dist\/linux-arm64/g' dist/linux-arm64/artifacts.json
       - uses: actions/cache@v4
         with:
           key: goreleaser-ubuntu-22.04-${{ github.sha }}
