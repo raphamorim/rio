@@ -92,34 +92,42 @@ release:
 publishers:
   - name: publish rio-window to crates.io
     cmd: cargo publish -p rio-window
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish sugarloaf to crates.io
     cmd: cargo publish -p sugarloaf
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish rio-proc-macros to crates.io
     cmd: cargo publish -p rio-proc-macros
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish copa to crates.io
     cmd: cargo publish -p copa
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish corcovado to crates.io
     cmd: cargo publish -p corcovado
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish teletypewriter to crates.io
     cmd: cargo publish -p teletypewriter
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish rio-backend to crates.io
     cmd: cargo publish -p rio-backend
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
   - name: publish rioterm to crates.io
     cmd: cargo publish -p rioterm
+    if: '{{ not .IsNightly }}'
     env:
       - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
 
