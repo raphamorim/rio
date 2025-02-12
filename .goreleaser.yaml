@@ -89,6 +89,40 @@ release:
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
 
+publishers:
+  - name: publish rio-window to crates.io
+    cmd: cargo publish -p rio-window
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish sugarloaf to crates.io
+    cmd: cargo publish -p sugarloaf
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish rio-proc-macros to crates.io
+    cmd: cargo publish -p rio-proc-macros
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish copa to crates.io
+    cmd: cargo publish -p copa
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish corcovado to crates.io
+    cmd: cargo publish -p corcovado
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish teletypewriter to crates.io
+    cmd: cargo publish -p teletypewriter
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish rio-backend to crates.io
+    cmd: cargo publish -p rio-backend
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+  - name: publish rioterm to crates.io
+    cmd: cargo publish -p rioterm
+    env:
+      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
+
 nightly:
   version_template: "{{ incminor .Version }}-nightly"
   tag_name: nightly
