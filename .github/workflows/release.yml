@@ -87,12 +87,14 @@ jobs:
           fail-on-cache-miss: true
       - uses: actions/cache@v4
         with:
-          key: goreleaser-ubuntu-22.04-${{ github.sha }}
+          key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
+      # rename linux to linux-arm64, to avoid cache restore conflicts
+      - run: mv dist/linux dist/linux-arm64
       - uses: actions/cache@v4
         with:
-          key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
+          key: goreleaser-ubuntu-22.04-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
       - uses: goreleaser/goreleaser-action@v6.1.0
