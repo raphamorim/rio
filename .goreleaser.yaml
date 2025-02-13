@@ -3,8 +3,6 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema-pro.json
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
-# todo: winget, cargo publish... and maybe? other package managers... also some announcers???
-
 version: 2
 
 partial:
