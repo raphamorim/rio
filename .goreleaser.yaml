@@ -121,12 +121,12 @@ notarize:
   macos:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       sign:
-        certificate: '{{ .Env.MACOS_SIGN_P12 }}'
-        password: '{{ .Env.MACOS_SIGN_PASSWORD }}'
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
       notarize:
-        issuer_id: '{{ .Env.MACOS_NOTARY_ISSUER_ID }}'
-        key: '{{ .Env.MACOS_NOTARY_KEY }}'
-        key_id: '{{ .Env.MACOS_NOTARY_KEY_ID }}'
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         wait: false
 
 app_bundles:
@@ -232,7 +232,7 @@ winget:
     copyright: Copyright (c) {{ .Now.Format "2006" }} Raphael Amorim
     copyright_url: https://raw.githubusercontent.com/raphamorim/rio/main/LICENSE
     tags: [cross-platform, terminal, terminal-emulators]
-    commit_msg_template: 'New version: raphamorim.rio {{ .Tag }}'
+    commit_msg_template: "New version: raphamorim.rio {{ .Tag }}"
     commit_author:
       name: raphamorim
       email: 3630346+raphamorim@users.noreply.github.com
@@ -250,6 +250,10 @@ winget:
 
 after:
   hooks:
+    - cmd: brew bump-cask-pr rio --version {{ .Version }}
+      if: "{{ not .IsNightly }}"
+      env: ["HOMEBREW_GITHUB_API_TOKEN={{ .Env.GITHUB_TOKEN }}"]
+      output: true
     - cmd: cargo publish -p rio-window
       if: "{{ not .IsNightly }}"
       output: true
