@@ -80,8 +80,6 @@ release:
   replace_existing_draft: false
   replace_existing_artifacts: true
   include_meta: false
-  github:
-    name: rio
   footer: >-
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
@@ -92,9 +90,8 @@ nightly:
   publish_release: true
   keep_single_release: true
 
-# left for @caarlos0, i wasn't able to make it work
 changelog:
-  disable: true
+  use: git
 
 checksum:
   name_template: checksums.txt
@@ -143,10 +140,10 @@ app_bundles:
         dst: Contents/Info.plist
 
 nfpms:
-  - formats: [deb]
+  - formats: [deb, rpm]
     id: deb-arm64-wayland
     builds: [linux-arm64-wayland]
-    file_name_template: rio_{{ .Version }}-1_arm64_wayland.deb
+    file_name_template: rio_{{ .Version }}-1_arm64_wayland
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -158,10 +155,10 @@ nfpms:
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
     priority: optional
-  - formats: [deb]
+  - formats: [deb, rpm]
     id: deb-arm64-x11
     builds: [linux-arm64-x11]
-    file_name_template: rio_{{ .Version }}-1_arm64_x11.deb
+    file_name_template: rio_{{ .Version }}-1_arm64_x11
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -173,10 +170,10 @@ nfpms:
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
     priority: optional
-  - formats: [deb]
+  - formats: [deb, rpm]
     id: deb-x64-wayland
     builds: [linux-x64-wayland]
-    file_name_template: rio_{{ .Version }}-1_amd64_wayland.deb
+    file_name_template: rio_{{ .Version }}-1_amd64_wayland
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -188,10 +185,10 @@ nfpms:
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
     priority: optional
-  - formats: [deb]
+  - formats: [deb, rpm]
     id: deb-x64-x11
     builds: [linux-x64-x11]
-    file_name_template: rio_{{ .Version }}-1_amd64_x11.deb
+    file_name_template: rio_{{ .Version }}-1_amd64_x11
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
