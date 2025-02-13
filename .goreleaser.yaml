@@ -81,7 +81,6 @@ release:
   replace_existing_artifacts: true
   include_meta: false
   github:
-    owner: vedantmgoyal9 # raphamorim
     name: rio
   footer: >-
     ---
