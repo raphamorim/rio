@@ -7,10 +7,10 @@ Note: Rio is only available for Windows 10 or later.
 
 Prebuilt binaries for Windows:
 
-- [Download Microsoft installer for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.7/Rio-installer-x86_64.msi)
-- [Download Microsoft executable for x86_64](https://github.com/raphamorim/rio/releases/download/v0.2.7/Rio-portable-x86_64.exe)
-- [Download Microsoft installer for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.7/Rio-installer-aarch64.msi)
-- [Download Microsoft executable for aarch64](https://github.com/raphamorim/rio/releases/download/v0.2.7/Rio-portable-aarch64.exe)
+- [Download MSI installer for x86_64](https://github.com/raphamorim/rio/releases/latest/download/rio-installer-x86_64.msi)
+- [Download portable executable for x86_64](https://github.com/raphamorim/rio/releases/latest/download/rio-portable-x86_64.exe)
+- [Download MSI installer for aarch64](https://github.com/raphamorim/rio/releases/latest/download/rio-installer-aarch64.msi)
+- [Download portable executable for aarch64](https://github.com/raphamorim/rio/releases/latest/download/rio-portable-aarch64.exe)
 
 - Using WinGet package manager:
 
