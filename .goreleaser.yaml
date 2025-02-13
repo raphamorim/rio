@@ -83,53 +83,11 @@ release:
   replace_existing_artifacts: true
   include_meta: false
   github:
-    owner: vedantmgoyal9 # raphaelamorim
+    owner: vedantmgoyal9 # raphamorim
     name: rio
   footer: >-
     ---
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
-
-publishers:
-  - name: publish rio-window to crates.io
-    cmd: cargo publish -p rio-window
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish sugarloaf to crates.io
-    cmd: cargo publish -p sugarloaf
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish rio-proc-macros to crates.io
-    cmd: cargo publish -p rio-proc-macros
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish copa to crates.io
-    cmd: cargo publish -p copa
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish corcovado to crates.io
-    cmd: cargo publish -p corcovado
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish teletypewriter to crates.io
-    cmd: cargo publish -p teletypewriter
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish rio-backend to crates.io
-    cmd: cargo publish -p rio-backend
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
-  - name: publish rioterm to crates.io
-    cmd: cargo publish -p rioterm
-    if: '{{ not .IsNightly }}'
-    env:
-      - CARGO_REGISTRY_TOKEN={{ .Env.CARGO_REGISTRY_TOKEN }}
 
 nightly:
   version_template: "{{ incminor .Version }}-nightly"
@@ -140,6 +98,40 @@ nightly:
 # left for @caarlos0, i wasn't able to make it work
 changelog:
   disable: true
+
+checksum:
+  name_template: checksums.txt
+
+archives:
+  - id: win-x64
+    formats: [binary]
+    builds: [windows-x86_64]
+    name_template: "{{ .ProjectName }}-portable-x86_64"
+  - id: win-arm64
+    formats: [binary]
+    builds: [windows-arm64]
+    name_template: "{{ .ProjectName }}-portable-aarch64"
+
+universal_binaries:
+  - ids: [macos]
+    replace: true
+
+dmg:
+  - name: "{{ .ProjectName }}"
+    use: appbundle
+
+app_bundles:
+  - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
+    bundle: com.raphaelamorim.rio
+    extra_files:
+      - src: ./misc/72/rio
+        dst: Contents/Resources/72/rio
+      # releases made before goreleaser integration included the classic icon
+      - src: ./misc/osx/Rio.app/Contents/Resources/icon-classic.icns
+        dst: Contents/Resources/icon-classic.icns
+    templated_extra_files:
+      - src: ./misc/osx/Rio.app/Contents/Info.plist
+        dst: Contents/Info.plist
 
 nfpms:
   - formats: [deb]
@@ -203,10 +195,6 @@ nfpms:
     section: admin
     priority: optional
 
-universal_binaries:
-  - ids: [macos]
-    replace: true
-
 msi:
   - id: win-x64
     name: "{{ .ProjectName }}-installer-x86_64"
@@ -221,32 +209,62 @@ msi:
     extensions: [WixToolset.UI.wixext, WixToolset.Util.wixext]
     extra_files: [./misc/windows/rio.ico, ./misc/windows/License.rtf]
 
-archives:
-  - id: win-x64
-    formats: [binary]
-    builds: [windows-x86_64]
-    name_template: "{{ .ProjectName }}-portable-x86_64"
-  - id: win-arm64
-    formats: [binary]
-    builds: [windows-arm64]
-    name_template: "{{ .ProjectName }}-portable-aarch64"
+winget:
+  - use: msi
+    name: Rio
+    package_identifier: raphamorim.rio
+    author: Raphael Amorim
+    release_notes: "{{ .Changelog }}"
+    release_notes_url: https://github.com/raphamorim/rio/releases/tag/{{ .Tag }}
+    publisher: Raphael Amorim
+    publisher_url: https://raphamorim.io
+    publisher_support_url: https://github.com/raphamorim/rio/issues
+    license_url: https://raw.githubusercontent.com/raphamorim/rio/main/LICENSE
+    copyright: Copyright (c) {{ .Now.Format "2006" }} Raphael Amorim
+    copyright_url: https://raw.githubusercontent.com/raphamorim/rio/main/LICENSE
+    tags: [cross-platform, terminal, terminal-emulators]
+    commit_msg_template: 'New version: raphamorim.rio {{ .Tag }}'
+    commit_author:
+      name: raphamorim
+      email: 3630346+raphamorim@users.noreply.github.com
+    repository:
+      owner: raphamorim
+      name: winget-pkgs
+      branch: rio-{{ .Tag }}-{{ .Now.Format "20060102150405"}}
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+        draft: false
 
-app_bundles:
-  - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
-    bundle: com.raphaelamorim.rio
-    extra_files:
-      - src: ./misc/72/rio
-        dst: Contents/Resources/72/rio
-      # releases made before goreleaser integration included the classic icon
-      - src: ./misc/osx/Rio.app/Contents/Resources/icon-classic.icns
-        dst: Contents/Resources/icon-classic.icns
-    templated_extra_files:
-      - src: ./misc/osx/Rio.app/Contents/Info.plist
-        dst: Contents/Info.plist
-
-dmg:
-  - name: "{{ .ProjectName }}-v{{ .Version}}"
-    use: appbundle
+after:
+  hooks:
+    - cmd: cargo publish -p rio-window
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p sugarloaf
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p rio-proc-macros
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p copa
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p corcovado
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p teletypewriter
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p rio-backend
+      if: "{{ not .IsNightly }}"
+      output: true
+    - cmd: cargo publish -p rioterm
+      if: "{{ not .IsNightly }}"
+      output: true
 
 metadata:
   maintainers: [Raphael Amorim <rapha850 at gmail dot com>]
