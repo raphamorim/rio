@@ -4,7 +4,7 @@
       UpgradeCode="87c21c74-dbd5-4584-89d5-46d9cd0c40a8"
       Language="1033"
       Codepage="1252"
-      Version="0.2.7"
+      Version="{{ .Version }}"
       Manufacturer="Raphael Amorim"
       InstallerVersion="200">
 
@@ -23,7 +23,7 @@
       <!-- Application binaries -->
       <DirectoryRef Id="RioProgramFiles">
          <Component Id="RioExe">
-            <File Id="RioExeFile" Source=".\target\x86_64-pc-windows-msvc\release\rio.exe" Name="rio.exe" KeyPath="yes" />
+            <File Id="RioExeFile" Source="{{ .Binary }}.exe" Name="rio.exe" KeyPath="yes" />
          </Component>
       </DirectoryRef>
       <DirectoryRef Id="RioProgramMenu">
