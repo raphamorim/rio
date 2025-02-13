@@ -1,150 +1,113 @@
 name: Release
-
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*.*.*'
-
-env:
-  CARGO_TERM_COLOR: always
-  GITHUB_REPOSITORY: raphamorim/rio
-  RUST_BACKTRACE: full
-  RUSTFLAGS: '-C link-arg=-s'
-
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref_name }}
+  cancel-in-progress: true
 jobs:
-  release-macos:
-    runs-on: macos-latest
+  build:
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
       discussions: write
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - run: rustup toolchain install stable --profile minimal
-      - run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
-      - run: make release-macos
-      - name: Release version
-        uses: softprops/action-gh-release@v2
-        with:
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            release/macos-unsigned.zip
-            LICENSE
-
-  release-deb-x84:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      discussions: write
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
-      - run: sudo apt install rename
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo install cargo-deb
-      - run: mkdir -p release
-      - run: make release-debian-x11
-      - run: make release-debian-wayland
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            release/debian/x11/*
-            release/debian/wayland/*
-
-  release-deb-arm:
-    runs-on: ubuntu-22.04-arm
-    permissions:
-      contents: write
-      discussions: write
-
-    steps:
-      - uses: actions/checkout@v4
-      - name: rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-all-crates: true
-
-      - run: sudo apt install rename
-      - run: rustup toolchain install stable --profile minimal
-      - run: cargo install cargo-deb
-      - run: mkdir -p release
-      - run: make release-debian-x11
-      - run: make release-debian-wayland
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            release/debian/x11/*
-            release/debian/wayland/*
-
-  release-windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
-    permissions:
-      contents: write
-      discussions: write
-
     strategy:
       matrix:
         include:
-          - target: x86_64
-            wix-arch: x64
-          - target: aarch64
-            wix-arch: arm64
-
+          - os: macos-latest
+            cache-subdir: darwin
+          - os: ubuntu-22.04
+            cache-subdir: linux
+            _ids: --id linux-x64-wayland --id linux-x64-x11
+          - os: ubuntu-22.04-arm
+            cache-subdir: linux
+            _ids: --id linux-arm64-wayland --id linux-arm64-x11
+          - os: windows-latest
+            cache-subdir: windows
+      fail-fast: false
+    outputs:
+      cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
+    env:
+      GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+      MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+      MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{matrix.target}}
-      - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.5
-      - run: wix --version
-      - run: wix extension add WixToolset.UI.wixext/4.0.5 WixToolset.Util.wixext/4.0.5
-      - run: rustup toolchain install stable --profile minimal --target ${{ matrix.target }}-pc-windows-msvc
-      - run: cargo build --target ${{ matrix.target }}-pc-windows-msvc --release
-      - name: Crate msi installer
-        run: |
-          wix build -arch "${{ matrix.wix-arch}}" -ext WixToolset.UI.wixext -ext WixToolset.Util.wixext \
-          -out "./Rio-installer-${{ matrix.target }}.msi" "misc/windows/rio-${{ matrix.target }}.wxs"
-      - run: cp ./target/${{ matrix.target }}-pc-windows-msvc/release/rio.exe ./Rio-portable-${{ matrix.target }}.exe
-      - name: Release
-        uses: softprops/action-gh-release@v1
+          fetch-depth: 0
+      - uses: actions/cache@v4
         with:
-          append_body: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          files: |
-            ./Rio-installer-${{ matrix.target }}.msi
-            ./Rio-portable-${{ matrix.target }}.exe
-
-  publish-winget:
-    runs-on: windows-latest
-    needs: release-windows
-    defaults:
-      run:
-        shell: bash
-    permissions:
-      contents: write
-      discussions: write
-
+          path: dist/${{ matrix.cache-subdir }}
+          key: goreleaser-${{ matrix.os }}-${{ github.sha }}
+          enableCrossOsArchive: ${{ matrix.os == 'windows-latest' }}
+          lookup-only: true
+          fail-on-cache-miss: false
+        id: cache-check
+      - if: matrix.os == 'macos-latest'
+        run: rustup target add x86_64-apple-darwin
+      - if: matrix.os == 'windows-latest'
+        run: rustup target add aarch64-pc-windows-msvc
+      - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.cache-check.outputs.cache-hit != 'true'
+        uses: goreleaser/goreleaser-action@v6.1.0
+        with:
+          distribution: goreleaser-pro
+          version: nightly
+          args: release --clean --split ${{ matrix._ids }}
+      - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
+        uses: goreleaser/goreleaser-action@v6.1.0
+        with:
+          distribution: goreleaser-pro
+          version: nightly
+          args: release --clean --split ${{ matrix._ids }} --nightly --skip=winget
+  release:
+    # skip if cache exists for same commit, since we probably already released
+    if: needs.build.outputs.cache-hit != 'true'
+    needs: build
+    runs-on: ubuntu-latest
     steps:
-      - uses: vedantmgoyal9/winget-releaser@main
+      - uses: actions/checkout@v4
         with:
-          identifier: raphamorim.rio
-          token: ${{ secrets.WINGET_TOKEN }}
-          installers-regex: '\.msi$' # Only .msi files
-
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-macos-latest-${{ github.sha }}
+          path: dist/darwin
+          fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-windows-latest-${{ github.sha }}
+          path: dist/windows
+          fail-on-cache-miss: true
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-ubuntu-22.04-arm-${{ github.sha }}
+          path: dist/linux
+          fail-on-cache-miss: true
+      - name: workaround to avoid conflicts b/w linux x64/arm64 caches
+        run: |
+          # rename linux to linux-arm64, to avoid cache restore conflicts
+          mv dist/linux dist/linux-arm64
+          # update paths in artifacts.json (dist/linux -> dist/linux-arm64)
+          sed -i 's/dist\/linux/dist\/linux-arm64/g' dist/linux-arm64/artifacts.json
+      - uses: actions/cache@v4
+        with:
+          key: goreleaser-ubuntu-22.04-${{ github.sha }}
+          path: dist/linux
+          fail-on-cache-miss: true
+      - uses: goreleaser/goreleaser-action@v6.1.0
+        with:
+          distribution: goreleaser-pro
+          version: nightly
+          args: continue --merge
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
