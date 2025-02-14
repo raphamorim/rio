@@ -143,7 +143,7 @@ nfpms:
   - formats: [deb, rpm]
     id: deb-arm64-wayland
     builds: [linux-arm64-wayland]
-    file_name_template: {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland
+    file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -158,7 +158,7 @@ nfpms:
   - formats: [deb, rpm]
     id: deb-arm64-x11
     builds: [linux-arm64-x11]
-    file_name_template: {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11
+    file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -173,7 +173,7 @@ nfpms:
   - formats: [deb, rpm]
     id: deb-x64-wayland
     builds: [linux-x64-wayland]
-    file_name_template: {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland
+    file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
@@ -188,7 +188,7 @@ nfpms:
   - formats: [deb, rpm]
     id: deb-x64-x11
     builds: [linux-x64-x11]
-    file_name_template: {{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11
+    file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     contents:
