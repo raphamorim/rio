@@ -6,13 +6,13 @@ on:
     branches: [main]
     paths:
       - "docs/**"
-      - ".github/workflows/release-docs.yml"
+      - ".github/workflows/docs.yml"
   pull_request:
     branches: [main]
     types: [closed]
     paths:
       - "docs/**"
-      - ".github/workflows/release-docs.yml"
+      - ".github/workflows/docs.yml"
 
 permissions:
   contents: write
