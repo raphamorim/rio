@@ -4,7 +4,11 @@ on:
     branches: [ main ]
     tags:
       - 'v*.*.*'
-    paths-ignore: [docs/**, "**.md"]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/release.yml'
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
