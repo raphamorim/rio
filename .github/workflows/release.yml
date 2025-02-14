@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/release.yml'
+      - '.goreleaser.yaml'
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
