@@ -1,12 +1,10 @@
 name: Release
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*.*.*'
     paths:
-      - '**/*.rs'
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
       - '.github/workflows/release.yml'
       - '.goreleaser.yaml'
   schedule:
