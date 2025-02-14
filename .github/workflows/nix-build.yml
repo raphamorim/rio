@@ -5,15 +5,17 @@ on:
   pull_request:
     paths:
       - '**/*.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/nix-build.yml'
-      - 'nix/**'
   push:
     branches:
       - main
     paths:
       - '**/*.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - '.github/workflows/nix-build.yml'
-      - 'nix/**'
 
 jobs:
   lints:
