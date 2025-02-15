@@ -62,13 +62,13 @@ jobs:
       - if: matrix.os == 'windows-latest'
         run: rustup target add aarch64-pc-windows-msvc
       - if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.cache-check.outputs.cache-hit != 'true'
-        uses: goreleaser/goreleaser-action@v6.1.0
+        uses: goreleaser/goreleaser-action@v6.2.1
         with:
           distribution: goreleaser-pro
           version: nightly
           args: release --clean --split ${{ matrix._ids }}
       - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
-        uses: goreleaser/goreleaser-action@v6.1.0
+        uses: goreleaser/goreleaser-action@v6.2.1
         with:
           distribution: goreleaser-pro
           version: nightly
@@ -108,7 +108,7 @@ jobs:
           key: goreleaser-ubuntu-22.04-${{ github.sha }}
           path: dist/linux
           fail-on-cache-miss: true
-      - uses: goreleaser/goreleaser-action@v6.1.0
+      - uses: goreleaser/goreleaser-action@v6.2.1
         with:
           distribution: goreleaser-pro
           version: nightly
