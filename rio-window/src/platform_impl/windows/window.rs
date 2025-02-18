@@ -495,7 +495,7 @@ impl Window {
                 .lock()
                 .unwrap()
                 .mouse
-                .set_cursor_flags(window, |f| f.set(CursorFlags::HIDDEN, !visible))
+                .set_cursor_flags(window.hwnd(), |f| f.set(CursorFlags::HIDDEN, !visible))
                 .map_err(|e| e.to_string());
             let _ = tx.send(result);
         });
