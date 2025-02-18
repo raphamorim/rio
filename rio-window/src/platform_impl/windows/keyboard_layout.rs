@@ -45,7 +45,6 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     VK_SNAPSHOT, VK_SPACE, VK_SUBTRACT, VK_TAB, VK_UP, VK_VOLUME_DOWN, VK_VOLUME_MUTE,
     VK_VOLUME_UP, VK_XBUTTON1, VK_XBUTTON2, VK_ZOOM,
 };
-use windows_sys::Win32::UI::TextServices::HKL;
 
 use crate::keyboard::{Key, KeyCode, ModifiersState, NamedKey, NativeKey, PhysicalKey};
 use crate::platform_impl::{loword, primarylangid, scancode_to_physicalkey};

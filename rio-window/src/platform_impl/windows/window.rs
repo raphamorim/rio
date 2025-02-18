@@ -888,7 +888,7 @@ impl Window {
                             size.1 as i32,
                             SWP_ASYNCWINDOWPOS | SWP_NOZORDER,
                         );
-                        InvalidateRgn(window.hwnd(), 0, false.into());
+                        InvalidateRgn(window.hwnd(), ptr::null_mut(), false.into());
                     }
                 }
                 None => {
