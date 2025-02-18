@@ -784,7 +784,7 @@ impl Window {
                         ChangeDisplaySettingsExW(
                             monitor_info.szDevice.as_ptr(),
                             &*video_mode.native_video_mode,
-                            ptr::null(),
+                            ptr::null_mut(),
                             CDS_FULLSCREEN,
                             ptr::null(),
                         )
@@ -801,7 +801,7 @@ impl Window {
                         ChangeDisplaySettingsExW(
                             ptr::null(),
                             ptr::null(),
-                            ptr::null(),
+                            ptr::null_mut(),
                             CDS_FULLSCREEN,
                             ptr::null(),
                         )
@@ -826,7 +826,7 @@ impl Window {
                 // fine, taking control back from the DWM and ensuring that the `SetWindowPos` call
                 // below goes through.
                 let mut msg = mem::zeroed();
-                PeekMessageW(&mut msg, ptr::null(), 0, 0, PM_NOREMOVE);
+                PeekMessageW(&mut msg, ptr::null_mut(), 0, 0, PM_NOREMOVE);
             }
 
             // Update window style
