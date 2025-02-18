@@ -1222,7 +1222,7 @@ impl Drop for Window {
     }
 }
 
-pub(super) struct InitData<'_> {
+pub(super) struct InitData<'a> {
     // inputs
     pub event_loop: &'a ActiveEventLoop,
     pub attributes: WindowAttributes,
@@ -1231,7 +1231,7 @@ pub(super) struct InitData<'_> {
     pub window: Option<Window>,
 }
 
-impl InitData {
+impl InitData<'_> {
     unsafe fn create_window(&self, window: HWND) -> Window {
         // Register for touch events if applicable
         {
