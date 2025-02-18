@@ -1224,7 +1224,7 @@ impl Drop for Window {
 
 pub(super) struct InitData<'_> {
     // inputs
-    pub event_loop: &ActiveEventLoop,
+    pub event_loop: &'a ActiveEventLoop,
     pub attributes: WindowAttributes,
     pub window_flags: WindowFlags,
     // outputs
