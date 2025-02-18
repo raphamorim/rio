@@ -13,6 +13,8 @@ language: 'en'
 	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
  - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921))
    (thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9))
+-  Updated `windows-sys` to `v0.59`.
+	- To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
 ## 0.2.7
 
