@@ -832,7 +832,7 @@ impl Window {
             // Update window style
             WindowState::set_window_flags(
                 window_state.lock().unwrap(),
-                window.hwnd(),
+                window,
                 |f| {
                     f.set(
                         WindowFlags::MARKER_EXCLUSIVE_FULLSCREEN,
