@@ -830,16 +830,20 @@ impl Window {
             }
 
             // Update window style
-            WindowState::set_window_flags(window_state.lock().unwrap(), window, |f| {
-                f.set(
-                    WindowFlags::MARKER_EXCLUSIVE_FULLSCREEN,
-                    matches!(fullscreen, Some(Fullscreen::Exclusive(_))),
-                );
-                f.set(
-                    WindowFlags::MARKER_BORDERLESS_FULLSCREEN,
-                    matches!(fullscreen, Some(Fullscreen::Borderless(_))),
-                );
-            });
+            WindowState::set_window_flags(
+                window_state.lock().unwrap(),
+                window.hwnd(),
+                |f| {
+                    f.set(
+                        WindowFlags::MARKER_EXCLUSIVE_FULLSCREEN,
+                        matches!(fullscreen, Some(Fullscreen::Exclusive(_))),
+                    );
+                    f.set(
+                        WindowFlags::MARKER_BORDERLESS_FULLSCREEN,
+                        matches!(fullscreen, Some(Fullscreen::Borderless(_))),
+                    );
+                },
+            );
 
             // Mark as fullscreen window wrt to z-order
             //
@@ -1253,11 +1257,9 @@ impl<'a> InitData<'a> {
                 self.attributes.preferred_theme,
             );
             let window_state = Arc::new(Mutex::new(window_state));
-            WindowState::set_window_flags(
-                window_state.lock().unwrap(),
-                window.hwnd(),
-                |f| *f = self.window_flags,
-            );
+            WindowState::set_window_flags(window_state.lock().unwrap(), window, |f| {
+                *f = self.window_flags
+            });
             window_state
         };
 
