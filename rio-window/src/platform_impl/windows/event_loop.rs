@@ -869,6 +869,7 @@ pub struct EventLoopProxy<T: 'static> {
     event_send: Sender<T>,
 }
 unsafe impl<T: Send + 'static> Send for EventLoopProxy<T> {}
+unsafe impl<T: Sync + 'static> Sync for EventLoopProxy<T> {}
 
 impl<T: 'static> Clone for EventLoopProxy<T> {
     fn clone(&self) -> Self {
