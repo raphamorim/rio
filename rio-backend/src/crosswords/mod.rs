@@ -402,7 +402,7 @@ where
     pub window_id: WindowId,
     pub route_id: usize,
     title_stack: Vec<String>,
-    current_directory: Option<std::path::PathBuf>,
+    pub current_directory: Option<std::path::PathBuf>,
     hyperlink_re: regex::Regex,
 
     // The stack for the keyboard modes.

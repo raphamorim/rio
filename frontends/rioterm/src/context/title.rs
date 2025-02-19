@@ -154,6 +154,20 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     }
                 }
                 "absolute_path" => {
+                    {
+                        let terminal = context.terminal.lock();
+                        if let Some(current_directory) = &terminal.current_directory {
+                            if let Ok(dir_str) =
+                                current_directory.clone().into_os_string().into_string()
+                            {
+                                new_template =
+                                    new_template.replace(to_replace_str, &dir_str);
+                                matched = true;
+                                continue;
+                            }
+                        };
+                    }
+
                     #[cfg(unix)]
                     {
                         let path = teletypewriter::foreground_process_path(
@@ -322,6 +336,18 @@ pub mod test {
         assert_eq!(
             update_title("{{ absolute_path || title }}", &context),
             String::from("Something")
+        );
+
+        // let's modify current_directory to actually be something
+        {
+            let path = std::path::PathBuf::from("/tmp");
+            let mut term = context.terminal.lock();
+            term.current_directory = Some(path);
+        };
+
+        assert_eq!(
+            update_title("{{ absolute_path || title }}", &context),
+            String::from("/tmp"),
         );
     }
 }

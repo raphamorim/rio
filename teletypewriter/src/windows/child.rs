@@ -57,7 +57,7 @@ impl ChildExitWatcher {
         } else {
             let pid = unsafe { NonZeroU32::new(GetProcessId(child_handle)) };
             Ok(ChildExitWatcher {
-                wait_handle: AtomicPtr::from(wait_handle as *mut c_void),
+                wait_handle: AtomicPtr::from(wait_handle),
                 event_rx,
                 child_handle,
                 pid,
