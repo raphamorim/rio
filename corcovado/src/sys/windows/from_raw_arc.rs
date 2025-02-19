@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn drops() {
         struct A<'a>(&'a mut bool);
-        impl<'a> Drop for A<'a> {
+        impl Drop for A<'_> {
             fn drop(&mut self) {
                 *self.0 = true;
             }

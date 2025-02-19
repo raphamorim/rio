@@ -140,7 +140,7 @@ fn should_apps_use_dark_mode() -> bool {
         Lazy::new(|| unsafe {
             const UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL: PCSTR = 132 as PCSTR;
 
-            let module = LoadLibraryA("uxtheme.dll\0".as_ptr());
+            let module = LoadLibraryA(c"uxtheme.dll");
 
             if module.is_null() {
                 return None;
