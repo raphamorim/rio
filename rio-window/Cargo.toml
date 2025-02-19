@@ -116,7 +116,7 @@ features = [
 unicode-segmentation = "1.7.1"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
-version = "0.52.0"
+version = "0.59.0"
 features = [
     "Win32_Devices_HumanInterfaceDevice",
     "Win32_Foundation",

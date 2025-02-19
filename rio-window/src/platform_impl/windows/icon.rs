@@ -1,7 +1,7 @@
 use std::ffi::c_void;
 use std::path::Path;
 use std::sync::Arc;
-use std::{fmt, io, mem};
+use std::{fmt, io, mem, ptr};
 
 use cursor_icon::CursorIcon;
 use windows_sys::core::PCWSTR;
@@ -42,7 +42,7 @@ impl RgbaIcon {
         assert_eq!(and_mask.len(), pixel_count);
         let handle = unsafe {
             CreateIcon(
-                0,
+                ptr::null_mut(),
                 self.width as i32,
                 self.height as i32,
                 1,
@@ -51,7 +51,7 @@ impl RgbaIcon {
                 rgba.as_ptr(),
             )
         };
-        if handle != 0 {
+        if !handle.is_null() {
             Ok(WinIcon::from_handle(handle))
         } else {
             Err(BadIcon::OsError(io::Error::last_os_error()))
@@ -69,6 +69,9 @@ pub enum IconType {
 struct RaiiIcon {
     handle: HICON,
 }
+
+unsafe impl Send for RaiiIcon {}
+unsafe impl Sync for RaiiIcon {}
 
 #[derive(Clone)]
 pub struct WinIcon {
@@ -93,7 +96,7 @@ impl WinIcon {
 
         let handle = unsafe {
             LoadImageW(
-                0,
+                ptr::null_mut(),
                 wide_path.as_ptr(),
                 IMAGE_ICON,
                 width,
@@ -101,7 +104,7 @@ impl WinIcon {
                 LR_DEFAULTSIZE | LR_LOADFROMFILE,
             )
         };
-        if handle != 0 {
+        if !handle.is_null() {
             Ok(WinIcon::from_handle(handle as HICON))
         } else {
             Err(BadIcon::OsError(io::Error::last_os_error()))
@@ -124,7 +127,7 @@ impl WinIcon {
                 LR_DEFAULTSIZE,
             )
         };
-        if handle != 0 {
+        if !handle.is_null() {
             Ok(WinIcon::from_handle(handle as HICON))
         } else {
             Err(BadIcon::OsError(io::Error::last_os_error()))
@@ -138,7 +141,12 @@ impl WinIcon {
 
     pub fn set_for_window(&self, hwnd: HWND, icon_type: IconType) {
         unsafe {
-            SendMessageW(hwnd, WM_SETICON, icon_type as usize, self.as_raw_handle());
+            SendMessageW(
+                hwnd,
+                WM_SETICON,
+                icon_type as usize,
+                self.as_raw_handle() as isize,
+            );
         }
     }
 
@@ -194,13 +202,13 @@ impl WinCursor {
         let h = image.height as i32;
 
         unsafe {
-            let hdc_screen = GetDC(0);
-            if hdc_screen == 0 {
+            let hdc_screen = GetDC(ptr::null_mut());
+            if hdc_screen.is_null() {
                 return Err(io::Error::last_os_error());
             }
             let hbm_color = CreateCompatibleBitmap(hdc_screen, w, h);
-            ReleaseDC(0, hdc_screen);
-            if hbm_color == 0 {
+            ReleaseDC(ptr::null_mut(), hdc_screen);
+            if hbm_color.is_null() {
                 return Err(io::Error::last_os_error());
             }
             if SetBitmapBits(hbm_color, bgra.len() as u32, bgra.as_ptr() as *const c_void)
@@ -213,7 +221,7 @@ impl WinCursor {
             // Mask created according to https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-createbitmap#parameters
             let mask_bits: Vec<u8> = vec![0xff; ((((w + 15) >> 4) << 1) * h) as usize];
             let hbm_mask = CreateBitmap(w, h, 1, 1, mask_bits.as_ptr() as *const _);
-            if hbm_mask == 0 {
+            if hbm_mask.is_null() {
                 DeleteObject(hbm_color);
                 return Err(io::Error::last_os_error());
             }
@@ -229,7 +237,7 @@ impl WinCursor {
             let handle = CreateIconIndirect(&icon_info as *const _);
             DeleteObject(hbm_color);
             DeleteObject(hbm_mask);
-            if handle == 0 {
+            if handle.is_null() {
                 return Err(io::Error::last_os_error());
             }
 
@@ -242,6 +250,9 @@ impl WinCursor {
 pub struct RaiiCursor {
     handle: HCURSOR,
 }
+
+unsafe impl Send for RaiiCursor {}
+unsafe impl Sync for RaiiCursor {}
 
 impl Drop for RaiiCursor {
     fn drop(&mut self) {
