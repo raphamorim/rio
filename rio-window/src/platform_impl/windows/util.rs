@@ -199,7 +199,7 @@ pub(super) fn get_function_impl(library: &str, function: &str) -> Option<*const 
 
     // Library names we will use are ASCII so we can use the A version to avoid string conversion.
     let module = unsafe { LoadLibraryA(library.as_ptr()) };
-    if module == 0 {
+    if module.is_null() {
         return None;
     }
 
