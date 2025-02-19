@@ -80,11 +80,9 @@ impl VideoModeHandle {
 pub struct MonitorHandle(HMONITOR);
 
 // Send is not implemented for HMONITOR, we have to wrap it and implement it manually.
-// For more info see:
-// https://github.com/retep998/winapi-rs/issues/360
-// https://github.com/retep998/winapi-rs/issues/396
 
 unsafe impl Send for MonitorHandle {}
+unsafe impl Sync for MonitorHandle {}
 
 unsafe extern "system" fn monitor_enum_proc(
     hmonitor: HMONITOR,
@@ -101,7 +99,7 @@ pub fn available_monitors() -> VecDeque<MonitorHandle> {
     let mut monitors: VecDeque<MonitorHandle> = VecDeque::new();
     unsafe {
         EnumDisplayMonitors(
-            0,
+            ptr::null_mut(),
             ptr::null(),
             Some(monitor_enum_proc),
             &mut monitors as *mut _ as LPARAM,

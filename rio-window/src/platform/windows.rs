@@ -13,11 +13,11 @@ use crate::monitor::MonitorHandle;
 use crate::window::{BadIcon, Icon, Window, WindowAttributes};
 
 /// Window Handle type used by Win32 API
-pub type HWND = isize;
+pub type HWND = *mut c_void;
 /// Menu Handle type used by Win32 API
-pub type HMENU = isize;
+pub type HMENU = *mut c_void;
 /// Monitor Handle type used by Win32 API
-pub type HMONITOR = isize;
+pub type HMONITOR = *mut c_void;
 
 /// Describes a system-drawn backdrop material of a window.
 ///

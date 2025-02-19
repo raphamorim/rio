@@ -2833,7 +2833,7 @@ dependencies = [
  "wayland-protocols-plasma",
  "web-sys",
  "web-time",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
  "x11-dl",
  "x11rb",
  "xkbcommon-dl",
