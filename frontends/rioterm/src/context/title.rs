@@ -340,19 +340,14 @@ pub mod test {
 
         // let's modify current_directory to actually be something
         {
-            use std::path::PathBuf;
-            let mut path = PathBuf::new();
-            path.push(r"C:\");
-            path.push("windows");
-            path.push("system32");
-
+            let path = std::path::PathBuf::from("/tmp");
             let mut term = context.terminal.lock();
             term.current_directory = Some(path);
         };
 
         assert_eq!(
             update_title("{{ absolute_path || title }}", &context),
-            String::from("C:\\/windows/system32")
+            String::from("/tmp"),
         );
     }
 }
