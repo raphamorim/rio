@@ -125,6 +125,7 @@ notarize:
         key: "{{ .Env.MACOS_NOTARY_KEY }}"
         key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         wait: true
+        timeout: 20m
 
 app_bundles:
   - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
