@@ -43,7 +43,7 @@ jobs:
       MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
       MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
       KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-      MACOS_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+      MACOS_NOTARY_KEYCHAIN_PROFILE: ${{ secrets.MACOS_NOTARY_KEYCHAIN_PROFILE }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,7 +82,7 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
           # create notary profile
-          xcrun notarytool store-credentials $MACOS_NOTARY_PROFILE \
+          xcrun notarytool store-credentials $MACOS_NOTARY_KEYCHAIN_PROFILE \
             --key $KEY_PATH \
             --key-id $MACOS_NOTARY_KEY_ID \
             --issuer $MACOS_NOTARY_ISSUER_ID \
