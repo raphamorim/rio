@@ -36,7 +36,8 @@ pub fn lookup_for_font_match(
     let mut font_synth = Synthesis::default();
     let fonts_len: usize = library.inner.len();
 
-    for font_id in 0..fonts_len {
+    // Note: zero it's a built-in fallback font
+    for font_id in 1..fonts_len {
         let mut is_emoji = false;
 
         if let Some(font) = library.inner.get(&font_id) {
@@ -261,16 +262,22 @@ impl FontLibraryData {
         let mut db = loader::Database::new();
         db.load_system_fonts();
 
+        // Index zero is a fallback font, it will not be looked up
+        // unless it's flagged to allow builtin fallback
+        // this is used mostly by box drawing characters
+        self.insert(load_fallback_from_memory(&spec.regular));
+
         match find_font(&db, spec.regular, false, false) {
             FindResult::Found(data) => {
                 self.insert(data);
             }
             FindResult::NotFound(spec) => {
                 if !spec.is_default_family() {
-                    fonts_not_fount.push(spec);
-                } else {
-                    self.insert(load_fallback_from_memory(&spec));
+                    fonts_not_fount.push(spec.to_owned());
                 }
+
+                // The first font should always have a fallback
+                self.insert(load_fallback_from_memory(&spec));
             }
         }
 
@@ -313,64 +320,64 @@ impl FontLibraryData {
             }
         }
 
-        for fallback in fallbacks::external_fallbacks() {
-            match find_font(
-                &db,
-                SugarloafFont {
-                    family: fallback,
-                    ..SugarloafFont::default()
-                },
-                true,
-                false,
-            ) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    // Fallback should not add errors
-                    tracing::info!("{:?}", spec);
-                }
-            }
-        }
+        // for fallback in fallbacks::external_fallbacks() {
+        //     match find_font(
+        //         &db,
+        //         SugarloafFont {
+        //             family: fallback,
+        //             ..SugarloafFont::default()
+        //         },
+        //         true,
+        //         false,
+        //     ) {
+        //         FindResult::Found(data) => {
+        //             self.insert(data);
+        //         }
+        //         FindResult::NotFound(spec) => {
+        //             // Fallback should not add errors
+        //             tracing::info!("{:?}", spec);
+        //         }
+        //     }
+        // }
 
-        if let Some(emoji_font) = spec.emoji {
-            match find_font(&db, emoji_font, true, true) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-                    if !spec.is_default_family() {
-                        fonts_not_fount.push(spec);
-                    }
-                }
-            }
-        } else {
-            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-        }
+        // if let Some(emoji_font) = spec.emoji {
+        //     match find_font(&db, emoji_font, true, true) {
+        //         FindResult::Found(data) => {
+        //             self.insert(data);
+        //         }
+        //         FindResult::NotFound(spec) => {
+        //             self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+        //             if !spec.is_default_family() {
+        //                 fonts_not_fount.push(spec);
+        //             }
+        //         }
+        //     }
+        // } else {
+        //     self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+        // }
 
-        for extra_font in spec.extras {
-            match find_font(
-                &db,
-                SugarloafFont {
-                    family: extra_font.family,
-                    style: extra_font.style,
-                    weight: extra_font.weight,
-                    width: extra_font.width,
-                },
-                true,
-                true,
-            ) {
-                FindResult::Found(data) => {
-                    self.insert(data);
-                }
-                FindResult::NotFound(spec) => {
-                    fonts_not_fount.push(spec);
-                }
-            }
-        }
+        // for extra_font in spec.extras {
+        //     match find_font(
+        //         &db,
+        //         SugarloafFont {
+        //             family: extra_font.family,
+        //             style: extra_font.style,
+        //             weight: extra_font.weight,
+        //             width: extra_font.width,
+        //         },
+        //         true,
+        //         true,
+        //     ) {
+        //         FindResult::Found(data) => {
+        //             self.insert(data);
+        //         }
+        //         FindResult::NotFound(spec) => {
+        //             fonts_not_fount.push(spec);
+        //         }
+        //     }
+        // }
 
-        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
+        // self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
 
         if let Some(ui_spec) = spec.ui {
             match find_font(&db, ui_spec, false, false) {
