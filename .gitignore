@@ -25,3 +25,4 @@ misc/72/
 
 # goreleaser
 dist/
+.intentionally-empty-file.o

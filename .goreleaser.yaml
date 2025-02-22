@@ -115,17 +115,15 @@ dmg:
     use: appbundle
 
 notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+  macos_native:
+    - enabled: "true"
       sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+        identity: "Developer ID Application: Hugo Amorim"
+        options: [runtime]
       notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
         wait: true
-        timeout: 20m
+        keychain: "{{ .Env.KEYCHAIN_PATH }}"
+        profile_name: "{{ .Env.MACOS_NOTARY_PROFILE }}"
 
 app_bundles:
   - icon: ./misc/osx/Rio.app/Contents/Resources/icon.icns
@@ -249,32 +247,32 @@ winget:
 after:
   hooks:
     - cmd: brew bump-cask-pr rio --version {{ .Version }}
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       env: ["HOMEBREW_GITHUB_API_TOKEN={{ .Env.GITHUB_TOKEN }}"]
       output: true
     - cmd: cargo publish -p rio-window
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p sugarloaf
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p rio-proc-macros
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p copa
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p corcovado
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p teletypewriter
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p rio-backend
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
     - cmd: cargo publish -p rioterm
-      if: "{{ not .IsNightly }}"
+      if: "{{ .IsRelease }}"
       output: true
 
 metadata:
