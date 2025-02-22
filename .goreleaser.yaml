@@ -116,7 +116,7 @@ dmg:
 
 notarize:
   macos_native:
-    - enabled: "true"
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       sign:
         identity: "Developer ID Application: Hugo Amorim"
         options: [runtime]
