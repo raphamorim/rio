@@ -7,10 +7,7 @@ language: 'en'
 
 ## 0.2.8 (unreleased)
 
-- Shell integration.
-	- OSC 7 Escape sequences to advise the terminal of the working directory.
-	- OSC 133 Escape sequence to define Input, Output and Prompt zones.
-	- OSC 1337 Escape sequences to set user vars for tracking additional shell state.
+- OSC 7 Escape sequences to advise the terminal of the working directory.
  - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921))
    (thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9))
 -  Updated `windows-sys` to `v0.59`.
