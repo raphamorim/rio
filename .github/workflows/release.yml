@@ -82,10 +82,10 @@ jobs:
           security list-keychain -d user -s $KEYCHAIN_PATH
 
           # create notary profile
-          xcrun notarytool store-credentials $MACOS_NOTARY_KEYCHAIN_PROFILE \
-            --key $KEY_PATH \
-            --key-id $MACOS_NOTARY_KEY_ID \
-            --issuer $MACOS_NOTARY_ISSUER_ID \
+          xcrun notarytool store-credentials "$MACOS_NOTARY_KEYCHAIN_PROFILE" \
+            --key "$KEY_PATH" \
+            --key-id "$MACOS_NOTARY_KEY_ID" \
+            --issuer "$MACOS_NOTARY_ISSUER_ID" \
             --keychain $KEYCHAIN_PATH
 
           # export the keychain path
