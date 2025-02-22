@@ -119,10 +119,10 @@ notarize:
     - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
       sign:
         identity: "Developer ID Application: Hugo Amorim"
+        keychain: "{{ .Env.KEYCHAIN_PATH }}"
         options: [runtime]
       notarize:
         wait: true
-        keychain: "{{ .Env.KEYCHAIN_PATH }}"
         profile_name: "{{ .Env.MACOS_NOTARY_KEYCHAIN_PROFILE }}"
 
 app_bundles:
