@@ -145,6 +145,9 @@ nfpms:
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++]
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
@@ -160,6 +163,9 @@ nfpms:
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++]
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
@@ -175,6 +181,9 @@ nfpms:
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++]
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
@@ -190,6 +199,9 @@ nfpms:
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++]
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
