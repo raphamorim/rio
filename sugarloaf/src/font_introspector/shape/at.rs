@@ -113,7 +113,8 @@ const MAX_SEQUENCE: usize = 32;
 /// script/language pair.
 #[derive(Clone, Default)]
 pub struct FeatureStore {
-    pub features: Vec<(RawTag, FeatureBit, u8)>,
+    pub sub_features: Vec<(RawTag, FeatureBit)>,
+    pub pos_features: Vec<(RawTag, FeatureBit)>,
     pub lookups: Vec<LookupData>,
     pub subtables: Vec<SubtableData>,
     pub coverage: Vec<u16>,
@@ -125,7 +126,8 @@ pub struct FeatureStore {
 
 impl FeatureStore {
     pub fn clear(&mut self) {
-        self.features.clear();
+        self.sub_features.clear();
+        self.pos_features.clear();
         self.lookups.clear();
         self.subtables.clear();
         self.coverage.clear();
@@ -135,21 +137,18 @@ impl FeatureStore {
         self.groups = FeatureGroups::default();
     }
 
-    pub fn bit(&self, feature: RawTag) -> Option<FeatureBit> {
-        match self.features.binary_search_by(|x| x.0.cmp(&feature)) {
-            Ok(index) => Some(self.features[index].1),
+    pub fn sub_bit(&self, feature: RawTag) -> Option<FeatureBit> {
+        match self.sub_features.binary_search_by(|x| x.0.cmp(&feature)) {
+            Ok(index) => Some(self.sub_features[index].1),
             _ => None,
         }
     }
 
-    pub fn mask(&self, features: &[RawTag]) -> FeatureMask {
-        let mut mask = FeatureMask::default();
-        for feature in features {
-            if let Some(bit) = self.bit(*feature) {
-                mask.set(bit);
-            }
+    pub fn pos_bit(&self, feature: RawTag) -> Option<FeatureBit> {
+        match self.pos_features.binary_search_by(|x| x.0.cmp(&feature)) {
+            Ok(index) => Some(self.pos_features[index].1),
+            _ => None,
         }
-        mask
     }
 
     /// Returns new `basic` and `position` masks based on the
@@ -161,93 +160,164 @@ impl FeatureStore {
         pos_args: &mut Vec<u16>,
         dir: Direction,
     ) -> (FeatureMask, FeatureMask) {
-        let sub_count = self.sub_count;
+        let sub_count = self.sub_features.len();
         sub_args.clear();
         sub_args.resize(sub_count, 0);
-        let pos_count = self.features.len() - sub_count;
+        let pos_count = self.pos_features.len();
         pos_args.clear();
         pos_args.resize(pos_count, 0);
         let mut sub = self.groups.basic;
-        let mut pos = self.groups.position;
         if dir == Direction::RightToLeft {
             sub |= self.groups.rtl
         }
-        for feature in features {
-            if let Ok(index) = self.features.binary_search_by(|x| x.0.cmp(&feature.0)) {
-                let cached_feature = self.features[index];
-                let mask = if cached_feature.2 == 0 {
-                    &mut sub
-                } else {
-                    &mut pos
-                };
-                let bit_index = cached_feature.1 as usize;
-                if cached_feature.2 == 0 {
-                    sub_args[bit_index] = feature.1;
-                } else {
-                    pos_args[bit_index] = feature.1;
-                }
-                if feature.1 != 0 {
-                    mask.set(bit_index as u16);
-                } else {
-                    mask.clear(bit_index as u16);
-                }
-            }
-        }
+        let sub = Self::custom_masks_for_stage(
+            &self.sub_features,
+            features,
+            self.groups.basic,
+            sub_args.as_mut_slice(),
+        );
+        let pos = Self::custom_masks_for_stage(
+            &self.pos_features,
+            features,
+            self.groups.position,
+            pos_args.as_mut_slice(),
+        );
         (sub, pos)
     }
 
+    fn custom_masks_for_stage(
+        stage_features: &[(RawTag, FeatureBit)],
+        requested_features: &[(RawTag, u16)],
+        mut mask: FeatureMask,
+        args: &mut [u16],
+    ) -> FeatureMask {
+        for req_feature in requested_features {
+            if let Ok(index) =
+                stage_features.binary_search_by(|x| x.0.cmp(&req_feature.0))
+            {
+                let stage_feature = stage_features[index];
+                let bit_ix = stage_feature.1;
+                let arg = req_feature.1;
+                args[bit_ix as usize] = arg;
+                if arg != 0 {
+                    mask.set(bit_ix);
+                } else {
+                    mask.clear(bit_ix);
+                }
+            }
+        }
+        mask
+    }
+
     pub fn groups(&self, script: Script) -> FeatureGroups {
-        let mut g = FeatureGroups {
-            vert: self.mask(&[VRT2]),
-            rtl: self.mask(&[RTLM]),
-            ..Default::default()
-        };
+        let mut g = FeatureGroups::default();
+        feature_masks(self, Some(&mut g.vert), Some(&mut g.position), &[VRT2]);
+        feature_masks(self, Some(&mut g.rtl), Some(&mut g.position), &[RTLM]);
         if g.vert.is_empty() {
-            g.vert = self.mask(&[VERT]);
+            feature_masks(self, Some(&mut g.vert), Some(&mut g.position), &[VERT]);
         }
         if script.is_complex() {
             match script {
                 Script::Myanmar => {
-                    g.default = self.mask(&[CALT, CCMP, LOCL, RVRN]);
-                    g.reph = self.bit(RPHF);
-                    g.pref = self.bit(PREF);
-                    // g.ortho = self.mask(&[BLWF, PSTF]);
-                    // g.basic = self.mask(&[ABVS, BLWS, PRES, PSTS]);
-                    g.stage1 = self.mask(&[BLWF, PSTF]);
-                    g.stage2 = self.mask(&[PRES, ABVS, BLWS, PSTS]);
-                    g.position = self.mask(&[DIST, KERN, MARK, MKMK]);
+                    feature_masks(
+                        self,
+                        Some(&mut g.default),
+                        Some(&mut g.position),
+                        &[CALT, CCMP, LOCL, RVRN],
+                    );
+                    g.reph = self.sub_bit(RPHF);
+                    g.pref = self.sub_bit(PREF);
+                    feature_masks(
+                        self,
+                        Some(&mut g.stage1),
+                        Some(&mut g.position),
+                        &[BLWF, PSTF],
+                    );
+                    feature_masks(
+                        self,
+                        Some(&mut g.stage2),
+                        Some(&mut g.position),
+                        &[PRES, ABVS, BLWS, PSTS],
+                    );
+                    feature_masks(
+                        self,
+                        Some(&mut g.basic),
+                        Some(&mut g.position),
+                        &[DIST, KERN, MARK, MKMK],
+                    );
                 }
                 _ => {
-                    g.default = self.mask(&[AKHN, CALT, CCMP, LOCL, NUKT, RVRN]);
-                    g.reph = self.bit(RPHF);
-                    g.pref = self.bit(PREF);
-                    g.stage1 = self.mask(&[ABVF, BLWF, CJCT, HALF, PSTF, RKRF, VATU]);
-                    g.stage2 = if script.is_joined() {
-                        self.mask(&[FIN2, FIN3, FINA, INIT, ISOL, MED2, MEDI])
-                    } else {
-                        FeatureMask::default()
-                    };
-                    g.basic = self.mask(&[
-                        ABVS, BLWS, CALT, CLIG, HALN, LIGA, PRES, PSTS, RCLT, RLIG,
-                    ]);
-                    g.position = self.mask(&[ABVM, BLWM, CURS, DIST, KERN, MARK, MKMK]);
+                    feature_masks(
+                        self,
+                        Some(&mut g.default),
+                        Some(&mut g.position),
+                        &[AKHN, CALT, CCMP, LOCL, NUKT, RVRN],
+                    );
+                    g.reph = self.sub_bit(RPHF);
+                    g.pref = self.sub_bit(PREF);
+                    feature_masks(
+                        self,
+                        Some(&mut g.stage1),
+                        Some(&mut g.position),
+                        &[ABVF, BLWF, CJCT, HALF, PSTF, RKRF, VATU],
+                    );
+                    if script.is_joined() {
+                        feature_masks(
+                            self,
+                            Some(&mut g.stage2),
+                            Some(&mut g.position),
+                            &[FIN2, FIN3, FINA, INIT, ISOL, MED2, MEDI],
+                        );
+                    }
+                    feature_masks(
+                        self,
+                        Some(&mut g.basic),
+                        Some(&mut g.position),
+                        &[ABVS, BLWS, CALT, CLIG, HALN, LIGA, PRES, PSTS, RCLT, RLIG],
+                    );
+                    feature_masks(
+                        self,
+                        Some(&mut g.basic),
+                        Some(&mut g.position),
+                        &[ABVM, BLWM, CURS, DIST, KERN, MARK, MKMK],
+                    );
                 }
             }
         } else {
             match script {
                 Script::Hangul => {
-                    g.basic = self.mask(&[CCMP, LJMO, RVRN, TJMO, VJMO]);
+                    feature_masks(
+                        self,
+                        Some(&mut g.basic),
+                        Some(&mut g.position),
+                        &[CCMP, LJMO, RVRN, TJMO, VJMO],
+                    );
                 }
                 _ => {
-                    g.basic = if script.is_joined() {
-                        self.mask(&[
-                            CALT, CCMP, CLIG, FIN2, FIN3, FINA, INIT, ISOL, LIGA, LOCL,
-                            MED2, MEDI, MSET, RLIG, RVRN,
-                        ])
+                    if script.is_joined() {
+                        feature_masks(
+                            self,
+                            Some(&mut g.basic),
+                            Some(&mut g.position),
+                            &[
+                                CALT, CCMP, CLIG, FIN2, FIN3, FINA, INIT, ISOL, LIGA,
+                                LOCL, MED2, MEDI, MSET, RLIG, RVRN,
+                            ],
+                        );
                     } else {
-                        self.mask(&[CALT, CCMP, CLIG, LIGA, LOCL, RVRN])
+                        feature_masks(
+                            self,
+                            Some(&mut g.basic),
+                            Some(&mut g.position),
+                            &[CALT, CCMP, CLIG, LIGA, LOCL, RVRN],
+                        );
                     };
-                    g.position = self.mask(&[CURS, DIST, KERN, MARK, MKMK]);
+                    feature_masks(
+                        self,
+                        Some(&mut g.basic),
+                        Some(&mut g.position),
+                        &[CURS, DIST, KERN, MARK, MKMK],
+                    );
                 }
             }
         }
@@ -276,6 +346,28 @@ impl FeatureStore {
     // }
 }
 
+fn feature_masks(
+    store: &FeatureStore,
+    sub_mask: Option<&mut FeatureMask>,
+    pos_mask: Option<&mut FeatureMask>,
+    features: &[RawTag],
+) {
+    if let Some(sub_mask) = sub_mask {
+        for feature in features {
+            if let Some(bit) = store.sub_bit(*feature) {
+                sub_mask.set(bit);
+            }
+        }
+    }
+    if let Some(pos_mask) = pos_mask {
+        for feature in features {
+            if let Some(bit) = store.pos_bit(*feature) {
+                pos_mask.set(bit);
+            }
+        }
+    }
+}
+
 /// Builder for a feature cache.
 #[derive(Default)]
 pub struct FeatureStoreBuilder {
@@ -298,13 +390,14 @@ impl FeatureStoreBuilder {
         cache.clear();
         if gsub.base != 0 {
             self.build_stage(cache, &b, coords, gdef, gsub, 0);
+            cache.sub_features.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         }
-        cache.sub_count = cache.features.len();
+        cache.sub_count = cache.sub_features.len();
         cache.pos_start = cache.lookups.len();
         if gpos.base != 0 {
             self.build_stage(cache, &b, coords, gdef, gpos, 1);
+            cache.pos_features.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         }
-        cache.features.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     }
 
     fn build_stage(
@@ -329,6 +422,11 @@ impl FeatureStoreBuilder {
         if actual_count < count {
             cache.truncated = true;
         }
+        let features = if stage == 0 {
+            &mut cache.sub_features
+        } else {
+            &mut cache.pos_features
+        };
         for i in 0..actual_count {
             let findex = b.read_u16(lbase + 6 + i * 2)? as usize;
             let rec = fbase + 2 + findex * 6;
@@ -354,7 +452,7 @@ impl FeatureStoreBuilder {
             } else {
                 0
             };
-            cache.features.push((ftag, fbit, stage));
+            features.push((ftag, fbit));
             let foffset = if let Some(v) = vars {
                 if let Some(offset) = v.apply(b, findex as u16) {
                     offset

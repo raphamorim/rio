@@ -332,15 +332,11 @@ impl BitmapFormat {
 #[derive(Copy, Clone)]
 pub struct Bitmap<'a> {
     pub format: BitmapFormat,
-    #[allow(unused)]
-    pub id: u16,
     pub ppem: u16,
     pub width: u32,
     pub height: u32,
     pub left: i32,
     pub top: i32,
-    #[allow(unused)]
-    pub advance: u32,
     pub data: &'a [u8],
 }
 
@@ -356,40 +352,34 @@ impl<'a> Bitmap<'a> {
         } else {
             BitmapFormat::Alpha(data.bit_depth)
         };
-        let (width, height, left, top, advance) = if data.is_png {
+        let (width, height, left, top) = if data.is_png {
             let png = Bytes::new(data.data);
             let width = png.read::<u32>(16)?;
             let height = png.read::<u32>(20)?;
             let (left, mut top) = (data.metrics.x as i32, data.metrics.y as i32);
-            let advance = if data.is_sbix {
+            if data.is_sbix {
                 if top == 0 && is_apple {
                     let s = data.ppem as f32 / upem as f32;
                     top = (-100. * s).round() as i32;
                 }
                 top += height as i32;
-                0
-            } else {
-                data.metrics.advance as u32
-            };
-            (width, height, left, top, advance)
+            }
+            (width, height, left, top)
         } else {
             (
                 data.width as u32,
                 data.height as u32,
                 data.metrics.x as i32,
                 data.metrics.y as i32,
-                data.metrics.advance as u32,
             )
         };
         Some(Bitmap {
             format,
-            id: data.id,
             ppem: data.ppem,
             width,
             height,
             left,
             top,
-            advance,
             data: data.data,
         })
     }
@@ -504,7 +494,6 @@ impl<'a> Bitmap<'a> {
 struct Location {
     format: u8,
     flags: u8,
-    id: u16,
     offset: u32,
     size: u32,
     ppem: u16,
@@ -575,7 +564,6 @@ fn get_location(
         let ppem = d.read::<u16>(strike_base)?;
         return Some(Location {
             ppem,
-            id: glyph_id,
             bit_depth: 32,
             width: 0,
             height: 0,
@@ -615,7 +603,6 @@ fn get_location(
         let base = offset + 8;
         let mut loc = Location {
             ppem,
-            id: glyph_id,
             bit_depth,
             width: 0,
             height: 0,
@@ -689,7 +676,6 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
     let depth = loc.bit_depth as usize;
     let mut bitmap = BitmapData {
         data: &[],
-        id: loc.id,
         ppem: loc.ppem,
         bit_depth: loc.bit_depth,
         width: loc.width,
@@ -805,7 +791,6 @@ fn sbix_range(
 #[derive(Copy, Clone)]
 struct BitmapData<'a> {
     pub data: &'a [u8],
-    pub id: u16,
     pub ppem: u16,
     pub bit_depth: u8,
     pub width: u8,
