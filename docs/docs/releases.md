@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.8 (unreleased)
 
+- Support to `.rpm` files! (thanks [@vedantmgoyal9](https://github.com/vedantmgoyal9) and [@caarlos0](https://github.com/caarlos0))
 - OSC 7 Escape sequences to advise the terminal of the working directory.
 - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921)), thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9)
 - Cache GSUB and GPOS features independently.
