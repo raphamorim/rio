@@ -29,10 +29,6 @@ program = "vi"
 args = []
 ```
 
-## builtin-box-drawing
-
-When true, Rio will use a custom built-in font for box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B3)`.
-
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
@@ -211,6 +207,8 @@ The font configuration default:
 [fonts]
 size = 18
 features = []
+builtin-box-drawing = true
+symbol-map = []
 
 [fonts.regular]
 family = "cascadiacode"
@@ -236,6 +234,10 @@ style = "Italic"
 width = "Normal"
 weight = 800
 ```
+
+## fonts.builtin-box-drawing
+
+When true, Rio will use a custom built-in font for box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B3)`.
 
 ## fonts.family
 
@@ -290,7 +292,7 @@ Enable or disable font hinting. It is enabled by default.
 fonts.hinting = true
 ```
 
-## symbol-map
+## fonts.symbol-map
 
 Has no default values. Example values are shown below:
 
