@@ -290,6 +290,27 @@ Enable or disable font hinting. It is enabled by default.
 fonts.hinting = true
 ```
 
+## symbol-map
+
+Has no default values. Example values are shown below:
+
+```toml
+fonts.symbol-map = [
+  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
+]
+```
+
+Map the specified Unicode codepoints to a particular font. Useful if you need special rendering for some symbols, such as for Powerline. Avoids the need for patched fonts.
+
+In case you would like to map many codepoints:
+
+```toml
+fonts.symbol-map = [
+  { start = "E0A0", end = "E0A3", font-family = "PowerlineSymbols" },
+  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" },
+]
+```
+
 ## fonts.ui
 
 You can specify user interface font on Rio.
@@ -709,27 +730,6 @@ args = ["-l"]
 [shell]
 program = "/opt/homebrew/bin/tmux"
 args = ["new-session", "-c", "/var/www"]
-```
-
-## symbol-map
-
-Has no default values. Example values are shown below:
-
-```toml
-symbol-map = [
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
-]
-```
-
-Map the specified Unicode codepoints to a particular font. Useful if you need special rendering for some symbols, such as for Powerline. Avoids the need for patched fonts.
-
-In case you would like to map many codepoints:
-
-```toml
-symbol-map = [
-  { start = "E0A0", end = "E0A3", font-family = "PowerlineSymbols" },
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" },
-]
 ```
 
 ## theme
