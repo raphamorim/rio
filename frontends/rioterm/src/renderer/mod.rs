@@ -35,7 +35,6 @@ pub struct Search {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
-    builtin_box_drawing: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -57,11 +56,6 @@ pub struct Renderer {
         (usize, f32),
     >,
 }
-
-const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
-// const POWERLINE_ARROW_LTR: char = '\u{e0b1}';
-// const POWERLINE_TRIANGLE_RTL: char = '\u{e0b2}';
-const POWERLINE_ARROW_RTL: char = '\u{e0b3}';
 
 impl Renderer {
     pub fn new(
@@ -354,35 +348,21 @@ impl Renderer {
                 let mut width = square.c.width().unwrap_or(1) as f32;
                 let mut font_ctx = self.font_context.inner.lock();
 
-                match (self.builtin_box_drawing, square_content) {
-                    // Box drawing characters and block elements.
-                    (true, '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}') => {
-                        style.font_id = 0;
-                    }
-
-                    // Powerline symbols: '','','',''
-                    (true, POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL) => {
-                        style.font_id = 0;
-                    }
-
-                    _ => {
-                        // There is no simple way to define what's emoji
-                        // could have to refer to the Unicode tables. However it could
-                        // be leading to misleading results. For example if we used
-                        // unicode and internationalization functionalities like
-                        // https://github.com/open-i18n/rust-unic/, then characters
-                        // like "◼" would be valid emojis. For a terminal context,
-                        // the character "◼" is not an emoji and should be treated as
-                        // single width. So, we completely rely on what font is
-                        // being used and then set width 2 for it.
-                        if let Some((font_id, is_emoji)) =
-                            font_ctx.find_best_font_match(square_content, &style)
-                        {
-                            style.font_id = font_id;
-                            if is_emoji {
-                                width = 2.0;
-                            }
-                        }
+                // There is no simple way to define what's emoji
+                // could have to refer to the Unicode tables. However it could
+                // be leading to misleading results. For example if we used
+                // unicode and internationalization functionalities like
+                // https://github.com/open-i18n/rust-unic/, then characters
+                // like "◼" would be valid emojis. For a terminal context,
+                // the character "◼" is not an emoji and should be treated as
+                // single width. So, we completely rely on what font is
+                // being used and then set width 2 for it.
+                if let Some((font_id, is_emoji)) =
+                    font_ctx.find_best_font_match(square_content, &style)
+                {
+                    style.font_id = font_id;
+                    if is_emoji {
+                        width = 2.0;
                     }
                 }
 
