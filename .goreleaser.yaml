@@ -155,7 +155,7 @@ nfpms:
         dst: /usr/share/info/rio.terminfo
         packager: deb
       - src: ./misc/rio.terminfo
-        dst: /usr/share/terminfo/r/rio.terminfo
+        dst: /usr/share/terminfo/r/rio
         packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -177,7 +177,7 @@ nfpms:
         dst: /usr/share/info/rio.terminfo
         packager: deb
       - src: ./misc/rio.terminfo
-        dst: /usr/share/terminfo/r/rio.terminfo
+        dst: /usr/share/terminfo/r/rio
         packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -199,7 +199,7 @@ nfpms:
         dst: /usr/share/info/rio.terminfo
         packager: deb
       - src: ./misc/rio.terminfo
-        dst: /usr/share/terminfo/r/rio.terminfo
+        dst: /usr/share/terminfo/r/rio
         packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -221,7 +221,7 @@ nfpms:
         dst: /usr/share/info/rio.terminfo
         packager: deb
       - src: ./misc/rio.terminfo
-        dst: /usr/share/terminfo/r/rio.terminfo
+        dst: /usr/share/terminfo/r/rio
         packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
