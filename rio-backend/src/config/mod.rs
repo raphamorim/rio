@@ -161,16 +161,6 @@ pub struct Config {
     pub draw_bold_text_with_light_colors: bool,
     #[serde(default = "default_bool_true", rename = "builtin-box-drawing")]
     pub builtin_box_drawing: bool,
-    #[serde(default = "Option::default", rename = "symbol-map")]
-    pub symbol_map: Option<Vec<SymbolMap>>,
-}
-
-#[derive(Clone, Debug, PartialEq,Serialize, Deserialize)]
-pub struct SymbolMap {
-    pub start: String,
-    pub end: String,
-    #[serde(rename = "font-family")]
-    pub font_family: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -520,7 +510,6 @@ impl Default for Config {
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             builtin_box_drawing: true,
-            symbol_map: None,
         }
     }
 }
