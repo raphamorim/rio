@@ -739,27 +739,6 @@ program = "/opt/homebrew/bin/tmux"
 args = ["new-session", "-c", "/var/www"]
 ```
 
-## symbol-map
-
-Has no default values. Example values are shown below:
-
-```toml
-symbol-map = [
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
-]
-```
-
-Map the specified Unicode codepoints to a particular font. Useful if you need special rendering for some symbols, such as for Powerline. Avoids the need for patched fonts.
-
-In case you would like to map many codepoints:
-
-```toml
-symbol-map = [
-  { start = "E0A0", end = "E0A3", font-family = "PowerlineSymbols" },
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" },
-]
-```
-
 ## theme
 
 The configuration property `theme` is used for specifying the theme. Rio will look in the `themes` folder for the theme.
