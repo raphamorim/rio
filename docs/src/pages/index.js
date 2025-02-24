@@ -43,6 +43,7 @@ function HomepageHeader() {
       <div className={styles.logoContainer}>
         <div className={styles.logoBackground} />
         <video className={styles.logo} autoPlay={true} loop={false} muted={true} playsInline={true} preLoad={true}>
+          <source src={"assets/rio-spinning.mov"} type="video/mp4"/>
           <source src={"assets/rio-spinning.webm"} type="video/webm"/>
         </video>
       </div>
