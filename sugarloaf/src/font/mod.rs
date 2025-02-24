@@ -26,6 +26,23 @@ use std::sync::Arc;
 
 pub use crate::font_introspector::{Style, Weight};
 
+// const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
+// const POWERLINE_ARROW_LTR: char = '\u{e0b1}';
+// const POWERLINE_TRIANGLE_RTL: char = '\u{e0b2}';
+// const POWERLINE_ARROW_RTL: char = '\u{e0b3}';
+// match (self.builtin_box_drawing, square_content) {
+// // Box drawing characters and block elements.
+// (true, '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}') => {
+//     style.font_id = 0;
+// }
+
+// // Powerline symbols: '','','',''
+// (true, POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL) => {
+//     style.font_id = 0;
+// }
+
+// _ => {
+
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
@@ -274,11 +291,6 @@ impl FontLibraryData {
 
         let mut db = loader::Database::new();
         db.load_system_fonts();
-
-        // Index zero is a fallback font, it will not be looked up
-        // unless it's flagged to allow builtin fallback
-        // this is used mostly by box drawing characters
-        self.insert(load_fallback_from_memory(&spec.regular));
 
         match find_font(&db, spec.regular, false, false) {
             FindResult::Found(data) => {
