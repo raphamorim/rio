@@ -93,7 +93,7 @@ impl Renderer {
 
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
-            builtin_box_drawing: config.builtin_box_drawing,
+            builtin_box_drawing: config.fonts.builtin_box_drawing,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
