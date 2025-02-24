@@ -161,6 +161,16 @@ pub struct Config {
     pub draw_bold_text_with_light_colors: bool,
     #[serde(default = "default_bool_true", rename = "builtin-box-drawing")]
     pub builtin_box_drawing: bool,
+    #[serde(default = "Option::default", rename = "symbol-map")]
+    pub symbol_map: Option<Vec<SymbolMap>>,
+}
+
+#[derive(Clone, Debug, PartialEq,Serialize, Deserialize)]
+pub struct SymbolMap {
+    pub start: String,
+    pub end: String,
+    #[serde(rename = "font-family")]
+    pub font_family: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -510,6 +520,7 @@ impl Default for Config {
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             builtin_box_drawing: true,
+            symbol_map: None,
         }
     }
 }
@@ -1043,5 +1054,32 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_symbol_map() {
+        fn unsafe_parse_unicode(input: &str) -> char {
+            let unicode = u32::from_str_radix(input, 16).unwrap();
+            char::from_u32(unicode).unwrap()
+        }
+
+        let result = create_temporary_config(
+            "symbol-map",
+            r#"
+            symbol-map = [
+                { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
+            ]
+        "#,
+        );
+
+        assert!(result.symbol_map.is_some());
+        let symbol_map = result.symbol_map.unwrap();
+        assert_eq!(symbol_map.len(), 1);
+        assert_eq!(symbol_map[0].font_family, "PowerlineSymbols");
+        assert_eq!(symbol_map[0].start, "E0C0");
+        assert_eq!(symbol_map[0].end, "E0C7");
+
+        assert_eq!(unsafe_parse_unicode(&symbol_map[0].start), '\u{E0C0}');
+        assert_eq!(unsafe_parse_unicode(&symbol_map[0].end), '\u{E0C7}');
     }
 }
