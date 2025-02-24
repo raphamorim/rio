@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/rio/ko/assets/css/styles.db4fd81a.css">
-<script src="/rio/ko/assets/js/runtime~main.389b42ca.js" defer="defer"></script>
+<script src="/rio/ko/assets/js/runtime~main.2160a2f6.js" defer="defer"></script>
 <script src="/rio/ko/assets/js/main.cb0b9cd3.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -25,8 +25,8 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="028-unreleased">0.2.8 (unreleased)<a href="#028-unreleased" class="hash-link" aria-label="0.2.8 (unreleased)에 대한 직접 링크" title="0.2.8 (unreleased)에 대한 직접 링크">​</a></h2>
 <ul>
 <li>OSC 7 Escape sequences to advise the terminal of the working directory.</li>
-<li>Use <a href="https://goreleaser.com" target="_blank" rel="noopener noreferrer">GoReleaser</a> to build &amp; release Rio (<a href="https://github.com/raphamorim/rio/pull/921" target="_blank" rel="noopener noreferrer">#921</a>)
-(thanks <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">@caarlos0</a> and <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">@vedantmgoyal9</a>)</li>
+<li>Use <a href="https://goreleaser.com" target="_blank" rel="noopener noreferrer">GoReleaser</a> to build &amp; release Rio (<a href="https://github.com/raphamorim/rio/pull/921" target="_blank" rel="noopener noreferrer">#921</a>), thanks <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">@caarlos0</a> and <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">@vedantmgoyal9</a></li>
+<li>Cache GSUB and GPOS features independently.</li>
 <li>Updated <code>windows-sys</code> to <code>v0.59</code>.<!-- -->
 <ul>
 <li>To match the corresponding changes in <code>windows-sys</code>, the <code>HWND</code>, <code>HMONITOR</code>, and <code>HMENU</code> types now alias to <code>*mut c_void</code> instead of <code>isize</code>.</li>
@@ -373,7 +373,7 @@
 <li>fix: IO Safety violation from dropping RawFd (fatal runtime error: IO Safety violation: owned file descriptor already closed).</li>
 <li>Upgrade to Rust 1.80.0.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="012">0.1.2<a href="#012" class="hash-link" aria-label="0.1.2에 대한 직접 링크" title="0.1.2에   대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="012">0.1.2<a href="#012" class="hash-link" aria-label="0.1.2에 대한 직접 링크" title="0.1.2에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Upgrade wgpu to v22.0.0.</li>
 <li>Restrict of cells width.</li>
@@ -583,7 +583,7 @@
 <li>Colors/Themes got a new property called <code>vi-cursor</code>, you can specify any color you wish for VI Cursor.</li>
 <li>Alacritty&#x27;s VI Mode.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0023">0.0.23<a href="#0023" class="hash-link" aria-label="0.0.23에 대한 직접 링크" title="0.0.23에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0023">0.0.23<a href="#0023" class="hash-link" aria-label="0.0.23에 대한 직접 링크" title="0.0.23에 대한 직접 링크">  ​</a></h2>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-changes">Breaking changes<a href="#breaking-changes" class="hash-link" aria-label="Breaking changes에 대한 직접 링크" title="Breaking changes에 대한 직접 링크">​</a></h4>
 <ul>
 <li><code>navigation.mode = &quot;Plain&quot;</code> now only shutdowns the key bindings related to tab creation/manipulation.</li>
