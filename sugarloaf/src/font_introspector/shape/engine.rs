@@ -18,22 +18,16 @@ pub struct Engine<'a> {
     pub gsub: at::StageOffsets,
     pub gpos: at::StageOffsets,
     pub morx: u32,
-    #[allow(unused)]
-    pub ltag: u32,
     pub kerx: u32,
     pub ankr: u32,
     pub kern: u32,
     pub storage: at::Storage,
     pub coords: &'a [i16],
     pub script: Script,
-    #[allow(unused)]
-    pub lang: Option<Language>,
     pub tags: [RawTag; 4],
     pub sub_mode: SubMode,
     pub pos_mode: PosMode,
     pub use_ot: bool,
-    #[allow(unused)]
-    pub use_aat: bool,
     pub mode: EngineMode,
 }
 
@@ -65,7 +59,6 @@ impl<'a> Engine<'a> {
         };
         let tags = [stags[0], stags[1], ptags[0], ptags[1]];
         let use_ot = gsub.lang != 0 || gpos.lang != 0;
-        let use_aat = metadata.morx != 0 || metadata.kerx != 0;
         let mode = if gsub.lang != 0 && script.is_complex() {
             if script == Script::Myanmar {
                 EngineMode::Myanmar
@@ -89,19 +82,16 @@ impl<'a> Engine<'a> {
             gsub,
             gpos,
             morx: metadata.morx,
-            ltag: metadata.ltag,
             kerx: metadata.kerx,
             ankr: metadata.ankr,
             kern: metadata.kern,
             storage: at::Storage::default(),
             coords,
             script,
-            lang,
             tags,
             sub_mode,
             pos_mode,
             use_ot,
-            use_aat,
             mode,
         }
     }
@@ -281,7 +271,6 @@ pub struct EngineMetadata {
     pub gsub: u32,
     pub gpos: u32,
     pub morx: u32,
-    pub ltag: u32,
     pub kerx: u32,
     pub ankr: u32,
     pub kern: u32,
@@ -296,7 +285,7 @@ impl EngineMetadata {
             gsub: font.table_offset(raw_tag(b"GSUB")),
             gpos: font.table_offset(raw_tag(b"GPOS")),
             morx: font.table_offset(raw_tag(b"morx")),
-            ltag: font.table_offset(raw_tag(b"ltag")),
+            // ltag: font.table_offset(raw_tag(b"ltag")),
             kerx: font.table_offset(raw_tag(b"kerx")),
             ankr: font.table_offset(raw_tag(b"ankr")),
             kern: font.table_offset(raw_tag(b"kern")),
