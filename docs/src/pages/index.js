@@ -42,7 +42,9 @@ function HomepageHeader() {
       </div>
       <div className={styles.logoContainer}>
         <div className={styles.logoBackground} />
-        <img src={"assets/rio-logo.png"} className={styles.logo} />
+        <video className={styles.logo} autoPlay={true} loop={false} muted={true} playsInline={true} preLoad={true}>
+          <source src={"assets/rio-spinning.webm"} type="video/webm"/>
+        </video>
       </div>
     </header>
   );
