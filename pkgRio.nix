@@ -97,7 +97,7 @@ in
     buildFeatures = ["x11" "wayland"];
     meta = {
       description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers";
-      homepage = "https://raphamorim.io/rio";
+      homepage = "https://rioterm.dev";
       license = lib.licenses.mit;
       platforms = lib.platforms.unix;
       changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
