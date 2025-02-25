@@ -25,6 +25,7 @@ const config = {
   tagline: tagline[CURRENT_LOCALE],
   favicon: '/assets/rio-logo.ico',
   url: 'https://rioterm.dev',
+  trailingSlash: false,
   baseUrl: '/',
   organizationName: 'raphamorim',
   projectName: 'rio',
