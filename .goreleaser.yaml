@@ -17,7 +17,7 @@ env:
 
 before:
   hooks:
-    - if: '{{ eq .Runtime.Goos "darwin" }}'
+    - if: '{{ ne .Runtime.Goos "windows" }}'
       cmd: tic -xe rio -o misc misc/rio.terminfo
       output: true
     - if: '{{ eq .Runtime.Goos "windows" }}'
