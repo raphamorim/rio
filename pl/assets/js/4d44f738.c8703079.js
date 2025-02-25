@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkrio_docs=self.webpackChunkrio_docs||[]).push([[1387],{235:e=>{e.exports=JSON.parse('{"metadata":{"permalink":"/rio/pl/blog","page":1,"postsPerPage":10,"totalPages":2,"totalCount":11,"nextPage":"/rio/pl/blog/page/2","blogDescription":"Blog","blogTitle":"Blog"}}')}}]);

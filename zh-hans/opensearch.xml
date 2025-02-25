@@ -4,8 +4,8 @@
   <ShortName>Rio Terminal</ShortName>
   <Description>Search Rio Terminal</Description>
   <InputEncoding>UTF-8</InputEncoding>
-  <Image width="16" height="16" type="image/x-icon">https://raphamorim.io/rio/zh-hans/assets/rio-logo.ico</Image>
-  <Url type="text/html" method="get" template="https://raphamorim.io/rio/zh-hans/search?q={searchTerms}"/>
-  <Url type="application/opensearchdescription+xml" rel="self" template="https://raphamorim.io/rio/zh-hans/opensearch.xml" />
-  <moz:SearchForm>https://raphamorim.io/rio/zh-hans/</moz:SearchForm>
+  <Image width="16" height="16" type="image/x-icon">https://rioterm.dev/zh-hans/assets/rio-logo.ico</Image>
+  <Url type="text/html" method="get" template="https://rioterm.dev/zh-hans/search?q={searchTerms}"/>
+  <Url type="application/opensearchdescription+xml" rel="self" template="https://rioterm.dev/zh-hans/opensearch.xml" />
+  <moz:SearchForm>https://rioterm.dev/zh-hans/</moz:SearchForm>
 </OpenSearchDescription>
