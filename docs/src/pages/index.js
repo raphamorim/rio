@@ -55,7 +55,7 @@ export default function Home() {
   return (
     <Layout
       title={title}
-      description="Description will go into a meta tag in <head />"
+      description="A modern terminal for the 21st century."
     >
       <HomepageHeader />
       <main>
