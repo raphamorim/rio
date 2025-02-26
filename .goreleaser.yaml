@@ -17,7 +17,7 @@ env:
 
 before:
   hooks:
-    - if: '{{ eq .Runtime.Goos "darwin" }}'
+    - if: '{{ ne .Runtime.Goos "windows" }}'
       cmd: tic -xe rio -o misc misc/rio.terminfo
       output: true
     - if: '{{ eq .Runtime.Goos "windows" }}'
@@ -151,12 +151,8 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/rio.terminfo
-        dst: /usr/share/info/rio.terminfo
-        packager: deb
-      - src: ./misc/rio.terminfo
+      - src: ./misc/72/rio
         dst: /usr/share/terminfo/r/rio
-        packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -173,12 +169,8 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/rio.terminfo
-        dst: /usr/share/info/rio.terminfo
-        packager: deb
-      - src: ./misc/rio.terminfo
+      - src: ./misc/72/rio
         dst: /usr/share/terminfo/r/rio
-        packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -195,12 +187,8 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/rio.terminfo
-        dst: /usr/share/info/rio.terminfo
-        packager: deb
-      - src: ./misc/rio.terminfo
+      - src: ./misc/72/rio
         dst: /usr/share/terminfo/r/rio
-        packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -217,12 +205,8 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/rio.terminfo
-        dst: /usr/share/info/rio.terminfo
-        packager: deb
-      - src: ./misc/rio.terminfo
+      - src: ./misc/72/rio
         dst: /usr/share/terminfo/r/rio
-        packager: rpm
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
