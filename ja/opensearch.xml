@@ -4,8 +4,8 @@
   <ShortName>Rio Terminal</ShortName>
   <Description>Search Rio Terminal</Description>
   <InputEncoding>UTF-8</InputEncoding>
-  <Image width="16" height="16" type="image/x-icon">https://rioterm.dev/ja/assets/rio-logo.ico</Image>
-  <Url type="text/html" method="get" template="https://rioterm.dev/ja/search?q={searchTerms}"/>
-  <Url type="application/opensearchdescription+xml" rel="self" template="https://rioterm.dev/ja/opensearch.xml" />
-  <moz:SearchForm>https://rioterm.dev/ja/</moz:SearchForm>
+  <Image width="16" height="16" type="image/x-icon">https://rioterm.com/ja/assets/rio-logo.ico</Image>
+  <Url type="text/html" method="get" template="https://rioterm.com/ja/search?q={searchTerms}"/>
+  <Url type="application/opensearchdescription+xml" rel="self" template="https://rioterm.com/ja/opensearch.xml" />
+  <moz:SearchForm>https://rioterm.com/ja/</moz:SearchForm>
 </OpenSearchDescription>
