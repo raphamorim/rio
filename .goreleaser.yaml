@@ -275,32 +275,32 @@ winget:
 after:
   hooks:
     - cmd: brew bump-cask-pr rio --version {{ .Version }}
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       env: ["HOMEBREW_GITHUB_API_TOKEN={{ .Env.GITHUB_TOKEN }}"]
       output: true
     - cmd: cargo publish -p rio-window
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p sugarloaf
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p rio-proc-macros
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p copa
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p corcovado
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p teletypewriter
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p rio-backend
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
     - cmd: cargo publish -p rioterm
-      if: "{{ and (.IsRelease .IsMerging )}}"
+      if: "{{ and .IsRelease .IsMerging }}"
       output: true
 
 metadata:
