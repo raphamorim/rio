@@ -84,6 +84,6 @@ fn welcome_content() -> String {
     #[cfg(not(target_os = "macos"))]
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
-    format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in rioterm.dev
+    format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in rioterm.com
     ", rio_backend::config::config_file_path().display(), shortcut)
 }
