@@ -99,11 +99,11 @@ checksum:
 archives:
   - id: win-x64
     formats: [binary]
-    builds: [windows-x86_64]
+    ids: [windows-x86_64]
     name_template: "{{ .ProjectName }}-portable-x86_64"
   - id: win-arm64
     formats: [binary]
-    builds: [windows-arm64]
+    ids: [windows-arm64]
     name_template: "{{ .ProjectName }}-portable-aarch64"
 
 universal_binaries:
@@ -141,7 +141,7 @@ app_bundles:
 nfpms:
   - formats: [deb, rpm]
     id: deb-arm64-wayland
-    builds: [linux-arm64-wayland]
+    ids: [linux-arm64-wayland]
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -151,7 +151,7 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/72/rio
+      - src: ./misc/r/rio
         dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -159,7 +159,7 @@ nfpms:
     priority: optional
   - formats: [deb, rpm]
     id: deb-arm64-x11
-    builds: [linux-arm64-x11]
+    ids: [linux-arm64-x11]
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -169,7 +169,7 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/72/rio
+      - src: ./misc/r/rio
         dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -177,7 +177,7 @@ nfpms:
     priority: optional
   - formats: [deb, rpm]
     id: deb-x64-wayland
-    builds: [linux-x64-wayland]
+    ids: [linux-x64-wayland]
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_wayland"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -187,7 +187,7 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/72/rio
+      - src: ./misc/r/rio
         dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
@@ -195,7 +195,7 @@ nfpms:
     priority: optional
   - formats: [deb, rpm]
     id: deb-x64-x11
-    builds: [linux-x64-x11]
+    ids: [linux-x64-x11]
     file_name_template: "{{- trimsuffix .ConventionalFileName .ConventionalExtension -}}_x11"
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
@@ -205,7 +205,7 @@ nfpms:
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/72/rio
+      - src: ./misc/r/rio
         dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
