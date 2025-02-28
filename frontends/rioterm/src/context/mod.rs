@@ -571,6 +571,32 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn switch_to_next_split_or_tab(&mut self) {
+        if self.contexts[self.current_index].select_next_split_no_loop() {
+            self.current_route = self.current().route_id;
+            return;
+        }
+        self.switch_to_next();
+        // Make sure first split is selected
+        let current_tab = &mut self.contexts[self.current_index];
+        current_tab.current = 0;
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
+    pub fn switch_to_prev_split_or_tab(&mut self) {
+        if self.contexts[self.current_index].select_prev_split_no_loop() {
+            self.current_route = self.current().route_id;
+            return;
+        }
+        self.switch_to_prev();
+        // Make sure last split is selected
+        let current_tab = &mut self.contexts[self.current_index];
+        current_tab.current = current_tab.len() - 1;
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
     pub fn select_tab(&mut self, tab_index: usize) {
         if self.config.is_native {
             self.event_proxy

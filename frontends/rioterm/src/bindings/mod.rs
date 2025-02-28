@@ -254,6 +254,8 @@ impl From<String> for Action {
             "splitdown" => Some(Action::SplitDown),
             "selectnextsplit" => Some(Action::SelectNextSplit),
             "selectprevsplit" => Some(Action::SelectPrevSplit),
+            "selectnextsplitortab" => Some(Action::SelectNextSplitOrTab),
+            "selectprevsplitortab" => Some(Action::SelectPrevSplitOrTab),
             "togglevimode" => Some(Action::ToggleViMode),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
             "none" => Some(Action::None),
@@ -465,8 +467,17 @@ pub enum Action {
     /// Split vertically
     SplitDown,
 
+    /// Select next split
     SelectNextSplit,
+
+    /// Select previous split
     SelectPrevSplit,
+
+    /// Select next split if available if not next tab
+    SelectNextSplitOrTab,
+
+    /// Select previous split if available if not previous tab
+    SelectPrevSplitOrTab,
 
     /// Allow receiving char input.
     ReceiveChar,
