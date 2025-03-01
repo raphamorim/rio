@@ -94,7 +94,8 @@ Execute a predefined action in Rio terminal.
 | SelectNextTab        | Select next tab                                                         |
 | SelectPrevTab        | Select pervious tab                                                     |
 | SelectLastTab        | Select last tab                                                         |
-| MoveCurrentTabToPrev | Move the current focused tab to the previous slot if any is available   |
+| MoveCurrentTabToNext | Move the current focused tab to the next slot, or first when last       |
+| MoveCurrentTabToPrev | Move the current focused tab to the previous slot, or last when first   |
 | SelectTab(tab_index) | Example: Select first tab `SelectTab(0)`, second tab `SelectTab(1)`     |
 
 ### [Scroll Actions](#scroll-actions)
