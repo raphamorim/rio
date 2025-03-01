@@ -2,11 +2,23 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://rioterm.com/pl/blog</id>
     <title>Rio Terminal Blog</title>
-    <updated>2025-01-17T15:34:00.000Z</updated>
+    <updated>2025-03-01T10:28:00.000Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://rioterm.com/pl/blog"/>
     <subtitle>Rio Terminal Blog</subtitle>
     <icon>https://rioterm.com/pl/assets/rio-logo.ico</icon>
+    <entry>
+        <title type="html"><![CDATA[Rio is now releasing with Goreleaser]]></title>
+        <id>https://rioterm.com/pl/blog/2025/03/01/rio-is-now-releasing-with-goreleaser</id>
+        <link href="https://rioterm.com/pl/blog/2025/03/01/rio-is-now-releasing-with-goreleaser"/>
+        <updated>2025-03-01T10:28:00.000Z</updated>
+        <summary type="html"><![CDATA[Since v0.2.8 Rio terminal has been releasing with Goreleaser.]]></summary>
+        <content type="html"><![CDATA[<p>Since v0.2.8 Rio terminal has been releasing with GoReleaser, which makes my life much simple. Before I was doing the process of release manually (specially Apple MacOS notarization).</p>
+<p>GoReleaser is a release automation tool. It currently supports Go, Rust, Zig, and TypeScript (with Bun and Deno). GoReleaser was created to solve a problem we all had at some point: releasing software is boring and error prone.</p>
+<p><img decoding="async" loading="lazy" src="https://raw.githubusercontent.com/goreleaser/artwork/refs/heads/master/goreleaser_rust_zig_16_9.png" alt="GoReleaser logo" class="img_ev3q"></p>
+<p>Rio wouldn't be using GoReleaser if wasn't the awesome work from <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">Vedant Mohan Goyal</a> and <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">Carlos Becker</a>. Talking which, Vedant is writing a blog post migrating Rio pipeline to GoReleaser, seriously go follow him!</p>
+<p>That's it for today folks :)</p>]]></content>
+    </entry>
     <entry>
         <title type="html"><![CDATA[New year, new look]]></title>
         <id>https://rioterm.com/pl/blog/2025/01/17/new-year-new-look</id>
