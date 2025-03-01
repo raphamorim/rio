@@ -5,13 +5,17 @@ language: 'en'
 
 # Releases
 
-## 0.2.8 (unreleased)
+## 0.2.9 (unreleased)
+
+- TBD
+
+## 0.2.8
 
 - OSC 7 Escape sequences to advise the terminal of the working directory.
 - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921)), thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9)
 - Cache GSUB and GPOS features independently.
 -  Updated `windows-sys` to `v0.59`.
-	- To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
+    - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
 ## 0.2.7
 
@@ -52,13 +56,13 @@ language: 'en'
 ## 0.2.3
 
 - Rio now allows you to configure window title through configuration via template. Possible options:
-	- `TITLE`: terminal title via OSC sequences for setting terminal title
-	- `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-	- `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-	<!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
-	- `COLUMNS`: current columns
-	- `LINES`: current lines
-		- So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
+    - `TITLE`: terminal title via OSC sequences for setting terminal title
+    - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
+    - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
+    <!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
+    - `COLUMNS`: current columns
+    - `LINES`: current lines
+        - So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
 - Perf improvement on text selection [#898](https://github.com/raphamorim/rio/pull/898) by [@marc2332](https://github.com/marc2332).
 - Window title is now updated regardless the Navigation Mode.
 - Performance: Background and foreground data are only retrieved if is asked (either color automation is enabled or `window.title` contains any request for it).
@@ -76,8 +80,8 @@ language: 'en'
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
 - Introduce `SwitchCurrentTabToPrev` and `SwitchCurrentTabToNext` actions [#854](https://github.com/raphamorim/rio/pull/854/files) by [@agjini](https://github.com/agjini).
 - On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
-	- On macOS, fixed the scancode conversion for audio volume keys.
-	- On macOS, fixed the scancode conversion for `IntlBackslash`.
+    - On macOS, fixed the scancode conversion for audio volume keys.
+    - On macOS, fixed the scancode conversion for `IntlBackslash`.
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
@@ -127,9 +131,9 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 
 - Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
-	- Sugarloaf: Major rewrite of font glyph logic.
-	- Sugarloaf: Removal of some unnecessary processing on shaping logic.
-	- Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
+    - Sugarloaf: Major rewrite of font glyph logic.
+    - Sugarloaf: Removal of some unnecessary processing on shaping logic.
+    - Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
 - *Breaking:* Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
 - Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
 - Microsoft Windows: [Rio terminal is now available on MINGW packages](https://github.com/msys2/MINGW-packages/pull/22248).
@@ -345,8 +349,8 @@ args = ["-w"]
 - Support custom colors on all underlines.
 - Support for advaned formatting (squiggly underline?) [#370](https://github.com/raphamorim/rio/issues/370)
 - Performance improvements!
-	- Cache strategy has improved to cover any line that have been previously rendered.
-	- Render backgrounds and cursors in one pass.
+    - Cache strategy has improved to cover any line that have been previously rendered.
+    - Render backgrounds and cursors in one pass.
 - Update tokio
 
 ## 0.1.5
@@ -427,10 +431,10 @@ opacity = 0.8
 ```
 
 - Major rewrite on sugarloaf.
-	- New rendering architecture.
-	- Sugarloaf now uses same render pass for each render.
-	- Ignore equal renderers.
-	- Compute layout updates only if layout is different.
+    - New rendering architecture.
+    - Sugarloaf now uses same render pass for each render.
+    - Ignore equal renderers.
+    - Compute layout updates only if layout is different.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Support bluetooth access on MacOs.
@@ -646,9 +650,9 @@ y = 0.0
 ```toml
 [bindings]
 keys = [
-	{ key = "1", with = "super", action = "SelectTab(0)" },
-	{ key = "2", with = "super", action = "SelectTab(1)" },
-	{ key = "3", with = "super", action = "SelectTab(2)" }
+    { key = "1", with = "super", action = "SelectTab(0)" },
+    { key = "2", with = "super", action = "SelectTab(1)" },
+    { key = "3", with = "super", action = "SelectTab(2)" }
 ]
 ```
 
@@ -657,10 +661,10 @@ keys = [
 ```toml
 [bindings]
 keys = [
-	# Scroll up 8 lines
-	{ key = "up", with = "super", action = "Scroll(8)" },
-	# Scroll down 5 lines
-	{ key = "down", with = "super", action = "Scroll(-5)" }
+    # Scroll up 8 lines
+    { key = "up", with = "super", action = "Scroll(8)" },
+    # Scroll down 5 lines
+    { key = "down", with = "super", action = "Scroll(-5)" }
 ]
 ```
 
@@ -685,8 +689,8 @@ keys = [
 ```toml
 [bindings]
 keys = [
-	{ key = "p", with = "super", action = "Run(code)" },
-	{ key = "o", with = "super", action = "Run(sublime ~/.config/rio/config.toml)" }
+    { key = "p", with = "super", action = "Run(code)" },
+    { key = "o", with = "super", action = "Run(sublime ~/.config/rio/config.toml)" }
 ]
 ```
 
@@ -873,8 +877,8 @@ clickable = false
 ```
 
 - Performance improvements with Sugarloaf de-duplication of input data.
-	- Before: `~253.5µs`.
-	- Now: `~51.5µs`.
+    - Before: `~253.5µs`.
+    - Now: `~51.5µs`.
 - Introduce `navigation.use-current-path` which sets if a tab/breacrumb should be open from the current context path.
 - Fix rendering unicode with 1 width glyphs (fix [#160](https://github.com/raphamorim/rio/issues/160)).
 - Increased max tabs from 9 to 20.
@@ -919,10 +923,10 @@ clickable = false
 ## 0.0.10
 
 - Major refactor of Sugarloaf.
-	- Performance improvements around 80-110%.
-	- Introduced CachedSugar.
-	- Usage of PixelScale.
-	- Line-height support.
+    - Performance improvements around 80-110%.
+    - Introduced CachedSugar.
+    - Usage of PixelScale.
+    - Line-height support.
 - Open new tab using the current tab directory.
 - Fix some symbols break the horizontal and vertical alignment of lines (ref [#148](https://github.com/raphamorim/rio/issues/148)).
 - Fix font size configuration is confusing (ref [#139](https://github.com/raphamorim/rio/issues/139)).
