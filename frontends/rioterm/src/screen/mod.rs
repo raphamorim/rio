@@ -997,6 +997,16 @@ impl Screen<'_> {
                         self.context_manager.select_prev_split();
                         self.render();
                     }
+                    Act::SelectNextSplitOrTab => {
+                        self.cancel_search();
+                        self.context_manager.switch_to_next_split_or_tab();
+                        self.render();
+                    }
+                    Act::SelectPrevSplitOrTab => {
+                        self.cancel_search();
+                        self.context_manager.switch_to_prev_split_or_tab();
+                        self.render();
+                    }
                     Act::SelectTab(tab_index) => {
                         self.context_manager.select_tab(*tab_index);
                         self.cancel_search();

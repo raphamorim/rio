@@ -571,6 +571,32 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn switch_to_next_split_or_tab(&mut self) {
+        if self.contexts[self.current_index].select_next_split_no_loop() {
+            self.current_route = self.current().route_id;
+            return;
+        }
+        self.switch_to_next();
+        // Make sure first split is selected
+        let current_tab = &mut self.contexts[self.current_index];
+        current_tab.current = 0;
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
+    pub fn switch_to_prev_split_or_tab(&mut self) {
+        if self.contexts[self.current_index].select_prev_split_no_loop() {
+            self.current_route = self.current().route_id;
+            return;
+        }
+        self.switch_to_prev();
+        // Make sure last split is selected
+        let current_tab = &mut self.contexts[self.current_index];
+        current_tab.current = current_tab.len() - 1;
+        self.current_route = self.current().route_id;
+    }
+
+    #[inline]
     pub fn select_tab(&mut self, tab_index: usize) {
         if self.config.is_native {
             self.event_proxy
@@ -1227,6 +1253,194 @@ pub mod test {
         assert_eq!(context_manager.current_index, 0);
         context_manager.switch_to_next();
         assert_eq!(context_manager.current_index, 1);
+    }
+
+    #[test]
+    fn test_switch_to_next_split_or_tab() {
+        let window_id: WindowId = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = true;
+        let split_down = false;
+
+        context_manager.add_context(should_redirect, 0);
+        context_manager.split(0, split_down);
+        context_manager.split(0, split_down);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.split(0, split_down);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.set_current(0);
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+
+        let mut current_index;
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 2);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 2);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 3);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 3);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 4);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 0);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+    }
+
+    #[test]
+    fn test_switch_to_prev_split_or_tab() {
+        let window_id: WindowId = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = true;
+        let split_down = false;
+
+        context_manager.add_context(should_redirect, 0);
+        context_manager.split(0, split_down);
+        context_manager.split(0, split_down);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.split(0, split_down);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.set_current(0);
+        assert_eq!(context_manager.len(), 5);
+        assert_eq!(context_manager.current_index, 0);
+
+        let mut current_index;
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 4);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 3);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 3);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 2);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 2);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 0);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+    }
+
+    #[test]
+    fn test_switch_to_next_and_prev_split_or_tab() {
+        let window_id: WindowId = WindowId::from(0);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, window_id).unwrap();
+        let should_redirect = true;
+        let split_down = false;
+
+        context_manager.add_context(should_redirect, 0);
+        context_manager.split(0, split_down);
+        context_manager.split(0, split_down);
+        context_manager.add_context(should_redirect, 0);
+        context_manager.set_current(0);
+        assert_eq!(context_manager.len(), 3);
+        assert_eq!(context_manager.current_index, 0);
+
+        let mut current_index;
+
+        // Next
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 2);
+
+        context_manager.switch_to_next_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 2);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        // Prev
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 2);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 1);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 1);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
+
+        context_manager.switch_to_prev_split_or_tab();
+        current_index = context_manager.current_index;
+        assert_eq!(current_index, 0);
+        assert_eq!(context_manager.contexts[current_index].current, 0);
     }
 
     #[test]
