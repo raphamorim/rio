@@ -141,6 +141,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    pub fn select_next_split_no_loop(&mut self) -> bool {
+        if self.inner.len() == 1 {
+            return false;
+        }
+
+        if self.current >= self.inner.len() - 1 {
+            return false;
+        } else {
+            self.current += 1;
+        }
+
+        return true;
+    }
+
+    #[inline]
     pub fn select_prev_split(&mut self) {
         if self.inner.len() == 1 {
             return;
@@ -151,6 +166,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         } else {
             self.current -= 1;
         }
+    }
+
+    #[inline]
+    pub fn select_prev_split_no_loop(&mut self) -> bool {
+        if self.inner.len() == 1 {
+            return false;
+        }
+
+        if self.current == 0 {
+            return false;
+        } else {
+            self.current -= 1;
+        }
+        return true;
     }
 
     #[inline]
