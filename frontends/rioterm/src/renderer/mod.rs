@@ -349,6 +349,7 @@ impl Renderer {
                         width = 2.0;
                     }
                 }
+
                 style.width = width;
 
                 self.font_cache.insert(
