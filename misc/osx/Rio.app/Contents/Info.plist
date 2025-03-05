@@ -71,6 +71,14 @@
             <string>txt</string>
         </array>
     </dict>
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Shell</string>
+        <key>LSItemContentTypes</key>
+        <array>
+            <string>public.unix-executable</string>
+        </array>
+	</dict>
   </array>
   <key>CFBundleIdentifier</key>
   <string>com.raphaelamorim.rio</string>
