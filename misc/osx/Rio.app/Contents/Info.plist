@@ -92,6 +92,8 @@
   <string>APPL</string>
   <key>CFBundleIconFile</key>
   <string>icon</string>
+  <key>MDItemKeywords</key>
+  <string>Terminal</string>
   <key>CFBundleShortVersionString</key>
   <string>{{.Version}}</string>
   <key>CFBundleVersion</key>
