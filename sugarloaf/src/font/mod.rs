@@ -7,7 +7,7 @@ pub mod loader;
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
-use crate::font::fonts::{SugarloafFontStyle, SugarloafFontWidth};
+use crate::font::fonts::{parse_unicode, SugarloafFontStyle, SugarloafFontWidth};
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -21,6 +21,7 @@ use lru::LruCache;
 use parking_lot::FairMutex;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -34,8 +35,8 @@ pub fn lookup_for_font_match(
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
     let mut font_synth = Synthesis::default();
-    let fonts_len: usize = library.inner.len();
 
+    let fonts_len: usize = library.inner.len();
     for font_id in 0..fonts_len {
         let mut is_emoji = false;
 
@@ -118,10 +119,16 @@ impl Default for FontLibrary {
     }
 }
 
+pub struct SymbolMap {
+    pub font_index: usize,
+    pub range: Range<char>,
+}
+
 pub struct FontLibraryData {
     pub ui: FontArc,
     // Standard is fallback for everything, it is also the inner number 0
     pub inner: FxHashMap<usize, FontData>,
+    pub symbol_maps: Option<Vec<SymbolMap>>,
     pub stash: LruCache<usize, SharedData>,
     pub hinting: bool,
 }
@@ -133,6 +140,7 @@ impl Default for FontLibraryData {
             inner: FxHashMap::default(),
             stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
             hinting: true,
+            symbol_maps: None,
         }
     }
 }
@@ -158,6 +166,15 @@ impl FontLibraryData {
         );
         if !parser.next(&mut char_cluster) {
             return Some((0, false));
+        }
+
+        // First check symbol map before lookup_for_font_match
+        if let Some(symbol_maps) = &self.symbol_maps {
+            for symbol_map in symbol_maps {
+                if symbol_map.range.contains(&ch) {
+                    return Some((symbol_map.font_index, false));
+                }
+            }
         }
 
         let is_italic = fragment_style.font_attrs.style() == Style::Italic;
@@ -382,6 +399,62 @@ impl FontLibraryData {
                     fonts_not_fount.push(spec);
                 }
             }
+        }
+
+        // TODO: Currently, it will naively just extend fonts from symbol_map
+        // without even look if the font has been loaded before.
+        // Considering that we drop the font data that's inactive should be ok but
+        // it will cost a bit more time to initialize.
+        //
+        // Considering we receive via config
+        // [{ start = "2297", end = "2299", font-family = "Cascadia Code NF" },
+        //  { start = "2296", end = "2297", font-family = "Cascadia Code NF" }]
+        //
+        // Will become:
+        // [{ start = "2297", end = "2299", font_index = Some(1) },
+        //  { start = "2296", end = "2297", font_index = Some(1) }]
+        //
+        // TODO: We should have a new symbol map internally
+        // { range = '2296'..'2297', font_index = Some(1) }]
+        if let Some(symbol_map) = spec.symbol_map {
+            let mut symbol_maps = Vec::default();
+            for extra_font_from_symbol_map in symbol_map {
+                match find_font(
+                    &db,
+                    SugarloafFont {
+                        family: extra_font_from_symbol_map.font_family,
+                        ..SugarloafFont::default()
+                    },
+                    true,
+                    true,
+                ) {
+                    FindResult::Found(data) => {
+                        if let Some(start) =
+                            parse_unicode(&extra_font_from_symbol_map.start)
+                        {
+                            if let Some(end) =
+                                parse_unicode(&extra_font_from_symbol_map.end)
+                            {
+                                self.insert(data);
+
+                                symbol_maps.push(SymbolMap {
+                                    range: start..end,
+                                    font_index: self.len() - 1,
+                                });
+
+                                continue;
+                            }
+                        }
+
+                        warn!("symbol-map: Failed to parse start and end values");
+                    }
+                    FindResult::NotFound(spec) => {
+                        fonts_not_fount.push(spec);
+                    }
+                }
+            }
+
+            self.symbol_maps = Some(symbol_maps);
         }
 
         fonts_not_fount

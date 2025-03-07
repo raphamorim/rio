@@ -141,6 +141,16 @@ pub struct SugarloafFonts {
     pub symbol_map: Option<Vec<SymbolMap>>,
 }
 
+pub fn parse_unicode(input: &str) -> Option<char> {
+    if let Ok(unicode) = u32::from_str_radix(input, 16) {
+        if let Some(result) = char::from_u32(unicode) {
+            return Some(result);
+        }
+    }
+
+    None
+}
+
 impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
