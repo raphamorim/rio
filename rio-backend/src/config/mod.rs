@@ -1049,7 +1049,7 @@ mod tests {
             "symbol-map",
             r#"
             fonts.symbol-map = [
-                // covers: '⊗','⊘','⊙'
+                # covers: '⊗','⊘','⊙'
                 { start = "2297", end = "2299", font-family = "PowerlineSymbols" }
             ]
         "#,
