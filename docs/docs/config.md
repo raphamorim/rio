@@ -293,7 +293,8 @@ Has no default values. Example values are shown below:
 
 ```toml
 fonts.symbol-map = [
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
+  // covers: '⊗','⊘','⊙'
+  { start = "2297", end = "2299", font-family = "Cascadia Code Nerd Font" }
 ]
 ```
 
