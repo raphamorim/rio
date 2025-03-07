@@ -11,6 +11,6 @@ Installation options:
 - openSUSE package: [openSUSE:Factory/rioterm](https://software.opensuse.org/package/rioterm)
 - Void Linux package: https://github.com/void-linux/void-packages/tree/master/srcpkgs/rio
 
-Note: Debian packages (`.deb`) are packaged and released along with [GitHub releases](https://github.com/raphamorim/rio/releases).
+Note: Debian packages (`.deb`) and Red Hat packages (`.rpm`) are packaged and released along with [GitHub releases](https://github.com/raphamorim/rio/releases).
 
 In case your distro doesn't have the package manager option listed above, proceed to [build from the source](/docs/install/build-from-source).

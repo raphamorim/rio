@@ -207,6 +207,7 @@ The font configuration default:
 [fonts]
 size = 18
 features = []
+symbol-map = []
 
 [fonts.regular]
 family = "cascadiacode"
@@ -284,6 +285,27 @@ Enable or disable font hinting. It is enabled by default.
 
 ```toml
 fonts.hinting = true
+```
+
+## fonts.symbol-map
+
+Has no default values. Example values are shown below:
+
+```toml
+fonts.symbol-map = [
+  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
+]
+```
+
+Map the specified Unicode codepoints to a particular font. Useful if you need special rendering for some symbols, such as for Powerline. Avoids the need for patched fonts.
+
+In case you would like to map many codepoints:
+
+```toml
+fonts.symbol-map = [
+  { start = "E0A0", end = "E0A3", font-family = "PowerlineSymbols" },
+  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" },
+]
 ```
 
 ## fonts.ui

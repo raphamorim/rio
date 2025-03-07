@@ -61,8 +61,16 @@ pub fn default_font_size() -> f32 {
 }
 
 #[inline]
-pub fn default_font_hinting() -> bool {
+pub fn default_bool_true() -> bool {
     true
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SymbolMap {
+    pub start: String,
+    pub end: String,
+    #[serde(rename = "font-family")]
+    pub font_family: String,
 }
 
 fn default_font_family() -> String {
@@ -109,7 +117,7 @@ pub fn default_font_bold_italic() -> SugarloafFont {
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
     pub size: f32,
-    #[serde(default = "default_font_hinting")]
+    #[serde(default = "default_bool_true")]
     pub hinting: bool,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
@@ -129,6 +137,8 @@ pub struct SugarloafFonts {
     pub emoji: Option<SugarloafFont>,
     #[serde(default = "Vec::default")]
     pub extras: Vec<SugarloafFont>,
+    #[serde(default = "Option::default", rename = "symbol-map")]
+    pub symbol_map: Option<Vec<SymbolMap>>,
 }
 
 impl Default for SugarloafFonts {
@@ -145,6 +155,7 @@ impl Default for SugarloafFonts {
             bold_italic: default_font_bold_italic(),
             italic: default_font_italic(),
             extras: vec![],
+            symbol_map: None,
         }
     }
 }
