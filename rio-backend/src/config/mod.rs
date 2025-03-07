@@ -526,6 +526,7 @@ mod tests {
     use super::*;
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
+    use sugarloaf::font::fonts::parse_unicode;
 
     fn tmp_dir() -> PathBuf {
         std::env::temp_dir()
@@ -1044,11 +1045,6 @@ mod tests {
 
     #[test]
     fn test_symbol_map() {
-        fn unsafe_parse_unicode(input: &str) -> char {
-            let unicode = u32::from_str_radix(input, 16).unwrap();
-            char::from_u32(unicode).unwrap()
-        }
-
         let result = create_temporary_config(
             "symbol-map",
             r#"
@@ -1066,7 +1062,7 @@ mod tests {
         assert_eq!(symbol_map[0].start, "E0C0");
         assert_eq!(symbol_map[0].end, "E0C7");
 
-        assert_eq!(unsafe_parse_unicode(&symbol_map[0].start), '\u{E0C0}');
-        assert_eq!(unsafe_parse_unicode(&symbol_map[0].end), '\u{E0C7}');
+        assert_eq!(parse_unicode(&symbol_map[0].start), Some('\u{E0C0}'));
+        assert_eq!(parse_unicode(&symbol_map[0].end), Some('\u{E0C7}'));
     }
 }

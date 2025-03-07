@@ -340,7 +340,14 @@ pub fn default_config_file_content() -> String {
 # [fonts]
 # hinting = false
 #
-# Example:
+# You can also map the specified Unicode codepoints to a particular font.
+# [fonts]
+# symbol-map = [
+#   // covers: '⊗','⊘','⊙'
+#   { start = "2297", end = "2299", font-family = "Cascadia Code NF" }
+# ]
+#
+# Simple example:
 # [fonts]
 # size = 18
 #

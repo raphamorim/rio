@@ -152,7 +152,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.current += 1;
         }
 
-        return true;
+        true
     }
 
     #[inline]
@@ -179,7 +179,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         } else {
             self.current -= 1;
         }
-        return true;
+        true
     }
 
     #[inline]
