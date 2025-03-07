@@ -7,8 +7,12 @@ language: 'en'
 
 ## 0.2.9 (unreleased)
 
+- Support to symbol map configuration: `fonts.symbol-map`:
+```toml
+# covers: '⊗','⊘','⊙'
+fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code NF" }]
+```
 - Add Switch to Next/Prev Split or Tab command by [@vlabo](https://github.com/vlabo).
-- Support to symbol map configuration: `fonts.symbol-map`.
 - Fix issue whenever the first main font cannot be found.
 
 ## 0.2.8
