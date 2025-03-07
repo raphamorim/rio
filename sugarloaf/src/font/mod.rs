@@ -267,10 +267,11 @@ impl FontLibraryData {
             }
             FindResult::NotFound(spec) => {
                 if !spec.is_default_family() {
-                    fonts_not_fount.push(spec);
-                } else {
-                    self.insert(load_fallback_from_memory(&spec));
+                    fonts_not_fount.push(spec.to_owned());
                 }
+
+                // The first font should always have a fallback
+                self.insert(load_fallback_from_memory(&spec));
             }
         }
 
