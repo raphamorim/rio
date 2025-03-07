@@ -294,7 +294,7 @@ Has no default values. Example values are shown below:
 ```toml
 fonts.symbol-map = [
   // covers: '⊗','⊘','⊙'
-  { start = "2297", end = "2299", font-family = "Cascadia Code Nerd Font" }
+  { start = "2297", end = "2299", font-family = "Cascadia Code NF" }
 ]
 ```
 
@@ -305,7 +305,7 @@ In case you would like to map many codepoints:
 ```toml
 fonts.symbol-map = [
   { start = "E0A0", end = "E0A3", font-family = "PowerlineSymbols" },
-  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" },
+  { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
 ]
 ```
 
