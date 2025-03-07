@@ -1050,19 +1050,27 @@ mod tests {
             r#"
             fonts.symbol-map = [
                 # covers: '⊗','⊘','⊙'
-                { start = "2297", end = "2299", font-family = "PowerlineSymbols" }
+                { start = "2297", end = "2299", font-family = "PowerlineSymbols" },
+                { start = "E0C0", end = "E0C7", font-family = "Cascadia Code NF" },
             ]
         "#,
         );
 
         assert!(result.fonts.symbol_map.is_some());
         let symbol_map = result.fonts.symbol_map.unwrap();
-        assert_eq!(symbol_map.len(), 1);
+        assert_eq!(symbol_map.len(), 2);
         assert_eq!(symbol_map[0].font_family, "PowerlineSymbols");
-        assert_eq!(symbol_map[0].start, "E0C0");
-        assert_eq!(symbol_map[0].end, "E0C7");
+        assert_eq!(symbol_map[0].start, "2297");
+        assert_eq!(symbol_map[0].end, "2299");
 
-        assert_eq!(parse_unicode(&symbol_map[0].start), Some('\u{E0C0}'));
-        assert_eq!(parse_unicode(&symbol_map[0].end), Some('\u{E0C7}'));
+        assert_eq!(parse_unicode(&symbol_map[0].start), Some('\u{2297}'));
+        assert_eq!(parse_unicode(&symbol_map[0].end), Some('\u{2299}'));
+
+        assert_eq!(symbol_map[1].font_family, "Cascadia Code NF");
+        assert_eq!(symbol_map[1].start, "E0C0");
+        assert_eq!(symbol_map[1].end, "E0C7");
+
+        assert_eq!(parse_unicode(&symbol_map[1].start), Some('\u{E0C0}'));
+        assert_eq!(parse_unicode(&symbol_map[1].end), Some('\u{E0C7}'));
     }
 }
