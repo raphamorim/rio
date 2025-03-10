@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.9 (unreleased)
+## 0.2.10 (unreleased)
+
+- TBD.
+
+## 0.2.9
 
 - Support to symbol map configuration: `fonts.symbol-map`:
 ```toml
