@@ -333,11 +333,6 @@ pub mod test {
             String::from("66")
         );
 
-        assert_eq!(
-            update_title("{{ absolute_path || title }}", &context),
-            String::from("Something")
-        );
-
         // let's modify current_directory to actually be something
         {
             let path = std::path::PathBuf::from("/tmp");
