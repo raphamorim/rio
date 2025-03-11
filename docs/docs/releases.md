@@ -7,7 +7,9 @@ language: 'en'
 
 ## 0.2.10 (unreleased)
 
-- TBD.
+- Fix flaky test issue, test_update_title_with_logical_or failing randomly on aarch64 [#994](https://github.com/raphamorim/rio/issues/994).
+- Support to `navigation.unfocused_split_opacity`, default is `0.5`.
+- Sugarloaf: Fix foreground color opacity not being computed.
 
 ## 0.2.9
 

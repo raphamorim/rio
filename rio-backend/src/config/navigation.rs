@@ -103,6 +103,11 @@ pub struct ColorAutomation {
     pub color: ColorArray,
 }
 
+#[inline]
+pub fn default_unfocused_split_opacity() -> f32 {
+    0.4
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Navigation {
     #[serde(default = "NavigationMode::default")]
@@ -125,6 +130,8 @@ pub struct Navigation {
     pub use_split: bool,
     #[serde(default = "default_bool_true", rename = "open-config-with-split")]
     pub open_config_with_split: bool,
+    #[serde(default = "default_unfocused_split_opacity", rename = "unfocused-split-opacity")]
+    pub unfocused_split_opacity: f32,
 }
 
 impl Default for Navigation {
@@ -137,6 +144,7 @@ impl Default for Navigation {
             use_terminal_title: false,
             hide_if_single: true,
             use_split: true,
+            unfocused_split_opacity: default_unfocused_split_opacity(),
             open_config_with_split: true,
         }
     }
