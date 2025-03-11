@@ -32,6 +32,7 @@ pub struct Renderer {
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
+    unfocused_split_opacity: f32,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -79,6 +80,7 @@ impl Renderer {
         }
 
         Renderer {
+            unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
@@ -299,6 +301,13 @@ impl Renderer {
                     style.color = self.named_colors.search_match_foreground;
                     style.background_color =
                         Some(self.named_colors.search_match_background);
+                }
+            }
+
+            if !is_active {
+                style.color[3] = self.unfocused_split_opacity;
+                if let Some(mut background_color) = style.background_color {
+                    background_color[3] = self.unfocused_split_opacity;
                 }
             }
 
