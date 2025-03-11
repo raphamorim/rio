@@ -173,8 +173,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if !self.scheduler.scheduled(timer_id) {
                             if let Some(limit) = route.window.wait_until() {
                                 route.window.start_render_timestamp();
-                                self.scheduler
-                                    .schedule(event, limit, false, timer_id);
+                                self.scheduler.schedule(event, limit, false, timer_id);
                             } else {
                                 route.window.start_render_timestamp();
                                 route.request_redraw();

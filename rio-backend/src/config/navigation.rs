@@ -130,7 +130,10 @@ pub struct Navigation {
     pub use_split: bool,
     #[serde(default = "default_bool_true", rename = "open-config-with-split")]
     pub open_config_with_split: bool,
-    #[serde(default = "default_unfocused_split_opacity", rename = "unfocused-split-opacity")]
+    #[serde(
+        default = "default_unfocused_split_opacity",
+        rename = "unfocused-split-opacity"
+    )]
     pub unfocused_split_opacity: f32,
 }
 
