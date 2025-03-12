@@ -1119,7 +1119,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 85);
-        assert_eq!(context_dimension.lines, 100);
+        assert_eq!(context_dimension.lines, 99);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -1244,7 +1244,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -1463,7 +1463,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -1610,7 +1610,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
@@ -1780,7 +1780,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 85);
-        assert_eq!(context_dimension.lines, 100);
+        assert_eq!(context_dimension.lines, 99);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -1934,7 +1934,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2132,7 +2132,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 85);
-        assert_eq!(context_dimension.lines, 100);
+        assert_eq!(context_dimension.lines, 99);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2257,7 +2257,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2375,7 +2375,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2466,7 +2466,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2563,7 +2563,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2674,7 +2674,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2765,7 +2765,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2862,7 +2862,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
@@ -2973,7 +2973,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
@@ -3220,7 +3220,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
@@ -3566,7 +3566,7 @@ pub mod test {
         );
 
         assert_eq!(context_dimension.columns, 42);
-        assert_eq!(context_dimension.lines, 75);
+        assert_eq!(context_dimension.lines, 74);
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
