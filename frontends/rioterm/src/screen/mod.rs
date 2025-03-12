@@ -115,9 +115,9 @@ impl Screen<'_> {
             1,
             config.window.macos_use_unified_titlebar,
         );
+
         let padding_y_bottom =
             padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
-
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 

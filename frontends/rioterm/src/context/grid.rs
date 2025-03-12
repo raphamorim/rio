@@ -11,8 +11,6 @@ const MIN_LINES: usize = 1;
 
 const PADDING: f32 = 2.;
 
-// $ tput columns
-// $ tput lines
 fn compute(
     width: f32,
     height: f32,
@@ -20,17 +18,19 @@ fn compute(
     line_height: f32,
     margin: Delta<f32>,
 ) -> (usize, usize) {
-    let margin_x = (margin.x * dimensions.scale).floor();
+    let margin_x = (margin.x * dimensions.scale).round();
     let margin_spaces = margin.top_y + margin.bottom_y;
 
     let mut lines = (height / dimensions.scale) - margin_spaces;
     lines /= (dimensions.height / dimensions.scale) * line_height;
-    let visible_lines = std::cmp::max(lines.floor() as usize, MIN_LINES);
+    lines -= 1.0;
+    let visible_lines = std::cmp::max(lines.round() as usize, MIN_LINES);
 
     let mut visible_columns = (width / dimensions.scale) - margin_x;
     visible_columns /= dimensions.width / dimensions.scale;
     let visible_columns = std::cmp::max(visible_columns as usize, MIN_COLS);
 
+    // println!("{:?} {:?} {:?} {:?} {:?}", width, height, dimensions, margin, (visible_columns, visible_lines));
     (visible_columns, visible_lines)
 }
 
@@ -1011,6 +1011,40 @@ pub mod test {
     use crate::event::VoidListener;
     use pretty_assertions::assert_eq;
     use rio_window::window::WindowId;
+
+    #[test]
+    fn test_compute() {
+        // (1000. / ((74. / 2.)=37.))
+        // (1000./37.)=27.027
+        assert_eq!(
+            (88, 26),
+            compute(
+                1600.0,
+                1000.0,
+                SugarDimensions {
+                    scale: 2.,
+                    width: 18.,
+                    height: 37.,
+                },
+                1.0,
+                Delta::<f32>::default()
+            )
+        );
+        assert_eq!(
+            (80, 24),
+            compute(
+                1600.0,
+                1000.0,
+                SugarDimensions {
+                    scale: 2.,
+                    width: 20.,
+                    height: 40.,
+                },
+                1.0,
+                Delta::<f32>::default()
+            )
+        );
+    }
 
     #[test]
     fn test_single_context_respecting_margin_and_no_quad_creation() {
