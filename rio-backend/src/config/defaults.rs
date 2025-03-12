@@ -118,7 +118,7 @@ pub fn default_window_width() -> i32 {
 
 #[inline]
 pub fn default_window_height() -> i32 {
-    500
+    490
 }
 
 #[inline]
