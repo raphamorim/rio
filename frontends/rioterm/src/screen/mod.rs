@@ -1075,12 +1075,15 @@ impl Screen<'_> {
     pub fn create_tab(&mut self) {
         let redirect = true;
 
+        // We resize the current tab ahead to prepare the
+        // dimensions to be copied to next tab.
+        let num_tabs = self.ctx().len();
+        self.resize_top_or_bottom_line(num_tabs + 1);
+
         let rich_text_id = self.sugarloaf.create_rich_text();
         self.context_manager.add_context(redirect, rich_text_id);
 
-        let num_tabs = self.ctx().len();
         self.cancel_search();
-        self.resize_top_or_bottom_line(num_tabs);
         self.render();
     }
 
