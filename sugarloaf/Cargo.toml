@@ -70,7 +70,7 @@ twox-hash = { version = "1.6.3", default-features = false, features = ["std"] }
 memmap2 = "0.9.5"
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.9.0", features = ["alloc"] }
-ttf-parser = { version = "0.25.1 }
+ttf-parser = { version = "0.25.1" }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.7", default-features = false }
