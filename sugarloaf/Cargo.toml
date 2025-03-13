@@ -33,7 +33,6 @@ wgpu = { workspace = true }
 bytemuck = { workspace = true }
 tracing = { workspace = true }
 serde = { version = "1.0.208", features = ["derive"] }
-twox-hash = { version = "1.6.3", default-features = false }
 image_rs = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
@@ -66,7 +65,7 @@ thiserror = "2.0.1"
 crossbeam-channel = "0.5.14"
 crossbeam-deque = "0.8.6"
 rayon = "1.10.0"
-twox-hash = { version = "1.6.3", default-features = false, features = ["std"] }
+twox-hash = { version = "2.1.0", default-features = false, features = ["std", "xxhash64"] }
 memmap2 = "0.9.5"
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.9.0", features = ["alloc"] }
