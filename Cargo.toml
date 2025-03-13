@@ -42,16 +42,16 @@ wa = { path = "wa", version = "0.1.7" }
 sugarloaf = { path = "sugarloaf", version = "0.2.10" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = ["nightly", "hardware-lock-elision"] }
-rustc-hash = "2.1.0"
+rustc-hash = "2.1.1"
 # unicode-width = "0.2.0"
 unicode-width = { package = "unicode-width-16", version = "0.1.0" }
 base64 = "0.22.1"
 image_rs = { package = "image", version = "0.25.5", default-features = false, features = ["gif", "jpeg", "ico", "png", "pnm", "webp", "bmp"] }
 regex = "1.11.1"
-bytemuck = { version = "1.21.0", features = [ "derive" ] }
-serde = { version = "1.0.217", features = ["derive"] }
+bytemuck = { version = "1.22.0", features = [ "derive" ] }
+serde = { version = "1.0.219", features = ["derive"] }
 wgpu = "24.0.1"
-libc = "0.2.169"
+libc = "0.2.171"
 smol_str = "0.3.2"
 futures = "0.3.31"
 wasm-bindgen = "0.2.87"
@@ -59,7 +59,7 @@ wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3.42"
 env_logger = "0.11.3"
 console_log = "0.2.2"
-bitflags = "2.8.0"
+bitflags = "2.9.0"
 iovec = "0.1.4"
 console_error_panic_hook = "0.1.7"
 tracing = "0.1.41"
