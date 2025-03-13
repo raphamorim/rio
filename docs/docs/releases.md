@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.10 (unreleased)
+## 0.2.11 (unreleased)
+
+TBD.
+
+## 0.2.10
 
 - Fix computation of lines on screen.
 - Fix dimension of the first tab whenever TopTab or BottomTab is created.
