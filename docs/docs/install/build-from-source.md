@@ -10,6 +10,8 @@ Before compiling Rio terminal, you'll have to first clone the source code:
 ```sh
 git clone https://github.com/raphamorim/rio.git
 ```
+Make sure you have `git-lfs` installed, as Rio uses it for some resource files.
+If you forgot, call `git lfs install && git lfs pull` in the repo folder after installing `git-lfs`. If you get an error about "Encountered [n] files that should have been pointers..." or git shows LFS files as changed, see: https://stackoverflow.com/a/54804224 for a solution.
 
 Then install the Rust compiler with `rustup` ([rustup.rs](https://rustup.rs/)).
 
