@@ -7,7 +7,7 @@ license.workspace = true
 keywords.workspace = true
 repository = "https://github.com/raphamorim/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
-description = "A hardware-accelerated GPU terminal emulator powered by WebGPU, focusing to run in desktops and browsers"
+description = "Backend infrastructure for Rio terminal"
 
 [lib]
 path = "src/lib.rs"
