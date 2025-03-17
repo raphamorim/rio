@@ -2100,7 +2100,7 @@ impl Screen<'_> {
             None
         };
 
-        self.renderer.prepare_term(
+        self.renderer.update(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &mut search_hints,

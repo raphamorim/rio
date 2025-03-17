@@ -83,6 +83,7 @@ pub struct RichText {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
+    NewLayer,
     Rect(Rect),
     Text(Text),
     Quad(ComposedQuad),
