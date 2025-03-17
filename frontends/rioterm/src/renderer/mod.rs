@@ -36,6 +36,7 @@ pub struct Renderer {
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
+    search_rich_text: Option<usize>,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -97,6 +98,7 @@ impl Renderer {
             named_colors,
             dynamic_background,
             active_search: None,
+            search_rich_text: None,
             font_cache: FxHashMap::default(),
             font_context: font_context.clone(),
         }
@@ -635,14 +637,77 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn prepare_term(
+    fn update_search_rich_text(&mut self, content: &mut Content) {
+        if let Some(active_search_content) = &self.active_search {
+            if let Some(search_rich_text) = self.search_rich_text {
+                if active_search_content.is_empty() {
+                    content.sel(search_rich_text).clear().new_line().add_text(
+                        &String::from("Search: type something..."), FragmentStyle {
+                            color: [
+                                self.named_colors.foreground[0],
+                                self.named_colors.foreground[1],
+                                self.named_colors.foreground[2],
+                                self.named_colors.foreground[3] - 0.3,
+                            ],
+                            ..FragmentStyle::default()
+                        },
+                    ).build();
+                } else {
+                    let mut style = FragmentStyle {
+                        color: self.named_colors.foreground,
+                        ..FragmentStyle::default()
+                    };
+                    let line = content.sel(search_rich_text);
+                    line.clear().new_line().add_text("Search: ", style);
+
+                    for character in active_search_content.chars() {
+                        if let Some((font_id, width)) =
+                            self.font_cache.get(&(character, style.font_attrs))
+                        {
+                            style.font_id = *font_id;
+                            style.width = *width;
+                        } else {
+                            let mut width = character.width().unwrap_or(1) as f32;
+                            let mut font_ctx = self.font_context.inner.lock();
+
+                            // Note we don't update cache from search bar
+                            if let Some((font_id, is_emoji)) =
+                                font_ctx.find_best_font_match(character, &style)
+                            {
+                                style.font_id = font_id;
+                                if is_emoji {
+                                    width = 2.0;
+                                }
+                            }
+                            style.width = width;
+                        };
+
+                        line.add_text_on_line(search_rich_text, &character.to_string(), style);
+                    }
+
+                    line.build();
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub fn update(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        // In case rich text for search was not created
+        if self.search_rich_text.is_none() {
+            let search_rich_text = sugarloaf.create_rich_text();
+            sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
+            self.search_rich_text = Some(search_rich_text);
+        }
+
         let content = sugarloaf.content();
+
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
 
@@ -711,6 +776,8 @@ impl Renderer {
             }
         }
 
+        self.update_search_rich_text(content);
+
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
         let mut objects = Vec::with_capacity(30);
@@ -722,13 +789,15 @@ impl Renderer {
             &mut objects,
         );
 
-        if let Some(active_search_content) = &self.active_search {
-            search::draw_search_bar(
-                &mut objects,
-                &self.named_colors,
-                (window_size.width, window_size.height, scale_factor),
-                active_search_content,
-            );
+        if self.active_search.is_some() {
+            if let Some(rich_text_id) = self.search_rich_text {
+                search::draw_search_bar(
+                    &mut objects,
+                    rich_text_id,
+                    &self.named_colors,
+                    (window_size.width, window_size.height, scale_factor),
+                );
+            }
 
             self.active_search = None;
         }

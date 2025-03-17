@@ -396,13 +396,13 @@ impl Sugarloaf<'_> {
                         }
                     }
 
-                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
 
                     self.rect_brush
                         .render(&mut rpass, &self.state, &mut self.ctx);
+
+                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
 
                     self.text_brush.render(&mut self.ctx, &mut rpass);
                 }
