@@ -16,7 +16,6 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
-use ab_glyph::FontArc;
 use lru::LruCache;
 use parking_lot::FairMutex;
 use rustc_hash::FxHashMap;
@@ -125,7 +124,6 @@ pub struct SymbolMap {
 }
 
 pub struct FontLibraryData {
-    pub ui: FontArc,
     // Standard is fallback for everything, it is also the inner number 0
     pub inner: FxHashMap<usize, FontData>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
@@ -136,7 +134,6 @@ pub struct FontLibraryData {
 impl Default for FontLibraryData {
     fn default() -> Self {
         Self {
-            ui: FontArc::try_from_slice(FONT_CASCADIAMONO_REGULAR).unwrap(),
             inner: FxHashMap::default(),
             stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
             hinting: true,
@@ -390,17 +387,6 @@ impl FontLibraryData {
 
         self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
 
-        if let Some(ui_spec) = spec.ui {
-            match find_font(&db, ui_spec, false, false) {
-                FindResult::Found(data) => {
-                    self.ui = FontArc::try_from_vec(data.data.unwrap().to_vec()).unwrap();
-                }
-                FindResult::NotFound(spec) => {
-                    fonts_not_fount.push(spec);
-                }
-            }
-        }
-
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
         // Considering that we drop the font data that's inactive should be ok but
@@ -607,14 +593,6 @@ pub type SugarloafFonts = fonts::SugarloafFonts;
 
 #[cfg(not(target_arch = "wasm32"))]
 use tracing::{info, warn};
-
-#[derive(Debug, Clone)]
-pub struct ComposedFontArc {
-    pub regular: FontArc,
-    pub bold: FontArc,
-    pub italic: FontArc,
-    pub bold_italic: FontArc,
-}
 
 enum FindResult {
     Found(FontData),

@@ -52,15 +52,6 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 ![Demo blurred background](docs/static/assets/demos/demos-nixos-blur.png)
 
-## Acknowledgments
-
-- Alacritty 🥇
-- Since version 0.0.22, Sugarloaf ported glyph-brush code which was originally written by @alexheretic and licensed under Apache-2.0 license 🥇
-- Components text render was originally from https://github.com/hecrj/wgpu_glyph
-- The legacy Rio logo was made using _Adobe Sketchbook_ on iPad (between versions 0.0.1 between 0.0.18).
-- WA was built originally from a fork from [Macroquad](https://github.com/not-fl3/macroquad) which is licensed under MIT license.
-- https://github.com/servo/core-foundation-rs/blob/d4ce710182f1756c9d874ab917283fe1a1b7a011/cocoa/src/appkit.rs#L1447
-
 ## Minimal stable rust version
 
 Rio's MSRV is 1.80.1.
