@@ -26,6 +26,12 @@ use std::ops::RangeInclusive;
 use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
 
+#[derive(Default)]
+pub struct Search {
+    rich_text_id: Option<usize>,
+    active_search: Option<String>,
+}
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
@@ -36,7 +42,7 @@ pub struct Renderer {
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
-    search_rich_text: Option<usize>,
+    pub search: Search,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -49,7 +55,6 @@ pub struct Renderer {
         (char, rio_backend::sugarloaf::font_introspector::Attributes),
         (usize, f32),
     >,
-    active_search: Option<String>,
 }
 
 impl Renderer {
@@ -97,8 +102,7 @@ impl Renderer {
             ),
             named_colors,
             dynamic_background,
-            active_search: None,
-            search_rich_text: None,
+            search: Search::default(),
             font_cache: FxHashMap::default(),
             font_context: font_context.clone(),
         }
@@ -106,7 +110,7 @@ impl Renderer {
 
     #[inline]
     pub fn set_active_search(&mut self, active_search: Option<String>) {
-        self.active_search = active_search;
+        self.search.active_search = active_search;
     }
 
     #[inline]
@@ -638,8 +642,8 @@ impl Renderer {
 
     #[inline]
     fn update_search_rich_text(&mut self, content: &mut Content) {
-        if let Some(active_search_content) = &self.active_search {
-            if let Some(search_rich_text) = self.search_rich_text {
+        if let Some(active_search_content) = &self.search.active_search {
+            if let Some(search_rich_text) = self.search.rich_text_id {
                 if active_search_content.is_empty() {
                     content
                         .sel(search_rich_text)
@@ -710,10 +714,10 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         // In case rich text for search was not created
-        if self.search_rich_text.is_none() {
+        if self.search.rich_text_id.is_none() {
             let search_rich_text = sugarloaf.create_rich_text();
             sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
-            self.search_rich_text = Some(search_rich_text);
+            self.search.rich_text_id = Some(search_rich_text);
         }
 
         let content = sugarloaf.content();
@@ -795,12 +799,12 @@ impl Renderer {
             (window_size.width, window_size.height, scale_factor),
             &self.named_colors,
             context_manager,
-            self.active_search.is_some(),
+            self.search.active_search.is_some(),
             &mut objects,
         );
 
-        if self.active_search.is_some() {
-            if let Some(rich_text_id) = self.search_rich_text {
+        if self.search.active_search.is_some() {
+            if let Some(rich_text_id) = self.search.rich_text_id {
                 search::draw_search_bar(
                     &mut objects,
                     rich_text_id,
@@ -809,7 +813,7 @@ impl Renderer {
                 );
             }
 
-            self.active_search = None;
+            self.search.active_search = None;
         }
 
         for rte in context_manager.grid_objects() {
