@@ -641,17 +641,23 @@ impl Renderer {
         if let Some(active_search_content) = &self.active_search {
             if let Some(search_rich_text) = self.search_rich_text {
                 if active_search_content.is_empty() {
-                    content.sel(search_rich_text).clear().new_line().add_text(
-                        &String::from("Search: type something..."), FragmentStyle {
-                            color: [
-                                self.named_colors.foreground[0],
-                                self.named_colors.foreground[1],
-                                self.named_colors.foreground[2],
-                                self.named_colors.foreground[3] - 0.3,
-                            ],
-                            ..FragmentStyle::default()
-                        },
-                    ).build();
+                    content
+                        .sel(search_rich_text)
+                        .clear()
+                        .new_line()
+                        .add_text(
+                            &String::from("Search: type something..."),
+                            FragmentStyle {
+                                color: [
+                                    self.named_colors.foreground[0],
+                                    self.named_colors.foreground[1],
+                                    self.named_colors.foreground[2],
+                                    self.named_colors.foreground[3] - 0.3,
+                                ],
+                                ..FragmentStyle::default()
+                            },
+                        )
+                        .build();
                 } else {
                     let mut style = FragmentStyle {
                         color: self.named_colors.foreground,
@@ -682,7 +688,11 @@ impl Renderer {
                             style.width = width;
                         };
 
-                        line.add_text_on_line(search_rich_text, &character.to_string(), style);
+                        line.add_text_on_line(
+                            search_rich_text,
+                            &character.to_string(),
+                            style,
+                        );
                     }
 
                     line.build();

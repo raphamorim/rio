@@ -236,10 +236,8 @@ impl SugarState {
                 }
                 Object::RichText(_rich_text) => {
                     // self.rich_texts.push(*rich_text);
-                },
-                Object::NewLayer => {
-
                 }
+                Object::NewLayer => {}
             }
         }
     }
