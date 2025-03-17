@@ -1,6 +1,6 @@
 use crate::context::grid::ContextDimension;
 use rio_backend::error::{RioError, RioErrorLevel};
-use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
+use rio_backend::sugarloaf::{Object, Rect, Sugarloaf};
 
 pub struct Assistant {
     pub inner: Option<RioError>,
@@ -63,39 +63,39 @@ pub fn screen(
         size: [30., layout.height],
     }));
 
-    objects.push(Object::Text(Text::single_line(
-        (70., context_dimension.margin.top_y + 50.),
-        String::from("Woops! Rio got errors"),
-        28.,
-        [1., 1., 1., 1.],
-    )));
+    // objects.push(Object::Text(Text::single_line(
+    //     (70., context_dimension.margin.top_y + 50.),
+    //     String::from("Woops! Rio got errors"),
+    //     28.,
+    //     [1., 1., 1., 1.],
+    // )));
 
-    if let Some(report) = &assistant.inner {
-        if report.level == RioErrorLevel::Error {
-            objects.push(Object::Text(Text::single_line(
-                (70., context_dimension.margin.top_y + 80.),
-                String::from("after fix it, restart the terminal"),
-                18.,
-                [1., 1., 1., 1.],
-            )));
-        }
+    // if let Some(report) = &assistant.inner {
+    //     if report.level == RioErrorLevel::Error {
+    //         objects.push(Object::Text(Text::single_line(
+    //             (70., context_dimension.margin.top_y + 80.),
+    //             String::from("after fix it, restart the terminal"),
+    //             18.,
+    //             [1., 1., 1., 1.],
+    //         )));
+    //     }
 
-        if report.level == RioErrorLevel::Warning {
-            objects.push(Object::Text(Text::single_line(
-                (70., context_dimension.margin.top_y + 80.),
-                String::from("(press enter to continue)"),
-                18.,
-                [1., 1., 1., 1.],
-            )));
-        }
+    //     if report.level == RioErrorLevel::Warning {
+    //         objects.push(Object::Text(Text::single_line(
+    //             (70., context_dimension.margin.top_y + 80.),
+    //             String::from("(press enter to continue)"),
+    //             18.,
+    //             [1., 1., 1., 1.],
+    //         )));
+    //     }
 
-        objects.push(Object::Text(Text::multi_line(
-            (70., context_dimension.margin.top_y + 170.),
-            report.report.to_string(),
-            14.,
-            [1., 1., 1., 1.],
-        )));
+    //     objects.push(Object::Text(Text::multi_line(
+    //         (70., context_dimension.margin.top_y + 170.),
+    //         report.report.to_string(),
+    //         14.,
+    //         [1., 1., 1., 1.],
+    //     )));
 
-        sugarloaf.set_objects(objects);
-    }
+        // sugarloaf.set_objects(objects);
+    // }
 }

@@ -9,7 +9,6 @@ use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
-use crate::components::text;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::{BottomLayer, Graphics};
@@ -17,7 +16,6 @@ use crate::sugarloaf::layer::types;
 use crate::Content;
 use crate::SugarDimensions;
 use crate::{context::Context, Object};
-use ab_glyph::{self, PxScale};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -27,7 +25,6 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    text_brush: text::GlyphBrush<()>,
     rect_brush: RectBrush,
     quad_brush: QuadBrush,
     layer_brush: LayerBrush,
@@ -126,12 +123,6 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let text_brush = {
-            let data = { font_library.inner.lock().ui.to_owned() };
-            text::GlyphBrushBuilder::using_fonts(vec![data])
-                .build(&ctx.device, ctx.format)
-        };
-
         let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let quad_brush = QuadBrush::new(&ctx);
@@ -148,7 +139,6 @@ impl Sugarloaf<'_> {
             background_image: None,
             rect_brush,
             rich_text_brush,
-            text_brush,
             graphics: Graphics::default(),
             filters_brush,
         };
@@ -318,7 +308,6 @@ impl Sugarloaf<'_> {
 
         self.state.compute_updates(
             &mut self.rich_text_brush,
-            &mut self.text_brush,
             &mut self.rect_brush,
             &mut self.quad_brush,
             &mut self.ctx,
@@ -403,8 +392,6 @@ impl Sugarloaf<'_> {
                         .render(&mut rpass, &self.state, &mut self.ctx);
 
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-
-                    self.text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
                 if self.graphics.bottom_layer.is_some()

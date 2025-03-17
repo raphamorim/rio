@@ -36,13 +36,9 @@ serde = { version = "1.0.208", features = ["derive"] }
 image_rs = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
-ordered-float = "5.0.0"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
-ab_glyph = "0.2.29"
-linked-hash-map = "0.5.6"
-xi-unicode = "0.3.0"
 approx = "0.5.1"
 lru = "0.13.0"
 skrifa = "0.28.1"

@@ -1,5 +1,5 @@
 use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{Object, Rect, Sugarloaf, Text};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
@@ -9,7 +9,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let black = [0.0, 0.0, 0.0, 1.0];
 
     let layout = sugarloaf.window_size();
-    let width = layout.width / sugarloaf.style().scale_factor;
 
     let mut objects = Vec::with_capacity(7);
 
@@ -34,56 +33,93 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         size: [30., layout.height],
     }));
 
-    if width <= 440. {
-        objects.push(Object::Text(Text::single_line(
-            (70., context_dimension.margin.top_y + 50.),
-            String::from("Welcome to\nRio Terminal"),
-            28.,
-            [1., 1., 1., 1.],
-        )));
+    let heading = sugarloaf.create_rich_text();
+    let paragraph_action = sugarloaf.create_rich_text();
+    let paragraph = sugarloaf.create_rich_text();
 
-        objects.push(Object::Text(Text::single_line(
-            (70., context_dimension.margin.top_y + 100.),
-            String::from("> enter to continue"),
-            18.,
-            yellow,
-        )));
+    sugarloaf.set_rich_text_font_size(&heading, 28.0);
+    sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);
+    sugarloaf.set_rich_text_font_size(&paragraph, 16.0);
 
-        return;
-    }
+    let content = sugarloaf.content();
+    let heading_line = content.sel(heading);
+    heading_line
+        .clear()
+        .new_line()
+        .add_text("Welcome to Rio Terminal", FragmentStyle::default())
+        .build();
 
-    objects.push(Object::Text(Text::single_line(
-        (70., context_dimension.margin.top_y + 50.),
-        String::from("Welcome to Rio Terminal"),
-        28.,
-        [1., 1., 1., 1.],
-    )));
+    let paragraph_action_line = content.sel(paragraph_action);
+    paragraph_action_line
+        .clear()
+        .new_line()
+        .add_text(
+            "> press enter to continue",
+            FragmentStyle {
+                color: yellow,
+                ..FragmentStyle::default()
+            },
+        )
+        .build();
 
-    objects.push(Object::Text(Text::single_line(
-        (70., context_dimension.margin.top_y + 80.),
-        String::from("> press enter to continue"),
-        18.,
-        yellow,
-    )));
-
-    objects.push(Object::Text(Text::multi_line(
-        (70., context_dimension.margin.top_y + 220.),
-        welcome_content(),
-        18.,
-        [1., 1., 1., 1.],
-    )));
-
-    sugarloaf.set_objects(objects);
-}
-
-#[inline]
-fn welcome_content() -> String {
     #[cfg(target_os = "macos")]
     let shortcut = "\"Command\" + \",\" (comma)";
 
     #[cfg(not(target_os = "macos"))]
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
-    format!("Your configuration file will be created in\n{}\n\nTo open settings menu use\n{}\n\n\n\nMore info in rioterm.com
-    ", rio_backend::config::config_file_path().display(), shortcut)
+    let paragraph_line = content.sel(paragraph);
+    paragraph_line
+        .clear()
+        .new_line()
+        .add_text(
+            "Your configuration file will be created in",
+            FragmentStyle::default(),
+        )
+        .new_line()
+        .add_text(
+            &format!(" {} ", rio_backend::config::config_file_path().display()),
+            FragmentStyle {
+                background_color: Some(yellow),
+                color: [0., 0., 0., 1.],
+                ..FragmentStyle::default()
+            },
+        )
+        .new_line()
+        .add_text("", FragmentStyle::default())
+        .new_line()
+        .add_text("To open settings menu use", FragmentStyle::default())
+        .new_line()
+        .add_text(
+            &format!(" {} ", shortcut),
+            FragmentStyle {
+                background_color: Some(yellow),
+                color: [0., 0., 0., 1.],
+                ..FragmentStyle::default()
+            },
+        )
+        .new_line()
+        .add_text("", FragmentStyle::default())
+        .new_line()
+        .add_text("", FragmentStyle::default())
+        .new_line()
+        .add_text("More info in rioterm.com", FragmentStyle::default())
+        .build();
+
+    objects.push(Object::RichText(RichText {
+        id: heading,
+        position: [70., context_dimension.margin.top_y + 30.],
+    }));
+
+    objects.push(Object::RichText(RichText {
+        id: paragraph_action,
+        position: [70., context_dimension.margin.top_y + 70.],
+    }));
+
+    objects.push(Object::RichText(RichText {
+        id: paragraph,
+        position: [70., context_dimension.margin.top_y + 140.],
+    }));
+
+    sugarloaf.set_objects(objects);
 }

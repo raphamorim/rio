@@ -2,7 +2,7 @@ use crate::constants::*;
 use crate::context::title::ContextTitle;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
-use rio_backend::sugarloaf::{Object, Rect, Text};
+use rio_backend::sugarloaf::{Object, Rect};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
@@ -272,12 +272,12 @@ impl ScreenNavigation {
                 format!("{}.{}", i + 1, name)
             };
 
-            self.objects.push(Object::Text(Text::single_line(
-                (initial_position_x + 4., position_y + text_pos_mod),
-                text,
-                14.,
-                foreground_color,
-            )));
+            // self.objects.push(Object::Text(Text::single_line(
+            //     (initial_position_x + 4., position_y + text_pos_mod),
+            //     text,
+            //     14.,
+            //     foreground_color,
+            // )));
 
             initial_position_x += name_modifier + 40.;
         }

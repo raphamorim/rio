@@ -2064,6 +2064,7 @@ impl Screen<'_> {
             &self.context_manager.current().dimension,
         );
         self.sugarloaf.render();
+        self.sugarloaf.reset();
     }
 
     pub fn render_dialog(&mut self, content: &str) {

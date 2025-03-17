@@ -7,7 +7,8 @@ language: 'en'
 
 ## 0.2.11 (unreleased)
 
-TBD.
+- Removed Text renderer mod by migrating to RichText renderer.
+- Fix search bar can't show chinese [#844](https://github.com/raphamorim/rio/issues/844).
 
 ## 0.2.10
 

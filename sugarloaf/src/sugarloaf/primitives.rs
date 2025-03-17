@@ -29,52 +29,6 @@ pub struct ImageProperties {
     pub y: f32,
 }
 
-#[derive(Default, Debug, PartialEq, Clone)]
-pub struct Text {
-    pub position: (f32, f32),
-    pub content: String,
-    pub font_id: usize,
-    pub font_size: f32,
-    pub color: [f32; 4],
-    pub single_line: bool,
-}
-
-impl Text {
-    #[inline]
-    pub fn single_line(
-        position: (f32, f32),
-        content: String,
-        font_size: f32,
-        color: [f32; 4],
-    ) -> Self {
-        Text {
-            position,
-            content,
-            font_size,
-            font_id: 0,
-            color,
-            single_line: true,
-        }
-    }
-
-    #[inline]
-    pub fn multi_line(
-        position: (f32, f32),
-        content: String,
-        font_size: f32,
-        color: [f32; 4],
-    ) -> Self {
-        Text {
-            position,
-            content,
-            font_size,
-            font_id: 0,
-            color,
-            single_line: false,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RichText {
     pub id: usize,
@@ -85,7 +39,6 @@ pub struct RichText {
 pub enum Object {
     NewLayer,
     Rect(Rect),
-    Text(Text),
     Quad(ComposedQuad),
     RichText(RichText),
 }

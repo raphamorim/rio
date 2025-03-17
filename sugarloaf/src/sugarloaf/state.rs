@@ -6,7 +6,7 @@
 use super::compositors::SugarCompositors;
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
-use crate::sugarloaf::{text, QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
+use crate::sugarloaf::{QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
 use crate::SugarDimensions;
 use crate::{Content, Graphics, Object, RichText};
 use std::collections::HashSet;
@@ -202,7 +202,6 @@ impl SugarState {
     pub fn compute_updates(
         &mut self,
         advance_brush: &mut RichTextBrush,
-        elementary_brush: &mut text::GlyphBrush<()>,
         rect_brush: &mut RectBrush,
         quad_brush: &mut QuadBrush,
         context: &mut super::Context,
@@ -219,15 +218,6 @@ impl SugarState {
         // It means that's either the first render or objects were erased on compute_diff() step
         for object in &self.objects {
             match object {
-                Object::Text(text) => {
-                    elementary_brush.queue(
-                        &self.compositors.elementary.create_section_from_text(
-                            text,
-                            context,
-                            &self.style,
-                        ),
-                    );
-                }
                 Object::Rect(rect) => {
                     self.compositors.elementary.rects.push(*rect);
                 }
