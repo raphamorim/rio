@@ -236,7 +236,7 @@ impl RectBrush {
         ctx: &mut Context,
     ) {
         // let device = &ctx.device;
-        let instances = &state.compositors.elementary.rects;
+        let instances = &state.compositor.rects;
         let mut i = 0;
         let total = instances.len();
 

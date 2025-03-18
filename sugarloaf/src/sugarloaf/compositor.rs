@@ -9,21 +9,37 @@
 use crate::font::FontLibrary;
 use crate::layout::RichTextLayout;
 use crate::layout::{BuilderState, Content};
+use crate::{ComposedQuad, Rect};
 
-pub struct Advanced {
+pub struct Compositor {
     pub content: Content,
+    pub rects: Vec<Rect>,
+    pub quads: Vec<ComposedQuad>,
 }
 
-impl Advanced {
+impl Compositor {
     pub fn new(font_library: &FontLibrary) -> Self {
         Self {
             content: Content::new(font_library),
+            rects: vec![],
+            quads: vec![],
         }
+    }
+
+    #[inline]
+    pub fn rects(&mut self) -> &Vec<Rect> {
+        &self.rects
     }
 
     #[inline]
     pub fn reset(&mut self) {
         self.content.clear_all();
+    }
+
+    #[inline]
+    pub fn reset_rects(&mut self) {
+        self.rects.clear();
+        self.quads.clear();
     }
 
     #[inline]

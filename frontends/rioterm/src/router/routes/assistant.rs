@@ -96,6 +96,6 @@ pub fn screen(
     //         [1., 1., 1., 1.],
     //     )));
 
-        // sugarloaf.set_objects(objects);
+    // sugarloaf.set_objects(objects);
     // }
 }
