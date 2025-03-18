@@ -309,17 +309,6 @@ fonts.symbol-map = [
 ]
 ```
 
-## fonts.ui
-
-You can specify user interface font on Rio.
-
-Note: `fonts.ui` does not have live reload configuration update, you need to close and open Rio again.
-
-```toml
-[fonts.ui]
-family = "Departure Mono"
-```
-
 ## ignore-selection-foreground-color
 
 Default is `false`
