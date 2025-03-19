@@ -263,9 +263,9 @@ impl RichTextBrush {
         }
 
         self.comp.begin();
-        let library = state.compositor.font_library();
+        let library = state.content.font_library();
         for rich_text in &state.rich_texts {
-            if let Some(rt) = state.compositor.get_rich_text(&rich_text.id) {
+            if let Some(rt) = state.content.get_state(&rich_text.id) {
                 let position = (
                     rich_text.position[0] * state.style.scale_factor,
                     rich_text.position[1] * state.style.scale_factor,

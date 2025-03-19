@@ -312,6 +312,11 @@ impl Content {
     }
 
     #[inline]
+    pub fn remove_state(&mut self, rich_text_id: &usize) {
+        self.states.remove(rich_text_id);
+    }
+
+    #[inline]
     pub fn update_dimensions(
         &mut self,
         state_id: &usize,

@@ -1,6 +1,6 @@
 use crate::context::grid::ContextDimension;
 use rio_backend::error::{RioError, RioErrorLevel};
-use rio_backend::sugarloaf::{Object, Rect, Sugarloaf};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
 
 pub struct Assistant {
     pub inner: Option<RioError>,
@@ -43,17 +43,24 @@ pub fn screen(
     let blue = [0.1764706, 0.6039216, 1.0, 1.0];
     let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
     let red = [1.0, 0.07058824, 0.38039216, 1.0];
+    let black = [0.0, 0.0, 0.0, 1.0];
+
     let layout = sugarloaf.window_size();
 
-    let mut objects = Vec::with_capacity(8);
+    let mut objects = Vec::with_capacity(7);
 
+    objects.push(Object::Rect(Rect {
+        position: [0., 0.0],
+        color: black,
+        size: [layout.width, layout.height],
+    }));
     objects.push(Object::Rect(Rect {
         position: [0., 30.0],
         color: blue,
         size: [30., layout.height],
     }));
     objects.push(Object::Rect(Rect {
-        position: [15., context_dimension.margin.top_y + 40.],
+        position: [15., context_dimension.margin.top_y + 60.],
         color: yellow,
         size: [30., layout.height],
     }));
@@ -63,39 +70,61 @@ pub fn screen(
         size: [30., layout.height],
     }));
 
-    // objects.push(Object::Text(Text::single_line(
-    //     (70., context_dimension.margin.top_y + 50.),
-    //     String::from("Woops! Rio got errors"),
-    //     28.,
-    //     [1., 1., 1., 1.],
-    // )));
+    let heading = sugarloaf.create_temp_rich_text();
+    let paragraph_action = sugarloaf.create_temp_rich_text();
+    let paragraph = sugarloaf.create_temp_rich_text();
 
-    // if let Some(report) = &assistant.inner {
-    //     if report.level == RioErrorLevel::Error {
-    //         objects.push(Object::Text(Text::single_line(
-    //             (70., context_dimension.margin.top_y + 80.),
-    //             String::from("after fix it, restart the terminal"),
-    //             18.,
-    //             [1., 1., 1., 1.],
-    //         )));
-    //     }
+    sugarloaf.set_rich_text_font_size(&heading, 28.0);
+    sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);
+    sugarloaf.set_rich_text_font_size(&paragraph, 14.0);
 
-    //     if report.level == RioErrorLevel::Warning {
-    //         objects.push(Object::Text(Text::single_line(
-    //             (70., context_dimension.margin.top_y + 80.),
-    //             String::from("(press enter to continue)"),
-    //             18.,
-    //             [1., 1., 1., 1.],
-    //         )));
-    //     }
+    let content = sugarloaf.content();
+    let heading_line = content.sel(heading);
+    heading_line
+        .clear()
+        .new_line()
+        .add_text("Woops! Rio got errors", FragmentStyle::default())
+        .build();
 
-    //     objects.push(Object::Text(Text::multi_line(
-    //         (70., context_dimension.margin.top_y + 170.),
-    //         report.report.to_string(),
-    //         14.,
-    //         [1., 1., 1., 1.],
-    //     )));
+    let paragraph_action_line = content.sel(paragraph_action);
+    paragraph_action_line
+        .clear()
+        .new_line()
+        .add_text(
+            "> press enter to continue",
+            FragmentStyle {
+                color: yellow,
+                ..FragmentStyle::default()
+            },
+        )
+        .build();
 
-    // sugarloaf.set_objects(objects);
-    // }
+    if let Some(report) = &assistant.inner {
+        let paragraph_line = content.sel(paragraph).clear();
+
+        for line in report.report.to_string().lines() {
+            paragraph_line
+                .new_line()
+                .add_text(line, FragmentStyle::default());
+        }
+
+        paragraph_line.build();
+
+        objects.push(Object::RichText(RichText {
+            id: paragraph,
+            position: [70., context_dimension.margin.top_y + 140.],
+        }));
+    }
+
+    objects.push(Object::RichText(RichText {
+        id: heading,
+        position: [70., context_dimension.margin.top_y + 30.],
+    }));
+
+    objects.push(Object::RichText(RichText {
+        id: paragraph_action,
+        position: [70., context_dimension.margin.top_y + 70.],
+    }));
+
+    sugarloaf.set_objects(objects);
 }

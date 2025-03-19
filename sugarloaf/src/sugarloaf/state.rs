@@ -3,11 +3,11 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use super::compositor::Compositor;
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
 use crate::sugarloaf::{QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
 use crate::SugarDimensions;
+use crate::{ComposedQuad, Rect};
 use crate::{Content, Graphics, Object, RichText};
 use std::collections::HashSet;
 
@@ -15,8 +15,11 @@ pub struct SugarState {
     objects: Vec<Object>,
     pub rich_texts: Vec<RichText>,
     rich_text_repaint: HashSet<usize>,
+    rich_text_to_be_removed: Vec<usize>,
     pub style: RootStyle,
-    pub compositor: Compositor,
+    pub content: Content,
+    pub rects: Vec<Rect>,
+    pub quads: Vec<ComposedQuad>,
 }
 
 impl SugarState {
@@ -25,21 +28,40 @@ impl SugarState {
         font_library: &FontLibrary,
         font_features: &Option<Vec<String>>,
     ) -> SugarState {
-        let mut state = SugarState {
-            compositor: Compositor::new(font_library),
+        let mut content = Content::new(font_library);
+        let found_font_features = SugarState::found_font_features(font_features);
+        content.set_font_features(found_font_features);
+
+        SugarState {
+            content: Content::new(font_library),
+            rects: vec![],
+            quads: vec![],
             style,
             objects: vec![],
             rich_texts: vec![],
+            rich_text_to_be_removed: vec![],
             rich_text_repaint: HashSet::default(),
-        };
+        }
+    }
 
-        state.compositor.set_font_features(font_features);
-        state
+    pub fn found_font_features(
+        font_features: &Option<Vec<String>>,
+    ) -> Vec<crate::font_introspector::Setting<u16>> {
+        let mut found_font_features = vec![];
+        if let Some(features) = font_features {
+            for feature in features {
+                let setting: crate::font_introspector::Setting<u16> =
+                    (feature.as_str(), 1).into();
+                found_font_features.push(setting);
+            }
+        }
+
+        found_font_features
     }
 
     #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
-        if let Some(builder_state) = self.compositor.content.get_state(id) {
+        if let Some(builder_state) = self.content.get_state(id) {
             return builder_state.layout;
         }
 
@@ -53,7 +75,7 @@ impl SugarState {
         advance_brush: &mut RichTextBrush,
     ) {
         self.style.scale_factor = scale;
-        for (id, state) in &mut self.compositor.content.states {
+        for (id, state) in &mut self.content.states {
             state.rescale(scale);
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
@@ -71,7 +93,7 @@ impl SugarState {
         font_size: f32,
         advance_brush: &mut RichTextBrush,
     ) {
-        if let Some(rte) = self.compositor.content.get_state_mut(rich_text_id) {
+        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
             rte.layout.font_size = font_size;
             rte.update_font_size();
 
@@ -90,7 +112,7 @@ impl SugarState {
         operation: u8,
         advance_brush: &mut RichTextBrush,
     ) {
-        if let Some(rte) = self.compositor.content.get_state_mut(rich_text_id) {
+        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
             let should_update = match operation {
                 0 => rte.reset_font_size(),
                 2 => rte.increase_font_size(),
@@ -110,16 +132,14 @@ impl SugarState {
 
     #[inline]
     pub fn set_rich_text_line_height(&mut self, rich_text_id: &usize, line_height: f32) {
-        if let Some(rte) = self.compositor.content.get_state_mut(rich_text_id) {
+        if let Some(rte) = self.content.get_state_mut(rich_text_id) {
             rte.layout.line_height = line_height;
         }
     }
 
     fn process_rich_text_repaint(&mut self, advance_brush: &mut RichTextBrush) {
         for rich_text in &self.rich_text_repaint {
-            self.compositor
-                .content
-                .update_dimensions(rich_text, advance_brush);
+            self.content.update_dimensions(rich_text, advance_brush);
         }
 
         self.rich_text_repaint.clear();
@@ -127,8 +147,8 @@ impl SugarState {
 
     #[inline]
     pub fn set_fonts(&mut self, fonts: &FontLibrary, advance_brush: &mut RichTextBrush) {
-        self.compositor.set_fonts(fonts);
-        for (id, state) in &mut self.compositor.content.states {
+        self.content.set_font_library(fonts);
+        for (id, state) in &mut self.content.states {
             state.layout.dimensions.height = 0.0;
             state.layout.dimensions.width = 0.0;
             self.rich_text_repaint.insert(*id);
@@ -139,7 +159,8 @@ impl SugarState {
 
     #[inline]
     pub fn set_font_features(&mut self, font_features: &Option<Vec<String>>) {
-        self.compositor.set_font_features(font_features);
+        let found_font_features = SugarState::found_font_features(font_features);
+        self.content.set_font_features(found_font_features);
     }
 
     #[inline]
@@ -163,22 +184,35 @@ impl SugarState {
 
     #[inline]
     pub fn reset_compositors(&mut self) {
-        self.compositor.reset_rects();
+        self.rects.clear();
+        self.quads.clear();
+        for rte_id in &self.rich_text_to_be_removed {
+            self.content.remove_state(rte_id);
+        }
     }
 
     #[inline]
     pub fn clear_rich_text(&mut self, id: &usize) {
-        self.compositor.clear_rich_text(id);
+        self.content.clear_state(id);
     }
 
     #[inline]
     pub fn create_rich_text(&mut self) -> usize {
-        self.compositor
-            .create_rich_text(&RichTextLayout::from_default_layout(&self.style))
+        self.content
+            .create_state(&RichTextLayout::from_default_layout(&self.style))
+    }
+
+    #[inline]
+    pub fn create_temp_rich_text(&mut self) -> usize {
+        let id = self
+            .content
+            .create_state(&RichTextLayout::from_default_layout(&self.style));
+        self.rich_text_to_be_removed.push(id);
+        id
     }
 
     pub fn content(&mut self) -> &mut Content {
-        &mut self.compositor.content
+        &mut self.content
     }
 
     #[inline]
@@ -202,10 +236,10 @@ impl SugarState {
         for object in &self.objects {
             match object {
                 Object::Rect(rect) => {
-                    self.compositor.rects.push(*rect);
+                    self.rects.push(*rect);
                 }
                 Object::Quad(composed_quad) => {
-                    self.compositor.quads.push(*composed_quad);
+                    self.quads.push(*composed_quad);
                 }
                 Object::RichText(_rich_text) => {
                     // self.rich_texts.push(*rich_text);
@@ -221,8 +255,8 @@ impl SugarState {
         id: &usize,
         advance_brush: &mut RichTextBrush,
     ) -> SugarDimensions {
-        self.compositor.content.update_dimensions(id, advance_brush);
-        if let Some(rte) = self.compositor.content.get_state(id) {
+        self.content.update_dimensions(id, advance_brush);
+        if let Some(rte) = self.content.get_state(id) {
             return rte.layout.dimensions;
         }
 
@@ -233,7 +267,7 @@ impl SugarState {
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
         // If sugar dimensions are empty then need to find it
         for rich_text in &self.rich_texts {
-            if let Some(rte) = self.compositor.content.get_state(&rich_text.id) {
+            if let Some(rte) = self.content.get_state(&rich_text.id) {
                 if rte.layout.dimensions.width == 0.0
                     || rte.layout.dimensions.height == 0.0
                 {
@@ -248,9 +282,7 @@ impl SugarState {
             return;
         }
         for rich_text in &self.rich_text_repaint {
-            self.compositor
-                .content
-                .update_dimensions(rich_text, advance_brush);
+            self.content.update_dimensions(rich_text, advance_brush);
         }
 
         self.rich_text_repaint.clear();
