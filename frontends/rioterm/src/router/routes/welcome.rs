@@ -33,9 +33,9 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         size: [30., layout.height],
     }));
 
-    let heading = sugarloaf.create_rich_text();
-    let paragraph_action = sugarloaf.create_rich_text();
-    let paragraph = sugarloaf.create_rich_text();
+    let heading = sugarloaf.create_temp_rich_text();
+    let paragraph_action = sugarloaf.create_temp_rich_text();
+    let paragraph = sugarloaf.create_temp_rich_text();
 
     sugarloaf.set_rich_text_font_size(&heading, 28.0);
     sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);

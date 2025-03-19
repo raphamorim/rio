@@ -1,4 +1,3 @@
-pub mod compositor;
 pub mod graphics;
 pub mod primitives;
 pub mod state;
@@ -231,6 +230,14 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn create_rich_text(&mut self) -> usize {
         self.state.create_rich_text()
+    }
+
+    // This RichText is different than regular rich text
+    // it will be removed after the render and doesn't
+    // offer any type of optimization (e.g: cache) per render.
+    #[inline]
+    pub fn create_temp_rich_text(&mut self) -> usize {
+        self.state.create_temp_rich_text()
     }
 
     #[inline]

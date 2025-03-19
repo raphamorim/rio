@@ -2064,15 +2064,16 @@ impl Screen<'_> {
             &self.context_manager.current().dimension,
         );
         self.sugarloaf.render();
-        self.sugarloaf.reset();
     }
 
-    pub fn render_dialog(&mut self, content: &str) {
+    pub fn render_dialog(&mut self, content: &str, confirm: &str, close: &str) {
         self.sugarloaf.clear();
         crate::router::routes::dialog::screen(
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
             content,
+            confirm,
+            close,
         );
         self.sugarloaf.render();
     }

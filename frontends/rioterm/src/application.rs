@@ -1136,10 +1136,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.render();
                     }
                     RoutePath::ConfirmQuit => {
-                        route
-                            .window
-                            .screen
-                            .render_dialog("Do you want to leave Rio?");
+                        route.window.screen.render_dialog(
+                            "Quit Rio?",
+                            "Continue -> press escape key",
+                            "Quit -> press enter key",
+                        );
                     }
                 }
                 // println!("Time elapsed in render() is: {:?}", duration);

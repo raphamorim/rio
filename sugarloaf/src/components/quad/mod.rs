@@ -237,7 +237,7 @@ impl QuadBrush {
         state: &crate::sugarloaf::state::SugarState,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        let instances = &state.compositor.quads;
+        let instances = &state.quads;
         let total = instances.len();
 
         if total == 0 {
