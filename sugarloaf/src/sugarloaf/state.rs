@@ -183,12 +183,14 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn reset_compositors(&mut self) {
+    pub fn reset(&mut self) {
         self.rects.clear();
         self.quads.clear();
         for rte_id in &self.rich_text_to_be_removed {
             self.content.remove_state(rte_id);
         }
+
+        self.rich_text_to_be_removed.clear();
     }
 
     #[inline]

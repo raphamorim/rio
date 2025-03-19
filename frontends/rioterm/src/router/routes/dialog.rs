@@ -39,27 +39,6 @@ pub fn screen(
         size: [30., layout.height],
     }));
 
-    // objects.push(Object::Text(Text::single_line(
-    //     (70., mid_screen - 10.),
-    //     content.to_string(),
-    //     48.,
-    //     [1., 1., 1., 1.],
-    // )));
-
-    // objects.push(Object::Text(Text::single_line(
-    //     (70., mid_screen + 30.),
-    //     String::from("To quit press enter key"),
-    //     18.,
-    //     yellow,
-    // )));
-
-    // objects.push(Object::Text(Text::single_line(
-    //     (70., mid_screen + 50.),
-    //     String::from("To continue press escape key"),
-    //     18.,
-    //     blue,
-    // )));
-
     let heading = sugarloaf.create_temp_rich_text();
     let confirm = sugarloaf.create_temp_rich_text();
     let quit = sugarloaf.create_temp_rich_text();

@@ -2,19 +2,12 @@ use crate::constants::*;
 use crate::context::title::ContextTitle;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
-use rio_backend::sugarloaf::{Object, Rect};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
 pub struct ScreenNavigation {
     pub navigation: Navigation,
-    pub objects: Vec<Object>,
-    keys: String,
-    current: usize,
-    len: usize,
-    width: f32,
-    height: f32,
-    scale: f32,
     pub padding_y: [f32; 2],
     color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
 }
@@ -27,130 +20,101 @@ impl ScreenNavigation {
     ) -> ScreenNavigation {
         ScreenNavigation {
             navigation,
-            objects: Vec::with_capacity(26),
-            keys: String::from(""),
             color_automation,
-            current: 0,
-            len: 0,
             padding_y,
-            width: 0.0,
-            height: 0.0,
-            scale: 0.0,
         }
     }
 
     #[inline]
     pub fn build_objects(
         &mut self,
+        sugarloaf: &mut Sugarloaf,
         dimensions: (f32, f32, f32),
         colors: &Colors,
         context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
         is_search_active: bool,
         objects: &mut Vec<Object>,
     ) {
-        let mut has_changes = false;
-        let (width, height, scale) = dimensions;
-
-        if width != self.width {
-            self.width = width;
-            has_changes = true;
-        }
-
-        if height != self.height {
-            self.height = height;
-            has_changes = true;
-        }
-
-        if scale != self.scale {
-            self.scale = scale;
-            has_changes = true;
-        }
-
         // When search is active then BottomTab should not be rendered
         if is_search_active && self.navigation.mode == NavigationMode::BottomTab {
-            self.objects.clear();
-            self.keys.clear();
             return;
-        }
-
-        let keys = &context_manager.titles.key;
-        if keys != &self.keys {
-            self.keys = keys.to_string();
-            has_changes = true;
         }
 
         let current = context_manager.current_index();
-        if current != self.current {
-            self.current = current;
-            has_changes = true;
-        }
-
         let len = context_manager.len();
-        if len != self.len {
-            self.len = len;
-            has_changes = true;
-        }
-
-        if !has_changes {
-            objects.extend(self.objects.clone());
-            return;
-        }
-
-        self.objects.clear();
 
         let titles = &context_manager.titles.titles;
 
         match self.navigation.mode {
             #[cfg(target_os = "macos")]
             NavigationMode::NativeTab => {}
-            NavigationMode::Bookmark => {
-                self.bookmark(titles, colors, len, self.navigation.hide_if_single)
-            }
+            NavigationMode::Bookmark => self.bookmark(
+                objects,
+                titles,
+                colors,
+                len,
+                current,
+                self.navigation.hide_if_single,
+                dimensions,
+            ),
             NavigationMode::TopTab => {
                 let position_y = 0.0;
                 self.tab(
+                    sugarloaf,
+                    objects,
                     titles,
                     colors,
                     len,
+                    current,
                     position_y,
                     self.navigation.hide_if_single,
+                    dimensions,
                 );
             }
             NavigationMode::BottomTab => {
-                let position_y = (self.height / self.scale) - PADDING_Y_BOTTOM_TABS;
+                let (_, height, scale) = dimensions;
+                let position_y = (height / scale) - PADDING_Y_BOTTOM_TABS;
                 self.tab(
+                    sugarloaf,
+                    objects,
                     titles,
                     colors,
                     len,
+                    current,
                     position_y,
                     self.navigation.hide_if_single,
+                    dimensions,
                 );
             }
             // Minimal simply does not do anything
             NavigationMode::Plain => {}
         }
-
-        objects.extend(self.objects.clone());
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn bookmark(
         &mut self,
+        objects: &mut Vec<Object>,
         titles: &FxHashMap<usize, ContextTitle>,
         colors: &Colors,
         len: usize,
+        current: usize,
         hide_if_single: bool,
+        dimensions: (f32, f32, f32),
     ) {
         if hide_if_single && len <= 1 {
             return;
         }
 
-        let mut initial_position = (self.width / self.scale) - PADDING_X_COLLAPSED_TABS;
+        let (width, _, scale) = dimensions;
+
+        let mut initial_position = (width / scale) - PADDING_X_COLLAPSED_TABS;
         let position_modifier = 20.;
         for i in (0..len).rev() {
             let mut color = colors.tabs;
             let mut size = INACTIVE_TAB_WIDTH_SIZE;
-            if i == self.current {
+            if i == current {
                 color = colors.tabs_active_highlight;
                 size = ACTIVE_TAB_WIDTH_SIZE;
             }
@@ -175,48 +139,54 @@ impl ScreenNavigation {
                 size: [30.0, size],
             };
             initial_position -= position_modifier;
-            self.objects.push(Object::Rect(renderable));
+            objects.push(Object::Rect(renderable));
         }
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn tab(
         &mut self,
+        sugarloaf: &mut Sugarloaf,
+        objects: &mut Vec<Object>,
         titles: &FxHashMap<usize, ContextTitle>,
         colors: &Colors,
         len: usize,
+        current: usize,
         position_y: f32,
         hide_if_single: bool,
+        dimensions: (f32, f32, f32),
     ) {
         if hide_if_single && len <= 1 {
             return;
         }
+
+        let (width, _, scale) = dimensions;
 
         let mut initial_position_x = 0.;
 
         let renderable = Rect {
             position: [initial_position_x, position_y],
             color: colors.bar,
-            size: [self.width * 2., PADDING_Y_BOTTOM_TABS],
+            size: [width * 2., PADDING_Y_BOTTOM_TABS],
         };
 
-        self.objects.push(Object::Rect(renderable));
+        objects.push(Object::Rect(renderable));
 
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
 
         let max_tab_width = 140.;
-        let screen_limit = ((self.width / self.scale) / max_tab_width).floor() as usize;
-        if len > screen_limit && self.current > screen_limit {
-            tabs = Vec::from_iter(self.current - screen_limit..len);
+        let screen_limit = ((width / scale) / max_tab_width).floor() as usize;
+        if len > screen_limit && current > screen_limit {
+            tabs = Vec::from_iter(current - screen_limit..len);
         }
 
-        let text_pos_mod = 11.;
         for i in tabs {
             let mut background_color = colors.bar;
             let mut foreground_color = colors.tabs_foreground;
 
-            let is_current = i == self.current;
+            let is_current = i == current;
             if is_current {
                 foreground_color = colors.tabs_active_foreground;
                 background_color = colors.tabs_active;
@@ -245,7 +215,7 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            self.objects.push(Object::Rect(Rect {
+            objects.push(Object::Rect(Rect {
                 position: [initial_position_x, position_y],
                 color: background_color,
                 size: [250., PADDING_Y_BOTTOM_TABS],
@@ -259,7 +229,7 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                self.objects.push(Object::Rect(Rect {
+                objects.push(Object::Rect(Rect {
                     position: [initial_position_x, position],
                     color: colors.tabs_active_highlight,
                     size: [250., PADDING_Y_BOTTOM_TABS / 10.],
@@ -272,12 +242,26 @@ impl ScreenNavigation {
                 format!("{}.{}", i + 1, name)
             };
 
-            // self.objects.push(Object::Text(Text::single_line(
-            //     (initial_position_x + 4., position_y + text_pos_mod),
-            //     text,
-            //     14.,
-            //     foreground_color,
-            // )));
+            let tab = sugarloaf.create_temp_rich_text();
+            let content = sugarloaf.content();
+
+            let tab_line = content.sel(tab);
+            tab_line
+                .clear()
+                .new_line()
+                .add_text(
+                    &text,
+                    FragmentStyle {
+                        color: foreground_color,
+                        ..FragmentStyle::default()
+                    },
+                )
+                .build();
+
+            objects.push(Object::RichText(RichText {
+                id: tab,
+                position: [initial_position_x + 4., position_y],
+            }));
 
             initial_position_x += name_modifier + 40.;
         }

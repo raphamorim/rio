@@ -693,7 +693,8 @@ impl Renderer {
                         };
 
                         line.add_text_on_line(
-                            search_rich_text,
+                            // Add on first line
+                            1,
                             &character.to_string(),
                             style,
                         );
@@ -714,8 +715,9 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         // In case rich text for search was not created
-        if self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_rich_text();
+        let has_search = self.search.active_search.is_some();
+        if has_search && self.search.rich_text_id.is_none() {
+            let search_rich_text = sugarloaf.create_temp_rich_text();
             sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }
@@ -796,6 +798,7 @@ impl Renderer {
         let scale_factor = sugarloaf.scale_factor();
         let mut objects = Vec::with_capacity(30);
         self.navigation.build_objects(
+            sugarloaf,
             (window_size.width, window_size.height, scale_factor),
             &self.named_colors,
             context_manager,
@@ -803,7 +806,7 @@ impl Renderer {
             &mut objects,
         );
 
-        if self.search.active_search.is_some() {
+        if has_search {
             if let Some(rich_text_id) = self.search.rich_text_id {
                 search::draw_search_bar(
                     &mut objects,
@@ -814,6 +817,7 @@ impl Renderer {
             }
 
             self.search.active_search = None;
+            self.search.rich_text_id = None;
         }
 
         for rte in context_manager.grid_objects() {
