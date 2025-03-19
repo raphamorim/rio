@@ -15,10 +15,23 @@ use crate::layout::RichTextLayout;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, Graphic};
+
+pub struct RichTextCounter(AtomicUsize);
+
+impl RichTextCounter {
+    pub const fn new() -> Self {
+        Self(AtomicUsize::new(1))
+    }
+
+    pub fn next(&self) -> usize {
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
 
 /// Data that describes a fragment.
 #[derive(Debug, Clone)]
@@ -249,6 +262,7 @@ pub struct Content {
     pub states: FxHashMap<usize, BuilderState>,
     word_cache: WordCache,
     selector: Option<usize>,
+    counter: RichTextCounter,
 }
 
 impl Content {
@@ -261,6 +275,7 @@ impl Content {
             word_cache: WordCache::new(),
             font_features: vec![],
             selector: None,
+            counter: RichTextCounter::new(),
         }
     }
 
@@ -305,7 +320,7 @@ impl Content {
 
     #[inline]
     pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
-        let id = self.states.len();
+        let id = self.counter.next();
         self.states
             .insert(id, BuilderState::from_layout(rich_text_layout));
         id

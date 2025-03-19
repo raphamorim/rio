@@ -149,7 +149,7 @@ impl Sugarloaf<'_> {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
 
-        self.state.reset_compositors();
+        self.state.reset();
         self.state
             .set_fonts(font_library, &mut self.rich_text_brush);
     }
@@ -232,6 +232,11 @@ impl Sugarloaf<'_> {
         self.state.create_rich_text()
     }
 
+    #[inline]
+    pub fn remove_rich_text(&mut self, rich_text_id: usize) {
+        self.state.content.remove_state(&rich_text_id);
+    }
+
     // This RichText is different than regular rich text
     // it will be removed after the render and doesn't
     // offer any type of optimization (e.g: cache) per render.
@@ -306,7 +311,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.state.reset_compositors();
+        self.state.reset();
     }
 
     #[inline]
