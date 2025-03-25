@@ -1,9 +1,19 @@
+mod builtin;
 mod runtime;
 
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub enum Filter {
+    #[serde(alias = "newpixiecrt")]
+    NewPixieCrt,
+    #[serde(alias = "path")]
+    Path(String),
+}
 
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
@@ -15,11 +25,11 @@ pub struct FiltersBrush {
 
 impl FiltersBrush {
     #[inline]
-    pub fn update_filters(&mut self, ctx: &Context, filter_paths: &[String]) {
+    pub fn update_filters(&mut self, ctx: &Context, filters: &[Filter]) {
         self.filter_chains.clear();
         self.filter_intermediates.clear();
 
-        if filter_paths.is_empty() {
+        if filters.is_empty() {
             return;
         }
 
@@ -33,18 +43,45 @@ impl FiltersBrush {
             return;
         }
 
-        for path in filter_paths {
-            tracing::debug!("Loading filter {}", path);
+        for filter in filters {
+            match filter {
+                Filter::Path(path) => {
+                    tracing::debug!("Loading filter {}", path);
 
-            match crate::components::filters::runtime::FilterChain::load_from_path(
-                path,
-                ShaderFeatures::NONE,
-                &ctx.device,
-                &ctx.queue,
-                None,
-            ) {
-                Ok(f) => self.filter_chains.push(f),
-                Err(e) => tracing::error!("Failed to load filter {}: {}", path, e),
+                    match crate::components::filters::runtime::FilterChain::load_from_path(
+                        path,
+                        ShaderFeatures::NONE,
+                        &ctx.device,
+                        &ctx.queue,
+                        None,
+                    ) {
+                        Ok(f) => self.filter_chains.push(f),
+                        Err(e) => {
+                            tracing::error!("Failed to load filter {}: {}", path, e)
+                        }
+                    }
+                }
+                Filter::NewPixieCrt => {
+                    tracing::debug!("Loading builtin filter NewPixieCrt");
+
+                    match builtin::newpixiecrt::shader_preset() {
+                        Ok(shader_preset) => {
+                            match crate::components::filters::runtime::FilterChain::load_from_preset(
+                                shader_preset,
+                                &ctx.device,
+                                &ctx.queue,
+                                None,
+                            ) {
+                                Ok(f) => self.filter_chains.push(f),
+                                Err(e) => tracing::error!("Failed to load builtin filter NewPixieCrt: {}", e),
+                            }
+                        },
+                        Err(e) => {
+                            println!("{:?}", e);
+                            tracing::error!("Failed to build shader preset from builtin filter NewPixieCrt: {}", e)
+                        },
+                    }
+                }
             }
         }
 

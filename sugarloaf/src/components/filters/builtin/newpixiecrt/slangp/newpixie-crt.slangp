@@ -1,0 +1,28 @@
+shaders = 4
+
+shader0 = accumulate.slang
+alias0 = accum1
+scale0 = 1.0
+scale_type0 = source
+filter_linear0 = true
+
+shader1 = blur_horiz.slang
+alias1 = blur1
+scale_1 = 1.0
+scale_type1 = source
+filter_linear1 = true
+
+shader2 = blur_vert.slang
+alias2 = blur2
+scale_2 = 1.0
+scale_type2 = source
+filter_linear2 = true
+
+shader3 = newpixie-crt.slang
+filter_linear3 = true
+scale_type3 = viewport
+
+textures = "frametexture"
+frametexture = crtframe.png
+frametexture_linear = true
+frametexture_wrap_mode = clamp_to_border

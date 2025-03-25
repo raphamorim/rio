@@ -3,7 +3,7 @@ pub mod primitives;
 pub mod state;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
-use crate::components::filters::FiltersBrush;
+use crate::components::filters::{FiltersBrush, Filter};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
 use crate::components::rect::{Rect, RectBrush};
@@ -199,8 +199,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn update_filters(&mut self, filter_paths: &[String]) {
-        self.filters_brush.update_filters(&self.ctx, filter_paths);
+    pub fn update_filters(&mut self, filters: &[Filter]) {
+        self.filters_brush.update_filters(&self.ctx, filters);
     }
 
     #[inline]

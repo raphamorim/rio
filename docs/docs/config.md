@@ -639,7 +639,10 @@ Note: Filters does not work with `GL` backend.
 ```toml
 [renderer]
 filters = [
-  "/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp"
+  # Loads built-in crt
+  "NewPixieCrt",
+  # It will render from a specific path
+  "Path('/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp')"
 ]
 ```
 
@@ -647,7 +650,7 @@ filters = [
 
 ## renderer.strategy
 
-Strategy property defines how Rio will render, by default it follows Event driven (`Events`), but you can change it to a continuous loop (that will consume more CPU) by changing to `Continuous`.
+Strategy property defines how Rio will render, by default it follows Event driven (`Events`), but you can change it to a continuous loop (that will consume more CPU) by changing to `Game`.
 
 ```toml
 [renderer]

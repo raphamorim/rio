@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use sugarloaf::Filter;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Renderer {
@@ -12,7 +13,7 @@ pub struct Renderer {
     #[serde(default = "Option::default", rename = "target-fps")]
     pub target_fps: Option<u64>,
     #[serde(default = "Vec::default")]
-    pub filters: Vec<String>,
+    pub filters: Vec<Filter>,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
 }
@@ -22,14 +23,14 @@ pub enum RendererStategy {
     #[default]
     #[serde(alias = "events")]
     Events,
-    #[serde(alias = "continuous")]
-    Continuous,
+    #[serde(alias = "game")]
+    Game,
 }
 
 impl RendererStategy {
     #[inline]
-    pub fn is_continuous(&self) -> bool {
-        self == &RendererStategy::Continuous
+    pub fn is_game(&self) -> bool {
+        self == &RendererStategy::Game
     }
 
     #[inline]
