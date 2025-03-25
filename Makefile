@@ -26,11 +26,12 @@ docs-build:
 run:
 	cargo run -p rioterm --release
 
+# OXS: optionally you can run "/bin/launchctl setenv MTL_HUD_ENABLED 1"
 dev:
 	cargo run -p rioterm
 
 dev-debug:
-	RIO_LOG_LEVEL=debug make dev
+	MTL_HUD_ENABLED=1 RIO_LOG_LEVEL=debug make dev
 
 dev-debug-wayland:
 	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=wayland
