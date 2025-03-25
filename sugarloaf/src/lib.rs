@@ -21,6 +21,7 @@ pub use crate::sugarloaf::{
 };
 pub use components::quad::{ComposedQuad, Quad};
 pub use components::rect::Rect;
+pub use components::filters::Filter;
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
     UnderlineShape,

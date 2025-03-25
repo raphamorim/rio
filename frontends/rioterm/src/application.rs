@@ -1146,7 +1146,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if self.config.renderer.strategy.is_continuous()
+                if self.config.renderer.strategy.is_game()
                     && !self.config.renderer.disable_unfocused_render
                     && route.window.is_focused
                 {
