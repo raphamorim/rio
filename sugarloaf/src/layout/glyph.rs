@@ -22,7 +22,7 @@ impl GlyphData {
     pub fn simple(id: u16, advance: f32, size: usize) -> Self {
         let advance = (advance * 64.).max(0.) as u32;
         Self {
-            data: (id as u32 | (advance & 0x7FFF) << 16),
+            data: id as u32 | ((advance & 0x7FFF) << 16),
             size,
         }
     }

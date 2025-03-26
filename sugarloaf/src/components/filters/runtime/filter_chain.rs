@@ -178,7 +178,7 @@ impl FilterChain {
         let (passes, semantics) = compile_passes(preset.passes, &preset.textures)?;
 
         // cache is opt-in for wgpu, not opt-out because of feature requirements.
-        let disable_cache = options.map_or(true, |o| !o.enable_cache);
+        let disable_cache = options.is_none_or(|o| !o.enable_cache);
 
         // initialize passes
         let filters = Self::init_passes(
