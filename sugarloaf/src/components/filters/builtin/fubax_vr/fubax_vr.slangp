@@ -1,0 +1,28 @@
+shaders = 5
+
+shader0 = stock.slang
+scale_type0 = viewport
+scale0 = 1.0
+
+shader1 = VR.slang
+scale_type1 = viewport
+scale1 = 1.0
+filter_linear1 = true
+
+shader2 = Chromatic.slang
+scale_type2 = viewport
+scale2 = 1.0
+filter_linear2 = true
+
+shader3 = FilmicSharpen.slang
+scale_type3 = viewport
+scale3 = 1.0
+filter_linear3 = true
+
+shader4 = VR_nose.slang
+scale_type4 = viewport
+scale4 = 1.0
+filter_linear4 = true
+
+textures = "noseTex"
+noseTex = nose.png
