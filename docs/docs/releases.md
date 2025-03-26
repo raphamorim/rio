@@ -12,7 +12,7 @@ language: 'en'
 - Fix dimension computation whenever resizing Rio.
 - Removed `fonts.ui` property, now Rio will always use primary font for UI.
 - Removed Text renderer mod by migrating to RichText renderer.
-- *Breaking:* `renderer.strategy = "Continuous"` was renamed to `render.strategy = "Game"`
+- *Breaking:* `renderer.strategy = "Continuous"` was renamed to `renderer.strategy = "Game"`
 - Fix search bar can't show chinese [#844](https://github.com/raphamorim/rio/issues/844).
 
 ## 0.2.10
