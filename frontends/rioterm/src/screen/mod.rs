@@ -450,11 +450,13 @@ impl Screen<'_> {
             self.clear_selection();
         }
         self.sugarloaf.resize(new_size.width, new_size.height);
-        self.context_manager
-            .current_grid_mut()
-            .resize(new_size.width as f32, new_size.height as f32);
+        let width = new_size.width as f32;
+        let height = new_size.height as f32;
 
-        self.resize_all_contexts();
+        for context_grid in self.context_manager.contexts_mut() {
+            context_grid.resize(width, height);
+        }
+
         self
     }
 
@@ -471,9 +473,12 @@ impl Screen<'_> {
         self.context_manager
             .current_grid_mut()
             .update_dimensions(&self.sugarloaf);
-        self.context_manager
-            .current_grid_mut()
-            .resize(new_size.width as f32, new_size.height as f32);
+        let width = new_size.width as f32;
+        let height = new_size.height as f32;
+
+        for context_grid in self.context_manager.contexts_mut() {
+            context_grid.resize(width, height);
+        }
 
         self
     }
@@ -484,13 +489,15 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
+        //
+        let dimension = self.context_manager.current_grid().grid_dimension();
         for context_grid in self.context_manager.contexts_mut() {
             for context in context_grid.contexts_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
-                terminal.resize::<ContextDimension>(ctx.dimension);
+                terminal.resize::<ContextDimension>(dimension);
                 drop(terminal);
-                let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
+                let winsize = crate::renderer::utils::terminal_dimensions(&dimension);
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
@@ -999,11 +1006,13 @@ impl Screen<'_> {
                     }
                     Act::SelectNextSplitOrTab => {
                         self.cancel_search();
+                        self.clear_selection();
                         self.context_manager.switch_to_next_split_or_tab();
                         self.render();
                     }
                     Act::SelectPrevSplitOrTab => {
                         self.cancel_search();
+                        self.clear_selection();
                         self.context_manager.switch_to_prev_split_or_tab();
                         self.render();
                     }

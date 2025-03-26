@@ -1005,13 +1005,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.acc_current_route += 1;
             let current = self.current();
             let cursor = current.cursor_from_ref();
+
             match ContextManager::create_context(
                 (&cursor, current.renderable_content.has_blinking_enabled),
                 self.event_proxy.clone(),
                 self.window_id,
                 self.acc_current_route,
                 rich_text_id,
-                self.current_grid().grid_dimension(),
+                current.dimension,
                 &cloned_config,
             ) {
                 Ok(new_context) => {
