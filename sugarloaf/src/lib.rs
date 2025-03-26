@@ -19,9 +19,9 @@ pub use crate::sugarloaf::{
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
 };
+pub use components::filters::Filter;
 pub use components::quad::{ComposedQuad, Quad};
 pub use components::rect::Rect;
-pub use components::filters::Filter;
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
     UnderlineShape,
