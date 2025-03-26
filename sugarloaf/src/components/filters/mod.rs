@@ -40,7 +40,6 @@ impl FiltersBrush {
             let configured_filter = filter.to_lowercase();
             match configured_filter.as_str() {
                 "newpixiecrt" | "ntsc_vcr" | "fubax_vr" => {
-
                     tracing::debug!("Loading builtin filter {}", configured_filter);
 
                     let builtin_filter = match configured_filter.as_str() {
@@ -49,7 +48,7 @@ impl FiltersBrush {
                         "ntsc_vcr" => builtin::ntscvcr,
                         _ => {
                             continue;
-                        },
+                        }
                     };
 
                     match builtin_filter() {
@@ -69,7 +68,7 @@ impl FiltersBrush {
                             tracing::error!("Failed to build shader preset from builtin filter {}: {}", configured_filter, e)
                         },
                     }
-                },
+                }
                 _ => {
                     tracing::debug!("Loading filter {}", filter);
 
