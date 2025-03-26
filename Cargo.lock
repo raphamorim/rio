@@ -273,7 +273,7 @@ version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2b74d67a0fc0af8e9823b79fd1c43a0900e5a8f0e0f4cc9210796bf3a820126"
 dependencies = [
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
 ]
 
 [[package]]
@@ -374,12 +374,6 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
-
-[[package]]
-name = "cfg_aliases"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "cfg_aliases"
@@ -925,9 +919,9 @@ dependencies = [
 
 [[package]]
 name = "fixedbitset"
-version = "0.4.2"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flate2"
@@ -1701,9 +1695,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-cache"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af354438a48fa685da478d0f9a3464acacdb522f6d6e81814d1e6de587635c3a"
+checksum = "26eda9e89e03e36bdc7fefc5a1822b6b12c5bb2f09c7d4d8f95e7ee91129465b"
 dependencies = [
  "bincode",
  "blake3",
@@ -1718,9 +1712,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-common"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "718d887336505eaf7bace926312bfcbb3403a2203996ea0c9945b487ade1357e"
+checksum = "baccd3ae1715d7d9b8a36cc88c6fd91e2372b5ee7bfa9fefa4e1ab4627d655fe"
 dependencies = [
  "bitflags 2.9.0",
  "halfbrown 0.2.5",
@@ -1732,9 +1726,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-pack"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10b1c3e775527a4a6e4eaef8cc2f0320a52373c46a5fcfc95cd78cc449d4d4e2"
+checksum = "4f62f655d069562b6e2d7a9bf551e83d3ab3ce55d9b9511608ee1ae3d2f7db60"
 dependencies = [
  "image",
  "librashader-preprocess",
@@ -1745,25 +1739,25 @@ dependencies = [
 
 [[package]]
 name = "librashader-preprocess"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f447318c57b82434510f3c159f7e4b15438e2e8a1ce3c170b77b3899d78ec09"
+checksum = "a155bc30480c2009223dad16135c5e8ec2629f4456532c138f58bcfe460e46d4"
 dependencies = [
  "encoding_rs",
  "librashader-common",
- "nom",
+ "nom 7.1.3",
  "serde",
  "thiserror 2.0.12",
 ]
 
 [[package]]
 name = "librashader-presets"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bd75eef028fa580ee457cbf913d8017f908cc92908b71eed43ce56f8d5d1340"
+checksum = "12d71013bf030b39cd2e90340f5348930646829dbfbf82fa0acea9c7f9a846ed"
 dependencies = [
  "librashader-common",
- "nom",
+ "nom 8.0.0",
  "nom_locate",
  "num-traits",
  "once_cell",
@@ -1775,9 +1769,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-reflect"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1affb4bb102a73cdb99d843b9466696854f54b600f4d419a2414663b04c308e9"
+checksum = "0032aec419242560a9b55faed54044bc504d00f0e4432030f89d757b4a985df2"
 dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
@@ -1786,7 +1780,7 @@ dependencies = [
  "librashader-pack",
  "librashader-preprocess",
  "librashader-presets",
- "naga 23.1.0",
+ "naga",
  "rspirv",
  "rustc-hash 2.1.1",
  "serde",
@@ -1797,9 +1791,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-runtime"
-version = "0.6.2"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78903004fca35dd7fea9bf69fd30708813a39f3c6089a36fd00abd603514aa7a"
+checksum = "c6c0012c3105b08ce4f99eae58cea47c2121d93dc571a1d8c836ed2513fdcb7f"
 dependencies = [
  "arc-swap",
  "array-concat",
@@ -1988,26 +1982,6 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "23.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "364f94bc34f61332abebe8cad6f6cd82a5b65cff22c828d05d0968911462ca4f"
-dependencies = [
- "arrayvec",
- "bit-set",
- "bitflags 2.9.0",
- "cfg_aliases 0.1.1",
- "codespan-reporting",
- "indexmap",
- "log 0.4.26",
- "petgraph",
- "rustc-hash 1.1.0",
- "spirv",
- "termcolor",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "naga"
 version = "24.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e380993072e52eef724eddfcde0ed013b0c023c3f0417336ed041aa9f076994e"
@@ -2015,11 +1989,12 @@ dependencies = [
  "arrayvec",
  "bit-set",
  "bitflags 2.9.0",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "codespan-reporting",
  "hexf-parse",
  "indexmap",
  "log 0.4.26",
+ "petgraph",
  "rustc-hash 1.1.0",
  "spirv",
  "strum",
@@ -2059,14 +2034,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "nom_locate"
-version = "4.2.0"
+name = "nom"
+version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e3c83c053b0713da60c5b8de47fe8e494fe3ece5267b2f23090a07a053ba8f3"
+checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "nom_locate"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b577e2d69827c4740cba2b52efaad1c4cc7c73042860b199710b3575c68438d"
 dependencies = [
  "bytecount",
  "memchr",
- "nom",
+ "nom 8.0.0",
 ]
 
 [[package]]
@@ -2369,9 +2353,9 @@ dependencies = [
 
 [[package]]
 name = "petgraph"
-version = "0.6.5"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
+checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
 dependencies = [
  "fixedbitset",
  "indexmap",
@@ -2800,7 +2784,7 @@ dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
  "calloop",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "concurrent-queue",
  "console_error_panic_hook",
  "core-foundation 0.10.0",
@@ -3144,7 +3128,7 @@ checksum = "18051cdd562e792cad055119e0cdb2cfc137e44e3987532e0f9659a77931bb08"
 dependencies = [
  "as-raw-xcb-connection",
  "bytemuck",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "core-graphics",
  "fastrand",
  "foreign-types",
@@ -3978,11 +3962,11 @@ checksum = "35904fb00ba2d2e0a4d002fcbbb6e1b89b574d272a50e5fc95f6e81cf281c245"
 dependencies = [
  "arrayvec",
  "bitflags 2.9.0",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "document-features",
  "js-sys",
  "log 0.4.26",
- "naga 24.0.0",
+ "naga",
  "parking_lot",
  "profiling",
  "raw-window-handle",
@@ -4005,11 +3989,11 @@ dependencies = [
  "arrayvec",
  "bit-vec",
  "bitflags 2.9.0",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "document-features",
  "indexmap",
  "log 0.4.26",
- "naga 24.0.0",
+ "naga",
  "once_cell",
  "parking_lot",
  "profiling",
@@ -4034,7 +4018,7 @@ dependencies = [
  "bitflags 2.9.0",
  "block",
  "bytemuck",
- "cfg_aliases 0.2.1",
+ "cfg_aliases",
  "core-graphics-types 0.1.3",
  "glow",
  "glutin_wgl_sys",
@@ -4047,7 +4031,7 @@ dependencies = [
  "libloading",
  "log 0.4.26",
  "metal",
- "naga 24.0.0",
+ "naga",
  "ndk-sys",
  "objc",
  "once_cell",
