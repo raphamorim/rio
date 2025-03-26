@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.11 (unreleased)
 
+- Fix dimension computation whenever resizing Rio.
 - Removed `fonts.ui` property, now Rio will always use primary font for UI.
 - Removed Text renderer mod by migrating to RichText renderer.
 - Fix search bar can't show chinese [#844](https://github.com/raphamorim/rio/issues/844).
