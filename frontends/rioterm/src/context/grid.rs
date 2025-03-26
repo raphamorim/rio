@@ -311,7 +311,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             self.width,
             self.height,
             current_context_dimension.dimension,
-            1.0,
+            current_context_dimension.line_height,
             self.margin,
         )
     }
@@ -876,7 +876,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ContextDimension {
     pub width: f32,
     pub height: f32,
