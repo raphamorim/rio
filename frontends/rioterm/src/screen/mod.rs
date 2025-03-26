@@ -489,15 +489,13 @@ impl Screen<'_> {
         // the next layout, so once the messenger.send_resize triggers
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
-        //
-        let dimension = self.context_manager.current_grid().grid_dimension();
         for context_grid in self.context_manager.contexts_mut() {
             for context in context_grid.contexts_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
-                terminal.resize::<ContextDimension>(dimension);
+                terminal.resize::<ContextDimension>(ctx.dimension);
                 drop(terminal);
-                let winsize = crate::renderer::utils::terminal_dimensions(&dimension);
+                let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
