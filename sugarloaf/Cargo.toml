@@ -48,13 +48,13 @@ yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.2", optional = true }
 futures = { workspace = true }
 
-librashader-common = "0.6.2"
-librashader-presets = "0.6.2"
-librashader-preprocess = "0.6.2"
-librashader-pack = "0.6.2"
-librashader-reflect = { version = "0.6.2", features = ["stable", "wgsl"], default-features = false }
-librashader-runtime = "0.6.2"
-librashader-cache = "0.6.2"
+librashader-common = "0.7.0"
+librashader-presets = "0.7.0"
+librashader-preprocess = "0.7.0"
+librashader-pack = "0.7.0"
+librashader-reflect = { version = "0.7.0", features = ["stable", "wgsl"], default-features = false }
+librashader-runtime = "0.7.0"
+librashader-cache = "0.7.0"
 thiserror = "2.0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
