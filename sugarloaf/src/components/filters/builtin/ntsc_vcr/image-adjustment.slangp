@@ -1,0 +1,4 @@
+shaders = 1
+
+shader0 = image-adjustment.slang
+scale_type0 = source

@@ -5,11 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 include = [
-  "Cargo.toml",
-  "src/**/*.ttf",
-  "src/**/*.otf",
-  "src/**/*.wgsl",
-  "src/**/*.rs"
+    "Cargo.toml",
+    "src/**/*.ttf",
+    "src/**/*.otf",
+    "src/**/*.wgsl",
+    "src/**/*.rs",
 ]
 description = "Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintained for Rio terminal purposes but feel free to use it."
 documentation = "https://docs.rs/crate/sugarloaf/latest"
@@ -52,7 +52,10 @@ librashader-common = "0.7.0"
 librashader-presets = "0.7.0"
 librashader-preprocess = "0.7.0"
 librashader-pack = "0.7.0"
-librashader-reflect = { version = "0.7.0", features = ["stable", "wgsl"], default-features = false }
+librashader-reflect = { version = "0.7.0", features = [
+    "stable",
+    "wgsl",
+], default-features = false }
 librashader-runtime = "0.7.0"
 librashader-cache = "0.7.0"
 thiserror = "2.0.1"
@@ -61,7 +64,10 @@ thiserror = "2.0.1"
 crossbeam-channel = "0.5.14"
 crossbeam-deque = "0.8.6"
 rayon = "1.10.0"
-twox-hash = { version = "2.1.0", default-features = false, features = ["std", "xxhash64"] }
+twox-hash = { version = "2.1.0", default-features = false, features = [
+    "std",
+    "xxhash64",
+] }
 memmap2 = "0.9.5"
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.9.0", features = ["alloc"] }
@@ -217,7 +223,7 @@ web-sys = { version = "0.3.77", features = [
     "ImageBitmapRenderingContext",
     "Window",
     "WorkerGlobalScope",
-    "WorkerNavigator"
+    "WorkerNavigator",
 ] }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
@@ -229,5 +235,5 @@ web-sys = { version = "0.3.61", features = [
     "Request",
     "Response",
     "WebGl2RenderingContext",
-    "CanvasRenderingContext2d"
-]}
+    "CanvasRenderingContext2d",
+] }

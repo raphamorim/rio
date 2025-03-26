@@ -8,6 +8,10 @@ Rio allow to configure filters based on RetroArch shaders: [github.com/libretro/
 ```toml
 [renderer]
 filters = [
+  # load builtin filter
+  "newpixiecrt",
+  
+  # or load your own filter
   "/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp"
 ]
 ```
