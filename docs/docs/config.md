@@ -634,6 +634,12 @@ target-fps = 120
 
 Rio allow to configure filters based on RetroArch shaders: [github.com/libretro/slang-shaders](https://github.com/libretro/slang-shaders).
 
+Builtin filters:
+
+- `newpixiecrt`.
+- `fubax_vr`.
+- `ntsc_vcr`.
+
 Note: Filters does not work with `GL` backend.
 
 ```toml
@@ -641,8 +647,9 @@ Note: Filters does not work with `GL` backend.
 filters = [
   # Loads built-in crt
   "NewPixieCrt",
-  # It will render from a specific path
-  "Path('/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp')"
+
+  # Or from a specific path
+  "/Users/raphael/Downloads/slang-shaders-master/crt/newpixie-crt.slangp"
 ]
 ```
 

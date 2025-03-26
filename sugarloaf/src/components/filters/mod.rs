@@ -4,16 +4,9 @@ mod runtime;
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub enum Filter {
-    #[serde(alias = "newpixiecrt")]
-    NewPixieCrt,
-    #[serde(alias = "path")]
-    Path(String),
-}
+pub type Filter = String;
 
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
@@ -44,27 +37,22 @@ impl FiltersBrush {
         }
 
         for filter in filters {
-            match filter {
-                Filter::Path(path) => {
-                    tracing::debug!("Loading filter {}", path);
+            let configured_filter = filter.to_lowercase();
+            match configured_filter.as_str() {
+                "newpixiecrt" | "ntsc_vcr" | "fubax_vr" => {
 
-                    match crate::components::filters::runtime::FilterChain::load_from_path(
-                        path,
-                        ShaderFeatures::NONE,
-                        &ctx.device,
-                        &ctx.queue,
-                        None,
-                    ) {
-                        Ok(f) => self.filter_chains.push(f),
-                        Err(e) => {
-                            tracing::error!("Failed to load filter {}: {}", path, e)
-                        }
-                    }
-                }
-                Filter::NewPixieCrt => {
-                    tracing::debug!("Loading builtin filter NewPixieCrt");
+                    tracing::debug!("Loading builtin filter {}", configured_filter);
 
-                    match builtin::newpixiecrt::shader_preset() {
+                    let builtin_filter = match configured_filter.as_str() {
+                        "newpixiecrt" => builtin::newpixiecrt,
+                        "fubax_vr" => builtin::fubaxvr,
+                        "ntsc_vcr" => builtin::ntscvcr,
+                        _ => {
+                            continue;
+                        },
+                    };
+
+                    match builtin_filter() {
                         Ok(shader_preset) => {
                             match crate::components::filters::runtime::FilterChain::load_from_preset(
                                 shader_preset,
@@ -73,13 +61,29 @@ impl FiltersBrush {
                                 None,
                             ) {
                                 Ok(f) => self.filter_chains.push(f),
-                                Err(e) => tracing::error!("Failed to load builtin filter NewPixieCrt: {}", e),
+                                Err(e) => tracing::error!("Failed to load builtin filter {}: {}", configured_filter, e),
                             }
                         },
                         Err(e) => {
                             println!("{:?}", e);
-                            tracing::error!("Failed to build shader preset from builtin filter NewPixieCrt: {}", e)
+                            tracing::error!("Failed to build shader preset from builtin filter {}: {}", configured_filter, e)
                         },
+                    }
+                },
+                _ => {
+                    tracing::debug!("Loading filter {}", filter);
+
+                    match crate::components::filters::runtime::FilterChain::load_from_path(
+                        filter,
+                        ShaderFeatures::NONE,
+                        &ctx.device,
+                        &ctx.queue,
+                        None,
+                    ) {
+                        Ok(f) => self.filter_chains.push(f),
+                        Err(e) => {
+                            tracing::error!("Failed to load filter {}: {}", filter, e)
+                        }
                     }
                 }
             }
@@ -205,7 +209,7 @@ impl FiltersBrush {
                 Viewport::new_render_target_sized_origin(dst_output_view, None).unwrap();
 
             // Framecount should be added forever: https://github.com/raphamorim/rio/issues/753
-            let _ = self.framecount.wrapping_add(1);
+            self.framecount = self.framecount.wrapping_add(1);
             if let Err(err) = filter.frame(
                 filter_src_texture,
                 &dst_viewport,
