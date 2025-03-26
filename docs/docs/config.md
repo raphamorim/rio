@@ -638,7 +638,6 @@ Builtin filters:
 
 - `newpixiecrt`.
 - `fubax_vr`.
-- `ntsc_vcr`.
 
 Note: Filters does not work with `GL` backend.
 

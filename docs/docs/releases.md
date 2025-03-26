@@ -8,7 +8,7 @@ language: 'en'
 ## 0.2.11 (unreleased)
 
 - Fix filter scanlines not appearing.
-- Support to builtin filters: `newpixiecrt`, .
+- Support to builtin filters: `newpixiecrt` and `fubax_vr`.
 - Fix dimension computation whenever resizing Rio.
 - Removed `fonts.ui` property, now Rio will always use primary font for UI.
 - Removed Text renderer mod by migrating to RichText renderer.
