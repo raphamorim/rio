@@ -39,13 +39,12 @@ impl FiltersBrush {
         for filter in filters {
             let configured_filter = filter.to_lowercase();
             match configured_filter.as_str() {
-                "newpixiecrt" | "ntsc_vcr" | "fubax_vr" => {
+                "newpixiecrt" | "fubax_vr" => {
                     tracing::debug!("Loading builtin filter {}", configured_filter);
 
                     let builtin_filter = match configured_filter.as_str() {
                         "newpixiecrt" => builtin::newpixiecrt,
                         "fubax_vr" => builtin::fubaxvr,
-                        "ntsc_vcr" => builtin::ntscvcr,
                         _ => {
                             continue;
                         }
