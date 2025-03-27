@@ -93,7 +93,12 @@ impl OwnedImage {
         original_size: &Size<u32>,
         mipmap: bool,
     ) -> Size<u32> {
-        let size = source_size.scale_viewport(scaling, *viewport_size, *original_size, Some(device.limits().max_texture_dimension_2d));
+        let size = source_size.scale_viewport(
+            scaling,
+            *viewport_size,
+            *original_size,
+            Some(device.limits().max_texture_dimension_2d),
+        );
         if self.size != size
             || (mipmap && self.max_miplevels == 1)
             || (!mipmap && self.max_miplevels != 1)
