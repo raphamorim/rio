@@ -1695,9 +1695,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-cache"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26eda9e89e03e36bdc7fefc5a1822b6b12c5bb2f09c7d4d8f95e7ee91129465b"
+checksum = "3d0227aa0ed65346958c5eb404d921414bdf648647347ff7f19da85c47b2a132"
 dependencies = [
  "bincode",
  "blake3",
@@ -1712,9 +1712,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-common"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "baccd3ae1715d7d9b8a36cc88c6fd91e2372b5ee7bfa9fefa4e1ab4627d655fe"
+checksum = "d29105df872dbcbdde0188d41a5c2e4aa25b9e0f36837d75fedc0f5b32267c71"
 dependencies = [
  "bitflags 2.9.0",
  "halfbrown 0.2.5",
@@ -1726,9 +1726,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-pack"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f62f655d069562b6e2d7a9bf551e83d3ab3ce55d9b9511608ee1ae3d2f7db60"
+checksum = "b98e3ea52000dda580d015eeb8fb10ef35027049d24be37514cd22a0cb37e367"
 dependencies = [
  "image",
  "librashader-preprocess",
@@ -1739,9 +1739,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-preprocess"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a155bc30480c2009223dad16135c5e8ec2629f4456532c138f58bcfe460e46d4"
+checksum = "b8c2f575cb9f5edb000934f7a6b9be0bc72cd38941e08625c35b360b94ae6cb1"
 dependencies = [
  "encoding_rs",
  "librashader-common",
@@ -1752,9 +1752,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-presets"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12d71013bf030b39cd2e90340f5348930646829dbfbf82fa0acea9c7f9a846ed"
+checksum = "75c35eff1a0d69fa1400a824f810092749802e2f29956c16dfb818ea298ff13d"
 dependencies = [
  "librashader-common",
  "nom 8.0.0",
@@ -1769,9 +1769,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-reflect"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0032aec419242560a9b55faed54044bc504d00f0e4432030f89d757b4a985df2"
+checksum = "57d74a8a5fef102d2c18d5527d060a1b948be53aa2b405ff0c776d2f0580fb9d"
 dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
@@ -1791,9 +1791,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-runtime"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6c0012c3105b08ce4f99eae58cea47c2121d93dc571a1d8c836ed2513fdcb7f"
+checksum = "170f534973833e5bf778792dc4553f5d4cc8257bc0c05f1ccb11f9b9a7b9a4ca"
 dependencies = [
  "arc-swap",
  "array-concat",
