@@ -8,6 +8,7 @@ language: 'en'
 ## 0.2.11 (unreleased)
 
 - Fix filter scanlines not appearing.
+- rt(wgpu): clamp texture size to device limits by [@chyyran](https://github.com/chyyran).
 - Support to builtin filters: `newpixiecrt` and `fubax_vr`.
 - Fix dimension computation whenever resizing Rio.
 - Removed `fonts.ui` property, now Rio will always use primary font for UI.
