@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ja/assets/css/styles.390fc736.css">
-<script src="/ja/assets/js/runtime~main.5f3b142c.js" defer="defer"></script>
+<script src="/ja/assets/js/runtime~main.34653c87.js" defer="defer"></script>
 <script src="/ja/assets/js/main.8f61fad2.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -25,6 +25,7 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0211-unreleased">0.2.11 (unreleased)<a href="#0211-unreleased" class="hash-link" aria-label="0.2.11 (unreleased) への直接リンク" title="0.2.11 (unreleased) への直接リンク">​</a></h2>
 <ul>
 <li>Fix filter scanlines not appearing.</li>
+<li>rt(wgpu): clamp texture size to device limits by <a href="https://github.com/chyyran" target="_blank" rel="noopener noreferrer">@chyyran</a>.</li>
 <li>Support to builtin filters: <code>newpixiecrt</code> and <code>fubax_vr</code>.</li>
 <li>Fix dimension computation whenever resizing Rio.</li>
 <li>Removed <code>fonts.ui</code> property, now Rio will always use primary font for UI.</li>
@@ -219,7 +220,7 @@
 <li>MacOS: Support to native modal that asks if wants to close app.</li>
 <li>MacOS: Fix <code>confirm-before-quit</code> property.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0115">0.1.15<a href="#0115" class="hash-link" aria-label="0.1.15 への直接リンク" title="0.1.15 への直  接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0115">0.1.15<a href="#0115" class="hash-link" aria-label="0.1.15 への直接リンク" title="0.1.15 への直接リンク">​</a></h2>
 <ul>
 <li>Introduce <code>cursor.blinking-interval</code>, default value is 800ms.</li>
 <li>Fix blinking cursor lag issue.</li>
@@ -393,7 +394,7 @@
 <ul>
 <li>Added support to font features (ref: #548 #551)</li>
 </ul>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">features</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss01&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss02&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss03&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss04&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss05&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss06&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss07&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss08&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss09&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコードをコピー" title="コ ピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">fonts</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">features</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss01&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss02&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss03&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss04&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss05&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss06&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss07&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss08&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">,</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;ss09&quot;</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="クリップボードにコードをコピー" title="コピー" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p>Note: Font features do not have support to live reload on configuration, so to reflect your changes, you will need to close and reopen Rio.</p>
 <ul>
 <li>fix: Wayland - No input after first run <a href="https://github.com/raphamorim/rio/issues/566" target="_blank" rel="noopener noreferrer">#566</a>.</li>
@@ -594,7 +595,7 @@
 <li>Support for <code>Run</code> actions key bindings for Microsoft Windows.</li>
 <li>Hyperlink support (Ref <a href="https://github.com/raphamorim/rio/issues/60" target="_blank" rel="noopener noreferrer">#60</a>)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0025">0.0.25<a href="#0025" class="hash-link" aria-label="0.0.25 への直接リンク" title="0.0.25 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0025">0.0.25<a href="#0025" class="hash-link" aria-label="0.0.25 への直接リンク" title="0.0.25 への直接リンク">  ​</a></h2>
 <ul>
 <li>Upgrade wgpu to 0.18.0.</li>
 <li>Desktop OpenGL 3.3+ Support on Windows through WebGPU.</li>
@@ -726,7 +727,7 @@
 <ul>
 <li>Action <code>TabSwitchNext</code> and <code>TabSwitchPrev</code> has been renamed to <code>SelectNextTab</code> and <code>SelectPrevTab</code>.</li>
 </ul>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog へ  の直接リンク" title="Rest of 0.0.17 changelog への直接リンク">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog への直接リンク" title="Rest of 0.0.17 changelog への直接リンク">​</a></h4>
 <ul>
 <li>Support to <code>NativeTab</code> (MacOS only).</li>
 <li>Support for kitty&#x27;s keyboard protocol (<code>CSI u</code>). Ref: <a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/" target="_blank" rel="noopener noreferrer">https://sw.kovidgoyal.net/kitty/keyboard-protocol/</a></li>
@@ -746,7 +747,7 @@
 <li>Fix tab/breadcrumb bug introduced in 0.0.15</li>
 <li>Introduce new configuration property: <code>navigation.macos-hide-window-button</code>.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0015">0.0.15<a href="#0015" class="hash-link" aria-label="0.0.15 への  直接リンク" title="0.0.15 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0015">0.0.15<a href="#0015" class="hash-link" aria-label="0.0.15 への直接リンク" title="0.0.15 への直接リンク">​</a></h2>
 <ul>
 <li>Introduce configurable navigation with the following options: <code>CollapsedTab</code> (default), <code>Breadcrumb</code>, <code>TopTab</code> and <code>BottomTab</code>.</li>
 </ul>
