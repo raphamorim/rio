@@ -1,2 +1,0 @@
-docs/static/assets/*.webm filter=lfs diff=lfs merge=lfs -text
-docs/static/assets/*.mov filter=lfs diff=lfs merge=lfs -text
