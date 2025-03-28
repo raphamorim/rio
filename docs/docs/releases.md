@@ -5,7 +5,15 @@ language: 'en'
 
 # Releases
 
-## 0.2.11 (unreleased)
+## 0.2.13 (unreleased)
+
+- TBD.
+
+## 0.2.12
+
+- Fix crash regarding fonts not found whenever trying to run Rio.
+
+## 0.2.11
 
 - Fix filter scanlines not appearing.
 - rt(wgpu): clamp texture size to device limits by [@chyyran](https://github.com/chyyran).
