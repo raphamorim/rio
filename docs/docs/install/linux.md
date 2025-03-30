@@ -18,6 +18,8 @@ In case your distro doesn't have the package manager option listed above, procee
 
 ## NixOS Flake Installation
 
+Note: If you are unsure if you should use the package from nixpkgs or the flakes package, always go for the nixpkgs derivation as the flakes package output is for development purposes only.
+
 ### For NixOS
 
 To integrate Rio into your NixOS system, add the following to your NixOS configuration:
