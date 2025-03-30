@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.13 (unreleased)
 
-- TBD.
+- Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
 
 ## 0.2.12
 
