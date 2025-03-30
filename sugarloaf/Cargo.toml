@@ -9,6 +9,10 @@ include = [
     "src/**/*.ttf",
     "src/**/*.otf",
     "src/**/*.wgsl",
+    "src/components/filters/**/*.slang",
+    "src/components/filters/**/*.slangp",
+    "src/components/filters/**/*.inc",
+    "src/components/filters/**/*.png",
     "src/**/*.rs",
 ]
 description = "Sugarloaf is Rio rendering engine, designed to be multiplatform. It is based on WebGPU, Rust library for Desktops and WebAssembly for Web (JavaScript). This project is created and maintained for Rio terminal purposes but feel free to use it."
