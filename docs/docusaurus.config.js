@@ -175,7 +175,7 @@ const config = {
       prism: {
         theme: lightCodeTheme,
         darkTheme: darkCodeTheme,
-        additionalLanguages: ['bash', 'toml'],
+        additionalLanguages: ['bash', 'toml', 'nix'],
       },
 
       colorMode: {
