@@ -18,6 +18,8 @@ In case your distro doesn't have the package manager option listed above, procee
 
 ## NixOS Flake Installation
 
+### For NixOS
+
 To integrate Rio into your NixOS system, add the following to your NixOS configuration:
 
 ```nix
