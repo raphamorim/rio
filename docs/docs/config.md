@@ -432,6 +432,14 @@ Enable split feature. It is enabled by default.
 use-split = true
 ```
 
+## navigation.unfocused-split-opacity
+
+Configure opacity on unfocused split.
+
+```toml
+navigation.unfocused-split-opacity = 0.8
+```
+
 ## navigation.open-config-with-split
 
 Enable split for open configuration file.

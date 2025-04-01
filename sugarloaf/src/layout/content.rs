@@ -62,6 +62,10 @@ pub struct BuilderState {
 
 impl BuilderState {
     #[inline]
+    pub fn new_line_at(&mut self, pos: usize) {
+        self.lines.insert(pos, BuilderLine::default());
+    }
+    #[inline]
     pub fn from_layout(layout: &RichTextLayout) -> Self {
         Self {
             layout: *layout,
@@ -375,6 +379,17 @@ impl Content {
     pub fn new_line(&mut self) -> &mut Content {
         if let Some(selector) = self.selector {
             return self.new_line_with_id(&selector);
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn new_line_at(&mut self, pos: usize) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(content) = self.states.get_mut(&selector) {
+                content.new_line_at(pos);
+            }
         }
 
         self
