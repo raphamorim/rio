@@ -3246,7 +3246,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "approx",
  "bytemuck",
