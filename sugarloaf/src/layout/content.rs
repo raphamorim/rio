@@ -66,6 +66,10 @@ impl BuilderState {
         self.lines.insert(pos, BuilderLine::default());
     }
     #[inline]
+    pub fn remove_line_at(&mut self, pos: usize) {
+        self.lines.remove(pos);
+    }
+    #[inline]
     pub fn from_layout(layout: &RichTextLayout) -> Self {
         Self {
             layout: *layout,
@@ -389,6 +393,17 @@ impl Content {
         if let Some(selector) = self.selector {
             if let Some(content) = self.states.get_mut(&selector) {
                 content.new_line_at(pos);
+            }
+        }
+
+        self
+    }
+
+    #[inline]
+    pub fn remove_line_at(&mut self, pos: usize) -> &mut Content {
+        if let Some(selector) = self.selector {
+            if let Some(content) = self.states.get_mut(&selector) {
+                content.remove_line_at(pos);
             }
         }
 
