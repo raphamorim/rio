@@ -37,14 +37,16 @@ copa = { path = "copa", default-features = false, version = "0.2.12" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.2.12" }
 corcovado = { path = "corcovado", version = "0.2.12" }
 wa = { path = "wa", version = "0.1.7" }
-
-sugarloaf = { path = "sugarloaf", version = "0.2.12" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = [
     "nightly",
     "hardware-lock-elision",
 ] }
 rustc-hash = "2.1.1"
+
+# Sugarloaf is part of own dependencies but does not follow Rio versioning
+sugarloaf = { path = "sugarloaf", version = "0.2.13" }
+
 # unicode-width = "0.2.0"
 unicode-width = { package = "unicode-width-16", version = "0.1.0" }
 base64 = "0.22.1"
