@@ -33,7 +33,7 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 ## Packaging
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg)](https://repology.org/project/rio-terminal/versions)
+[![Packaging status](https://repology.org/badge/vertical-allrepos/rio-terminal.svg?columns=3)](https://repology.org/project/rio-terminal/versions)
 
 ## Platforms
 
