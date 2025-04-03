@@ -28,7 +28,7 @@ run:
 
 # OXS: optionally you can run "/bin/launchctl setenv MTL_HUD_ENABLED 1"
 dev:
-	cargo run -p rioterm
+	MTL_HUD_ENABLED=1 cargo run -p rioterm
 
 dev-debug:
 	MTL_HUD_ENABLED=1 RIO_LOG_LEVEL=debug make dev

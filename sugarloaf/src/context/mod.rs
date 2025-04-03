@@ -118,7 +118,6 @@ impl Context<'_> {
                             | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
                         ..Default::default()
                     },
-                    None,
                 )) {
                     result
                 } else {
@@ -129,8 +128,8 @@ impl Context<'_> {
                             label: None,
                             required_features: wgpu::Features::empty(),
                             required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                            ..Default::default()
                         },
-                        None,
                     ))
                     .expect("Request device")
                 }
