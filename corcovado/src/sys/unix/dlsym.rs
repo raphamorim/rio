@@ -7,7 +7,7 @@ use libc;
 macro_rules! dlsym {
     (fn $name:ident($($t:ty),*) -> $ret:ty) => (
         #[allow(bad_style)]
-        static $name: ::sys::unix::dlsym::DlSym<unsafe extern fn($($t),*) -> $ret> =
+        static $name: ::sys::unix::dlsym::DlSym<unsafe extern "C" fn($($t),*) -> $ret> =
             ::sys::unix::dlsym::DlSym {
                 name: concat!(stringify!($name), "\0"),
                 addr: ::std::sync::atomic::AtomicUsize::new(0),
