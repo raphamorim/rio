@@ -14,8 +14,8 @@ use {Poll, Token};
 /// There are two types of `Evented` values.
 ///
 /// * **System** handles, which are backed by sockets or other system handles.
-///     These `Evented` handles will be monitored by the system selector. In this
-///     case, an implementation of `Evented` delegates to a lower level handle.
+///    These `Evented` handles will be monitored by the system selector. In this
+///    case, an implementation of `Evented` delegates to a lower level handle.
 ///
 /// * **User** handles, which are driven entirely in user space using
 ///     [`Registration`] and [`SetReadiness`]. In this case, the implementer takes
