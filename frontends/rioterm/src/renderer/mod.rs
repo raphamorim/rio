@@ -17,8 +17,8 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    BuiltinChar, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -35,6 +35,7 @@ pub struct Search {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
+    builtin_box_drawing: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -56,6 +57,9 @@ pub struct Renderer {
         (usize, f32),
     >,
 }
+
+const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
+const POWERLINE_ARROW_RTL: char = '\u{e0b3}';
 
 impl Renderer {
     pub fn new(
@@ -260,6 +264,14 @@ impl Renderer {
                 continue;
             }
 
+            // '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' => {
+            //     box_drawing(character, metrics, offset)
+            // },
+            // // Powerline symbols: '','','',''
+            // POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL => {
+            //     powerline_drawing(character, metrics, offset)?
+            // },
+
             let (mut style, square_content) = if has_cursor
                 && column == cursor.state.pos.col
             {
@@ -365,7 +377,6 @@ impl Renderer {
                         width = 2.0;
                     }
                 }
-
                 style.width = width;
 
                 self.font_cache.insert(
@@ -373,6 +384,21 @@ impl Renderer {
                     (style.font_id, style.width),
                 );
             };
+
+            if self.builtin_box_drawing {
+                // Box drawing characters and block elements.
+                match square_content {
+                    '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
+                        // Powerline symbols: '','','',''
+                        POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL
+                    => {
+                        if let Ok(character) = BuiltinChar::try_from(square_content) {
+                            style.builtin_char = Some(character);
+                        }
+                    }
+                    _ => {}
+                };
+            }
 
             if square_content == ' ' {
                 if !last_char_was_space {

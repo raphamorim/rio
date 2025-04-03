@@ -48,10 +48,8 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - OSC 7 Escape sequences to advise the terminal of the working directory.
 - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921)), thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9)
 - Cache GSUB and GPOS features independently.
-- Support to symbol map configuration: `fonts.symbol-map`.
 - Support to builtin box drawing by using `fonts.builtin-box-drawing = true` (enabled by default).
-- Fix issue whenever the first main font cannot be found.
--  Updated `windows-sys` to `v0.59`.
+- Updated `windows-sys` to `v0.59`.
     - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
 ## 0.2.7

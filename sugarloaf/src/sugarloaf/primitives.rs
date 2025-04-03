@@ -42,3 +42,88 @@ pub enum Object {
     Quad(ComposedQuad),
     RichText(RichText),
 }
+
+pub enum CornerType {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BuiltinChar {
+    Horizontal,     // ─
+    Vertical,       // │
+    TopRight,       // └
+    TopLeft,        // ┘
+    BottomRight,    // ┌
+    BottomLeft,     // ┐
+    Cross,          // ┼
+    VerticalRight,  // ├
+    VerticalLeft,   // ┤
+    HorizontalDown, // ┬
+    HorizontalUp,   // ┴
+
+    // Horizontal dashes
+    HorizontalLightDash,       // ┄
+    HorizontalHeavyDash,       // ┅
+    HorizontalLightDoubleDash, // ┈
+    HorizontalHeavyDoubleDash, // ┉
+    HorizontalLightTripleDash, // ╌
+    HorizontalHeavyTripleDash, // ╍
+
+    // Vertical dashes
+    VerticalLightDash,       // ┆
+    VerticalHeavyDash,       // ┇
+    VerticalLightDoubleDash, // ┊
+    VerticalHeavyDoubleDash, // ┋
+    VerticalLightTripleDash, // ╎
+    VerticalHeavyTripleDash, // ╏
+
+    // Powerline triangles
+    PowerlineLeftSolid,   //
+    PowerlineRightSolid,  //
+    PowerlineLeftHollow,  //
+    PowerlineRightHollow, //
+}
+
+impl TryFrom<char> for BuiltinChar {
+    type Error = char;
+
+    fn try_from(val: char) -> Result<Self, Self::Error> {
+        let boxchar = match val {
+            '─' => BuiltinChar::Horizontal,
+            '│' => BuiltinChar::Vertical,
+            '└' => BuiltinChar::TopRight,
+            '┘' => BuiltinChar::TopLeft,
+            '┌' => BuiltinChar::BottomRight,
+            '┐' => BuiltinChar::BottomLeft,
+            '┼' => BuiltinChar::Cross,
+            '├' => BuiltinChar::VerticalRight,
+            '┤' => BuiltinChar::VerticalLeft,
+            '┬' => BuiltinChar::HorizontalDown,
+            '┴' => BuiltinChar::HorizontalUp,
+
+            '┄' => BuiltinChar::HorizontalLightDash,
+            '┅' => BuiltinChar::HorizontalHeavyDash,
+            '┈' => BuiltinChar::HorizontalLightDoubleDash,
+            '┉' => BuiltinChar::HorizontalHeavyDoubleDash,
+            '╌' => BuiltinChar::HorizontalLightTripleDash,
+            '╍' => BuiltinChar::HorizontalHeavyTripleDash,
+            '┆' => BuiltinChar::VerticalLightDash,
+            '┇' => BuiltinChar::VerticalHeavyDash,
+            '┊' => BuiltinChar::VerticalLightDoubleDash,
+            '┋' => BuiltinChar::VerticalHeavyDoubleDash,
+            '╎' => BuiltinChar::VerticalLightTripleDash,
+            '╏' => BuiltinChar::VerticalHeavyTripleDash,
+
+            '\u{e0b2}' => BuiltinChar::PowerlineLeftSolid,
+            '\u{e0b0}' => BuiltinChar::PowerlineRightSolid,
+            // '' => PowerlineLeftHollow,
+            // '' => PowerlineRightHollow,
+            _ => return Err(val),
+        };
+        Ok(boxchar)
+    }
+}
