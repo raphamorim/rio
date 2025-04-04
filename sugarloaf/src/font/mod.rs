@@ -26,23 +26,6 @@ use std::sync::Arc;
 
 pub use crate::font_introspector::{Style, Weight};
 
-// const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
-// const POWERLINE_ARROW_LTR: char = '\u{e0b1}';
-// const POWERLINE_TRIANGLE_RTL: char = '\u{e0b2}';
-// const POWERLINE_ARROW_RTL: char = '\u{e0b3}';
-// match (self.builtin_box_drawing, square_content) {
-// // Box drawing characters and block elements.
-// (true, '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}') => {
-//     style.font_id = 0;
-// }
-
-// // Powerline symbols: '','','',''
-// (true, POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL) => {
-//     style.font_id = 0;
-// }
-
-// _ => {
-
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
@@ -345,64 +328,64 @@ impl FontLibraryData {
             }
         }
 
-        // for fallback in fallbacks::external_fallbacks() {
-        //     match find_font(
-        //         &db,
-        //         SugarloafFont {
-        //             family: fallback,
-        //             ..SugarloafFont::default()
-        //         },
-        //         true,
-        //         false,
-        //     ) {
-        //         FindResult::Found(data) => {
-        //             self.insert(data);
-        //         }
-        //         FindResult::NotFound(spec) => {
-        //             // Fallback should not add errors
-        //             tracing::info!("{:?}", spec);
-        //         }
-        //     }
-        // }
+        for fallback in fallbacks::external_fallbacks() {
+            match find_font(
+                &db,
+                SugarloafFont {
+                    family: fallback,
+                    ..SugarloafFont::default()
+                },
+                true,
+                false,
+            ) {
+                FindResult::Found(data) => {
+                    self.insert(data);
+                }
+                FindResult::NotFound(spec) => {
+                    // Fallback should not add errors
+                    tracing::info!("{:?}", spec);
+                }
+            }
+        }
 
-        // if let Some(emoji_font) = spec.emoji {
-        //     match find_font(&db, emoji_font, true, true) {
-        //         FindResult::Found(data) => {
-        //             self.insert(data);
-        //         }
-        //         FindResult::NotFound(spec) => {
-        //             self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-        //             if !spec.is_default_family() {
-        //                 fonts_not_fount.push(spec);
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
-        // }
+        if let Some(emoji_font) = spec.emoji {
+            match find_font(&db, emoji_font, true, true) {
+                FindResult::Found(data) => {
+                    self.insert(data);
+                }
+                FindResult::NotFound(spec) => {
+                    self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+                    if !spec.is_default_family() {
+                        fonts_not_fount.push(spec);
+                    }
+                }
+            }
+        } else {
+            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+        }
 
-        // for extra_font in spec.extras {
-        //     match find_font(
-        //         &db,
-        //         SugarloafFont {
-        //             family: extra_font.family,
-        //             style: extra_font.style,
-        //             weight: extra_font.weight,
-        //             width: extra_font.width,
-        //         },
-        //         true,
-        //         true,
-        //     ) {
-        //         FindResult::Found(data) => {
-        //             self.insert(data);
-        //         }
-        //         FindResult::NotFound(spec) => {
-        //             fonts_not_fount.push(spec);
-        //         }
-        //     }
-        // }
+        for extra_font in spec.extras {
+            match find_font(
+                &db,
+                SugarloafFont {
+                    family: extra_font.family,
+                    style: extra_font.style,
+                    weight: extra_font.weight,
+                    width: extra_font.width,
+                },
+                true,
+                true,
+            ) {
+                FindResult::Found(data) => {
+                    self.insert(data);
+                }
+                FindResult::NotFound(spec) => {
+                    fonts_not_fount.push(spec);
+                }
+            }
+        }
 
-        // self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
+        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.
