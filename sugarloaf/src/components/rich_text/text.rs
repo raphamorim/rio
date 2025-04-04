@@ -11,7 +11,7 @@
 
 use crate::font_introspector::{GlyphId, NormalizedCoord};
 use crate::layout::FragmentStyleDecoration;
-use crate::sugarloaf::primitives::SugarCursor;
+use crate::sugarloaf::primitives::{BuiltinChar, SugarCursor};
 
 /// Properties for a text run.
 #[derive(Copy, Clone)]
@@ -42,6 +42,7 @@ pub struct TextRunStyle<'a> {
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.
     pub cursor: Option<SugarCursor>,
+    pub builtin_char: Option<BuiltinChar>,
 }
 
 /// Positioned glyph in a text run.

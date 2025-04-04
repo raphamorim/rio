@@ -394,6 +394,8 @@ impl Renderer {
                     => {
                         if let Ok(character) = BuiltinChar::try_from(square_content) {
                             style.builtin_char = Some(character);
+                        } else {
+                            panic!("Could not find {:?}", square_content);
                         }
                     }
                     _ => {}
