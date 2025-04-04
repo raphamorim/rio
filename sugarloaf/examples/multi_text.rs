@@ -123,7 +123,7 @@ impl ApplicationHandler for Application {
                 },
             }),
             Object::RichText(RichText {
-                id: 0,
+                id: self.rich_texts[0],
                 position: [5., 5.],
             }),
             Object::Quad(ComposedQuad {
@@ -140,7 +140,7 @@ impl ApplicationHandler for Application {
                 },
             }),
             Object::RichText(RichText {
-                id: 1,
+                id: self.rich_texts[1],
                 position: [220., 5.],
             }),
             Object::Quad(ComposedQuad {
@@ -157,7 +157,7 @@ impl ApplicationHandler for Application {
                 },
             }),
             Object::RichText(RichText {
-                id: 2,
+                id: self.rich_texts[2],
                 position: [440., 5.],
             }),
         ];

@@ -25,6 +25,7 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
+    rich_text: usize,
 }
 
 impl Application {
@@ -32,6 +33,7 @@ impl Application {
         event_loop.listen_device_events(DeviceEvents::Never);
 
         Application {
+            rich_text: 0,
             sugarloaf: None,
             window: None,
             width,
@@ -78,7 +80,7 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text();
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -117,7 +119,7 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
-                content.sel(0).clear();
+                content.sel(self.rich_text).clear();
                 content
                     .new_line()
                     .add_text(
@@ -300,7 +302,7 @@ impl ApplicationHandler for Application {
                     .build();
 
                 sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: 0,
+                    id: self.rich_text,
                     position: [10., 0.],
                 })]);
                 sugarloaf.render();
