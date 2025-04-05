@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.13 (unreleased)
 
+- Fix dimension for whenever a new tab is created from a view with splits.
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
 
 ## 0.2.12

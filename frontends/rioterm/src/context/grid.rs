@@ -305,7 +305,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn grid_dimension(&self) -> ContextDimension {
         let current_context_dimension = self.inner[self.current].val.dimension;
         ContextDimension::build(
