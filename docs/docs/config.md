@@ -149,6 +149,8 @@ log-level = "OFF"
 enable-log-file = false
 ```
 
+The default log file is located at `~/.config/rio/log/rio.log`.
+
 If you have any suggestion of configuration ideas to Rio, please feel free to [open an issue](https://github.com/raphamorim/rio/issues/new).
 
 ## draw-bold-text-with-light-colors
