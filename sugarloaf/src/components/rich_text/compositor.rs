@@ -16,7 +16,7 @@ use crate::components::rich_text::image_cache::ImageCache;
 pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, UnderlineShape};
-use crate::{BuiltinChar, SugarCursor};
+use crate::{DrawableChar, SugarCursor};
 
 #[derive(Default)]
 pub struct RunUnderline {
@@ -163,11 +163,11 @@ impl Compositor {
         let subpx_bias = (0.125, 0.);
         let color = style.color;
 
-        if let Some(builtin_character) = style.builtin_char {
+        if let Some(builtin_character) = style.drawable_char {
             println!("{:?}", builtin_character);
             // x: f32,
             // y: f32,
-            // char: BuiltinChar,
+            // char: DrawableChar,
             // color: [f32; 4],
             // depth: f32,
             // line_width: f32,
@@ -244,7 +244,7 @@ impl Compositor {
                 );
             }
 
-            self.draw_builtin_char(
+            self.draw_drawable_character(
                 rect.x,
                 style.topline,
                 rect.width,
@@ -469,12 +469,12 @@ impl Compositor {
     }
 
     #[inline]
-    pub fn draw_builtin_char(
+    pub fn draw_drawable_character(
         &mut self,
         x: f32,
         y: f32,
         advance: f32,
-        character: BuiltinChar,
+        character: DrawableChar,
         color: [f32; 4],
         depth: f32,
         line_height: f32,
@@ -486,7 +486,7 @@ impl Compositor {
         let line_width = advance;
 
         match character {
-            BuiltinChar::Horizontal => {
+            DrawableChar::Horizontal => {
                 let rect = Rect {
                     x: x,
                     y: center_y - stroke / 2.0,
@@ -495,7 +495,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::Vertical => {
+            DrawableChar::Vertical => {
                 let rect = Rect {
                     x: center_x - stroke / 2.0,
                     y: y,
@@ -504,7 +504,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::Cross => {
+            DrawableChar::Cross => {
                 // Horizontal part
                 let rect_h = Rect {
                     x: x,
@@ -523,7 +523,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::TopRight => {
+            DrawableChar::TopRight => {
                 // Horizontal part (from center to right)
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
@@ -542,7 +542,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
             }
-            BuiltinChar::TopLeft => {
+            DrawableChar::TopLeft => {
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
                     y: y,

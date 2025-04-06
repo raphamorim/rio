@@ -17,7 +17,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    BuiltinChar, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    DrawableChar, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ pub struct Search {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
-    builtin_box_drawing: bool,
+    use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -91,7 +91,7 @@ impl Renderer {
 
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
-            builtin_box_drawing: config.fonts.builtin_box_drawing,
+            use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
@@ -385,15 +385,15 @@ impl Renderer {
                 );
             };
 
-            if self.builtin_box_drawing {
+            if self.use_drawable_chars {
                 // Box drawing characters and block elements.
                 match square_content {
                     '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
                         // Powerline symbols: '','','',''
                         POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL
                     => {
-                        if let Ok(character) = BuiltinChar::try_from(square_content) {
-                            style.builtin_char = Some(character);
+                        if let Ok(character) = DrawableChar::try_from(square_content) {
+                            style.drawable_char = Some(character);
                         } else {
                             panic!("Could not find {:?}", square_content);
                         }
