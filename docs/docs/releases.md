@@ -9,6 +9,10 @@ language: 'en'
 
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
 - Fix font size affecting tabs size.
+- Support to drawable characters by using `fonts.use-drawable-chars = true`.
+- Fix: Wrong unicode character alignment [#616](https://github.com/raphamorim/rio/issues/616).
+- Fix: Built-in font for box drawing #974 [#974](https://github.com/raphamorim/rio/issues/974).
+- Fix: U+E0B6 and U+E0B4 Unicode with different sizes [#895](https://github.com/raphamorim/rio/issues/895).
 
 ## 0.2.12
 
