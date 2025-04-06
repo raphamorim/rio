@@ -243,6 +243,7 @@ impl ScreenNavigation {
             };
 
             let tab = sugarloaf.create_temp_rich_text();
+            sugarloaf.set_rich_text_font_size(&tab, 14.);
             let content = sugarloaf.content();
 
             let tab_line = content.sel(tab);
