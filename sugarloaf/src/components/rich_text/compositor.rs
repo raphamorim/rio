@@ -525,41 +525,40 @@ impl Compositor {
             }
             BuiltinChar::TopRight => {
                 // Horizontal part (from center to right)
-                let rect_h = Rect {
-                    x: center_x,
-                    y: center_y - stroke / 2.0,
-                    width: half_size,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect_h, depth, &color);
-
-                // Vertical part (from center to top)
-                let rect_v = Rect {
+                let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
                     y: y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
-                self.batches.add_rect(&rect_v, depth, &color);
+                self.batches.add_rect(&vertical_rect, depth, &color);
+
+                // Horizontal line from left to center
+                let horizontal_rect = Rect {
+                    x: center_x - stroke / 2.0,
+                    y: center_y - stroke / 2.0,
+                    width: line_width / 2.0,
+                    height: stroke,
+                };
+                self.batches.add_rect(&horizontal_rect, depth, &color);
             }
             BuiltinChar::TopLeft => {
-                // Horizontal part (from left to center)
-                let rect_h = Rect {
-                    x: x,
-                    y: center_y - stroke / 2.0,
-                    width: half_size,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect_h, depth, &color);
-
-                // Vertical part (from center to top)
-                let rect_v = Rect {
+                let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
                     y: y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
-                self.batches.add_rect(&rect_v, depth, &color);
+                self.batches.add_rect(&vertical_rect, depth, &color);
+
+                // Horizontal line from left to center
+                let horizontal_rect = Rect {
+                    x: x,
+                    y: center_y - stroke / 2.0,
+                    width: line_width / 2.0,
+                    height: stroke,
+                };
+                self.batches.add_rect(&horizontal_rect, depth, &color);
             }
             BuiltinChar::BottomRight => {
                 // Horizontal part (from center to right)
@@ -576,7 +575,7 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y: center_y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
@@ -595,12 +594,12 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y: center_y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::CurvedTopLeft => {
-                // Curved corner from bottom to right (╯)
+            BuiltinChar::ArcTopLeft => {
+                // Arc corner at bottom-right (╯)
                 // Vertical line from top to center
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
@@ -610,19 +609,19 @@ impl Compositor {
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
 
-                // Horizontal line from center to right
+                // Horizontal line from left to center
                 let horizontal_rect = Rect {
-                    x: center_x,
+                    x: x,
                     y: center_y - stroke / 2.0,
-                    width: line_width / 2.0,
+                    width: 3.0,
                     height: stroke,
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
 
-                // Arc in the bottom-right quarter (connecting vertical and horizontal lines)
+                // Arc in the bottom-left quarter (connecting horizontal and vertical lines)
                 self.batches.add_arc(
-                    center_x,
-                    center_y,
+                    center_x + 3.0,
+                    center_y - stroke,
                     line_width / 4.0, // Smaller radius for better appearance
                     0.0,              // Start angle
                     90.0,             // End angle (quarter circle)
@@ -631,8 +630,8 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::CurvedBottomRight => {
-                // Curved corner at top-left (╭)
+            BuiltinChar::ArcBottomRight => {
+                // Arc corner at top-left (╭)
                 // Vertical line from center to bottom
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
@@ -663,8 +662,8 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::CurvedBottomLeft => {
-                // Curved corner at top-right (╮)
+            BuiltinChar::ArcBottomLeft => {
+                // Arc corner at top-right (╮)
                 // Vertical line from center to bottom
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
@@ -695,8 +694,8 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::CurvedTopRight => {
-                // Curved corner at bottom-left (╰)
+            BuiltinChar::ArcTopRight => {
+                // Arc corner at bottom-left (╰)
                 // Vertical line from top to center
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,

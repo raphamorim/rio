@@ -53,21 +53,21 @@ pub enum CornerType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BuiltinChar {
     // Original box-drawing characters
-    Horizontal,        // ─
-    Vertical,          // │
-    TopRight,          // └
-    TopLeft,           // ┘
-    BottomRight,       // ┌
-    BottomLeft,        // ┐
-    Cross,             // ┼
-    VerticalRight,     // ├
-    VerticalLeft,      // ┤
-    HorizontalDown,    // ┬
-    HorizontalUp,      // ┴
-    CurvedTopLeft,     // ╯
-    CurvedBottomRight, // ╭
-    CurvedBottomLeft,  // ╮
-    CurvedTopRight,    // ╰
+    Horizontal,     // ─
+    Vertical,       // │
+    TopRight,       // └
+    TopLeft,        // ┘
+    BottomRight,    // ┌
+    BottomLeft,     // ┐
+    Cross,          // ┼
+    VerticalRight,  // ├
+    VerticalLeft,   // ┤
+    HorizontalDown, // ┬
+    HorizontalUp,   // ┴
+    ArcTopLeft,     // ╯
+    ArcBottomRight, // ╭
+    ArcBottomLeft,  // ╮
+    ArcTopRight,    // ╰
     // Horizontal dashes
     HorizontalLightDash,       // ┄
     HorizontalHeavyDash,       // ┅
@@ -377,10 +377,10 @@ impl TryFrom<char> for BuiltinChar {
             '┬' => BuiltinChar::HorizontalDown,
             '┴' => BuiltinChar::HorizontalUp,
 
-            '╯' => BuiltinChar::CurvedTopLeft,
-            '╭' => BuiltinChar::CurvedBottomRight,
-            '╮' => BuiltinChar::CurvedBottomLeft,
-            '╰' => BuiltinChar::CurvedTopRight,
+            '╯' => BuiltinChar::ArcTopLeft,
+            '╭' => BuiltinChar::ArcBottomRight,
+            '╮' => BuiltinChar::ArcBottomLeft,
+            '╰' => BuiltinChar::ArcTopRight,
 
             '┄' => BuiltinChar::HorizontalLightDash,
             '┅' => BuiltinChar::HorizontalHeavyDash,
