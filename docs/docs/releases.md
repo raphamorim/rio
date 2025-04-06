@@ -8,6 +8,7 @@ language: 'en'
 ## 0.2.13 (unreleased)
 
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
+- Fix font size affecting tabs size.
 
 ## 0.2.12
 
