@@ -1004,9 +1004,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.process_key_event(&key_event);
 
                 if key_event.state == ElementState::Released
-                    && self.config.hide_cursor_when_typing
                 {
-                    route.window.winit_window.set_cursor_visible(false);
+                    // TODO: Implement cursor to position on screen
+                    route.window.set_ime_cursor_area(400., 200.);
+                    if self.config.hide_cursor_when_typing {
+                        route.window.winit_window.set_cursor_visible(false);
+                    }
                 }
             }
 
