@@ -86,6 +86,10 @@ impl ApplicationHandler for Application {
         self.second_rich_text = sugarloaf.create_rich_text();
         window.request_redraw();
 
+        // we will add two layers
+        sugarloaf.add_layer();
+        sugarloaf.add_layer();
+
         self.sugarloaf = Some(sugarloaf);
         self.window = Some(window);
     }
@@ -151,8 +155,6 @@ impl ApplicationHandler for Application {
                     .build();
 
                 sugarloaf.set_objects(vec![
-                    // New layer sets default to 1
-                    Object::NewLayer,
                     Object::RichText(
                         RichText {
                             id: self.rich_text,
@@ -168,7 +170,6 @@ impl ApplicationHandler for Application {
                         },
                         Some(1),
                     ),
-                    Object::NewLayer,
                     Object::RichText(
                         RichText {
                             id: self.second_rich_text,
@@ -178,12 +179,28 @@ impl ApplicationHandler for Application {
                     ),
                     Object::Rect(
                         Rect {
-                            position: [10., 60.],
-                            color: [0.5, 0.5, 0.8, 1.0],
-                            size: [100., 30.],
+                            position: [10., 80.],
+                            color: [0.0, 0.3, 0.5, 1.0],
+                            size: [600., 100.],
                         },
                         Some(2),
                     ),
+                    Object::Rect(
+                        Rect {
+                            position: [95., 30.],
+                            color: [1.0, 1.0, 0.5, 1.0],
+                            size: [20., 100.],
+                        },
+                        Some(3),
+                    ),
+                    // Object::Rect(
+                    //     Rect {
+                    //         position: [10., 60.],
+                    //         color: [0.5, 0.5, 0.8, 1.0],
+                    //         size: [100., 30.],
+                    //     },
+                    //     Some(2),
+                    // ),
                 ]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

@@ -36,19 +36,22 @@ fn compute(
 
 #[inline]
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
-    Object::Quad(ComposedQuad {
-        color,
-        quad: Quad {
-            position,
-            shadow_blur_radius: 0.0,
-            shadow_offset: [0.0, 0.0],
-            shadow_color: [0.0, 0.0, 0.0, 0.0],
-            border_color: [0.0, 0.0, 0.0, 0.0],
-            border_width: 0.0,
-            border_radius: [0.0, 0.0, 0.0, 0.0],
-            size,
+    Object::Quad(
+        ComposedQuad {
+            color,
+            quad: Quad {
+                position,
+                shadow_blur_radius: 0.0,
+                shadow_offset: [0.0, 0.0],
+                shadow_color: [0.0, 0.0, 0.0, 0.0],
+                border_color: [0.0, 0.0, 0.0, 0.0],
+                border_width: 0.0,
+                border_radius: [0.0, 0.0, 0.0, 0.0],
+                size,
+            },
         },
-    })
+        None,
+    )
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -210,10 +213,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // In case there's only 1 context then ignore quad
         if len == 1 {
             if let Some(item) = self.inner.first() {
-                objects.push(Object::RichText(RichText {
-                    id: item.val.rich_text_id,
-                    position: [self.margin.x, self.margin.top_y],
-                }));
+                objects.push(Object::RichText(
+                    RichText {
+                        id: item.val.rich_text_id,
+                        position: [self.margin.x, self.margin.top_y],
+                    },
+                    None,
+                ));
             }
         } else {
             self.plot_objects(&mut objects, 0, self.margin);
@@ -234,7 +240,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let mut margin = self.margin;
         for obj in objects {
-            if let Object::RichText(rich_text_obj) = obj {
+            if let Object::RichText(rich_text_obj, _) = obj {
                 if rich_text_obj.id == rich_text_id {
                     margin.x = rich_text_obj.position[0] + scaled_padding;
                     margin.top_y = rich_text_obj.position[1] + scaled_padding;
@@ -256,7 +262,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let objects = self.objects();
         let mut select_new_current = None;
         for obj in objects {
-            if let Object::RichText(rich_text_obj) = obj {
+            if let Object::RichText(rich_text_obj, _) = obj {
                 if let Some(position) = self.find_by_rich_text_id(rich_text_obj.id) {
                     let scaled_position_x = rich_text_obj.position[0]
                         * self.inner[position].val.dimension.dimension.scale;
@@ -324,10 +330,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         margin: Delta<f32>,
     ) {
         if let Some(item) = self.inner.get(index) {
-            objects.push(Object::RichText(RichText {
-                id: item.val.rich_text_id,
-                position: [margin.x, margin.top_y],
-            }));
+            objects.push(Object::RichText(
+                RichText {
+                    id: item.val.rich_text_id,
+                    position: [margin.x, margin.top_y],
+                },
+                None,
+            ));
 
             let scale = self.inner[self.current].val.dimension.dimension.scale;
             let scaled_padding = PADDING * scale;
@@ -1092,10 +1101,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: rich_text_id,
-                position: [10., 20.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: rich_text_id,
+                    position: [10., 20.],
+                },
+                None
+            )]
         );
     }
 
@@ -1157,26 +1169,35 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
         grid.split_right(second_context);
 
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [600., 0.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [600., 0.0]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [600.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
             ]
@@ -1202,22 +1223,31 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [600.0, 0.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [600.0, 0.0]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [298.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [898.0, 0.0], [1.0, 800.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [900.0, 0.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [900.0, 0.0]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [900.0, 800.0], [300.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
             ]
@@ -1282,10 +1312,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [margin.x, margin.top_y],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                },
+                None
+            )]
         );
         grid.split_right(second_context);
 
@@ -1315,16 +1348,22 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [margin.x, margin.top_y],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [margin.x, margin.top_y],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [167.0, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [167.0, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [145.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [312.0, margin.top_y], [1.0, 300.0]),
             ]
@@ -1350,22 +1389,31 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [margin.x, margin.top_y],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [margin.x, margin.top_y],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [167.0, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [167.0, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [65.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [232.5, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [236.5, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [236.5, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [236.5, 330.0], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [304.0, margin.top_y], [1.0, 300.0]),
             ]
@@ -1415,28 +1463,40 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [margin.x, margin.top_y],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [margin.x, margin.top_y],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [167.0, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [167.0, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [25.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: fourth_context_id,
-                    position: [196.75, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: fourth_context_id,
+                        position: [196.75, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.0], [27.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [228.5, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [228.5, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.0], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
             ]
@@ -1501,10 +1561,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [margin.x, margin.top_y],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                },
+                None
+            )]
         );
 
         let (third_context, _third_context_id) = {
@@ -1693,10 +1756,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [margin.x, margin.top_y],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                },
+                None
+            )]
         );
 
         grid.split_down(second_context);
@@ -1818,25 +1884,34 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
         grid.split_down(second_context);
 
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [0.0, 202.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [0.0, 202.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 0.0], [1.0, 198.0]),
@@ -1887,27 +1962,36 @@ pub mod test {
         // Rect(Rect { position: [298.0, 0.0], color: [0.0, 0.0, 1.0, 0.0], size: [1.0, 396.0] }),
         // RichText(RichText { id: 2, position: [302.0, 0.0] }),
         // Rect(Rect { position: [0.0, 198.0], color: [0.0, 0.0, 1.0, 0.0], size: [596.0, 1.0] }),
-        // RichText(RichText { id: 1, position: [0.0, 202.0] })]
+        // RichText(RichText { id: 1, position: [0.0, 202.0] }, None)]
 
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [298.0, 1.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [0.0, 202.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [0.0, 202.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [298.0, 0.0], [1.0, 198.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [302.0, 0.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [302.0, 0.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [302.0, 198.0], [300.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [602.0, 0.0], [1.0, 198.0]),
             ]
@@ -1972,10 +2056,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [margin.x, margin.top_y],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [margin.x, margin.top_y],
+                },
+                None
+            )]
         );
         grid.split_right(second_context);
 
@@ -2051,28 +2138,40 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [margin.x, margin.top_y],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [margin.x, margin.top_y],
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [167.0, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [167.0, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.], [25.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: fourth_context_id,
-                    position: [196.75, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: fourth_context_id,
+                        position: [196.75, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.], [27.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [228.5, margin.top_y]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [228.5, margin.top_y]
+                    },
+                    None
+                ),
                 create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
             ]
@@ -2170,25 +2269,34 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
         grid.split_down(second_context);
 
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [0.0, 202.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [0.0, 202.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 0.0], [1.0, 198.0]),
@@ -2215,20 +2323,29 @@ pub mod test {
         assert_eq!(
             grid.objects(),
             vec![
-                Object::RichText(RichText {
-                    id: first_context_id,
-                    position: [0.0, 0.0],
-                }),
+                Object::RichText(
+                    RichText {
+                        id: first_context_id,
+                        position: [0.0, 0.0],
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
-                Object::RichText(RichText {
-                    id: second_context_id,
-                    position: [0.0, 202.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: second_context_id,
+                        position: [0.0, 202.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 300.0], [600.0, 1.0]),
-                Object::RichText(RichText {
-                    id: third_context_id,
-                    position: [0.0, 304.0]
-                }),
+                Object::RichText(
+                    RichText {
+                        id: third_context_id,
+                        position: [0.0, 304.0]
+                    },
+                    None
+                ),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 404.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 304.0], [1.0, 100.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 98.0]),
@@ -2310,10 +2427,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_right(second_context);
@@ -2413,10 +2533,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         assert_eq!(grid.width, 600.0);
@@ -2504,10 +2627,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_right(second_context);
@@ -2601,10 +2727,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_right(second_context);
@@ -2712,10 +2841,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         assert_eq!(grid.width, 600.0);
@@ -2803,10 +2935,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_down(second_context);
@@ -2900,10 +3035,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_down(second_context);
@@ -3071,10 +3209,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         // The test is to validate the removal of a context with parenting however
@@ -3288,10 +3429,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.split_right(second_context);
@@ -3604,10 +3748,13 @@ pub mod test {
 
         assert_eq!(
             grid.objects(),
-            vec![Object::RichText(RichText {
-                id: first_context_id,
-                position: [0., 0.],
-            })]
+            vec![Object::RichText(
+                RichText {
+                    id: first_context_id,
+                    position: [0., 0.],
+                },
+                None
+            )]
         );
 
         grid.select_current_based_on_mouse(&mouse);
