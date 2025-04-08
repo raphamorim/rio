@@ -16,7 +16,7 @@ pub fn draw_search_bar(
         Quad {
             position: [0.0, position_y],
             color: colors.bar,
-            size: [width * 2., PADDING_Y_BOTTOM_TABS],
+            size: [width, PADDING_Y_BOTTOM_TABS],
             ..Quad::default()
         },
         None,
