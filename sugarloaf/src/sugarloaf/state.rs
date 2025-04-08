@@ -23,6 +23,7 @@ pub struct SugarState {
     pub rich_texts: Vec<RichText>,
     rich_text_repaint: HashSet<usize>,
     rich_text_to_be_removed: Vec<usize>,
+    max_layers: usize,
     pub style: RootStyle,
     pub content: Content,
     pub rects: Vec<Rect>,
@@ -41,6 +42,7 @@ impl SugarState {
         content.set_font_features(found_font_features);
 
         SugarState {
+            max_layers: 1,
             layers: vec![Layer::default()],
             content: Content::new(font_library),
             rects: vec![],
@@ -71,6 +73,7 @@ impl SugarState {
     #[inline]
     pub fn new_layer(&mut self) {
         self.layers.push(Layer::default());
+        self.max_layers = self.max_layers + 1;
     }
 
     #[inline]
@@ -250,13 +253,10 @@ impl SugarState {
 
         self.rich_text_to_be_removed.clear();
 
-        for l in &mut self.layers {
-            l.quads.clear();
-            l.rects.clear();
-            l.rich_texts.clear();
+        self.layers.clear();
+        for _ in 0..self.max_layers {
+            self.layers.push(Layer::default());
         }
-        // self.layers.clear();
-        // self.layers.push(Layer::default());
     }
 
     #[inline]
