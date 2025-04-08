@@ -83,10 +83,7 @@ impl ApplicationHandler for Application {
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
         self.rich_text = sugarloaf.create_rich_text();
-<<<<<<< HEAD
-=======
         self.second_rich_text = sugarloaf.create_rich_text();
->>>>>>> 42590b54e6 (only rendering last layer)
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
