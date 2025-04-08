@@ -6,17 +6,10 @@
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
 use crate::sugarloaf::{QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
-use crate::{ComposedQuad, Content, Object, Rect, RichText, SugarDimensions};
+use crate::SugarDimensions;
+use crate::{ComposedQuad, Rect};
+use crate::{Content, Graphics, Object, RichText};
 use std::collections::HashSet;
-
-// Layer points for each rect, quad or rt that will be used on that
-// particular scene.
-#[derive(Default, Debug)]
-pub struct Layer {
-    pub quads: Vec<usize>,
-    pub rects: Vec<usize>,
-    pub rich_texts: Vec<usize>,
-}
 
 pub struct SugarState {
     objects: Vec<Object>,
@@ -27,7 +20,6 @@ pub struct SugarState {
     pub content: Content,
     pub rects: Vec<Rect>,
     pub quads: Vec<ComposedQuad>,
-    pub layers: Vec<Layer>,
 }
 
 impl SugarState {
@@ -41,7 +33,6 @@ impl SugarState {
         content.set_font_features(found_font_features);
 
         SugarState {
-            layers: vec![Layer::default()],
             content: Content::new(font_library),
             rects: vec![],
             quads: vec![],
@@ -75,39 +66,6 @@ impl SugarState {
         }
 
         RichTextLayout::from_default_layout(&self.style)
-    }
-
-    #[inline]
-    pub fn get_layer_quads(&self, layer_index: usize) -> Vec<ComposedQuad> {
-        self.layers.get(layer_index).map_or_else(Vec::new, |layer| {
-            layer
-                .quads
-                .iter()
-                .filter_map(|&idx| self.quads.get(idx).copied())
-                .collect()
-        })
-    }
-
-    #[inline]
-    pub fn get_layer_rich_texts(&self, layer_index: usize) -> Vec<RichText> {
-        self.layers.get(layer_index).map_or_else(Vec::new, |layer| {
-            layer
-                .rich_texts
-                .iter()
-                .filter_map(|&idx| self.rich_texts.get(idx).copied())
-                .collect()
-        })
-    }
-
-    #[inline]
-    pub fn get_layer_rects(&self, layer_index: usize) -> Vec<Rect> {
-        self.layers.get(layer_index).map_or_else(Vec::new, |layer| {
-            layer
-                .rects
-                .iter()
-                .filter_map(|&idx| self.rects.get(idx).copied())
-                .collect()
-        })
     }
 
     #[inline]
@@ -209,31 +167,15 @@ impl SugarState {
     pub fn clean_screen(&mut self) {
         // self.content.clear();
         self.objects.clear();
-        self.layers.clear();
-        self.layers.push(Layer::default());
     }
 
     #[inline]
     pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
         // Block are used only with elementary renderer
         let mut rich_texts: Vec<RichText> = vec![];
-        let len = self.layers.len() - 1;
         for obj in &new_objects {
-            if let Object::NewLayer = obj {
-                self.layers.push(Layer::default());
-                continue;
-            }
-
-            if let Object::RichText(rich_text, layer) = obj {
+            if let Object::RichText(rich_text) = obj {
                 rich_texts.push(*rich_text);
-
-                if let Some(idx) = layer {
-                    if let Some(layer) = self.layers.get_mut(*idx) {
-                        layer.rich_texts.push(rich_texts.len() - 1);
-                    }
-                } else {
-                    self.layers[len].rich_texts.push(rich_texts.len() - 1);
-                }
             }
         }
         self.objects = new_objects;
@@ -249,9 +191,6 @@ impl SugarState {
         }
 
         self.rich_text_to_be_removed.clear();
-
-        self.layers.clear();
-        self.layers.push(Layer::default());
     }
 
     #[inline]
@@ -281,11 +220,13 @@ impl SugarState {
     #[inline]
     pub fn compute_updates(
         &mut self,
+        advance_brush: &mut RichTextBrush,
         rect_brush: &mut RectBrush,
         quad_brush: &mut QuadBrush,
         context: &mut super::Context,
+        graphics: &mut Graphics,
     ) {
-        let len = self.layers.len() - 1;
+        advance_brush.prepare(context, self, graphics);
         rect_brush.resize(context);
         quad_brush.resize(context);
 
@@ -296,34 +237,18 @@ impl SugarState {
         // It means that's either the first render or objects were erased on compute_diff() step
         for object in &self.objects {
             match object {
-                Object::Rect(rect, layer) => {
+                Object::Rect(rect) => {
                     self.rects.push(*rect);
-
-                    if let Some(idx) = layer {
-                        if let Some(layer) = self.layers.get_mut(*idx) {
-                            layer.rects.push(self.rects.len() - 1);
-                        }
-                    } else {
-                        self.layers[len].rects.push(self.rects.len() - 1);
-                    }
                 }
-                Object::Quad(composed_quad, layer) => {
+                Object::Quad(composed_quad) => {
                     self.quads.push(*composed_quad);
-
-                    if let Some(idx) = layer {
-                        if let Some(layer) = self.layers.get_mut(*idx) {
-                            layer.quads.push(self.quads.len() - 1);
-                        }
-                    } else {
-                        self.layers[len].quads.push(self.quads.len() - 1);
-                    }
                 }
-                // rich texts and layers have been already computed
-                _ => {}
+                Object::RichText(_rich_text) => {
+                    // self.rich_texts.push(*rich_text);
+                }
+                Object::NewLayer => {}
             }
         }
-
-        println!("{:?}", self.layers);
     }
 
     #[inline]
