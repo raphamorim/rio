@@ -221,7 +221,7 @@ impl ScreenNavigation {
                 Quad {
                     position: [initial_position_x, position_y],
                     color: background_color,
-                    size: [250. / scale, PADDING_Y_BOTTOM_TABS],
+                    size: [125., PADDING_Y_BOTTOM_TABS],
                     ..Quad::default()
                 },
                 None,
@@ -239,7 +239,7 @@ impl ScreenNavigation {
                     Quad {
                         position: [initial_position_x, position],
                         color: colors.tabs_active_highlight,
-                        size: [250. / scale, PADDING_Y_BOTTOM_TABS / 10.],
+                        size: [125., PADDING_Y_BOTTOM_TABS / 10.],
                         ..Quad::default()
                     },
                     None,

@@ -28,7 +28,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         Quad {
             position: [0., 30.0],
             color: blue,
-            size: [30. / context_dimension.dimension.scale, layout.height],
+            size: [15., layout.height],
             ..Quad::default()
         },
         None,
@@ -37,7 +37,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         Quad {
             position: [15., context_dimension.margin.top_y + 60.],
             color: yellow,
-            size: [30. / context_dimension.dimension.scale, layout.height],
+            size: [15., layout.height],
             ..Quad::default()
         },
         None,
@@ -46,7 +46,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         Quad {
             position: [30., context_dimension.margin.top_y + 120.],
             color: red,
-            size: [30. / context_dimension.dimension.scale, layout.height],
+            size: [15., layout.height],
             ..Quad::default()
         },
         None,
