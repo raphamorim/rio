@@ -20,8 +20,7 @@ pub use crate::sugarloaf::{
     SugarloafWithErrors,
 };
 pub use components::filters::Filter;
-pub use components::quad::{ComposedQuad, Quad};
-pub use components::rect::Rect;
+pub use components::quad::Quad;
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
     UnderlineShape,

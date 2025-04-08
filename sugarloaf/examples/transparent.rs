@@ -7,9 +7,8 @@ use rio_window::platform::run_on_demand::EventLoopExtRunOnDemand;
 use rio_window::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
-use sugarloaf::components::rect::Rect;
 use sugarloaf::layout::RootStyle;
-use sugarloaf::{Object, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{Object, Quad, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 fn main() {
     let mut event_loop = EventLoop::new().unwrap();
@@ -62,16 +61,24 @@ fn main() {
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested { .. } = event {
                     let objects = vec![
-                        Object::Rect(Rect {
-                            position: [10.0, 10.0],
-                            color: [1.0, 0.0, 1.0, 0.2],
-                            size: [100.0, 100.0],
-                        }),
-                        Object::Rect(Rect {
-                            position: [115.0, 10.0],
-                            color: [0.0, 1.0, 1.0, 0.5],
-                            size: [100.0, 100.0],
-                        }),
+                        Object::Quad(
+                            Quad {
+                                position: [10.0, 10.0],
+                                color: [1.0, 0.0, 1.0, 0.2],
+                                size: [50.0, 50.0],
+                                ..Quad::default()
+                            },
+                            None,
+                        ),
+                        Object::Quad(
+                            Quad {
+                                position: [115.0, 10.0],
+                                color: [0.0, 1.0, 1.0, 0.5],
+                                size: [50.0, 50.0],
+                                ..Quad::default()
+                            },
+                            None,
+                        ),
                     ];
 
                     sugarloaf.set_objects(objects);

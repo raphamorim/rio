@@ -1,5 +1,5 @@
 use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
@@ -12,26 +12,42 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
 
     let mut objects = Vec::with_capacity(7);
 
-    objects.push(Object::Rect(Rect {
-        position: [0., 0.0],
-        color: black,
-        size: [layout.width, layout.height],
-    }));
-    objects.push(Object::Rect(Rect {
-        position: [0., 30.0],
-        color: blue,
-        size: [30., layout.height],
-    }));
-    objects.push(Object::Rect(Rect {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [30., layout.height],
-    }));
-    objects.push(Object::Rect(Rect {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [30., layout.height],
-    }));
+    objects.push(Object::Quad(
+        Quad {
+            position: [0., 0.0],
+            color: black,
+            size: [layout.width, layout.height],
+            ..Quad::default()
+        },
+        None,
+    ));
+    objects.push(Object::Quad(
+        Quad {
+            position: [0., 30.0],
+            color: blue,
+            size: [30., layout.height],
+            ..Quad::default()
+        },
+        None,
+    ));
+    objects.push(Object::Quad(
+        Quad {
+            position: [15., context_dimension.margin.top_y + 60.],
+            color: yellow,
+            size: [30., layout.height],
+            ..Quad::default()
+        },
+        None,
+    ));
+    objects.push(Object::Quad(
+        Quad {
+            position: [30., context_dimension.margin.top_y + 120.],
+            color: red,
+            size: [30., layout.height],
+            ..Quad::default()
+        },
+        None,
+    ));
 
     let heading = sugarloaf.create_temp_rich_text();
     let paragraph_action = sugarloaf.create_temp_rich_text();
