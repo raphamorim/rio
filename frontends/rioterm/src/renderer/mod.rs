@@ -272,7 +272,7 @@ impl Renderer {
             //     powerline_drawing(character, metrics, offset)?
             // },
 
-            let (mut style, square_content) = if has_cursor
+            let (mut style, mut square_content) = if has_cursor
                 && column == cursor.state.pos.col
             {
                 self.create_cursor_style(square, cursor, is_active, renderable_content)
@@ -351,6 +351,25 @@ impl Renderer {
                 style.background_color = None;
             }
 
+            if self.use_drawable_chars {
+                // Box drawing characters and block elements.
+                match square_content {
+                    '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
+                        // Powerline symbols: '','','',''
+                        POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL
+                    => {
+                        if let Ok(character) = DrawableChar::try_from(square_content) {
+                            style.drawable_char = Some(character);
+                            // In case it's drawable_char then we can ignore the shaping
+                            square_content = ' ';
+                        } else {
+                            panic!("Could not find {:?}", square_content);
+                        }
+                    }
+                    _ => {}
+                };
+            }
+
             if let Some((font_id, width)) =
                 self.font_cache.get(&(square_content, style.font_attrs))
             {
@@ -384,23 +403,6 @@ impl Renderer {
                     (style.font_id, style.width),
                 );
             };
-
-            if self.use_drawable_chars {
-                // Box drawing characters and block elements.
-                match square_content {
-                    '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
-                        // Powerline symbols: '','','',''
-                        POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL
-                    => {
-                        if let Ok(character) = DrawableChar::try_from(square_content) {
-                            style.drawable_char = Some(character);
-                        } else {
-                            panic!("Could not find {:?}", square_content);
-                        }
-                    }
-                    _ => {}
-                };
-            }
 
             if square_content == ' ' {
                 if !last_char_was_space {
