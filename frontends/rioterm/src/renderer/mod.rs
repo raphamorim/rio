@@ -264,14 +264,6 @@ impl Renderer {
                 continue;
             }
 
-            // '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' => {
-            //     box_drawing(character, metrics, offset)
-            // },
-            // // Powerline symbols: '','','',''
-            // POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL => {
-            //     powerline_drawing(character, metrics, offset)?
-            // },
-
             let (mut style, mut square_content) = if has_cursor
                 && column == cursor.state.pos.col
             {
