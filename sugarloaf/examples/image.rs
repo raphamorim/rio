@@ -118,7 +118,7 @@ impl ApplicationHandler for Application {
                 sugarloaf.resize(new_size.width, new_size.height);
                 window.request_redraw();
             }
-            WindowEvent::RedrawRequested { .. } => {
+            WindowEvent::RedrawRequested => {
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

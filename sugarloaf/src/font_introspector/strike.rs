@@ -442,7 +442,7 @@ impl<'a> Bitmap<'a> {
             BitmapFormat::Alpha(bits) => match bits {
                 1 => {
                     let mut dst_idx = 0;
-                    for row in src.chunks(((w * bits as usize) + 7) / 8) {
+                    for row in src.chunks((w * bits as usize).div_ceil(8)) {
                         for x in 0..w {
                             dst[dst_idx] = (row[x >> 3] >> (!x & 7) & 1) * 255;
                             dst_idx += 1;
@@ -451,7 +451,7 @@ impl<'a> Bitmap<'a> {
                 }
                 2 => {
                     let mut dst_idx = 0;
-                    for row in src.chunks(((w * bits as usize) + 7) / 8) {
+                    for row in src.chunks((w * bits as usize).div_ceil(8)) {
                         for x in 0..w {
                             dst[dst_idx] = (row[x >> 2] >> (!(x * 2) & 2) & 3) * 85;
                             dst_idx += 1;
@@ -460,7 +460,7 @@ impl<'a> Bitmap<'a> {
                 }
                 4 => {
                     let mut dst_idx = 0;
-                    for row in src.chunks(((w * bits as usize) + 7) / 8) {
+                    for row in src.chunks((w * bits as usize).div_ceil(8)) {
                         for x in 0..w {
                             dst[dst_idx] = (row[x >> 1] >> (!(x * 4) & 4) & 15) * 17;
                             dst_idx += 1;
@@ -699,7 +699,7 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
         }
         1 => {
             bitmap.read_metrics(d, offset, flags, false)?;
-            let w = (bitmap.width as usize * depth + 7) / 8;
+            let w = (bitmap.width as usize * depth).div_ceil(8);
             let h = bitmap.height as usize;
             bitmap.data = d.read_bytes(offset + 5, w * h)?;
             Some(bitmap)
@@ -708,7 +708,7 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
             bitmap.read_metrics(d, offset, flags, false)?;
             let w = bitmap.width as usize * depth;
             let h = bitmap.height as usize;
-            bitmap.data = d.read_bytes(offset + 5, (w * h + 7) / 8)?;
+            bitmap.data = d.read_bytes(offset + 5, (w * h).div_ceil(8))?;
             bitmap.is_packed = true;
             Some(bitmap)
         }
@@ -719,7 +719,7 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
         }
         6 => {
             bitmap.read_metrics(d, offset, flags, true)?;
-            let w = (bitmap.width as usize * depth + 7) / 8;
+            let w = (bitmap.width as usize * depth).div_ceil(8);
             let h = bitmap.height as usize;
             bitmap.data = d.read_bytes(offset + 8, w * h)?;
             Some(bitmap)
@@ -728,7 +728,7 @@ fn get_data<'a>(table: &'a [u8], loc: &Location) -> Option<BitmapData<'a>> {
             bitmap.read_metrics(d, offset, flags, true)?;
             let w = bitmap.width as usize * depth;
             let h = bitmap.height as usize;
-            bitmap.data = d.read_bytes(offset + 8, (w * h + 7) / 8)?;
+            bitmap.data = d.read_bytes(offset + 8, (w * h).div_ceil(8))?;
             bitmap.is_packed = true;
             Some(bitmap)
         }

@@ -191,7 +191,7 @@ impl ApplicationHandler for Application {
                 sugarloaf.resize(new_size.width, new_size.height);
                 window.request_redraw();
             }
-            WindowEvent::RedrawRequested { .. } => {
+            WindowEvent::RedrawRequested => {
                 let content = sugarloaf.content();
                 let time = std::time::Instant::now();
                 for rich_text in &self.rich_texts {

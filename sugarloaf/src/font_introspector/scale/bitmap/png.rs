@@ -202,8 +202,8 @@ impl<'a> State<'a> {
         };
         this.has_alpha = has_alpha;
         this.bpp = this.header.depth as usize * channels;
-        this.pitch = (w * this.bpp + 7) / 8;
-        this.bwidth = (this.bpp + 7) / 8;
+        this.pitch = (w * this.bpp).div_ceil(8);
+        this.bwidth = this.bpp.div_ceil(8);
         this.extra_bytes = this.pitch * 2 + w * 8;
         decomp.clear();
         decomp.reserve(this.extra_bytes + (this.pitch + 1) * h);
@@ -286,11 +286,11 @@ fn decode_data<E: Emit>(
         let mut offset = 0;
         loop {
             let cols = match pass {
-                0 => (w + 7) / 8,
+                0 => w.div_ceil(8),
                 1 => (w + 3) / 8,
-                2 => (w + 3) / 4,
+                2 => w.div_ceil(4),
                 3 => (w + 1) / 4,
-                4 => (w + 1) / 2,
+                4 => w.div_ceil(2),
                 5 => w / 2,
                 6 => w,
                 _ => return None,
@@ -303,7 +303,7 @@ fn decode_data<E: Emit>(
             let inc = COL_INCREMENT[pass] as usize;
             let row_inc = ROW_INCREMENT[pass] as usize;
             while y < h {
-                let pitch = (cols * bpp + 7) / 8;
+                let pitch = (cols * bpp).div_ceil(8);
                 let end = offset + pitch + 1;
                 let source = decomp.get(offset..end)?;
                 offset = end;

@@ -59,7 +59,7 @@ fn main() {
                 window.request_redraw();
             }
             Event::WindowEvent { event, .. } => {
-                if let WindowEvent::RedrawRequested { .. } = event {
+                if let WindowEvent::RedrawRequested = event {
                     let objects = vec![
                         Object::Quad(
                             Quad {
