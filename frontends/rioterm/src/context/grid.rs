@@ -3,7 +3,7 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Quad, Object, RichText, Sugarloaf,
+    layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
 };
 
 const MIN_COLS: usize = 2;
@@ -39,14 +39,14 @@ fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object 
     Object::Quad(
         Quad {
             color,
-                position,
-                shadow_blur_radius: 0.0,
-                shadow_offset: [0.0, 0.0],
-                shadow_color: [0.0, 0.0, 0.0, 0.0],
-                border_color: [0.0, 0.0, 0.0, 0.0],
-                border_width: 0.0,
-                border_radius: [0.0, 0.0, 0.0, 0.0],
-                size,
+            position,
+            shadow_blur_radius: 0.0,
+            shadow_offset: [0.0, 0.0],
+            shadow_color: [0.0, 0.0, 0.0, 0.0],
+            border_color: [0.0, 0.0, 0.0, 0.0],
+            border_width: 0.0,
+            border_radius: [0.0, 0.0, 0.0, 0.0],
+            size,
         },
         None,
     )
