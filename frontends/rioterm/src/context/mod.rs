@@ -1005,6 +1005,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.acc_current_route += 1;
             let current = self.current();
             let cursor = current.cursor_from_ref();
+            let mut dimension = current.dimension;
+
+            // If current has splits then shouldn't use that dimension
+            if self.current_grid().len() > 1 {
+                dimension = self.current_grid().grid_dimension();
+            }
 
             match ContextManager::create_context(
                 (&cursor, current.renderable_content.has_blinking_enabled),
@@ -1012,7 +1018,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.window_id,
                 self.acc_current_route,
                 rich_text_id,
-                current.dimension,
+                dimension,
                 &cloned_config,
             ) {
                 Ok(new_context) => {
