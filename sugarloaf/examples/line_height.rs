@@ -144,7 +144,7 @@ impl ApplicationHandler for Application {
                     }
                 }
             }
-            WindowEvent::RedrawRequested { .. } => {
+            WindowEvent::RedrawRequested => {
                 let content = sugarloaf.content();
                 content.sel(0).clear();
                 content

@@ -62,7 +62,7 @@ impl<'a> Gdef<'a> {
     }
 
     pub fn ok(&self) -> bool {
-        self.data.len() != 0
+        !self.data.is_empty()
     }
 
     /// Returns true if glyph classes are available.

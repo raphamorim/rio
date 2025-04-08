@@ -507,7 +507,7 @@ impl Compositor {
             DrawableChar::Cross => {
                 // Horizontal part
                 let rect_h = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_width,
                     height: stroke,
@@ -545,7 +545,7 @@ impl Compositor {
             DrawableChar::TopLeft => {
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
-                    y: y,
+                    y,
                     width: stroke,
                     height: line_height / 2.0,
                 };
@@ -553,7 +553,7 @@ impl Compositor {
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_width / 2.0,
                     height: stroke,
@@ -643,7 +643,7 @@ impl Compositor {
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_width / 2.0,
                     height: stroke,
@@ -699,7 +699,7 @@ impl Compositor {
                 // Vertical line from top to center
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
-                    y: y,
+                    y,
                     width: stroke,
                     height: line_height / 2.0,
                 };
@@ -707,7 +707,7 @@ impl Compositor {
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_width / 2.0,
                     height: stroke,
@@ -730,7 +730,7 @@ impl Compositor {
                 // Vertical line
                 let rect_v = Rect {
                     x: center_x - stroke / 2.0,
-                    y: y,
+                    y,
                     width: stroke,
                     height: line_height,
                 };
@@ -749,7 +749,7 @@ impl Compositor {
                 // Vertical line
                 let rect_v = Rect {
                     x: center_x - stroke / 2.0,
-                    y: y,
+                    y,
                     width: stroke,
                     height: line_height,
                 };
@@ -757,7 +757,7 @@ impl Compositor {
 
                 // Horizontal line (from left to center)
                 let rect_h = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: half_size,
                     height: stroke,
@@ -767,7 +767,7 @@ impl Compositor {
             DrawableChar::HorizontalDown => {
                 // Horizontal line
                 let rect_h = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_height,
                     height: stroke,
@@ -786,7 +786,7 @@ impl Compositor {
             DrawableChar::HorizontalUp => {
                 // Horizontal line
                 let rect_h = Rect {
-                    x: x,
+                    x,
                     y: center_y - stroke / 2.0,
                     width: line_height,
                     height: stroke,
@@ -796,7 +796,7 @@ impl Compositor {
                 // Vertical line (from center to top)
                 let rect_v = Rect {
                     x: center_x - stroke / 2.0,
-                    y: y,
+                    y,
                     width: stroke,
                     height: half_size,
                 };

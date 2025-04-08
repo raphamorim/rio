@@ -317,8 +317,8 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn render<'pass>(
-        &'pass mut self,
+    pub fn render(
+        &mut self,
         ctx: &mut Context,
         rpass: &mut wgpu::RenderPass,
     ) {

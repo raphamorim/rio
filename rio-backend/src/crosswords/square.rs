@@ -184,7 +184,7 @@ impl Square {
     ) {
         // If we reset color and we don't have zerowidth we should drop extra storage.
         if color.is_none()
-            && self.extra.as_ref().map_or(true, |extra| {
+            && self.extra.as_ref().is_none_or(|extra| {
                 extra.zerowidth.is_empty() && extra.hyperlink.is_none()
             })
         {
@@ -204,7 +204,7 @@ impl Square {
     /// Set hyperlink.
     pub fn set_hyperlink(&mut self, hyperlink: Option<Hyperlink>) {
         let should_drop = hyperlink.is_none()
-            && self.extra.as_ref().map_or(true, |extra| {
+            && self.extra.as_ref().is_none_or(|extra| {
                 extra.zerowidth.is_empty() && extra.underline_color.is_none()
             });
 
