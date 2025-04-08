@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, ComposedQuad, FragmentStyle, Object, Quad, RichText, Sugarloaf,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Object, Quad, RichText, Sugarloaf, SugarloafWindow,
+    SugarloafWindowSize,
 };
 
 fn main() {
@@ -109,9 +109,9 @@ impl ApplicationHandler for Application {
         let window = self.window.as_mut().unwrap();
 
         let objects = vec![
-            Object::Quad(ComposedQuad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                quad: Quad {
+            Object::Quad(
+                Quad {
+                    color: [1.0, 0.5, 0.5, 0.5],
                     position: [5., 5.],
                     shadow_blur_radius: 2.0,
                     shadow_offset: [1.0, 1.0],
@@ -121,14 +121,18 @@ impl ApplicationHandler for Application {
                     border_radius: [10.0, 10.0, 10.0, 10.0],
                     size: [200.0, 200.0],
                 },
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[0],
-                position: [5., 5.],
-            }),
-            Object::Quad(ComposedQuad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                quad: Quad {
+                None,
+            ),
+            Object::RichText(
+                RichText {
+                    id: self.rich_texts[0],
+                    position: [5., 5.],
+                },
+                None,
+            ),
+            Object::Quad(
+                Quad {
+                    color: [1.0, 0.5, 0.5, 0.5],
                     position: [220., 5.],
                     shadow_blur_radius: 0.0,
                     shadow_offset: [0.0, 0.0],
@@ -138,14 +142,18 @@ impl ApplicationHandler for Application {
                     border_radius: [0.0, 0.0, 0.0, 0.0],
                     size: [200.0, 150.0],
                 },
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[1],
-                position: [220., 5.],
-            }),
-            Object::Quad(ComposedQuad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                quad: Quad {
+                None,
+            ),
+            Object::RichText(
+                RichText {
+                    id: self.rich_texts[1],
+                    position: [220., 5.],
+                },
+                None,
+            ),
+            Object::Quad(
+                Quad {
+                    color: [1.0, 0.5, 0.5, 0.5],
                     position: [440., 5.],
                     shadow_blur_radius: 0.0,
                     shadow_offset: [0.0, 0.0],
@@ -155,11 +163,15 @@ impl ApplicationHandler for Application {
                     border_radius: [0.0, 0.0, 0.0, 0.0],
                     size: [320.0, 150.0],
                 },
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[2],
-                position: [440., 5.],
-            }),
+                None,
+            ),
+            Object::RichText(
+                RichText {
+                    id: self.rich_texts[2],
+                    position: [440., 5.],
+                },
+                None,
+            ),
         ];
 
         match event {

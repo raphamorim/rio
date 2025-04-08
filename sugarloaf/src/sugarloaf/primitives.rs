@@ -3,8 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::sugarloaf::Rect;
-use crate::ComposedQuad;
+use crate::Quad;
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -37,8 +36,7 @@ pub struct RichText {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
-    Rect(Rect, Option<usize>),
-    Quad(ComposedQuad, Option<usize>),
+    Quad(Quad, Option<usize>),
     RichText(RichText, Option<usize>),
 }
 

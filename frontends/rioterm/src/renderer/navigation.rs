@@ -2,7 +2,7 @@ use crate::constants::*;
 use crate::context::title::ContextTitle;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
-use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
@@ -133,13 +133,14 @@ impl ScreenNavigation {
                 }
             }
 
-            let renderable = Rect {
+            let renderable = Quad {
                 position: [initial_position, 0.0],
                 color,
                 size: [30.0, size],
+                ..Quad::default()
             };
             initial_position -= position_modifier;
-            objects.push(Object::Rect(renderable));
+            objects.push(Object::Quad(renderable, None));
         }
     }
 
@@ -165,13 +166,14 @@ impl ScreenNavigation {
 
         let mut initial_position_x = 0.;
 
-        let renderable = Rect {
+        let renderable = Quad {
             position: [initial_position_x, position_y],
             color: colors.bar,
             size: [width * 2., PADDING_Y_BOTTOM_TABS],
+            ..Quad::default()
         };
 
-        objects.push(Object::Rect(renderable));
+        objects.push(Object::Quad(renderable, None));
 
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
@@ -215,11 +217,15 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            objects.push(Object::Rect(Rect {
-                position: [initial_position_x, position_y],
-                color: background_color,
-                size: [250., PADDING_Y_BOTTOM_TABS],
-            }));
+            objects.push(Object::Quad(
+                Quad {
+                    position: [initial_position_x, position_y],
+                    color: background_color,
+                    size: [250., PADDING_Y_BOTTOM_TABS],
+                    ..Quad::default()
+                },
+                None,
+            ));
 
             if is_current {
                 // TopBar case should render on bottom
@@ -229,11 +235,15 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                objects.push(Object::Rect(Rect {
-                    position: [initial_position_x, position],
-                    color: colors.tabs_active_highlight,
-                    size: [250., PADDING_Y_BOTTOM_TABS / 10.],
-                }));
+                objects.push(Object::Quad(
+                    Quad {
+                        position: [initial_position_x, position],
+                        color: colors.tabs_active_highlight,
+                        size: [250., PADDING_Y_BOTTOM_TABS / 10.],
+                        ..Quad::default()
+                    },
+                    None,
+                ));
             }
 
             let text = if is_current {
@@ -259,10 +269,13 @@ impl ScreenNavigation {
                 )
                 .build();
 
-            objects.push(Object::RichText(RichText {
-                id: tab,
-                position: [initial_position_x + 4., position_y],
-            }));
+            objects.push(Object::RichText(
+                RichText {
+                    id: tab,
+                    position: [initial_position_x + 4., position_y],
+                },
+                None,
+            ));
 
             initial_position_x += name_modifier + 40.;
         }

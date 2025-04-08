@@ -6,7 +6,6 @@ use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
-use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
@@ -24,7 +23,6 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    rect_brush: Vec<RectBrush>,
     quad_brush: Vec<QuadBrush>,
     rich_text_brush: Vec<RichTextBrush>,
     layer_brush: LayerBrush,
@@ -122,7 +120,6 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
@@ -136,7 +133,6 @@ impl Sugarloaf<'_> {
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
-            rect_brush: vec![rect_brush],
             rich_text_brush: vec![rich_text_brush],
             graphics: Graphics::default(),
             filters_brush,
@@ -313,11 +309,12 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn add_layer(&mut self) {
-        self.quad_brush.push(QuadBrush::new(&mut self.ctx));
-        self.rect_brush.push(RectBrush::init(&mut self.ctx));
-        self.rich_text_brush.push(RichTextBrush::new(&mut self.ctx));
-        self.state.new_layer();
+    pub fn add_layers(&mut self, quantity: usize) {
+        for _ in 0..quantity {
+            self.quad_brush.push(QuadBrush::new(&mut self.ctx));
+            self.rich_text_brush.push(RichTextBrush::new(&mut self.ctx));
+            self.state.new_layer();
+        }
     }
 
     #[inline]
@@ -409,16 +406,6 @@ impl Sugarloaf<'_> {
                                 &mut self.ctx,
                                 &self.state,
                                 &mut rpass,
-                            );
-                        }
-
-                        if let Some(rect_brush) = self.rect_brush.get_mut(layer_idx) {
-                            rect_brush.resize(&mut self.ctx);
-                            rect_brush.render(
-                                layer_idx,
-                                &mut rpass,
-                                &self.state,
-                                &mut self.ctx,
                             );
                         }
 

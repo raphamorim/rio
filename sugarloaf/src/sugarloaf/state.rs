@@ -6,7 +6,7 @@
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
 use crate::sugarloaf::{RichTextBrush, RichTextLayout};
-use crate::{ComposedQuad, Content, Object, Rect, RichText, SugarDimensions};
+use crate::{Content, Object, Quad, RichText, SugarDimensions};
 use std::collections::HashSet;
 
 // Layer points for each rect, quad or rt that will be used on that
@@ -14,7 +14,6 @@ use std::collections::HashSet;
 #[derive(Default, Debug)]
 pub struct Layer {
     pub quads: Vec<usize>,
-    pub rects: Vec<usize>,
     pub rich_texts: Vec<usize>,
 }
 
@@ -26,8 +25,7 @@ pub struct SugarState {
     max_layers: usize,
     pub style: RootStyle,
     pub content: Content,
-    pub rects: Vec<Rect>,
-    pub quads: Vec<ComposedQuad>,
+    pub quads: Vec<Quad>,
     pub layers: Vec<Layer>,
 }
 
@@ -45,7 +43,6 @@ impl SugarState {
             max_layers: 1,
             layers: vec![Layer::default()],
             content: Content::new(font_library),
-            rects: vec![],
             quads: vec![],
             style,
             objects: vec![],
@@ -86,7 +83,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn get_layer_quads(&self, layer_index: usize) -> Vec<ComposedQuad> {
+    pub fn get_layer_quads(&self, layer_index: usize) -> Vec<Quad> {
         self.layers.get(layer_index).map_or_else(Vec::new, |layer| {
             layer
                 .quads
@@ -103,17 +100,6 @@ impl SugarState {
                 .rich_texts
                 .iter()
                 .filter_map(|&idx| self.rich_texts.get(idx).copied())
-                .collect()
-        })
-    }
-
-    #[inline]
-    pub fn get_layer_rects(&self, layer_index: usize) -> Vec<Rect> {
-        self.layers.get(layer_index).map_or_else(Vec::new, |layer| {
-            layer
-                .rects
-                .iter()
-                .filter_map(|&idx| self.rects.get(idx).copied())
                 .collect()
         })
     }
@@ -245,7 +231,6 @@ impl SugarState {
 
     #[inline]
     pub fn reset(&mut self) {
-        self.rects.clear();
         self.quads.clear();
         for rte_id in &self.rich_text_to_be_removed {
             self.content.remove_state(rte_id);
@@ -294,19 +279,8 @@ impl SugarState {
         // It means that's either the first render or objects were erased on compute_diff() step
         for object in &self.objects {
             match object {
-                Object::Rect(rect, layer) => {
-                    self.rects.push(*rect);
-
-                    if let Some(idx) = layer {
-                        if let Some(layer) = self.layers.get_mut(*idx) {
-                            layer.rects.push(self.rects.len() - 1);
-                        }
-                    } else {
-                        self.layers[len].rects.push(self.rects.len() - 1);
-                    }
-                }
-                Object::Quad(composed_quad, layer) => {
-                    self.quads.push(*composed_quad);
+                Object::Quad(quad, layer) => {
+                    self.quads.push(*quad);
 
                     if let Some(idx) = layer {
                         if let Some(layer) = self.layers.get_mut(*idx) {
@@ -320,8 +294,6 @@ impl SugarState {
                 _ => {}
             }
         }
-
-        println!("{:?}", self.layers);
     }
 
     #[inline]
