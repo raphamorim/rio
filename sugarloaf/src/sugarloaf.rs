@@ -311,8 +311,8 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn add_layers(&mut self, quantity: usize) {
         for _ in 0..quantity {
-            self.quad_brush.push(QuadBrush::new(&mut self.ctx));
-            self.rich_text_brush.push(RichTextBrush::new(&mut self.ctx));
+            self.quad_brush.push(QuadBrush::new(&self.ctx));
+            self.rich_text_brush.push(RichTextBrush::new(&self.ctx));
             self.state.new_layer();
         }
     }
