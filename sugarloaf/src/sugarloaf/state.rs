@@ -5,7 +5,7 @@
 
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
-use crate::sugarloaf::{QuadBrush, RectBrush, RichTextBrush, RichTextLayout};
+use crate::sugarloaf::{RichTextBrush, RichTextLayout};
 use crate::{ComposedQuad, Content, Object, Rect, RichText, SugarDimensions};
 use std::collections::HashSet;
 
@@ -66,6 +66,11 @@ impl SugarState {
         }
 
         found_font_features
+    }
+
+    #[inline]
+    pub fn new_layer(&mut self) {
+        self.layers.push(Layer::default());
     }
 
     #[inline]
@@ -219,11 +224,6 @@ impl SugarState {
         let mut rich_texts: Vec<RichText> = vec![];
         let len = self.layers.len() - 1;
         for obj in &new_objects {
-            if let Object::NewLayer = obj {
-                self.layers.push(Layer::default());
-                continue;
-            }
-
             if let Object::RichText(rich_text, layer) = obj {
                 rich_texts.push(*rich_text);
 
@@ -250,8 +250,13 @@ impl SugarState {
 
         self.rich_text_to_be_removed.clear();
 
-        self.layers.clear();
-        self.layers.push(Layer::default());
+        for l in &mut self.layers {
+            l.quads.clear();
+            l.rects.clear();
+            l.rich_texts.clear();
+        }
+        // self.layers.clear();
+        // self.layers.push(Layer::default());
     }
 
     #[inline]
@@ -279,15 +284,8 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_updates(
-        &mut self,
-        rect_brush: &mut RectBrush,
-        quad_brush: &mut QuadBrush,
-        context: &mut super::Context,
-    ) {
+    pub fn compute_updates(&mut self) {
         let len = self.layers.len() - 1;
-        rect_brush.resize(context);
-        quad_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf
         // like objects rendering (created by .text() or .append_rects())
