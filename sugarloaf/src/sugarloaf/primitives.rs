@@ -38,9 +38,9 @@ pub struct RichText {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
     NewLayer,
-    Rect(Rect),
-    Quad(ComposedQuad),
-    RichText(RichText),
+    Rect(Rect, Option<usize>),
+    Quad(ComposedQuad, Option<usize>),
+    RichText(RichText, Option<usize>),
 }
 
 pub enum CornerType {

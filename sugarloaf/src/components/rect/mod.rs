@@ -231,12 +231,14 @@ impl RectBrush {
     #[inline]
     pub fn render<'pass>(
         &'pass mut self,
-        rpass: &mut wgpu::RenderPass<'pass>,
+        layer_idx: usize,
+        rpass: &mut wgpu::RenderPass,
         state: &crate::sugarloaf::state::SugarState,
         ctx: &mut Context,
     ) {
         // let device = &ctx.device;
-        let instances = &state.rects;
+        let instances = state.get_layer_rects(layer_idx);
+        println!("rects {:?} {:?}", layer_idx, instances);
         let mut i = 0;
         let total = instances.len();
 
