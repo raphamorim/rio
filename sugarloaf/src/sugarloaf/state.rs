@@ -70,7 +70,7 @@ impl SugarState {
     #[inline]
     pub fn new_layer(&mut self) {
         self.layers.push(Layer::default());
-        self.max_layers = self.max_layers + 1;
+        self.max_layers += 1;
     }
 
     #[inline]

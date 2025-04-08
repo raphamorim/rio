@@ -223,8 +223,8 @@ impl QuadBrush {
         }
     }
 
-    pub fn render<'a>(
-        &'a mut self,
+    pub fn render(
+        &mut self,
         layer_idx: usize,
         context: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
