@@ -17,7 +17,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    DrawableChar, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    Content, DrawableChar, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
     Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;

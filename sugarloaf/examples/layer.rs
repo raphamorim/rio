@@ -25,6 +25,8 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
+    rich_text: usize,
+    second_rich_text: usize,
 }
 
 impl Application {
@@ -36,6 +38,8 @@ impl Application {
             window: None,
             width,
             height,
+            rich_text: 0,
+            second_rich_text: 0,
         }
     }
 
@@ -78,7 +82,8 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text();
+        self.second_rich_text = sugarloaf.create_rich_text();
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -117,7 +122,7 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested { .. } => {
                 let content = sugarloaf.content();
-                content.sel(0).clear();
+                content.sel(self.rich_text).clear();
                 content
                     .new_line()
                     .add_text(
@@ -131,26 +136,54 @@ impl ApplicationHandler for Application {
                     .new_line()
                     .build();
 
+                content.sel(self.second_rich_text).clear();
+                content
+                    .new_line()
+                    .add_text(
+                        "Second Layer",
+                        FragmentStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .build();
+
                 sugarloaf.set_objects(vec![
-                    // Default behaviour is Rect over RichText
-                    Object::RichText(RichText {
-                        id: 0,
-                        position: [10., 10.],
-                    }),
-                    Object::Rect(Rect {
-                        position: [10., 10.],
-                        color: [1.0, 0.3, 0.5, 1.0],
-                        size: [100., 30.],
-                    }),
-                    Object::RichText(RichText {
-                        id: 0,
-                        position: [10., 60.],
-                    }),
-                    Object::Rect(Rect {
-                        position: [10., 60.],
-                        color: [1.0, 0.3, 0.5, 1.0],
-                        size: [100., 30.],
-                    }),
+                    // New layer sets default to 1
+                    Object::NewLayer,
+                    Object::RichText(
+                        RichText {
+                            id: self.rich_text,
+                            position: [10., 10.],
+                        },
+                        Some(1),
+                    ),
+                    Object::Rect(
+                        Rect {
+                            position: [10., 10.],
+                            color: [1.0, 0.3, 0.5, 1.0],
+                            size: [600., 100.],
+                        },
+                        Some(1),
+                    ),
+                    Object::NewLayer,
+                    Object::RichText(
+                        RichText {
+                            id: self.second_rich_text,
+                            position: [10., 60.],
+                        },
+                        Some(2),
+                    ),
+                    Object::Rect(
+                        Rect {
+                            position: [10., 60.],
+                            color: [0.5, 0.5, 0.8, 1.0],
+                            size: [100., 30.],
+                        },
+                        Some(2),
+                    ),
                 ]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

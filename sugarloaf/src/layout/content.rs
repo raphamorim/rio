@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
-use crate::{sugarloaf::primitives::SugarCursor, BuiltinChar, Graphic};
+use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 
 pub struct RichTextCounter(AtomicUsize);
 
@@ -240,8 +240,8 @@ pub struct FragmentStyle {
     pub cursor: Option<SugarCursor>,
     /// Media
     pub media: Option<Graphic>,
-    /// Builtin character
-    pub builtin_char: Option<BuiltinChar>,
+    /// Drawable character
+    pub drawable_char: Option<DrawableChar>,
 }
 
 impl Default for FragmentStyle {
@@ -260,7 +260,7 @@ impl Default for FragmentStyle {
             decoration: None,
             decoration_color: None,
             media: None,
-            builtin_char: None,
+            drawable_char: None,
         }
     }
 }
