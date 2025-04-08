@@ -233,12 +233,11 @@ impl QuadBrush {
 
     pub fn render<'a>(
         &'a mut self,
-        layer_idx: usize,
         context: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
-        render_pass: &mut wgpu::RenderPass,
+        render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        let instances = state.get_layer_quads(layer_idx);
+        let instances = &state.quads;
         let total = instances.len();
 
         if total == 0 {
@@ -258,7 +257,7 @@ impl QuadBrush {
             });
         }
 
-        let instance_bytes = bytemuck::cast_slice(&instances);
+        let instance_bytes = bytemuck::cast_slice(instances);
         context
             .queue
             .write_buffer(&self.instances, 0, instance_bytes);

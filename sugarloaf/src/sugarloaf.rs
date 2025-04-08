@@ -319,9 +319,11 @@ impl Sugarloaf<'_> {
         self.state.compute_dimensions(&mut self.rich_text_brush);
 
         self.state.compute_updates(
+            &mut self.rich_text_brush,
             &mut self.rect_brush,
             &mut self.quad_brush,
             &mut self.ctx,
+            &mut self.graphics,
         );
 
         match self.ctx.surface.get_current_texture() {
@@ -395,29 +397,13 @@ impl Sugarloaf<'_> {
                         }
                     }
 
-                    for layer_idx in 0..self.state.layers.len() {
-                        self.quad_brush.render(
-                            layer_idx,
-                            &mut self.ctx,
-                            &self.state,
-                            &mut rpass,
-                        );
+                    self.quad_brush
+                        .render(&mut self.ctx, &self.state, &mut rpass);
 
-                        self.rect_brush.render(
-                            layer_idx,
-                            &mut rpass,
-                            &self.state,
-                            &mut self.ctx,
-                        );
+                    self.rect_brush
+                        .render(&mut rpass, &self.state, &mut self.ctx);
 
-                        self.rich_text_brush.prepare(
-                            layer_idx,
-                            &mut self.ctx,
-                            &self.state,
-                            &mut self.graphics,
-                        );
-                        self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-                    }
+                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
                 if self.graphics.bottom_layer.is_some()
