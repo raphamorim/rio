@@ -38,9 +38,9 @@ pub struct RichText {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
     NewLayer,
-    Rect(Rect),
-    Quad(ComposedQuad),
-    RichText(RichText),
+    Rect(Rect, Option<usize>),
+    Quad(ComposedQuad, Option<usize>),
+    RichText(RichText, Option<usize>),
 }
 
 pub enum CornerType {
@@ -51,7 +51,7 @@ pub enum CornerType {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BuiltinChar {
+pub enum DrawableChar {
     // Original box-drawing characters
     Horizontal,     // ─
     Vertical,       // │
@@ -360,47 +360,47 @@ pub enum BuiltinChar {
                          // BrailleDots125678,  // ⣳ U+28F3 BRAILLE PATTERN DOTS
 }
 
-impl TryFrom<char> for BuiltinChar {
+impl TryFrom<char> for DrawableChar {
     type Error = char;
 
     fn try_from(val: char) -> Result<Self, Self::Error> {
-        let boxchar = match val {
-            '─' => BuiltinChar::Horizontal,
-            '│' => BuiltinChar::Vertical,
-            '└' => BuiltinChar::TopRight,
-            '┘' => BuiltinChar::TopLeft,
-            '┌' => BuiltinChar::BottomRight,
-            '┐' => BuiltinChar::BottomLeft,
-            '┼' => BuiltinChar::Cross,
-            '├' => BuiltinChar::VerticalRight,
-            '┤' => BuiltinChar::VerticalLeft,
-            '┬' => BuiltinChar::HorizontalDown,
-            '┴' => BuiltinChar::HorizontalUp,
+        let drawbable_char = match val {
+            '─' => DrawableChar::Horizontal,
+            '│' => DrawableChar::Vertical,
+            '└' => DrawableChar::TopRight,
+            '┘' => DrawableChar::TopLeft,
+            '┌' => DrawableChar::BottomRight,
+            '┐' => DrawableChar::BottomLeft,
+            '┼' => DrawableChar::Cross,
+            '├' => DrawableChar::VerticalRight,
+            '┤' => DrawableChar::VerticalLeft,
+            '┬' => DrawableChar::HorizontalDown,
+            '┴' => DrawableChar::HorizontalUp,
 
-            '╯' => BuiltinChar::ArcTopLeft,
-            '╭' => BuiltinChar::ArcBottomRight,
-            '╮' => BuiltinChar::ArcBottomLeft,
-            '╰' => BuiltinChar::ArcTopRight,
+            '╯' => DrawableChar::ArcTopLeft,
+            '╭' => DrawableChar::ArcBottomRight,
+            '╮' => DrawableChar::ArcBottomLeft,
+            '╰' => DrawableChar::ArcTopRight,
 
-            '┄' => BuiltinChar::HorizontalLightDash,
-            '┅' => BuiltinChar::HorizontalHeavyDash,
-            '┈' => BuiltinChar::HorizontalLightDoubleDash,
-            '┉' => BuiltinChar::HorizontalHeavyDoubleDash,
-            '╌' => BuiltinChar::HorizontalLightTripleDash,
-            '╍' => BuiltinChar::HorizontalHeavyTripleDash,
-            '┆' => BuiltinChar::VerticalLightDash,
-            '┇' => BuiltinChar::VerticalHeavyDash,
-            '┊' => BuiltinChar::VerticalLightDoubleDash,
-            '┋' => BuiltinChar::VerticalHeavyDoubleDash,
-            '╎' => BuiltinChar::VerticalLightTripleDash,
-            '╏' => BuiltinChar::VerticalHeavyTripleDash,
+            '┄' => DrawableChar::HorizontalLightDash,
+            '┅' => DrawableChar::HorizontalHeavyDash,
+            '┈' => DrawableChar::HorizontalLightDoubleDash,
+            '┉' => DrawableChar::HorizontalHeavyDoubleDash,
+            '╌' => DrawableChar::HorizontalLightTripleDash,
+            '╍' => DrawableChar::HorizontalHeavyTripleDash,
+            '┆' => DrawableChar::VerticalLightDash,
+            '┇' => DrawableChar::VerticalHeavyDash,
+            '┊' => DrawableChar::VerticalLightDoubleDash,
+            '┋' => DrawableChar::VerticalHeavyDoubleDash,
+            '╎' => DrawableChar::VerticalLightTripleDash,
+            '╏' => DrawableChar::VerticalHeavyTripleDash,
 
-            '\u{e0b2}' => BuiltinChar::PowerlineLeftSolid,
-            '\u{e0b0}' => BuiltinChar::PowerlineRightSolid,
+            '\u{e0b2}' => DrawableChar::PowerlineLeftSolid,
+            '\u{e0b0}' => DrawableChar::PowerlineRightSolid,
             // '' => PowerlineLeftHollow,
             // '' => PowerlineRightHollow,
             _ => return Err(val),
         };
-        Ok(boxchar)
+        Ok(drawbable_char)
     }
 }

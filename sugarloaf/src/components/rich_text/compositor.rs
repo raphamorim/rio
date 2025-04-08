@@ -560,7 +560,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
             }
-            BuiltinChar::BottomRight => {
+            DrawableChar::BottomRight => {
                 // Horizontal part (from center to right)
                 let rect_h = Rect {
                     x: center_x,
@@ -579,7 +579,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::BottomLeft => {
+            DrawableChar::BottomLeft => {
                 // Horizontal part (from left to center)
                 let rect_h = Rect {
                     x: x,
@@ -598,7 +598,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::ArcTopLeft => {
+            DrawableChar::ArcTopLeft => {
                 // Arc corner at bottom-right (╯)
                 // Vertical line from top to center
                 let vertical_rect = Rect {
@@ -630,7 +630,7 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::ArcBottomRight => {
+            DrawableChar::ArcBottomRight => {
                 // Arc corner at top-left (╭)
                 // Vertical line from center to bottom
                 let vertical_rect = Rect {
@@ -662,7 +662,7 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::ArcBottomLeft => {
+            DrawableChar::ArcBottomLeft => {
                 // Arc corner at top-right (╮)
                 // Vertical line from center to bottom
                 let vertical_rect = Rect {
@@ -694,7 +694,7 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::ArcTopRight => {
+            DrawableChar::ArcTopRight => {
                 // Arc corner at bottom-left (╰)
                 // Vertical line from top to center
                 let vertical_rect = Rect {
@@ -726,7 +726,7 @@ impl Compositor {
                     &color,
                 );
             }
-            BuiltinChar::VerticalRight => {
+            DrawableChar::VerticalRight => {
                 // Vertical line
                 let rect_v = Rect {
                     x: center_x - stroke / 2.0,
@@ -745,7 +745,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
             }
-            BuiltinChar::VerticalLeft => {
+            DrawableChar::VerticalLeft => {
                 // Vertical line
                 let rect_v = Rect {
                     x: center_x - stroke / 2.0,
@@ -764,7 +764,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
             }
-            BuiltinChar::HorizontalDown => {
+            DrawableChar::HorizontalDown => {
                 // Horizontal line
                 let rect_h = Rect {
                     x: x,
@@ -783,7 +783,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::HorizontalUp => {
+            DrawableChar::HorizontalUp => {
                 // Horizontal line
                 let rect_h = Rect {
                     x: x,
@@ -802,7 +802,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
-            BuiltinChar::PowerlineLeftSolid => {
+            DrawableChar::PowerlineLeftSolid => {
                 // Use draw_triangle for the powerline
                 self.draw_triangle(
                     x,
@@ -826,7 +826,7 @@ impl Compositor {
                     depth,
                 );
             }
-            BuiltinChar::PowerlineRightSolid => {
+            DrawableChar::PowerlineRightSolid => {
                 // Use draw_triangle for the powerline
                 self.draw_triangle(
                     x + half_size,
@@ -850,7 +850,7 @@ impl Compositor {
                     depth,
                 );
             }
-            BuiltinChar::PowerlineLeftHollow => {
+            DrawableChar::PowerlineLeftHollow => {
                 // Use draw_line for the hollow powerline
                 self.draw_line(
                     x,
@@ -862,7 +862,7 @@ impl Compositor {
                     depth,
                 );
             }
-            BuiltinChar::PowerlineRightHollow => {
+            DrawableChar::PowerlineRightHollow => {
                 // Use draw_line for the hollow powerline
                 self.draw_line(
                     x + half_size,
@@ -875,7 +875,7 @@ impl Compositor {
                 );
             }
             // TODO: Use draw_dashed_line
-            BuiltinChar::HorizontalLightDash => {
+            DrawableChar::HorizontalLightDash => {
                 // Single dash in the middle
                 let dash_width = line_height / 2.0;
                 let rect = Rect {
@@ -886,7 +886,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::HorizontalHeavyDash => {
+            DrawableChar::HorizontalHeavyDash => {
                 // Single thick dash in the middle
                 let dash_width = line_height / 2.0;
                 let heavy_stroke = stroke * 1.5;
@@ -898,7 +898,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::HorizontalLightDoubleDash => {
+            DrawableChar::HorizontalLightDoubleDash => {
                 // Two dashes
                 let dash_width = line_height / 4.0;
                 let space = line_height / 10.0;
@@ -921,7 +921,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect2, depth, &color);
             }
-            BuiltinChar::HorizontalHeavyDoubleDash => {
+            DrawableChar::HorizontalHeavyDoubleDash => {
                 // Two thick dashes
                 let dash_width = line_height / 4.0;
                 let space = line_height / 10.0;
@@ -945,7 +945,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect2, depth, &color);
             }
-            BuiltinChar::HorizontalLightTripleDash => {
+            DrawableChar::HorizontalLightTripleDash => {
                 // Three dashes
                 let dash_width = line_height / 6.0;
                 let space = line_height / 12.0;
@@ -977,7 +977,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect3, depth, &color);
             }
-            BuiltinChar::HorizontalHeavyTripleDash => {
+            DrawableChar::HorizontalHeavyTripleDash => {
                 // Three thick dashes
                 let dash_width = line_height / 6.0;
                 let space = line_height / 12.0;
@@ -1010,7 +1010,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect3, depth, &color);
             }
-            BuiltinChar::VerticalLightDash => {
+            DrawableChar::VerticalLightDash => {
                 // Single dash in the middle
                 let dash_height = line_height / 2.0;
                 let rect = Rect {
@@ -1021,7 +1021,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::VerticalHeavyDash => {
+            DrawableChar::VerticalHeavyDash => {
                 // Single thick dash in the middle
                 let dash_height = line_height / 2.0;
                 let heavy_stroke = stroke * 1.5;
@@ -1033,7 +1033,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
-            BuiltinChar::VerticalLightDoubleDash => {
+            DrawableChar::VerticalLightDoubleDash => {
                 // Two dashes
                 let dash_height = line_height / 4.0;
                 let space = line_height / 10.0;
@@ -1056,7 +1056,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect2, depth, &color);
             }
-            BuiltinChar::VerticalHeavyDoubleDash => {
+            DrawableChar::VerticalHeavyDoubleDash => {
                 // Two thick dashes
                 let dash_height = line_height / 4.0;
                 let space = line_height / 10.0;
@@ -1080,7 +1080,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect2, depth, &color);
             }
-            BuiltinChar::VerticalLightTripleDash => {
+            DrawableChar::VerticalLightTripleDash => {
                 // Three dashes
                 let dash_height = line_height / 6.0;
                 let space = line_height / 12.0;
@@ -1112,7 +1112,7 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect3, depth, &color);
             }
-            BuiltinChar::VerticalHeavyTripleDash => {
+            DrawableChar::VerticalHeavyTripleDash => {
                 // Three thick dashes
                 let dash_height = line_height / 6.0;
                 let space = line_height / 12.0;

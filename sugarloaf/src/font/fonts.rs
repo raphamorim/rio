@@ -135,8 +135,8 @@ pub struct SugarloafFonts {
     pub emoji: Option<SugarloafFont>,
     #[serde(default = "Vec::default")]
     pub extras: Vec<SugarloafFont>,
-    #[serde(default = "default_bool_true", rename = "builtin-box-drawing")]
-    pub builtin_box_drawing: bool,
+    #[serde(default = "default_bool_true", rename = "use-drawable-chars")]
+    pub use_drawable_chars: bool,
     #[serde(default = "Option::default", rename = "symbol-map")]
     pub symbol_map: Option<Vec<SymbolMap>>,
 }
@@ -164,7 +164,7 @@ impl Default for SugarloafFonts {
             bold_italic: default_font_bold_italic(),
             italic: default_font_italic(),
             extras: vec![],
-            builtin_box_drawing: true,
+            use_drawable_chars: true,
             symbol_map: None,
         }
     }
