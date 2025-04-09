@@ -175,10 +175,13 @@ impl<T> Timer<T> {
         let num_slots = num_slots.next_power_of_two();
         let capacity = capacity.next_power_of_two();
         let mask = (num_slots as u64) - 1;
-        let wheel = std::iter::repeat_n(WheelEntry {
-            next_tick: TICK_MAX,
-            head: EMPTY,
-        }, num_slots)
+        let wheel = std::iter::repeat_n(
+            WheelEntry {
+                next_tick: TICK_MAX,
+                head: EMPTY,
+            },
+            num_slots,
+        )
         .collect();
 
         Timer {
