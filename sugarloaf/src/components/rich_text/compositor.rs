@@ -164,7 +164,6 @@ impl Compositor {
         let color = style.color;
 
         if let Some(builtin_character) = style.drawable_char {
-            println!("{:?}", builtin_character);
             // x: f32,
             // y: f32,
             // char: DrawableChar,
@@ -251,7 +250,7 @@ impl Compositor {
                 builtin_character,
                 color,
                 depth,
-                style.line_height,
+                style.line_height_without_mod,
             );
         } else {
             for glyph in glyphs {
@@ -480,7 +479,7 @@ impl Compositor {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = 3.0;
+        let stroke = f32::clamp(advance / 8., 1.0, 6.0);
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
