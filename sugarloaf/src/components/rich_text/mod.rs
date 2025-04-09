@@ -317,11 +317,7 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn render(
-        &mut self,
-        ctx: &mut Context,
-        rpass: &mut wgpu::RenderPass,
-    ) {
+    pub fn render(&mut self, ctx: &mut Context, rpass: &mut wgpu::RenderPass) {
         // let start = std::time::Instant::now();
         // There's nothing to render
         if self.dlist.vertices.is_empty() {

@@ -479,7 +479,7 @@ impl Compositor {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = f32::clamp(advance / 6., 1.0, 6.0).round();
+        let stroke = f32::clamp(advance / 8., 1.0, 6.0).round();
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
@@ -499,6 +499,218 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
+                    height: line_height,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperLeft => {
+                let rect = Rect {
+                    x,
+                    y: center_y - line_height / 2.0,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperRight => {
+                let rect = Rect {
+                    x: x + line_width / 2.0,
+                    y: center_y - line_height / 2.0,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::QuadrantLowerLeft => {
+                let rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::QuadrantLowerRight => {
+                let rect = Rect {
+                    x: x + line_width / 2.0,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::UpperHalf => {
+                let rect = Rect {
+                    x,
+                    y: center_y - line_height / 2.0,
+                    width: line_width,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::LowerHalf => {
+                let rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width,
+                    height: line_height / 2.0,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::LeftHalf => {
+                let rect = Rect {
+                    x,
+                    y: center_y - line_height / 2.0,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::RightHalf => {
+                let rect = Rect {
+                    x: x + line_width / 2.0,
+                    y: center_y - line_height / 2.0,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::LightShade => {
+                // For light shade (25% filled), create a sparse dot pattern
+                // (░)
+                let dot_size = stroke;
+                let cols = 4;
+                let rows = 8;
+                let cell_width = line_width / cols as f32;
+                let cell_height = line_height / rows as f32;
+
+                for j in 0..rows {
+                    for i in 0..cols {
+                        // Place dots in alternating positions:
+                        // If row is even (0, 2), place dots at even columns (0, 2)
+                        // If row is odd (1, 3), place dots at odd columns (1, 3)
+                        if (j % 2 == 0 && i % 2 == 0) || (j % 2 == 1 && i % 2 == 1) {
+                            let dot_x =
+                                x + i as f32 * cell_width + (cell_width - dot_size) / 2.0;
+                            let dot_y = center_y - line_height / 2.0
+                                + j as f32 * cell_height
+                                + (cell_height - dot_size) / 2.0;
+
+                            let rect = Rect {
+                                x: dot_x,
+                                y: dot_y,
+                                width: dot_size,
+                                height: dot_size,
+                            };
+                            self.batches.add_rect(&rect, depth, &color);
+                        }
+                    }
+                }
+            }
+            DrawableChar::MediumShade => {
+                // For medium shade (50% filled), create a denser pattern
+                // (▒)
+                let dot_size = stroke;
+                let cols = 4;
+                let rows = 8;
+                let cell_width = line_width / cols as f32;
+                let cell_height = line_height / rows as f32;
+
+                // First layer - same as light shade
+                for j in 0..rows {
+                    for i in 0..cols {
+                        if (j % 2 == 0 && i % 2 == 0) || (j % 2 == 1 && i % 2 == 1) {
+                            let dot_x =
+                                x + i as f32 * cell_width + (cell_width - dot_size) / 2.0;
+                            let dot_y = center_y - line_height / 2.0
+                                + j as f32 * cell_height
+                                + (cell_height - dot_size) / 2.0;
+                            let rect = Rect {
+                                x: dot_x,
+                                y: dot_y,
+                                width: dot_size,
+                                height: dot_size,
+                            };
+                            self.batches.add_rect(&rect, depth, &color);
+                        }
+                    }
+                }
+
+                // Second layer - offset pattern at half the size for medium shade
+                let small_dot_size = dot_size * 0.75;
+                for j in 0..rows {
+                    for i in 0..cols {
+                        if (j % 2 == 1 && i % 2 == 0) || (j % 2 == 0 && i % 2 == 1) {
+                            let dot_x = x
+                                + i as f32 * cell_width
+                                + (cell_width - small_dot_size) / 2.0;
+                            let dot_y = center_y - line_height / 2.0
+                                + j as f32 * cell_height
+                                + (cell_height - small_dot_size) / 2.0;
+                            let rect = Rect {
+                                x: dot_x,
+                                y: dot_y,
+                                width: small_dot_size,
+                                height: small_dot_size,
+                            };
+                            self.batches.add_rect(&rect, depth, &color);
+                        }
+                    }
+                }
+            }
+            DrawableChar::DarkShade => {
+                // For dark shade (75% filled)
+                // (▓)
+                let dot_size = stroke;
+                let cols = 4;
+                let rows = 8;
+                let cell_width = line_width / cols as f32;
+                let cell_height = line_height / rows as f32;
+
+                // Base layer - fill the entire rectangle with a semi-transparent color
+                let rect = Rect {
+                    x,
+                    y: center_y - line_height / 2.0,
+                    width: line_width,
+                    height: line_height,
+                };
+                let base_color = [
+                    color[0] * 0.6,
+                    color[1] * 0.6,
+                    color[2] * 0.6,
+                    color[3] * 0.6,
+                ];
+                self.batches.add_rect(&rect, depth + 0.0001, &base_color);
+
+                // Add dots everywhere
+                for j in 0..rows {
+                    for i in 0..cols {
+                        let dot_x =
+                            x + i as f32 * cell_width + (cell_width - dot_size) / 2.0;
+                        let dot_y = center_y - line_height / 2.0
+                            + j as f32 * cell_height
+                            + (cell_height - dot_size) / 2.0;
+                        let rect = Rect {
+                            x: dot_x,
+                            y: dot_y,
+                            width: dot_size,
+                            height: dot_size,
+                        };
+                        self.batches.add_rect(&rect, depth, &color);
+
+                        // Skip some dots to create tiny gaps (only in a few positions)
+                        if j % 4 == 0 && i % 4 == 0 {
+                            // This creates small gaps in a regular pattern
+                            continue;
+                        }
+                    }
+                }
+            }
+            DrawableChar::FullBlock => {
+                let rect = Rect {
+                    x,
+                    y: center_y - line_height / 2.0,
+                    width: line_width,
                     height: line_height,
                 };
                 self.batches.add_rect(&rect, depth, &color);
@@ -1144,7 +1356,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect3, depth, &color);
             }
-            _ => {}
         }
     }
 
