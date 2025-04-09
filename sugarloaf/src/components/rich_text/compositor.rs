@@ -479,7 +479,7 @@ impl Compositor {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = f32::clamp(advance / 8., 1.0, 6.0);
+        let stroke = f32::clamp(advance / 6., 1.0, 6.0).round();
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
@@ -768,7 +768,7 @@ impl Compositor {
                 let rect_h = Rect {
                     x,
                     y: center_y - stroke / 2.0,
-                    width: line_height,
+                    width: advance,
                     height: stroke,
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
@@ -778,7 +778,7 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y: center_y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
@@ -787,7 +787,7 @@ impl Compositor {
                 let rect_h = Rect {
                     x,
                     y: center_y - stroke / 2.0,
-                    width: line_height,
+                    width: advance,
                     height: stroke,
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
@@ -797,7 +797,7 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
-                    height: half_size,
+                    height: line_height / 2.0,
                 };
                 self.batches.add_rect(&rect_v, depth, &color);
             }
