@@ -23,9 +23,7 @@ use crate::{Graphic, GraphicId};
 #[derive(Clone, Debug, Default)]
 pub struct RenderData {
     pub runs: Vec<RunData>,
-    /// Simple glyphs.
     pub glyphs: Vec<GlyphData>,
-    /// Detailed glyphs.
     pub detailed_glyphs: Vec<Glyph>,
     pub graphics: std::collections::HashSet<GraphicId>,
 }
