@@ -523,6 +523,28 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
+            DrawableChar::LowerOneEighthBlock => {
+                // Lower One Eighth Block (▁) - fills bottom 1/8 of the cell
+                let block_height = line_height / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height, // Position at bottom 1/8
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::LowerOneQuarterBlock => {
+                // Lower One Quarter Block (▂) - fills bottom 1/4 of the cell
+                let block_height = line_height / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height, // Position at bottom 1/4
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
             DrawableChar::QuadrantUpperLeft => {
                 let rect = Rect {
                     x,
