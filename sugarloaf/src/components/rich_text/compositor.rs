@@ -832,11 +832,12 @@ impl Compositor {
             DrawableChar::ArcTopLeft => {
                 // Arc corner at bottom-right (╯)
                 // Vertical line from top to center
+                let radius = line_width / 4.0;
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
-                    height: line_height / 2.0,
+                    height: (line_height / 2.0) - radius,
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
 
@@ -844,15 +845,15 @@ impl Compositor {
                 let horizontal_rect = Rect {
                     x,
                     y: center_y - stroke / 2.0,
-                    width: 3.0,
+                    width: (line_width / 2.0) - radius,
                     height: stroke,
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
 
                 // Arc in the bottom-left quarter (connecting horizontal and vertical lines)
                 self.batches.add_arc(
-                    center_x + 3.0,
-                    center_y - stroke,
+                    center_x - radius,
+                    center_y - radius,
                     line_width / 4.0, // Smaller radius for better appearance
                     0.0,              // Start angle
                     90.0,             // End angle (quarter circle)
@@ -862,96 +863,95 @@ impl Compositor {
                 );
             }
             DrawableChar::ArcBottomRight => {
-                // Arc corner at top-left (╭)
+                // Arc corner at top-left (┌)
                 // Vertical line from center to bottom
+                let radius = line_width / 4.0;
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
-                    y: center_y,
+                    y: center_y + radius,
                     width: stroke,
-                    height: line_height / 2.0,
+                    height: (line_height / 2.0) - radius,
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
+                // Horizontal line from center to right
+                let horizontal_rect = Rect {
+                    x: center_x + radius,
+                    y: center_y - stroke / 2.0,
+                    width: (line_width / 2.0) - radius,
+                    height: stroke,
+                };
+                self.batches.add_rect(&horizontal_rect, depth, &color);
+                // Arc in the top-left quarter (connecting horizontal and vertical lines)
+                self.batches.add_arc(
+                    center_x + radius,
+                    center_y + radius,
+                    radius, // Smaller radius for better appearance
+                    180.0,  // Start angle
+                    270.0,  // End angle (quarter circle)
+                    stroke,
+                    depth,
+                    &color,
+                );
+            }
 
+            DrawableChar::ArcBottomLeft => {
+                // Arc corner at top-right (┐)
+                // Vertical line from center to bottom
+                let radius = line_width / 4.0;
+                let vertical_rect = Rect {
+                    x: center_x - stroke / 2.0,
+                    y: center_y + radius,
+                    width: stroke,
+                    height: (line_height / 2.0) - radius,
+                };
+                self.batches.add_rect(&vertical_rect, depth, &color);
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
                     x,
                     y: center_y - stroke / 2.0,
-                    width: line_width / 2.0,
+                    width: center_x - radius - x,
                     height: stroke,
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
-
-                // Arc in the top-left quarter (connecting horizontal and vertical lines)
+                // Arc in the top-right quarter (connecting horizontal and vertical lines)
                 self.batches.add_arc(
-                    center_x,
-                    center_y,
-                    line_width / 4.0, // Smaller radius for better appearance
-                    180.0,            // Start angle
-                    270.0,            // End angle (quarter circle)
+                    center_x - radius,
+                    center_y + radius,
+                    radius, // Smaller radius for better appearance
+                    270.0,  // Start angle
+                    360.0,  // End angle (quarter circle)
                     stroke,
                     depth,
                     &color,
                 );
             }
-            DrawableChar::ArcBottomLeft => {
-                // Arc corner at top-right (╮)
-                // Vertical line from center to bottom
-                let vertical_rect = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y,
-                    width: stroke,
-                    height: line_height / 2.0,
-                };
-                self.batches.add_rect(&vertical_rect, depth, &color);
 
-                // Horizontal line from center to right
-                let horizontal_rect = Rect {
-                    x: center_x,
-                    y: center_y - stroke / 2.0,
-                    width: line_width / 2.0,
-                    height: stroke,
-                };
-                self.batches.add_rect(&horizontal_rect, depth, &color);
-
-                // Arc in the top-right quarter (connecting vertical and horizontal lines)
-                self.batches.add_arc(
-                    center_x,
-                    center_y,
-                    line_width / 4.0, // Smaller radius for better appearance
-                    270.0,            // Start angle
-                    360.0,            // End angle (quarter circle)
-                    stroke,
-                    depth,
-                    &color,
-                );
-            }
             DrawableChar::ArcTopRight => {
                 // Arc corner at bottom-left (╰)
                 // Vertical line from top to center
+                let radius = line_width / 4.0;
                 let vertical_rect = Rect {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
-                    height: line_height / 2.0,
+                    height: center_y - radius - y,
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
-
-                // Horizontal line from left to center
+                // Horizontal line from center to right
                 let horizontal_rect = Rect {
-                    x,
+                    x: center_x + radius,
                     y: center_y - stroke / 2.0,
-                    width: line_width / 2.0,
+                    width: (line_width / 2.0) - radius,
                     height: stroke,
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
-
-                // Arc in the bottom-left quarter (connecting horizontal and vertical lines)
+                // Arc in the bottom-right quarter (connecting horizontal and vertical lines)
                 self.batches.add_arc(
-                    center_x,
-                    center_y,
-                    line_width / 4.0, // Smaller radius for better appearance
-                    90.0,             // Start angle
-                    180.0,            // End angle (quarter circle)
+                    center_x + radius,
+                    center_y - radius,
+                    radius, // Smaller radius for better appearance
+                    90.0,   // Start angle
+                    180.0,  // End angle (quarter circle)
                     stroke,
                     depth,
                     &color,
