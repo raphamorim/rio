@@ -760,14 +760,14 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
-                    height: line_height / 2.0,
+                    height: (line_height / 2.0) + (stroke / 2.0),
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
                     x: center_x,
-                    y: center_y - stroke,
+                    y: center_y - stroke / 2.0,
                     width: line_width / 2.0,
                     height: stroke,
                 };
@@ -778,14 +778,14 @@ impl Compositor {
                     x: center_x - stroke / 2.0,
                     y,
                     width: stroke,
-                    height: line_height / 2.0,
+                    height: (line_height / 2.0) + (stroke / 2.0),
                 };
                 self.batches.add_rect(&vertical_rect, depth, &color);
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
                     x,
-                    y: center_y - stroke,
+                    y: center_y - stroke / 2.0,
                     width: half_size,
                     height: stroke,
                 };
