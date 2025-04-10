@@ -133,15 +133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbitrary"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
-dependencies = [
- "derive_arbitrary",
-]
-
-[[package]]
 name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -701,9 +692,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.14"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -764,17 +755,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c86f7e25f518f4b81808a2cf1c50996a61f5c2eb394b2393bd87f2a4780a432f"
 dependencies = [
  "adler32",
-]
-
-[[package]]
-name = "derive_arbitrary"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1321,11 +1301,10 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7db2ff139bba50379da6aa0766b52fdcb62cb5b263009b09ed58ba604e14bbd1"
+checksum = "459196ed295495a68f7d7fe1d84f6c4b7ff0e21fe3017b2f283c6fac3ad803c9"
 dependencies = [
- "arbitrary",
  "cfg-if 1.0.0",
  "crunchy",
  "num-traits",
@@ -1994,9 +1973,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -2056,7 +2035,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -4052,7 +4031,7 @@ checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 [[package]]
 name = "wgpu"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "arrayvec",
  "bitflags 2.9.0",
@@ -4079,7 +4058,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -4109,7 +4088,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-apple"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "wgpu-hal",
 ]
@@ -4117,7 +4096,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-emscripten"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "wgpu-hal",
 ]
@@ -4125,7 +4104,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "wgpu-hal",
 ]
@@ -4133,7 +4112,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -4179,7 +4158,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#8010203281d2f7c1accf8bfcc24de399278b9562"
 dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
@@ -4506,9 +4485,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
 dependencies = [
  "memchr",
 ]
@@ -4603,9 +4582,9 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xml-rs"
-version = "0.8.25"
+version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5b940ebc25896e71dd073bad2dbaa2abfe97b0a391415e22ad1326d9c54e3c4"
+checksum = "a62ce76d9b56901b19a74f19431b0d8b3bc7ca4ad685a746dfd78ca8f4fc6bda"
 
 [[package]]
 name = "yansi"
