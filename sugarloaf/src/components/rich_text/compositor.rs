@@ -969,9 +969,9 @@ impl Compositor {
 
                 // Horizontal line (from center to right)
                 let rect_h = Rect {
-                    x: center_x,
+                    x: center_x + (stroke / 2.0),
                     y: center_y - stroke / 2.0,
-                    width: half_size,
+                    width: half_size - (stroke / 2.0),
                     height: stroke,
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
@@ -990,7 +990,7 @@ impl Compositor {
                 let rect_h = Rect {
                     x,
                     y: center_y - stroke / 2.0,
-                    width: half_size,
+                    width: half_size - (stroke / 2.0),
                     height: stroke,
                 };
                 self.batches.add_rect(&rect_h, depth, &color);
