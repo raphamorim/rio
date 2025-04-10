@@ -479,7 +479,7 @@ impl Compositor {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = f32::clamp(advance / 8., 1.0, 6.0).round();
+        let stroke = f32::clamp(line_height / 10., 1.0, 6.0).round();
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
@@ -488,17 +488,37 @@ impl Compositor {
             DrawableChar::Horizontal => {
                 let rect = Rect {
                     x,
-                    y: center_y - stroke / 2.0,
+                    y: center_y - (stroke / 2.0),
                     width: line_width,
                     height: stroke,
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
+            DrawableChar::HeavyHorizontal => {
+                let heavy_stroke = stroke * 2.0;
+                let rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width,
+                    height: heavy_stroke,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
             DrawableChar::Vertical => {
                 let rect = Rect {
-                    x: center_x - stroke / 2.0,
+                    x: center_x - (stroke / 2.0),
                     y,
                     width: stroke,
+                    height: line_height,
+                };
+                self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::HeavyVertical => {
+                let heavy_stroke = stroke * 2.0;
+                let rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
                     height: line_height,
                 };
                 self.batches.add_rect(&rect, depth, &color);
@@ -746,8 +766,8 @@ impl Compositor {
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y - stroke / 2.0,
+                    x: center_x,
+                    y: center_y - stroke,
                     width: line_width / 2.0,
                     height: stroke,
                 };
@@ -765,8 +785,8 @@ impl Compositor {
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
                     x,
-                    y: center_y - stroke / 2.0,
-                    width: line_width / 2.0,
+                    y: center_y - stroke,
+                    width: half_size,
                     height: stroke,
                 };
                 self.batches.add_rect(&horizontal_rect, depth, &color);
