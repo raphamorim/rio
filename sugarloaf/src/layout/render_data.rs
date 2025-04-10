@@ -232,14 +232,6 @@ impl Run<'_> {
         self.run.span.cursor
     }
 
-    // /// Returns the normalized variation coordinates for the run.
-    // pub fn normalized_coords(&self) -> &'a [NormalizedCoord] {
-    //     self.layout
-    //         .coords
-    //         .get(make_range(self.run.coords))
-    //         .unwrap_or(&[])
-    // }
-
     /// Returns the advance of the run.
     #[inline]
     pub fn advance(&self) -> f32 {
@@ -262,22 +254,4 @@ impl Run<'_> {
     pub fn decoration_color(&self) -> Option<[f32; 4]> {
         self.run.span.decoration_color
     }
-
-    // #[inline]
-    // pub fn clusters(&self) -> Clusters<'a> {
-    //     Clusters {
-    //         layout: self.layout,
-    //         iter: self.layout.clusters[make_range(self.run.clusters)].iter(),
-    //         rev: false,
-    //     }
-    // }
-
-    // #[inline]
-    // pub fn visual_clusters(&self) -> Clusters<'a> {
-    //     Clusters {
-    //         layout: self.layout,
-    //         iter: self.layout.clusters[make_range(self.run.clusters)].iter(),
-    //         rev: false,
-    //     }
-    // }
 }

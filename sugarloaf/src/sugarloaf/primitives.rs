@@ -50,21 +50,23 @@ pub enum CornerType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DrawableChar {
     // Original box-drawing characters
-    Horizontal,     // ─
-    Vertical,       // │
-    TopRight,       // └
-    TopLeft,        // ┘
-    BottomRight,    // ┌
-    BottomLeft,     // ┐
-    Cross,          // ┼
-    VerticalRight,  // ├
-    VerticalLeft,   // ┤
-    HorizontalDown, // ┬
-    HorizontalUp,   // ┴
-    ArcTopLeft,     // ╯
-    ArcBottomRight, // ╭
-    ArcBottomLeft,  // ╮
-    ArcTopRight,    // ╰
+    Horizontal,      // ─
+    Vertical,        // │
+    HeavyHorizontal, // ━
+    HeavyVertical,   // ┃
+    TopRight,        // └
+    TopLeft,         // ┘
+    BottomRight,     // ┌
+    BottomLeft,      // ┐
+    Cross,           // ┼
+    VerticalRight,   // ├
+    VerticalLeft,    // ┤
+    HorizontalDown,  // ┬
+    HorizontalUp,    // ┴
+    ArcTopLeft,      // ╯
+    ArcBottomRight,  // ╭
+    ArcBottomLeft,   // ╮
+    ArcTopRight,     // ╰
     // Horizontal dashes
     HorizontalLightDash,       // ┄
     HorizontalHeavyDash,       // ┅
@@ -364,6 +366,8 @@ impl TryFrom<char> for DrawableChar {
         let drawbable_char = match val {
             '─' => DrawableChar::Horizontal,
             '│' => DrawableChar::Vertical,
+            '━' => DrawableChar::HeavyHorizontal,
+            '┃' => DrawableChar::HeavyVertical,
             '└' => DrawableChar::TopRight,
             '┘' => DrawableChar::TopLeft,
             '┌' => DrawableChar::BottomRight,

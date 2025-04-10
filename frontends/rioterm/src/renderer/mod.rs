@@ -264,7 +264,7 @@ impl Renderer {
                 continue;
             }
 
-            let (mut style, mut square_content) = if has_cursor
+            let (mut style, square_content) = if has_cursor
                 && column == cursor.state.pos.col
             {
                 self.create_cursor_style(square, cursor, is_active, renderable_content)
@@ -352,8 +352,6 @@ impl Renderer {
                     => {
                         if let Ok(character) = DrawableChar::try_from(square_content) {
                             style.drawable_char = Some(character);
-                            // In case it's drawable_char then we can ignore the shaping
-                            square_content = ' ';
                         } else {
                             panic!("Could not find {:?}", square_content);
                         }
@@ -362,39 +360,48 @@ impl Renderer {
                 };
             }
 
-            if let Some((font_id, width)) =
-                self.font_cache.get(&(square_content, style.font_attrs))
-            {
-                style.font_id = *font_id;
-                style.width = *width;
-            } else {
-                let mut width = square.c.width().unwrap_or(1) as f32;
-                let mut font_ctx = self.font_context.inner.lock();
-
-                // There is no simple way to define what's emoji
-                // could have to refer to the Unicode tables. However it could
-                // be leading to misleading results. For example if we used
-                // unicode and internationalization functionalities like
-                // https://github.com/open-i18n/rust-unic/, then characters
-                // like "◼" would be valid emojis. For a terminal context,
-                // the character "◼" is not an emoji and should be treated as
-                // single width. So, we completely rely on what font is
-                // being used and then set width 2 for it.
-                if let Some((font_id, is_emoji)) =
-                    font_ctx.find_best_font_match(square_content, &style)
+            // In case we have a drawable character then we will:
+            // 1. Ignore font cache and find width since it's known already.
+            // 2. Wrap up the content and send to sugarloaf.
+            //
+            // TODO: In the future it should use same logic to render everything
+            // at once.
+            let has_drawable_char = style.drawable_char.is_some();
+            if !has_drawable_char {
+                if let Some((font_id, width)) =
+                    self.font_cache.get(&(square_content, style.font_attrs))
                 {
-                    style.font_id = font_id;
-                    if is_emoji {
-                        width = 2.0;
-                    }
-                }
-                style.width = width;
+                    style.font_id = *font_id;
+                    style.width = *width;
+                } else {
+                    let mut width = square.c.width().unwrap_or(1) as f32;
+                    let mut font_ctx = self.font_context.inner.lock();
 
-                self.font_cache.insert(
-                    (square_content, style.font_attrs),
-                    (style.font_id, style.width),
-                );
-            };
+                    // There is no simple way to define what's emoji
+                    // could have to refer to the Unicode tables. However it could
+                    // be leading to misleading results. For example if we used
+                    // unicode and internationalization functionalities like
+                    // https://github.com/open-i18n/rust-unic/, then characters
+                    // like "◼" would be valid emojis. For a terminal context,
+                    // the character "◼" is not an emoji and should be treated as
+                    // single width. So, we completely rely on what font is
+                    // being used and then set width 2 for it.
+                    if let Some((font_id, is_emoji)) =
+                        font_ctx.find_best_font_match(square_content, &style)
+                    {
+                        style.font_id = font_id;
+                        if is_emoji {
+                            width = 2.0;
+                        }
+                    }
+                    style.width = width;
+
+                    self.font_cache.insert(
+                        (square_content, style.font_attrs),
+                        (style.font_id, style.width),
+                    );
+                };
+            }
 
             if square_content == ' ' {
                 if !last_char_was_space {
@@ -423,7 +430,7 @@ impl Renderer {
                 last_char_was_space = false;
             }
 
-            if last_style != style {
+            if last_style != style || has_drawable_char {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
                         builder.add_text_on_line(line, &content, last_style);
