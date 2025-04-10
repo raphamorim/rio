@@ -208,7 +208,7 @@ The font configuration default:
 [fonts]
 size = 18
 features = []
-builtin-box-drawing = true
+use-drawable-chars = true
 symbol-map = []
 
 [fonts.regular]
@@ -235,10 +235,6 @@ style = "Italic"
 width = "Normal"
 weight = 800
 ```
-
-## fonts.builtin-box-drawing
-
-When true, Rio will use a custom built-in font for box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B3)`.
 
 ## fonts.family
 
@@ -314,6 +310,64 @@ fonts.symbol-map = [
   { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
 ]
 ```
+
+## fonts.use-drawable-chars
+
+When set `true`, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B3)`).
+
+```toml
+fonts.use-drawable-chars = true
+```
+
+The list of characters:
+
+- `─` Horizontal
+- `│` Vertical
+- `━` HeavyHorizontal
+- `┃` HeavyVertical
+- `└` TopRight
+- `┘` TopLeft
+- `┌` BottomRight
+- `┐` BottomLeft
+- `┼` Cross
+- `├` VerticalRight
+- `┤` VerticalLeft
+- `┬` HorizontalDown
+- `┴` HorizontalUp
+- `╯` ArcTopLeft
+- `╭` ArcBottomRight
+- `╮` ArcBottomLeft
+- `╰` ArcTopRight
+- `▂` LowerOneQuarterBlock
+- `▁` LowerOneEighthBlock
+- `┄` HorizontalLightDash
+- `┅` HorizontalHeavyDash
+- `┈` HorizontalLightDoubleDash
+- `┉` HorizontalHeavyDoubleDash
+- `╌` HorizontalLightTripleDash
+- `╍` HorizontalHeavyTripleDash
+- `┆` VerticalLightDash
+- `┇` VerticalHeavyDash
+- `┊` VerticalLightDoubleDash
+- `┋` VerticalHeavyDoubleDash
+- `╎` VerticalLightTripleDash
+- `╏` VerticalHeavyTripleDash
+- `▘` QuadrantUpperLeft
+- `▝` QuadrantUpperRight
+- `▖` QuadrantLowerLeft
+- `▗` QuadrantLowerRight
+- `▀` UpperHalf
+- `▄` LowerHalf
+- `▌` LeftHalf
+- `▐` RightHalf
+- `░` LightShade
+- `▒` MediumShade
+- `▓` DarkShade
+- `█` FullBlock
+-  PowerlineLeftSolid
+-  PowerlineRightSolid
+-  PowerlineLeftHollow
+-  PowerlineRightHollow
 
 ## ignore-selection-foreground-color
 
