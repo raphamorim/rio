@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.12"
+version = "0.2.13"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -28,15 +28,14 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.2.12" }
-rio-backend = { path = "rio-backend", version = "0.2.12" }
-rio-window = { path = "rio-window", version = "0.2.12", default-features = false }
+teletypewriter = { path = "teletypewriter", version = "0.2.13" }
+rio-backend = { path = "rio-backend", version = "0.2.13" }
+rio-window = { path = "rio-window", version = "0.2.13", default-features = false }
 
 # Own dependencies
-copa = { path = "copa", default-features = false, version = "0.2.12" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.2.12" }
-corcovado = { path = "corcovado", version = "0.2.12" }
-wa = { path = "wa", version = "0.1.7" }
+copa = { path = "copa", default-features = false, version = "0.2.13" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.2.13" }
+corcovado = { path = "corcovado", version = "0.2.13" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = [
     "nightly",
@@ -45,7 +44,7 @@ parking_lot = { version = "0.12.3", features = [
 rustc-hash = "2.1.1"
 
 # Sugarloaf is part of own dependencies but does not follow Rio versioning
-sugarloaf = { path = "sugarloaf", version = "0.2.13" }
+sugarloaf = { path = "sugarloaf", version = "0.2.14" }
 
 # unicode-width = "0.2.0"
 unicode-width = { package = "unicode-width-16", version = "0.1.0" }
@@ -62,8 +61,7 @@ image_rs = { package = "image", version = "0.25.5", default-features = false, fe
 regex = "1.11.1"
 bytemuck = { version = "1.22.0", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
-# wgpu = "24.0.3"
-wgpu = { git = "https://github.com/gfx-rs/wgpu", branch = "trunk" }
+wgpu = "25.0.0"
 libc = "0.2.171"
 smol_str = "0.3.2"
 futures = "0.3.31"
