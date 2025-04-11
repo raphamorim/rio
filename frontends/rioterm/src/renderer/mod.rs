@@ -58,8 +58,8 @@ pub struct Renderer {
     >,
 }
 
-const POWERLINE_TRIANGLE_LTR: char = '\u{e0b0}';
-const POWERLINE_ARROW_RTL: char = '\u{e0b3}';
+const POWERLINE_RIGHT_SOLID: char = '\u{e0b0}';
+const POWERLINE_CURVED_LEFT_HOLLOW: char = '\u{e0b7}';
 
 impl Renderer {
     pub fn new(
@@ -347,8 +347,7 @@ impl Renderer {
                 // Box drawing characters and block elements.
                 match square_content {
                     '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
-                        // Powerline symbols: '','','',''
-                        POWERLINE_TRIANGLE_LTR..=POWERLINE_ARROW_RTL
+                        POWERLINE_RIGHT_SOLID..=POWERLINE_CURVED_LEFT_HOLLOW
                     => {
                         if let Ok(character) = DrawableChar::try_from(square_content) {
                             style.drawable_char = Some(character);
