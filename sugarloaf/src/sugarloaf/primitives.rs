@@ -68,9 +68,19 @@ pub enum DrawableChar {
     ArcBottomLeft,   // ╮
     ArcTopRight,     // ╰
 
-    // Lower
-    LowerOneEighthBlock, // ▁
-    LowerOneQuarterBlock, // ▂
+    // Misc
+    LowerOneEighthBlock,     // ▁
+    LowerOneQuarterBlock,    // ▂
+    LowerThreeEighthsBlock,  // ▃
+    LeftOneQuarterBlock,     // ▎
+    LeftThreeEighthsBlock,   // ▍
+    LeftThreeQuartersBlock,  // ▊
+    RightOneQuarterBlock,    //▕
+    RightThreeEighthsBlock,  // 🮈
+    RightThreeQuartersBlock, // 🮊
+    UpperOneEighthBlock,     // ▔
+    UpperThreeEighthsBlock,  // 🮃
+    UpperThreeQuartersBlock, // 🮅
 
     // Horizontal dashes
     HorizontalLightDash,       // ┄
@@ -390,6 +400,16 @@ impl TryFrom<char> for DrawableChar {
 
             '▁' => DrawableChar::LowerOneEighthBlock,
             '▂' => DrawableChar::LowerOneQuarterBlock,
+            '▃' => DrawableChar::LowerThreeEighthsBlock,
+            '▎' => DrawableChar::LeftOneQuarterBlock,
+            '▍' => DrawableChar::LeftThreeEighthsBlock,
+            '▊' => DrawableChar::LeftThreeQuartersBlock,
+            '▕' => DrawableChar::RightOneQuarterBlock,
+            '🮈' => DrawableChar::RightThreeEighthsBlock,
+            '🮊' => DrawableChar::RightThreeQuartersBlock,
+            '▔' => DrawableChar::UpperOneEighthBlock,
+            '🮃' => DrawableChar::UpperThreeEighthsBlock,
+            '🮅' => DrawableChar::UpperThreeQuartersBlock,
 
             '┄' => DrawableChar::HorizontalLightDash,
             '┅' => DrawableChar::HorizontalHeavyDash,

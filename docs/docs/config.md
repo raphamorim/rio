@@ -340,6 +340,16 @@ The list of characters:
 - `╰` ArcTopRight
 - `▂` LowerOneQuarterBlock
 - `▁` LowerOneEighthBlock
+- `▃` LowerThreeEighthsBlock
+- `▎` LeftOneQuarterBlock
+- `▍` LeftThreeEighthsBlock
+- `▊` LeftThreeQuartersBlock
+- `▕` RightOneQuarterBlock
+- `🮈` RightThreeEighthsBlock
+- `🮊` RightThreeQuartersBlock
+- `▔` UpperOneEighthBlock
+- `🮃` UpperThreeEighthsBlock
+- `🮅` UpperThreeQuartersBlock
 - `┄` HorizontalLightDash
 - `┅` HorizontalHeavyDash
 - `┈` HorizontalLightDoubleDash

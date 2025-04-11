@@ -545,6 +545,125 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
+            DrawableChar::LowerThreeEighthsBlock => {
+                // Lower Three Eighths Block (▃) - fills bottom 3/8 of the cell
+                let block_height = (line_height * 3.0) / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height, // Position at bottom 3/8
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::LeftOneQuarterBlock => {
+                // Left One Quarter Block (▎) - fills left 1/4 of the cell
+                let block_width = line_width / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::LeftThreeEighthsBlock => {
+                // Left Three Eighths Block (▍) - fills left 3/8 of the cell
+                let block_width = (line_width * 3.0) / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::LeftThreeQuartersBlock => {
+                // Left Three Quarters Block (▊) - fills left 3/4 of the cell
+                let block_width = (line_width * 3.0) / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::RightOneQuarterBlock => {
+                // Right One Quarter Block (▕) - fills right 1/4 of the cell
+                let block_width = line_width / 4.0;
+                let block_rect = Rect {
+                    x: x + line_width - block_width, // Position at right 1/4
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::RightThreeEighthsBlock => {
+                // Right Three Eighths Block (🮈) - fills right 3/8 of the cell
+                let block_width = (line_width * 3.0) / 8.0;
+                let block_rect = Rect {
+                    x: x + line_width - block_width, // Position at right 3/8
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::RightThreeQuartersBlock => {
+                // Right Three Quarters Block (🮊) - fills right 3/4 of the cell
+                let block_width = (line_width * 3.0) / 4.0;
+                let block_rect = Rect {
+                    x: x + line_width - block_width, // Position at right 3/4
+                    y,
+                    width: block_width,
+                    height: line_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::UpperOneEighthBlock => {
+                // Upper One Eighth Block (▔) - fills top 1/8 of the cell
+                let block_height = line_height / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y, // Position at top
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::UpperThreeEighthsBlock => {
+                // Upper Three Eighths Block (🮃) - fills top 3/8 of the cell
+                let block_height = (line_height * 3.0) / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y, // Position at top
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
+
+            DrawableChar::UpperThreeQuartersBlock => {
+                // Upper Three Quarters Block (🮅) - fills top 3/4 of the cell
+                let block_height = (line_height * 3.0) / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y, // Position at top
+                    width: line_width,
+                    height: block_height,
+                };
+                self.batches.add_rect(&block_rect, depth, &color);
+            }
             DrawableChar::QuadrantUpperLeft => {
                 let rect = Rect {
                     x,
@@ -1056,49 +1175,30 @@ impl Compositor {
                 self.batches.add_rect(&rect_v, depth, &color);
             }
             DrawableChar::PowerlineLeftSolid => {
-                // Use draw_triangle for the powerline
+                // PowerlineLeftSolid - solid triangle pointing left
+                // Creates a filled triangle pointing to the left
                 self.draw_triangle(
+                    x + line_width,
+                    y, // Top-right (x1, y1)
+                    x + line_width,
+                    y + line_height, // Bottom-right (x2, y2)
                     x,
-                    y + line_height, // bottom-left
-                    x + half_size,
-                    y, // top-middle
-                    x + stroke,
-                    y + line_height, // bottom-left-right
-                    color,
-                    depth,
-                );
-                // Add a second triangle to make it solid
-                self.draw_triangle(
-                    x + half_size,
-                    y, // top-middle
-                    x + half_size + stroke,
-                    y, // top-middle-right
-                    x + stroke,
-                    y + line_height, // bottom-left-right
+                    y + line_height / 2.0, // Middle-left (x3, y3)
                     color,
                     depth,
                 );
             }
+
             DrawableChar::PowerlineRightSolid => {
-                // Use draw_triangle for the powerline
+                // PowerlineRightSolid - solid triangle pointing right
+                // Creates a filled triangle pointing to the right
                 self.draw_triangle(
-                    x + half_size,
-                    y, // top-middle
-                    x + line_height,
-                    y + line_height, // bottom-right
-                    x + half_size - stroke,
-                    y, // top-middle-left
-                    color,
-                    depth,
-                );
-                // Add a second triangle to make it solid
-                self.draw_triangle(
-                    x + half_size - stroke,
-                    y, // top-middle-left
-                    x + line_height,
-                    y + line_height, // bottom-right
-                    x + line_height - stroke,
-                    y + line_height, // bottom-right-left
+                    x,
+                    y, // Top-left (x1, y1)
+                    x,
+                    y + line_height, // Bottom-left (x2, y2)
+                    x + line_width,
+                    y + line_height / 2.0, // Middle-right (x3, y3)
                     color,
                     depth,
                 );
