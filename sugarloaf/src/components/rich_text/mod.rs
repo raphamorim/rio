@@ -253,18 +253,20 @@ impl RichTextBrush {
     #[inline]
     pub fn prepare(
         &mut self,
+        layer_idx: usize,
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
     ) {
-        if state.rich_texts.is_empty() {
+        let rich_texts = state.get_layer_rich_texts(layer_idx);
+        if rich_texts.is_empty() {
             self.dlist.clear();
             return;
         }
 
         self.comp.begin();
         let library = state.content.font_library();
-        for rich_text in &state.rich_texts {
+        for rich_text in &rich_texts {
             if let Some(rt) = state.content.get_state(&rich_text.id) {
                 let position = (
                     rich_text.position[0] * state.style.scale_factor,
@@ -315,11 +317,7 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn render<'pass>(
-        &'pass mut self,
-        ctx: &mut Context,
-        rpass: &mut wgpu::RenderPass<'pass>,
-    ) {
+    pub fn render(&mut self, ctx: &mut Context, rpass: &mut wgpu::RenderPass) {
         // let start = std::time::Instant::now();
         // There's nothing to render
         if self.dlist.vertices.is_empty() {
@@ -487,6 +485,7 @@ fn draw_layout(
                 font_size: run.size,
                 color: run.span.color,
                 cursor: run.span.cursor,
+                drawable_char: run.span.drawable_char,
                 background_color: run.span.background_color,
                 baseline: py,
                 topline: py - ascent,
@@ -608,6 +607,7 @@ fn fetch_dimensions(
             font_size: run.size,
             color,
             cursor: run.span.cursor,
+            drawable_char: None,
             background_color: None,
             baseline: py,
             padding_y: 0.,

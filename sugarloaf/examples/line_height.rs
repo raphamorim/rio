@@ -144,7 +144,7 @@ impl ApplicationHandler for Application {
                     }
                 }
             }
-            WindowEvent::RedrawRequested { .. } => {
+            WindowEvent::RedrawRequested => {
                 let content = sugarloaf.content();
                 content.sel(0).clear();
                 content
@@ -195,10 +195,13 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: 0,
-                    position: [10., 0.],
-                })]);
+                sugarloaf.set_objects(vec![Object::RichText(
+                    RichText {
+                        id: 0,
+                        position: [10., 0.],
+                    },
+                    None,
+                )]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

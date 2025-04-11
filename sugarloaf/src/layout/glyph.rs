@@ -55,12 +55,8 @@ pub struct RunData {
     pub span: FragmentStyle,
     pub line: u32,
     pub size: f32,
-    /// Simple glyphs.
     pub glyphs: Vec<GlyphData>,
-    /// Detailed glyphs.
     pub detailed_glyphs: Vec<Glyph>,
-    // pub whitespace: bool,
-    // pub trailing_whitespace: bool,
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,

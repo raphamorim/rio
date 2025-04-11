@@ -9,6 +9,12 @@ language: 'en'
 
 - Fix dimension for whenever a new tab is created from a view with splits.
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
+- Fix font size affecting tabs size.
+- Support to drawable characters by using `fonts.use-drawable-chars = true`.
+- Fix: Wrong unicode character alignment [#616](https://github.com/raphamorim/rio/issues/616).
+- Fix: Built-in font for box drawing #974 [#974](https://github.com/raphamorim/rio/issues/974).
+- Fix: U+E0B6 and U+E0B4 Unicode with different sizes [#895](https://github.com/raphamorim/rio/issues/895).
+- Update wgpu to v25.
 
 ## 0.2.12
 
@@ -49,7 +55,8 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - OSC 7 Escape sequences to advise the terminal of the working directory.
 - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921)), thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9)
 - Cache GSUB and GPOS features independently.
--  Updated `windows-sys` to `v0.59`.
+- Support to builtin box drawing by using `fonts.builtin-box-drawing = true` (enabled by default).
+- Updated `windows-sys` to `v0.59`.
     - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
 ## 0.2.7

@@ -17,8 +17,8 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    Content, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    Content, DrawableChar, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -35,6 +35,7 @@ pub struct Search {
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
+    use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
@@ -56,6 +57,9 @@ pub struct Renderer {
         (usize, f32),
     >,
 }
+
+const POWERLINE_RIGHT_SOLID: char = '\u{e0b0}';
+const POWERLINE_CURVED_LEFT_HOLLOW: char = '\u{e0b7}';
 
 impl Renderer {
     pub fn new(
@@ -87,6 +91,7 @@ impl Renderer {
 
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
+            use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
@@ -338,39 +343,64 @@ impl Renderer {
                 style.background_color = None;
             }
 
-            if let Some((font_id, width)) =
-                self.font_cache.get(&(square_content, style.font_attrs))
-            {
-                style.font_id = *font_id;
-                style.width = *width;
-            } else {
-                let mut width = square.c.width().unwrap_or(1) as f32;
-                let mut font_ctx = self.font_context.inner.lock();
-
-                // There is no simple way to define what's emoji
-                // could have to refer to the Unicode tables. However it could
-                // be leading to misleading results. For example if we used
-                // unicode and internationalization functionalities like
-                // https://github.com/open-i18n/rust-unic/, then characters
-                // like "◼" would be valid emojis. For a terminal context,
-                // the character "◼" is not an emoji and should be treated as
-                // single width. So, we completely rely on what font is
-                // being used and then set width 2 for it.
-                if let Some((font_id, is_emoji)) =
-                    font_ctx.find_best_font_match(square_content, &style)
-                {
-                    style.font_id = font_id;
-                    if is_emoji {
-                        width = 2.0;
+            if self.use_drawable_chars {
+                // Box drawing characters and block elements.
+                match square_content {
+                    '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
+                        POWERLINE_RIGHT_SOLID..=POWERLINE_CURVED_LEFT_HOLLOW
+                    => {
+                        if let Ok(character) = DrawableChar::try_from(square_content) {
+                            style.drawable_char = Some(character);
+                        } else {
+                            panic!("Could not find {:?}", square_content);
+                        }
                     }
-                }
-                style.width = width;
+                    _ => {}
+                };
+            }
 
-                self.font_cache.insert(
-                    (square_content, style.font_attrs),
-                    (style.font_id, style.width),
-                );
-            };
+            // In case we have a drawable character then we will:
+            // 1. Ignore font cache and find width since it's known already.
+            // 2. Wrap up the content and send to sugarloaf.
+            //
+            // TODO: In the future it should use same logic to render everything
+            // at once.
+            let has_drawable_char = style.drawable_char.is_some();
+            if !has_drawable_char {
+                if let Some((font_id, width)) =
+                    self.font_cache.get(&(square_content, style.font_attrs))
+                {
+                    style.font_id = *font_id;
+                    style.width = *width;
+                } else {
+                    let mut width = square.c.width().unwrap_or(1) as f32;
+                    let mut font_ctx = self.font_context.inner.lock();
+
+                    // There is no simple way to define what's emoji
+                    // could have to refer to the Unicode tables. However it could
+                    // be leading to misleading results. For example if we used
+                    // unicode and internationalization functionalities like
+                    // https://github.com/open-i18n/rust-unic/, then characters
+                    // like "◼" would be valid emojis. For a terminal context,
+                    // the character "◼" is not an emoji and should be treated as
+                    // single width. So, we completely rely on what font is
+                    // being used and then set width 2 for it.
+                    if let Some((font_id, is_emoji)) =
+                        font_ctx.find_best_font_match(square_content, &style)
+                    {
+                        style.font_id = font_id;
+                        if is_emoji {
+                            width = 2.0;
+                        }
+                    }
+                    style.width = width;
+
+                    self.font_cache.insert(
+                        (square_content, style.font_attrs),
+                        (style.font_id, style.width),
+                    );
+                };
+            }
 
             if square_content == ' ' {
                 if !last_char_was_space {
@@ -399,7 +429,7 @@ impl Renderer {
                 last_char_was_space = false;
             }
 
-            if last_style != style {
+            if last_style != style || has_drawable_char {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
                         builder.add_text_on_line(line, &content, last_style);

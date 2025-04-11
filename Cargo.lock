@@ -133,15 +133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbitrary"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dde20b3d026af13f561bdd0f15edf01fc734f0dafcedbaf42bba506a9517f223"
-dependencies = [
- "derive_arbitrary",
-]
-
-[[package]]
 name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -537,7 +528,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "copa"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "arrayvec",
  "rio-proc-macros",
@@ -559,7 +550,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -701,9 +692,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.14"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -764,17 +755,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c86f7e25f518f4b81808a2cf1c50996a61f5c2eb394b2393bd87f2a4780a432f"
 dependencies = [
  "adler32",
-]
-
-[[package]]
-name = "derive_arbitrary"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30542c1ad912e0e3d22a1935c290e12e8a29d704a420177a31faad4a601a0800"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -1321,11 +1301,10 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7db2ff139bba50379da6aa0766b52fdcb62cb5b263009b09ed58ba604e14bbd1"
+checksum = "459196ed295495a68f7d7fe1d84f6c4b7ff0e21fe3017b2f283c6fac3ad803c9"
 dependencies = [
- "arbitrary",
  "cfg-if 1.0.0",
  "crunchy",
  "num-traits",
@@ -1832,7 +1811,7 @@ dependencies = [
  "librashader-pack",
  "librashader-preprocess",
  "librashader-presets",
- "naga 24.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "naga 24.0.0",
  "rspirv",
  "rustc-hash 2.1.1",
  "serde",
@@ -1994,9 +1973,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.7"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
+checksum = "3be647b768db090acb35d5ec5db2b0e1f1de11133ca123b9eacf5137868f892a"
 dependencies = [
  "adler2",
  "simd-adler32",
@@ -2055,8 +2034,9 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b977c445f26e49757f9aca3631c3b8b836942cb278d69a92e7b80d3b24da632"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -2069,6 +2049,7 @@ dependencies = [
  "indexmap",
  "log 0.4.27",
  "num-traits",
+ "once_cell",
  "rustc-hash 1.1.0",
  "spirv",
  "strum",
@@ -2824,7 +2805,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "base64",
  "bitflags 2.9.0",
@@ -2855,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2863,7 +2844,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -2915,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "ahash",
  "bitflags 2.9.0",
@@ -3332,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.13"
+version = "0.2.14"
 dependencies = [
  "approx",
  "bytemuck",
@@ -3412,7 +3393,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "corcovado",
  "dirs",
@@ -4051,8 +4032,9 @@ checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 
 [[package]]
 name = "wgpu"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca6049eb2014a0e0d8689f9b787605dd71d5bbfdc74095ead499f3cff705c229"
 dependencies = [
  "arrayvec",
  "bitflags 2.9.0",
@@ -4061,7 +4043,7 @@ dependencies = [
  "hashbrown 0.15.2",
  "js-sys",
  "log 0.4.27",
- "naga 24.0.0 (git+https://github.com/gfx-rs/wgpu?branch=trunk)",
+ "naga 25.0.1",
  "parking_lot",
  "portable-atomic",
  "profiling",
@@ -4078,8 +4060,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a19813e647da7aa3cdaa84f5846e2c64114970ea7c86b1e6aae8be08091f4bdc"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -4090,7 +4073,7 @@ dependencies = [
  "hashbrown 0.15.2",
  "indexmap",
  "log 0.4.27",
- "naga 24.0.0 (git+https://github.com/gfx-rs/wgpu?branch=trunk)",
+ "naga 25.0.1",
  "once_cell",
  "parking_lot",
  "portable-atomic",
@@ -4108,32 +4091,36 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core-deps-apple"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfd488b3239b6b7b185c3b045c39ca6bf8af34467a4c5de4e0b1a564135d093d"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-core-deps-emscripten"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f09ad7aceb3818e52539acc679f049d3475775586f3f4e311c30165cf2c00445"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cba5fb5f7f9c98baa7c889d444f63ace25574833df56f5b817985f641af58e46"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-hal"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb7c4a1dc42ff14c23c9b11ebf1ee85cde661a9b1cf0392f79c1faca5bc559fb"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -4157,7 +4144,7 @@ dependencies = [
  "libloading",
  "log 0.4.27",
  "metal",
- "naga 24.0.0 (git+https://github.com/gfx-rs/wgpu?branch=trunk)",
+ "naga 25.0.1",
  "ndk-sys",
  "objc",
  "ordered-float",
@@ -4178,8 +4165,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-types"
-version = "24.0.0"
-source = "git+https://github.com/gfx-rs/wgpu?branch=trunk#a843c880d243b45acbc7634ffa53587f41aa59ae"
+version = "25.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2aa49460c2a8ee8edba3fca54325540d904dd85b2e086ada762767e17d06e8bc"
 dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
@@ -4506,9 +4494,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.7.4"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
+checksum = "63d3fcd9bba44b03821e7d699eeee959f3126dcc4aa8e4ae18ec617c2a5cea10"
 dependencies = [
  "memchr",
 ]
@@ -4603,9 +4591,9 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xml-rs"
-version = "0.8.25"
+version = "0.8.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5b940ebc25896e71dd073bad2dbaa2abfe97b0a391415e22ad1326d9c54e3c4"
+checksum = "a62ce76d9b56901b19a74f19431b0d8b3bc7ca4ad685a746dfd78ca8f4fc6bda"
 
 [[package]]
 name = "yansi"

@@ -208,6 +208,7 @@ The font configuration default:
 [fonts]
 size = 18
 features = []
+use-drawable-chars = true
 symbol-map = []
 
 [fonts.regular]
@@ -309,6 +310,78 @@ fonts.symbol-map = [
   { start = "E0C0", end = "E0C7", font-family = "PowerlineSymbols" }
 ]
 ```
+
+## fonts.use-drawable-chars
+
+When set `true`, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B7)`).
+
+```toml
+fonts.use-drawable-chars = true
+```
+
+The list of characters:
+
+- `─` Horizontal
+- `│` Vertical
+- `━` HeavyHorizontal
+- `┃` HeavyVertical
+- `└` TopRight
+- `┘` TopLeft
+- `┌` BottomRight
+- `┐` BottomLeft
+- `┼` Cross
+- `├` VerticalRight
+- `┤` VerticalLeft
+- `┬` HorizontalDown
+- `┴` HorizontalUp
+- `╯` ArcTopLeft
+- `╭` ArcBottomRight
+- `╮` ArcBottomLeft
+- `╰` ArcTopRight
+- `▂` LowerOneQuarterBlock
+- `▁` LowerOneEighthBlock
+- `▃` LowerThreeEighthsBlock
+- `▎` LeftOneQuarterBlock
+- `▍` LeftThreeEighthsBlock
+- `▊` LeftThreeQuartersBlock
+- `▕` RightOneQuarterBlock
+- `🮈` RightThreeEighthsBlock
+- `🮊` RightThreeQuartersBlock
+- `▔` UpperOneEighthBlock
+- `🮃` UpperThreeEighthsBlock
+- `🮅` UpperThreeQuartersBlock
+- `┄` HorizontalLightDash
+- `┅` HorizontalHeavyDash
+- `┈` HorizontalLightDoubleDash
+- `┉` HorizontalHeavyDoubleDash
+- `╌` HorizontalLightTripleDash
+- `╍` HorizontalHeavyTripleDash
+- `┆` VerticalLightDash
+- `┇` VerticalHeavyDash
+- `┊` VerticalLightDoubleDash
+- `┋` VerticalHeavyDoubleDash
+- `╎` VerticalLightTripleDash
+- `╏` VerticalHeavyTripleDash
+- `▘` QuadrantUpperLeft
+- `▝` QuadrantUpperRight
+- `▖` QuadrantLowerLeft
+- `▗` QuadrantLowerRight
+- `▀` UpperHalf
+- `▄` LowerHalf
+- `▌` LeftHalf
+- `▐` RightHalf
+- `░` LightShade
+- `▒` MediumShade
+- `▓` DarkShade
+- `█` FullBlock
+- `` PowerlineLeftSolid
+- `` PowerlineRightSolid
+- `` PowerlineLeftHollow
+- `` PowerlineRightHollow
+- `` PowerlineCurvedRightSolid
+- `` PowerlineCurvedRightHollow
+- `` PowerlineCurvedLeftSolid
+- `` PowerlineCurvedLeftHollow
 
 ## ignore-selection-foreground-color
 

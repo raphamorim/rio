@@ -6,7 +6,6 @@ use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::components::layer::{self, LayerBrush};
 use crate::components::quad::QuadBrush;
-use crate::components::rect::{Rect, RectBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
@@ -24,10 +23,9 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    rect_brush: RectBrush,
-    quad_brush: QuadBrush,
+    quad_brush: Vec<QuadBrush>,
+    rich_text_brush: Vec<RichTextBrush>,
     layer_brush: LayerBrush,
-    rich_text_brush: RichTextBrush,
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
@@ -122,7 +120,6 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let rect_brush = RectBrush::init(&ctx);
         let layer_brush = LayerBrush::new(&ctx);
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
@@ -132,12 +129,11 @@ impl Sugarloaf<'_> {
         let instance = Sugarloaf {
             state,
             layer_brush,
-            quad_brush,
+            quad_brush: vec![quad_brush],
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
-            rect_brush,
-            rich_text_brush,
+            rich_text_brush: vec![rich_text_brush],
             graphics: Graphics::default(),
             filters_brush,
         };
@@ -151,7 +147,7 @@ impl Sugarloaf<'_> {
 
         self.state.reset();
         self.state
-            .set_fonts(font_library, &mut self.rich_text_brush);
+            .set_fonts(font_library, &mut self.rich_text_brush[0]);
     }
 
     #[inline]
@@ -183,14 +179,17 @@ impl Sugarloaf<'_> {
         self.state.set_rich_text_font_size_based_on_action(
             rt_id,
             operation,
-            &mut self.rich_text_brush,
+            &mut self.rich_text_brush[0],
         );
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state
-            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+        self.state.set_rich_text_font_size(
+            rt_id,
+            font_size,
+            &mut self.rich_text_brush[0],
+        );
     }
 
     #[inline]
@@ -267,7 +266,7 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
         self.state
-            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+            .get_rich_text_dimensions(id, &mut self.rich_text_brush[0])
     }
 
     #[inline]
@@ -300,12 +299,21 @@ impl Sugarloaf<'_> {
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.scale = scale;
         self.state
-            .compute_layout_rescale(scale, &mut self.rich_text_brush);
+            .compute_layout_rescale(scale, &mut self.rich_text_brush[0]);
         if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
             if bottom_layer.should_fit {
                 bottom_layer.data.bounds.width = self.ctx.size.width;
                 bottom_layer.data.bounds.height = self.ctx.size.height;
             }
+        }
+    }
+
+    #[inline]
+    pub fn add_layers(&mut self, quantity: usize) {
+        for _ in 0..quantity {
+            self.quad_brush.push(QuadBrush::new(&self.ctx));
+            self.rich_text_brush.push(RichTextBrush::new(&self.ctx));
+            self.state.new_layer();
         }
     }
 
@@ -316,15 +324,8 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_dimensions(&mut self.rich_text_brush);
-
-        self.state.compute_updates(
-            &mut self.rich_text_brush,
-            &mut self.rect_brush,
-            &mut self.quad_brush,
-            &mut self.ctx,
-            &mut self.graphics,
-        );
+        self.state.compute_dimensions(&mut self.rich_text_brush[0]);
+        self.state.compute_updates();
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
@@ -397,13 +398,29 @@ impl Sugarloaf<'_> {
                         }
                     }
 
-                    self.quad_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
+                    for layer_idx in 0..self.state.layers.len() {
+                        if let Some(quad_brush) = self.quad_brush.get_mut(layer_idx) {
+                            quad_brush.resize(&mut self.ctx);
+                            quad_brush.render(
+                                layer_idx,
+                                &mut self.ctx,
+                                &self.state,
+                                &mut rpass,
+                            );
+                        }
 
-                    self.rect_brush
-                        .render(&mut rpass, &self.state, &mut self.ctx);
-
-                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
+                        if let Some(rich_text_brush) =
+                            self.rich_text_brush.get_mut(layer_idx)
+                        {
+                            rich_text_brush.prepare(
+                                layer_idx,
+                                &mut self.ctx,
+                                &self.state,
+                                &mut self.graphics,
+                            );
+                            rich_text_brush.render(&mut self.ctx, &mut rpass);
+                        }
+                    }
                 }
 
                 if self.graphics.bottom_layer.is_some()

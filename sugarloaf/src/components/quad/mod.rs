@@ -5,17 +5,6 @@ use bytemuck::{Pod, Zeroable};
 
 use std::mem;
 
-/// A quad filled with a ComposedQuad color.
-#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
-#[repr(C)]
-pub struct ComposedQuad {
-    /// The background color data of the quad.
-    pub color: [f32; 4],
-
-    /// The [`Quad`] data of the [`ComposedQuad`].
-    pub quad: Quad,
-}
-
 /// The background of some element.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Background {
@@ -26,9 +15,12 @@ pub enum Background {
 const INITIAL_QUANTITY: usize = 2;
 
 /// The properties of a quad.
-#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq)]
+#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq, Default)]
 #[repr(C)]
 pub struct Quad {
+    /// The background color data of the quad.
+    pub color: [f32; 4],
+
     /// The position of the [`Quad`].
     pub position: [f32; 2],
 
@@ -70,7 +62,7 @@ impl QuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
         let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Instances Buffer"),
-            size: mem::size_of::<ComposedQuad>() as u64 * supported_quantity as u64,
+            size: mem::size_of::<Quad>() as u64 * supported_quantity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -146,7 +138,7 @@ impl QuadBrush {
                         module: &shader,
                         entry_point: Some("composed_quad_vs_main"),
                         buffers: &[wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<ComposedQuad>() as u64,
+                            array_stride: std::mem::size_of::<Quad>() as u64,
                             step_mode: wgpu::VertexStepMode::Instance,
                             attributes: &wgpu::vertex_attr_array!(
                                 // Color
@@ -231,13 +223,14 @@ impl QuadBrush {
         }
     }
 
-    pub fn render<'a>(
-        &'a mut self,
+    pub fn render(
+        &mut self,
+        layer_idx: usize,
         context: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
-        render_pass: &mut wgpu::RenderPass<'a>,
+        render_pass: &mut wgpu::RenderPass,
     ) {
-        let instances = &state.quads;
+        let instances = state.get_layer_quads(layer_idx);
         let total = instances.len();
 
         if total == 0 {
@@ -250,14 +243,13 @@ impl QuadBrush {
             self.supported_quantity = total;
             self.instances = context.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::quad instances"),
-                size: mem::size_of::<ComposedQuad>() as u64
-                    * self.supported_quantity as u64,
+                size: mem::size_of::<Quad>() as u64 * self.supported_quantity as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
         }
 
-        let instance_bytes = bytemuck::cast_slice(instances);
+        let instance_bytes = bytemuck::cast_slice(&instances);
         context
             .queue
             .write_buffer(&self.instances, 0, instance_bytes);

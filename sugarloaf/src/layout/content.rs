@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
-use crate::{sugarloaf::primitives::SugarCursor, Graphic};
+use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
 
 pub struct RichTextCounter(AtomicUsize);
 
@@ -33,27 +33,21 @@ impl RichTextCounter {
     }
 }
 
-/// Data that describes a fragment.
 #[derive(Debug, Clone)]
 pub struct FragmentData {
     pub content: String,
-    /// Style
     pub style: FragmentStyle,
 }
 
 #[derive(Default, Clone)]
 pub struct BuilderLine {
-    /// Collection of fragments.
     pub fragments: Vec<FragmentData>,
     pub render_data: RenderData,
 }
 
-/// Builder state.
 #[derive(Default)]
 pub struct BuilderState {
-    /// Lines State
     pub lines: Vec<BuilderLine>,
-    /// Font variation setting cache.
     pub vars: FontSettingCache<f32>,
     metrics_cache: MetricsCache,
     scaled_font_size: f32,
@@ -240,6 +234,8 @@ pub struct FragmentStyle {
     pub cursor: Option<SugarCursor>,
     /// Media
     pub media: Option<Graphic>,
+    /// Drawable character
+    pub drawable_char: Option<DrawableChar>,
 }
 
 impl Default for FragmentStyle {
@@ -258,6 +254,7 @@ impl Default for FragmentStyle {
             decoration: None,
             decoration_color: None,
             media: None,
+            drawable_char: None,
         }
     }
 }
@@ -512,8 +509,6 @@ impl Content {
                         let vars = state.vars.get(item.style.font_vars);
                         let shaper_key = &item.content;
 
-                        // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
-
                         if let Some(shaper) =
                             self.word_cache.get(&item.style.font_id, shaper_key)
                         {
@@ -576,8 +571,6 @@ impl Content {
                 for item in &line.fragments {
                     let vars = state.vars.get(item.style.font_vars);
                     let shaper_key = &item.content;
-
-                    // println!("{:?} -> {:?}", item.style.font_id, shaper_key);
 
                     if let Some(shaper) =
                         self.word_cache.get(&item.style.font_id, shaper_key)

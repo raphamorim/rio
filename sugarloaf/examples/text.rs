@@ -13,8 +13,8 @@ use sugarloaf::{
 };
 
 fn main() {
-    let width = 600.0;
-    let height = 400.0;
+    let width = 1200.0;
+    let height = 500.0;
     let window_event_loop = rio_window::event_loop::EventLoop::new().unwrap();
     let mut application = Application::new(&window_event_loop, width, height);
     let _ = application.run(window_event_loop);
@@ -25,6 +25,7 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
+    rich_text: usize,
 }
 
 impl Application {
@@ -32,6 +33,7 @@ impl Application {
         event_loop.listen_device_events(DeviceEvents::Never);
 
         Application {
+            rich_text: 0,
             sugarloaf: None,
             window: None,
             width,
@@ -78,7 +80,7 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text();
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -115,9 +117,9 @@ impl ApplicationHandler for Application {
                 sugarloaf.resize(new_size.width, new_size.height);
                 window.request_redraw();
             }
-            WindowEvent::RedrawRequested { .. } => {
+            WindowEvent::RedrawRequested => {
                 let content = sugarloaf.content();
-                content.sel(0).clear();
+                content.sel(self.rich_text).clear();
                 content
                     .new_line()
                     .add_text(
@@ -265,12 +267,47 @@ impl ApplicationHandler for Application {
                             ..FragmentStyle::default()
                         },
                     )
+                    .new_line()
+
+                    /*
+                Box drawing alignment tests:                                          █
+                                                                      ▉
+  ╔══╦══╗  ┌──┬──┐  ╭──┬──╮  ╭──┬──╮  ┏━━┳━━┓  ┎┒┏┑   ╷  ╻ ┏┯┓ ┌┰┐    ▊ ╱╲╱╲╳╳╳
+  ║┌─╨─┐║  │╔═╧═╗│  │╒═╪═╕│  │╓─╁─╖│  ┃┌─╂─┐┃  ┗╃╄┙  ╶┼╴╺╋╸┠┼┨ ┝╋┥    ▋ ╲╱╲╱╳╳╳
+  ║│╲ ╱│║  │║   ║│  ││ │ ││  │║ ┃ ║│  ┃│ ╿ │┃  ┍╅╆┓   ╵  ╹ ┗┷┛ └┸┘    ▌ ╱╲╱╲╳╳╳
+  ╠╡ ╳ ╞╣  ├╢   ╟┤  ├┼─┼─┼┤  ├╫─╂─╫┤  ┣┿╾┼╼┿┫  ┕┛┖┚     ┌┄┄┐ ╎ ┏┅┅┓ ┋ ▍ ╲╱╲╱╳╳╳
+  ║│╱ ╲│║  │║   ║│  ││ │ ││  │║ ┃ ║│  ┃│ ╽ │┃  ░░▒▒▓▓██ ┊  ┆ ╎ ╏  ┇ ┋ ▎
+  ║└─╥─┘║  │╚═╤═╝│  │╘═╪═╛│  │╙─╀─╜│  ┃└─╂─┘┃  ░░▒▒▓▓██ ┊  ┆ ╎ ╏  ┇ ┋ ▏
+  ╚══╩══╝  └──┴──┘  ╰──┴──╯  ╰──┴──╯  ┗━━┻━━┛  ▗▄▖▛▀▜   └╌╌┘ ╎ ┗╍╍┛ ┋  ▁▂▃▄▅▆▇█
+                                               ▝▀▘▙▄▟
+                */
+
+                    .add_text("Box drawing alignment tests:                                          █", FragmentStyle::default())
+                    .new_line()
+                    .add_text("╔══╦══╗  ┌──┬──┐  ╭──┬──╮  ╭──┬──╮  ┏━━┳━━┓  ┎┒┏┑   ╷  ╻ ┏┯┓ ┌┰┐    ▊ ╱╲╱╲╳╳╳", FragmentStyle::default())
+                    .new_line()
+                    .add_text("║┌─╨─┐║  │╔═╧═╗│  │╒═╪═╕│  │╓─╁─╖│  ┃┌─╂─┐┃  ┗╃╄┙  ╶┼╴╺╋╸┠┼┨ ┝╋┥    ▋ ╲╱╲╱╳╳╳", FragmentStyle::default())
+                    .new_line()
+                    .add_text("║│╲ ╱│║  │║   ║│  ││ │ ││  │║ ┃ ║│  ┃│ ╿ │┃  ┍╅╆┓   ╵  ╹ ┗┷┛ └┸┘    ▌ ╱╲╱╲╳╳╳", FragmentStyle::default())
+                    .new_line()
+                    .add_text("╠╡ ╳ ╞╣  ├╢   ╟┤  ├┼─┼─┼┤  ├╫─╂─╫┤  ┣┿╾┼╼┿┫  ┕┛┖┚     ┌┄┄┐ ╎ ┏┅┅┓ ┋ ▍ ╲╱╲╱╳╳╳", FragmentStyle::default())
+                    .new_line()
+                    .add_text("║│╱ ╲│║  │║   ║│  ││ │ ││  │║ ┃ ║│  ┃│ ╽ │┃  ░░▒▒▓▓██ ┊  ┆ ╎ ╏  ┇ ┋ ▎", FragmentStyle::default())
+                    .new_line()
+                    .add_text("║└─╥─┘║  │╚═╤═╝│  │╘═╪═╛│  │╙─╀─╜│  ┃└─╂─┘┃  ░░▒▒▓▓██ ┊  ┆ ╎ ╏  ┇ ┋ ▏", FragmentStyle::default())
+                    .new_line()
+                    .add_text("╚══╩══╝  └──┴──┘  ╰──┴──╯  ╰──┴──╯  ┗━━┻━━┛  ▗▄▖▛▀▜   └╌╌┘ ╎ ┗╍╍┛ ┋  ▁▂▃▄▅▆▇█", FragmentStyle::default())
+                    .new_line()
+                    .add_text("                                             ▝▀▘▙▄▟", FragmentStyle::default())
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: 0,
-                    position: [10., 0.],
-                })]);
+                sugarloaf.set_objects(vec![Object::RichText(
+                    RichText {
+                        id: self.rich_text,
+                        position: [10., 0.],
+                    },
+                    None,
+                )]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
