@@ -8,54 +8,54 @@ macro_rules! font {
 pub const DEFAULT_FONT_FAMILY: &str = "cascadiacode";
 
 // Fonts:
-// CascadiaCodePL-Bold.ttf
-// CascadiaCodePL-BoldItalic.ttf
-// CascadiaCodePL-ExtraLight.ttf
-// CascadiaCodePL-ExtraLightItalic.ttf
-// CascadiaCodePL-Italic.ttf
-// CascadiaCodePL-Light.ttf
-// CascadiaCodePL-LightItalic.ttf
-// CascadiaCodePL-Regular.ttf
-// CascadiaCodePL-SemiBold.ttf
-// CascadiaCodePL-SemiBoldItalic.ttf
-// CascadiaCodePL-SemiLight.ttf
-// CascadiaCodePL-SemiLightItalic.ttf
+// CascadiaCode-Bold.ttf
+// CascadiaCode-BoldItalic.ttf
+// CascadiaCode-ExtraLight.ttf
+// CascadiaCode-ExtraLightItalic.ttf
+// CascadiaCode-Italic.ttf
+// CascadiaCode-Light.ttf
+// CascadiaCode-LightItalic.ttf
+// CascadiaCode-Regular.ttf
+// CascadiaCode-SemiBold.ttf
+// CascadiaCode-SemiBoldItalic.ttf
+// CascadiaCode-SemiLight.ttf
+// CascadiaCode-SemiLightItalic.ttf
 
 pub const FONT_CASCADIAMONO_BOLD: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-Bold.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-Bold.otf");
 
 pub const FONT_CASCADIAMONO_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-BoldItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-BoldItalic.otf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-ExtraLight.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-ExtraLight.otf");
 
 pub const FONT_CASCADIAMONO_EXTRA_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-ExtraLightItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-ExtraLightItalic.otf");
 
 pub const FONT_CASCADIAMONO_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-Italic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-Italic.otf");
 
 pub const FONT_CASCADIAMONO_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-Light.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-Light.otf");
 
 pub const FONT_CASCADIAMONO_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-LightItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-LightItalic.otf");
 
 pub const FONT_CASCADIAMONO_REGULAR: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-Regular.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-Regular.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-SemiBold.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-SemiBold.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_BOLD_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-SemiBoldItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-SemiBoldItalic.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-SemiLight.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-SemiLight.otf");
 
 pub const FONT_CASCADIAMONO_SEMI_LIGHT_ITALIC: &[u8] =
-    font!("./resources/CascadiaCode/CascadiaCodePL-SemiLightItalic.otf");
+    font!("./resources/CascadiaCode/CascadiaCode-SemiLightItalic.otf");
 
 pub const FONT_SYMBOLS_NERD_FONT_MONO: &[u8] =
     font!("./resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf");
