@@ -115,10 +115,14 @@ pub enum DrawableChar {
     // RightHalfBlackCircle, // ◗
 
     // Powerline triangles
-    PowerlineLeftSolid,  //
-    PowerlineRightSolid, //
-    PowerlineLeftHollow, //
-    PowerlineRightHollow, //
+    PowerlineLeftSolid,
+    PowerlineRightSolid,
+    PowerlineLeftHollow,
+    PowerlineRightHollow,
+    PowerlineCurvedRightSolid,
+    PowerlineCurvedRightHollow,
+    PowerlineCurvedLeftSolid,
+    PowerlineCurvedLeftHollow,
 
                          // Complete set of Braille characters (U+2800 to U+28FF)
                          // First row (no dot 7, no dot 8)
@@ -437,10 +441,16 @@ impl TryFrom<char> for DrawableChar {
             '▓' => DrawableChar::DarkShade,
             '█' => DrawableChar::FullBlock,
 
-            '\u{e0b2}' => DrawableChar::PowerlineLeftSolid,
+            // Quick test:
+            // echo "\ue0b0 \ue0b1 \ue0b2 \ue0b3 \ue0b4 \ue0b5 \ue0b6 \ue0b7"
             '\u{e0b0}' => DrawableChar::PowerlineRightSolid,
-            // '' => PowerlineLeftHollow,
-            // '' => PowerlineRightHollow,
+            '\u{e0b1}' => DrawableChar::PowerlineRightHollow,
+            '\u{e0b2}' => DrawableChar::PowerlineLeftSolid,
+            '\u{e0b3}' => DrawableChar::PowerlineLeftHollow,
+            '\u{e0b4}' => DrawableChar::PowerlineCurvedRightSolid,
+            '\u{e0b5}' => DrawableChar::PowerlineCurvedRightHollow,
+            '\u{e0b6}' => DrawableChar::PowerlineCurvedLeftSolid,
+            '\u{e0b7}' => DrawableChar::PowerlineCurvedLeftHollow,
             _ => return Err(val),
         };
         Ok(drawbable_char)

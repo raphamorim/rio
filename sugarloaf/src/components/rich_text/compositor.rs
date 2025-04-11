@@ -1177,57 +1177,244 @@ impl Compositor {
             DrawableChar::PowerlineLeftSolid => {
                 // PowerlineLeftSolid - solid triangle pointing left
                 // Creates a filled triangle pointing to the left
-                self.draw_triangle(
+                self.batches.add_triangle(
                     x + line_width,
                     y, // Top-right (x1, y1)
                     x + line_width,
                     y + line_height, // Bottom-right (x2, y2)
                     x,
                     y + line_height / 2.0, // Middle-left (x3, y3)
-                    color,
                     depth,
+                    color,
                 );
             }
-
             DrawableChar::PowerlineRightSolid => {
                 // PowerlineRightSolid - solid triangle pointing right
                 // Creates a filled triangle pointing to the right
-                self.draw_triangle(
+                self.batches.add_triangle(
                     x,
                     y, // Top-left (x1, y1)
                     x,
                     y + line_height, // Bottom-left (x2, y2)
                     x + line_width,
                     y + line_height / 2.0, // Middle-right (x3, y3)
-                    color,
                     depth,
+                    color,
                 );
             }
             DrawableChar::PowerlineLeftHollow => {
-                // Use draw_line for the hollow powerline
-                self.draw_line(
+                // PowerlineLeftHollow - hollow triangle pointing left
+
+                // Define stroke width for the hollow triangle outline
+                let stroke_width = line_width * 0.1; // Adjust as needed for desired thickness
+
+                // Top edge: from top-right to middle-left
+                self.batches.add_line(
+                    x + line_width,
+                    y, // Start point (top-right)
                     x,
-                    y + line_height, // bottom-left
-                    x + half_size,
-                    y, // top-middle
-                    stroke,
-                    color,
+                    y + line_height / 2.0, // End point (middle-left)
+                    stroke_width,
                     depth,
+                    &color,
                 );
+
+                // Bottom edge: from middle-left to bottom-right
+                self.batches.add_line(
+                    x,
+                    y + line_height / 2.0, // Start point (middle-left)
+                    x + line_width,
+                    y + line_height, // End point (bottom-right)
+                    stroke_width,
+                    depth,
+                    &color,
+                );
+
+                // // Right edge: from bottom-right to top-right
+                // self.batches.add_line(
+                //     x + line_width,
+                //     y + line_height, // Start point (bottom-right)
+                //     x + line_width,
+                //     y, // End point (top-right)
+                //     stroke_width,
+                //     depth,
+                //     &color,
+                // );
             }
             DrawableChar::PowerlineRightHollow => {
-                // Use draw_line for the hollow powerline
-                self.draw_line(
-                    x + half_size,
-                    y, // top-middle
-                    x + line_height,
-                    y + line_height, // bottom-right
-                    stroke,
-                    color,
+                // PowerlineRightHollow - hollow triangle pointing right
+
+                // Define stroke width for the hollow triangle outline
+                let stroke_width = line_width * 0.1; // Adjust as needed for desired thickness
+
+                // Top edge: from top-left to middle-right
+                self.batches.add_line(
+                    x,
+                    y, // Start point (top-left)
+                    x + line_width,
+                    y + line_height / 2.0, // End point (middle-right)
+                    stroke_width,
                     depth,
+                    &color,
+                );
+
+                // Bottom edge: from middle-right to bottom-left
+                self.batches.add_line(
+                    x + line_width,
+                    y + line_height / 2.0, // Start point (middle-right)
+                    x,
+                    y + line_height, // End point (bottom-left)
+                    stroke_width,
+                    depth,
+                    &color,
+                );
+
+                // Left edge: from bottom-left to top-left
+                // self.batches.add_line(
+                //     x,
+                //     y + line_height, // Start point (bottom-left)
+                //     x,
+                //     y, // End point (top-left)
+                //     stroke_width,
+                //     depth,
+                //     &color,
+                // );
+            }
+            DrawableChar::PowerlineCurvedLeftSolid => {
+                // PowerlineCurvedLeftSolid -  curvedSolid shape pointing left
+
+                // First, draw a solid triangle to fill the main area
+                self.batches.add_triangle(
+                    x + line_width,
+                    y,                         // Top-right (x1, y1)
+                    x + line_width,
+                    y + line_height,           // Bottom-right (x2, y2)
+                    x,
+                    y + line_height / 2.0,     // Middle-left (x3, y3)
+                    depth,
+                    color,
+                );
+
+                // Then draw the curved part on the right side
+                // This creates a semi-circle that extends into the triangle
+                self.batches.add_arc(
+                    x + line_width * 0.8,        // Center x is inside the cell
+                    y + line_height / 2.0,       // Center y is middle of cell height
+                    line_height / 2.0,           // Radius is half the line height
+                    270.0,                       // Start angle (bottom)
+                    90.0,                        // End angle (top)
+                    line_width * 0.8,            // Width of the arc (thicker for  appearanceSolid)
+                    depth,
+                    &color,
+                );
+            },
+
+            DrawableChar::PowerlineCurvedRightSolid => {
+                // PowerlineCurvedRightSolid -  curvedSolid shape pointing right
+
+                // First, draw a solid triangle to fill the main area
+                self.batches.add_triangle(
+                    x,
+                    y,                         // Top-left (x1, y1)
+                    x,
+                    y + line_height,           // Bottom-left (x2, y2)
+                    x + line_width,
+                    y + line_height / 2.0,     // Middle-right (x3, y3)
+                    depth,
+                    color,
+                );
+
+                // Then draw the curved part on the left side
+                // This creates a semi-circle that extends into the triangle
+                self.batches.add_arc(
+                    x + line_width * 0.2,        // Center x is inside the cell
+                    y + line_height / 2.0,       // Center y is middle of cell height
+                    line_height / 2.0,           // Radius is half the line height
+                    90.0,                        // Start angle (top)
+                    270.0,                       // End angle (bottom)
+                    line_width * 0.8,            // Width of the arc (thicker for filled appearance)
+                    depth,
+                    &color,
                 );
             }
-            // TODO: Use draw_dashed_line
+            DrawableChar::PowerlineCurvedLeftHollow => {
+                // PowerlineCurvedLeft - curved triangle pointing left
+                // Creates a curved shape pointing to the left using arcs
+
+                // Draw the curved part (right side of the shape)
+                self.batches.add_arc(
+                    x + line_width * 2.0,        // Center x is to the right of the cell
+                    y + line_height / 2.0,       // Center y is middle of cell height
+                    line_height / 2.0,           // Radius is half the line height
+                    270.0,                       // Start angle (bottom)
+                    90.0,                        // End angle (top)
+                    line_width,                  // Width of the arc
+                    depth,
+                    &color,
+                );
+
+                // Draw the straight line connecting the arc ends to the left point
+                // From top of arc to left middle point
+                self.batches.add_line(
+                    x + line_width,              // Start x at right edge of cell
+                    y,                           // Start y at top of cell
+                    x,                           // End x at left edge of cell
+                    y + line_height / 2.0,       // End y at middle of cell height
+                    line_width * 0.1,            // Width of the line
+                    depth,
+                    &color,
+                );
+
+                // From bottom of arc to left middle point
+                self.batches.add_line(
+                    x + line_width,              // Start x at right edge of cell
+                    y + line_height,             // Start y at bottom of cell
+                    x,                           // End x at left edge of cell
+                    y + line_height / 2.0,       // End y at middle of cell height
+                    line_width * 0.1,            // Width of the line
+                    depth,
+                    &color,
+                );
+            },
+            DrawableChar::PowerlineCurvedRightHollow => {
+                // PowerlineCurvedRight - curved triangle pointing right
+                // Creates a curved shape pointing to the right using arcs
+
+                // Draw the curved part (left side of the shape)
+                self.batches.add_arc(
+                    x - line_width,              // Center x is to the left of the cell
+                    y + line_height / 2.0,       // Center y is middle of cell height
+                    line_height / 2.0,           // Radius is half the line height
+                    90.0,                        // Start angle (top)
+                    270.0,                       // End angle (bottom)
+                    line_width,                  // Width of the arc
+                    depth,
+                    &color,
+                );
+
+                // Draw the straight line connecting the arc ends to the right point
+                // From top of arc to right middle point
+                self.batches.add_line(
+                    x,                           // Start x at left edge of cell
+                    y,                           // Start y at top of cell
+                    x + line_width,              // End x at right edge of cell
+                    y + line_height / 2.0,       // End y at middle of cell height
+                    line_width * 0.1,            // Width of the line
+                    depth,
+                    &color,
+                );
+
+                // From bottom of arc to right middle point
+                self.batches.add_line(
+                    x,                           // Start x at left edge of cell
+                    y + line_height,             // Start y at bottom of cell
+                    x + line_width,              // End x at right edge of cell
+                    y + line_height / 2.0,       // End y at middle of cell height
+                    line_width * 0.1,            // Width of the line
+                    depth,
+                    &color,
+                );
+            }
             DrawableChar::HorizontalLightDash => {
                 // Single dash in the middle
                 let dash_width = line_height / 2.0;
