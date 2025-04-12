@@ -50,32 +50,32 @@ pub enum CornerType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DrawableChar {
     // Original box-drawing characters
-    Horizontal,      // ─
-    DoubleHorizontal,// ═
-    Vertical,        // │
-    DoubleVertical,  // ║
-    HeavyHorizontal, // ━
-    HeavyVertical,   // ┃
-    TopRight,        // └
-    TopLeft,         // ┘
-    BottomRight,     // ┌
-    BottomLeft,      // ┐
-    Cross,           // ┼
-    VerticalRight,   // ├
-    VerticalLeft,    // ┤
-    HorizontalDown,  // ┬
-    HorizontalUp,    // ┴
-    ArcTopLeft,      // ╯
-    ArcBottomRight,  // ╭
-    ArcBottomLeft,   // ╮
-    ArcTopRight,     // ╰
+    Horizontal,       // ─
+    DoubleHorizontal, // ═
+    Vertical,         // │
+    DoubleVertical,   // ║
+    HeavyHorizontal,  // ━
+    HeavyVertical,    // ┃
+    TopRight,         // └
+    TopLeft,          // ┘
+    BottomRight,      // ┌
+    BottomLeft,       // ┐
+    Cross,            // ┼
+    VerticalRight,    // ├
+    VerticalLeft,     // ┤
+    HorizontalDown,   // ┬
+    HorizontalUp,     // ┴
+    ArcTopLeft,       // ╯
+    ArcBottomRight,   // ╭
+    ArcBottomLeft,    // ╮
+    ArcTopRight,      // ╰
 
-    DownDoubleAndHorizontalSingle, // ╥
-    DownSingleAndHorizontalDouble, // ╤
-    DoubleUpAndRight, // ╚
-    DoubleUpAndLeft, // ╝
-    UpSingleAndRightDouble, // ╘
-    UpSingleAndLeftDouble, // ╛
+    DownDoubleAndHorizontalSingle,     // ╥
+    DownSingleAndHorizontalDouble,     // ╤
+    DoubleUpAndRight,                  // ╚
+    DoubleUpAndLeft,                   // ╝
+    UpSingleAndRightDouble,            // ╘
+    UpSingleAndLeftDouble,             // ╛
     VerticalSingleAndHorizontalDouble, // ╪
 
     // Misc
