@@ -70,6 +70,14 @@ pub enum DrawableChar {
     ArcBottomLeft,   // ╮
     ArcTopRight,     // ╰
 
+    DownDoubleAndHorizontalSingle, // ╥
+    DownSingleAndHorizontalDouble, // ╤
+    DoubleUpAndRight, // ╚
+    DoubleUpAndLeft, // ╝
+    UpSingleAndRightDouble, // ╘
+    UpSingleAndLeftDouble, // ╛
+    VerticalSingleAndHorizontalDouble, // ╪
+
     // Misc
     LowerOneEighthBlock,     // ▁
     LowerOneQuarterBlock,    // ▂
@@ -404,6 +412,14 @@ impl TryFrom<char> for DrawableChar {
             '╭' => DrawableChar::ArcBottomRight,
             '╮' => DrawableChar::ArcBottomLeft,
             '╰' => DrawableChar::ArcTopRight,
+
+            '╥' => DrawableChar::DownDoubleAndHorizontalSingle,
+            '╤' => DrawableChar::DownSingleAndHorizontalDouble,
+            '╚' => DrawableChar::DoubleUpAndRight,
+            '╝' => DrawableChar::DoubleUpAndLeft,
+            '╘' => DrawableChar::UpSingleAndRightDouble,
+            '╛' => DrawableChar::UpSingleAndLeftDouble,
+            '╪' => DrawableChar::VerticalSingleAndHorizontalDouble,
 
             '▁' => DrawableChar::LowerOneEighthBlock,
             '▂' => DrawableChar::LowerOneQuarterBlock,

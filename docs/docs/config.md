@@ -336,6 +336,13 @@ The list of characters:
 - `┤` VerticalLeft
 - `┬` HorizontalDown
 - `┴` HorizontalUp
+- `╥` DownDoubleAndHorizontalSingle
+- `╤` DownSingleAndHorizontalDouble
+- `╘` UpSingleAndRightDouble
+- `╛` UpSingleAndLeftDouble
+- `╪` VerticalSingleAndHorizontalDouble
+- `╚` DoubleUpAndRight
+- `╝` DoubleUpAndLeft
 - `╯` ArcTopLeft
 - `╭` ArcBottomRight
 - `╮` ArcBottomLeft
