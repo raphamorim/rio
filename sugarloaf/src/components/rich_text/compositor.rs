@@ -1286,11 +1286,11 @@ impl Compositor {
                 // First, draw a solid triangle to fill the main area
                 self.batches.add_triangle(
                     x + line_width,
-                    y,                         // Top-right (x1, y1)
+                    y, // Top-right (x1, y1)
                     x + line_width,
-                    y + line_height,           // Bottom-right (x2, y2)
+                    y + line_height, // Bottom-right (x2, y2)
                     x,
-                    y + line_height / 2.0,     // Middle-left (x3, y3)
+                    y + line_height / 2.0, // Middle-left (x3, y3)
                     depth,
                     color,
                 );
@@ -1298,16 +1298,16 @@ impl Compositor {
                 // Then draw the curved part on the right side
                 // This creates a semi-circle that extends into the triangle
                 self.batches.add_arc(
-                    x + line_width * 0.8,        // Center x is inside the cell
-                    y + line_height / 2.0,       // Center y is middle of cell height
-                    line_height / 2.0,           // Radius is half the line height
-                    270.0,                       // Start angle (bottom)
-                    90.0,                        // End angle (top)
-                    line_width * 0.8,            // Width of the arc (thicker for  appearanceSolid)
+                    x + line_width * 0.8,  // Center x is inside the cell
+                    y + line_height / 2.0, // Center y is middle of cell height
+                    line_height / 2.0,     // Radius is half the line height
+                    270.0,                 // Start angle (bottom)
+                    90.0,                  // End angle (top)
+                    line_width * 0.8, // Width of the arc (thicker for  appearanceSolid)
                     depth,
                     &color,
                 );
-            },
+            }
 
             DrawableChar::PowerlineCurvedRightSolid => {
                 // PowerlineCurvedRightSolid -  curvedSolid shape pointing right
@@ -1315,11 +1315,11 @@ impl Compositor {
                 // First, draw a solid triangle to fill the main area
                 self.batches.add_triangle(
                     x,
-                    y,                         // Top-left (x1, y1)
+                    y, // Top-left (x1, y1)
                     x,
-                    y + line_height,           // Bottom-left (x2, y2)
+                    y + line_height, // Bottom-left (x2, y2)
                     x + line_width,
-                    y + line_height / 2.0,     // Middle-right (x3, y3)
+                    y + line_height / 2.0, // Middle-right (x3, y3)
                     depth,
                     color,
                 );
@@ -1327,12 +1327,12 @@ impl Compositor {
                 // Then draw the curved part on the left side
                 // This creates a semi-circle that extends into the triangle
                 self.batches.add_arc(
-                    x + line_width * 0.2,        // Center x is inside the cell
-                    y + line_height / 2.0,       // Center y is middle of cell height
-                    line_height / 2.0,           // Radius is half the line height
-                    90.0,                        // Start angle (top)
-                    270.0,                       // End angle (bottom)
-                    line_width * 0.8,            // Width of the arc (thicker for filled appearance)
+                    x + line_width * 0.2,  // Center x is inside the cell
+                    y + line_height / 2.0, // Center y is middle of cell height
+                    line_height / 2.0,     // Radius is half the line height
+                    90.0,                  // Start angle (top)
+                    270.0,                 // End angle (bottom)
+                    line_width * 0.8, // Width of the arc (thicker for filled appearance)
                     depth,
                     &color,
                 );
@@ -1343,12 +1343,12 @@ impl Compositor {
 
                 // Draw the curved part (right side of the shape)
                 self.batches.add_arc(
-                    x + line_width * 2.0,        // Center x is to the right of the cell
-                    y + line_height / 2.0,       // Center y is middle of cell height
-                    line_height / 2.0,           // Radius is half the line height
-                    270.0,                       // Start angle (bottom)
-                    90.0,                        // End angle (top)
-                    line_width,                  // Width of the arc
+                    x + line_width * 2.0,  // Center x is to the right of the cell
+                    y + line_height / 2.0, // Center y is middle of cell height
+                    line_height / 2.0,     // Radius is half the line height
+                    270.0,                 // Start angle (bottom)
+                    90.0,                  // End angle (top)
+                    line_width,            // Width of the arc
                     depth,
                     &color,
                 );
@@ -1356,38 +1356,38 @@ impl Compositor {
                 // Draw the straight line connecting the arc ends to the left point
                 // From top of arc to left middle point
                 self.batches.add_line(
-                    x + line_width,              // Start x at right edge of cell
-                    y,                           // Start y at top of cell
-                    x,                           // End x at left edge of cell
-                    y + line_height / 2.0,       // End y at middle of cell height
-                    line_width * 0.1,            // Width of the line
+                    x + line_width,        // Start x at right edge of cell
+                    y,                     // Start y at top of cell
+                    x,                     // End x at left edge of cell
+                    y + line_height / 2.0, // End y at middle of cell height
+                    line_width * 0.1,      // Width of the line
                     depth,
                     &color,
                 );
 
                 // From bottom of arc to left middle point
                 self.batches.add_line(
-                    x + line_width,              // Start x at right edge of cell
-                    y + line_height,             // Start y at bottom of cell
-                    x,                           // End x at left edge of cell
-                    y + line_height / 2.0,       // End y at middle of cell height
-                    line_width * 0.1,            // Width of the line
+                    x + line_width,        // Start x at right edge of cell
+                    y + line_height,       // Start y at bottom of cell
+                    x,                     // End x at left edge of cell
+                    y + line_height / 2.0, // End y at middle of cell height
+                    line_width * 0.1,      // Width of the line
                     depth,
                     &color,
                 );
-            },
+            }
             DrawableChar::PowerlineCurvedRightHollow => {
                 // PowerlineCurvedRight - curved triangle pointing right
                 // Creates a curved shape pointing to the right using arcs
 
                 // Draw the curved part (left side of the shape)
                 self.batches.add_arc(
-                    x - line_width,              // Center x is to the left of the cell
-                    y + line_height / 2.0,       // Center y is middle of cell height
-                    line_height / 2.0,           // Radius is half the line height
-                    90.0,                        // Start angle (top)
-                    270.0,                       // End angle (bottom)
-                    line_width,                  // Width of the arc
+                    x - line_width,        // Center x is to the left of the cell
+                    y + line_height / 2.0, // Center y is middle of cell height
+                    line_height / 2.0,     // Radius is half the line height
+                    90.0,                  // Start angle (top)
+                    270.0,                 // End angle (bottom)
+                    line_width,            // Width of the arc
                     depth,
                     &color,
                 );
@@ -1395,22 +1395,22 @@ impl Compositor {
                 // Draw the straight line connecting the arc ends to the right point
                 // From top of arc to right middle point
                 self.batches.add_line(
-                    x,                           // Start x at left edge of cell
-                    y,                           // Start y at top of cell
-                    x + line_width,              // End x at right edge of cell
-                    y + line_height / 2.0,       // End y at middle of cell height
-                    line_width * 0.1,            // Width of the line
+                    x,                     // Start x at left edge of cell
+                    y,                     // Start y at top of cell
+                    x + line_width,        // End x at right edge of cell
+                    y + line_height / 2.0, // End y at middle of cell height
+                    line_width * 0.1,      // Width of the line
                     depth,
                     &color,
                 );
 
                 // From bottom of arc to right middle point
                 self.batches.add_line(
-                    x,                           // Start x at left edge of cell
-                    y + line_height,             // Start y at bottom of cell
-                    x + line_width,              // End x at right edge of cell
-                    y + line_height / 2.0,       // End y at middle of cell height
-                    line_width * 0.1,            // Width of the line
+                    x,                     // Start x at left edge of cell
+                    y + line_height,       // Start y at bottom of cell
+                    x + line_width,        // End x at right edge of cell
+                    y + line_height / 2.0, // End y at middle of cell height
+                    line_width * 0.1,      // Width of the line
                     depth,
                     &color,
                 );
