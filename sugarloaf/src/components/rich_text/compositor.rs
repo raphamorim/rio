@@ -468,6 +468,7 @@ impl Compositor {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_drawable_character(
         &mut self,
         x: f32,
