@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hant/assets/css/styles.390fc736.css">
-<script src="/zh-hant/assets/js/runtime~main.8df9deeb.js" defer="defer"></script>
+<script src="/zh-hant/assets/js/runtime~main.1054c93e.js" defer="defer"></script>
 <script src="/zh-hant/assets/js/main.6d3ecfce.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -26,8 +26,14 @@
 <ul>
 <li>Fix dimension for whenever a new tab is created from a view with splits.</li>
 <li>Drop subtables with empty coverage by <a href="https://github.com/xorgy" target="_blank" rel="noopener noreferrer">@xorgy</a>.</li>
+<li>Fix font size affecting tabs size.</li>
+<li>Support to drawable characters by using <code>fonts.use-drawable-chars = true</code>.</li>
+<li>Fix: Wrong unicode character alignment <a href="https://github.com/raphamorim/rio/issues/616" target="_blank" rel="noopener noreferrer">#616</a>.</li>
+<li>Fix: Built-in font for box drawing #974 <a href="https://github.com/raphamorim/rio/issues/974" target="_blank" rel="noopener noreferrer">#974</a>.</li>
+<li>Fix: U+E0B6 and U+E0B4 Unicode with different sizes <a href="https://github.com/raphamorim/rio/issues/895" target="_blank" rel="noopener noreferrer">#895</a>.</li>
+<li>Update wgpu to v25.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12的直接連結" title="0.2.12的直接連  結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12的直接連結" title="0.2.12的直接連結">​</a></h2>
 <ul>
 <li>Fix crash regarding fonts not found whenever trying to run Rio.</li>
 </ul>
@@ -264,7 +270,7 @@
 <li>Implement LRU to cache on layout and draw methods.</li>
 <li>Reenable set subtitle on MacOS native tabs.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0112">0.1.12<a href="#0112" class="hash-link" aria-label="0.1.12的直接連結" title="0.1.12的直接連結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0112">0.1.12<a href="#0112" class="hash-link" aria-label="0.1.12的直接連結" title="0.1.12  的直接連結">​</a></h2>
 <ul>
 <li>Introduce: <code>renderer.max-fps</code>.</li>
 <li>Fix: Cursor making text with ligatures hidden.</li>
@@ -336,7 +342,7 @@
 <li>Fix scale update on transitioning between screens with different DPI.</li>
 <li>Support a short variant (<code>-w</code>) for <code>--working-dir</code> argument.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="018">0.1.8<a href="#018" class="hash-link" aria-label="0.1.8的直接連結" title="0.1.8的直接 連結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="018">0.1.8<a href="#018" class="hash-link" aria-label="0.1.8的直接連結" title="0.1.8的直接連結">​</a></h2>
 <ul>
 <li><strong>breaking:</strong> Introduced a new property in theme called <code>tabs-active-highlight</code>, default color is <code>#ff00ff</code>.</li>
 <li><strong>breaking:</strong> Removed breadcrumb navigation.</li>

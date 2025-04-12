@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.390fc736.css">
-<script src="/ko/assets/js/runtime~main.592a85bd.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.f2d5f576.js" defer="defer"></script>
 <script src="/ko/assets/js/main.46d93418.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -26,6 +26,12 @@
 <ul>
 <li>Fix dimension for whenever a new tab is created from a view with splits.</li>
 <li>Drop subtables with empty coverage by <a href="https://github.com/xorgy" target="_blank" rel="noopener noreferrer">@xorgy</a>.</li>
+<li>Fix font size affecting tabs size.</li>
+<li>Support to drawable characters by using <code>fonts.use-drawable-chars = true</code>.</li>
+<li>Fix: Wrong unicode character alignment <a href="https://github.com/raphamorim/rio/issues/616" target="_blank" rel="noopener noreferrer">#616</a>.</li>
+<li>Fix: Built-in font for box drawing #974 <a href="https://github.com/raphamorim/rio/issues/974" target="_blank" rel="noopener noreferrer">#974</a>.</li>
+<li>Fix: U+E0B6 and U+E0B4 Unicode with different sizes <a href="https://github.com/raphamorim/rio/issues/895" target="_blank" rel="noopener noreferrer">#895</a>.</li>
+<li>Update wgpu to v25.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12에 대한 직접 링크" title="0.2.12에 대한 직접 링크">​</a></h2>
 <ul>
@@ -286,8 +292,8 @@
 <p>Before:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&#x27;▇&#x27;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking-cursor</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p>After:</p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">cursor</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">shape</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&#x27;block&#x27;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0111">0.1.11<a href="#0111" class="hash-link" aria-label="0.1.11  에 대한 직접 링크" title="0.1.11에 대한 직접 링크">​</a></h2>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">cursor</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">shape</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&#x27;block&#x27;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">blinking</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label=" 클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0111">0.1.11<a href="#0111" class="hash-link" aria-label="0.1.11에 대한 직접 링크" title="0.1.11에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Experimental support to Sixel protocol.</li>
 <li>Clipboard has been moved to Application level and shared to all windows.</li>
@@ -509,7 +515,7 @@
 <li>use Fowler–Noll–Vo hash function implementation for sugar cache (more efficient for smaller hash keys)</li>
 <li>update winit to 0.29.9</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0033">0.0.33<a href="#0033" class="hash-link" aria-label="0.0.33에 대한 직접 링크" title="0.0.33에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0033">0.0.33<a href="#0033" class="hash-link" aria-label="0.0.33에 대  한 직접 링크" title="0.0.33에 대한 직접 링크">​</a></h2>
 <ul>
 <li><strong>Breaking</strong>: Removed <code>macos-hide-toolbar-buttons</code> in favor of <code>window.decorations</code> api.</li>
 <li>Fix: Rio failing to draw blur upon launch #379</li>
@@ -598,7 +604,7 @@
 <li>Activate the hyperlink check whenever a modifier is changed (<code>alt</code> for windows/linux/bsd and <code>command</code> for macos).</li>
 <li>Fix Error when Double click on terminal side (Ref <a href="https://github.com/raphamorim/rio/issues/316" target="_blank" rel="noopener noreferrer">#316</a>).</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0026">0.0.26<a href="#0026" class="hash-link" aria-label="0.0.26 에 대한 직접 링크" title="0.0.26에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0026">0.0.26<a href="#0026" class="hash-link" aria-label="0.0.26에 대한 직접 링크" title="0.0.26에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Upgrade winit to 0.29.3.</li>
 <li>Support for <code>Run</code> actions key bindings for Microsoft Windows.</li>
@@ -622,7 +628,7 @@
 <li>Alacritty&#x27;s VI Mode.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0023">0.0.23<a href="#0023" class="hash-link" aria-label="0.0.23에 대한 직접 링크" title="0.0.23에 대한 직접 링크">​</a></h2>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-changes">Breaking changes<a href="#breaking-changes" class="hash-link" aria-label="Breaking changes에 대한 직접  링크" title="Breaking changes에 대한 직접 링크">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-changes">Breaking changes<a href="#breaking-changes" class="hash-link" aria-label="Breaking changes에 대한 직접 링크" title="Breaking changes에 대한 직접 링크">​</a></h4>
 <ul>
 <li><code>navigation.mode = &quot;Plain&quot;</code> now only shutdowns the key bindings related to tab creation/manipulation.</li>
 <li><code>ignore-selection-fg-color</code> has been renamed to <code>ignore-selection-foreground-color</code>.</li>
@@ -775,7 +781,7 @@
 <li>Default colors <code>selection-foreground</code> and <code>selection-background</code> has changed.</li>
 <li>Default colors <code>tab</code> and <code>tab-active</code> has changed.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="0.0.14에 대한 직접 링크" title="0.0.14에   대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0014">0.0.14<a href="#0014" class="hash-link" aria-label="0.0.14에 대한 직접 링크" title="0.0.14에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Implementation of custom key bindings (<a href="https://github.com/raphamorim/rio/issues/117" target="_blank" rel="noopener noreferrer">#117</a>).</li>
 <li>Fix .deb packing in GH Actions.</li>
