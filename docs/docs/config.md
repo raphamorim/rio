@@ -322,6 +322,7 @@ fonts.use-drawable-chars = true
 The list of characters:
 
 - `─` Horizontal
+- `═` DoubleHorizontal
 - `│` Vertical
 - `║` DoubleVertical
 - `━` HeavyHorizontal
