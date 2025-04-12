@@ -343,14 +343,32 @@ impl Renderer {
                 style.background_color = None;
             }
 
+            // In case we have a drawable character then we will:
+            // 1. Ignore font cache and find width since it's known already.
+            // 2. Wrap up the content and send to sugarloaf.
+            //
+            // TODO: In the future it should use same logic to render everything
+            // at once.
             if self.use_drawable_chars {
-                // Box drawing characters and block elements.
                 match square_content {
-                    '\u{2500}'..='\u{259f}' | '\u{1fb00}'..='\u{1fb3b}' |
-                        POWERLINE_RIGHT_SOLID..=POWERLINE_CURVED_LEFT_HOLLOW
-                    => {
+                    '\u{2500}'..='\u{259f}'
+                    | '\u{1fb00}'..='\u{1fb3b}'
+                    | POWERLINE_RIGHT_SOLID..=POWERLINE_CURVED_LEFT_HOLLOW => {
                         if let Ok(character) = DrawableChar::try_from(square_content) {
                             style.drawable_char = Some(character);
+                            if !content.is_empty() {
+                                if let Some(line) = line_opt {
+                                    builder.add_text_on_line(line, &content, last_style);
+                                } else {
+                                    builder.add_text(&content, last_style);
+                                }
+                                content.clear();
+                            }
+
+                            last_style = style;
+
+                            // Ignore font shaping
+                            content.push(' ');
                         } else {
                             panic!("Could not find {:?}", square_content);
                         }
@@ -359,12 +377,6 @@ impl Renderer {
                 };
             }
 
-            // In case we have a drawable character then we will:
-            // 1. Ignore font cache and find width since it's known already.
-            // 2. Wrap up the content and send to sugarloaf.
-            //
-            // TODO: In the future it should use same logic to render everything
-            // at once.
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
                 if let Some((font_id, width)) =
@@ -400,10 +412,35 @@ impl Renderer {
                         (style.font_id, style.width),
                     );
                 };
-            }
 
-            if square_content == ' ' {
-                if !last_char_was_space {
+                if square_content == ' ' {
+                    if !last_char_was_space {
+                        if !content.is_empty() {
+                            if let Some(line) = line_opt {
+                                builder.add_text_on_line(line, &content, last_style);
+                            } else {
+                                builder.add_text(&content, last_style);
+                            }
+                            content.clear();
+                        }
+
+                        last_char_was_space = true;
+                        last_style = style;
+                    }
+                } else {
+                    if last_char_was_space && !content.is_empty() {
+                        if let Some(line) = line_opt {
+                            builder.add_text_on_line(line, &content, last_style);
+                        } else {
+                            builder.add_text(&content, last_style);
+                        }
+                        content.clear();
+                    }
+
+                    last_char_was_space = false;
+                }
+
+                if last_style != style {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_text_on_line(line, &content, last_style);
@@ -413,36 +450,11 @@ impl Renderer {
                         content.clear();
                     }
 
-                    last_char_was_space = true;
                     last_style = style;
                 }
-            } else {
-                if last_char_was_space && !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
-                    }
-                    content.clear();
-                }
 
-                last_char_was_space = false;
+                content.push(square_content);
             }
-
-            if last_style != style || has_drawable_char {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
-                    }
-                    content.clear();
-                }
-
-                last_style = style;
-            }
-
-            content.push(square_content);
 
             // Render last column and break row
             if column == (columns - 1) {
