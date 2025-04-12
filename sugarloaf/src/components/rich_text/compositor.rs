@@ -1281,32 +1281,42 @@ impl Compositor {
                 // );
             }
             DrawableChar::PowerlineCurvedLeftSolid => {
-                // PowerlineCurvedLeftSolid -  curvedSolid shape pointing left
+                // PowerlineCurvedLeftSolid - solid shape with straight left edge and curved right edge
+                // that matches the scale of other powerline characters and reaches the full width
 
-                // First, draw a solid triangle to fill the main area
-                self.batches.add_triangle(
-                    x + line_width,
-                    y, // Top-right (x1, y1)
-                    x + line_width,
-                    y + line_height, // Bottom-right (x2, y2)
-                    x,
-                    y + line_height / 2.0, // Middle-left (x3, y3)
-                    depth,
-                    color,
-                );
+                // Number of segments to create a smooth curve
+                let segments = 15;
 
-                // Then draw the curved part on the right side
-                // This creates a semi-circle that extends into the triangle
-                self.batches.add_arc(
-                    x + line_width * 0.8,  // Center x is inside the cell
-                    y + line_height / 2.0, // Center y is middle of cell height
-                    line_height / 2.0,     // Radius is half the line height
-                    270.0,                 // Start angle (bottom)
-                    90.0,                  // End angle (top)
-                    line_width * 0.8, // Width of the arc (thicker for  appearanceSolid)
-                    depth,
-                    &color,
-                );
+                // Create points for the polygon
+                let mut points = Vec::with_capacity(segments + 2);
+
+                // Add the left side points first (straight edge)
+                points.push((x, y)); // Top-left
+                points.push((x, y + line_height)); // Bottom-left
+
+                // Create the curved right side
+                for i in (0..=segments).rev() {
+                    // Draw from bottom to top
+                    let t = i as f32 / segments as f32; // Parameter from 0 to 1
+
+                    // Create a curve that's similar to the triangle shape in PowerlineRightHollow
+                    // but with a concave profile
+                    let normalized_t = (t - 0.5) * 2.0; // Normalize to -1 to 1 centered at middle
+
+                    // Make the curve have a similar profile to other powerline characters
+                    // Using a quadratic curve to get the concave shape
+                    let curve_amount = 1.0 - normalized_t * normalized_t;
+
+                    // Apply the curve ensuring the max point reaches the full line_width
+                    // When curve_amount is 1.0 (at t = 0.5), the point should be at x + line_width
+                    let x_pos = x + (line_width * curve_amount);
+                    let y_pos = y + line_height * t;
+
+                    points.push((x_pos, y_pos));
+                }
+
+                // Draw the filled polygon with all our points
+                self.batches.add_polygon(&points, depth, color);
             }
 
             DrawableChar::PowerlineCurvedRightSolid => {
