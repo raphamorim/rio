@@ -617,7 +617,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::LeftThreeEighthsBlock => {
                 // Left Three Eighths Block (▍) - fills left 3/8 of the cell
                 let block_width = (line_width * 3.0) / 8.0;
@@ -629,7 +628,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::LeftThreeQuartersBlock => {
                 // Left Three Quarters Block (▊) - fills left 3/4 of the cell
                 let block_width = (line_width * 3.0) / 4.0;
@@ -641,7 +639,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::RightOneQuarterBlock => {
                 // Right One Quarter Block (▕) - fills right 1/4 of the cell
                 let block_width = line_width / 4.0;
@@ -665,7 +662,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::RightThreeQuartersBlock => {
                 // Right Three Quarters Block (🮊) - fills right 3/4 of the cell
                 let block_width = (line_width * 3.0) / 4.0;
@@ -677,7 +673,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::UpperOneEighthBlock => {
                 // Upper One Eighth Block (▔) - fills top 1/8 of the cell
                 let block_height = line_height / 8.0;
@@ -689,7 +684,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::UpperThreeEighthsBlock => {
                 // Upper Three Eighths Block (🮃) - fills top 3/8 of the cell
                 let block_height = (line_height * 3.0) / 8.0;
@@ -701,7 +695,6 @@ impl Compositor {
                 };
                 self.batches.add_rect(&block_rect, depth, &color);
             }
-
             DrawableChar::UpperThreeQuartersBlock => {
                 // Upper Three Quarters Block (🮅) - fills top 3/4 of the cell
                 let block_height = (line_height * 3.0) / 4.0;
@@ -784,6 +777,247 @@ impl Compositor {
                     height: line_height,
                 };
                 self.batches.add_rect(&rect, depth, &color);
+            }
+            DrawableChar::DownDoubleAndHorizontalSingle => {
+                // Calculate spacing between the two vertical lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Left vertical line - goes all the way down
+                let left_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Only the bottom half
+                };
+
+                // Right vertical line - goes all the way down
+                let right_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Only the bottom half
+                };
+
+                // Horizontal single line
+                let horiz_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&left_rect, depth, &color);
+                self.batches.add_rect(&right_rect, depth, &color);
+                self.batches.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::DownSingleAndHorizontalDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Single vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y: center_y + gap,
+                    width: stroke,
+                    height: (line_height / 2.0) - gap, // Bottom half
+                };
+
+                // Double horizontal lines
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DoubleUpAndRight => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Vertical double lines going up from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Horizontal double lines going right from center
+                let top_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&left_vertical_rect, depth, &color);
+                self.batches.add_rect(&right_vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DoubleUpAndLeft => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Vertical double lines going up from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Horizontal double lines going left from center
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&left_vertical_rect, depth, &color);
+                self.batches.add_rect(&right_vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::UpSingleAndRightDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Single vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Double horizontal lines going right from center
+                let top_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::UpSingleAndLeftDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Single vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Double horizontal lines going left from center
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::VerticalSingleAndHorizontalDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5; // Adjust this value as needed
+
+                // Single vertical line going through the full height
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Double horizontal lines going across the full width
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.batches.add_rect(&vertical_rect, depth, &color);
+                self.batches.add_rect(&top_horizontal_rect, depth, &color);
+                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::LightShade => {
                 // For light shade (25% filled), create a sparse dot pattern
