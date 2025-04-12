@@ -486,6 +486,37 @@ impl BatchManager {
     }
 
     #[inline]
+    pub fn add_polygon(
+        &mut self,
+        points: &[(f32, f32)], // Array of (x,y) points defining the polygon
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        // Need at least 3 points to form a polygon
+        if points.len() < 3 {
+            return;
+        }
+
+        // Use triangulation by fan method
+        // This works well for convex shapes and some concave shapes,
+        // but more complex triangulation would be needed for highly concave polygons
+        let first_point = points[0];
+
+        for i in 1..points.len() - 1 {
+            self.add_triangle(
+                first_point.0,
+                first_point.1, // First vertex
+                points[i].0,
+                points[i].1, // Second vertex
+                points[i + 1].0,
+                points[i + 1].1, // Third vertex
+                depth,
+                color,
+            );
+        }
+    }
+
+    #[inline]
     pub fn add_triangle(
         &mut self,
         x1: f32,
