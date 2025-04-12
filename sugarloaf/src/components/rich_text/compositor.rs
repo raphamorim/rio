@@ -1282,63 +1282,67 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedLeftSolid => {
                 // Number of segments to create a smooth curve
-                let segments = 15;
+                let segments = 25;
                 // Create points for the polygon
                 let mut points = Vec::with_capacity(segments + 2);
                 // Add the right side points first (straight edge)
                 points.push((x + line_width, y)); // Top-right
                 points.push((x + line_width, y + line_height)); // Bottom-right
-                                                                // Create the curved left side
+
+                // Create the curved left side (half oval)
                 for i in (0..=segments).rev() {
                     // Draw from bottom to top
                     let t = i as f32 / segments as f32; // Parameter from 0 to 1
-                                                        // Create a curve that's similar to the triangle shape in PowerlineLeftHollow
-                                                        // but with a concave profile
-                    let normalized_t = (t - 0.5) * 2.0; // Normalize to -1 to 1 centered at middle
-                                                        // Make the curve have a similar profile to other powerline characters
-                                                        // Using a quadratic curve to get the concave shape
-                    let curve_amount = 1.0 - normalized_t * normalized_t;
-                    // Apply the curve ensuring the max point reaches the left edge
-                    // When curve_amount is 1.0 (at t = 0.5), the point should be at x
-                    let x_pos = x + line_width - (line_width * curve_amount);
-                    let y_pos = y + line_height * t;
+
+                    // For a half oval, we use the parametric equation of an ellipse
+                    // The horizontal radius is line_width
+                    // The vertical radius is line_height/2
+
+                    // Calculate y position (moving from bottom to top)
+                    let y_pos = y + line_height * (1.0 - t);
+
+                    // Calculate x position using the ellipse formula x = a * sqrt(1 - (y/b)²)
+                    // Where a is the horizontal radius and b is the vertical radius
+                    // We need to normalize y to be between -1 and 1 for the calculation
+                    let normalized_y = 2.0 * t - 1.0;
+
+                    // Calculate the x position based on the ellipse equation
+                    let x_pos = x + line_width
+                        - (line_width * (1.0 - normalized_y * normalized_y).sqrt());
+
                     points.push((x_pos, y_pos));
                 }
+
                 // Draw the filled polygon with all our points
                 self.batches.add_polygon(&points, depth, color);
             }
             DrawableChar::PowerlineCurvedRightSolid => {
                 // Number of segments to create a smooth curve
-                let segments = 15;
-
+                let segments = 25;
                 // Create points for the polygon
                 let mut points = Vec::with_capacity(segments + 2);
-
                 // Add the left side points first (straight edge)
                 points.push((x, y)); // Top-left
                 points.push((x, y + line_height)); // Bottom-left
-
-                // Create the curved right side
+                                                   // Create the curved right side (half oval)
                 for i in (0..=segments).rev() {
                     // Draw from bottom to top
                     let t = i as f32 / segments as f32; // Parameter from 0 to 1
-
-                    // Create a curve that's similar to the triangle shape in PowerlineRightHollow
-                    // but with a concave profile
-                    let normalized_t = (t - 0.5) * 2.0; // Normalize to -1 to 1 centered at middle
-
-                    // Make the curve have a similar profile to other powerline characters
-                    // Using a quadratic curve to get the concave shape
-                    let curve_amount = 1.0 - normalized_t * normalized_t;
-
-                    // Apply the curve ensuring the max point reaches the full line_width
-                    // When curve_amount is 1.0 (at t = 0.5), the point should be at x + line_width
-                    let x_pos = x + (line_width * curve_amount);
-                    let y_pos = y + line_height * t;
-
+                                                        // For a half oval, we use the parametric equation of an ellipse
+                                                        // The horizontal radius is line_width
+                                                        // The vertical radius is line_height/2
+                                                        // Calculate y position (moving from bottom to top)
+                    let y_pos = y + line_height * (1.0 - t);
+                    // Calculate x position using the ellipse formula x = a * sqrt(1 - (y/b)²)
+                    // Where a is the horizontal radius and b is the vertical radius
+                    // We need to normalize y to be between -1 and 1 for the calculation
+                    let normalized_y = 2.0 * t - 1.0;
+                    // Calculate the x position based on the ellipse equation
+                    // For right curve, we add to x instead of subtracting from x + line_width
+                    let x_pos =
+                        x + (line_width * (1.0 - normalized_y * normalized_y).sqrt());
                     points.push((x_pos, y_pos));
                 }
-
                 // Draw the filled polygon with all our points
                 self.batches.add_polygon(&points, depth, color);
             }
