@@ -76,7 +76,7 @@ impl Batch {
         y2: f32,
         width: f32,
         depth: f32,
-        color: &[f32; 4],
+        color: [f32; 4],
         image: Option<i32>,
         mask: Option<i32>,
         subpix: bool,
@@ -132,28 +132,28 @@ impl Batch {
             // First vertex (top left)
             Vertex {
                 pos: [x1_top, y1_top, depth],
-                color: *color,
+                color,
                 uv: [0.0, 0.0],
                 layers,
             },
             // Second vertex (top right)
             Vertex {
                 pos: [x2_top, y2_top, depth],
-                color: *color,
+                color: color,
                 uv: [1.0, 0.0],
                 layers,
             },
             // Third vertex (bottom right)
             Vertex {
                 pos: [x2_bottom, y2_bottom, depth],
-                color: *color,
+                color: color,
                 uv: [1.0, 1.0],
                 layers,
             },
             // Fourth vertex (bottom left)
             Vertex {
                 pos: [x1_bottom, y1_bottom, depth],
-                color: *color,
+                color: color,
                 uv: [0.0, 1.0],
                 layers,
             },
@@ -566,7 +566,7 @@ impl BatchManager {
         y2: f32,
         width: f32,
         depth: f32,
-        color: &[f32; 4],
+        color: [f32; 4],
     ) {
         let transparent = color[3] != 1.0;
         if transparent {
