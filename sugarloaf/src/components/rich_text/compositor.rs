@@ -841,7 +841,8 @@ impl Compositor {
                 // Draw all rectangles
                 self.batches.add_rect(&vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleUpAndRight => {
                 // Calculate spacing between the double lines
@@ -881,7 +882,8 @@ impl Compositor {
                 self.batches.add_rect(&left_vertical_rect, depth, &color);
                 self.batches.add_rect(&right_vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleUpAndLeft => {
                 // Calculate spacing between the double lines
@@ -921,7 +923,8 @@ impl Compositor {
                 self.batches.add_rect(&left_vertical_rect, depth, &color);
                 self.batches.add_rect(&right_vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::UpSingleAndRightDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -953,7 +956,8 @@ impl Compositor {
                 // Draw all rectangles
                 self.batches.add_rect(&vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::UpSingleAndLeftDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -985,7 +989,8 @@ impl Compositor {
                 // Draw all rectangles
                 self.batches.add_rect(&vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::VerticalSingleAndHorizontalDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -1017,7 +1022,8 @@ impl Compositor {
                 // Draw all rectangles
                 self.batches.add_rect(&vertical_rect, depth, &color);
                 self.batches.add_rect(&top_horizontal_rect, depth, &color);
-                self.batches.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.batches
+                    .add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::LightShade => {
                 // For light shade (25% filled), create a sparse dot pattern
