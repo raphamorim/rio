@@ -495,6 +495,30 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
+            DrawableChar::DoubleHorizontal => {
+                // Calculate spacing between the two horizontal lines
+                let gap = stroke * 1.5; // Adjust this value as needed for desired appearance
+
+                // Top horizontal line
+                let top_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Bottom horizontal line
+                let bottom_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw both rectangles
+                self.batches.add_rect(&top_rect, depth, &color);
+                self.batches.add_rect(&bottom_rect, depth, &color);
+            }
             DrawableChar::HeavyHorizontal => {
                 let heavy_stroke = stroke * 2.0;
                 let rect = Rect {
