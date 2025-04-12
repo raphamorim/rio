@@ -513,6 +513,30 @@ impl Compositor {
                 };
                 self.batches.add_rect(&rect, depth, &color);
             }
+            DrawableChar::DoubleVertical => {
+                // Calculate spacing between the two vertical lines
+                let gap = stroke * 1.5; // Adjust this value as needed for desired appearance
+
+                // Left vertical line
+                let left_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Right vertical line
+                let right_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Draw both rectangles
+                self.batches.add_rect(&left_rect, depth, &color);
+                self.batches.add_rect(&right_rect, depth, &color);
+            }
             DrawableChar::HeavyVertical => {
                 let heavy_stroke = stroke * 2.0;
                 let rect = Rect {

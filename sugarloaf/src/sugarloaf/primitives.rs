@@ -52,6 +52,7 @@ pub enum DrawableChar {
     // Original box-drawing characters
     Horizontal,      // ─
     Vertical,        // │
+    DoubleVertical,  // ║
     HeavyHorizontal, // ━
     HeavyVertical,   // ┃
     TopRight,        // └
@@ -384,6 +385,7 @@ impl TryFrom<char> for DrawableChar {
         let drawbable_char = match val {
             '─' => DrawableChar::Horizontal,
             '│' => DrawableChar::Vertical,
+            '║' => DrawableChar::DoubleVertical,
             '━' => DrawableChar::HeavyHorizontal,
             '┃' => DrawableChar::HeavyVertical,
             '└' => DrawableChar::TopRight,

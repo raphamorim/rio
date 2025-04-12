@@ -323,6 +323,7 @@ The list of characters:
 
 - `─` Horizontal
 - `│` Vertical
+- `║` DoubleVertical
 - `━` HeavyHorizontal
 - `┃` HeavyVertical
 - `└` TopRight
