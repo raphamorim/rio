@@ -370,7 +370,11 @@ impl Renderer {
                             // Ignore font shaping
                             content.push(' ');
                         } else {
-                            panic!("Could not find {:?}", square_content);
+                            // panic!("Could not find {:?}", square_content);
+                            tracing::warn!(
+                                "use_drawable_chars: Could not find {:?} on sugarloaf",
+                                square_content
+                            );
                         }
                     }
                     _ => {}
