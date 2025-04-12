@@ -1216,7 +1216,7 @@ impl Compositor {
                     y + line_height / 2.0, // End point (middle-left)
                     stroke_width,
                     depth,
-                    &color,
+                    color,
                 );
 
                 // Bottom edge: from middle-left to bottom-right
@@ -1227,7 +1227,7 @@ impl Compositor {
                     y + line_height, // End point (bottom-right)
                     stroke_width,
                     depth,
-                    &color,
+                    color,
                 );
 
                 // // Right edge: from bottom-right to top-right
@@ -1255,7 +1255,7 @@ impl Compositor {
                     y + line_height / 2.0, // End point (middle-right)
                     stroke_width,
                     depth,
-                    &color,
+                    color,
                 );
 
                 // Bottom edge: from middle-right to bottom-left
@@ -1266,7 +1266,7 @@ impl Compositor {
                     y + line_height, // End point (bottom-left)
                     stroke_width,
                     depth,
-                    &color,
+                    color,
                 );
 
                 // Left edge: from bottom-left to top-left
@@ -1347,81 +1347,140 @@ impl Compositor {
                 self.batches.add_polygon(&points, depth, color);
             }
             DrawableChar::PowerlineCurvedLeftHollow => {
-                // PowerlineCurvedLeft - curved triangle pointing left
-                // Creates a curved shape pointing to the left using arcs
+                // Number of segments to create a smooth curve
+                let segments = 25;
+                let line_thickness = stroke / 2.;
 
-                // Draw the curved part (right side of the shape)
-                self.batches.add_arc(
-                    x + line_width * 2.0,  // Center x is to the right of the cell
-                    y + line_height / 2.0, // Center y is middle of cell height
-                    line_height / 2.0,     // Radius is half the line height
-                    270.0,                 // Start angle (bottom)
-                    90.0,                  // End angle (top)
-                    line_width,            // Width of the arc
+                // Draw the vertical line on the right side
+                // self.batches.add_line(
+                //     x + line_width, y,
+                //     x + line_width, y + line_height,
+                //     line_thickness, depth, color
+                // );
+
+                // Draw the curved left side from top to bottom
+                for i in 0..segments {
+                    let t1 = i as f32 / segments as f32;
+                    let t2 = (i + 1) as f32 / segments as f32;
+
+                    // Calculate positions
+                    let y1 = y + line_height * t1;
+                    let y2 = y + line_height * t2;
+
+                    // Calculate x positions
+                    let normalized_t1 = 2.0 * t1 - 1.0;
+                    let normalized_t2 = 2.0 * t2 - 1.0;
+
+                    let x_factor1 = f32::sqrt(1.0 - normalized_t1 * normalized_t1);
+                    let x_factor2 = f32::sqrt(1.0 - normalized_t2 * normalized_t2);
+
+                    let x1 = x + (line_width * (1.0 - x_factor1));
+                    let x2 = x + (line_width * (1.0 - x_factor2));
+
+                    // Draw segment of the curve
+                    self.batches
+                        .add_line(x1, y1, x2, y2, line_thickness, depth, color);
+                }
+
+                // Calculate endpoints for top and bottom
+                let top_normalized_t = -1.0; // t=0 gives normalized_t = -1
+                let bottom_normalized_t = 1.0; // t=1 gives normalized_t = 1
+
+                let top_x_factor = f32::sqrt(1.0 - top_normalized_t * top_normalized_t);
+                let bottom_x_factor =
+                    f32::sqrt(1.0 - bottom_normalized_t * bottom_normalized_t);
+
+                let top_x = x + (line_width * (1.0 - top_x_factor));
+                let bottom_x = x + (line_width * (1.0 - bottom_x_factor));
+
+                // Draw the horizontal line at the top
+                self.batches.add_line(
+                    top_x,
+                    y,
+                    x + line_width,
+                    y,
+                    line_thickness,
                     depth,
-                    &color,
+                    color,
                 );
 
-                // Draw the straight line connecting the arc ends to the left point
-                // From top of arc to left middle point
+                // Draw the horizontal line at the bottom
                 self.batches.add_line(
-                    x + line_width,        // Start x at right edge of cell
-                    y,                     // Start y at top of cell
-                    x,                     // End x at left edge of cell
-                    y + line_height / 2.0, // End y at middle of cell height
-                    line_width * 0.1,      // Width of the line
+                    bottom_x,
+                    y + line_height,
+                    x + line_width,
+                    y + line_height,
+                    line_thickness,
                     depth,
-                    &color,
-                );
-
-                // From bottom of arc to left middle point
-                self.batches.add_line(
-                    x + line_width,        // Start x at right edge of cell
-                    y + line_height,       // Start y at bottom of cell
-                    x,                     // End x at left edge of cell
-                    y + line_height / 2.0, // End y at middle of cell height
-                    line_width * 0.1,      // Width of the line
-                    depth,
-                    &color,
+                    color,
                 );
             }
             DrawableChar::PowerlineCurvedRightHollow => {
-                // PowerlineCurvedRight - curved triangle pointing right
-                // Creates a curved shape pointing to the right using arcs
+                // Number of segments to create a smooth curve
+                let segments = 25;
+                let line_thickness = stroke / 2.;
 
-                // Draw the curved part (left side of the shape)
-                self.batches.add_arc(
-                    x - line_width,        // Center x is to the left of the cell
-                    y + line_height / 2.0, // Center y is middle of cell height
-                    line_height / 2.0,     // Radius is half the line height
-                    90.0,                  // Start angle (top)
-                    270.0,                 // End angle (bottom)
-                    line_width,            // Width of the arc
-                    depth,
-                    &color,
-                );
+                // Draw the vertical line on the left side
+                // self.batches.add_line(
+                //     x,
+                //     y,
+                //     x,
+                //     y + line_height,
+                //     line_thickness,
+                //     depth,
+                //     color,
+                // );
 
-                // Draw the straight line connecting the arc ends to the right point
-                // From top of arc to right middle point
+                // Draw the curved right side from top to bottom
+                for i in 0..segments {
+                    let t1 = i as f32 / segments as f32;
+                    let t2 = (i + 1) as f32 / segments as f32;
+
+                    // Calculate positions
+                    let y1 = y + line_height * t1;
+                    let y2 = y + line_height * t2;
+
+                    // Calculate x positions - flipped from left version
+                    let normalized_t1 = 2.0 * t1 - 1.0;
+                    let normalized_t2 = 2.0 * t2 - 1.0;
+
+                    let x_factor1 = f32::sqrt(1.0 - normalized_t1 * normalized_t1);
+                    let x_factor2 = f32::sqrt(1.0 - normalized_t2 * normalized_t2);
+
+                    // For right curve, we add the factor instead of subtracting
+                    let x1 = x + (line_width * x_factor1);
+                    let x2 = x + (line_width * x_factor2);
+
+                    // Draw segment of the curve
+                    self.batches
+                        .add_line(x1, y1, x2, y2, line_thickness, depth, color);
+                }
+
+                // Calculate endpoints for top and bottom
+                let top_normalized_t = -1.0; // t=0 gives normalized_t = -1
+                let bottom_normalized_t = 1.0; // t=1 gives normalized_t = 1
+
+                let top_x_factor = f32::sqrt(1.0 - top_normalized_t * top_normalized_t);
+                let bottom_x_factor =
+                    f32::sqrt(1.0 - bottom_normalized_t * bottom_normalized_t);
+
+                // For right curve, we add the factor instead of subtracting
+                let top_x = x + (line_width * top_x_factor);
+                let bottom_x = x + (line_width * bottom_x_factor);
+
+                // Draw the horizontal line at the top
+                self.batches
+                    .add_line(x, y, top_x, y, line_thickness, depth, color);
+
+                // Draw the horizontal line at the bottom
                 self.batches.add_line(
-                    x,                     // Start x at left edge of cell
-                    y,                     // Start y at top of cell
-                    x + line_width,        // End x at right edge of cell
-                    y + line_height / 2.0, // End y at middle of cell height
-                    line_width * 0.1,      // Width of the line
+                    x,
+                    y + line_height,
+                    bottom_x,
+                    y + line_height,
+                    line_thickness,
                     depth,
-                    &color,
-                );
-
-                // From bottom of arc to right middle point
-                self.batches.add_line(
-                    x,                     // Start x at left edge of cell
-                    y + line_height,       // Start y at bottom of cell
-                    x + line_width,        // End x at right edge of cell
-                    y + line_height / 2.0, // End y at middle of cell height
-                    line_width * 0.1,      // Width of the line
-                    depth,
-                    &color,
+                    color,
                 );
             }
             DrawableChar::HorizontalLightDash => {
@@ -1695,203 +1754,5 @@ impl Compositor {
                 self.batches.add_rect(&rect3, depth, &color);
             }
         }
-    }
-
-    // Helper method to draw a dashed line
-    fn draw_dashed_line(
-        &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        thickness: f32,
-        dash_length: u32,
-        gap_length: u32,
-        color: [f32; 4],
-        depth: f32,
-        line_width: f32,
-    ) {
-        // Calculate line properties
-        let dx = x2 - x1;
-        let dy = y2 - y1;
-        let length = (dx * dx + dy * dy).sqrt();
-        let angle = dy.atan2(dx);
-
-        // Calculate unit vector along the line
-        let unit_x = dx / length;
-        let unit_y = dy / length;
-
-        // Calculate total dash+gap length
-        let total_segment = (dash_length + gap_length) as f32;
-        let dash_segment = dash_length as f32;
-
-        // Calculate number of full segments
-        let num_segments = (length / (total_segment * line_width)).floor() as u32;
-
-        // Draw each dash
-        for i in 0..num_segments {
-            let start_ratio = (i as f32 * total_segment * line_width) / length;
-            let end_ratio = ((i as f32 * total_segment + dash_segment) * line_width)
-                .min(length)
-                / length;
-
-            let start_x = x1 + dx * start_ratio;
-            let start_y = y1 + dy * start_ratio;
-            let end_x = x1 + dx * end_ratio;
-            let end_y = y1 + dy * end_ratio;
-
-            // Create rect for this dash segment
-            let dash_length =
-                ((end_x - start_x).powi(2) + (end_y - start_y).powi(2)).sqrt();
-            let half_thickness = thickness / 2.0;
-
-            // For perfectly horizontal or vertical lines
-            if x1 == x2 || y1 == y2 {
-                let rect = if x1 == x2 {
-                    // Vertical line
-                    Rect {
-                        x: start_x - half_thickness,
-                        y: start_y,
-                        width: thickness,
-                        height: dash_length,
-                    }
-                } else {
-                    // Horizontal line
-                    Rect {
-                        x: start_x,
-                        y: start_y - half_thickness,
-                        width: dash_length,
-                        height: thickness,
-                    }
-                };
-
-                self.batches.add_rect(&rect, depth, &color);
-            } else {
-                // For diagonal lines - simplified approximation
-                // In a real implementation, you'd want proper rotation support
-                let num_steps = (dash_length / (thickness / 2.0)).ceil() as u32;
-                let step_x = (end_x - start_x) / num_steps as f32;
-                let step_y = (end_y - start_y) / num_steps as f32;
-
-                for j in 0..num_steps {
-                    let px = start_x + j as f32 * step_x;
-                    let py = start_y + j as f32 * step_y;
-
-                    let rect = Rect {
-                        x: px - half_thickness,
-                        y: py - half_thickness,
-                        width: thickness,
-                        height: thickness,
-                    };
-
-                    self.batches.add_rect(&rect, depth, &color);
-                }
-            }
-        }
-    }
-
-    // Helper method to draw a triangle using the add_rect function
-    // Note: In a real implementation, you would want to use a triangle-specific drawing method
-    // This is a simplified approximation using rectangles to form a triangle
-    fn draw_triangle(
-        &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        x3: f32,
-        y3: f32,
-        color: [f32; 4],
-        depth: f32,
-    ) {
-        // For a real application, you'd want to implement proper triangle rendering
-        // This is an approximation using multiple small rectangles to simulate a triangle
-
-        // Calculate the bounding box
-        let min_x = f32::min(f32::min(x1, x2), x3);
-        let max_x = f32::max(f32::max(x1, x2), x3);
-        let min_y = f32::min(f32::min(y1, y2), y3);
-        let max_y = f32::max(f32::max(y1, y2), y3);
-
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-
-        // Define how many steps to use for approximation
-        let steps = 20;
-        let step_width = width / steps as f32;
-        let step_height = height / steps as f32;
-
-        // For each point in the bounding box, check if it's inside the triangle
-        for i in 0..steps {
-            for j in 0..steps {
-                let px = min_x + i as f32 * step_width;
-                let py = min_y + j as f32 * step_height;
-
-                if self.point_in_triangle(px, py, x1, y1, x2, y2, x3, y3) {
-                    let rect = Rect {
-                        x: px,
-                        y: py,
-                        width: step_width,
-                        height: step_height,
-                    };
-
-                    self.batches.add_rect(&rect, depth, &color);
-                }
-            }
-        }
-    }
-
-    // Helper method to check if a point is inside a triangle
-    fn point_in_triangle(
-        &self,
-        px: f32,
-        py: f32,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        x3: f32,
-        y3: f32,
-    ) -> bool {
-        // Calculate barycentric coordinates
-        let area = 0.5 * (-x2 * y3 + x1 * (-y2 + y3) + x3 * (y2 - y1) + x2 * y1).abs();
-        let s = 1.0 / (2.0 * area) * (x1 * (y3 - py) + py * (x3 - x1) + x3 * (y1 - y3));
-        let t = 1.0 / (2.0 * area) * (x1 * (py - y2) + x2 * (y1 - py) + px * (y2 - y1));
-
-        s >= 0.0 && t >= 0.0 && (1.0 - s - t) >= 0.0
-    }
-
-    // Helper method to draw a line between two points
-    fn draw_line(
-        &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        thickness: f32,
-        color: [f32; 4],
-        depth: f32,
-    ) {
-        // Calculate line length and angle
-        let dx = x2 - x1;
-        let dy = y2 - y1;
-        let length = (dx * dx + dy * dy).sqrt();
-        let angle = dy.atan2(dx);
-
-        // Calculate the rectangle that represents this line
-        let half_thickness = thickness / 2.0;
-
-        // Create a rect covering the line
-        let rect = Rect {
-            x: x1 - half_thickness * angle.sin(),
-            y: y1 + half_thickness * angle.cos(),
-            width: length,
-            height: thickness,
-        };
-
-        // To properly rotate the rectangle, we would need rotation support
-        // This is a simplified version that works best for horizontal/vertical lines
-        // For a proper implementation, you'd add rotation support or use multiple small rectangles
-        self.batches.add_rect(&rect, depth, &color);
     }
 }
