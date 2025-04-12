@@ -18,8 +18,8 @@ use {Poll, Token};
 ///    case, an implementation of `Evented` delegates to a lower level handle.
 ///
 /// * **User** handles, which are driven entirely in user space using
-///     [`Registration`] and [`SetReadiness`]. In this case, the implementer takes
-///     responsibility for driving the readiness state changes.
+///    [`Registration`] and [`SetReadiness`]. In this case, the implementer takes
+///    responsibility for driving the readiness state changes.
 ///
 /// [`Poll`]: ../struct.Poll.html
 /// [`Registration`]: ../struct.Registration.html

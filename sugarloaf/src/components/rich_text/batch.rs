@@ -177,6 +177,7 @@ impl Batch {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     fn add_triangle(
         &mut self,
         x1: f32,
@@ -517,6 +518,7 @@ impl BatchManager {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_triangle(
         &mut self,
         x1: f32,
@@ -558,6 +560,7 @@ impl BatchManager {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_line(
         &mut self,
         x1: f32,
@@ -598,6 +601,7 @@ impl BatchManager {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_arc(
         &mut self,
         center_x: f32,
