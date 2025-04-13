@@ -61,7 +61,7 @@ pub struct Renderer {
 const POWERLINE_RIGHT_SOLID: char = '\u{e0b0}';
 const POWERLINE_CURVED_LEFT_HOLLOW: char = '\u{e0b7}';
 const BRAILLE_BLANK: char = '\u{2800}';
-const BRAILLE_DOTS12345678: char = '⣿';
+const BRAILLE_DOTS12345678: char = '\u{28FF}';
 
 impl Renderer {
     pub fn new(
