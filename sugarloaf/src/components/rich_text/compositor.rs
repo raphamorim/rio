@@ -2295,7 +2295,7 @@ impl Compositor {
             | DrawableChar::BrailleDots12345678
             | DrawableChar::BrailleDots235678) => {
                 // Use stroke as the dot size base
-                let dot_size = stroke * 1.2;
+                let dot_size = (stroke * 1.2).round();
 
                 // Calculate cell dimensions
                 let cell_width = advance;
