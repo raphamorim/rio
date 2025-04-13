@@ -265,6 +265,7 @@ pub enum DrawableChar {
     BrailleDots134567,  // ⡽ U+287D BRAILLE PATTERN DOTS-134567
     BrailleDots234567,  // ⡾ U+287E BRAILLE PATTERN DOTS-234567
     BrailleDots1234567, // ⡿ U+287F BRAILLE PATTERN DOTS-1234567
+    BrailleDots235678,  // ⣶ U+28F6 BRAILLE PATTERN DOTS-235678
 
     // Third row (no dot 7, with dot 8)
     BrailleDots8,       // ⢀ U+2880 BRAILLE PATTERN DOTS-8
@@ -385,6 +386,8 @@ pub enum DrawableChar {
     BrailleDots15678,   // ⣱ U+28F1 BRAILLE PATTERN DOTS-15678
     BrailleDots25678,   // ⣲ U+28F2 BRAILLE PATTERN DOTS-25678
     BrailleDots125678,  // ⣳ U+28F3 BRAILLE PATTERN DOTS
+
+    BrailleDots12345678, // ⣿ U+28DF BRAILLE PATTERN DOTS-12345678
 }
 
 impl TryFrom<char> for DrawableChar {
@@ -718,6 +721,8 @@ impl TryFrom<char> for DrawableChar {
             '⣱' => DrawableChar::BrailleDots15678,
             '⣲' => DrawableChar::BrailleDots25678,
             '⣳' => DrawableChar::BrailleDots125678,
+            '⣿' => DrawableChar::BrailleDots12345678,
+            '⣶' => DrawableChar::BrailleDots235678,
             _ => return Err(val),
         };
         Ok(drawbable_char)
