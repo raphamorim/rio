@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ja/assets/css/styles.390fc736.css">
-<script src="/ja/assets/js/runtime~main.174f7216.js" defer="defer"></script>
+<script src="/ja/assets/js/runtime~main.e329f0ac.js" defer="defer"></script>
 <script src="/ja/assets/js/main.bc0b55f2.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -32,6 +32,11 @@
 <li>Fix: Built-in font for box drawing #974 <a href="https://github.com/raphamorim/rio/issues/974" target="_blank" rel="noopener noreferrer">#974</a>.</li>
 <li>Fix: U+E0B6 and U+E0B4 Unicode with different sizes <a href="https://github.com/raphamorim/rio/issues/895" target="_blank" rel="noopener noreferrer">#895</a>.</li>
 <li>Update wgpu to v25.</li>
+<li>Fix: Custom rendering (alignment) of Braille symbols <a href="https://github.com/raphamorim/rio/issues/1057" target="_blank" rel="noopener noreferrer">#1057</a>.</li>
+<li>Fix: Drawing char ⡿ in column 1 causes the entire terminal to stutter <a href="https://github.com/raphamorim/rio/issues/1033" target="_blank" rel="noopener noreferrer">#1033</a>.</li>
+<li>Fix: Some glyphs (e.g. braille symbol) are rendered with gaps in between <a href="https://github.com/raphamorim/rio/issues/930" target="_blank" rel="noopener noreferrer">#930</a>.</li>
+<li>Introduce <code>fonts.disable-warnings-not-found</code> to disable warning regarding fonts not found.</li>
+<li>Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras <a href="https://github.com/raphamorim/rio/issues/1031" target="_blank" rel="noopener noreferrer">#1031</a>.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12 への直接リンク" title="0.2.12 への直接リンク">​</a></h2>
 <ul>
@@ -84,7 +89,7 @@
 <li>fix: Can the &quot;base 16&quot; colors be changed at runtime through Ansi escape sequences? <a href="https://github.com/raphamorim/rio/issues/188" target="_blank" rel="noopener noreferrer">#188</a></li>
 <li>fix: Changing release and nightly build Ubuntu runners for x86 (<code>ubuntu-latest</code> to <code>ubuntu-22.04</code>) and arm (<code>ubuntu-24.04-arm</code> to <code>ubuntu-22.04-arm</code>)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6 への直接リンク" title="0.2.6 への直接リ  ンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6 への直接リンク" title="0.2.6 への直接リンク">​</a></h2>
 <ul>
 <li>Fix: 0.2.5 doesn&#x27;t render grey scale font on macOS <a href="https://github.com/raphamorim/rio/issues/937" target="_blank" rel="noopener noreferrer">#937</a>.</li>
 <li>fix: fix duplicate tab_id by monotonic counter for unique tab IDs by <a href="https://github.com/hilaolu" target="_blank" rel="noopener noreferrer">@hilaolu</a>.</li>
@@ -214,7 +219,7 @@
 <li>Fix: Window output lost when rio loses focus <a href="https://github.com/raphamorim/rio/issues/706" target="_blank" rel="noopener noreferrer">#706</a>.</li>
 <li>Updated wgpu to <code>23.0.0</code>.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0117">0.1.17<a href="#0117" class="hash-link" aria-label="0.1.17 への直接リンク" title="0.1.17 への直接リ  ンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0117">0.1.17<a href="#0117" class="hash-link" aria-label="0.1.17 への直接リンク" title="0.1.17 への直接リンク">​</a></h2>
 <ul>
 <li>Fix flash of white during startup on Microsoft Windows <a href="https://github.com/raphamorim/rio/issues/640" target="_blank" rel="noopener noreferrer">#640</a>.</li>
 <li>Add DWMWA_CLOAK support on Microsoft Windows.</li>
@@ -330,7 +335,7 @@
 <li>Enable search functionality as default on Microsoft Windows.</li>
 <li>Add command for closing all tabs except the current one (<code>CloseUnfocusedTabs</code>)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="019">0.1.9<a href="#019" class="hash-link" aria-label="0.1.9 へ の直接リンク" title="0.1.9 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="019">0.1.9<a href="#019" class="hash-link" aria-label="0.1.9 への直接リンク" title="0.1.9 への直接リンク">​</a></h2>
 <ul>
 <li>Search support.</li>
 <li>New theme properties <code>search-match-background</code>, <code>search-match-foreground</code>, <code>search-focused-match-background</code> and <code>search-focused-match-foreground</code>.</li>
@@ -560,7 +565,7 @@
 <li>Fix: remove duplicate kitty backspace keybinds <a href="https://github.com/raphamorim/rio/pull/375" target="_blank" rel="noopener noreferrer">#375</a> by <a href="https://github.com/hougesen" target="_blank" rel="noopener noreferrer">@hougesen</a></li>
 <li>Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. <a href="https://github.com/raphamorim/rio/issues/344" target="_blank" rel="noopener noreferrer">#344</a> by <a href="https://github.com/hougesen" target="_blank" rel="noopener noreferrer">@hougesen</a></li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0030">0.0.30<a href="#0030" class="hash-link" aria-label="0.0.30 への直接リンク" title="0.0.30 への直接リンク">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0030">0.0.30<a href="#0030" class="hash-link" aria-label="0.0.30 への直接リンク" title="0.0.30 への直接リ  ンク">​</a></h2>
 <ul>
 <li>Fix regression with color ansi when transparency is off.</li>
 <li><strong>Breaking</strong>: Config <code>navigation.macos-hide-window-buttons</code> has moved to <code>window.macos-hide-toolbar-buttons</code>.</li>
