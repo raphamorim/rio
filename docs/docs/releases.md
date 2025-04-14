@@ -19,6 +19,7 @@ language: 'en'
 - Fix: Drawing char ⡿ in column 1 causes the entire terminal to stutter [#1033](https://github.com/raphamorim/rio/issues/1033).
 - Fix: Some glyphs (e.g. braille symbol) are rendered with gaps in between [#930](https://github.com/raphamorim/rio/issues/930).
 - Introduce `fonts.disable-warnings-not-found` to disable warning regarding fonts not found.
+- Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras [#1031](https://github.com/raphamorim/rio/issues/1031).
 
 ## 0.2.12
 
