@@ -1355,7 +1355,6 @@ impl Compositor {
                     &color,
                 );
             }
-
             DrawableChar::ArcTopRight => {
                 // Arc corner at bottom-left (╰)
                 // Vertical line from top to center
@@ -1571,7 +1570,7 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedLeftSolid => {
                 // Number of segments to create a smooth curve
-                let segments = 25;
+                let segments = 30;
                 // Create points for the polygon
                 let mut points = Vec::with_capacity(segments + 2);
                 // Add the right side points first (straight edge)
@@ -1607,7 +1606,7 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedRightSolid => {
                 // Number of segments to create a smooth curve
-                let segments = 25;
+                let segments = 30;
                 // Create points for the polygon
                 let mut points = Vec::with_capacity(segments + 2);
                 // Add the left side points first (straight edge)
@@ -1637,7 +1636,7 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedLeftHollow => {
                 // Number of segments to create a smooth curve
-                let segments = 25;
+                let segments = 30;
                 let line_thickness = stroke / 2.;
 
                 // Draw the vertical line on the right side
@@ -1706,7 +1705,7 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedRightHollow => {
                 // Number of segments to create a smooth curve
-                let segments = 25;
+                let segments = 30;
                 let line_thickness = stroke / 2.;
 
                 // Draw the vertical line on the left side
