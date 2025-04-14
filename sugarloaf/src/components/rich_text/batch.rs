@@ -139,21 +139,21 @@ impl Batch {
             // Second vertex (top right)
             Vertex {
                 pos: [x2_top, y2_top, depth],
-                color: color,
+                color,
                 uv: [1.0, 0.0],
                 layers,
             },
             // Third vertex (bottom right)
             Vertex {
                 pos: [x2_bottom, y2_bottom, depth],
-                color: color,
+                color,
                 uv: [1.0, 1.0],
                 layers,
             },
             // Fourth vertex (bottom left)
             Vertex {
                 pos: [x1_bottom, y1_bottom, depth],
-                color: color,
+                color,
                 uv: [0.0, 1.0],
                 layers,
             },
