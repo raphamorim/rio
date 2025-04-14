@@ -1878,274 +1878,214 @@ impl Compositor {
                 );
             }
             DrawableChar::HorizontalLightDash => {
-                // Single dash in the middle
-                let dash_width = line_height / 2.0;
-                let rect = Rect {
-                    x: center_x - dash_width / 2.0,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect, depth, &color);
+                // ┄ - Light dashed horizontal line with 3 dashes
+                let dash_count = 3;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - (stroke / 2.0),
+                        width: dash_width,
+                        height: stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::HorizontalHeavyDash => {
-                // Single thick dash in the middle
-                let dash_width = line_height / 2.0;
-                let heavy_stroke = stroke * 1.5;
-                let rect = Rect {
-                    x: center_x - dash_width / 2.0,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect, depth, &color);
+                // ┅ - Heavy dashed horizontal line with 3 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 3;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - heavy_stroke / 2.0,
+                        width: dash_width,
+                        height: heavy_stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::HorizontalLightDoubleDash => {
-                // Two dashes
-                let dash_width = line_height / 4.0;
-                let space = line_height / 10.0;
+                // ┈ - Light double-dashed horizontal line with 4 dashes
+                let dash_count = 4;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - dash_width - space / 2.0,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash
-                let rect2 = Rect {
-                    x: center_x + space / 2.0,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - (stroke / 2.0),
+                        width: dash_width,
+                        height: stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::HorizontalHeavyDoubleDash => {
-                // Two thick dashes
-                let dash_width = line_height / 4.0;
-                let space = line_height / 10.0;
-                let heavy_stroke = stroke * 1.5;
+                // ┉ - Heavy double-dashed horizontal line with 4 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 4;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - dash_width - space / 2.0,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash
-                let rect2 = Rect {
-                    x: center_x + space / 2.0,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - heavy_stroke / 2.0,
+                        width: dash_width,
+                        height: heavy_stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::HorizontalLightTripleDash => {
-                // Three dashes
-                let dash_width = line_height / 6.0;
-                let space = line_height / 12.0;
+                // ╌ - Light triple-dashed horizontal line with 2 dashes
+                let dash_count = 2;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - dash_width * 1.5 - space,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash (middle)
-                let rect2 = Rect {
-                    x: center_x - dash_width / 2.0,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
-
-                // Third dash
-                let rect3 = Rect {
-                    x: center_x + dash_width / 2.0 + space,
-                    y: center_y - stroke / 2.0,
-                    width: dash_width,
-                    height: stroke,
-                };
-                self.batches.add_rect(&rect3, depth, &color);
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - (stroke / 2.0),
+                        width: dash_width,
+                        height: stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::HorizontalHeavyTripleDash => {
-                // Three thick dashes
-                let dash_width = line_height / 6.0;
-                let space = line_height / 12.0;
-                let heavy_stroke = stroke * 1.5;
+                // ╍ - Heavy triple-dashed horizontal line with 2 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 2;
+                let total_space = dash_count - 1;
+                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - dash_width * 1.5 - space,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash (middle)
-                let rect2 = Rect {
-                    x: center_x - dash_width / 2.0,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
-
-                // Third dash
-                let rect3 = Rect {
-                    x: center_x + dash_width / 2.0 + space,
-                    y: center_y - heavy_stroke / 2.0,
-                    width: dash_width,
-                    height: heavy_stroke,
-                };
-                self.batches.add_rect(&rect3, depth, &color);
+                for i in 0..dash_count {
+                    let dash_x = x + (i as f32) * (dash_width + stroke);
+                    let rect = Rect {
+                        x: dash_x,
+                        y: center_y - heavy_stroke / 2.0,
+                        width: dash_width,
+                        height: heavy_stroke,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalLightDash => {
-                // Single dash in the middle
-                let dash_height = line_height / 2.0;
-                let rect = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y - dash_height / 2.0,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect, depth, &color);
+                // ┆ - Light dashed vertical line with 3 dashes
+                let dash_count = 3;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - (stroke / 2.0),
+                        y: dash_y,
+                        width: stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalHeavyDash => {
-                // Single thick dash in the middle
-                let dash_height = line_height / 2.0;
-                let heavy_stroke = stroke * 1.5;
-                let rect = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y - dash_height / 2.0,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect, depth, &color);
+                // ┇ - Heavy dashed vertical line with 3 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 3;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - heavy_stroke / 2.0,
+                        y: dash_y,
+                        width: heavy_stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalLightDoubleDash => {
-                // Two dashes
-                let dash_height = line_height / 4.0;
-                let space = line_height / 10.0;
+                // ┊ - Light double-dashed vertical line with 4 dashes
+                let dash_count = 4;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y - dash_height - space / 2.0,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash
-                let rect2 = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y + space / 2.0,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - (stroke / 2.0),
+                        y: dash_y,
+                        width: stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalHeavyDoubleDash => {
-                // Two thick dashes
-                let dash_height = line_height / 4.0;
-                let space = line_height / 10.0;
-                let heavy_stroke = stroke * 1.5;
+                // ┋ - Heavy double-dashed vertical line with 4 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 4;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y - dash_height - space / 2.0,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash
-                let rect2 = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y + space / 2.0,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - heavy_stroke / 2.0,
+                        y: dash_y,
+                        width: heavy_stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalLightTripleDash => {
-                // Three dashes
-                let dash_height = line_height / 6.0;
-                let space = line_height / 12.0;
+                // ╎ - Light triple-dashed vertical line with 2 dashes
+                let dash_count = 2;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y - dash_height * 1.5 - space,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash (middle)
-                let rect2 = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y - dash_height / 2.0,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
-
-                // Third dash
-                let rect3 = Rect {
-                    x: center_x - stroke / 2.0,
-                    y: center_y + dash_height / 2.0 + space,
-                    width: stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect3, depth, &color);
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - (stroke / 2.0),
+                        y: dash_y,
+                        width: stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             DrawableChar::VerticalHeavyTripleDash => {
-                // Three thick dashes
-                let dash_height = line_height / 6.0;
-                let space = line_height / 12.0;
-                let heavy_stroke = stroke * 1.5;
+                // ╏ - Heavy triple-dashed vertical line with 2 dashes
+                let heavy_stroke = stroke * 1.8;
+                let dash_count = 2;
+                let total_space = dash_count - 1;
+                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
-                // First dash
-                let rect1 = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y - dash_height * 1.5 - space,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect1, depth, &color);
-
-                // Second dash (middle)
-                let rect2 = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y - dash_height / 2.0,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect2, depth, &color);
-
-                // Third dash
-                let rect3 = Rect {
-                    x: center_x - heavy_stroke / 2.0,
-                    y: center_y + dash_height / 2.0 + space,
-                    width: heavy_stroke,
-                    height: dash_height,
-                };
-                self.batches.add_rect(&rect3, depth, &color);
+                for i in 0..dash_count {
+                    let dash_y = y + (i as f32) * (dash_height + stroke);
+                    let rect = Rect {
+                        x: center_x - heavy_stroke / 2.0,
+                        y: dash_y,
+                        width: heavy_stroke,
+                        height: dash_height,
+                    };
+                    self.batches.add_rect(&rect, depth, &color);
+                }
             }
             // Braille patterns
             DrawableChar::BrailleBlank => {

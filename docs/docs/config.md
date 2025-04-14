@@ -313,7 +313,7 @@ fonts.symbol-map = [
 
 ## fonts.use-drawable-chars
 
-When set `true`, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0B7)`).
+When set `true`, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters `(Unicode points U+2500 - U+259F)`, legacy computing symbols `(U+1FB00 - U+1FB3B)`, and powerline symbols `(U+E0B0 - U+E0BF)`).
 
 ```toml
 fonts.use-drawable-chars = true
