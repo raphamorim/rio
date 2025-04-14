@@ -133,6 +133,15 @@ pub enum DrawableChar {
     PowerlineCurvedRightHollow,
     PowerlineCurvedLeftSolid,
     PowerlineCurvedLeftHollow,
+    PowerlineLowerLeftTriangle,
+    PowerlineBackslashSeparator,
+    PowerlineLowerRightTriangle,
+    PowerlineForwardslashSeparator,
+    PowerlineUpperLeftTriangle,
+    PowerlineForwardslashSeparatorRedundant,
+    PowerlineUpperRightTriangle,
+    PowerlineBackslashSeparatorRedundant,
+
     // Complete set of Braille characters (U+2800 to U+28FF)
     // First row (no dot 7, no dot 8)
     BrailleBlank,      // ⠀ U+2800 BRAILLE PATTERN BLANK
@@ -484,6 +493,16 @@ impl TryFrom<char> for DrawableChar {
             '\u{e0b5}' => DrawableChar::PowerlineCurvedRightHollow,
             '\u{e0b6}' => DrawableChar::PowerlineCurvedLeftSolid,
             '\u{e0b7}' => DrawableChar::PowerlineCurvedLeftHollow,
+            // Quick test:
+            // echo "\ue0b8 \ue0b9 \ue0ba \ue0bb \ue0bc \ue0bd \ue0be \ue0bf"
+            '\u{e0b8}' => DrawableChar::PowerlineLowerLeftTriangle,
+            '\u{e0b9}' => DrawableChar::PowerlineBackslashSeparator,
+            '\u{e0ba}' => DrawableChar::PowerlineLowerRightTriangle,
+            '\u{e0bb}' => DrawableChar::PowerlineForwardslashSeparator,
+            '\u{e0bc}' => DrawableChar::PowerlineUpperLeftTriangle,
+            '\u{e0bd}' => DrawableChar::PowerlineForwardslashSeparatorRedundant,
+            '\u{e0be}' => DrawableChar::PowerlineUpperRightTriangle,
+            '\u{e0bf}' => DrawableChar::PowerlineBackslashSeparatorRedundant,
 
             '⠀' => DrawableChar::BrailleBlank,
             '⠁' => DrawableChar::BrailleDots1,

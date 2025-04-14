@@ -1771,6 +1771,112 @@ impl Compositor {
                     color,
                 );
             }
+            DrawableChar::PowerlineLowerLeftTriangle => {
+                // POWERLINE_EXTRA_LOWER_LEFT_TRIANGLE - solid triangle pointing to lower left
+                self.batches.add_triangle(
+                    x,
+                    y + line_height, // Bottom-left (x1, y1)
+                    x + line_width,
+                    y + line_height, // Bottom-right (x2, y2)
+                    x,
+                    y, // Top-left (x3, y3)
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineBackslashSeparator => {
+                // POWERLINE_EXTRA_BACKSLASH_SEPARATOR - diagonal line from top right to bottom left
+                let stroke_width = line_width * 0.1; // Adjust thickness as needed
+                self.batches.add_line(
+                    x + line_width,
+                    y, // Start point (top-right)
+                    x,
+                    y + line_height, // End point (bottom-left)
+                    stroke_width,
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineLowerRightTriangle => {
+                // POWERLINE_EXTRA_LOWER_RIGHT_TRIANGLE - solid triangle pointing to lower right
+                self.batches.add_triangle(
+                    x,
+                    y + line_height, // Bottom-left (x1, y1)
+                    x + line_width,
+                    y + line_height, // Bottom-right (x2, y2)
+                    x + line_width,
+                    y, // Top-right (x3, y3)
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineForwardslashSeparator => {
+                // POWERLINE_EXTRA_FORWARDSLASH_SEPARATOR - diagonal line from top left to bottom right
+                let stroke_width = line_width * 0.1; // Adjust thickness as needed
+                self.batches.add_line(
+                    x,
+                    y, // Start point (top-left)
+                    x + line_width,
+                    y + line_height, // End point (bottom-right)
+                    stroke_width,
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineUpperLeftTriangle => {
+                // POWERLINE_EXTRA_UPPER_LEFT_TRIANGLE - solid triangle pointing to upper left
+                self.batches.add_triangle(
+                    x,
+                    y, // Top-left (x1, y1)
+                    x + line_width,
+                    y, // Top-right (x2, y2)
+                    x,
+                    y + line_height, // Bottom-left (x3, y3)
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineForwardslashSeparatorRedundant => {
+                // This appears to be another forward slash separator (redundant)
+                // Using same implementation as PowerlineForwardslashSeparator
+                let stroke_width = line_width * 0.1; // Adjust thickness as needed
+                self.batches.add_line(
+                    x,
+                    y, // Start point (top-left)
+                    x + line_width,
+                    y + line_height, // End point (bottom-right)
+                    stroke_width,
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineUpperRightTriangle => {
+                // POWERLINE_EXTRA_UPPER_RIGHT_TRIANGLE - solid triangle pointing to upper right
+                self.batches.add_triangle(
+                    x,
+                    y, // Top-left (x1, y1)
+                    x + line_width,
+                    y, // Top-right (x2, y2)
+                    x + line_width,
+                    y + line_height, // Bottom-right (x3, y3)
+                    depth,
+                    color,
+                );
+            }
+            DrawableChar::PowerlineBackslashSeparatorRedundant => {
+                // This appears to be another backslash separator (redundant)
+                // Using same implementation as PowerlineBackslashSeparator
+                let stroke_width = line_width * 0.1; // Adjust thickness as needed
+                self.batches.add_line(
+                    x + line_width,
+                    y, // Start point (top-right)
+                    x,
+                    y + line_height, // End point (bottom-left)
+                    stroke_width,
+                    depth,
+                    color,
+                );
+            }
             DrawableChar::HorizontalLightDash => {
                 // Single dash in the middle
                 let dash_width = line_height / 2.0;
