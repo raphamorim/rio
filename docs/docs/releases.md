@@ -21,6 +21,7 @@ language: 'en'
 - Introduce `fonts.disable-warnings-not-found` to disable warning regarding fonts not found.
 - Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras [#1031](https://github.com/raphamorim/rio/issues/1031).
 - Fix: Add branch drawing symbols to box characters [#761](https://github.com/raphamorim/rio/issues/761).
+- Fix: macOS: fallback for missing font glyph? [#913](https://github.com/raphamorim/rio/issues/913).
 
 ## 0.2.12
 
