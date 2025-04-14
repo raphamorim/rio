@@ -139,6 +139,8 @@ pub struct SugarloafFonts {
     pub use_drawable_chars: bool,
     #[serde(default = "Option::default", rename = "symbol-map")]
     pub symbol_map: Option<Vec<SymbolMap>>,
+    #[serde(default = "bool::default", rename = "disable-warnings-not-found")]
+    pub disable_warnings_not_found: bool,
 }
 
 pub fn parse_unicode(input: &str) -> Option<char> {
@@ -166,6 +168,7 @@ impl Default for SugarloafFonts {
             extras: vec![],
             use_drawable_chars: true,
             symbol_map: None,
+            disable_warnings_not_found: false,
         }
     }
 }

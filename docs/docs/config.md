@@ -210,6 +210,7 @@ size = 18
 features = []
 use-drawable-chars = true
 symbol-map = []
+disable-warnings-not-found = false
 
 [fonts.regular]
 family = "cascadiacode"
@@ -234,6 +235,14 @@ family = "cascadiacode"
 style = "Italic"
 width = "Normal"
 weight = 800
+```
+
+## fonts.disable-warnings-not-found
+
+Disables warnings regarding fonts not found. Default it `false`.
+
+```toml
+fonts.disable-warnings-not-found = false
 ```
 
 ## fonts.family

@@ -15,6 +15,10 @@ language: 'en'
 - Fix: Built-in font for box drawing #974 [#974](https://github.com/raphamorim/rio/issues/974).
 - Fix: U+E0B6 and U+E0B4 Unicode with different sizes [#895](https://github.com/raphamorim/rio/issues/895).
 - Update wgpu to v25.
+- Fix: Custom rendering (alignment) of Braille symbols [#1057](https://github.com/raphamorim/rio/issues/1057).
+- Fix: Drawing char ⡿ in column 1 causes the entire terminal to stutter [#1033](https://github.com/raphamorim/rio/issues/1033).
+- Fix: Some glyphs (e.g. braille symbol) are rendered with gaps in between [#930](https://github.com/raphamorim/rio/issues/930).
+- Introduce `fonts.disable-warnings-not-found` to disable warning regarding fonts not found.
 
 ## 0.2.12
 
