@@ -2293,7 +2293,12 @@ impl Compositor {
             | DrawableChar::BrailleDots25678
             | DrawableChar::BrailleDots125678
             | DrawableChar::BrailleDots12345678
-            | DrawableChar::BrailleDots235678) => {
+            | DrawableChar::BrailleDots235678
+            | DrawableChar::BrailleDots45678
+            | DrawableChar::BrailleDots35678
+            | DrawableChar::BrailleDots345678
+            | DrawableChar::BrailleDots2345678
+            | DrawableChar::BrailleDots1235678) => {
                 // Use stroke as the dot size base
                 let dot_size = (stroke * 1.2).round();
 
@@ -2448,6 +2453,7 @@ impl Compositor {
                             | DrawableChar::BrailleDots15678
                             | DrawableChar::BrailleDots125678
                             | DrawableChar::BrailleDots12345678
+                            | DrawableChar::BrailleDots1235678
                     ),
                     2 => matches!(
                         braille_pattern,
@@ -2578,6 +2584,8 @@ impl Compositor {
                             | DrawableChar::BrailleDots125678
                             | DrawableChar::BrailleDots12345678
                             | DrawableChar::BrailleDots235678
+                            | DrawableChar::BrailleDots2345678
+                            | DrawableChar::BrailleDots1235678
                     ),
                     3 => matches!(
                         braille_pattern,
@@ -2706,6 +2714,10 @@ impl Compositor {
                             | DrawableChar::BrailleDots1234678
                             | DrawableChar::BrailleDots12345678
                             | DrawableChar::BrailleDots235678
+                            | DrawableChar::BrailleDots35678
+                            | DrawableChar::BrailleDots345678
+                            | DrawableChar::BrailleDots2345678
+                            | DrawableChar::BrailleDots1235678
                     ),
                     4 => matches!(
                         braille_pattern,
@@ -2833,6 +2845,9 @@ impl Compositor {
                             | DrawableChar::BrailleDots234678
                             | DrawableChar::BrailleDots1234678
                             | DrawableChar::BrailleDots12345678
+                            | DrawableChar::BrailleDots45678
+                            | DrawableChar::BrailleDots345678
+                            | DrawableChar::BrailleDots2345678
                     ),
                     5 => matches!(
                             braille_pattern,
@@ -2955,18 +2970,18 @@ impl Compositor {
                                 | DrawableChar::BrailleDots15678
                                 | DrawableChar::BrailleDots25678
                                 | DrawableChar::BrailleDots125678
-                                // | DrawableChar::BrailleDots35678
+                                | DrawableChar::BrailleDots35678
                                 // | DrawableChar::BrailleDots135678
-                                // | DrawableChar::BrailleDots1235678
-                                // | DrawableChar::BrailleDots45678
+                                | DrawableChar::BrailleDots1235678
+                                | DrawableChar::BrailleDots45678
                                 // | DrawableChar::BrailleDots145678
                                 // | DrawableChar::BrailleDots245678
                                 // | DrawableChar::BrailleDots1245678
-                                // | DrawableChar::BrailleDots345678
+                                | DrawableChar::BrailleDots345678
                                 // | DrawableChar::BrailleDots1345678
-                                // | DrawableChar::BrailleDots2345678
                                 | DrawableChar::BrailleDots12345678
                                 | DrawableChar::BrailleDots235678
+                                | DrawableChar::BrailleDots2345678
                         ),
                         6 => matches!(
                             braille_pattern,
@@ -3089,16 +3104,16 @@ impl Compositor {
                                 | DrawableChar::BrailleDots15678
                                 | DrawableChar::BrailleDots25678
                                 | DrawableChar::BrailleDots125678
-                                // | DrawableChar::BrailleDots35678
+                                | DrawableChar::BrailleDots35678
                                 // | DrawableChar::BrailleDots135678
-                                // | DrawableChar::BrailleDots1235678
-                                // | DrawableChar::BrailleDots45678
+                                | DrawableChar::BrailleDots1235678
+                                | DrawableChar::BrailleDots45678
                                 // | DrawableChar::BrailleDots145678
                                 // | DrawableChar::BrailleDots245678
                                 // | DrawableChar::BrailleDots1245678
-                                // | DrawableChar::BrailleDots345678
+                                | DrawableChar::BrailleDots345678
                                 // | DrawableChar::BrailleDots1345678
-                                // | DrawableChar::BrailleDots2345678
+                                | DrawableChar::BrailleDots2345678
                                 | DrawableChar::BrailleDots235678
                                 | DrawableChar::BrailleDots12345678
                         ),
@@ -3221,17 +3236,17 @@ impl Compositor {
                                 | DrawableChar::BrailleDots15678
                                 | DrawableChar::BrailleDots25678
                                 | DrawableChar::BrailleDots125678
-                                // | DrawableChar::BrailleDots35678
+                                | DrawableChar::BrailleDots35678
                                 // | DrawableChar::BrailleDots135678
                                 | DrawableChar::BrailleDots235678
-                                // | DrawableChar::BrailleDots1235678
-                                // | DrawableChar::BrailleDots45678
+                                | DrawableChar::BrailleDots1235678
+                                | DrawableChar::BrailleDots45678
                                 // | DrawableChar::BrailleDots145678
                                 // | DrawableChar::BrailleDots245678
                                 // | DrawableChar::BrailleDots1245678
-                                // | DrawableChar::BrailleDots345678
+                                | DrawableChar::BrailleDots345678
                                 // | DrawableChar::BrailleDots1345678
-                                // | DrawableChar::BrailleDots2345678
+                                | DrawableChar::BrailleDots2345678
                                 | DrawableChar::BrailleDots12345678
                         ),
                         8 => matches!(
@@ -3353,17 +3368,17 @@ impl Compositor {
                                 | DrawableChar::BrailleDots15678
                                 | DrawableChar::BrailleDots25678
                                 | DrawableChar::BrailleDots125678
-                                // | DrawableChar::BrailleDots35678
+                                | DrawableChar::BrailleDots35678
                                 // | DrawableChar::BrailleDots135678
                                 | DrawableChar::BrailleDots235678
-                                // | DrawableChar::BrailleDots1235678
-                                // | DrawableChar::BrailleDots45678
+                                | DrawableChar::BrailleDots1235678
+                                | DrawableChar::BrailleDots45678
                                 // | DrawableChar::BrailleDots145678
                                 // | DrawableChar::BrailleDots245678
                                 // | DrawableChar::BrailleDots1245678
-                                // | DrawableChar::BrailleDots345678
+                                | DrawableChar::BrailleDots345678
                                 // | DrawableChar::BrailleDots1345678
-                                // | DrawableChar::BrailleDots2345678
+                                | DrawableChar::BrailleDots2345678
                                 | DrawableChar::BrailleDots12345678
                         ),
                         _ => false,
