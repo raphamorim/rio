@@ -443,7 +443,11 @@ impl FontLibraryData {
             self.symbol_maps = Some(symbol_maps);
         }
 
-        fonts_not_fount
+        if spec.disable_warnings_not_found {
+            vec![]
+        } else {
+            fonts_not_fount
+        }
     }
 
     #[cfg(target_arch = "wasm32")]
