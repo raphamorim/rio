@@ -16,7 +16,7 @@ use crate::components::rich_text::image_cache::ImageCache;
 pub use crate::components::rich_text::image_cache::ImageId;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, UnderlineShape};
-use crate::{DrawableChar, SugarCursor};
+use crate::{contains_braille_dot, DrawableChar, SugarCursor};
 
 #[derive(Default)]
 pub struct RunUnderline {
@@ -1881,7 +1881,8 @@ impl Compositor {
                 // ┄ - Light dashed horizontal line with 3 dashes
                 let dash_count = 3;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1899,7 +1900,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 3;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1916,7 +1918,8 @@ impl Compositor {
                 // ┈ - Light double-dashed horizontal line with 4 dashes
                 let dash_count = 4;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1934,7 +1937,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 4;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1951,7 +1955,8 @@ impl Compositor {
                 // ╌ - Light triple-dashed horizontal line with 2 dashes
                 let dash_count = 2;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1969,7 +1974,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 2;
                 let total_space = dash_count - 1;
-                let dash_width = (line_width - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_width =
+                    (line_width - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_x = x + (i as f32) * (dash_width + stroke);
@@ -1986,7 +1992,8 @@ impl Compositor {
                 // ┆ - Light dashed vertical line with 3 dashes
                 let dash_count = 3;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2004,7 +2011,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 3;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2021,7 +2029,8 @@ impl Compositor {
                 // ┊ - Light double-dashed vertical line with 4 dashes
                 let dash_count = 4;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2039,7 +2048,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 4;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2056,7 +2066,8 @@ impl Compositor {
                 // ╎ - Light triple-dashed vertical line with 2 dashes
                 let dash_count = 2;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2074,7 +2085,8 @@ impl Compositor {
                 let heavy_stroke = stroke * 1.8;
                 let dash_count = 2;
                 let total_space = dash_count - 1;
-                let dash_height = (line_height - (total_space as f32 * stroke)) / dash_count as f32;
+                let dash_height =
+                    (line_height - (total_space as f32 * stroke)) / dash_count as f32;
 
                 for i in 0..dash_count {
                     let dash_y = y + (i as f32) * (dash_height + stroke);
@@ -2091,264 +2103,7 @@ impl Compositor {
             DrawableChar::BrailleBlank => {
                 // No dots to draw
             }
-            braille_pattern @ (DrawableChar::BrailleDots1
-            | DrawableChar::BrailleDots2
-            | DrawableChar::BrailleDots12
-            | DrawableChar::BrailleDots3
-            | DrawableChar::BrailleDots13
-            | DrawableChar::BrailleDots23
-            | DrawableChar::BrailleDots123
-            | DrawableChar::BrailleDots4
-            | DrawableChar::BrailleDots14
-            | DrawableChar::BrailleDots24
-            | DrawableChar::BrailleDots124
-            | DrawableChar::BrailleDots34
-            | DrawableChar::BrailleDots134
-            | DrawableChar::BrailleDots234
-            | DrawableChar::BrailleDots1234
-            | DrawableChar::BrailleDots5
-            | DrawableChar::BrailleDots15
-            | DrawableChar::BrailleDots25
-            | DrawableChar::BrailleDots125
-            | DrawableChar::BrailleDots35
-            | DrawableChar::BrailleDots135
-            | DrawableChar::BrailleDots235
-            | DrawableChar::BrailleDots1235
-            | DrawableChar::BrailleDots45
-            | DrawableChar::BrailleDots145
-            | DrawableChar::BrailleDots245
-            | DrawableChar::BrailleDots1245
-            | DrawableChar::BrailleDots345
-            | DrawableChar::BrailleDots1345
-            | DrawableChar::BrailleDots2345
-            | DrawableChar::BrailleDots12345
-            | DrawableChar::BrailleDots6
-            | DrawableChar::BrailleDots16
-            | DrawableChar::BrailleDots26
-            | DrawableChar::BrailleDots126
-            | DrawableChar::BrailleDots36
-            | DrawableChar::BrailleDots136
-            | DrawableChar::BrailleDots236
-            | DrawableChar::BrailleDots1236
-            | DrawableChar::BrailleDots46
-            | DrawableChar::BrailleDots146
-            | DrawableChar::BrailleDots246
-            | DrawableChar::BrailleDots1246
-            | DrawableChar::BrailleDots346
-            | DrawableChar::BrailleDots1346
-            | DrawableChar::BrailleDots2346
-            | DrawableChar::BrailleDots12346
-            | DrawableChar::BrailleDots56
-            | DrawableChar::BrailleDots156
-            | DrawableChar::BrailleDots256
-            | DrawableChar::BrailleDots1256
-            | DrawableChar::BrailleDots356
-            | DrawableChar::BrailleDots1356
-            | DrawableChar::BrailleDots2356
-            | DrawableChar::BrailleDots12356
-            | DrawableChar::BrailleDots456
-            | DrawableChar::BrailleDots1456
-            | DrawableChar::BrailleDots2456
-            | DrawableChar::BrailleDots12456
-            | DrawableChar::BrailleDots3456
-            | DrawableChar::BrailleDots13456
-            | DrawableChar::BrailleDots23456
-            | DrawableChar::BrailleDots123456
-            // Dot 7 patterns
-            | DrawableChar::BrailleDots7
-            | DrawableChar::BrailleDots17
-            | DrawableChar::BrailleDots27
-            | DrawableChar::BrailleDots127
-            | DrawableChar::BrailleDots37
-            | DrawableChar::BrailleDots137
-            | DrawableChar::BrailleDots237
-            | DrawableChar::BrailleDots1237
-            | DrawableChar::BrailleDots47
-            | DrawableChar::BrailleDots147
-            | DrawableChar::BrailleDots247
-            | DrawableChar::BrailleDots1247
-            | DrawableChar::BrailleDots347
-            | DrawableChar::BrailleDots1347
-            | DrawableChar::BrailleDots2347
-            | DrawableChar::BrailleDots12347
-            | DrawableChar::BrailleDots57
-            | DrawableChar::BrailleDots157
-            | DrawableChar::BrailleDots257
-            | DrawableChar::BrailleDots1257
-            | DrawableChar::BrailleDots357
-            | DrawableChar::BrailleDots1357
-            | DrawableChar::BrailleDots2357
-            | DrawableChar::BrailleDots12357
-            | DrawableChar::BrailleDots457
-            | DrawableChar::BrailleDots1457
-            | DrawableChar::BrailleDots2457
-            | DrawableChar::BrailleDots12457
-            | DrawableChar::BrailleDots3457
-            | DrawableChar::BrailleDots13457
-            | DrawableChar::BrailleDots23457
-            | DrawableChar::BrailleDots123457
-            | DrawableChar::BrailleDots67
-            | DrawableChar::BrailleDots167
-            | DrawableChar::BrailleDots267
-            | DrawableChar::BrailleDots1267
-            | DrawableChar::BrailleDots367
-            | DrawableChar::BrailleDots1367
-            | DrawableChar::BrailleDots2367
-            | DrawableChar::BrailleDots12367
-            | DrawableChar::BrailleDots467
-            | DrawableChar::BrailleDots1467
-            | DrawableChar::BrailleDots2467
-            | DrawableChar::BrailleDots12467
-            | DrawableChar::BrailleDots3467
-            | DrawableChar::BrailleDots13467
-            | DrawableChar::BrailleDots23467
-            | DrawableChar::BrailleDots123467
-            | DrawableChar::BrailleDots567
-            | DrawableChar::BrailleDots1567
-            | DrawableChar::BrailleDots2567
-            | DrawableChar::BrailleDots12567
-            | DrawableChar::BrailleDots3567
-            | DrawableChar::BrailleDots13567
-            | DrawableChar::BrailleDots23567
-            | DrawableChar::BrailleDots123567
-            | DrawableChar::BrailleDots4567
-            | DrawableChar::BrailleDots14567
-            | DrawableChar::BrailleDots24567
-            | DrawableChar::BrailleDots124567
-            | DrawableChar::BrailleDots34567
-            | DrawableChar::BrailleDots134567
-            | DrawableChar::BrailleDots234567
-            | DrawableChar::BrailleDots1234567
-            // Dot 8 patterns
-            | DrawableChar::BrailleDots8
-            | DrawableChar::BrailleDots18
-            | DrawableChar::BrailleDots28
-            | DrawableChar::BrailleDots128
-            | DrawableChar::BrailleDots38
-            | DrawableChar::BrailleDots138
-            | DrawableChar::BrailleDots238
-            | DrawableChar::BrailleDots1238
-            | DrawableChar::BrailleDots48
-            | DrawableChar::BrailleDots148
-            | DrawableChar::BrailleDots248
-            | DrawableChar::BrailleDots1248
-            | DrawableChar::BrailleDots348
-            | DrawableChar::BrailleDots1348
-            | DrawableChar::BrailleDots2348
-            | DrawableChar::BrailleDots12348
-            | DrawableChar::BrailleDots58
-            | DrawableChar::BrailleDots158
-            | DrawableChar::BrailleDots258
-            | DrawableChar::BrailleDots1258
-            | DrawableChar::BrailleDots358
-            | DrawableChar::BrailleDots1358
-            | DrawableChar::BrailleDots2358
-            | DrawableChar::BrailleDots12358
-            | DrawableChar::BrailleDots458
-            | DrawableChar::BrailleDots1458
-            | DrawableChar::BrailleDots2458
-            | DrawableChar::BrailleDots12458
-            | DrawableChar::BrailleDots3458
-            | DrawableChar::BrailleDots13458
-            | DrawableChar::BrailleDots23458
-            | DrawableChar::BrailleDots123458
-            | DrawableChar::BrailleDots68
-            | DrawableChar::BrailleDots168
-            | DrawableChar::BrailleDots268
-            | DrawableChar::BrailleDots1268
-            | DrawableChar::BrailleDots368
-            | DrawableChar::BrailleDots1368
-            | DrawableChar::BrailleDots2368
-            | DrawableChar::BrailleDots12368
-            | DrawableChar::BrailleDots468
-            | DrawableChar::BrailleDots1468
-            | DrawableChar::BrailleDots2468
-            | DrawableChar::BrailleDots12468
-            | DrawableChar::BrailleDots3468
-            | DrawableChar::BrailleDots13468
-            | DrawableChar::BrailleDots23468
-            | DrawableChar::BrailleDots123468
-            | DrawableChar::BrailleDots568
-            | DrawableChar::BrailleDots1568
-            | DrawableChar::BrailleDots2568
-            | DrawableChar::BrailleDots12568
-            | DrawableChar::BrailleDots3568
-            | DrawableChar::BrailleDots13568
-            | DrawableChar::BrailleDots23568
-            | DrawableChar::BrailleDots123568
-            | DrawableChar::BrailleDots4568
-            | DrawableChar::BrailleDots14568
-            | DrawableChar::BrailleDots24568
-            | DrawableChar::BrailleDots124568
-            | DrawableChar::BrailleDots34568
-            | DrawableChar::BrailleDots134568
-            | DrawableChar::BrailleDots234568
-            | DrawableChar::BrailleDots1234568
-            // Combined dot 7 and dot 8 patterns
-            | DrawableChar::BrailleDots78
-            | DrawableChar::BrailleDots178
-            | DrawableChar::BrailleDots278
-            | DrawableChar::BrailleDots1278
-            | DrawableChar::BrailleDots378
-            | DrawableChar::BrailleDots1378
-            | DrawableChar::BrailleDots2378
-            | DrawableChar::BrailleDots12378
-            | DrawableChar::BrailleDots478
-            | DrawableChar::BrailleDots1478
-            | DrawableChar::BrailleDots2478
-            | DrawableChar::BrailleDots12478
-            | DrawableChar::BrailleDots3478
-            | DrawableChar::BrailleDots13478
-            | DrawableChar::BrailleDots23478
-            | DrawableChar::BrailleDots123478
-            | DrawableChar::BrailleDots578
-            | DrawableChar::BrailleDots1578
-            | DrawableChar::BrailleDots2578
-            | DrawableChar::BrailleDots12578
-            | DrawableChar::BrailleDots3578
-            | DrawableChar::BrailleDots13578
-            | DrawableChar::BrailleDots23578
-            | DrawableChar::BrailleDots123578
-            | DrawableChar::BrailleDots4578
-            | DrawableChar::BrailleDots14578
-            | DrawableChar::BrailleDots24578
-            | DrawableChar::BrailleDots124578
-            | DrawableChar::BrailleDots34578
-            | DrawableChar::BrailleDots134578
-            | DrawableChar::BrailleDots234578
-            | DrawableChar::BrailleDots1234578
-            | DrawableChar::BrailleDots678
-            | DrawableChar::BrailleDots1678
-            | DrawableChar::BrailleDots2678
-            | DrawableChar::BrailleDots12678
-            | DrawableChar::BrailleDots3678
-            | DrawableChar::BrailleDots13678
-            | DrawableChar::BrailleDots23678
-            | DrawableChar::BrailleDots123678
-            | DrawableChar::BrailleDots4678
-            | DrawableChar::BrailleDots14678
-            | DrawableChar::BrailleDots24678
-            | DrawableChar::BrailleDots124678
-            | DrawableChar::BrailleDots34678
-            | DrawableChar::BrailleDots134678
-            | DrawableChar::BrailleDots234678
-            | DrawableChar::BrailleDots1234678
-            | DrawableChar::BrailleDots5678
-            | DrawableChar::BrailleDots15678
-            | DrawableChar::BrailleDots25678
-            | DrawableChar::BrailleDots125678
-            | DrawableChar::BrailleDots12345678
-            | DrawableChar::BrailleDots235678
-            | DrawableChar::BrailleDots45678
-            | DrawableChar::BrailleDots35678
-            | DrawableChar::BrailleDots345678
-            | DrawableChar::BrailleDots2345678
-            | DrawableChar::BrailleDots1235678
-            | DrawableChar::BrailleDots135678
-            | DrawableChar::BrailleDots1345678
-            | DrawableChar::BrailleDots1245678
-            | DrawableChar::BrailleDots145678
-            | DrawableChar::BrailleDots245678) => {
+            DrawableChar::Braille(braille_dots) => {
                 // Use stroke as the dot size base
                 let dot_size = (stroke * 1.2).round();
 
@@ -2366,1089 +2121,17 @@ impl Compositor {
 
                 // Function to calculate dot position based on grid coordinates
                 let get_dot_position = |col: usize, row: usize| -> (f32, f32) {
-                    let dot_x = x + (col as f32 * cell_width_unit) + (cell_width_unit / 2.0) - (dot_size / 2.0);
-                    let dot_y = y + (row as f32 * cell_height_unit) + (cell_height_unit / 2.0) - (dot_size / 2.0);
+                    let dot_x =
+                        x + (col as f32 * cell_width_unit) + (cell_width_unit / 2.0)
+                            - (dot_size / 2.0);
+                    let dot_y =
+                        y + (row as f32 * cell_height_unit) + (cell_height_unit / 2.0)
+                            - (dot_size / 2.0);
                     (dot_x, dot_y)
                 };
 
-
-                // Function to check if a specific dot should be drawn
-                let has_dot = |dot_number: u8| -> bool {
-                    match dot_number {
-                    1 => matches!(
-                        braille_pattern,
-                        DrawableChar::BrailleDots1
-                            | DrawableChar::BrailleDots12
-                            | DrawableChar::BrailleDots13
-                            | DrawableChar::BrailleDots123
-                            | DrawableChar::BrailleDots14
-                            | DrawableChar::BrailleDots124
-                            | DrawableChar::BrailleDots134
-                            | DrawableChar::BrailleDots1234
-                            | DrawableChar::BrailleDots15
-                            | DrawableChar::BrailleDots125
-                            | DrawableChar::BrailleDots135
-                            | DrawableChar::BrailleDots1235
-                            | DrawableChar::BrailleDots145
-                            | DrawableChar::BrailleDots1245
-                            | DrawableChar::BrailleDots1345
-                            | DrawableChar::BrailleDots12345
-                            | DrawableChar::BrailleDots16
-                            | DrawableChar::BrailleDots126
-                            | DrawableChar::BrailleDots136
-                            | DrawableChar::BrailleDots1236
-                            | DrawableChar::BrailleDots146
-                            | DrawableChar::BrailleDots1246
-                            | DrawableChar::BrailleDots1346
-                            | DrawableChar::BrailleDots12346
-                            | DrawableChar::BrailleDots156
-                            | DrawableChar::BrailleDots1256
-                            | DrawableChar::BrailleDots1356
-                            | DrawableChar::BrailleDots12356
-                            | DrawableChar::BrailleDots1456
-                            | DrawableChar::BrailleDots12456
-                            | DrawableChar::BrailleDots13456
-                            | DrawableChar::BrailleDots123456
-                            // Dot 7 combinations with dot 1
-                            | DrawableChar::BrailleDots17
-                            | DrawableChar::BrailleDots127
-                            | DrawableChar::BrailleDots137
-                            | DrawableChar::BrailleDots1237
-                            | DrawableChar::BrailleDots147
-                            | DrawableChar::BrailleDots1247
-                            | DrawableChar::BrailleDots1347
-                            | DrawableChar::BrailleDots12347
-                            | DrawableChar::BrailleDots157
-                            | DrawableChar::BrailleDots1257
-                            | DrawableChar::BrailleDots1357
-                            | DrawableChar::BrailleDots12357
-                            | DrawableChar::BrailleDots1457
-                            | DrawableChar::BrailleDots12457
-                            | DrawableChar::BrailleDots13457
-                            | DrawableChar::BrailleDots123457
-                            | DrawableChar::BrailleDots167
-                            | DrawableChar::BrailleDots1267
-                            | DrawableChar::BrailleDots1367
-                            | DrawableChar::BrailleDots12367
-                            | DrawableChar::BrailleDots1467
-                            | DrawableChar::BrailleDots12467
-                            | DrawableChar::BrailleDots13467
-                            | DrawableChar::BrailleDots123467
-                            | DrawableChar::BrailleDots1567
-                            | DrawableChar::BrailleDots12567
-                            | DrawableChar::BrailleDots13567
-                            | DrawableChar::BrailleDots123567
-                            | DrawableChar::BrailleDots14567
-                            | DrawableChar::BrailleDots124567
-                            | DrawableChar::BrailleDots134567
-                            | DrawableChar::BrailleDots1234567
-                            // Dot 8 combinations with dot 1
-                            | DrawableChar::BrailleDots18
-                            | DrawableChar::BrailleDots128
-                            | DrawableChar::BrailleDots138
-                            | DrawableChar::BrailleDots1238
-                            | DrawableChar::BrailleDots148
-                            | DrawableChar::BrailleDots1248
-                            | DrawableChar::BrailleDots1348
-                            | DrawableChar::BrailleDots12348
-                            | DrawableChar::BrailleDots158
-                            | DrawableChar::BrailleDots1258
-                            | DrawableChar::BrailleDots1358
-                            | DrawableChar::BrailleDots12358
-                            | DrawableChar::BrailleDots1458
-                            | DrawableChar::BrailleDots12458
-                            | DrawableChar::BrailleDots13458
-                            | DrawableChar::BrailleDots123458
-                            | DrawableChar::BrailleDots168
-                            | DrawableChar::BrailleDots1268
-                            | DrawableChar::BrailleDots1368
-                            | DrawableChar::BrailleDots12368
-                            | DrawableChar::BrailleDots1468
-                            | DrawableChar::BrailleDots12468
-                            | DrawableChar::BrailleDots13468
-                            | DrawableChar::BrailleDots123468
-                            | DrawableChar::BrailleDots1568
-                            | DrawableChar::BrailleDots12568
-                            | DrawableChar::BrailleDots13568
-                            | DrawableChar::BrailleDots123568
-                            | DrawableChar::BrailleDots14568
-                            | DrawableChar::BrailleDots124568
-                            | DrawableChar::BrailleDots134568
-                            | DrawableChar::BrailleDots1234568
-                            // Combined dot 7 and 8 with dot 1
-                            | DrawableChar::BrailleDots178
-                            | DrawableChar::BrailleDots1278
-                            | DrawableChar::BrailleDots1378
-                            | DrawableChar::BrailleDots12378
-                            | DrawableChar::BrailleDots1478
-                            | DrawableChar::BrailleDots12478
-                            | DrawableChar::BrailleDots13478
-                            | DrawableChar::BrailleDots123478
-                            | DrawableChar::BrailleDots1578
-                            | DrawableChar::BrailleDots12578
-                            | DrawableChar::BrailleDots13578
-                            | DrawableChar::BrailleDots123578
-                            | DrawableChar::BrailleDots14578
-                            | DrawableChar::BrailleDots124578
-                            | DrawableChar::BrailleDots134578
-                            | DrawableChar::BrailleDots1234578
-                            | DrawableChar::BrailleDots1678
-                            | DrawableChar::BrailleDots12678
-                            | DrawableChar::BrailleDots13678
-                            | DrawableChar::BrailleDots123678
-                            | DrawableChar::BrailleDots14678
-                            | DrawableChar::BrailleDots124678
-                            | DrawableChar::BrailleDots134678
-                            | DrawableChar::BrailleDots1234678
-                            | DrawableChar::BrailleDots15678
-                            | DrawableChar::BrailleDots125678
-                            | DrawableChar::BrailleDots12345678
-                            | DrawableChar::BrailleDots1235678
-                            | DrawableChar::BrailleDots135678
-                            | DrawableChar::BrailleDots1345678
-                            | DrawableChar::BrailleDots1245678
-                            | DrawableChar::BrailleDots145678
-                    ),
-                    2 => matches!(
-                        braille_pattern,
-                        DrawableChar::BrailleDots2
-                            | DrawableChar::BrailleDots12
-                            | DrawableChar::BrailleDots23
-                            | DrawableChar::BrailleDots123
-                            | DrawableChar::BrailleDots24
-                            | DrawableChar::BrailleDots124
-                            | DrawableChar::BrailleDots234
-                            | DrawableChar::BrailleDots1234
-                            | DrawableChar::BrailleDots25
-                            | DrawableChar::BrailleDots125
-                            | DrawableChar::BrailleDots235
-                            | DrawableChar::BrailleDots1235
-                            | DrawableChar::BrailleDots245
-                            | DrawableChar::BrailleDots1245
-                            | DrawableChar::BrailleDots2345
-                            | DrawableChar::BrailleDots12345
-                            | DrawableChar::BrailleDots26
-                            | DrawableChar::BrailleDots126
-                            | DrawableChar::BrailleDots236
-                            | DrawableChar::BrailleDots1236
-                            | DrawableChar::BrailleDots246
-                            | DrawableChar::BrailleDots1246
-                            | DrawableChar::BrailleDots2346
-                            | DrawableChar::BrailleDots12346
-                            | DrawableChar::BrailleDots256
-                            | DrawableChar::BrailleDots1256
-                            | DrawableChar::BrailleDots2356
-                            | DrawableChar::BrailleDots12356
-                            | DrawableChar::BrailleDots2456
-                            | DrawableChar::BrailleDots12456
-                            | DrawableChar::BrailleDots23456
-                            | DrawableChar::BrailleDots123456
-                            // Dot 7 combinations with dot 2
-                            | DrawableChar::BrailleDots27
-                            | DrawableChar::BrailleDots127
-                            | DrawableChar::BrailleDots237
-                            | DrawableChar::BrailleDots1237
-                            | DrawableChar::BrailleDots247
-                            | DrawableChar::BrailleDots1247
-                            | DrawableChar::BrailleDots2347
-                            | DrawableChar::BrailleDots12347
-                            | DrawableChar::BrailleDots257
-                            | DrawableChar::BrailleDots1257
-                            | DrawableChar::BrailleDots2357
-                            | DrawableChar::BrailleDots12357
-                            | DrawableChar::BrailleDots2457
-                            | DrawableChar::BrailleDots12457
-                            | DrawableChar::BrailleDots23457
-                            | DrawableChar::BrailleDots123457
-                            | DrawableChar::BrailleDots267
-                            | DrawableChar::BrailleDots1267
-                            | DrawableChar::BrailleDots2367
-                            | DrawableChar::BrailleDots12367
-                            | DrawableChar::BrailleDots2467
-                            | DrawableChar::BrailleDots12467
-                            | DrawableChar::BrailleDots23467
-                            | DrawableChar::BrailleDots123467
-                            | DrawableChar::BrailleDots2567
-                            | DrawableChar::BrailleDots12567
-                            | DrawableChar::BrailleDots23567
-                            | DrawableChar::BrailleDots123567
-                            | DrawableChar::BrailleDots24567
-                            | DrawableChar::BrailleDots124567
-                            | DrawableChar::BrailleDots234567
-                            | DrawableChar::BrailleDots1234567
-                            // Dot 8 combinations with dot 2
-                            | DrawableChar::BrailleDots28
-                            | DrawableChar::BrailleDots128
-                            | DrawableChar::BrailleDots238
-                            | DrawableChar::BrailleDots1238
-                            | DrawableChar::BrailleDots248
-                            | DrawableChar::BrailleDots1248
-                            | DrawableChar::BrailleDots2348
-                            | DrawableChar::BrailleDots12348
-                            | DrawableChar::BrailleDots258
-                            | DrawableChar::BrailleDots1258
-                            | DrawableChar::BrailleDots2358
-                            | DrawableChar::BrailleDots12358
-                            | DrawableChar::BrailleDots2458
-                            | DrawableChar::BrailleDots12458
-                            | DrawableChar::BrailleDots23458
-                            | DrawableChar::BrailleDots123458
-                            | DrawableChar::BrailleDots268
-                            | DrawableChar::BrailleDots1268
-                            | DrawableChar::BrailleDots2368
-                            | DrawableChar::BrailleDots12368
-                            | DrawableChar::BrailleDots2468
-                            | DrawableChar::BrailleDots12468
-                            | DrawableChar::BrailleDots23468
-                            | DrawableChar::BrailleDots123468
-                            | DrawableChar::BrailleDots2568
-                            | DrawableChar::BrailleDots12568
-                            | DrawableChar::BrailleDots23568
-                            | DrawableChar::BrailleDots123568
-                            | DrawableChar::BrailleDots24568
-                            | DrawableChar::BrailleDots124568
-                            | DrawableChar::BrailleDots234568
-                            | DrawableChar::BrailleDots1234568
-                            // Combined dot 7 and 8 with dot 2
-                            | DrawableChar::BrailleDots278
-                            | DrawableChar::BrailleDots1278
-                            | DrawableChar::BrailleDots2378
-                            | DrawableChar::BrailleDots12378
-                            | DrawableChar::BrailleDots2478
-                            | DrawableChar::BrailleDots12478
-                            | DrawableChar::BrailleDots23478
-                            | DrawableChar::BrailleDots123478
-                            | DrawableChar::BrailleDots2578
-                            | DrawableChar::BrailleDots12578
-                            | DrawableChar::BrailleDots23578
-                            | DrawableChar::BrailleDots123578
-                            | DrawableChar::BrailleDots24578
-                            | DrawableChar::BrailleDots124578
-                            | DrawableChar::BrailleDots234578
-                            | DrawableChar::BrailleDots1234578
-                            | DrawableChar::BrailleDots2678
-                            | DrawableChar::BrailleDots12678
-                            | DrawableChar::BrailleDots23678
-                            | DrawableChar::BrailleDots123678
-                            | DrawableChar::BrailleDots24678
-                            | DrawableChar::BrailleDots124678
-                            | DrawableChar::BrailleDots234678
-                            | DrawableChar::BrailleDots1234678
-                            | DrawableChar::BrailleDots25678
-                            | DrawableChar::BrailleDots125678
-                            | DrawableChar::BrailleDots12345678
-                            | DrawableChar::BrailleDots235678
-                            | DrawableChar::BrailleDots2345678
-                            | DrawableChar::BrailleDots1235678
-                            | DrawableChar::BrailleDots1245678
-                            | DrawableChar::BrailleDots245678
-                    ),
-                    3 => matches!(
-                        braille_pattern,
-                        DrawableChar::BrailleDots3
-                            | DrawableChar::BrailleDots13
-                            | DrawableChar::BrailleDots23
-                            | DrawableChar::BrailleDots123
-                            | DrawableChar::BrailleDots34
-                            | DrawableChar::BrailleDots134
-                            | DrawableChar::BrailleDots234
-                            | DrawableChar::BrailleDots1234
-                            | DrawableChar::BrailleDots35
-                            | DrawableChar::BrailleDots135
-                            | DrawableChar::BrailleDots235
-                            | DrawableChar::BrailleDots1235
-                            | DrawableChar::BrailleDots345
-                            | DrawableChar::BrailleDots1345
-                            | DrawableChar::BrailleDots2345
-                            | DrawableChar::BrailleDots12345
-                            | DrawableChar::BrailleDots36
-                            | DrawableChar::BrailleDots136
-                            | DrawableChar::BrailleDots236
-                            | DrawableChar::BrailleDots1236
-                            | DrawableChar::BrailleDots346
-                            | DrawableChar::BrailleDots1346
-                            | DrawableChar::BrailleDots2346
-                            | DrawableChar::BrailleDots12346
-                            | DrawableChar::BrailleDots356
-                            | DrawableChar::BrailleDots1356
-                            | DrawableChar::BrailleDots2356
-                            | DrawableChar::BrailleDots12356
-                            | DrawableChar::BrailleDots3456
-                            | DrawableChar::BrailleDots13456
-                            | DrawableChar::BrailleDots23456
-                            | DrawableChar::BrailleDots123456
-                            // Dot 7 combinations with dot 3
-                            | DrawableChar::BrailleDots37
-                            | DrawableChar::BrailleDots137
-                            | DrawableChar::BrailleDots237
-                            | DrawableChar::BrailleDots1237
-                            | DrawableChar::BrailleDots347
-                            | DrawableChar::BrailleDots1347
-                            | DrawableChar::BrailleDots2347
-                            | DrawableChar::BrailleDots12347
-                            | DrawableChar::BrailleDots357
-                            | DrawableChar::BrailleDots1357
-                            | DrawableChar::BrailleDots2357
-                            | DrawableChar::BrailleDots12357
-                            | DrawableChar::BrailleDots3457
-                            | DrawableChar::BrailleDots13457
-                            | DrawableChar::BrailleDots23457
-                            | DrawableChar::BrailleDots123457
-                            | DrawableChar::BrailleDots367
-                            | DrawableChar::BrailleDots1367
-                            | DrawableChar::BrailleDots2367
-                            | DrawableChar::BrailleDots12367
-                            | DrawableChar::BrailleDots3467
-                            | DrawableChar::BrailleDots13467
-                            | DrawableChar::BrailleDots23467
-                            | DrawableChar::BrailleDots123467
-                            | DrawableChar::BrailleDots3567
-                            | DrawableChar::BrailleDots13567
-                            | DrawableChar::BrailleDots23567
-                            | DrawableChar::BrailleDots123567
-                            | DrawableChar::BrailleDots34567
-                            | DrawableChar::BrailleDots134567
-                            | DrawableChar::BrailleDots234567
-                            | DrawableChar::BrailleDots1234567
-                            // Dot 8 combinations with dot 3
-                            | DrawableChar::BrailleDots38
-                            | DrawableChar::BrailleDots138
-                            | DrawableChar::BrailleDots238
-                            | DrawableChar::BrailleDots1238
-                            | DrawableChar::BrailleDots348
-                            | DrawableChar::BrailleDots1348
-                            | DrawableChar::BrailleDots2348
-                            | DrawableChar::BrailleDots12348
-                            | DrawableChar::BrailleDots358
-                            | DrawableChar::BrailleDots1358
-                            | DrawableChar::BrailleDots2358
-                            | DrawableChar::BrailleDots12358
-                            | DrawableChar::BrailleDots3458
-                            | DrawableChar::BrailleDots13458
-                            | DrawableChar::BrailleDots23458
-                            | DrawableChar::BrailleDots123458
-                            | DrawableChar::BrailleDots368
-                            | DrawableChar::BrailleDots1368
-                            | DrawableChar::BrailleDots2368
-                            | DrawableChar::BrailleDots12368
-                            | DrawableChar::BrailleDots3468
-                            | DrawableChar::BrailleDots13468
-                            | DrawableChar::BrailleDots23468
-                            | DrawableChar::BrailleDots123468
-                            | DrawableChar::BrailleDots3568
-                            | DrawableChar::BrailleDots13568
-                            | DrawableChar::BrailleDots23568
-                            | DrawableChar::BrailleDots123568
-                            | DrawableChar::BrailleDots34568
-                            | DrawableChar::BrailleDots134568
-                            | DrawableChar::BrailleDots234568
-                            | DrawableChar::BrailleDots1234568
-                            // Combined dot 7 and 8 with dot 3
-                            | DrawableChar::BrailleDots378
-                            | DrawableChar::BrailleDots1378
-                            | DrawableChar::BrailleDots2378
-                            | DrawableChar::BrailleDots12378
-                            | DrawableChar::BrailleDots3478
-                            | DrawableChar::BrailleDots13478
-                            | DrawableChar::BrailleDots23478
-                            | DrawableChar::BrailleDots123478
-                            | DrawableChar::BrailleDots3578
-                            | DrawableChar::BrailleDots13578
-                            | DrawableChar::BrailleDots23578
-                            | DrawableChar::BrailleDots123578
-                            | DrawableChar::BrailleDots34578
-                            | DrawableChar::BrailleDots134578
-                            | DrawableChar::BrailleDots234578
-                            | DrawableChar::BrailleDots1234578
-                            | DrawableChar::BrailleDots3678
-                            | DrawableChar::BrailleDots13678
-                            | DrawableChar::BrailleDots23678
-                            | DrawableChar::BrailleDots123678
-                            | DrawableChar::BrailleDots34678
-                            | DrawableChar::BrailleDots134678
-                            | DrawableChar::BrailleDots234678
-                            | DrawableChar::BrailleDots1234678
-                            | DrawableChar::BrailleDots12345678
-                            | DrawableChar::BrailleDots235678
-                            | DrawableChar::BrailleDots35678
-                            | DrawableChar::BrailleDots345678
-                            | DrawableChar::BrailleDots2345678
-                            | DrawableChar::BrailleDots1235678
-                            | DrawableChar::BrailleDots135678
-                            | DrawableChar::BrailleDots1345678
-                    ),
-                    4 => matches!(
-                        braille_pattern,
-                        DrawableChar::BrailleDots4
-                            | DrawableChar::BrailleDots14
-                            | DrawableChar::BrailleDots24
-                            | DrawableChar::BrailleDots124
-                            | DrawableChar::BrailleDots34
-                            | DrawableChar::BrailleDots134
-                            | DrawableChar::BrailleDots234
-                            | DrawableChar::BrailleDots1234
-                            | DrawableChar::BrailleDots45
-                            | DrawableChar::BrailleDots145
-                            | DrawableChar::BrailleDots245
-                            | DrawableChar::BrailleDots1245
-                            | DrawableChar::BrailleDots345
-                            | DrawableChar::BrailleDots1345
-                            | DrawableChar::BrailleDots2345
-                            | DrawableChar::BrailleDots12345
-                            | DrawableChar::BrailleDots46
-                            | DrawableChar::BrailleDots146
-                            | DrawableChar::BrailleDots246
-                            | DrawableChar::BrailleDots1246
-                            | DrawableChar::BrailleDots346
-                            | DrawableChar::BrailleDots1346
-                            | DrawableChar::BrailleDots2346
-                            | DrawableChar::BrailleDots12346
-                            | DrawableChar::BrailleDots456
-                            | DrawableChar::BrailleDots1456
-                            | DrawableChar::BrailleDots2456
-                            | DrawableChar::BrailleDots12456
-                            | DrawableChar::BrailleDots3456
-                            | DrawableChar::BrailleDots13456
-                            | DrawableChar::BrailleDots23456
-                            | DrawableChar::BrailleDots123456
-                            // Dot 7 combinations with dot 4
-                            | DrawableChar::BrailleDots47
-                            | DrawableChar::BrailleDots147
-                            | DrawableChar::BrailleDots247
-                            | DrawableChar::BrailleDots1247
-                            | DrawableChar::BrailleDots347
-                            | DrawableChar::BrailleDots1347
-                            | DrawableChar::BrailleDots2347
-                            | DrawableChar::BrailleDots12347
-                            | DrawableChar::BrailleDots457
-                            | DrawableChar::BrailleDots1457
-                            | DrawableChar::BrailleDots2457
-                            | DrawableChar::BrailleDots12457
-                            | DrawableChar::BrailleDots3457
-                            | DrawableChar::BrailleDots13457
-                            | DrawableChar::BrailleDots23457
-                            | DrawableChar::BrailleDots123457
-                            | DrawableChar::BrailleDots467
-                            | DrawableChar::BrailleDots1467
-                            | DrawableChar::BrailleDots2467
-                            | DrawableChar::BrailleDots12467
-                            | DrawableChar::BrailleDots3467
-                            | DrawableChar::BrailleDots13467
-                            | DrawableChar::BrailleDots23467
-                            | DrawableChar::BrailleDots123467
-                            | DrawableChar::BrailleDots4567
-                            | DrawableChar::BrailleDots14567
-                            | DrawableChar::BrailleDots24567
-                            | DrawableChar::BrailleDots124567
-                            | DrawableChar::BrailleDots34567
-                            | DrawableChar::BrailleDots134567
-                            | DrawableChar::BrailleDots234567
-                            | DrawableChar::BrailleDots1234567
-                            // Dot 8 combinations with dot 4
-                            | DrawableChar::BrailleDots48
-                            | DrawableChar::BrailleDots148
-                            | DrawableChar::BrailleDots248
-                            | DrawableChar::BrailleDots1248
-                            | DrawableChar::BrailleDots348
-                            | DrawableChar::BrailleDots1348
-                            | DrawableChar::BrailleDots2348
-                            | DrawableChar::BrailleDots12348
-                            | DrawableChar::BrailleDots458
-                            | DrawableChar::BrailleDots1458
-                            | DrawableChar::BrailleDots2458
-                            | DrawableChar::BrailleDots12458
-                            | DrawableChar::BrailleDots3458
-                            | DrawableChar::BrailleDots13458
-                            | DrawableChar::BrailleDots23458
-                            | DrawableChar::BrailleDots123458
-                            | DrawableChar::BrailleDots468
-                            | DrawableChar::BrailleDots1468
-                            | DrawableChar::BrailleDots2468
-                            | DrawableChar::BrailleDots12468
-                            | DrawableChar::BrailleDots3468
-                            | DrawableChar::BrailleDots13468
-                            | DrawableChar::BrailleDots23468
-                            | DrawableChar::BrailleDots123468
-                            | DrawableChar::BrailleDots4568
-                            | DrawableChar::BrailleDots14568
-                            | DrawableChar::BrailleDots24568
-                            | DrawableChar::BrailleDots124568
-                            | DrawableChar::BrailleDots34568
-                            | DrawableChar::BrailleDots134568
-                            | DrawableChar::BrailleDots234568
-                            | DrawableChar::BrailleDots1234568
-                            // Combined dot 7 and 8 with dot 4
-                            | DrawableChar::BrailleDots478
-                            | DrawableChar::BrailleDots1478
-                            | DrawableChar::BrailleDots2478
-                            | DrawableChar::BrailleDots12478
-                            | DrawableChar::BrailleDots3478
-                            | DrawableChar::BrailleDots13478
-                            | DrawableChar::BrailleDots23478
-                            | DrawableChar::BrailleDots123478
-                            | DrawableChar::BrailleDots4578
-                            | DrawableChar::BrailleDots14578
-                            | DrawableChar::BrailleDots24578
-                            | DrawableChar::BrailleDots124578
-                            | DrawableChar::BrailleDots34578
-                            | DrawableChar::BrailleDots134578
-                            | DrawableChar::BrailleDots234578
-                            | DrawableChar::BrailleDots1234578
-                            | DrawableChar::BrailleDots4678
-                            | DrawableChar::BrailleDots14678
-                            | DrawableChar::BrailleDots24678
-                            | DrawableChar::BrailleDots124678
-                            | DrawableChar::BrailleDots34678
-                            | DrawableChar::BrailleDots134678
-                            | DrawableChar::BrailleDots234678
-                            | DrawableChar::BrailleDots1234678
-                            | DrawableChar::BrailleDots12345678
-                            | DrawableChar::BrailleDots45678
-                            | DrawableChar::BrailleDots345678
-                            | DrawableChar::BrailleDots2345678
-                            | DrawableChar::BrailleDots1345678
-                            | DrawableChar::BrailleDots1245678
-                            | DrawableChar::BrailleDots145678
-                            | DrawableChar::BrailleDots245678
-                    ),
-                    5 => matches!(
-                            braille_pattern,
-                            DrawableChar::BrailleDots5
-                                | DrawableChar::BrailleDots15
-                                | DrawableChar::BrailleDots25
-                                | DrawableChar::BrailleDots125
-                                | DrawableChar::BrailleDots35
-                                | DrawableChar::BrailleDots135
-                                | DrawableChar::BrailleDots235
-                                | DrawableChar::BrailleDots1235
-                                | DrawableChar::BrailleDots45
-                                | DrawableChar::BrailleDots145
-                                | DrawableChar::BrailleDots245
-                                | DrawableChar::BrailleDots1245
-                                | DrawableChar::BrailleDots345
-                                | DrawableChar::BrailleDots1345
-                                | DrawableChar::BrailleDots2345
-                                | DrawableChar::BrailleDots12345
-                                | DrawableChar::BrailleDots56
-                                | DrawableChar::BrailleDots156
-                                | DrawableChar::BrailleDots256
-                                | DrawableChar::BrailleDots1256
-                                | DrawableChar::BrailleDots356
-                                | DrawableChar::BrailleDots1356
-                                | DrawableChar::BrailleDots2356
-                                | DrawableChar::BrailleDots12356
-                                | DrawableChar::BrailleDots456
-                                | DrawableChar::BrailleDots1456
-                                | DrawableChar::BrailleDots2456
-                                | DrawableChar::BrailleDots12456
-                                | DrawableChar::BrailleDots3456
-                                | DrawableChar::BrailleDots13456
-                                | DrawableChar::BrailleDots23456
-                                | DrawableChar::BrailleDots123456
-                                // Dot 7 combinations with dot 5
-                                | DrawableChar::BrailleDots57
-                                | DrawableChar::BrailleDots157
-                                | DrawableChar::BrailleDots257
-                                | DrawableChar::BrailleDots1257
-                                | DrawableChar::BrailleDots357
-                                | DrawableChar::BrailleDots1357
-                                | DrawableChar::BrailleDots2357
-                                | DrawableChar::BrailleDots12357
-                                | DrawableChar::BrailleDots457
-                                | DrawableChar::BrailleDots1457
-                                | DrawableChar::BrailleDots2457
-                                | DrawableChar::BrailleDots12457
-                                | DrawableChar::BrailleDots3457
-                                | DrawableChar::BrailleDots13457
-                                | DrawableChar::BrailleDots23457
-                                | DrawableChar::BrailleDots123457
-                                | DrawableChar::BrailleDots567
-                                | DrawableChar::BrailleDots1567
-                                | DrawableChar::BrailleDots2567
-                                | DrawableChar::BrailleDots12567
-                                | DrawableChar::BrailleDots3567
-                                | DrawableChar::BrailleDots13567
-                                | DrawableChar::BrailleDots23567
-                                | DrawableChar::BrailleDots123567
-                                | DrawableChar::BrailleDots4567
-                                | DrawableChar::BrailleDots14567
-                                | DrawableChar::BrailleDots24567
-                                | DrawableChar::BrailleDots124567
-                                | DrawableChar::BrailleDots34567
-                                | DrawableChar::BrailleDots134567
-                                | DrawableChar::BrailleDots234567
-                                | DrawableChar::BrailleDots1234567
-                                // Dot 8 combinations with dot 5
-                                | DrawableChar::BrailleDots58
-                                | DrawableChar::BrailleDots158
-                                | DrawableChar::BrailleDots258
-                                | DrawableChar::BrailleDots1258
-                                | DrawableChar::BrailleDots358
-                                | DrawableChar::BrailleDots1358
-                                | DrawableChar::BrailleDots2358
-                                | DrawableChar::BrailleDots12358
-                                | DrawableChar::BrailleDots458
-                                | DrawableChar::BrailleDots1458
-                                | DrawableChar::BrailleDots2458
-                                | DrawableChar::BrailleDots12458
-                                | DrawableChar::BrailleDots3458
-                                | DrawableChar::BrailleDots13458
-                                | DrawableChar::BrailleDots23458
-                                | DrawableChar::BrailleDots123458
-                                | DrawableChar::BrailleDots568
-                                | DrawableChar::BrailleDots1568
-                                | DrawableChar::BrailleDots2568
-                                | DrawableChar::BrailleDots12568
-                                | DrawableChar::BrailleDots3568
-                                | DrawableChar::BrailleDots13568
-                                | DrawableChar::BrailleDots23568
-                                | DrawableChar::BrailleDots123568
-                                | DrawableChar::BrailleDots4568
-                                | DrawableChar::BrailleDots14568
-                                | DrawableChar::BrailleDots24568
-                                | DrawableChar::BrailleDots124568
-                                | DrawableChar::BrailleDots34568
-                                | DrawableChar::BrailleDots134568
-                                | DrawableChar::BrailleDots234568
-                                | DrawableChar::BrailleDots1234568
-                                // Dots 5, 7, and 8 combinations
-                                | DrawableChar::BrailleDots578
-                                | DrawableChar::BrailleDots1578
-                                | DrawableChar::BrailleDots2578
-                                | DrawableChar::BrailleDots12578
-                                | DrawableChar::BrailleDots3578
-                                | DrawableChar::BrailleDots13578
-                                | DrawableChar::BrailleDots23578
-                                | DrawableChar::BrailleDots123578
-                                | DrawableChar::BrailleDots4578
-                                | DrawableChar::BrailleDots14578
-                                | DrawableChar::BrailleDots24578
-                                | DrawableChar::BrailleDots124578
-                                | DrawableChar::BrailleDots34578
-                                | DrawableChar::BrailleDots134578
-                                | DrawableChar::BrailleDots234578
-                                | DrawableChar::BrailleDots1234578
-                                | DrawableChar::BrailleDots5678
-                                | DrawableChar::BrailleDots15678
-                                | DrawableChar::BrailleDots25678
-                                | DrawableChar::BrailleDots125678
-                                | DrawableChar::BrailleDots35678
-                                | DrawableChar::BrailleDots135678
-                                | DrawableChar::BrailleDots1235678
-                                | DrawableChar::BrailleDots45678
-                                | DrawableChar::BrailleDots145678
-                                | DrawableChar::BrailleDots245678
-                                | DrawableChar::BrailleDots1245678
-                                | DrawableChar::BrailleDots345678
-                                | DrawableChar::BrailleDots1345678
-                                | DrawableChar::BrailleDots12345678
-                                | DrawableChar::BrailleDots235678
-                                | DrawableChar::BrailleDots2345678
-                        ),
-                        6 => matches!(
-                            braille_pattern,
-                            DrawableChar::BrailleDots6
-                                | DrawableChar::BrailleDots16
-                                | DrawableChar::BrailleDots26
-                                | DrawableChar::BrailleDots126
-                                | DrawableChar::BrailleDots36
-                                | DrawableChar::BrailleDots136
-                                | DrawableChar::BrailleDots236
-                                | DrawableChar::BrailleDots1236
-                                | DrawableChar::BrailleDots46
-                                | DrawableChar::BrailleDots146
-                                | DrawableChar::BrailleDots246
-                                | DrawableChar::BrailleDots1246
-                                | DrawableChar::BrailleDots346
-                                | DrawableChar::BrailleDots1346
-                                | DrawableChar::BrailleDots2346
-                                | DrawableChar::BrailleDots12346
-                                | DrawableChar::BrailleDots56
-                                | DrawableChar::BrailleDots156
-                                | DrawableChar::BrailleDots256
-                                | DrawableChar::BrailleDots1256
-                                | DrawableChar::BrailleDots356
-                                | DrawableChar::BrailleDots1356
-                                | DrawableChar::BrailleDots2356
-                                | DrawableChar::BrailleDots12356
-                                | DrawableChar::BrailleDots456
-                                | DrawableChar::BrailleDots1456
-                                | DrawableChar::BrailleDots2456
-                                | DrawableChar::BrailleDots12456
-                                | DrawableChar::BrailleDots3456
-                                | DrawableChar::BrailleDots13456
-                                | DrawableChar::BrailleDots23456
-                                | DrawableChar::BrailleDots123456
-                                // Dot 7 combinations with dot 6
-                                | DrawableChar::BrailleDots67
-                                | DrawableChar::BrailleDots167
-                                | DrawableChar::BrailleDots267
-                                | DrawableChar::BrailleDots1267
-                                | DrawableChar::BrailleDots367
-                                | DrawableChar::BrailleDots1367
-                                | DrawableChar::BrailleDots2367
-                                | DrawableChar::BrailleDots12367
-                                | DrawableChar::BrailleDots467
-                                | DrawableChar::BrailleDots1467
-                                | DrawableChar::BrailleDots2467
-                                | DrawableChar::BrailleDots12467
-                                | DrawableChar::BrailleDots3467
-                                | DrawableChar::BrailleDots13467
-                                | DrawableChar::BrailleDots23467
-                                | DrawableChar::BrailleDots123467
-                                | DrawableChar::BrailleDots567
-                                | DrawableChar::BrailleDots1567
-                                | DrawableChar::BrailleDots2567
-                                | DrawableChar::BrailleDots12567
-                                | DrawableChar::BrailleDots3567
-                                | DrawableChar::BrailleDots13567
-                                | DrawableChar::BrailleDots23567
-                                | DrawableChar::BrailleDots123567
-                                | DrawableChar::BrailleDots4567
-                                | DrawableChar::BrailleDots14567
-                                | DrawableChar::BrailleDots24567
-                                | DrawableChar::BrailleDots124567
-                                | DrawableChar::BrailleDots34567
-                                | DrawableChar::BrailleDots134567
-                                | DrawableChar::BrailleDots234567
-                                | DrawableChar::BrailleDots1234567
-                                // Dot 8 combinations with dot 6
-                                | DrawableChar::BrailleDots68
-                                | DrawableChar::BrailleDots168
-                                | DrawableChar::BrailleDots268
-                                | DrawableChar::BrailleDots1268
-                                | DrawableChar::BrailleDots368
-                                | DrawableChar::BrailleDots1368
-                                | DrawableChar::BrailleDots2368
-                                | DrawableChar::BrailleDots12368
-                                | DrawableChar::BrailleDots468
-                                | DrawableChar::BrailleDots1468
-                                | DrawableChar::BrailleDots2468
-                                | DrawableChar::BrailleDots12468
-                                | DrawableChar::BrailleDots3468
-                                | DrawableChar::BrailleDots13468
-                                | DrawableChar::BrailleDots23468
-                                | DrawableChar::BrailleDots123468
-                                | DrawableChar::BrailleDots568
-                                | DrawableChar::BrailleDots1568
-                                | DrawableChar::BrailleDots2568
-                                | DrawableChar::BrailleDots12568
-                                | DrawableChar::BrailleDots3568
-                                | DrawableChar::BrailleDots13568
-                                | DrawableChar::BrailleDots23568
-                                | DrawableChar::BrailleDots123568
-                                | DrawableChar::BrailleDots4568
-                                | DrawableChar::BrailleDots14568
-                                | DrawableChar::BrailleDots24568
-                                | DrawableChar::BrailleDots124568
-                                | DrawableChar::BrailleDots34568
-                                | DrawableChar::BrailleDots134568
-                                | DrawableChar::BrailleDots234568
-                                | DrawableChar::BrailleDots1234568
-                                // Dots 6, 7, and 8 combinations
-                                | DrawableChar::BrailleDots678
-                                | DrawableChar::BrailleDots1678
-                                | DrawableChar::BrailleDots2678
-                                | DrawableChar::BrailleDots12678
-                                | DrawableChar::BrailleDots3678
-                                | DrawableChar::BrailleDots13678
-                                | DrawableChar::BrailleDots23678
-                                | DrawableChar::BrailleDots123678
-                                | DrawableChar::BrailleDots4678
-                                | DrawableChar::BrailleDots14678
-                                | DrawableChar::BrailleDots24678
-                                | DrawableChar::BrailleDots124678
-                                | DrawableChar::BrailleDots34678
-                                | DrawableChar::BrailleDots134678
-                                | DrawableChar::BrailleDots234678
-                                | DrawableChar::BrailleDots1234678
-                                | DrawableChar::BrailleDots5678
-                                | DrawableChar::BrailleDots15678
-                                | DrawableChar::BrailleDots25678
-                                | DrawableChar::BrailleDots125678
-                                | DrawableChar::BrailleDots35678
-                                | DrawableChar::BrailleDots135678
-                                | DrawableChar::BrailleDots1235678
-                                | DrawableChar::BrailleDots45678
-                                | DrawableChar::BrailleDots145678
-                                | DrawableChar::BrailleDots245678
-                                | DrawableChar::BrailleDots1245678
-                                | DrawableChar::BrailleDots345678
-                                | DrawableChar::BrailleDots1345678
-                                | DrawableChar::BrailleDots2345678
-                                | DrawableChar::BrailleDots235678
-                                | DrawableChar::BrailleDots12345678
-                        ),
-                        7 => matches!(
-                            braille_pattern,
-                            DrawableChar::BrailleDots7
-                                | DrawableChar::BrailleDots17
-                                | DrawableChar::BrailleDots27
-                                | DrawableChar::BrailleDots127
-                                | DrawableChar::BrailleDots37
-                                | DrawableChar::BrailleDots137
-                                | DrawableChar::BrailleDots237
-                                | DrawableChar::BrailleDots1237
-                                | DrawableChar::BrailleDots47
-                                | DrawableChar::BrailleDots147
-                                | DrawableChar::BrailleDots247
-                                | DrawableChar::BrailleDots1247
-                                | DrawableChar::BrailleDots347
-                                | DrawableChar::BrailleDots1347
-                                | DrawableChar::BrailleDots2347
-                                | DrawableChar::BrailleDots12347
-                                | DrawableChar::BrailleDots57
-                                | DrawableChar::BrailleDots157
-                                | DrawableChar::BrailleDots257
-                                | DrawableChar::BrailleDots1257
-                                | DrawableChar::BrailleDots357
-                                | DrawableChar::BrailleDots1357
-                                | DrawableChar::BrailleDots2357
-                                | DrawableChar::BrailleDots12357
-                                | DrawableChar::BrailleDots457
-                                | DrawableChar::BrailleDots1457
-                                | DrawableChar::BrailleDots2457
-                                | DrawableChar::BrailleDots12457
-                                | DrawableChar::BrailleDots3457
-                                | DrawableChar::BrailleDots13457
-                                | DrawableChar::BrailleDots23457
-                                | DrawableChar::BrailleDots123457
-                                | DrawableChar::BrailleDots67
-                                | DrawableChar::BrailleDots167
-                                | DrawableChar::BrailleDots267
-                                | DrawableChar::BrailleDots1267
-                                | DrawableChar::BrailleDots367
-                                | DrawableChar::BrailleDots1367
-                                | DrawableChar::BrailleDots2367
-                                | DrawableChar::BrailleDots12367
-                                | DrawableChar::BrailleDots467
-                                | DrawableChar::BrailleDots1467
-                                | DrawableChar::BrailleDots2467
-                                | DrawableChar::BrailleDots12467
-                                | DrawableChar::BrailleDots3467
-                                | DrawableChar::BrailleDots13467
-                                | DrawableChar::BrailleDots23467
-                                | DrawableChar::BrailleDots123467
-                                | DrawableChar::BrailleDots567
-                                | DrawableChar::BrailleDots1567
-                                | DrawableChar::BrailleDots2567
-                                | DrawableChar::BrailleDots12567
-                                | DrawableChar::BrailleDots3567
-                                | DrawableChar::BrailleDots13567
-                                | DrawableChar::BrailleDots23567
-                                | DrawableChar::BrailleDots123567
-                                | DrawableChar::BrailleDots4567
-                                | DrawableChar::BrailleDots14567
-                                | DrawableChar::BrailleDots24567
-                                | DrawableChar::BrailleDots124567
-                                | DrawableChar::BrailleDots34567
-                                | DrawableChar::BrailleDots134567
-                                | DrawableChar::BrailleDots234567
-                                | DrawableChar::BrailleDots1234567
-                                // Dots 7 and 8 combinations
-                                | DrawableChar::BrailleDots78
-                                | DrawableChar::BrailleDots178
-                                | DrawableChar::BrailleDots278
-                                | DrawableChar::BrailleDots1278
-                                | DrawableChar::BrailleDots378
-                                | DrawableChar::BrailleDots1378
-                                | DrawableChar::BrailleDots2378
-                                | DrawableChar::BrailleDots12378
-                                | DrawableChar::BrailleDots478
-                                | DrawableChar::BrailleDots1478
-                                | DrawableChar::BrailleDots2478
-                                | DrawableChar::BrailleDots12478
-                                | DrawableChar::BrailleDots3478
-                                | DrawableChar::BrailleDots13478
-                                | DrawableChar::BrailleDots23478
-                                | DrawableChar::BrailleDots123478
-                                | DrawableChar::BrailleDots578
-                                | DrawableChar::BrailleDots1578
-                                | DrawableChar::BrailleDots2578
-                                | DrawableChar::BrailleDots12578
-                                | DrawableChar::BrailleDots3578
-                                | DrawableChar::BrailleDots13578
-                                | DrawableChar::BrailleDots23578
-                                | DrawableChar::BrailleDots123578
-                                | DrawableChar::BrailleDots4578
-                                | DrawableChar::BrailleDots14578
-                                | DrawableChar::BrailleDots24578
-                                | DrawableChar::BrailleDots124578
-                                | DrawableChar::BrailleDots34578
-                                | DrawableChar::BrailleDots134578
-                                | DrawableChar::BrailleDots234578
-                                | DrawableChar::BrailleDots1234578
-                                | DrawableChar::BrailleDots678
-                                | DrawableChar::BrailleDots1678
-                                | DrawableChar::BrailleDots2678
-                                | DrawableChar::BrailleDots12678
-                                | DrawableChar::BrailleDots3678
-                                | DrawableChar::BrailleDots13678
-                                | DrawableChar::BrailleDots23678
-                                | DrawableChar::BrailleDots123678
-                                | DrawableChar::BrailleDots4678
-                                | DrawableChar::BrailleDots14678
-                                | DrawableChar::BrailleDots24678
-                                | DrawableChar::BrailleDots124678
-                                | DrawableChar::BrailleDots34678
-                                | DrawableChar::BrailleDots134678
-                                | DrawableChar::BrailleDots234678
-                                | DrawableChar::BrailleDots1234678
-                                | DrawableChar::BrailleDots5678
-                                | DrawableChar::BrailleDots15678
-                                | DrawableChar::BrailleDots25678
-                                | DrawableChar::BrailleDots125678
-                                | DrawableChar::BrailleDots35678
-                                | DrawableChar::BrailleDots135678
-                                | DrawableChar::BrailleDots235678
-                                | DrawableChar::BrailleDots1235678
-                                | DrawableChar::BrailleDots45678
-                                | DrawableChar::BrailleDots145678
-                                | DrawableChar::BrailleDots245678
-                                | DrawableChar::BrailleDots1245678
-                                | DrawableChar::BrailleDots345678
-                                | DrawableChar::BrailleDots1345678
-                                | DrawableChar::BrailleDots2345678
-                                | DrawableChar::BrailleDots12345678
-                        ),
-                        8 => matches!(
-                            braille_pattern,
-                            DrawableChar::BrailleDots8
-                                | DrawableChar::BrailleDots18
-                                | DrawableChar::BrailleDots28
-                                | DrawableChar::BrailleDots128
-                                | DrawableChar::BrailleDots38
-                                | DrawableChar::BrailleDots138
-                                | DrawableChar::BrailleDots238
-                                | DrawableChar::BrailleDots1238
-                                | DrawableChar::BrailleDots48
-                                | DrawableChar::BrailleDots148
-                                | DrawableChar::BrailleDots248
-                                | DrawableChar::BrailleDots1248
-                                | DrawableChar::BrailleDots348
-                                | DrawableChar::BrailleDots1348
-                                | DrawableChar::BrailleDots2348
-                                | DrawableChar::BrailleDots12348
-                                | DrawableChar::BrailleDots58
-                                | DrawableChar::BrailleDots158
-                                | DrawableChar::BrailleDots258
-                                | DrawableChar::BrailleDots1258
-                                | DrawableChar::BrailleDots358
-                                | DrawableChar::BrailleDots1358
-                                | DrawableChar::BrailleDots2358
-                                | DrawableChar::BrailleDots12358
-                                | DrawableChar::BrailleDots458
-                                | DrawableChar::BrailleDots1458
-                                | DrawableChar::BrailleDots2458
-                                | DrawableChar::BrailleDots12458
-                                | DrawableChar::BrailleDots3458
-                                | DrawableChar::BrailleDots13458
-                                | DrawableChar::BrailleDots23458
-                                | DrawableChar::BrailleDots123458
-                                | DrawableChar::BrailleDots68
-                                | DrawableChar::BrailleDots168
-                                | DrawableChar::BrailleDots268
-                                | DrawableChar::BrailleDots1268
-                                | DrawableChar::BrailleDots368
-                                | DrawableChar::BrailleDots1368
-                                | DrawableChar::BrailleDots2368
-                                | DrawableChar::BrailleDots12368
-                                | DrawableChar::BrailleDots468
-                                | DrawableChar::BrailleDots1468
-                                | DrawableChar::BrailleDots2468
-                                | DrawableChar::BrailleDots12468
-                                | DrawableChar::BrailleDots3468
-                                | DrawableChar::BrailleDots13468
-                                | DrawableChar::BrailleDots23468
-                                | DrawableChar::BrailleDots123468
-                                | DrawableChar::BrailleDots568
-                                | DrawableChar::BrailleDots1568
-                                | DrawableChar::BrailleDots2568
-                                | DrawableChar::BrailleDots12568
-                                | DrawableChar::BrailleDots3568
-                                | DrawableChar::BrailleDots13568
-                                | DrawableChar::BrailleDots23568
-                                | DrawableChar::BrailleDots123568
-                                | DrawableChar::BrailleDots4568
-                                | DrawableChar::BrailleDots14568
-                                | DrawableChar::BrailleDots24568
-                                | DrawableChar::BrailleDots124568
-                                | DrawableChar::BrailleDots34568
-                                | DrawableChar::BrailleDots134568
-                                | DrawableChar::BrailleDots234568
-                                | DrawableChar::BrailleDots1234568
-                                // Dots 7 and 8 combinations
-                                | DrawableChar::BrailleDots78
-                                | DrawableChar::BrailleDots178
-                                | DrawableChar::BrailleDots278
-                                | DrawableChar::BrailleDots1278
-                                | DrawableChar::BrailleDots378
-                                | DrawableChar::BrailleDots1378
-                                | DrawableChar::BrailleDots2378
-                                | DrawableChar::BrailleDots12378
-                                | DrawableChar::BrailleDots478
-                                | DrawableChar::BrailleDots1478
-                                | DrawableChar::BrailleDots2478
-                                | DrawableChar::BrailleDots12478
-                                | DrawableChar::BrailleDots3478
-                                | DrawableChar::BrailleDots13478
-                                | DrawableChar::BrailleDots23478
-                                | DrawableChar::BrailleDots123478
-                                | DrawableChar::BrailleDots578
-                                | DrawableChar::BrailleDots1578
-                                | DrawableChar::BrailleDots2578
-                                | DrawableChar::BrailleDots12578
-                                | DrawableChar::BrailleDots3578
-                                | DrawableChar::BrailleDots13578
-                                | DrawableChar::BrailleDots23578
-                                | DrawableChar::BrailleDots123578
-                                | DrawableChar::BrailleDots4578
-                                | DrawableChar::BrailleDots14578
-                                | DrawableChar::BrailleDots24578
-                                | DrawableChar::BrailleDots124578
-                                | DrawableChar::BrailleDots34578
-                                | DrawableChar::BrailleDots134578
-                                | DrawableChar::BrailleDots234578
-                                | DrawableChar::BrailleDots1234578
-                                | DrawableChar::BrailleDots678
-                                | DrawableChar::BrailleDots1678
-                                | DrawableChar::BrailleDots2678
-                                | DrawableChar::BrailleDots12678
-                                | DrawableChar::BrailleDots3678
-                                | DrawableChar::BrailleDots13678
-                                | DrawableChar::BrailleDots23678
-                                | DrawableChar::BrailleDots123678
-                                | DrawableChar::BrailleDots4678
-                                | DrawableChar::BrailleDots14678
-                                | DrawableChar::BrailleDots24678
-                                | DrawableChar::BrailleDots124678
-                                | DrawableChar::BrailleDots34678
-                                | DrawableChar::BrailleDots134678
-                                | DrawableChar::BrailleDots234678
-                                | DrawableChar::BrailleDots1234678
-                                | DrawableChar::BrailleDots5678
-                                | DrawableChar::BrailleDots15678
-                                | DrawableChar::BrailleDots25678
-                                | DrawableChar::BrailleDots125678
-                                | DrawableChar::BrailleDots35678
-                                | DrawableChar::BrailleDots135678
-                                | DrawableChar::BrailleDots235678
-                                | DrawableChar::BrailleDots1235678
-                                | DrawableChar::BrailleDots45678
-                                | DrawableChar::BrailleDots145678
-                                | DrawableChar::BrailleDots245678
-                                | DrawableChar::BrailleDots1245678
-                                | DrawableChar::BrailleDots345678
-                                | DrawableChar::BrailleDots1345678
-                                | DrawableChar::BrailleDots2345678
-                                | DrawableChar::BrailleDots12345678
-                        ),
-                        _ => false,
-                    }
-                };
-
                 // Dot 1 (top-left): position [0,0]
-                if has_dot(1) {
+                if contains_braille_dot(&braille_dots, 1) {
                     let (dot_x, dot_y) = get_dot_position(0, 0);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3460,7 +2143,7 @@ impl Compositor {
                 }
 
                 // Dot 2 (middle-top-left): position [0,1]
-                if has_dot(2) {
+                if contains_braille_dot(&braille_dots, 2) {
                     let (dot_x, dot_y) = get_dot_position(0, 1);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3472,7 +2155,7 @@ impl Compositor {
                 }
 
                 // Dot 3 (middle-bottom-left): position [0,2]
-                if has_dot(3) {
+                if contains_braille_dot(&braille_dots, 3) {
                     let (dot_x, dot_y) = get_dot_position(0, 2);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3484,7 +2167,7 @@ impl Compositor {
                 }
 
                 // Dot 7 (bottom-left): position [0,3]
-                if has_dot(7) {
+                if contains_braille_dot(&braille_dots, 7) {
                     let (dot_x, dot_y) = get_dot_position(0, 3);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3497,7 +2180,7 @@ impl Compositor {
 
                 // Right column
                 // Dot 4 (top-right): position [1,0]
-                if has_dot(4) {
+                if contains_braille_dot(&braille_dots, 4) {
                     let (dot_x, dot_y) = get_dot_position(1, 0);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3509,7 +2192,7 @@ impl Compositor {
                 }
 
                 // Dot 5 (middle-top-right): position [1,1]
-                if has_dot(5) {
+                if contains_braille_dot(&braille_dots, 5) {
                     let (dot_x, dot_y) = get_dot_position(1, 1);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3521,7 +2204,7 @@ impl Compositor {
                 }
 
                 // Dot 6 (middle-bottom-right): position [1,2]
-                if has_dot(6) {
+                if contains_braille_dot(&braille_dots, 6) {
                     let (dot_x, dot_y) = get_dot_position(1, 2);
                     let dot_rect = Rect {
                         x: dot_x,
@@ -3533,7 +2216,7 @@ impl Compositor {
                 }
 
                 // Dot 8 (bottom-right): position [1,3]
-                if has_dot(8) {
+                if contains_braille_dot(&braille_dots, 8) {
                     let (dot_x, dot_y) = get_dot_position(1, 3);
                     let dot_rect = Rect {
                         x: dot_x,
