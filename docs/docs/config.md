@@ -455,7 +455,6 @@ The list of characters:
 - `⠽` BrailleDots13456
 - `⠾` BrailleDots23456
 - `⠿` BrailleDots123456
-
 - `⡀` BrailleDots7
 - `⡁` BrailleDots17
 - `⡂` BrailleDots27
@@ -520,7 +519,6 @@ The list of characters:
 - `⡽` BrailleDots134567
 - `⡾` BrailleDots234567
 - `⡿` BrailleDots1234567
-
 - `⢀` BrailleDots8
 - `⢁` BrailleDots18
 - `⢂` BrailleDots28
@@ -585,6 +583,69 @@ The list of characters:
 - `⢽` BrailleDots134568
 - `⢾` BrailleDots234568
 - `⢿` BrailleDots1234568
+- `⣀` BrailleDots78
+- `⣁` BrailleDots178
+- `⣂` BrailleDots278
+- `⣃` BrailleDots1278
+- `⣄` BrailleDots378
+- `⣅` BrailleDots1378
+- `⣆` BrailleDots2378
+- `⣇` BrailleDots12378
+- `⣈` BrailleDots478
+- `⣉` BrailleDots1478
+- `⣊` BrailleDots2478
+- `⣋` BrailleDots12478
+- `⣌` BrailleDots3478
+- `⣍` BrailleDots13478
+- `⣎` BrailleDots23478
+- `⣏` BrailleDots123478
+- `⣐` BrailleDots578
+- `⣑` BrailleDots1578
+- `⣒` BrailleDots2578
+- `⣓` BrailleDots12578
+- `⣔` BrailleDots3578
+- `⣕` BrailleDots13578
+- `⣖` BrailleDots23578
+- `⣗` BrailleDots123578
+- `⣘` BrailleDots4578
+- `⣙` BrailleDots14578
+- `⣚` BrailleDots24578
+- `⣛` BrailleDots124578
+- `⣜` BrailleDots34578
+- `⣝` BrailleDots134578
+- `⣞` BrailleDots234578
+- `⣟` BrailleDots1234578
+- `⣠` BrailleDots678
+- `⣡` BrailleDots1678
+- `⣢` BrailleDots2678
+- `⣣` BrailleDots12678
+- `⣤` BrailleDots3678
+- `⣥` BrailleDots13678
+- `⣦` BrailleDots23678
+- `⣧` BrailleDots123678
+- `⣨` BrailleDots4678
+- `⣩` BrailleDots14678
+- `⣪` BrailleDots24678
+- `⣫` BrailleDots124678
+- `⣬` BrailleDots34678
+- `⣭` BrailleDots134678
+- `⣮` BrailleDots234678
+- `⣯` BrailleDots1234678
+- `⣰` BrailleDots5678
+- `⣱` BrailleDots15678
+- `⣲` BrailleDots25678
+- `⣳` BrailleDots125678
+- `⣿` BrailleDots12345678
+- `⣸` BrailleDots45678
+- `⣴` BrailleDots35678
+- `⣼` BrailleDots345678
+- `⣾` BrailleDots2345678
+- `⣷` BrailleDots1235678
+- `⣵` BrailleDots135678
+- `⣽` BrailleDots1345678
+- `⣻` BrailleDots1245678
+- `⣹` BrailleDots145678
+- `⣺` BrailleDots245678
 
 ## ignore-selection-foreground-color
 
