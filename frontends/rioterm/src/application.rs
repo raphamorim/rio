@@ -155,6 +155,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        // Skip rendering for unfocused windows if disabled
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
@@ -164,20 +165,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // TODO: Optionally Allow check if is the current route
                         // before schedule render. Using the following code below:
                         // if route_id == route.window.screen.ctx().current_route() {
+
                         let timer_id = TimerId::new(Topic::RenderRoute, route_id);
                         let event = EventPayload::new(
                             RioEventType::Rio(RioEvent::Render),
                             window_id,
                         );
 
+                        // Only proceed if this event isn't already scheduled
                         if !self.scheduler.scheduled(timer_id) {
                             if let Some(limit) = route.window.wait_until() {
-                                route.window.start_render_timestamp();
+                                // Schedule for future without updating timestamp yet
                                 self.scheduler.schedule(event, limit, false, timer_id);
                             } else {
-                                route.window.start_render_timestamp();
+                                // Request immediate redraw without updating timestamp
                                 route.request_redraw();
                             }
+                            // Note: timestamp will be updated when actual rendering begins
                         }
                     }
                 }
@@ -1124,6 +1128,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::RedrawRequested => {
                 route.window.winit_window.pre_present_notify();
+
+                route.begin_render();
 
                 match route.path {
                     RoutePath::Assistant => {
