@@ -58,6 +58,11 @@ impl Route<'_> {
         self.window.winit_window.request_redraw();
     }
 
+    // Add this function to be called at the START of actual rendering
+    pub fn begin_render(&mut self) {
+        self.window.render_timestamp = Instant::now();
+    }
+
     pub fn request_frame(&mut self, scheduler: &mut Scheduler) {
         let timer_id =
             TimerId::new(Topic::RenderRoute, self.window.screen.ctx().current_route());
@@ -67,10 +72,8 @@ impl Route<'_> {
         );
 
         if let Some(limit) = self.window.wait_until() {
-            self.window.start_render_timestamp();
             scheduler.schedule(event, limit, false, timer_id);
         } else {
-            self.window.start_render_timestamp();
             self.request_redraw();
         }
     }
@@ -393,38 +396,34 @@ impl<'a> RouteWindow<'a> {
         configure_window(&self.winit_window, config);
     }
 
-    pub fn start_render_timestamp(&mut self) {
-        self.render_timestamp = Instant::now();
-    }
-
     pub fn wait_until(&self) -> Option<Duration> {
         let elapsed_time = Instant::now()
             .duration_since(self.render_timestamp)
             .as_millis() as u64;
         let vblank_interval = self.vblank_interval.as_millis() as u64;
 
-        match vblank_interval >= elapsed_time {
-            true => Some(Duration::from_millis(vblank_interval - elapsed_time)),
-            // false => None,
-            false => Some(Duration::from_millis(vblank_interval.wrapping_sub(1))),
+        if vblank_interval >= elapsed_time {
+            // We're ahead of schedule, wait for the appropriate time
+            Some(Duration::from_millis(vblank_interval - elapsed_time))
+        } else {
+            // We're behind schedule, render immediately
+            None
         }
     }
 
     pub fn update_vblank_interval(&mut self) {
         if !self.has_fps_target {
-            // Get the display vblank interval.
-            let monitor_vblank_interval = 1_000_000.
-                / self
-                    .winit_window
-                    .current_monitor()
-                    .and_then(|monitor| monitor.refresh_rate_millihertz())
-                    .unwrap_or(60_000) as f64;
+            // Get the display refresh rate, default to 60Hz if unavailable
+            let refresh_rate_hz = self
+                .winit_window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+                .unwrap_or(60_000) as f64
+                / 1000.0; // Convert millihertz to Hz
 
-            // Now convert it to micro seconds.
-            let monitor_vblank_interval =
-                Duration::from_micros((1000. * monitor_vblank_interval) as u64);
-
-            self.vblank_interval = monitor_vblank_interval;
+            // Calculate frame time in microseconds (1,000,000 µs / refresh_rate)
+            let frame_time_us = (1_000_000.0 / refresh_rate_hz) as u64;
+            self.vblank_interval = Duration::from_micros(frame_time_us);
         }
     }
 
