@@ -391,6 +391,14 @@ The list of characters:
 - `` PowerlineCurvedRightHollow
 - `` PowerlineCurvedLeftSolid
 - `` PowerlineCurvedLeftHollow
+- `\ue0b8` PowerlineLowerLeftTriangle
+- `\ue0b9` PowerlineBackslashSeparator
+- `\ue0ba` PowerlineLowerRightTriangle
+- `\ue0bb` PowerlineForwardslashSeparator
+- `\ue0bc` PowerlineUpperLeftTriangle
+- `\ue0bd` PowerlineForwardslashSeparatorRedundant
+- `\ue0be` PowerlineUpperRightTriangle
+- `\ue0bf` PowerlineBackslashSeparatorRedundant
 - `⠀` BrailleBlank
 - `⠁` BrailleDots1
 - `⠂` BrailleDots2
