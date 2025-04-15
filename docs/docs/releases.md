@@ -24,7 +24,9 @@ language: 'en'
 - Fix: macOS: fallback for missing font glyph? [#913](https://github.com/raphamorim/rio/issues/913).
 - Fix: FPS calculation, before it was rendering avg 48 on 60fps screen, however it was due to wrong frame scheduling computations, now it's up to 56-58.
 - Fix: Shift+Tab event is doubled, as if hit twice [#1061](https://github.com/raphamorim/rio/issues/1061).
+- Fix: Request: Option to change click-link modifier key [#1059](https://github.com/raphamorim/rio/issues/1059).
 - Fix: Unexpected tmux previous-window [#1062](https://github.com/raphamorim/rio/issues/1062).
+- *Breaking change*: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
 
 ## 0.2.12
 

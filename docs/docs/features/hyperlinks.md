@@ -35,7 +35,7 @@ If the url is absent then that ends the hyperlink. Typical usage would look like
 OSC 8 ; ; https://example.com/ ST Link to example website OSC 8 ; ; ST
 ```
 
-Will work as default rio terminal hyperlinks, by holding command or `alt` key (depending of your platform) and clicking the link.
+Will work as default rio terminal hyperlinks, by holding command for MacOS and `shift` key for all the other platforms and clicking the link.
 
 ### OSC 8 Example
 
