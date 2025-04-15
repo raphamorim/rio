@@ -22,6 +22,7 @@ language: 'en'
 - Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras [#1031](https://github.com/raphamorim/rio/issues/1031).
 - Fix: Add branch drawing symbols to box characters [#761](https://github.com/raphamorim/rio/issues/761).
 - Fix: macOS: fallback for missing font glyph? [#913](https://github.com/raphamorim/rio/issues/913).
+- Fix: FPS calculation, before it was rendering avg 48 on 60fps screen, however it was due to wrong frame scheduling computations, now it's up to 56-58.
 
 ## 0.2.12
 
