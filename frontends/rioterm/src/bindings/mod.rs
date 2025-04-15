@@ -601,7 +601,6 @@ pub fn default_key_bindings(
         Key::Named(Paste), ~BindingMode::VI; Action::Paste;
         Key::Character("l".into()), ModifiersState::CONTROL; Action::ClearLogNotice;
         "l",  ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\x0c".into());
-        Key::Named(Tab),  ModifiersState::SHIFT, ~BindingMode::VI; Action::Esc("\x1b[Z".into());
         Key::Named(Home),     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         Key::Named(End),      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
         Key::Named(PageUp),   ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollPageUp;
