@@ -1373,7 +1373,7 @@ impl Screen<'_> {
         let is_hyperlink_key_active = self.modifiers.state().super_key();
 
         #[cfg(not(target_os = "macos"))]
-        let is_hyperlink_key_active = self.modifiers.state().alt_key();
+        let is_hyperlink_key_active = self.modifiers.state().shift_key();
 
         if !is_hyperlink_key_active {
             return false;
