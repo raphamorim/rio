@@ -203,11 +203,14 @@ impl Batch {
         if has_mask && self.mask.is_some() && self.mask != mask {
             return false;
         }
+
         self.subpix = subpix;
         self.image = image;
         self.mask = mask;
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
 
+        // Properly set UV coordinates for anti-aliasing
+        // For anti-aliased rendering, use proper edge coordinates
         let verts = [
             // First vertex
             Vertex {
@@ -220,14 +223,14 @@ impl Batch {
             Vertex {
                 pos: [x2, y2, depth],
                 color,
-                uv: [0.0, 1.0],
+                uv: [1.0, 0.0],
                 layers,
             },
             // Third vertex
             Vertex {
                 pos: [x3, y3, depth],
                 color,
-                uv: [1.0, 0.0],
+                uv: [0.0, 1.0],
                 layers,
             },
         ];
@@ -487,6 +490,7 @@ impl BatchManager {
     }
 
     #[inline]
+    #[allow(unused)]
     pub fn add_polygon(
         &mut self,
         points: &[(f32, f32)], // Array of (x,y) points defining the polygon
@@ -530,13 +534,14 @@ impl BatchManager {
         depth: f32,
         color: [f32; 4],
     ) {
+        // Enable subpixel positioning for curved shapes
+        let subpix = true;
+
         let transparent = color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
                 if batch.add_triangle(
-                    x1, y1, x2, y2, x3, y3, color, depth, None,  // image
-                    None,  // mask
-                    false, // subpix
+                    x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix,
                 ) {
                     return;
                 }
@@ -544,19 +549,14 @@ impl BatchManager {
         } else {
             for batch in &mut self.opaque {
                 if batch.add_triangle(
-                    x1, y1, x2, y2, x3, y3, color, depth, None,  // image
-                    None,  // mask
-                    false, // subpix
+                    x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix,
                 ) {
                     return;
                 }
             }
         }
-        self.alloc_batch(transparent).add_triangle(
-            x1, y1, x2, y2, x3, y3, color, depth, None,  // image
-            None,  // mask
-            false, // subpix
-        );
+        self.alloc_batch(transparent)
+            .add_triangle(x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix);
     }
 
     #[inline]
@@ -664,6 +664,82 @@ impl BatchManager {
             None,  // mask
             false, // subpix
         );
+    }
+
+    #[inline]
+    pub fn add_antialiased_polygon(
+        &mut self,
+        points: &[(f32, f32)],
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        // Need at least 3 points to form a polygon
+        if points.len() < 3 {
+            return;
+        }
+
+        // For a crisp-free appearance, we'll use a multi-pass approach
+        // First, draw the main polygon at full opacity
+        let first_point = points[0];
+
+        // For curved shapes, use an optimized triangulation
+        for i in 1..points.len() - 1 {
+            let p1 = first_point;
+            let p2 = points[i];
+            let p3 = points[i + 1];
+
+            // Add triangle with correct subpixel rendering
+            self.add_triangle(p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, depth, color);
+        }
+
+        // Now add anti-aliasing at the edges
+        // Create a slightly larger stroke around the polygon with semi-transparency
+        if points.len() >= 4 {
+            // Draw anti-aliased edges
+            // Create a slightly transparent version of the color for edge blending
+            let depth = depth - 0.0001;
+            let edge_color = [
+                color[0],
+                color[1],
+                color[2],
+                color[3] * 0.5, // Half opacity for smooth blending
+            ];
+
+            // Edge width for anti-aliasing (typically 0.5-1.0 pixels)
+            let edge_width = 0.5;
+
+            // Process each edge of the polygon
+            for i in 0..points.len() {
+                let p1 = points[i];
+                let p2 = points[(i + 1) % points.len()];
+
+                // Calculate edge vector
+                let edge_x = p2.0 - p1.0;
+                let edge_y = p2.1 - p1.1;
+
+                // Calculate normalized perpendicular vector for edge expansion
+                let edge_length = (edge_x * edge_x + edge_y * edge_y).sqrt();
+                if edge_length > 0.001 {
+                    let norm_x = -edge_y / edge_length;
+                    let norm_y = edge_x / edge_length;
+
+                    // Create expanded edge quad points
+                    let q1 = (p1.0, p1.1);
+                    let q2 = (p2.0, p2.1);
+                    let q3 = (p2.0 + norm_x * edge_width, p2.1 + norm_y * edge_width);
+                    let q4 = (p1.0 + norm_x * edge_width, p1.1 + norm_y * edge_width);
+
+                    // Draw the quad as two triangles with transparency for anti-aliasing
+                    self.add_triangle(
+                        q1.0, q1.1, q2.0, q2.1, q3.0, q3.1, depth, edge_color,
+                    );
+
+                    self.add_triangle(
+                        q1.0, q1.1, q3.0, q3.1, q4.0, q4.1, depth, edge_color,
+                    );
+                }
+            }
+        }
     }
 
     #[inline]

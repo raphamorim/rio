@@ -1570,7 +1570,7 @@ impl Compositor {
             }
             DrawableChar::PowerlineCurvedLeftSolid => {
                 // Number of segments to create a smooth curve
-                let segments = 30;
+                let segments = 60;
                 // Create points for the polygon
                 let mut points = Vec::with_capacity(segments + 2);
                 // Add the right side points first (straight edge)
@@ -1602,37 +1602,45 @@ impl Compositor {
                 }
 
                 // Draw the filled polygon with all our points
-                self.batches.add_polygon(&points, depth, color);
+                self.batches.add_antialiased_polygon(&points, depth, color);
             }
             DrawableChar::PowerlineCurvedRightSolid => {
-                // Number of segments to create a smooth curve
-                let segments = 30;
-                // Create points for the polygon
+                // Use even higher segment count for ultra-smooth curve
+                let segments = 180;
                 let mut points = Vec::with_capacity(segments + 2);
-                // Add the left side points first (straight edge)
+
+                // Start with straight edge (left side)
                 points.push((x, y)); // Top-left
                 points.push((x, y + line_height)); // Bottom-left
-                                                   // Create the curved right side (half oval)
-                for i in (0..=segments).rev() {
-                    // Draw from bottom to top
-                    let t = i as f32 / segments as f32; // Parameter from 0 to 1
-                                                        // For a half oval, we use the parametric equation of an ellipse
-                                                        // The horizontal radius is line_width
-                                                        // The vertical radius is line_height/2
-                                                        // Calculate y position (moving from bottom to top)
+
+                // Create an even distribution of points along the curve
+                // Use a distribution that concentrates more points in the curved areas
+                for i in 0..=segments {
+                    // Use sine-based parameterization for better point distribution
+                    // This gives more points where curvature is highest
+                    let angle = std::f32::consts::PI * i as f32 / segments as f32;
+                    let t = (1.0 - angle.cos()) / 2.0; // Smoother distribution between 0-1
+
+                    // Calculate y position from bottom to top
                     let y_pos = y + line_height * (1.0 - t);
-                    // Calculate x position using the ellipse formula x = a * sqrt(1 - (y/b)²)
-                    // Where a is the horizontal radius and b is the vertical radius
-                    // We need to normalize y to be between -1 and 1 for the calculation
+
+                    // Calculate x position using ellipse formula
+                    // Using sine distribution gives better antialiasing at critical curve points
                     let normalized_y = 2.0 * t - 1.0;
-                    // Calculate the x position based on the ellipse equation
-                    // For right curve, we add to x instead of subtracting from x + line_width
+
+                    // Ensure x coordinates exactly match the mathematical approach in left curve
+                    // but mirrored for right side
                     let x_pos =
-                        x + (line_width * (1.0 - normalized_y * normalized_y).sqrt());
-                    points.push((x_pos, y_pos));
+                        x + line_width * (1.0 - normalized_y * normalized_y).sqrt();
+
+                    // Add a tiny adjustment to ensure perfect pixel alignment
+                    let x_adj = x_pos + 0.001; // Subpixel adjustment can help with antialiasing
+
+                    points.push((x_adj, y_pos));
                 }
-                // Draw the filled polygon with all our points
-                self.batches.add_polygon(&points, depth, color);
+
+                // Draw the filled polygon with antialiasing
+                self.batches.add_antialiased_polygon(&points, depth, color);
             }
             DrawableChar::PowerlineCurvedLeftHollow => {
                 // Number of segments to create a smooth curve
