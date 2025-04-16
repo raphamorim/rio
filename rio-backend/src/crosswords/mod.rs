@@ -842,7 +842,7 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    fn damage_cursor(&mut self) {
+    pub fn damage_cursor(&mut self) {
         // The normal cursor coordinates are always in viewport.
         let point = Pos::new(
             self.grid.cursor.pos.row.0 as usize,
@@ -1556,10 +1556,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                // TODO: Update it
-                // self.blinking_cursor = false;
-                // self.event_proxy
-                // .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+                self.blinking_cursor = false;
+                self.event_proxy
+                    .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
         }
@@ -2009,16 +2008,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn set_cursor_style(&mut self, style: Option<CursorShape>, _blinking: bool) {
+    fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
         if let Some(cursor_shape) = style {
             self.cursor_shape = cursor_shape;
         } else {
             self.cursor_shape = self.default_cursor_shape;
         }
 
-        // self.blinking_cursor = blinking;
-        // self.event_proxy
-        //     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+        self.blinking_cursor = blinking;
+        self.event_proxy
+            .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
 
     #[inline]

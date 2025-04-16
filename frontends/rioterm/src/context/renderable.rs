@@ -16,6 +16,7 @@ pub struct RenderableContent {
     // TODO: Should not use default
     pub cursor: Cursor,
     pub has_blinking_enabled: bool,
+    pub is_blinking_cursor_visible: bool,
     pub selection_range: Option<SelectionRange>,
     pub hyperlink_range: Option<SelectionRange>,
     pub last_typing: Option<Instant>,
@@ -31,6 +32,7 @@ impl RenderableContent {
             hyperlink_range: None,
             last_typing: None,
             has_pending_updates: false,
+            is_blinking_cursor_visible: false,
         }
     }
 
