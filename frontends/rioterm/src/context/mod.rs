@@ -17,6 +17,7 @@ use crate::performer::Machine;
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
+use rio_backend::crosswords::TermDamage;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -81,36 +82,44 @@ impl<T: EventListener> Context<T> {
         self.renderable_content.hyperlink_range.is_some()
     }
 
-    #[inline]
-    pub fn renderable_content(&mut self) -> &RenderableContent {
-        let mut has_ime = false;
-        if let Some(preedit) = self.ime.preedit() {
-            if let Some(content) = preedit.text.chars().next() {
-                self.renderable_content.cursor.content = content;
-                self.renderable_content.cursor.is_ime_enabled = true;
-                has_ime = true;
-            }
-        }
+    // #[inline]
+    // pub fn renderable_content<'a>(&'a mut self) -> &'a TermDamage {
+    //     // let start2 = std::time::Instant::now();
+    //     // let mut has_ime = false;
+    //     // if let Some(preedit) = self.ime.preedit() {
+    //     //     if let Some(content) = preedit.text.chars().next() {
+    //     //         self.renderable_content.cursor.content = content;
+    //     //         self.renderable_content.cursor.is_ime_enabled = true;
+    //     //         has_ime = true;
+    //     //     }
+    //     // }
 
-        if !has_ime {
-            self.renderable_content.cursor.is_ime_enabled = false;
-            self.renderable_content.cursor.content =
-                self.renderable_content.cursor.content_ref;
-        }
+    //     // if !has_ime {
+    //     //     self.renderable_content.cursor.is_ime_enabled = false;
+    //     //     self.renderable_content.cursor.content =
+    //     //         self.renderable_content.cursor.content_ref;
+    //     // }
 
-        let terminal = self.terminal.lock();
-        self.renderable_content.update(
-            terminal.visible_rows(),
-            terminal.display_offset(),
-            terminal.cursor(),
-            terminal.is_fully_damaged(),
-            terminal.colors,
-            terminal.blinking_cursor,
-        );
-        drop(terminal);
+    //     let mut terminal = self.terminal.lock();
+    //     // let start3 = std::time::Instant::now();
+    //     let visible_rows = terminal.visible_rows();
+    //     // let duration3 = start3.elapsed();
+    //     // println!("Time elapsed in -renderer.update.visible_rows() is: {:?}", duration3);
+    //     self.renderable_content.update(
+    //         visible_rows,
+    //         terminal.cursor(),
+    //         terminal.colors,
+    //         terminal.blinking_cursor,
+    //         terminal.damage(),
+    //     );
+    //     // terminal.reset_damage();
+    //     // drop(terminal);
 
-        &self.renderable_content
-    }
+    //     // let duration2 = start2.elapsed();
+    //     // println!("Time elapsed in -renderer.update.renderable_content() is: {:?}", duration2);
+
+    //     // &self.renderable_content
+    // }
 
     #[inline]
     pub fn cursor_from_ref(&self) -> Cursor {
@@ -659,8 +668,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn grid_objects(&self) -> Vec<Object> {
-        self.contexts[self.current_index].objects()
+    pub fn get_grid_objects(&self, target: &mut Vec<Object>) {
+        self.contexts[self.current_index].get_objects(target);
     }
 
     #[inline]

@@ -1,8 +1,10 @@
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
+use rio_backend::crosswords::pos::Column;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
+use rio_backend::crosswords::TermDamage;
 use rio_backend::selection::SelectionRange;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
@@ -22,14 +24,13 @@ pub struct Cursor {
     pub is_ime_enabled: bool,
 }
 
+#[derive(Default)]
 pub struct RenderableContent {
-    pub inner: Vec<Row<Square>>,
     pub display_offset: i32,
     // TODO: Should not use default
     pub cursor: Cursor,
     pub colors: TermColors,
     pub has_blinking_enabled: bool,
-    pub strategy: RenderableContentStrategy,
     pub selection_range: Option<SelectionRange>,
     pub hyperlink_range: Option<SelectionRange>,
     pub has_pending_updates: bool,
@@ -40,12 +41,10 @@ pub struct RenderableContent {
 impl RenderableContent {
     pub fn new(cursor: Cursor) -> Self {
         RenderableContent {
-            inner: vec![],
             colors: TermColors::default(),
             cursor,
             has_blinking_enabled: false,
             display_offset: 0,
-            strategy: RenderableContentStrategy::Noop,
             selection_range: None,
             hyperlink_range: None,
             has_pending_updates: false,
@@ -73,75 +72,67 @@ impl RenderableContent {
     pub fn update(
         &mut self,
         rows: Vec<Row<Square>>,
-        display_offset: usize,
         cursor: CursorState,
-        is_fully_damaged: bool,
         colors: TermColors,
         has_blinking_enabled: bool,
+        damage: TermDamage,
     ) {
-        let mut diff: HashSet<usize> = HashSet::with_capacity(rows.len());
-        if self.cursor.state.pos != cursor.pos {
-            // Add old row cursor
-            diff.insert(*self.cursor.state.pos.row as usize);
-            // Add new row cursor
-            diff.insert(*cursor.pos.row as usize);
-        }
-        self.cursor.state = cursor;
+        // self.has_blinking_enabled = has_blinking_enabled;
+        // self.cursor.state = cursor;
+        // self.colors = colors;
+        // match damage {
+        //     TermDamage::Full => {
+        //         self.strategy = RenderableContentStrategy::Full;
+        //         self.inner = rows.clone();
+        //     },
+        //     TermDamage::Partial(lines) => {
+        //         let mut diff: HashSet<usize> = HashSet::with_capacity(rows.len());
+        //         for line in lines {
+        //             println!(">>>>> {:?}", line);
+        //             for i in line.left..line.right {
+        //                 self.inner[line.line][Column(i)] = rows[line.line][Column(i)].clone();
+        //             }
+        //             diff.insert(line.line);
+        //         }
+        //         self.strategy = RenderableContentStrategy::Lines(diff);
+        //     },
+        // }
 
-        let has_selection = self.selection_range.is_some();
-        if !has_selection && has_blinking_enabled {
-            let mut should_blink = true;
-            if let Some(last_typing_time) = self.last_typing {
-                if last_typing_time.elapsed() < Duration::from_secs(1) {
-                    should_blink = false;
-                }
-            }
+        // let has_selection = self.selection_range.is_some();
+        // if !has_selection && has_blinking_enabled {
+        //     let mut should_blink = true;
+        //     if let Some(last_typing_time) = self.last_typing {
+        //         if last_typing_time.elapsed() < Duration::from_secs(1) {
+        //             should_blink = false;
+        //         }
+        //     }
 
-            if should_blink {
-                self.is_cursor_visible = !self.is_cursor_visible;
-                diff.insert(*self.cursor.state.pos.row as usize);
-            } else {
-                self.is_cursor_visible = true;
-            }
-        }
+        //     if should_blink {
+        //         self.is_cursor_visible = !self.is_cursor_visible;
+        //         diff.insert(*self.cursor.state.pos.row as usize);
+        //     } else {
+        //         self.is_cursor_visible = true;
+        //     }
+        // }
 
-        self.strategy = RenderableContentStrategy::Full;
+        // self.strategy = RenderableContentStrategy::Full;
 
-        let require_full_clone = is_fully_damaged
-            || self.display_offset != display_offset as i32
-            || self.has_blinking_enabled != has_blinking_enabled
-            || self.has_pending_updates
-            || self.inner.len() != rows.len()
-            || has_selection
-            || self.colors != colors
-            || self.hyperlink_range.is_some();
+        // let require_full_clone = self.display_offset != display_offset as i32
+        //     || self.has_blinking_enabled != has_blinking_enabled
+        //     || self.has_pending_updates
+        //     || self.inner.len() != rows.len()
+        //     || has_selection
+        //     || self.colors != colors
+        //     || self.hyperlink_range.is_some();
 
-        self.has_pending_updates = false;
+        // self.has_pending_updates = false;
 
-        self.display_offset = display_offset as i32;
-        self.has_blinking_enabled = has_blinking_enabled;
+        // self.display_offset = display_offset as i32;
+        // self.has_blinking_enabled = has_blinking_enabled;
 
-        if is_fully_damaged {
-            self.colors = colors;
-        }
-
-        if require_full_clone {
-            self.inner = rows.clone();
-            return;
-        }
-
-        // inner and rows will always contains same len
-        for (current_idx, _) in rows.iter().enumerate() {
-            if rows[current_idx] != self.inner[current_idx] {
-                self.inner[current_idx] = rows[current_idx].clone();
-                diff.insert(current_idx);
-            }
-        }
-
-        if !diff.is_empty() {
-            self.strategy = RenderableContentStrategy::Lines(diff);
-        } else {
-            self.strategy = RenderableContentStrategy::Noop;
-        }
+        // if require_full_clone {
+        //     self.inner = rows.clone();
+        //     return;
+        // }
     }
 }
