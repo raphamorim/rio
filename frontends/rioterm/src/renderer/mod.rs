@@ -252,7 +252,7 @@ impl Renderer {
         term_colors: &TermColors,
         is_active: bool,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
         let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
@@ -485,11 +485,11 @@ impl Renderer {
             builder.new_line();
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed in --renderer.update.create_line() is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed in --renderer.update.create_line() is: {:?}",
+        //     duration
+        // );
     }
 
     #[inline]
@@ -761,7 +761,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -806,20 +806,26 @@ impl Renderer {
 
             let mut is_cursor_visible = cursor.is_visible();
 
-            let has_selection = context.renderable_content.selection_range.is_some();
-            if !has_selection && blinking_cursor {
-                let mut should_blink = true;
-                if let Some(last_typing_time) = context.renderable_content.last_typing {
-                    if last_typing_time.elapsed() < std::time::Duration::from_secs(1) {
-                        should_blink = false;
+            context.renderable_content.has_blinking_enabled = blinking_cursor;
+            if blinking_cursor {
+                let has_selection = context.renderable_content.selection_range.is_some();
+                if !has_selection {
+                    let mut should_blink = true;
+                    if let Some(last_typing_time) = context.renderable_content.last_typing {
+                        if last_typing_time.elapsed() < std::time::Duration::from_secs(1) {
+                            should_blink = false;
+                        }
+                    }
+
+                    if should_blink {
+                        context.renderable_content.is_blinking_cursor_visible = !context.renderable_content.is_blinking_cursor_visible;
+                        terminal.damage_cursor();
+                    } else {
+                        context.renderable_content.is_blinking_cursor_visible = true;
                     }
                 }
 
-                if should_blink {
-                    is_cursor_visible = !is_cursor_visible;
-                } else {
-                    is_cursor_visible = true;
-                }
+                is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
             }
 
             if !is_active && context.renderable_content.cursor.state.is_visible() {
@@ -914,7 +920,7 @@ impl Renderer {
         context_manager.get_grid_objects(&mut objects);
 
         sugarloaf.set_objects(objects);
-        let duration = start.elapsed();
-        println!("Time elapsed in -renderer.update() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
 }
