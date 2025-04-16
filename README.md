@@ -39,9 +39,9 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 | Name | Details |
 | --- | --- |
-| MacOs _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/macos/) |
-| Linux _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/linux/) |
-| Windows _as desktop application_ | [Installation guide](https://raphamorim.io/rio/docs/install/windows/) |
+| MacOs _as desktop application_ | [Installation guide](https://rioterm.com/docs/install/macos) |
+| Linux _as desktop application_ | [Installation guide](https://rioterm.com/docs/install/linux) |
+| Windows _as desktop application_ | [Installation guide](https://rioterm.com/docs/install/windows) |
 | Web Browser _(WebAssembly)_ | (Sugarloaf is ready but Rio still need to be ported) |
 
 > Demo with split and CRT on MacOS
