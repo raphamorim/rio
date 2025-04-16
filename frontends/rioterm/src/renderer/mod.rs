@@ -811,14 +811,17 @@ impl Renderer {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
                     let mut should_blink = true;
-                    if let Some(last_typing_time) = context.renderable_content.last_typing {
-                        if last_typing_time.elapsed() < std::time::Duration::from_secs(1) {
+                    if let Some(last_typing_time) = context.renderable_content.last_typing
+                    {
+                        if last_typing_time.elapsed() < std::time::Duration::from_secs(1)
+                        {
                             should_blink = false;
                         }
                     }
 
                     if should_blink {
-                        context.renderable_content.is_blinking_cursor_visible = !context.renderable_content.is_blinking_cursor_visible;
+                        context.renderable_content.is_blinking_cursor_visible =
+                            !context.renderable_content.is_blinking_cursor_visible;
                         terminal.damage_cursor();
                     } else {
                         context.renderable_content.is_blinking_cursor_visible = true;
