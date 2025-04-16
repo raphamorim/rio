@@ -836,8 +836,6 @@ impl Renderer {
                 terminal.damage()
             };
 
-            println!("{:?}", damage);
-
             match damage {
                 TermDamage::Full => {
                     content.sel(rich_text_id);
@@ -849,7 +847,7 @@ impl Renderer {
                             row,
                             has_cursor,
                             None,
-                            Line((i - display_offset) as i32),
+                            Line((i as i32) - display_offset as i32),
                             &context.renderable_content,
                             hints,
                             focused_match,
