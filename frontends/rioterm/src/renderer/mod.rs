@@ -3,7 +3,7 @@ mod search;
 pub mod utils;
 
 use crate::ansi::CursorShape;
-use crate::context::renderable::{Cursor, RenderableContent, RenderableContentStrategy};
+use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
@@ -778,54 +778,79 @@ impl Renderer {
         for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
             let is_active = active_index == index;
             let context = grid_context.context_mut();
+
+            let mut has_ime = false;
+            if let Some(preedit) = context.ime.preedit() {
+                if let Some(content) = preedit.text.chars().next() {
+                    context.renderable_content.cursor.content = content;
+                    context.renderable_content.cursor.is_ime_enabled = true;
+                    has_ime = true;
+                }
+            }
+
+            if !has_ime {
+                context.renderable_content.cursor.is_ime_enabled = false;
+                context.renderable_content.cursor.content =
+                    context.renderable_content.cursor.content_ref;
+            }
+
             let rich_text_id = context.rich_text_id;
             let mut terminal = context.terminal.lock();
             // let renderable_content = context.renderable_content();
             let colors = terminal.colors;
+            let cursor = terminal.cursor();
+            context.renderable_content.cursor.state = cursor.clone();
             let display_offset = terminal.display_offset();
             let blinking_cursor = terminal.blinking_cursor;
             let visible_rows = terminal.visible_rows();
-            let damage = terminal.damage();
-            // let mut is_cursor_visible = renderable_content.is_cursor_visible
-            //     && renderable_content.cursor.state.is_visible();
-            // if !is_active && renderable_content.cursor.state.is_visible() {
-            //     is_cursor_visible = true;
-            // }
 
-            // let display_offset = renderable_content.display_offset;
-            // let strategy = if is_active && hints.is_some() {
-            //     &RenderableContentStrategy::Full
-            // } else {
-            //     &renderable_content.strategy
-            // };
+            let mut is_cursor_visible = cursor.is_visible();
+
+            let has_selection = context.renderable_content.selection_range.is_some();
+            if !has_selection && blinking_cursor {
+                let mut should_blink = true;
+                if let Some(last_typing_time) = context.renderable_content.last_typing {
+                    if last_typing_time.elapsed() < std::time::Duration::from_secs(1) {
+                        should_blink = false;
+                    }
+                }
+
+                if should_blink {
+                    is_cursor_visible = !is_cursor_visible;
+                } else {
+                    is_cursor_visible = true;
+                }
+            }
+
+            if !is_active && context.renderable_content.cursor.state.is_visible() {
+                is_cursor_visible = true;
+            }
+
+            let damage = if context.renderable_content.has_pending_updates
+                || is_active
+                    && (context.renderable_content.selection_range.is_some()
+                        || hints.is_some())
+            {
+                TermDamage::Full
+            } else {
+                terminal.damage()
+            };
+
+            println!("{:?}", damage);
 
             match damage {
                 TermDamage::Full => {
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
-                        // let has_cursor = is_cursor_visible
-                        //     && renderable_content.cursor.state.pos.row == i;
-                        let has_cursor = false;
+                        let has_cursor = is_cursor_visible && cursor.pos.row == i;
                         self.create_line(
                             content,
                             row,
                             has_cursor,
                             None,
                             Line((i - display_offset) as i32),
-                            &RenderableContent {
-                                // display_offset,
-                                // TODO: Should not use default
-                                // cursor,
-                                has_blinking_enabled: blinking_cursor,
-                                // strategy,
-                                // selection_range: Optio,
-                                // hyperlink_range: Optio,
-                                // has_pending_updates,
-                                // last_typing: Optio,
-                                // is_cursor_visible,
-                                ..RenderableContent::default()
-                            },
+                            &context.renderable_content,
                             hints,
                             focused_match,
                             &colors,
@@ -837,9 +862,7 @@ impl Renderer {
                 TermDamage::Partial(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
-                        // let has_cursor = is_cursor_visible
-                        //     && renderable_content.cursor.state.pos.row == line;
-                        let has_cursor = false;
+                        let has_cursor = is_cursor_visible && cursor.pos.row == line.line;
                         content.clear_line(line.line);
                         self.create_line(
                             content,
@@ -847,59 +870,17 @@ impl Renderer {
                             has_cursor,
                             Some(line.line),
                             Line(line.line as i32),
-                            &RenderableContent {
-                                // display_offset,
-                                // TODO: Should not use default
-                                // cursor,
-                                has_blinking_enabled: blinking_cursor,
-                                // strategy,
-                                // selection_range: Optio,
-                                // hyperlink_range: Optio,
-                                // has_pending_updates,
-                                // last_typing: Optio,
-                                // is_cursor_visible,
-                                ..RenderableContent::default()
-                            },
+                            &context.renderable_content,
                             hints,
                             focused_match,
                             &colors,
                             is_active,
                         );
-                        // for i in line.left..line.right {
-                        // self.inner[line.line][Column(i)] = rows[line.line][Column(i)].clone();
-                        // }
-                        // diff.insert(line.line);
                     }
                 }
             };
 
-            // match strategy {
-            //     RenderableContentStrategy::Full => {
-            //         content.sel(rich_text_id);
-            //         content.clear();
-            //         for (i, row) in renderable_content.inner.iter().enumerate() {
-            //             let has_cursor = is_cursor_visible
-            //                 && renderable_content.cursor.state.pos.row == i;
-            //             self.create_line(
-            //                 content,
-            //                 row,
-            //                 has_cursor,
-            //                 None,
-            //                 Line((i as i32) - display_offset),
-            //                 renderable_content,
-            //                 hints,
-            //                 focused_match,
-            //                 is_active,
-            //             );
-            //         }
-            //         content.build();
-            //     }
-            //     RenderableContentStrategy::Lines(lines) => {
-
-            //     }
-            //     RenderableContentStrategy::Noop => {}
-            // }
-
+            context.renderable_content.has_pending_updates = false;
             terminal.reset_damage();
             drop(terminal);
         }

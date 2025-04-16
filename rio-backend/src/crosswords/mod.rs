@@ -2333,7 +2333,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
 
                 self.selection = None;
-                self.mark_fully_damaged();
             }
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
@@ -2348,12 +2347,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .selection
                     .take()
                     .filter(|s| !s.intersects_range(..Line(0)));
-
-                self.mark_fully_damaged();
             }
             // We have no history to clear.
             ClearMode::Saved => (),
         }
+
+        self.mark_fully_damaged();
     }
 
     #[inline]
