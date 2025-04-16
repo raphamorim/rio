@@ -200,6 +200,32 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    pub fn get_objects(&self, target: &mut Vec<Object>) {
+        let len = self.inner.len();
+        if len == 0 {
+            return;
+        }
+
+        // Reserve space for more objects
+        target.reserve(len);
+
+        // In case there's only 1 context then ignore quad
+        if len == 1 {
+            if let Some(item) = self.inner.first() {
+                target.push(Object::RichText(
+                    RichText {
+                        id: item.val.rich_text_id,
+                        position: [self.margin.x, self.margin.top_y],
+                    },
+                    None,
+                ));
+            }
+        } else {
+            self.plot_objects(target, 0, self.margin);
+        }
+    }
+
+    #[inline]
     pub fn objects(&self) -> Vec<Object> {
         let len = self.inner.len();
         if len == 0 {
