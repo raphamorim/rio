@@ -597,8 +597,8 @@ impl<U: EventListener> Crosswords<U> {
             self.mark_fully_damaged();
 
             // TODO: This should leave here
-            // self.event_proxy
-            // .send_event(RioEvent::Render, self.window_id);
+            self.event_proxy
+                .send_event(RioEvent::Render, self.window_id);
         }
     }
 
@@ -2396,7 +2396,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let color_arr = color.to_arr();
 
         if index != NamedColor::Cursor as usize && self.colors[index] != Some(color_arr) {
-            println!("set_color");
             self.mark_fully_damaged();
         }
 
@@ -2407,7 +2406,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn reset_color(&mut self, index: usize) {
         // Damage terminal if the color changed and it's not the cursor.
         if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
-            println!("reset_color");
             self.mark_fully_damaged();
         }
 
