@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.13 (unreleased)
 
+- *Breaking change*: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
 - Fix dimension for whenever a new tab is created from a view with splits.
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
 - Fix font size affecting tabs size.
@@ -26,7 +27,7 @@ language: 'en'
 - Fix: Shift+Tab event is doubled, as if hit twice [#1061](https://github.com/raphamorim/rio/issues/1061).
 - Fix: Request: Option to change click-link modifier key [#1059](https://github.com/raphamorim/rio/issues/1059).
 - Fix: Unexpected tmux previous-window [#1062](https://github.com/raphamorim/rio/issues/1062).
-- *Breaking change*: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
+- Rewrite the way Rio deals with line diff and updates computation.
 
 ## 0.2.12
 
