@@ -169,6 +169,49 @@ impl From<KeyboardModes> for Mode {
     }
 }
 
+/// Terminal damage information collected since the last [`Term::reset_damage`] call.
+#[derive(Debug)]
+pub enum TermDamage<'a> {
+    /// The entire terminal is damaged.
+    Full,
+
+    /// Iterator over damaged lines in the terminal.
+    Partial(TermDamageIterator<'a>),
+}
+
+/// Iterator over the terminal's viewport damaged lines.
+#[derive(Clone, Debug)]
+pub struct TermDamageIterator<'a> {
+    line_damage: std::slice::Iter<'a, LineDamageBounds>,
+    display_offset: usize,
+}
+
+impl<'a> TermDamageIterator<'a> {
+    pub fn new(line_damage: &'a [LineDamageBounds], display_offset: usize) -> Self {
+        let num_lines = line_damage.len();
+        // Filter out invisible damage.
+        let line_damage = &line_damage[..num_lines.saturating_sub(display_offset)];
+        Self {
+            display_offset,
+            line_damage: line_damage.iter(),
+        }
+    }
+}
+
+impl Iterator for TermDamageIterator<'_> {
+    type Item = LineDamageBounds;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.line_damage.find_map(|line| {
+            line.is_damaged().then_some(LineDamageBounds::new(
+                line.line + self.display_offset,
+                line.left,
+                line.right,
+            ))
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LineDamageBounds {
     /// Damaged line number.
@@ -182,6 +225,11 @@ pub struct LineDamageBounds {
 }
 
 impl LineDamageBounds {
+    #[inline]
+    pub fn new(line: usize, left: usize, right: usize) -> Self {
+        Self { line, left, right }
+    }
+
     #[inline]
     pub fn undamaged(num_cols: usize, line: usize) -> Self {
         Self {
@@ -213,7 +261,7 @@ impl LineDamageBounds {
 #[derive(Debug, Clone)]
 struct TermDamageState {
     /// Hint whether terminal should be damaged entirely regardless of the actual damage changes.
-    is_fully_damaged: bool,
+    full: bool,
 
     /// Information about damage on terminal lines.
     lines: Vec<LineDamageBounds>,
@@ -234,7 +282,7 @@ impl TermDamageState {
             .collect();
 
         Self {
-            is_fully_damaged: true,
+            full: true,
             lines,
             last_cursor: Default::default(),
             last_vi_cursor_point: Default::default(),
@@ -248,7 +296,7 @@ impl TermDamageState {
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
         self.last_selection = None;
-        self.is_fully_damaged = true;
+        self.full = true;
 
         self.lines.clear();
         self.lines.reserve(num_lines);
@@ -259,8 +307,8 @@ impl TermDamageState {
 
     /// Damage point inside of the viewport.
     #[inline]
-    fn damage_point(&mut self, pos: Pos) {
-        self.damage_line(pos.row.0 as usize, pos.col.0, pos.col.0);
+    fn damage_point(&mut self, point: Pos<usize>) {
+        self.damage_line(point.row, point.col.0, point.col.0);
     }
 
     /// Expand `line`'s damage to span at least `left` to `right` column.
@@ -295,7 +343,7 @@ impl TermDamageState {
 
     /// Reset information about terminal damage.
     fn reset(&mut self, num_cols: usize) {
-        self.is_fully_damaged = false;
+        self.full = false;
         self.lines.iter_mut().for_each(|line| line.reset(num_cols));
     }
 }
@@ -464,15 +512,57 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn mark_fully_damaged(&mut self) {
-        self.damage.is_fully_damaged = true;
+        self.damage.full = true;
     }
 
     #[inline]
     pub fn is_fully_damaged(&self) -> bool {
-        self.damage.is_fully_damaged
+        self.damage.full
     }
 
-    #[allow(dead_code)]
+    /// Collect the information about the changes in the lines, which
+    /// could be used to minimize the amount of drawing operations.
+    ///
+    /// The user controlled elements, like `Vi` mode cursor and `Selection` are **not** part of the
+    /// collected damage state. Those could easily be tracked by comparing their old and new
+    /// value between adjacent frames.
+    ///
+    /// After reading damage [`reset_damage`] should be called.
+    ///
+    /// [`reset_damage`]: Self::reset_damage
+    #[must_use]
+    pub fn damage(&mut self) -> TermDamage<'_> {
+        // Ensure the entire terminal is damaged after entering insert mode.
+        // Leaving is handled in the ansi handler.
+        if self.mode.contains(Mode::INSERT) {
+            self.mark_fully_damaged();
+        }
+
+        let previous_cursor =
+            mem::replace(&mut self.damage.last_cursor, self.grid.cursor.pos);
+
+        if self.damage.full {
+            return TermDamage::Full;
+        }
+
+        // Add information about old cursor position and new one if they are not the same, so we
+        // cover everything that was produced by `Term::input`.
+        if self.damage.last_cursor != previous_cursor {
+            // Cursor coordinates are always inside viewport even if you have `display_offset`.
+            let point = Pos::new(previous_cursor.row.0 as usize, previous_cursor.col);
+            self.damage.damage_point(point);
+        }
+
+        // Always damage current cursor.
+        self.damage_cursor();
+
+        // NOTE: damage which changes all the content when the display offset is non-zero (e.g.
+        // scrolling) is handled via full damage.
+        let display_offset = self.grid.display_offset();
+        TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
+    }
+
+    #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset(self.grid.columns());
     }
@@ -506,8 +596,9 @@ impl<U: EventListener> Crosswords<U> {
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
 
-            self.event_proxy
-                .send_event(RioEvent::Render, self.window_id);
+            // TODO: This should leave here
+            // self.event_proxy
+            // .send_event(RioEvent::Render, self.window_id);
         }
     }
 
@@ -753,7 +844,10 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     fn damage_cursor(&mut self) {
         // The normal cursor coordinates are always in viewport.
-        let point = Pos::new(Line(self.grid.cursor.pos.row.0), self.grid.cursor.pos.col);
+        let point = Pos::new(
+            self.grid.cursor.pos.row.0 as usize,
+            self.grid.cursor.pos.col,
+        );
         self.damage.damage_point(point);
     }
 
@@ -2239,6 +2333,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
 
                 self.selection = None;
+                self.mark_fully_damaged();
             }
             ClearMode::Saved if self.history_size() > 0 => {
                 self.grid.clear_history();
@@ -2253,12 +2348,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .selection
                     .take()
                     .filter(|s| !s.intersects_range(..Line(0)));
+
+                self.mark_fully_damaged();
             }
             // We have no history to clear.
             ClearMode::Saved => (),
         }
-
-        self.mark_fully_damaged();
     }
 
     #[inline]
@@ -2302,6 +2397,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let color_arr = color.to_arr();
 
         if index != NamedColor::Cursor as usize && self.colors[index] != Some(color_arr) {
+            println!("set_color");
             self.mark_fully_damaged();
         }
 
@@ -2312,6 +2408,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn reset_color(&mut self, index: usize) {
         // Damage terminal if the color changed and it's not the cursor.
         if index != NamedColor::Cursor as usize && self.colors[index].is_some() {
+            println!("reset_color");
             self.mark_fully_damaged();
         }
 

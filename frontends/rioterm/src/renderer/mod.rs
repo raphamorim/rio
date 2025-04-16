@@ -10,11 +10,13 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
+use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
+use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
     Content, DrawableChar, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
@@ -124,13 +126,12 @@ impl Renderer {
     fn create_style(
         &mut self,
         square: &Square,
-        renderable_content: &RenderableContent,
+        term_colors: &TermColors,
     ) -> (FragmentStyle, char) {
         let flags = square.flags;
 
-        let mut foreground_color =
-            self.compute_color(&square.fg, flags, renderable_content);
-        let mut background_color = self.compute_bg_color(square, renderable_content);
+        let mut foreground_color = self.compute_color(&square.fg, flags, term_colors);
+        let mut background_color = self.compute_bg_color(square, term_colors);
 
         let content = if square.c == '\t' || flags.contains(Flags::HIDDEN) {
             ' '
@@ -163,8 +164,7 @@ impl Renderer {
             Some(background_color)
         };
 
-        let (decoration, decoration_color) =
-            self.compute_decoration(square, renderable_content);
+        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
 
         (
             FragmentStyle {
@@ -183,7 +183,7 @@ impl Renderer {
     fn compute_decoration(
         &self,
         square: &Square,
-        renderable_content: &RenderableContent,
+        term_colors: &TermColors,
     ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
@@ -230,7 +230,7 @@ impl Renderer {
         if decoration.is_some() {
             if let Some(color) = square.underline_color() {
                 decoration_color =
-                    Some(self.compute_color(&color, square.flags, renderable_content));
+                    Some(self.compute_color(&color, square.flags, term_colors));
             }
         };
 
@@ -249,8 +249,10 @@ impl Renderer {
         renderable_content: &RenderableContent,
         search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
+        term_colors: &TermColors,
         is_active: bool,
     ) {
+        let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
         let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
@@ -266,13 +268,12 @@ impl Renderer {
                 continue;
             }
 
-            let (mut style, square_content) = if has_cursor
-                && column == cursor.state.pos.col
-            {
-                self.create_cursor_style(square, cursor, is_active, renderable_content)
-            } else {
-                self.create_style(square, renderable_content)
-            };
+            let (mut style, square_content) =
+                if has_cursor && column == cursor.state.pos.col {
+                    self.create_cursor_style(square, cursor, is_active, term_colors)
+                } else {
+                    self.create_style(square, term_colors)
+                };
 
             if hyperlink_range.is_some()
                 && square.hyperlink().is_some()
@@ -293,7 +294,7 @@ impl Renderer {
                     .contains(Pos::new(line, Column(column)))
             {
                 style.color = if self.ignore_selection_fg_color {
-                    self.compute_color(&square.fg, square.flags, renderable_content)
+                    self.compute_color(&square.fg, square.flags, term_colors)
                 } else {
                     self.named_colors.selection_foreground
                 };
@@ -483,6 +484,12 @@ impl Renderer {
         } else {
             builder.new_line();
         }
+
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed in --renderer.update.create_line() is: {:?}",
+            duration
+        );
     }
 
     #[inline]
@@ -490,7 +497,7 @@ impl Renderer {
         &self,
         color: &AnsiColor,
         flags: Flags,
-        renderable_content: &RenderableContent,
+        term_colors: &TermColors,
     ) -> ColorArray {
         match color {
             AnsiColor::Named(ansi) => {
@@ -503,18 +510,18 @@ impl Renderer {
                         if ansi == &NamedColor::Foreground
                             && self.named_colors.light_foreground.is_none() =>
                     {
-                        self.color(NamedColor::DimForeground as usize, renderable_content)
+                        self.color(NamedColor::DimForeground as usize, term_colors)
                     }
                     // Draw bold text in bright colors *and* contains bold flag.
                     (true, Flags::BOLD) => {
-                        self.color(ansi.to_light() as usize, renderable_content)
+                        self.color(ansi.to_light() as usize, term_colors)
                     }
                     // Cell is marked as dim and not bold.
                     (_, Flags::DIM) | (false, Flags::DIM_BOLD) => {
-                        self.color(ansi.to_dim() as usize, renderable_content)
+                        self.color(ansi.to_dim() as usize, term_colors)
                     }
                     // None of the above, keep original color..
-                    _ => self.color(*ansi as usize, renderable_content),
+                    _ => self.color(*ansi as usize, term_colors),
                 }
             }
             AnsiColor::Spec(rgb) => {
@@ -533,19 +540,15 @@ impl Renderer {
                     _ => *index as usize,
                 };
 
-                self.color(index, renderable_content)
+                self.color(index, term_colors)
             }
         }
     }
 
     #[inline]
-    fn compute_bg_color(
-        &self,
-        square: &Square,
-        renderable_content: &RenderableContent,
-    ) -> ColorArray {
+    fn compute_bg_color(&self, square: &Square, term_colors: &TermColors) -> ColorArray {
         match square.bg {
-            AnsiColor::Named(ansi) => self.color(ansi as usize, renderable_content),
+            AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
             AnsiColor::Spec(rgb) => match square.flags & Flags::DIM {
                 Flags::DIM => (&(rgb * DIM_FACTOR)).into(),
                 _ => (&rgb).into(),
@@ -564,7 +567,7 @@ impl Renderer {
                     _ => idx as usize,
                 };
 
-                self.color(idx, renderable_content)
+                self.color(idx, term_colors)
             }
         }
     }
@@ -575,7 +578,7 @@ impl Renderer {
         square: &Square,
         cursor: &Cursor,
         is_active: bool,
-        renderable_content: &RenderableContent,
+        term_colors: &TermColors,
     ) -> (FragmentStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
@@ -588,8 +591,8 @@ impl Renderer {
             _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
         };
 
-        let mut color = self.compute_color(&square.fg, square.flags, renderable_content);
-        let mut background_color = self.compute_bg_color(square, renderable_content);
+        let mut color = self.compute_color(&square.fg, square.flags, term_colors);
+        let mut background_color = self.compute_bg_color(square, term_colors);
         // If IME is enabled we get the current content to cursor
         let content = if cursor.is_ime_enabled {
             cursor.content
@@ -636,14 +639,12 @@ impl Renderer {
         };
 
         let cursor_color = if !self.is_vi_mode_enabled {
-            renderable_content.colors[NamedColor::Cursor]
-                .unwrap_or(self.named_colors.cursor)
+            term_colors[NamedColor::Cursor].unwrap_or(self.named_colors.cursor)
         } else {
             self.named_colors.vi_cursor
         };
 
-        let (decoration, decoration_color) =
-            self.compute_decoration(square, renderable_content);
+        let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
         style.decoration = decoration;
         style.decoration_color = decoration_color;
 
@@ -682,12 +683,8 @@ impl Renderer {
 
     // Get the RGB value for a color index.
     #[inline]
-    pub fn color(
-        &self,
-        color: usize,
-        renderable_content: &RenderableContent,
-    ) -> ColorArray {
-        renderable_content.colors[color].unwrap_or(self.colors[color])
+    pub fn color(&self, color: usize, term_colors: &TermColors) -> ColorArray {
+        term_colors[color].unwrap_or(self.colors[color])
     }
 
     #[inline]
@@ -764,6 +761,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        let start = std::time::Instant::now();
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -781,65 +779,129 @@ impl Renderer {
             let is_active = active_index == index;
             let context = grid_context.context_mut();
             let rich_text_id = context.rich_text_id;
-            let renderable_content = context.renderable_content();
-            let mut is_cursor_visible = renderable_content.is_cursor_visible
-                && renderable_content.cursor.state.is_visible();
-            if !is_active && renderable_content.cursor.state.is_visible() {
-                is_cursor_visible = true;
-            }
+            let mut terminal = context.terminal.lock();
+            // let renderable_content = context.renderable_content();
+            let colors = terminal.colors;
+            let display_offset = terminal.display_offset();
+            let blinking_cursor = terminal.blinking_cursor;
+            let visible_rows = terminal.visible_rows();
+            let damage = terminal.damage();
+            // let mut is_cursor_visible = renderable_content.is_cursor_visible
+            //     && renderable_content.cursor.state.is_visible();
+            // if !is_active && renderable_content.cursor.state.is_visible() {
+            //     is_cursor_visible = true;
+            // }
 
-            let display_offset = renderable_content.display_offset;
-            let strategy = if is_active && hints.is_some() {
-                &RenderableContentStrategy::Full
-            } else {
-                &renderable_content.strategy
-            };
+            // let display_offset = renderable_content.display_offset;
+            // let strategy = if is_active && hints.is_some() {
+            //     &RenderableContentStrategy::Full
+            // } else {
+            //     &renderable_content.strategy
+            // };
 
-            match strategy {
-                RenderableContentStrategy::Full => {
+            match damage {
+                TermDamage::Full => {
                     content.sel(rich_text_id);
                     content.clear();
-                    for (i, row) in renderable_content.inner.iter().enumerate() {
-                        let has_cursor = is_cursor_visible
-                            && renderable_content.cursor.state.pos.row == i;
+                    for (i, row) in visible_rows.iter().enumerate() {
+                        // let has_cursor = is_cursor_visible
+                        //     && renderable_content.cursor.state.pos.row == i;
+                        let has_cursor = false;
                         self.create_line(
                             content,
                             row,
                             has_cursor,
                             None,
-                            Line((i as i32) - display_offset),
-                            renderable_content,
+                            Line((i - display_offset) as i32),
+                            &RenderableContent {
+                                // display_offset,
+                                // TODO: Should not use default
+                                // cursor,
+                                has_blinking_enabled: blinking_cursor,
+                                // strategy,
+                                // selection_range: Optio,
+                                // hyperlink_range: Optio,
+                                // has_pending_updates,
+                                // last_typing: Optio,
+                                // is_cursor_visible,
+                                ..RenderableContent::default()
+                            },
                             hints,
                             focused_match,
+                            &colors,
                             is_active,
                         );
                     }
                     content.build();
                 }
-                RenderableContentStrategy::Lines(lines) => {
+                TermDamage::Partial(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
-                        let line = *line;
-                        if let Some(line_data) = renderable_content.inner.get(line) {
-                            let has_cursor = is_cursor_visible
-                                && renderable_content.cursor.state.pos.row == line;
-                            content.clear_line(line);
-                            self.create_line(
-                                content,
-                                line_data,
-                                has_cursor,
-                                Some(line),
-                                Line((line as i32) - display_offset),
-                                renderable_content,
-                                hints,
-                                focused_match,
-                                is_active,
-                            );
-                        }
+                        // let has_cursor = is_cursor_visible
+                        //     && renderable_content.cursor.state.pos.row == line;
+                        let has_cursor = false;
+                        content.clear_line(line.line);
+                        self.create_line(
+                            content,
+                            &visible_rows[line.line],
+                            has_cursor,
+                            Some(line.line),
+                            Line(line.line as i32),
+                            &RenderableContent {
+                                // display_offset,
+                                // TODO: Should not use default
+                                // cursor,
+                                has_blinking_enabled: blinking_cursor,
+                                // strategy,
+                                // selection_range: Optio,
+                                // hyperlink_range: Optio,
+                                // has_pending_updates,
+                                // last_typing: Optio,
+                                // is_cursor_visible,
+                                ..RenderableContent::default()
+                            },
+                            hints,
+                            focused_match,
+                            &colors,
+                            is_active,
+                        );
+                        // for i in line.left..line.right {
+                        // self.inner[line.line][Column(i)] = rows[line.line][Column(i)].clone();
+                        // }
+                        // diff.insert(line.line);
                     }
                 }
-                RenderableContentStrategy::Noop => {}
-            }
+            };
+
+            // match strategy {
+            //     RenderableContentStrategy::Full => {
+            //         content.sel(rich_text_id);
+            //         content.clear();
+            //         for (i, row) in renderable_content.inner.iter().enumerate() {
+            //             let has_cursor = is_cursor_visible
+            //                 && renderable_content.cursor.state.pos.row == i;
+            //             self.create_line(
+            //                 content,
+            //                 row,
+            //                 has_cursor,
+            //                 None,
+            //                 Line((i as i32) - display_offset),
+            //                 renderable_content,
+            //                 hints,
+            //                 focused_match,
+            //                 is_active,
+            //             );
+            //         }
+            //         content.build();
+            //     }
+            //     RenderableContentStrategy::Lines(lines) => {
+
+            //     }
+            //     RenderableContentStrategy::Noop => {}
+            // }
+
+            terminal.reset_damage();
+            drop(terminal);
         }
 
         self.update_search_rich_text(content);
@@ -870,10 +932,10 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        for rte in context_manager.grid_objects() {
-            objects.push(rte);
-        }
+        context_manager.get_grid_objects(&mut objects);
 
         sugarloaf.set_objects(objects);
+        let duration = start.elapsed();
+        println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
 }
