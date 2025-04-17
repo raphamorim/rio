@@ -2,7 +2,6 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
-use rio_backend::ansi::graphics::UpdateQueues;
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::ContextManager;
@@ -11,6 +10,7 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
+use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -797,6 +797,11 @@ impl Renderer {
             // let duration = start.elapsed();
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
+            let force_full_damage = context.renderable_content.has_pending_updates
+                || is_active
+                    && (context.renderable_content.selection_range.is_some()
+                        || hints.is_some());
+
             let mut specific_lines = None;
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
@@ -818,11 +823,12 @@ impl Renderer {
                     }
                 }
 
-                if !terminal.is_fully_damaged() {
+                if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
-                        let mut own_lines = Vec::with_capacity(visible_rows.len());
+                        let mut own_lines =
+                            std::collections::HashSet::with_capacity(visible_rows.len());
                         for line in lines {
-                            own_lines.push(line.line);
+                            own_lines.insert(line.line);
                         }
                         specific_lines = Some(own_lines);
                     };
@@ -853,7 +859,12 @@ impl Renderer {
                     if should_blink {
                         context.renderable_content.is_blinking_cursor_visible =
                             !context.renderable_content.is_blinking_cursor_visible;
-                        // terminal.damage_cursor();
+                        if let Some(ref mut lines) = specific_lines {
+                            lines.insert(
+                                context.renderable_content.cursor.state.pos.row.0
+                                    as usize,
+                            );
+                        }
                     } else {
                         context.renderable_content.is_blinking_cursor_visible = true;
                     }
@@ -867,7 +878,6 @@ impl Renderer {
             }
 
             let content = sugarloaf.content();
-
             match specific_lines {
                 None => {
                     content.sel(rich_text_id);
@@ -929,8 +939,7 @@ impl Renderer {
             }
         }
 
-        let content = sugarloaf.content();
-        self.update_search_rich_text(content);
+        self.update_search_rich_text(sugarloaf.content());
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
@@ -958,8 +967,7 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        context_manager.get_grid_objects(&mut objects);
-
+        context_manager.extend_with_grid_objects(&mut objects);
         sugarloaf.set_objects(objects);
 
         // let duration = start.elapsed();
