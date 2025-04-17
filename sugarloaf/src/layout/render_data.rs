@@ -136,7 +136,6 @@ impl RenderData {
         self.runs.push(run_data);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run_without_shaper(
         &mut self,
         style: FragmentStyle,
