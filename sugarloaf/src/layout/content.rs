@@ -561,8 +561,9 @@ impl Content {
                 {
                     let font_library = &mut self.fonts.inner.lock();
                     if let Some(data) = font_library.get_data(&font_id) {
-                        let mut shaper = self.scx
-                            .builder(data)  // Use reference directly without cloning
+                        let mut shaper = self
+                            .scx
+                            .builder(data) // Use reference directly without cloning
                             .script(script)
                             .size(scaled_font_size)
                             .features(features.iter().copied())
