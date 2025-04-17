@@ -197,7 +197,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    pub fn get_objects(&self, target: &mut Vec<Object>) {
+    pub fn extend_with_objects(&self, target: &mut Vec<Object>) {
         let len = self.inner.len();
         if len == 0 {
             return;
