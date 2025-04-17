@@ -511,7 +511,7 @@ impl Content {
 
         // Get references to the scaled font size and features outside any other borrows
         let scaled_font_size = state.scaled_font_size;
-        let features = self.font_features.clone(); // Clone features to avoid borrowing self later
+        let features = &self.font_features;
 
         // Check if the line exists
         if line_number >= state.lines.len() {
@@ -527,7 +527,7 @@ impl Content {
             let item = &line.fragments[fragment_idx];
             let font_id = item.style.font_id;
             let font_vars = item.style.font_vars;
-            let content = item.content.clone(); // Clone once to use throughout the loop
+            let content = &item.content;
             let style = item.style;
 
             // Get vars for this fragment
