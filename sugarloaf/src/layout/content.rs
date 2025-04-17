@@ -533,9 +533,6 @@ impl Content {
             // Get vars for this fragment
             let vars: Vec<_> = state.vars.get(font_vars).to_vec();
 
-            // Try cache lookup first
-            let mut cache_hit = false;
-
             // Check if the shaped text is already in the cache
             if let Some(cache_entry) = self.word_cache.get(&font_id, &content) {
                 if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
@@ -546,47 +543,45 @@ impl Content {
                         cache_entry,
                         metrics,
                     ) {
-                        cache_hit = true;
+                        continue;
                     }
                 }
             }
 
             // If not in cache, shape the text
-            if !cache_hit {
-                // Set up cache entry info
-                self.word_cache.font_id = font_id;
-                self.word_cache.content = content.clone();
+            // Set up cache entry info
+            self.word_cache.font_id = font_id;
+            self.word_cache.content = content.clone();
 
-                // Process the font data directly without cloning FontRef
-                {
-                    let font_library = &mut self.fonts.inner.lock();
-                    if let Some(data) = font_library.get_data(&font_id) {
-                        let mut shaper = self
-                            .scx
-                            .builder(data) // Use reference directly without cloning
-                            .script(script)
-                            .size(scaled_font_size)
-                            .features(features.iter().copied())
-                            .variations(vars.iter().copied())
-                            .build();
+            // Process the font data directly without cloning FontRef
+            {
+                let font_library = &mut self.fonts.inner.lock();
+                if let Some(data) = font_library.get_data(&font_id) {
+                    let mut shaper = self
+                        .scx
+                        .builder(data) // Use reference directly without cloning
+                        .script(script)
+                        .size(scaled_font_size)
+                        .features(features.iter().copied())
+                        .variations(vars.iter().copied())
+                        .build();
 
-                        shaper.add_str(&content);
+                    shaper.add_str(&content);
 
-                        // Cache metrics if needed
-                        if !state.metrics_cache.inner.contains_key(&font_id) {
-                            let metrics = shaper.metrics();
-                            state.metrics_cache.inner.insert(font_id, metrics);
-                        }
-
-                        // Push run to render data
-                        line.render_data.push_run(
-                            style,
-                            scaled_font_size,
-                            line_number as u32,
-                            shaper,
-                            &mut self.word_cache,
-                        );
+                    // Cache metrics if needed
+                    if !state.metrics_cache.inner.contains_key(&font_id) {
+                        let metrics = shaper.metrics();
+                        state.metrics_cache.inner.insert(font_id, metrics);
                     }
+
+                    // Push run to render data
+                    line.render_data.push_run(
+                        style,
+                        scaled_font_size,
+                        line_number as u32,
+                        shaper,
+                        &mut self.word_cache,
+                    );
                 }
             }
         }
@@ -663,7 +658,6 @@ impl WordCache {
     pub fn finish(&mut self) {
         if !self.content.is_empty() && !self.stash.is_empty() {
             if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                // println!("{:?} {:?}", self.content, cache.len());
                 cache.put(
                     std::mem::take(&mut self.content),
                     std::mem::take(&mut self.stash),

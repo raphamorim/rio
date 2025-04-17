@@ -2109,13 +2109,12 @@ impl Screen<'_> {
             None
         };
 
-        self.renderer.update(
+        self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        self.sugarloaf.render();
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)

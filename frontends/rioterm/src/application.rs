@@ -181,7 +181,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 // Request immediate redraw without updating timestamp
                                 route.request_redraw();
                             }
-                            // Note: timestamp will be updated when actual rendering begins
                         }
                     }
                 }
@@ -1134,10 +1133,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // }
 
                 if self.config.renderer.strategy.is_game()
-                    && !self.config.renderer.disable_unfocused_render
-                    && route.window.is_focused
                 {
-                    route.request_frame(&mut self.scheduler);
+                    // route.request_frame(&mut self.scheduler);
+                    route.request_redraw();
                 }
 
                 event_loop.set_control_flow(ControlFlow::Wait);

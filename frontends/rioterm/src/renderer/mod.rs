@@ -755,7 +755,7 @@ impl Renderer {
     }
 
     #[inline]
-    pub fn update(
+    pub fn run(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
@@ -805,12 +805,11 @@ impl Renderer {
             let mut specific_lines = None;
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
-                let visible_rows = terminal.visible_rows();
                 let result = (
                     terminal.colors,
                     terminal.display_offset(),
                     terminal.blinking_cursor,
-                    visible_rows.clone(),
+                    terminal.visible_rows(),
                 );
 
                 context.renderable_content.cursor.state = terminal.cursor();
@@ -826,7 +825,7 @@ impl Renderer {
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         let mut own_lines =
-                            std::collections::HashSet::with_capacity(visible_rows.len());
+                            std::collections::HashSet::with_capacity(result.3.len());
                         for line in lines {
                             own_lines.insert(line.line);
                         }
@@ -877,6 +876,7 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
+            context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
@@ -923,8 +923,6 @@ impl Renderer {
                     }
                 }
             };
-
-            context.renderable_content.has_pending_updates = false;
         }
 
         if let Some(op) = graphic_queues.take() {
@@ -943,7 +941,7 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(30);
+        let mut objects = Vec::with_capacity(15);
         self.navigation.build_objects(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
@@ -970,6 +968,7 @@ impl Renderer {
         context_manager.extend_with_grid_objects(&mut objects);
         sugarloaf.set_objects(objects);
 
+        sugarloaf.render();
         // let duration = start.elapsed();
         // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }

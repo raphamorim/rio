@@ -240,7 +240,6 @@ impl LineDamageBounds {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub fn reset(&mut self, num_cols: usize) {
         *self = Self::undamaged(num_cols, self.line);
     }
@@ -252,7 +251,6 @@ impl LineDamageBounds {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub fn is_damaged(&self) -> bool {
         self.left <= self.right
     }
@@ -554,7 +552,8 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Always damage current cursor.
-        self.damage_cursor();
+        // Disabling damage_cursor for avoid process unnecessary rendering.
+        // self.damage_cursor();
 
         // NOTE: damage which changes all the content when the display offset is non-zero (e.g.
         // scrolling) is handled via full damage.
