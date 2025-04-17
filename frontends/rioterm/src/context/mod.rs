@@ -628,8 +628,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn get_grid_objects(&self, target: &mut Vec<Object>) {
-        self.contexts[self.current_index].get_objects(target);
+    pub fn extend_with_grid_objects(&self, target: &mut Vec<Object>) {
+        self.contexts[self.current_index].extend_with_objects(target);
     }
 
     #[inline]
