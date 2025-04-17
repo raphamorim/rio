@@ -140,7 +140,7 @@ impl ScreenNavigation {
                 ..Quad::default()
             };
             initial_position -= position_modifier;
-            objects.push(Object::Quad(renderable, None));
+            objects.push(Object::Quad(renderable));
         }
     }
 
@@ -173,7 +173,7 @@ impl ScreenNavigation {
             ..Quad::default()
         };
 
-        objects.push(Object::Quad(renderable, None));
+        objects.push(Object::Quad(renderable));
 
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
@@ -217,15 +217,12 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            objects.push(Object::Quad(
-                Quad {
-                    position: [initial_position_x, position_y],
-                    color: background_color,
-                    size: [125., PADDING_Y_BOTTOM_TABS],
-                    ..Quad::default()
-                },
-                None,
-            ));
+            objects.push(Object::Quad(Quad {
+                position: [initial_position_x, position_y],
+                color: background_color,
+                size: [125., PADDING_Y_BOTTOM_TABS],
+                ..Quad::default()
+            }));
 
             if is_current {
                 // TopBar case should render on bottom
@@ -235,15 +232,12 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                objects.push(Object::Quad(
-                    Quad {
-                        position: [initial_position_x, position],
-                        color: colors.tabs_active_highlight,
-                        size: [125., PADDING_Y_BOTTOM_TABS / 10.],
-                        ..Quad::default()
-                    },
-                    None,
-                ));
+                objects.push(Object::Quad(Quad {
+                    position: [initial_position_x, position],
+                    color: colors.tabs_active_highlight,
+                    size: [125., PADDING_Y_BOTTOM_TABS / 10.],
+                    ..Quad::default()
+                }));
             }
 
             let text = if is_current {
@@ -269,13 +263,10 @@ impl ScreenNavigation {
                 )
                 .build();
 
-            objects.push(Object::RichText(
-                RichText {
-                    id: tab,
-                    position: [initial_position_x + 4., position_y],
-                },
-                None,
-            ));
+            objects.push(Object::RichText(RichText {
+                id: tab,
+                position: [initial_position_x + 4., position_y],
+            }));
 
             initial_position_x += name_modifier + 40.;
         }

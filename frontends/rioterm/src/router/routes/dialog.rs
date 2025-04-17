@@ -18,42 +18,30 @@ pub fn screen(
 
     let mut objects = Vec::with_capacity(7);
 
-    objects.push(Object::Quad(
-        Quad {
-            position: [0., 0.0],
-            color: black,
-            size: [layout.width, layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [0., 30.0],
-            color: blue,
-            size: [30., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [15., context_dimension.margin.top_y + 60.],
-            color: yellow,
-            size: [30., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [30., context_dimension.margin.top_y + 120.],
-            color: red,
-            size: [30., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
+    objects.push(Object::Quad(Quad {
+        position: [0., 0.0],
+        color: black,
+        size: [layout.width, layout.height],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [0., 30.0],
+        color: blue,
+        size: [30., layout.height],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [15., context_dimension.margin.top_y + 60.],
+        color: yellow,
+        size: [30., layout.height],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [30., context_dimension.margin.top_y + 120.],
+        color: red,
+        size: [30., layout.height],
+        ..Quad::default()
+    }));
 
     let heading = sugarloaf.create_temp_rich_text();
     let confirm = sugarloaf.create_temp_rich_text();
@@ -73,13 +61,10 @@ pub fn screen(
     }
     heading_line.build();
 
-    objects.push(Object::RichText(
-        RichText {
-            id: heading,
-            position: [70., context_dimension.margin.top_y + 30.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: heading,
+        position: [70., context_dimension.margin.top_y + 30.],
+    }));
 
     let confirm_line = content.sel(confirm);
     confirm_line
@@ -95,13 +80,10 @@ pub fn screen(
         )
         .build();
 
-    objects.push(Object::RichText(
-        RichText {
-            id: confirm,
-            position: [70., context_dimension.margin.top_y + 100.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: confirm,
+        position: [70., context_dimension.margin.top_y + 100.],
+    }));
 
     let quit_line = content.sel(quit);
     quit_line
@@ -117,13 +99,10 @@ pub fn screen(
         )
         .build();
 
-    objects.push(Object::RichText(
-        RichText {
-            id: quit,
-            position: [70., context_dimension.margin.top_y + 140.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: quit,
+        position: [70., context_dimension.margin.top_y + 140.],
+    }));
 
     sugarloaf.set_objects(objects);
 }
