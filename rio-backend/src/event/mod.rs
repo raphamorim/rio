@@ -131,8 +131,6 @@ pub enum RioEvent {
 
     BlinkCursor(u64, usize),
 
-    UpdateGraphicLibrary,
-
     // No operation
     Noop,
 }
@@ -194,7 +192,6 @@ impl Debug for RioEvent {
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
-            RioEvent::UpdateGraphicLibrary => write!(f, "UpdateGraphicLibrary"),
         }
     }
 }

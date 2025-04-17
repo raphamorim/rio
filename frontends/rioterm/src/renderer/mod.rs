@@ -769,7 +769,7 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
-        let content = sugarloaf.content();
+        let mut graphics = Vec::new();
 
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
@@ -808,10 +808,12 @@ impl Renderer {
                     visible_rows.clone(),
                 );
 
+                graphics.push(terminal.graphics_take_queues());
+
                 match terminal.damage() {
                     TermDamage::Full => {
                         // Does nothing
-                    },
+                    }
                     TermDamage::Partial(lines) => {
                         let mut own_lines = Vec::with_capacity(visible_rows.len());
                         for line in lines {
@@ -825,6 +827,7 @@ impl Renderer {
 
                 result
             };
+
             // let duration = start.elapsed();
             // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
@@ -860,6 +863,8 @@ impl Renderer {
             if !is_active && context.renderable_content.cursor.state.is_visible() {
                 is_cursor_visible = true;
             }
+
+            let content = sugarloaf.content();
 
             match specific_lines {
                 None => {
@@ -908,6 +913,19 @@ impl Renderer {
             context.renderable_content.has_pending_updates = false;
         }
 
+        for queues in graphics {
+            if let Some(graphic_queues) = queues {
+                for graphic_data in graphic_queues.pending {
+                    sugarloaf.graphics.insert(graphic_data);
+                }
+
+                for graphic_data in graphic_queues.remove_queue {
+                    sugarloaf.graphics.remove(&graphic_data);
+                }
+            }
+        }
+
+        let content = sugarloaf.content();
         self.update_search_rich_text(content);
 
         let window_size = sugarloaf.window_size();

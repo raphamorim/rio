@@ -2940,9 +2940,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             id: graphic_id,
             ..graphic
         });
-
-        self.event_proxy
-            .send_event(RioEvent::UpdateGraphicLibrary, self.window_id);
     }
 }
 
