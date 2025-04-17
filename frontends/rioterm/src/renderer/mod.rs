@@ -2,6 +2,7 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
+use rio_backend::ansi::graphics::UpdateQueues;
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::ContextManager;
@@ -769,7 +770,7 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
-        let mut graphics = Vec::new();
+        let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
 
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
@@ -797,34 +798,36 @@ impl Renderer {
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
             let mut specific_lines = None;
-            let (colors, cursor, display_offset, blinking_cursor, visible_rows) = {
+            let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let visible_rows = terminal.visible_rows();
                 let result = (
-                    terminal.colors.clone(),
-                    terminal.cursor().clone(),
+                    terminal.colors,
                     terminal.display_offset(),
                     terminal.blinking_cursor,
                     visible_rows.clone(),
                 );
 
-                graphics.push(terminal.graphics_take_queues());
+                context.renderable_content.cursor.state = terminal.cursor();
 
-                match terminal.damage() {
-                    TermDamage::Full => {
-                        // Does nothing
+                if let Some(queues_to_add) = terminal.graphics_take_queues() {
+                    if let Some(ref mut queues) = graphic_queues {
+                        queues.push(queues_to_add);
+                    } else {
+                        graphic_queues = Some(vec![queues_to_add]);
                     }
-                    TermDamage::Partial(lines) => {
+                }
+
+                if !terminal.is_fully_damaged() {
+                    if let TermDamage::Partial(lines) = terminal.damage() {
                         let mut own_lines = Vec::with_capacity(visible_rows.len());
                         for line in lines {
                             own_lines.push(line.line);
                         }
                         specific_lines = Some(own_lines);
-                    }
-                };
-
+                    };
+                }
                 terminal.reset_damage();
-
                 result
             };
 
@@ -832,9 +835,8 @@ impl Renderer {
             // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
-            let mut is_cursor_visible = cursor.is_visible();
-            context.renderable_content.cursor.state = cursor.clone();
-
+            let mut is_cursor_visible =
+                context.renderable_content.cursor.state.is_visible();
             context.renderable_content.has_blinking_enabled = blinking_cursor;
             if blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
@@ -871,7 +873,8 @@ impl Renderer {
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
-                        let has_cursor = is_cursor_visible && cursor.pos.row == i;
+                        let has_cursor = is_cursor_visible
+                            && context.renderable_content.cursor.state.pos.row == i;
                         self.create_line(
                             content,
                             row,
@@ -892,7 +895,8 @@ impl Renderer {
                 Some(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
-                        let has_cursor = is_cursor_visible && cursor.pos.row == line;
+                        let has_cursor = is_cursor_visible
+                            && context.renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
                         self.create_line(
                             content,
@@ -913,13 +917,13 @@ impl Renderer {
             context.renderable_content.has_pending_updates = false;
         }
 
-        for queues in graphics {
-            if let Some(graphic_queues) = queues {
-                for graphic_data in graphic_queues.pending {
+        if let Some(op) = graphic_queues.take() {
+            for queues in op {
+                for graphic_data in queues.pending {
                     sugarloaf.graphics.insert(graphic_data);
                 }
 
-                for graphic_data in graphic_queues.remove_queue {
+                for graphic_data in queues.remove_queue {
                     sugarloaf.graphics.remove(&graphic_data);
                 }
             }
