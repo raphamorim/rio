@@ -258,6 +258,7 @@ impl RichTextBrush {
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
     ) {
+        // let start = std::time::Instant::now();
         let rich_texts = state.get_layer_rich_texts(layer_idx);
         if rich_texts.is_empty() {
             self.dlist.clear();
@@ -288,6 +289,8 @@ impl RichTextBrush {
         self.dlist.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.dlist);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in prepare() is: {:?}", duration);
     }
 
     #[inline]

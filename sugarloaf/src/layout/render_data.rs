@@ -39,6 +39,24 @@ impl RenderData {
         Self::default()
     }
 
+    #[inline]
+    pub fn reserve(&mut self, capacity: usize) {
+        self.runs.reserve(capacity);
+        self.glyphs.reserve(capacity);
+        self.detailed_glyphs.reserve(capacity);
+        self.graphics.reserve(capacity);
+    }
+
+    #[inline]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            runs: Vec::with_capacity(capacity),
+            glyphs: Vec::with_capacity(capacity),
+            detailed_glyphs: Vec::with_capacity(capacity),
+            graphics: std::collections::HashSet::with_capacity(capacity),
+        }
+    }
+
     /// Clears the paragraph.
     #[inline]
     pub fn clear(&mut self) {

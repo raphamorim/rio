@@ -498,122 +498,89 @@ impl Content {
         self
     }
 
-    #[inline]
-    pub fn build(&mut self) {
-        if let Some(selector) = self.selector {
-            if let Some(state) = self.states.get_mut(&selector) {
-                let script = Script::Latin;
-                for line_number in 0..state.lines.len() {
-                    let line = &mut state.lines[line_number];
-                    for item in &line.fragments {
-                        let vars = state.vars.get(item.style.font_vars);
-                        let shaper_key = &item.content;
+    // Helper function to process a single line that avoids borrow issues
+    fn process_line(&mut self, state_id: usize, line_number: usize) {
+        // Get all needed data while borrowing parts of self separately
+        let script = Script::Latin;
 
-                        if let Some(shaper) =
-                            self.word_cache.get(&item.style.font_id, shaper_key)
-                        {
-                            if let Some(metrics) =
-                                state.metrics_cache.inner.get(&item.style.font_id)
-                            {
-                                if line.render_data.push_run_without_shaper(
-                                    item.style,
-                                    state.scaled_font_size,
-                                    line_number as u32,
-                                    shaper,
-                                    metrics,
-                                ) {
-                                    continue;
-                                }
-                            }
-                        }
+        // Safe to get state first as we'll only use it to access properties
+        let state = match self.states.get_mut(&state_id) {
+            Some(state) => state,
+            None => return,
+        };
 
-                        self.word_cache.font_id = item.style.font_id;
-                        self.word_cache.content = item.content.clone();
-                        let font_library = { &mut self.fonts.inner.lock() };
-                        if let Some(data) = font_library.get_data(&item.style.font_id) {
-                            let mut shaper = self
-                                .scx
-                                .builder(data)
-                                .script(script)
-                                .size(state.scaled_font_size)
-                                .features(self.font_features.iter().copied())
-                                .variations(vars.iter().copied())
-                                .build();
+        // Get references to the scaled font size and features outside any other borrows
+        let scaled_font_size = state.scaled_font_size;
+        let features = self.font_features.clone(); // Clone features to avoid borrowing self later
 
-                            shaper.add_str(&self.word_cache.content);
+        // Check if the line exists
+        if line_number >= state.lines.len() {
+            return;
+        }
 
-                            state
-                                .metrics_cache
-                                .inner
-                                .entry(item.style.font_id)
-                                .or_insert_with(|| shaper.metrics());
+        // Process fragments in the line
+        let line = &mut state.lines[line_number];
 
-                            line.render_data.push_run(
-                                item.style,
-                                state.scaled_font_size,
-                                line_number as u32,
-                                shaper,
-                                &mut self.word_cache,
-                            );
-                        }
+        // Process each fragment
+        for fragment_idx in 0..line.fragments.len() {
+            // Get a reference to the current fragment
+            let item = &line.fragments[fragment_idx];
+            let font_id = item.style.font_id;
+            let font_vars = item.style.font_vars;
+            let content = item.content.clone(); // Clone once to use throughout the loop
+            let style = item.style;
+
+            // Get vars for this fragment
+            let vars: Vec<_> = state.vars.get(font_vars).to_vec();
+
+            // Try cache lookup first
+            let mut cache_hit = false;
+
+            // Check if the shaped text is already in the cache
+            if let Some(cache_entry) = self.word_cache.get(&font_id, &content) {
+                if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
+                    if line.render_data.push_run_without_shaper(
+                        style,
+                        scaled_font_size,
+                        line_number as u32,
+                        cache_entry,
+                        metrics,
+                    ) {
+                        cache_hit = true;
                     }
                 }
             }
-        }
-    }
 
-    #[inline]
-    pub fn build_line(&mut self, line_number: usize) {
-        if let Some(selector) = self.selector {
-            if let Some(state) = self.states.get_mut(&selector) {
-                let script = Script::Latin;
-                let line = &mut state.lines[line_number];
-                for item in &line.fragments {
-                    let vars = state.vars.get(item.style.font_vars);
-                    let shaper_key = &item.content;
+            // If not in cache, shape the text
+            if !cache_hit {
+                // Set up cache entry info
+                self.word_cache.font_id = font_id;
+                self.word_cache.content = content.clone();
 
-                    if let Some(shaper) =
-                        self.word_cache.get(&item.style.font_id, shaper_key)
-                    {
-                        if let Some(metrics) =
-                            state.metrics_cache.inner.get(&item.style.font_id)
-                        {
-                            if line.render_data.push_run_without_shaper(
-                                item.style,
-                                state.scaled_font_size,
-                                line_number as u32,
-                                shaper,
-                                metrics,
-                            ) {
-                                continue;
-                            }
-                        }
-                    }
-
-                    self.word_cache.font_id = item.style.font_id;
-                    self.word_cache.content = item.content.clone();
-                    let font_library = { &mut self.fonts.inner.lock() };
-                    if let Some(data) = font_library.get_data(&item.style.font_id) {
-                        let mut shaper = self
-                            .scx
-                            .builder(data)
+                // Process the font data directly without cloning FontRef
+                {
+                    let font_library = &mut self.fonts.inner.lock();
+                    if let Some(data) = font_library.get_data(&font_id) {
+                        let mut shaper = self.scx
+                            .builder(data)  // Use reference directly without cloning
                             .script(script)
-                            .size(state.scaled_font_size)
-                            .features(self.font_features.iter().copied())
+                            .size(scaled_font_size)
+                            .features(features.iter().copied())
                             .variations(vars.iter().copied())
                             .build();
 
-                        shaper.add_str(&self.word_cache.content);
+                        shaper.add_str(&content);
 
-                        state
-                            .metrics_cache
-                            .inner
-                            .entry(item.style.font_id)
-                            .or_insert_with(|| shaper.metrics());
+                        // Cache metrics if needed
+                        if !state.metrics_cache.inner.contains_key(&font_id) {
+                            let metrics = shaper.metrics();
+                            state.metrics_cache.inner.insert(font_id, metrics);
+                        }
 
+                        // Push run to render data
                         line.render_data.push_run(
-                            item.style,
-                            state.scaled_font_size,
+                            style,
+                            scaled_font_size,
                             line_number as u32,
                             shaper,
                             &mut self.word_cache,
@@ -623,8 +590,40 @@ impl Content {
             }
         }
     }
+
+    #[inline]
+    pub fn build(&mut self) {
+        // let start = std::time::Instant::now();
+        if let Some(selector) = self.selector {
+            let state_id = selector;
+
+            // Get line count safely
+            let line_count = if let Some(state) = self.states.get(&state_id) {
+                state.lines.len()
+            } else {
+                return;
+            };
+
+            // Process all lines
+            for line_number in 0..line_count {
+                self.process_line(state_id, line_number);
+            }
+        }
+
+        // let duration = start.elapsed();
+        // println!("Time elapsed in build() is: {:?}", duration);
+    }
+
+    #[inline]
+    pub fn build_line(&mut self, line_number: usize) {
+        if let Some(selector) = self.selector {
+            // Process just the specified line
+            self.process_line(selector, line_number);
+        }
+    }
 }
 
+#[derive(Default)]
 pub struct WordCache {
     pub inner: FxHashMap<usize, LruCache<String, Vec<OwnedGlyphCluster>>>,
     stash: Vec<OwnedGlyphCluster>,
@@ -646,7 +645,7 @@ impl WordCache {
     pub fn get(
         &mut self,
         font_id: &usize,
-        content: &String,
+        content: &str,
     ) -> Option<&Vec<OwnedGlyphCluster>> {
         if let Some(cache) = self.inner.get_mut(font_id) {
             return cache.get(content);
