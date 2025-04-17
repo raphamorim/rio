@@ -223,14 +223,13 @@ impl QuadBrush {
         }
     }
 
-    pub fn render(
-        &mut self,
-        layer_idx: usize,
+    pub fn render<'a>(
+        &'a mut self,
         context: &mut Context,
         state: &crate::sugarloaf::state::SugarState,
-        render_pass: &mut wgpu::RenderPass,
+        render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        let instances = state.get_layer_quads(layer_idx);
+        let instances = &state.quads;
         let total = instances.len();
 
         if total == 0 {
