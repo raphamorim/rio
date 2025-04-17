@@ -761,7 +761,6 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        // let start = std::time::Instant::now();
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -794,17 +793,44 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            let rich_text_id = context.rich_text_id;
-            let mut terminal = context.terminal.lock();
+            // let duration = start.elapsed();
+            // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
-            let colors = terminal.colors;
-            let cursor = terminal.cursor();
-            context.renderable_content.cursor.state = cursor.clone();
-            let display_offset = terminal.display_offset();
-            let blinking_cursor = terminal.blinking_cursor;
-            let visible_rows = terminal.visible_rows();
+            let mut specific_lines = None;
+            let (colors, cursor, display_offset, blinking_cursor, visible_rows) = {
+                let mut terminal = context.terminal.lock();
+                let visible_rows = terminal.visible_rows();
+                let result = (
+                    terminal.colors.clone(),
+                    terminal.cursor().clone(),
+                    terminal.display_offset(),
+                    terminal.blinking_cursor,
+                    visible_rows.clone(),
+                );
+
+                match terminal.damage() {
+                    TermDamage::Full => {
+                        // Does nothing
+                    },
+                    TermDamage::Partial(lines) => {
+                        let mut own_lines = Vec::with_capacity(visible_rows.len());
+                        for line in lines {
+                            own_lines.push(line.line);
+                        }
+                        specific_lines = Some(own_lines);
+                    }
+                };
+
+                terminal.reset_damage();
+
+                result
+            };
+            // let duration = start.elapsed();
+            // println!("Time elapsed in antes-antes is: {:?}", duration);
+            let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible = cursor.is_visible();
+            context.renderable_content.cursor.state = cursor.clone();
 
             context.renderable_content.has_blinking_enabled = blinking_cursor;
             if blinking_cursor {
@@ -822,7 +848,7 @@ impl Renderer {
                     if should_blink {
                         context.renderable_content.is_blinking_cursor_visible =
                             !context.renderable_content.is_blinking_cursor_visible;
-                        terminal.damage_cursor();
+                        // terminal.damage_cursor();
                     } else {
                         context.renderable_content.is_blinking_cursor_visible = true;
                     }
@@ -835,18 +861,8 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            let damage = if context.renderable_content.has_pending_updates
-                || is_active
-                    && (context.renderable_content.selection_range.is_some()
-                        || hints.is_some())
-            {
-                TermDamage::Full
-            } else {
-                terminal.damage()
-            };
-
-            match damage {
-                TermDamage::Full => {
+            match specific_lines {
+                None => {
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
@@ -865,18 +881,20 @@ impl Renderer {
                         );
                     }
                     content.build();
+                    // let duration = start.elapsed();
+                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
                 }
-                TermDamage::Partial(lines) => {
+                Some(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
-                        let has_cursor = is_cursor_visible && cursor.pos.row == line.line;
-                        content.clear_line(line.line);
+                        let has_cursor = is_cursor_visible && cursor.pos.row == line;
+                        content.clear_line(line);
                         self.create_line(
                             content,
-                            &visible_rows[line.line],
+                            &visible_rows[line],
                             has_cursor,
-                            Some(line.line),
-                            Line(line.line as i32),
+                            Some(line),
+                            Line(line as i32),
                             &context.renderable_content,
                             hints,
                             focused_match,
@@ -888,8 +906,6 @@ impl Renderer {
             };
 
             context.renderable_content.has_pending_updates = false;
-            terminal.reset_damage();
-            drop(terminal);
         }
 
         self.update_search_rich_text(content);
@@ -923,6 +939,7 @@ impl Renderer {
         context_manager.get_grid_objects(&mut objects);
 
         sugarloaf.set_objects(objects);
+
         // let duration = start.elapsed();
         // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
