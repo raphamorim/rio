@@ -12,45 +12,33 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
 
     let mut objects = Vec::with_capacity(7);
 
-    objects.push(Object::Quad(
-        Quad {
-            position: [0., 0.0],
-            color: black,
-            size: [
-                layout.width / context_dimension.dimension.scale,
-                layout.height,
-            ],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [0., 30.0],
-            color: blue,
-            size: [15., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [15., context_dimension.margin.top_y + 60.],
-            color: yellow,
-            size: [15., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
-    objects.push(Object::Quad(
-        Quad {
-            position: [30., context_dimension.margin.top_y + 120.],
-            color: red,
-            size: [15., layout.height],
-            ..Quad::default()
-        },
-        None,
-    ));
+    objects.push(Object::Quad(Quad {
+        position: [0., 0.0],
+        color: black,
+        size: [
+            layout.width / context_dimension.dimension.scale,
+            layout.height,
+        ],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [0., 30.0],
+        color: blue,
+        size: [15., layout.height],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [15., context_dimension.margin.top_y + 60.],
+        color: yellow,
+        size: [15., layout.height],
+        ..Quad::default()
+    }));
+    objects.push(Object::Quad(Quad {
+        position: [30., context_dimension.margin.top_y + 120.],
+        color: red,
+        size: [15., layout.height],
+        ..Quad::default()
+    }));
 
     let heading = sugarloaf.create_temp_rich_text();
     let paragraph_action = sugarloaf.create_temp_rich_text();
@@ -125,29 +113,20 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         .add_text("More info in rioterm.com", FragmentStyle::default())
         .build();
 
-    objects.push(Object::RichText(
-        RichText {
-            id: heading,
-            position: [70., context_dimension.margin.top_y + 30.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: heading,
+        position: [70., context_dimension.margin.top_y + 30.],
+    }));
 
-    objects.push(Object::RichText(
-        RichText {
-            id: paragraph_action,
-            position: [70., context_dimension.margin.top_y + 70.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: paragraph_action,
+        position: [70., context_dimension.margin.top_y + 70.],
+    }));
 
-    objects.push(Object::RichText(
-        RichText {
-            id: paragraph,
-            position: [70., context_dimension.margin.top_y + 140.],
-        },
-        None,
-    ));
+    objects.push(Object::RichText(RichText {
+        id: paragraph,
+        position: [70., context_dimension.margin.top_y + 140.],
+    }));
 
     sugarloaf.set_objects(objects);
 }
