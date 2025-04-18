@@ -10,7 +10,7 @@ use crate::font::FontLibrary;
 use crate::layout::{RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
-use compositor::{Compositor, DisplayList, Rect, Vertex};
+use compositor::{Compositor, Rect, Vertex};
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
@@ -43,7 +43,7 @@ pub struct RichTextBrush {
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     comp: Compositor,
-    dlist: DisplayList,
+    vertices: Vec<Vertex>,
     supported_vertex_buffer: usize,
     textures_version: usize,
     images: ImageCache,
@@ -53,8 +53,7 @@ pub struct RichTextBrush {
 impl RichTextBrush {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
-        let dlist = DisplayList::new();
-        let supported_vertex_buffer = 2_000;
+        let supported_vertex_buffer = 500;
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
@@ -228,7 +227,7 @@ impl RichTextBrush {
             images,
             textures_version: 0,
             glyphs: GlyphCache::new(),
-            dlist,
+            vertices: vec![],
             transform,
             pipeline,
             vertex_buffer,
@@ -245,7 +244,7 @@ impl RichTextBrush {
         graphics: &mut Graphics,
     ) {
         if state.rich_texts.is_empty() {
-            self.dlist.clear();
+            self.vertices.clear();
             return;
         }
 
@@ -270,9 +269,9 @@ impl RichTextBrush {
             }
         }
 
-        self.dlist.clear();
+        self.vertices.clear();
         self.images.process_atlases(context);
-        self.comp.finish(&mut self.dlist);
+        self.comp.finish(&mut self.vertices);
         // let duration = start.elapsed();
         // println!("Time elapsed in prepare() is: {:?}", duration);
     }
@@ -310,7 +309,7 @@ impl RichTextBrush {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // There's nothing to render
-        if self.dlist.vertices.is_empty() {
+        if self.vertices.is_empty() {
             return;
         }
 
@@ -324,10 +323,10 @@ impl RichTextBrush {
             self.current_transform = transform;
         }
 
-        if self.dlist.vertices.len() > self.supported_vertex_buffer {
+        if self.vertices.len() > self.supported_vertex_buffer {
             self.vertex_buffer.destroy();
 
-            self.supported_vertex_buffer = self.dlist.vertices.len();
+            self.supported_vertex_buffer = self.vertices.len();
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rich_text::Pipeline vertices"),
                 size: mem::size_of::<Vertex>() as u64
@@ -337,7 +336,7 @@ impl RichTextBrush {
             });
         }
 
-        let vertices_bytes: &[u8] = bytemuck::cast_slice(&self.dlist.vertices);
+        let vertices_bytes: &[u8] = bytemuck::cast_slice(&self.vertices);
         if !vertices_bytes.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
         }
@@ -363,7 +362,7 @@ impl RichTextBrush {
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
         // Use draw instead of draw_indexed
-        let vertex_count = self.dlist.vertices.len() as u32;
+        let vertex_count = self.vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
     }
 }
