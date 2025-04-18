@@ -18,7 +18,7 @@ pub struct GraphicDataEntry {
     pub height: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct GraphicRenderRequest {
     pub id: GraphicId,
     pub pos_x: f32,
