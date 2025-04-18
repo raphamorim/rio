@@ -61,11 +61,6 @@ impl GlyphCache {
         }
     }
 
-    #[inline]
-    pub fn set_max_height(&mut self, max_height: u16) {
-        self.max_height = max_height;
-    }
-
     // pub fn prune(&mut self, images: &mut ImageCache) {
     //     self.fonts.retain(|_, entry| {
     //         for glyph in &entry.glyphs {

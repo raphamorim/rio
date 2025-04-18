@@ -323,11 +323,6 @@ impl RichTextBrush {
             }
         }
 
-        // Configure cache height if drawing layout
-        if let Some(layout) = rte_layout {
-            glyphs_cache.set_max_height(layout.dimensions.height as u16);
-        }
-
         let mut session = glyphs_cache.session(
             image_cache,
             current_font,
@@ -341,15 +336,21 @@ impl RichTextBrush {
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
 
+        let first_run = &lines[0].render_data.runs[0];
+        let ascent = first_run.ascent.round();
+        let descent = first_run.descent.round();
+        let leading = (first_run.leading).round() * 2.;
+
+        // Calculate line height with modifier if available
+        let line_height_without_mod = ascent + descent + leading;
+        let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
+        let line_height = line_height_without_mod * line_height_mod;
+
         for line in lines_to_process {
             if line.render_data.runs.is_empty() {
                 continue;
             }
 
-            let first_run = &line.render_data.runs[0];
-            let ascent = first_run.ascent.round();
-            let descent = first_run.descent.round();
-            let leading = (first_run.leading).round() * 2.;
             let mut px = x;
 
             // Calculate baseline differently based on mode
@@ -362,11 +363,6 @@ impl RichTextBrush {
             // Different line_y calculation based on mode
             line_y = baseline + descent;
 
-            // Calculate line height with modifier if available
-            let line_height_without_mod = ascent + descent + leading;
-            let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
-            let line_height = line_height_without_mod * line_height_mod;
-
             // Calculate padding
             let padding_y = if line_height_mod > 1.0 {
                 (line_height - line_height_without_mod) / 2.0
@@ -376,11 +372,13 @@ impl RichTextBrush {
 
             let py = line_y;
 
-            // if !is_dimensions_only {
-            //     println!("{:?}", line.render_data.runs.len());
-            // }
+            if !is_dimensions_only {
+                // println!("line {:?}", line.render_data.runs.len());
+            }
 
             for run in &line.render_data.runs {
+
+                // println!("glyphs {:?}", run.glyphs.len());
                 glyphs.clear();
                 let font = run.span.font_id;
                 let char_width = run.span.width;
@@ -480,10 +478,10 @@ impl RichTextBrush {
         }
 
         // Only log timing for layout mode
-        // if !is_dimensions_only {
-        //     let duration = start.elapsed();
-        //     println!(" - draw_layout() is: {:?}\n", duration);
-        // }
+        if !is_dimensions_only {
+            // let duration = start.elapsed();
+            // println!(" - draw_layout() is: {:?}\n", duration);
+        }
 
         // Return dimensions if in dimensions mode
         if is_dimensions_only {
