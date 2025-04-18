@@ -248,7 +248,7 @@ impl QuadBrush {
             });
         }
 
-        let instance_bytes = bytemuck::cast_slice(&instances);
+        let instance_bytes = bytemuck::cast_slice(instances);
         context
             .queue
             .write_buffer(&self.instances, 0, instance_bytes);
