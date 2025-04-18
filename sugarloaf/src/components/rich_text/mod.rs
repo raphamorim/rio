@@ -41,8 +41,6 @@ pub struct RichTextBrush {
     layout_bind_group_layout: wgpu::BindGroupLayout,
     transform: wgpu::Buffer,
     pipeline: wgpu::RenderPipeline,
-    index_buffer: wgpu::Buffer,
-    index_buffer_size: u64,
     current_transform: [f32; 16],
     comp: Compositor,
     dlist: DisplayList,
@@ -216,18 +214,9 @@ impl RichTextBrush {
         });
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rich_text::Instances Buffer"),
+            label: Some("rich_text::Vertices Buffer"),
             size: mem::size_of::<Vertex>() as u64 * supported_vertex_buffer as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let index_buffer_size: &[u32] = bytemuck::cast_slice(&dlist.indices);
-        let index_buffer_size = index_buffer_size.len() as u64;
-        let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rich_text::Indices Buffer"),
-            size: index_buffer_size,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
@@ -235,8 +224,6 @@ impl RichTextBrush {
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
-            index_buffer_size,
-            index_buffer,
             comp: Compositor::new(),
             images,
             textures_version: 0,
@@ -322,7 +309,6 @@ impl RichTextBrush {
         ctx: &mut Context,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
-        // let start = std::time::Instant::now();
         // There's nothing to render
         if self.dlist.vertices.is_empty() {
             return;
@@ -343,7 +329,7 @@ impl RichTextBrush {
 
             self.supported_vertex_buffer = self.dlist.vertices.len();
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sugarloaf::rich_text::Pipeline instances"),
+                label: Some("sugarloaf::rich_text::Pipeline vertices"),
                 size: mem::size_of::<Vertex>() as u64
                     * self.supported_vertex_buffer as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
@@ -354,29 +340,6 @@ impl RichTextBrush {
         let vertices_bytes: &[u8] = bytemuck::cast_slice(&self.dlist.vertices);
         if !vertices_bytes.is_empty() {
             queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
-        }
-
-        let indices_raw: &[u8] = bytemuck::cast_slice(&self.dlist.indices);
-        let indices_raw_size = indices_raw.len() as u64;
-
-        if self.index_buffer_size >= indices_raw_size {
-            queue.write_buffer(&self.index_buffer, 0, indices_raw);
-        } else {
-            self.index_buffer.destroy();
-
-            let size = next_copy_buffer_size(indices_raw_size);
-            let buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rich_text::Indices"),
-                size,
-                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: true,
-            });
-            buffer.slice(..).get_mapped_range_mut()[..indices_raw.len()]
-                .copy_from_slice(indices_raw);
-            buffer.unmap();
-
-            self.index_buffer = buffer;
-            self.index_buffer_size = size;
         }
 
         if self.textures_version != self.images.entries.len() {
@@ -398,11 +361,10 @@ impl RichTextBrush {
         rpass.set_bind_group(0, &self.constant_bind_group, &[]);
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        rpass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        rpass.draw_indexed(0..(self.dlist.indices.len() as u32), 0, 0..1);
 
-        // let duration = start.elapsed();
-        // println!(" - rich_text::render() is: {:?}", duration);
+        // Use draw instead of draw_indexed
+        let vertex_count = self.dlist.vertices.len() as u32;
+        rpass.draw(0..vertex_count, 0..1);
     }
 }
 
@@ -651,11 +613,4 @@ fn fetch_dimensions(
     }
 
     dimension
-}
-
-#[inline]
-fn next_copy_buffer_size(size: u64) -> u64 {
-    let align_mask = wgpu::COPY_BUFFER_ALIGNMENT - 1;
-    ((size.next_power_of_two() + align_mask) & !align_mask)
-        .max(wgpu::COPY_BUFFER_ALIGNMENT)
 }

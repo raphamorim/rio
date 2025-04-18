@@ -53,7 +53,6 @@ struct Batch {
     image: Option<i32>,
     mask: Option<i32>,
     vertices: Vec<Vertex>,
-    indices: Vec<u32>,
     subpix: bool,
 }
 
@@ -62,311 +61,276 @@ impl Batch {
         self.image = None;
         self.mask = None;
         self.vertices.clear();
-        self.indices.clear();
         self.subpix = false;
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[inline]
-    fn add_line(
-        &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        width: f32,
-        depth: f32,
-        color: [f32; 4],
-        image: Option<i32>,
-        mask: Option<i32>,
-        subpix: bool,
-    ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
-            return false;
-        }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
-            return false;
-        }
-        if has_mask && self.mask.is_some() && self.mask != mask {
-            return false;
-        }
-        self.subpix = subpix;
-        self.image = image;
-        self.mask = mask;
-        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+#[inline]
+fn add_line(
+    &mut self,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    width: f32,
+    depth: f32,
+    color: [f32; 4],
+    image: Option<i32>,
+    mask: Option<i32>,
+    subpix: bool,
+) -> bool {
+    if !self.vertices.is_empty() && subpix != self.subpix {
+        return false;
+    }
+    let has_image = image.is_some();
+    let has_mask = mask.is_some();
+    if has_image && self.image.is_some() && self.image != image {
+        return false;
+    }
+    if has_mask && self.mask.is_some() && self.mask != mask {
+        return false;
+    }
+    self.subpix = subpix;
+    self.image = image;
+    self.mask = mask;
+    let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
 
-        // Calculate the direction vector of the line
-        let dx = x2 - x1;
-        let dy = y2 - y1;
+    // Calculate the direction vector of the line
+    let dx = x2 - x1;
+    let dy = y2 - y1;
 
-        // Calculate the length of the line
-        let line_length = (dx * dx + dy * dy).sqrt();
+    // Calculate the length of the line
+    let line_length = (dx * dx + dy * dy).sqrt();
 
-        // If the line has no length, don't draw anything
-        if line_length < 0.001 {
-            return true;
-        }
-
-        // Calculate the normalized perpendicular vector
-        let nx = -dy / line_length; // Perpendicular vector x component
-        let ny = dx / line_length; // Perpendicular vector y component
-
-        // Calculate half width
-        let half_width = width / 2.0;
-
-        // Calculate the corners of the quad representing the line
-        let x1_top = x1 + nx * half_width;
-        let y1_top = y1 + ny * half_width;
-        let x1_bottom = x1 - nx * half_width;
-        let y1_bottom = y1 - ny * half_width;
-
-        let x2_top = x2 + nx * half_width;
-        let y2_top = y2 + ny * half_width;
-        let x2_bottom = x2 - nx * half_width;
-        let y2_bottom = y2 - ny * half_width;
-
-        // Create vertices for the quad
-        let verts = [
-            // First vertex (top left)
-            Vertex {
-                pos: [x1_top, y1_top, depth],
-                color,
-                uv: [0.0, 0.0],
-                layers,
-            },
-            // Second vertex (top right)
-            Vertex {
-                pos: [x2_top, y2_top, depth],
-                color,
-                uv: [1.0, 0.0],
-                layers,
-            },
-            // Third vertex (bottom right)
-            Vertex {
-                pos: [x2_bottom, y2_bottom, depth],
-                color,
-                uv: [1.0, 1.0],
-                layers,
-            },
-            // Fourth vertex (bottom left)
-            Vertex {
-                pos: [x1_bottom, y1_bottom, depth],
-                color,
-                uv: [0.0, 1.0],
-                layers,
-            },
-        ];
-
-        // Add the vertices to the batch
-        let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&verts);
-
-        // Add indices for two triangles forming the quad
-        self.indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 2,
-            base + 2,
-            base + 3,
-            base,
-        ]);
-
-        true
+    // If the line has no length, don't draw anything
+    if line_length < 0.001 {
+        return true;
     }
 
-    #[inline]
-    #[allow(clippy::too_many_arguments)]
-    fn add_triangle(
-        &mut self,
-        x1: f32,
-        y1: f32,
-        x2: f32,
-        y2: f32,
-        x3: f32,
-        y3: f32,
-        color: [f32; 4],
-        depth: f32,
-        image: Option<i32>,
-        mask: Option<i32>,
-        subpix: bool,
-    ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
-            return false;
-        }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
-            return false;
-        }
-        if has_mask && self.mask.is_some() && self.mask != mask {
-            return false;
-        }
+    // Calculate the normalized perpendicular vector
+    let nx = -dy / line_length; // Perpendicular vector x component
+    let ny = dx / line_length; // Perpendicular vector y component
 
-        self.subpix = subpix;
-        self.image = image;
-        self.mask = mask;
-        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+    // Calculate half width
+    let half_width = width / 2.0;
 
-        // Properly set UV coordinates for anti-aliasing
-        // For anti-aliased rendering, use proper edge coordinates
-        let verts = [
-            // First vertex
-            Vertex {
-                pos: [x1, y1, depth],
-                color,
-                uv: [0.0, 0.0],
-                layers,
-            },
-            // Second vertex
-            Vertex {
-                pos: [x2, y2, depth],
-                color,
-                uv: [1.0, 0.0],
-                layers,
-            },
-            // Third vertex
-            Vertex {
-                pos: [x3, y3, depth],
-                color,
-                uv: [0.0, 1.0],
-                layers,
-            },
-        ];
+    // Calculate the corners of the quad representing the line
+    let x1_top = x1 + nx * half_width;
+    let y1_top = y1 + ny * half_width;
+    let x1_bottom = x1 - nx * half_width;
+    let y1_bottom = y1 - ny * half_width;
 
-        // Add the vertices to the batch
-        let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&verts);
+    let x2_top = x2 + nx * half_width;
+    let y2_top = y2 + ny * half_width;
+    let x2_bottom = x2 - nx * half_width;
+    let y2_bottom = y2 - ny * half_width;
 
-        // Add indices for the triangle
-        self.indices.extend_from_slice(&[
-            base,     // First vertex
-            base + 1, // Second vertex
-            base + 2, // Third vertex
-        ]);
+    // Create vertices for the quad
+    let v0 = Vertex {
+        pos: [x1_top, y1_top, depth],
+        color,
+        uv: [0.0, 0.0],
+        layers,
+    };
+    let v1 = Vertex {
+        pos: [x2_top, y2_top, depth],
+        color,
+        uv: [1.0, 0.0],
+        layers,
+    };
+    let v2 = Vertex {
+        pos: [x2_bottom, y2_bottom, depth],
+        color,
+        uv: [1.0, 1.0],
+        layers,
+    };
+    let v3 = Vertex {
+        pos: [x1_bottom, y1_bottom, depth],
+        color,
+        uv: [0.0, 1.0],
+        layers,
+    };
 
-        true
+    // Add vertices directly in drawing order (two triangles)
+    // First triangle: v0, v1, v2
+    self.vertices.push(v0);
+    self.vertices.push(v1);
+    self.vertices.push(v2);
+
+    // Second triangle: v2, v3, v0
+    self.vertices.push(v2);
+    self.vertices.push(v3);
+    self.vertices.push(v0);
+
+    true
+}
+
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn add_triangle(
+    &mut self,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    x3: f32,
+    y3: f32,
+    color: [f32; 4],
+    depth: f32,
+    image: Option<i32>,
+    mask: Option<i32>,
+    subpix: bool,
+) -> bool {
+    if !self.vertices.is_empty() && subpix != self.subpix {
+        return false;
+    }
+    let has_image = image.is_some();
+    let has_mask = mask.is_some();
+    if has_image && self.image.is_some() && self.image != image {
+        return false;
+    }
+    if has_mask && self.mask.is_some() && self.mask != mask {
+        return false;
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[inline]
-    fn add_arc(
-        &mut self,
-        center_x: f32,
-        center_y: f32,
-        radius: f32,
-        start_angle_deg: f32,
-        end_angle_deg: f32,
-        stroke_width: f32,
-        depth: f32,
-        color: &[f32; 4],
-        image: Option<i32>,
-        mask: Option<i32>,
-        subpix: bool,
-    ) -> bool {
-        if !self.vertices.is_empty() && subpix != self.subpix {
-            return false;
-        }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
-            return false;
-        }
-        if has_mask && self.mask.is_some() && self.mask != mask {
-            return false;
-        }
-        self.subpix = subpix;
-        self.image = image;
-        self.mask = mask;
-        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+    self.subpix = subpix;
+    self.image = image;
+    self.mask = mask;
+    let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
 
-        // Convert angles from degrees to radians
-        let start_angle = start_angle_deg.to_radians();
-        let end_angle = end_angle_deg.to_radians();
+    // Create vertices for the triangle and add them directly in drawing order
+    self.vertices.push(Vertex {
+        pos: [x1, y1, depth],
+        color,
+        uv: [0.0, 0.0],
+        layers,
+    });
+    self.vertices.push(Vertex {
+        pos: [x2, y2, depth],
+        color,
+        uv: [1.0, 0.0],
+        layers,
+    });
+    self.vertices.push(Vertex {
+        pos: [x3, y3, depth],
+        color,
+        uv: [0.0, 1.0],
+        layers,
+    });
 
-        // Number of segments to use for the arc (more segments = smoother curve)
-        let segments = 16;
+    true
+}
 
-        // Calculate angle increment per segment
-        let angle_diff = if end_angle >= start_angle {
-            end_angle - start_angle
-        } else {
-            2.0 * std::f32::consts::PI - (start_angle - end_angle)
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn add_arc(
+    &mut self,
+    center_x: f32,
+    center_y: f32,
+    radius: f32,
+    start_angle_deg: f32,
+    end_angle_deg: f32,
+    stroke_width: f32,
+    depth: f32,
+    color: &[f32; 4],
+    image: Option<i32>,
+    mask: Option<i32>,
+    subpix: bool,
+) -> bool {
+    if !self.vertices.is_empty() && subpix != self.subpix {
+        return false;
+    }
+    let has_image = image.is_some();
+    let has_mask = mask.is_some();
+    if has_image && self.image.is_some() && self.image != image {
+        return false;
+    }
+    if has_mask && self.mask.is_some() && self.mask != mask {
+        return false;
+    }
+    self.subpix = subpix;
+    self.image = image;
+    self.mask = mask;
+    let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+
+    // Convert angles from degrees to radians
+    let start_angle = start_angle_deg.to_radians();
+    let end_angle = end_angle_deg.to_radians();
+
+    // Number of segments to use for the arc (more segments = smoother curve)
+    let segments = 16;
+
+    // Calculate angle increment per segment
+    let angle_diff = if end_angle >= start_angle {
+        end_angle - start_angle
+    } else {
+        2.0 * std::f32::consts::PI - (start_angle - end_angle)
+    };
+    let angle_increment = angle_diff / segments as f32;
+
+    // Calculate inner and outer radius for the stroke
+    let inner_radius = radius - stroke_width / 2.0;
+    let outer_radius = radius + stroke_width / 2.0;
+
+    // Create vertices for the arc segments
+    let mut current_angle = start_angle;
+
+    for _ in 0..segments {
+        let next_angle = current_angle + angle_increment;
+
+        // Calculate vertex positions for current and next angle
+        let inner_x1 = center_x + inner_radius * current_angle.cos();
+        let inner_y1 = center_y + inner_radius * current_angle.sin();
+        let outer_x1 = center_x + outer_radius * current_angle.cos();
+        let outer_y1 = center_y + outer_radius * current_angle.sin();
+
+        let inner_x2 = center_x + inner_radius * next_angle.cos();
+        let inner_y2 = center_y + inner_radius * next_angle.sin();
+        let outer_x2 = center_x + outer_radius * next_angle.cos();
+        let outer_y2 = center_y + outer_radius * next_angle.sin();
+
+        // Create vertex objects
+        let v0 = Vertex {
+            pos: [inner_x1, inner_y1, depth],
+            color: *color,
+            uv: [0.0, 0.0],
+            layers,
         };
-        let angle_increment = angle_diff / segments as f32;
+        let v1 = Vertex {
+            pos: [inner_x2, inner_y2, depth],
+            color: *color,
+            uv: [0.0, 1.0],
+            layers,
+        };
+        let v2 = Vertex {
+            pos: [outer_x2, outer_y2, depth],
+            color: *color,
+            uv: [1.0, 1.0],
+            layers,
+        };
+        let v3 = Vertex {
+            pos: [outer_x1, outer_y1, depth],
+            color: *color,
+            uv: [1.0, 0.0],
+            layers,
+        };
 
-        // Calculate inner and outer radius for the stroke
-        let inner_radius = radius - stroke_width / 2.0;
-        let outer_radius = radius + stroke_width / 2.0;
+        // Add vertices directly in drawing order (two triangles)
+        // First triangle: v0, v1, v2
+        self.vertices.push(v0);
+        self.vertices.push(v1);
+        self.vertices.push(v2);
 
-        // Create vertices for the arc segments
-        let mut current_angle = start_angle;
+        // Second triangle: v2, v3, v0
+        self.vertices.push(v2);
+        self.vertices.push(v3);
+        self.vertices.push(v0);
 
-        for _ in 0..segments {
-            let next_angle = current_angle + angle_increment;
-
-            // Calculate vertex positions for current and next angle
-            let inner_x1 = center_x + inner_radius * current_angle.cos();
-            let inner_y1 = center_y + inner_radius * current_angle.sin();
-            let outer_x1 = center_x + outer_radius * current_angle.cos();
-            let outer_y1 = center_y + outer_radius * current_angle.sin();
-
-            let inner_x2 = center_x + inner_radius * next_angle.cos();
-            let inner_y2 = center_y + inner_radius * next_angle.sin();
-            let outer_x2 = center_x + outer_radius * next_angle.cos();
-            let outer_y2 = center_y + outer_radius * next_angle.sin();
-
-            // Create a quad (two triangles) for this segment
-            let verts = [
-                // Inner point at current angle
-                Vertex {
-                    pos: [inner_x1, inner_y1, depth],
-                    color: *color,
-                    uv: [0.0, 0.0],
-                    layers,
-                },
-                // Inner point at next angle
-                Vertex {
-                    pos: [inner_x2, inner_y2, depth],
-                    color: *color,
-                    uv: [0.0, 1.0],
-                    layers,
-                },
-                // Outer point at next angle
-                Vertex {
-                    pos: [outer_x2, outer_y2, depth],
-                    color: *color,
-                    uv: [1.0, 1.0],
-                    layers,
-                },
-                // Outer point at current angle
-                Vertex {
-                    pos: [outer_x1, outer_y1, depth],
-                    color: *color,
-                    uv: [1.0, 0.0],
-                    layers,
-                },
-            ];
-
-            let base = self.vertices.len() as u32;
-            self.vertices.extend_from_slice(&verts);
-
-            // Add indices for two triangles forming a quad
-            self.indices.extend_from_slice(&[
-                base,
-                base + 1,
-                base + 2,
-                base + 2,
-                base + 3,
-                base,
-            ]);
-
-            current_angle = next_angle;
-        }
-
-        true
+        current_angle = next_angle;
     }
+
+    true
+}
 
     #[allow(clippy::too_many_arguments)]
     #[inline]
@@ -412,56 +376,56 @@ impl Batch {
         let y = rect.y;
         let w = rect.width;
         let h = rect.height;
+
         const DEFAULT_COORDS: [f32; 4] = [0., 0., 1., 1.];
         let coords = coords.unwrap_or(&DEFAULT_COORDS);
         let l = coords[0];
         let t = coords[1];
         let r = coords[2];
         let b = coords[3];
-        let verts = [
-            Vertex {
-                pos: [x, y, depth],
-                color: *color,
-                uv: [l, t],
-                layers,
-            },
-            Vertex {
-                pos: [x, y + h, depth],
-                color: *color,
-                uv: [l, b],
-                layers,
-            },
-            Vertex {
-                pos: [x + w, y + h, depth],
-                color: *color,
-                uv: [r, b],
-                layers,
-            },
-            Vertex {
-                pos: [x + w, y, depth],
-                color: *color,
-                uv: [r, t],
-                layers,
-            },
-        ];
-        let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&verts);
-        self.indices.extend_from_slice(&[
-            base,
-            base + 1,
-            base + 2,
-            base + 2,
-            base,
-            base + 3,
-        ]);
+
+        // Create the four corner vertices
+        let v0 = Vertex {
+            pos: [x, y, depth],
+            color: *color,
+            uv: [l, t],
+            layers,
+        };
+        let v1 = Vertex {
+            pos: [x, y + h, depth],
+            color: *color,
+            uv: [l, b],
+            layers,
+        };
+        let v2 = Vertex {
+            pos: [x + w, y + h, depth],
+            color: *color,
+            uv: [r, b],
+            layers,
+        };
+        let v3 = Vertex {
+            pos: [x + w, y, depth],
+            color: *color,
+            uv: [r, t],
+            layers,
+        };
+
+        // Add vertices directly in the order they'll be drawn
+        // First triangle: v0, v1, v2
+        self.vertices.push(v0);
+        self.vertices.push(v1);
+        self.vertices.push(v2);
+
+        // Second triangle: v2, v3, v0
+        self.vertices.push(v2);
+        self.vertices.push(v3);
+        self.vertices.push(v0);
     }
 
     #[inline]
     fn build_display_list(&self, list: &mut DisplayList) {
-        let first_vertex = list.vertices.len() as u32;
+        // Since vertices are already in draw order, we can just copy them
         list.vertices.extend_from_slice(&self.vertices);
-        list.indices
-            .extend(self.indices.iter().map(|i| *i + first_vertex));
     }
 }
 
@@ -856,7 +820,6 @@ impl BatchManager {
 #[derive(Default, Debug, Clone)]
 pub struct DisplayList {
     pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
 }
 
 impl DisplayList {
@@ -870,6 +833,5 @@ impl DisplayList {
     #[inline]
     pub fn clear(&mut self) {
         self.vertices.clear();
-        self.indices.clear();
     }
 }
