@@ -260,13 +260,10 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(
-                    RichText {
-                        id: self.rich_text,
-                        position: [10., 0.],
-                    },
-                    None,
-                )]);
+                sugarloaf.set_objects(vec![Object::RichText(RichText {
+                    id: self.rich_text,
+                    position: [10., 0.],
+                })]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
