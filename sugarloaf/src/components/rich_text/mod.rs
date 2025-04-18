@@ -16,11 +16,6 @@ use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
 
-// Note: currently it's using Indexed drawing instead of Instance drawing could be worth to
-// evaluate if would make sense move to instance drawing instead
-// https://math.hws.edu/graphicsbook/c9/s2.html
-// https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
         src_factor: wgpu::BlendFactor::SrcAlpha,
@@ -257,14 +252,12 @@ impl RichTextBrush {
                     rich_text.position[1] * state.style.scale_factor,
                 );
 
-                draw_layout(
-                    &mut self.comp,
-                    (&mut self.images, &mut self.glyphs),
+                self.draw_layout(
                     &rt.lines,
-                    position,
+                    Some(position),
                     library,
-                    &rt.layout,
-                    graphics,
+                    Some(&rt.layout),
+                    Some(graphics),
                 );
             }
         }
@@ -284,14 +277,221 @@ impl RichTextBrush {
     ) -> Option<SugarDimensions> {
         self.comp.begin();
 
-        let dimension = fetch_dimensions(
-            &mut self.comp,
-            (&mut self.images, &mut self.glyphs),
-            render_data,
+        let lines = vec![render_data.clone()];
+        self.draw_layout(&lines, None, font_library, None, None)
+    }
+
+    #[inline]
+    fn draw_layout(
+        &mut self,
+        lines: &Vec<crate::layout::BuilderLine>,
+        pos: Option<(f32, f32)>,
+        font_library: &FontLibrary,
+        rte_layout: Option<&RichTextLayout>,
+        mut graphics: Option<&mut Graphics>,
+    ) -> Option<SugarDimensions> {
+        // let start = std::time::Instant::now();
+        let comp = &mut self.comp;
+        let caches = (&mut self.images, &mut self.glyphs);
+        let (image_cache, glyphs_cache) = caches;
+        let font_coords: &[i16] = &[0, 0, 0, 0];
+        let depth = 0.0;
+
+        // Determine if we're calculating dimensions only or drawing layout
+        let is_dimensions_only =
+            pos.is_none() || rte_layout.is_none() || graphics.is_none();
+
+        // For dimensions mode, we only process the first line
+        let lines_to_process = if is_dimensions_only && !lines.is_empty() {
+            std::slice::from_ref(&lines[0])
+        } else {
+            lines.as_slice()
+        };
+
+        // Get initial position
+        let (x, y) = pos.unwrap_or((0.0, 0.0));
+
+        // Set up caches based on mode
+        let mut current_font = 0;
+        let mut current_font_size = 0.0;
+
+        // Initialize from first run if available
+        if let Some(line) = lines_to_process.first() {
+            if let Some(first_run) = line.render_data.runs.first() {
+                current_font = first_run.span.font_id;
+                current_font_size = first_run.size;
+            }
+        }
+
+        // Configure cache height if drawing layout
+        if let Some(layout) = rte_layout {
+            glyphs_cache.set_max_height(layout.dimensions.height as u16);
+        }
+
+        let mut session = glyphs_cache.session(
+            image_cache,
+            current_font,
             font_library,
+            font_coords,
+            current_font_size,
         );
-        if dimension.height > 0. && dimension.width > 0. {
-            Some(dimension)
+
+        let mut glyphs = Vec::new();
+        let mut last_rendered_graphic = HashSet::new();
+        let mut line_y = y;
+        let mut dimensions = SugarDimensions::default();
+
+        for line in lines_to_process {
+            if line.render_data.runs.is_empty() {
+                continue;
+            }
+
+            let first_run = &line.render_data.runs[0];
+            let ascent = first_run.ascent.round();
+            let descent = first_run.descent.round();
+            let leading = (first_run.leading).round() * 2.;
+            let mut px = x;
+
+            // Calculate baseline differently based on mode
+            let baseline = if is_dimensions_only {
+                ascent + y
+            } else {
+                line_y + ascent
+            };
+
+            // Different line_y calculation based on mode
+            line_y = baseline + descent;
+
+            // Calculate line height with modifier if available
+            let line_height_without_mod = ascent + descent + leading;
+            let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
+            let line_height = line_height_without_mod * line_height_mod;
+
+            // Calculate padding
+            let padding_y = if line_height_mod > 1.0 {
+                (line_height - line_height_without_mod) / 2.0
+            } else {
+                0.0
+            };
+
+            let py = line_y;
+
+            // if !is_dimensions_only {
+            //     println!("{:?}", line.render_data.runs.len());
+            // }
+
+            for run in &line.render_data.runs {
+                glyphs.clear();
+                let font = run.span.font_id;
+                let char_width = run.span.width;
+
+                let run_x = px;
+                for glyph in &run.glyphs {
+                    let x = px;
+                    let y = py + padding_y;
+
+                    // Different advance calculation based on mode
+                    if is_dimensions_only {
+                        px += glyph.simple_data().1 * char_width;
+                    } else {
+                        px += rte_layout.unwrap().dimensions.width * char_width;
+                    }
+
+                    glyphs.push(Glyph {
+                        id: glyph.simple_data().0,
+                        x,
+                        y,
+                    });
+                }
+
+                // Create style with appropriate defaults
+                let style = TextRunStyle {
+                    font_coords,
+                    font_size: run.size,
+                    color: run.span.color,
+                    cursor: run.span.cursor,
+                    drawable_char: run.span.drawable_char,
+                    background_color: run.span.background_color,
+                    baseline: py,
+                    topline: py - ascent,
+                    padding_y,
+                    line_height,
+                    line_height_without_mod,
+                    advance: px - run_x,
+                    decoration: run.span.decoration,
+                    decoration_color: run.span.decoration_color,
+                };
+
+                // Update dimensions if in dimensions mode
+                if is_dimensions_only && style.advance > 0.0 && line_height > 0.0 {
+                    dimensions.width = style.advance.round();
+                    dimensions.height = line_height.round();
+                }
+
+                // Update font session if needed
+                if font != current_font || style.font_size != current_font_size {
+                    current_font = font;
+                    current_font_size = style.font_size;
+
+                    session = glyphs_cache.session(
+                        image_cache,
+                        current_font,
+                        font_library,
+                        font_coords,
+                        style.font_size,
+                    );
+                }
+
+                // Handle graphics if in layout mode
+                if !is_dimensions_only {
+                    if let Some(graphic) = run.span.media {
+                        if !last_rendered_graphic.contains(&graphic.id) {
+                            let offset_x = graphic.offset_x as f32;
+                            let offset_y = graphic.offset_y as f32;
+
+                            if let Some(ref mut graphics_ref) = graphics {
+                                graphics_ref.top_layer.push(GraphicRenderRequest {
+                                    id: graphic.id,
+                                    pos_x: run_x - offset_x,
+                                    pos_y: style.topline - offset_y,
+                                    width: None,
+                                    height: None,
+                                });
+                            }
+                            last_rendered_graphic.insert(graphic.id);
+                        }
+                    }
+                }
+
+                // Draw the run
+                comp.draw_run(
+                    &mut session,
+                    Rect::new(run_x, py, style.advance, 1.),
+                    depth,
+                    &style,
+                    &glyphs,
+                );
+            }
+
+            // Update line_y for line height modifier
+            if !is_dimensions_only && line_height_mod > 1.0 {
+                line_y += line_height - line_height_without_mod;
+            }
+        }
+
+        // Only log timing for layout mode
+        // if !is_dimensions_only {
+        //     let duration = start.elapsed();
+        //     println!(" - draw_layout() is: {:?}\n", duration);
+        // }
+
+        // Return dimensions if in dimensions mode
+        if is_dimensions_only {
+            if dimensions.height > 0.0 && dimensions.width > 0.0 {
+                Some(dimensions)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -365,251 +565,4 @@ impl RichTextBrush {
         let vertex_count = self.vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
     }
-}
-
-#[inline]
-fn draw_layout(
-    comp: &mut compositor::Compositor,
-    caches: (&mut ImageCache, &mut GlyphCache),
-    lines: &Vec<crate::layout::BuilderLine>,
-    pos: (f32, f32),
-    font_library: &FontLibrary,
-    rte_layout: &RichTextLayout,
-    graphics: &mut Graphics,
-) {
-    let rect = &rte_layout.dimensions;
-    let line_height_mod = &rte_layout.line_height;
-    // let start = std::time::Instant::now();
-    let (x, y) = pos;
-    let (image_cache, glyphs_cache) = caches;
-    let depth = 0.0;
-    let mut glyphs = Vec::new();
-    let mut current_font = 0;
-    let mut current_font_size = 0.0;
-    let font_coords: &[i16] = &[0, 0, 0, 0];
-    if let Some(line) = lines.first() {
-        if let Some(first_run) = line.render_data.runs.first() {
-            current_font = first_run.span.font_id;
-            current_font_size = first_run.size;
-        }
-    }
-
-    glyphs_cache.set_max_height(rect.height as u16);
-
-    let mut session = glyphs_cache.session(
-        image_cache,
-        current_font,
-        font_library,
-        font_coords,
-        current_font_size,
-    );
-
-    let mut last_rendered_graphic = HashSet::new();
-    let mut line_y = 0. + y;
-    for line in lines {
-        if line.render_data.runs.is_empty() {
-            continue;
-        }
-
-        let first_run = &line.render_data.runs[0];
-        let ascent = first_run.ascent.round();
-        let descent = first_run.descent.round();
-        let leading = (first_run.leading).round() * 2.;
-        let mut px = x + 0.0;
-        let baseline = line_y + ascent;
-        line_y = baseline + descent;
-        let line_height_without_mod = ascent + descent + leading;
-        let line_height = line_height_without_mod * line_height_mod;
-
-        // If line height is 10. and and modifier is 1.5, then 5
-        let padding_y = if line_height_mod > &1. {
-            (line_height - line_height_without_mod) / 2.
-        } else {
-            0.
-        };
-
-        let py = line_y;
-        for run in &line.render_data.runs {
-            glyphs.clear();
-            let font = run.span.font_id;
-            let char_width = run.span.width;
-
-            let run_x = px;
-            for glyph in &run.glyphs {
-                let x = px;
-                let y = py + padding_y;
-                px += rect.width * char_width;
-                glyphs.push(Glyph {
-                    id: glyph.simple_data().0,
-                    x,
-                    y,
-                });
-            }
-            let style = TextRunStyle {
-                font_coords,
-                font_size: run.size,
-                color: run.span.color,
-                cursor: run.span.cursor,
-                drawable_char: run.span.drawable_char,
-                background_color: run.span.background_color,
-                baseline: py,
-                topline: py - ascent,
-                padding_y,
-                line_height,
-                line_height_without_mod,
-                advance: px - run_x,
-                decoration: run.span.decoration,
-                decoration_color: run.span.decoration_color,
-            };
-
-            if font != current_font || style.font_size != current_font_size {
-                current_font = font;
-                current_font_size = style.font_size;
-
-                session = glyphs_cache.session(
-                    image_cache,
-                    current_font,
-                    font_library,
-                    font_coords,
-                    style.font_size,
-                );
-            }
-
-            if let Some(graphic) = run.span.media {
-                if !last_rendered_graphic.contains(&graphic.id) {
-                    let offset_x = graphic.offset_x as f32;
-                    let offset_y = graphic.offset_y as f32;
-
-                    graphics.top_layer.push(GraphicRenderRequest {
-                        id: graphic.id,
-                        pos_x: run_x - offset_x,
-                        pos_y: style.topline - offset_y,
-                        width: None,
-                        height: None,
-                    });
-                    last_rendered_graphic.insert(graphic.id);
-                }
-            }
-
-            comp.draw_run(
-                &mut session,
-                Rect::new(run_x, py, style.advance, 1.),
-                depth,
-                &style,
-                &glyphs,
-            );
-        }
-
-        if line_height_mod > &1.0 {
-            line_y += line_height - line_height_without_mod;
-        }
-    }
-
-    // let duration = start.elapsed();
-    // println!(" - draw_layout() is: {:?}\n", duration);
-}
-
-#[inline]
-fn fetch_dimensions(
-    comp: &mut compositor::Compositor,
-    caches: (&mut ImageCache, &mut GlyphCache),
-    line: &crate::layout::BuilderLine,
-    font_library: &FontLibrary,
-) -> SugarDimensions {
-    let x = 0.;
-    let y = 0.;
-
-    let (image_cache, glyphs_cache) = caches;
-    let mut current_font = 0;
-    let mut current_font_size = 0.0;
-    let font_coords: &[i16] = &[0, 0, 0, 0];
-    if let Some(first_run) = line.render_data.runs.first() {
-        current_font = first_run.span.font_id;
-        current_font_size = first_run.size;
-    }
-
-    let mut session = glyphs_cache.session(
-        image_cache,
-        current_font,
-        font_library,
-        font_coords,
-        current_font_size,
-    );
-
-    let mut glyphs = Vec::with_capacity(3);
-    let mut dimension = SugarDimensions::default();
-    let first_run = &line.render_data.runs[0];
-    let ascent = first_run.ascent.round();
-    let descent = first_run.descent.round();
-    let leading = (first_run.leading).round() * 2.;
-    // let mut px = x + line.offset();
-    let mut px = x + 0.0;
-    let py = ascent + y;
-    let line_height = ascent + descent + leading;
-    for run in &line.render_data.runs {
-        let char_width = run.span.width;
-
-        let font = run.span.font_id;
-        let run_x = px;
-        glyphs.clear();
-        for glyph in &run.glyphs {
-            // let x = px + glyph.x;
-            // let y = py - glyph.y;
-            let x = px;
-            let y = py;
-            // px += glyph.advance
-            px += glyph.simple_data().1 * char_width;
-            glyphs.push(Glyph {
-                id: glyph.simple_data().0,
-                x,
-                y,
-            });
-        }
-        let color = run.span.color;
-
-        let style = TextRunStyle {
-            font_coords,
-            font_size: run.size,
-            color,
-            cursor: run.span.cursor,
-            drawable_char: None,
-            background_color: None,
-            baseline: py,
-            padding_y: 0.,
-            topline: py - ascent,
-            line_height,
-            line_height_without_mod: line_height,
-            advance: px - run_x,
-            decoration: None,
-            decoration_color: None,
-        };
-
-        if style.advance > 0. && line_height > 0. {
-            dimension.width = style.advance.round();
-            dimension.height = line_height.round();
-        }
-
-        if font != current_font || style.font_size != current_font_size {
-            current_font = font;
-            current_font_size = style.font_size;
-
-            session = glyphs_cache.session(
-                image_cache,
-                current_font,
-                font_library,
-                font_coords,
-                current_font_size,
-            );
-        }
-
-        comp.draw_run(
-            &mut session,
-            Rect::new(run_x, py, style.advance, 1.),
-            0.0,
-            &style,
-            &glyphs,
-        );
-    }
-
-    dimension
 }
