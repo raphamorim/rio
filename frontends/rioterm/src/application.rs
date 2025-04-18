@@ -1132,8 +1132,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if self.config.renderer.strategy.is_game()
-                {
+                if self.config.renderer.strategy.is_game() {
                     // route.request_frame(&mut self.scheduler);
                     route.request_redraw();
                 }
