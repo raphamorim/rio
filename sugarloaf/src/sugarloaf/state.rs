@@ -190,6 +190,7 @@ impl SugarState {
             self.content.remove_state(rte_id);
         }
 
+        self.content.mark_states_clean();
         self.rich_text_to_be_removed.clear();
     }
 
