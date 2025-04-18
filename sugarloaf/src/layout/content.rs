@@ -12,8 +12,10 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
+use crate::Graphics;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -45,10 +47,20 @@ pub struct BuilderLine {
     pub render_data: RenderData,
 }
 
+#[derive(Default, Clone, PartialEq)]
+#[repr(C)]
+pub enum BuilderStateUpdate {
+    #[default]
+    Full,
+    Partial(HashSet<usize>),
+    Noop,
+}
+
 #[derive(Default)]
 pub struct BuilderState {
     pub lines: Vec<BuilderLine>,
     pub vars: FontSettingCache<f32>,
+    pub last_update: BuilderStateUpdate,
     metrics_cache: MetricsCache,
     scaled_font_size: f32,
     pub layout: RichTextLayout,
@@ -80,9 +92,32 @@ impl BuilderState {
         self.lines.len().wrapping_sub(1)
     }
     #[inline]
+    pub fn mark_clean(&mut self) {
+        self.last_update = BuilderStateUpdate::Noop;
+    }
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.last_update = BuilderStateUpdate::Full;
+    }
+    #[inline]
+    pub fn mark_line_dirty(&mut self, line: usize) {
+        match &mut self.last_update {
+            BuilderStateUpdate::Full => {
+                // No operation
+            }
+            BuilderStateUpdate::Noop => {
+                self.last_update = BuilderStateUpdate::Partial(HashSet::from([line]));
+            }
+            BuilderStateUpdate::Partial(set) => {
+                set.insert(line);
+            }
+        };
+    }
+    #[inline]
     pub fn clear(&mut self) {
         self.lines.clear();
         self.vars.clear();
+        self.last_update = BuilderStateUpdate::Full;
     }
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) {
@@ -104,6 +139,7 @@ impl BuilderState {
         if prev_font_size != self.scaled_font_size {
             self.metrics_cache.inner.clear();
         }
+        self.last_update = BuilderStateUpdate::Full;
     }
 
     pub fn increase_font_size(&mut self) -> bool {
@@ -337,6 +373,13 @@ impl Content {
     }
 
     #[inline]
+    pub fn mark_states_clean(&mut self) {
+        for (_, state) in &mut self.states {
+            state.mark_clean();
+        }
+    }
+
+    #[inline]
     pub fn update_dimensions(
         &mut self,
         state_id: &usize,
@@ -352,7 +395,11 @@ impl Content {
                 .build();
             let render_data = content.get_state(&id).unwrap().lines[0].clone();
 
-            if let Some(dimension) = advance_brush.dimensions(&self.fonts, &render_data) {
+            if let Some(dimension) = advance_brush.dimensions(
+                &self.fonts,
+                &render_data,
+                &mut Graphics::default(),
+            ) {
                 rte.layout.dimensions.height = dimension.height;
                 rte.layout.dimensions.width = dimension.width;
             }
@@ -466,6 +513,7 @@ impl Content {
     ) -> &mut Content {
         if let Some(selector) = self.selector {
             if let Some(state) = self.states.get_mut(&selector) {
+                state.mark_line_dirty(line);
                 let line = &mut state.lines[line];
 
                 line.fragments.push(FragmentData {
@@ -593,16 +641,11 @@ impl Content {
         if let Some(selector) = self.selector {
             let state_id = selector;
 
-            // Get line count safely
-            let line_count = if let Some(state) = self.states.get(&state_id) {
-                state.lines.len()
-            } else {
-                return;
-            };
-
-            // Process all lines
-            for line_number in 0..line_count {
-                self.process_line(state_id, line_number);
+            if let Some(state) = self.states.get_mut(&state_id) {
+                state.mark_dirty();
+                for line_number in 0..state.lines.len() {
+                    self.process_line(state_id, line_number);
+                }
             }
         }
 

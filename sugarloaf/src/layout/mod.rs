@@ -15,8 +15,8 @@ pub use glyph::Glyph;
 pub use render_data::RenderData;
 
 pub use content::{
-    BuilderLine, BuilderState, Content, FragmentStyle, FragmentStyleDecoration,
-    UnderlineInfo, UnderlineShape,
+    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentStyle,
+    FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
 };
 pub use render_data::Run;
 

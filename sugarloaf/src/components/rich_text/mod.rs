@@ -4,10 +4,11 @@ mod image_cache;
 pub mod text;
 
 use crate::components::core::orthographic_projection;
+use crate::components::rich_text::compositor::{BatchOperation, LineCache};
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::context::Context;
 use crate::font::FontLibrary;
-use crate::layout::{RichTextLayout, SugarDimensions};
+use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use compositor::{Compositor, Rect, Vertex};
@@ -43,6 +44,7 @@ pub struct RichTextBrush {
     textures_version: usize,
     images: ImageCache,
     glyphs: GlyphCache,
+    line_cache: LineCache,
 }
 
 impl RichTextBrush {
@@ -215,6 +217,7 @@ impl RichTextBrush {
         });
 
         RichTextBrush {
+            line_cache: LineCache::new(),
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
@@ -245,19 +248,36 @@ impl RichTextBrush {
 
         self.comp.begin();
         let library = state.content.font_library();
+
         for rich_text in &state.rich_texts {
             if let Some(rt) = state.content.get_state(&rich_text.id) {
+                // Check if this specific rich text needs cache invalidation
+                match &rt.last_update {
+                    BuilderStateUpdate::Full => {
+                        self.line_cache.clear_text_cache(rich_text.id);
+                    }
+                    BuilderStateUpdate::Partial(lines) => {
+                        for line in lines {
+                            self.line_cache.clear_cache(rich_text.id, line);
+                        }
+                    }
+                    BuilderStateUpdate::Noop => {
+                        // Do nothing
+                    }
+                };
+
                 let position = (
                     rich_text.position[0] * state.style.scale_factor,
                     rich_text.position[1] * state.style.scale_factor,
                 );
 
                 self.draw_layout(
+                    rich_text.id, // Pass the rich text ID for caching
                     &rt.lines,
                     Some(position),
                     library,
                     Some(&rt.layout),
-                    Some(graphics),
+                    graphics,
                 );
             }
         }
@@ -265,8 +285,6 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
-        // let duration = start.elapsed();
-        // println!("Time elapsed in prepare() is: {:?}", duration);
     }
 
     #[inline]
@@ -274,21 +292,25 @@ impl RichTextBrush {
         &mut self,
         font_library: &FontLibrary,
         render_data: &crate::layout::BuilderLine,
+        graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
+        // Every dimension request will lead to clear lines cache
+        self.line_cache.clear_all();
         self.comp.begin();
 
         let lines = vec![render_data.clone()];
-        self.draw_layout(&lines, None, font_library, None, None)
+        self.draw_layout(0, &lines, None, font_library, None, graphics)
     }
 
     #[inline]
     fn draw_layout(
         &mut self,
+        rich_text_id: usize,
         lines: &Vec<crate::layout::BuilderLine>,
         pos: Option<(f32, f32)>,
         font_library: &FontLibrary,
         rte_layout: Option<&RichTextLayout>,
-        mut graphics: Option<&mut Graphics>,
+        graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
         // let start = std::time::Instant::now();
         let comp = &mut self.comp;
@@ -298,8 +320,7 @@ impl RichTextBrush {
         let depth = 0.0;
 
         // Determine if we're calculating dimensions only or drawing layout
-        let is_dimensions_only =
-            pos.is_none() || rte_layout.is_none() || graphics.is_none();
+        let is_dimensions_only = pos.is_none() || rte_layout.is_none();
 
         // For dimensions mode, we only process the first line
         let lines_to_process = if is_dimensions_only && !lines.is_empty() {
@@ -346,9 +367,21 @@ impl RichTextBrush {
         let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
         let line_height = line_height_without_mod * line_height_mod;
 
-        for line in lines_to_process {
+        for (line_idx, line) in lines_to_process.iter().enumerate() {
             if line.render_data.runs.is_empty() {
                 continue;
+            }
+
+            // Check if we can use the cache for this line
+            if !is_dimensions_only && self.line_cache.has_cache(rich_text_id, line_idx) {
+                if self
+                    .line_cache
+                    .apply_cache(rich_text_id, line_idx, comp, graphics)
+                {
+                    // Cache was applied successfully, skip to next line
+                    line_y += line_height;
+                    continue;
+                }
             }
 
             let mut px = x;
@@ -371,14 +404,9 @@ impl RichTextBrush {
             };
 
             let py = line_y;
-
-            if !is_dimensions_only {
-                // println!("line {:?}", line.render_data.runs.len());
-            }
+            let mut line_operations = Vec::new();
 
             for run in &line.render_data.runs {
-
-                // println!("glyphs {:?}", run.glyphs.len());
                 glyphs.clear();
                 let font = run.span.font_id;
                 let char_width = run.span.width;
@@ -447,40 +475,58 @@ impl RichTextBrush {
                             let offset_x = graphic.offset_x as f32;
                             let offset_y = graphic.offset_y as f32;
 
-                            if let Some(ref mut graphics_ref) = graphics {
-                                graphics_ref.top_layer.push(GraphicRenderRequest {
-                                    id: graphic.id,
-                                    pos_x: run_x - offset_x,
-                                    pos_y: style.topline - offset_y,
-                                    width: None,
-                                    height: None,
-                                });
-                            }
+                            let graphic_render_request = GraphicRenderRequest {
+                                id: graphic.id,
+                                pos_x: run_x - offset_x,
+                                pos_y: style.topline - offset_y,
+                                width: None,
+                                height: None,
+                            };
+
+                            graphics.top_layer.push(graphic_render_request);
+                            line_operations.push(BatchOperation::GraphicRequest(
+                                graphic_render_request,
+                            ));
+
                             last_rendered_graphic.insert(graphic.id);
                         }
                     }
                 }
 
-                // Draw the run
+                // Use a Vec to collect operations if caching
+                let mut run_operations = Vec::new();
+                let cache_ops = if !is_dimensions_only {
+                    Some(&mut run_operations)
+                } else {
+                    None
+                };
+
+                // Draw the run with caching if needed
                 comp.draw_run(
                     &mut session,
                     Rect::new(run_x, py, style.advance, 1.),
                     depth,
                     &style,
                     &glyphs,
+                    cache_ops,
                 );
+
+                // Add run operations to line operations
+                if !is_dimensions_only {
+                    line_operations.extend(run_operations);
+                }
+            }
+
+            // Store line in cache if we're not in dimensions mode
+            if !is_dimensions_only {
+                self.line_cache
+                    .store(rich_text_id, line_idx, line_operations);
             }
 
             // Update line_y for line height modifier
             if !is_dimensions_only && line_height_mod > 1.0 {
                 line_y += line_height - line_height_without_mod;
             }
-        }
-
-        // Only log timing for layout mode
-        if !is_dimensions_only {
-            // let duration = start.elapsed();
-            // println!(" - draw_layout() is: {:?}\n", duration);
         }
 
         // Return dimensions if in dimensions mode
