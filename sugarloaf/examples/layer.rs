@@ -154,54 +154,36 @@ impl ApplicationHandler for Application {
                     .build();
 
                 sugarloaf.set_objects(vec![
-                    Object::RichText(
-                        RichText {
-                            id: self.rich_text,
-                            position: [10., 10.],
-                        },
-                        Some(1),
-                    ),
-                    Object::Quad(
-                        Quad {
-                            position: [10., 10.],
-                            color: [1.0, 0.3, 0.5, 1.0],
-                            size: [120., 100.],
-                            ..Quad::default()
-                        },
-                        Some(1),
-                    ),
-                    Object::RichText(
-                        RichText {
-                            id: self.second_rich_text,
-                            position: [10., 60.],
-                        },
-                        Some(2),
-                    ),
-                    Object::Quad(
-                        Quad {
-                            position: [10., 80.],
-                            color: [0.0, 0.3, 0.5, 1.0],
-                            size: [120., 100.],
-                            ..Quad::default()
-                        },
-                        Some(2),
-                    ),
-                    Object::Quad(
-                        Quad {
-                            position: [95., 30.],
-                            color: [1.0, 1.0, 0.5, 1.0],
-                            size: [20., 100.],
-                            ..Quad::default()
-                        },
-                        Some(3),
-                    ),
-                    Object::RichText(
-                        RichText {
-                            id: self.rich_text,
-                            position: [100., 100.],
-                        },
-                        Some(3),
-                    ),
+                    Object::RichText(RichText {
+                        id: self.rich_text,
+                        position: [10., 10.],
+                    }),
+                    Object::Quad(Quad {
+                        position: [10., 10.],
+                        color: [1.0, 0.3, 0.5, 1.0],
+                        size: [120., 100.],
+                        ..Quad::default()
+                    }),
+                    Object::RichText(RichText {
+                        id: self.second_rich_text,
+                        position: [10., 60.],
+                    }),
+                    Object::Quad(Quad {
+                        position: [10., 80.],
+                        color: [0.0, 0.3, 0.5, 1.0],
+                        size: [120., 100.],
+                        ..Quad::default()
+                    }),
+                    Object::Quad(Quad {
+                        position: [95., 30.],
+                        color: [1.0, 1.0, 0.5, 1.0],
+                        size: [20., 100.],
+                        ..Quad::default()
+                    }),
+                    Object::RichText(RichText {
+                        id: self.rich_text,
+                        position: [100., 100.],
+                    }),
                 ]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
