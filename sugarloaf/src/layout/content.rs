@@ -107,7 +107,7 @@ impl BuilderState {
     }
 
     pub fn increase_font_size(&mut self) -> bool {
-        if self.layout.font_size < 40.0 {
+        if self.layout.font_size < 100.0 {
             self.layout.font_size += 1.0;
             self.update_font_size();
             return true;
