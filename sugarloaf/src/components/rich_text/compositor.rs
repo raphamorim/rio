@@ -10,7 +10,7 @@
 // text color, underline color and etc.
 
 use crate::components::rich_text::batch::BatchManager;
-pub use crate::components::rich_text::batch::{DisplayList, Rect, Vertex};
+pub use crate::components::rich_text::batch::{Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
 use crate::components::rich_text::image_cache::ImageCache;
 pub use crate::components::rich_text::image_cache::ImageId;
@@ -50,7 +50,7 @@ impl Compositor {
 
     /// Builds a display list for the current batched geometry and enumerates
     /// all texture events with the specified closure.
-    pub fn finish(&mut self, list: &mut DisplayList) {
+    pub fn finish(&mut self, list: &mut Vec<Vertex>) {
         self.batches.build_display_list(list);
     }
 
