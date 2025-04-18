@@ -373,15 +373,15 @@ impl RichTextBrush {
             }
 
             // Check if we can use the cache for this line
-            if !is_dimensions_only && self.line_cache.has_cache(rich_text_id, line_idx) {
-                if self
+            if !is_dimensions_only
+                && self.line_cache.has_cache(rich_text_id, line_idx)
+                && self
                     .line_cache
                     .apply_cache(rich_text_id, line_idx, comp, graphics)
-                {
-                    // Cache was applied successfully, skip to next line
-                    line_y += line_height;
-                    continue;
-                }
+            {
+                // Cache was applied successfully, skip to next line
+                line_y += line_height;
+                continue;
             }
 
             let mut px = x;

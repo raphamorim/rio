@@ -100,7 +100,7 @@ impl LineCache {
     pub fn has_cache(&self, rich_text_id: usize, line_number: usize) -> bool {
         self.caches
             .get(&rich_text_id)
-            .map_or(false, |text_cache| text_cache.contains_key(&line_number))
+            .is_some_and(|text_cache| text_cache.contains_key(&line_number))
     }
 
     // Store operations in cache
@@ -344,7 +344,7 @@ impl Compositor {
                 self.batches.add_rect(&bg_rect, depth, &bg_color);
                 if let Some(cache) = &mut cache_operations {
                     cache.push(BatchOperation::Rect {
-                        rect: bg_rect.clone(),
+                        rect: bg_rect,
                         depth,
                         color: bg_color,
                     });
@@ -490,7 +490,7 @@ impl Compositor {
 
                             if let Some(cache) = &mut cache_operations {
                                 cache.push(BatchOperation::ImageRect {
-                                    rect: glyph_rect.clone(),
+                                    rect: glyph_rect,
                                     depth,
                                     color: bitmap_color,
                                     coords,
@@ -508,7 +508,7 @@ impl Compositor {
 
                             if let Some(cache) = &mut cache_operations {
                                 cache.push(BatchOperation::MaskRect {
-                                    rect: glyph_rect.clone(),
+                                    rect: glyph_rect,
                                     depth,
                                     color,
                                     coords,

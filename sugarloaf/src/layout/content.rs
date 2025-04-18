@@ -374,7 +374,7 @@ impl Content {
 
     #[inline]
     pub fn mark_states_clean(&mut self) {
-        for (_, state) in &mut self.states {
+        for state in self.states.values_mut() {
             state.mark_clean();
         }
     }
@@ -582,7 +582,7 @@ impl Content {
             let vars: Vec<_> = state.vars.get(font_vars).to_vec();
 
             // Check if the shaped text is already in the cache
-            if let Some(cache_entry) = self.word_cache.get(&font_id, &content) {
+            if let Some(cache_entry) = self.word_cache.get(&font_id, content) {
                 if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
                     if line.render_data.push_run_without_shaper(
                         style,
@@ -614,13 +614,14 @@ impl Content {
                         .variations(vars.iter().copied())
                         .build();
 
-                    shaper.add_str(&content);
+                    shaper.add_str(content);
 
                     // Cache metrics if needed
-                    if !state.metrics_cache.inner.contains_key(&font_id) {
-                        let metrics = shaper.metrics();
-                        state.metrics_cache.inner.insert(font_id, metrics);
-                    }
+                    state
+                        .metrics_cache
+                        .inner
+                        .entry(font_id)
+                        .or_insert_with(|| shaper.metrics());
 
                     // Push run to render data
                     line.render_data.push_run(
