@@ -410,6 +410,10 @@ impl<'a> RouteWindow<'a> {
         }
     }
 
+    pub fn set_ime_cursor_area(&mut self, x: f32, y: f32) {
+        self.winit_window.set_ime_cursor_area(rio_window::dpi::LogicalPosition::new(x, y),rio_window::dpi::LogicalSize::new(100, 100));
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn from_target<'b>(
         event_loop: &'b ActiveEventLoop,
