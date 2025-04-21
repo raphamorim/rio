@@ -11,7 +11,6 @@ Default Rio terminal colors.
 background = '#0F0D0E'
 black = '#4C4345'
 blue = '#006EE6'
-cursor = '#F38BA3'
 cyan = '#88DAF2'
 foreground  = '#F9F4DA'
 green = '#0BA95B'
