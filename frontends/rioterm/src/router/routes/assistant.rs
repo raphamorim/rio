@@ -107,8 +107,7 @@ pub fn screen(
         let paragraph_line = content.sel(paragraph).clear();
 
         for line in report.report.to_string().lines() {
-            paragraph_line
-                .add_text(line, FragmentStyle::default());
+            paragraph_line.add_text(line, FragmentStyle::default());
         }
 
         paragraph_line.build();
