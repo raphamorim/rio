@@ -52,14 +52,12 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let heading_line = content.sel(heading);
     heading_line
         .clear()
-        .new_line()
         .add_text("Welcome to Rio Terminal", FragmentStyle::default())
         .build();
 
     let paragraph_action_line = content.sel(paragraph_action);
     paragraph_action_line
         .clear()
-        .new_line()
         .add_text(
             "> press enter to continue",
             FragmentStyle {
@@ -78,7 +76,6 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let paragraph_line = content.sel(paragraph);
     paragraph_line
         .clear()
-        .new_line()
         .add_text(
             "Your configuration file will be created in",
             FragmentStyle::default(),

@@ -41,7 +41,7 @@ pub struct FragmentData {
     pub style: FragmentStyle,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct BuilderLine {
     pub fragments: Vec<FragmentData>,
     pub render_data: RenderData,

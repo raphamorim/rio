@@ -75,7 +75,7 @@ twox-hash = { version = "2.1.0", default-features = false, features = [
 memmap2 = "0.9.5"
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.9.0", features = ["alloc"] }
-ttf-parser = { version = "0.25.1" }
+ttf-parser = { version = "0.25.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names", "no-std-float"] }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.7", default-features = false }

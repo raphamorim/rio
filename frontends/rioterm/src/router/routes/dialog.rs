@@ -56,7 +56,6 @@ pub fn screen(
     let heading_line = content.sel(heading).clear();
     for line in heading_content.to_string().lines() {
         heading_line
-            .new_line()
             .add_text(line, FragmentStyle::default());
     }
     heading_line.build();
@@ -70,7 +69,6 @@ pub fn screen(
     let confirm_line = content.sel(confirm);
     confirm_line
         .clear()
-        .new_line()
         .add_text(
             &format!(" {} ", confirm_content),
             FragmentStyle {
@@ -90,7 +88,6 @@ pub fn screen(
     let quit_line = content.sel(quit);
     quit_line
         .clear()
-        .new_line()
         .add_text(
             &format!(" {} ", quit_content),
             FragmentStyle {

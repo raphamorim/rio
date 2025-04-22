@@ -22,7 +22,6 @@ impl Assistant {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn is_warning(&self) -> bool {
         if let Some(report) = &self.inner {
             if report.level == RioErrorLevel::Error {
@@ -89,14 +88,12 @@ pub fn screen(
     let heading_line = content.sel(heading);
     heading_line
         .clear()
-        .new_line()
         .add_text("Woops! Rio got errors", FragmentStyle::default())
         .build();
 
     let paragraph_action_line = content.sel(paragraph_action);
     paragraph_action_line
         .clear()
-        .new_line()
         .add_text(
             "> press enter to continue",
             FragmentStyle {
@@ -111,7 +108,6 @@ pub fn screen(
 
         for line in report.report.to_string().lines() {
             paragraph_line
-                .new_line()
                 .add_text(line, FragmentStyle::default());
         }
 
