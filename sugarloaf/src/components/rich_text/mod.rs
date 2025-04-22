@@ -304,19 +304,24 @@ impl RichTextBrush {
         self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
-    fn extract_font_metrics(lines: &[crate::layout::BuilderLine]) -> Option<(f32, f32, f32, usize, f32)> {
+    fn extract_font_metrics(
+        lines: &[crate::layout::BuilderLine],
+    ) -> Option<(f32, f32, f32, usize, f32)> {
         // Extract the first run from a line that has at least one run
-        lines.iter()
+        lines
+            .iter()
             .filter(|line| !line.render_data.runs.is_empty())
             .map(|line| &line.render_data.runs[0])
             .next()
-            .map(|run| (
-                run.ascent.round(),
-                run.descent.round(),
-                (run.leading).round() * 2.0,
-                run.span.font_id,
-                run.size
-            ))
+            .map(|run| {
+                (
+                    run.ascent.round(),
+                    run.descent.round(),
+                    (run.leading).round() * 2.0,
+                    run.span.font_id,
+                    run.size,
+                )
+            })
     }
 
     #[inline]
@@ -380,8 +385,15 @@ impl RichTextBrush {
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
 
-        let font_metrics = Self::extract_font_metrics(&lines);
-        if let Some((ascent, descent, leading, current_font_from_valid_run, current_font_size_from_valid_run)) = font_metrics {
+        let font_metrics = Self::extract_font_metrics(lines);
+        if let Some((
+            ascent,
+            descent,
+            leading,
+            current_font_from_valid_run,
+            current_font_size_from_valid_run,
+        )) = font_metrics
+        {
             // Initialize from first run if available
             current_font = current_font_from_valid_run;
             current_font_size = current_font_size_from_valid_run;

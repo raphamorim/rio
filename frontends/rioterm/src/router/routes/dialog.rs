@@ -55,8 +55,7 @@ pub fn screen(
 
     let heading_line = content.sel(heading).clear();
     for line in heading_content.to_string().lines() {
-        heading_line
-            .add_text(line, FragmentStyle::default());
+        heading_line.add_text(line, FragmentStyle::default());
     }
     heading_line.build();
 
