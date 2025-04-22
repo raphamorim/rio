@@ -361,31 +361,12 @@ impl RichTextBrush {
         let (x, y) = pos.unwrap_or((0.0, 0.0));
 
         // Set up caches based on mode
-        let mut current_font = 0;
-        let mut current_font_size = 0.0;
-
-        // Initialize from first run if available
-        if let Some(line) = lines_to_process.first() {
-            if let Some(first_run) = line.render_data.runs.first() {
-                current_font = first_run.span.font_id;
-                current_font_size = first_run.size;
-            }
-        }
-
-        let mut session = glyphs_cache.session(
-            image_cache,
-            current_font,
-            font_library,
-            font_coords,
-            current_font_size,
-        );
-
         let mut glyphs = Vec::new();
         let mut last_rendered_graphic = HashSet::new();
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
 
-        let font_metrics = Self::extract_font_metrics(lines);
+        let font_metrics = Self::extract_font_metrics(lines_to_process);
         if let Some((
             ascent,
             descent,
@@ -395,8 +376,16 @@ impl RichTextBrush {
         )) = font_metrics
         {
             // Initialize from first run if available
-            current_font = current_font_from_valid_run;
-            current_font_size = current_font_size_from_valid_run;
+            let mut current_font = current_font_from_valid_run;
+            let mut current_font_size = current_font_size_from_valid_run;
+
+            let mut session = glyphs_cache.session(
+                image_cache,
+                current_font,
+                font_library,
+                font_coords,
+                current_font_size,
+            );
 
             // Calculate line height with modifier if available
             let line_height_without_mod = ascent + descent + leading;
