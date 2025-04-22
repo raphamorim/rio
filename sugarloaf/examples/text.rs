@@ -121,7 +121,6 @@ impl ApplicationHandler for Application {
                 let content = sugarloaf.content();
                 content.sel(self.rich_text).clear();
                 content
-                    .new_line()
                     .add_text(
                         "Sugarloaf",
                         FragmentStyle {
