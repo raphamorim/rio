@@ -198,6 +198,7 @@ impl ApplicationHandler for Application {
                 sugarloaf.set_objects(vec![Object::RichText(RichText {
                     id: 0,
                     position: [10., 0.],
+                    lines: None,
                 })]);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

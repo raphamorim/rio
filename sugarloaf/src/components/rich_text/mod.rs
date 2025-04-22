@@ -11,6 +11,7 @@ use crate::font::FontLibrary;
 use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
+use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
@@ -274,6 +275,7 @@ impl RichTextBrush {
                 self.draw_layout(
                     rich_text.id, // Pass the rich text ID for caching
                     &rt.lines,
+                    &rich_text.lines,
                     Some(position),
                     library,
                     Some(&rt.layout),
@@ -299,19 +301,25 @@ impl RichTextBrush {
         self.comp.begin();
 
         let lines = vec![render_data.clone()];
-        self.draw_layout(0, &lines, None, font_library, None, graphics)
+        self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
     fn draw_layout(
         &mut self,
         rich_text_id: usize,
         lines: &Vec<crate::layout::BuilderLine>,
+        selected_lines: &Option<RichTextLinesRange>,
         pos: Option<(f32, f32)>,
         font_library: &FontLibrary,
         rte_layout: Option<&RichTextLayout>,
         graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
+        if lines.is_empty() {
+            return None;
+        }
+
         // let start = std::time::Instant::now();
         let comp = &mut self.comp;
         let caches = (&mut self.images, &mut self.glyphs);
@@ -323,7 +331,7 @@ impl RichTextBrush {
         let is_dimensions_only = pos.is_none() || rte_layout.is_none();
 
         // For dimensions mode, we only process the first line
-        let lines_to_process = if is_dimensions_only && !lines.is_empty() {
+        let lines_to_process = if is_dimensions_only {
             std::slice::from_ref(&lines[0])
         } else {
             lines.as_slice()
@@ -362,12 +370,25 @@ impl RichTextBrush {
         let descent = first_run.descent.round();
         let leading = (first_run.leading).round() * 2.;
 
+        // Initialize from first run if available
+        current_font = first_run.span.font_id;
+        current_font_size = first_run.size;
+
         // Calculate line height with modifier if available
         let line_height_without_mod = ascent + descent + leading;
         let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
         let line_height = line_height_without_mod * line_height_mod;
 
-        for (line_idx, line) in lines_to_process.iter().enumerate() {
+        let skip_count = selected_lines.map_or(0, |range| range.start);
+        let take_count = selected_lines
+            .map_or(lines_to_process.len(), |range| range.end - range.start);
+
+        for (line_idx, line) in lines_to_process
+            .iter()
+            .enumerate()
+            .skip(skip_count)
+            .take(take_count)
+        {
             if line.render_data.runs.is_empty() {
                 continue;
             }

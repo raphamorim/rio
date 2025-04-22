@@ -22,5 +22,6 @@ pub fn draw_search_bar(
     objects.push(Object::RichText(RichText {
         id: rich_text_id,
         position: [4., position_y],
+        lines: None,
     }));
 }

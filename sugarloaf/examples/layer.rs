@@ -157,6 +157,7 @@ impl ApplicationHandler for Application {
                     Object::RichText(RichText {
                         id: self.rich_text,
                         position: [10., 10.],
+                        lines: None,
                     }),
                     Object::Quad(Quad {
                         position: [10., 10.],
@@ -167,6 +168,7 @@ impl ApplicationHandler for Application {
                     Object::RichText(RichText {
                         id: self.second_rich_text,
                         position: [10., 60.],
+                        lines: None,
                     }),
                     Object::Quad(Quad {
                         position: [10., 80.],
@@ -183,6 +185,7 @@ impl ApplicationHandler for Application {
                     Object::RichText(RichText {
                         id: self.rich_text,
                         position: [100., 100.],
+                        lines: None,
                     }),
                 ]);
                 sugarloaf.render();

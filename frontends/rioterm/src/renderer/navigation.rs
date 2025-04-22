@@ -266,6 +266,7 @@ impl ScreenNavigation {
             objects.push(Object::RichText(RichText {
                 id: tab,
                 position: [initial_position_x + 4., position_y],
+                lines: None,
             }));
 
             initial_position_x += name_modifier + 40.;

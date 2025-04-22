@@ -116,16 +116,19 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     objects.push(Object::RichText(RichText {
         id: heading,
         position: [70., context_dimension.margin.top_y + 30.],
+        lines: None,
     }));
 
     objects.push(Object::RichText(RichText {
         id: paragraph_action,
         position: [70., context_dimension.margin.top_y + 70.],
+        lines: None,
     }));
 
     objects.push(Object::RichText(RichText {
         id: paragraph,
         position: [70., context_dimension.margin.top_y + 140.],
+        lines: None,
     }));
 
     sugarloaf.set_objects(objects);

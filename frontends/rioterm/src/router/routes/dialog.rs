@@ -64,6 +64,7 @@ pub fn screen(
     objects.push(Object::RichText(RichText {
         id: heading,
         position: [70., context_dimension.margin.top_y + 30.],
+        lines: None,
     }));
 
     let confirm_line = content.sel(confirm);
@@ -83,6 +84,7 @@ pub fn screen(
     objects.push(Object::RichText(RichText {
         id: confirm,
         position: [70., context_dimension.margin.top_y + 100.],
+        lines: None,
     }));
 
     let quit_line = content.sel(quit);
@@ -102,6 +104,7 @@ pub fn screen(
     objects.push(Object::RichText(RichText {
         id: quit,
         position: [70., context_dimension.margin.top_y + 140.],
+        lines: None,
     }));
 
     sugarloaf.set_objects(objects);
