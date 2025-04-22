@@ -304,6 +304,21 @@ impl RichTextBrush {
         self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
+    fn extract_font_metrics(lines: &[crate::layout::BuilderLine]) -> Option<(f32, f32, f32, usize, f32)> {
+        // Extract the first run from a line that has at least one run
+        lines.iter()
+            .filter(|line| !line.render_data.runs.is_empty())
+            .map(|line| &line.render_data.runs[0])
+            .next()
+            .map(|run| (
+                run.ascent.round(),
+                run.descent.round(),
+                (run.leading).round() * 2.0,
+                run.span.font_id,
+                run.size
+            ))
+    }
+
     #[inline]
     #[allow(clippy::too_many_arguments)]
     fn draw_layout(
@@ -365,188 +380,186 @@ impl RichTextBrush {
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
 
-        let first_run = &lines[0].render_data.runs[0];
-        let ascent = first_run.ascent.round();
-        let descent = first_run.descent.round();
-        let leading = (first_run.leading).round() * 2.;
+        let font_metrics = Self::extract_font_metrics(&lines);
+        if let Some((ascent, descent, leading, current_font_from_valid_run, current_font_size_from_valid_run)) = font_metrics {
+            // Initialize from first run if available
+            current_font = current_font_from_valid_run;
+            current_font_size = current_font_size_from_valid_run;
 
-        // Initialize from first run if available
-        current_font = first_run.span.font_id;
-        current_font_size = first_run.size;
+            // Calculate line height with modifier if available
+            let line_height_without_mod = ascent + descent + leading;
+            let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
+            let line_height = line_height_without_mod * line_height_mod;
 
-        // Calculate line height with modifier if available
-        let line_height_without_mod = ascent + descent + leading;
-        let line_height_mod = rte_layout.map_or(1.0, |layout| layout.line_height);
-        let line_height = line_height_without_mod * line_height_mod;
+            let skip_count = selected_lines.map_or(0, |range| range.start);
+            let take_count = selected_lines
+                .map_or(lines_to_process.len(), |range| range.end - range.start);
 
-        let skip_count = selected_lines.map_or(0, |range| range.start);
-        let take_count = selected_lines
-            .map_or(lines_to_process.len(), |range| range.end - range.start);
-
-        for (line_idx, line) in lines_to_process
-            .iter()
-            .enumerate()
-            .skip(skip_count)
-            .take(take_count)
-        {
-            if line.render_data.runs.is_empty() {
-                continue;
-            }
-
-            // Check if we can use the cache for this line
-            if !is_dimensions_only
-                && self.line_cache.has_cache(rich_text_id, line_idx)
-                && self
-                    .line_cache
-                    .apply_cache(rich_text_id, line_idx, comp, graphics)
+            for (line_idx, line) in lines_to_process
+                .iter()
+                .enumerate()
+                .skip(skip_count)
+                .take(take_count)
             {
-                // Cache was applied successfully, skip to next line
-                line_y += line_height;
-                continue;
-            }
-
-            let mut px = x;
-
-            // Calculate baseline differently based on mode
-            let baseline = if is_dimensions_only {
-                ascent + y
-            } else {
-                line_y + ascent
-            };
-
-            // Different line_y calculation based on mode
-            line_y = baseline + descent;
-
-            // Calculate padding
-            let padding_y = if line_height_mod > 1.0 {
-                (line_height - line_height_without_mod) / 2.0
-            } else {
-                0.0
-            };
-
-            let py = line_y;
-            let mut line_operations = Vec::new();
-
-            for run in &line.render_data.runs {
-                glyphs.clear();
-                let font = run.span.font_id;
-                let char_width = run.span.width;
-
-                let run_x = px;
-                for glyph in &run.glyphs {
-                    let x = px;
-                    let y = py + padding_y;
-
-                    // Different advance calculation based on mode
-                    if is_dimensions_only {
-                        px += glyph.simple_data().1 * char_width;
-                    } else {
-                        px += rte_layout.unwrap().dimensions.width * char_width;
-                    }
-
-                    glyphs.push(Glyph {
-                        id: glyph.simple_data().0,
-                        x,
-                        y,
-                    });
+                if line.render_data.runs.is_empty() {
+                    continue;
                 }
 
-                // Create style with appropriate defaults
-                let style = TextRunStyle {
-                    font_coords,
-                    font_size: run.size,
-                    color: run.span.color,
-                    cursor: run.span.cursor,
-                    drawable_char: run.span.drawable_char,
-                    background_color: run.span.background_color,
-                    baseline: py,
-                    topline: py - ascent,
-                    padding_y,
-                    line_height,
-                    line_height_without_mod,
-                    advance: px - run_x,
-                    decoration: run.span.decoration,
-                    decoration_color: run.span.decoration_color,
+                // Check if we can use the cache for this line
+                if !is_dimensions_only
+                    && self.line_cache.has_cache(rich_text_id, line_idx)
+                    && self
+                        .line_cache
+                        .apply_cache(rich_text_id, line_idx, comp, graphics)
+                {
+                    // Cache was applied successfully, skip to next line
+                    line_y += line_height;
+                    continue;
+                }
+
+                let mut px = x;
+
+                // Calculate baseline differently based on mode
+                let baseline = if is_dimensions_only {
+                    ascent + y
+                } else {
+                    line_y + ascent
                 };
 
-                // Update dimensions if in dimensions mode
-                if is_dimensions_only && style.advance > 0.0 && line_height > 0.0 {
-                    dimensions.width = style.advance.round();
-                    dimensions.height = line_height.round();
-                }
+                // Different line_y calculation based on mode
+                line_y = baseline + descent;
 
-                // Update font session if needed
-                if font != current_font || style.font_size != current_font_size {
-                    current_font = font;
-                    current_font_size = style.font_size;
+                // Calculate padding
+                let padding_y = if line_height_mod > 1.0 {
+                    (line_height - line_height_without_mod) / 2.0
+                } else {
+                    0.0
+                };
 
-                    session = glyphs_cache.session(
-                        image_cache,
-                        current_font,
-                        font_library,
+                let py = line_y;
+                let mut line_operations = Vec::new();
+
+                for run in &line.render_data.runs {
+                    glyphs.clear();
+                    let font = run.span.font_id;
+                    let char_width = run.span.width;
+
+                    let run_x = px;
+                    for glyph in &run.glyphs {
+                        let x = px;
+                        let y = py + padding_y;
+
+                        // Different advance calculation based on mode
+                        if is_dimensions_only {
+                            px += glyph.simple_data().1 * char_width;
+                        } else {
+                            px += rte_layout.unwrap().dimensions.width * char_width;
+                        }
+
+                        glyphs.push(Glyph {
+                            id: glyph.simple_data().0,
+                            x,
+                            y,
+                        });
+                    }
+
+                    // Create style with appropriate defaults
+                    let style = TextRunStyle {
                         font_coords,
-                        style.font_size,
-                    );
-                }
+                        font_size: run.size,
+                        color: run.span.color,
+                        cursor: run.span.cursor,
+                        drawable_char: run.span.drawable_char,
+                        background_color: run.span.background_color,
+                        baseline: py,
+                        topline: py - ascent,
+                        padding_y,
+                        line_height,
+                        line_height_without_mod,
+                        advance: px - run_x,
+                        decoration: run.span.decoration,
+                        decoration_color: run.span.decoration_color,
+                    };
 
-                // Handle graphics if in layout mode
-                if !is_dimensions_only {
-                    if let Some(graphic) = run.span.media {
-                        if !last_rendered_graphic.contains(&graphic.id) {
-                            let offset_x = graphic.offset_x as f32;
-                            let offset_y = graphic.offset_y as f32;
+                    // Update dimensions if in dimensions mode
+                    if is_dimensions_only && style.advance > 0.0 && line_height > 0.0 {
+                        dimensions.width = style.advance.round();
+                        dimensions.height = line_height.round();
+                    }
 
-                            let graphic_render_request = GraphicRenderRequest {
-                                id: graphic.id,
-                                pos_x: run_x - offset_x,
-                                pos_y: style.topline - offset_y,
-                                width: None,
-                                height: None,
-                            };
+                    // Update font session if needed
+                    if font != current_font || style.font_size != current_font_size {
+                        current_font = font;
+                        current_font_size = style.font_size;
 
-                            graphics.top_layer.push(graphic_render_request);
-                            line_operations.push(BatchOperation::GraphicRequest(
-                                graphic_render_request,
-                            ));
+                        session = glyphs_cache.session(
+                            image_cache,
+                            current_font,
+                            font_library,
+                            font_coords,
+                            style.font_size,
+                        );
+                    }
 
-                            last_rendered_graphic.insert(graphic.id);
+                    // Handle graphics if in layout mode
+                    if !is_dimensions_only {
+                        if let Some(graphic) = run.span.media {
+                            if !last_rendered_graphic.contains(&graphic.id) {
+                                let offset_x = graphic.offset_x as f32;
+                                let offset_y = graphic.offset_y as f32;
+
+                                let graphic_render_request = GraphicRenderRequest {
+                                    id: graphic.id,
+                                    pos_x: run_x - offset_x,
+                                    pos_y: style.topline - offset_y,
+                                    width: None,
+                                    height: None,
+                                };
+
+                                graphics.top_layer.push(graphic_render_request);
+                                line_operations.push(BatchOperation::GraphicRequest(
+                                    graphic_render_request,
+                                ));
+
+                                last_rendered_graphic.insert(graphic.id);
+                            }
                         }
                     }
+
+                    // Use a Vec to collect operations if caching
+                    let mut run_operations = Vec::new();
+                    let cache_ops = if !is_dimensions_only {
+                        Some(&mut run_operations)
+                    } else {
+                        None
+                    };
+
+                    // Draw the run with caching if needed
+                    comp.draw_run(
+                        &mut session,
+                        Rect::new(run_x, py, style.advance, 1.),
+                        depth,
+                        &style,
+                        &glyphs,
+                        cache_ops,
+                    );
+
+                    // Add run operations to line operations
+                    if !is_dimensions_only {
+                        line_operations.extend(run_operations);
+                    }
                 }
 
-                // Use a Vec to collect operations if caching
-                let mut run_operations = Vec::new();
-                let cache_ops = if !is_dimensions_only {
-                    Some(&mut run_operations)
-                } else {
-                    None
-                };
-
-                // Draw the run with caching if needed
-                comp.draw_run(
-                    &mut session,
-                    Rect::new(run_x, py, style.advance, 1.),
-                    depth,
-                    &style,
-                    &glyphs,
-                    cache_ops,
-                );
-
-                // Add run operations to line operations
+                // Store line in cache if we're not in dimensions mode
                 if !is_dimensions_only {
-                    line_operations.extend(run_operations);
+                    self.line_cache
+                        .store(rich_text_id, line_idx, line_operations);
                 }
-            }
 
-            // Store line in cache if we're not in dimensions mode
-            if !is_dimensions_only {
-                self.line_cache
-                    .store(rich_text_id, line_idx, line_operations);
-            }
-
-            // Update line_y for line height modifier
-            if !is_dimensions_only && line_height_mod > 1.0 {
-                line_y += line_height - line_height_without_mod;
+                // Update line_y for line height modifier
+                if !is_dimensions_only && line_height_mod > 1.0 {
+                    line_y += line_height - line_height_without_mod;
+                }
             }
         }
 
