@@ -51,19 +51,19 @@ pub trait EventLoopExtPumpEvents {
     /// buffered and handled outside of Winit include:
     /// - `RedrawRequested` events, used to schedule rendering.
     ///
-    ///     macOS for example uses a `drawRect` callback to drive rendering
-    ///     within applications and expects rendering to be finished before
-    ///     the `drawRect` callback returns.
+    ///   macOS for example uses a `drawRect` callback to drive rendering
+    ///   within applications and expects rendering to be finished before
+    ///   the `drawRect` callback returns.
     ///
-    ///     For portability it's strongly recommended that applications should
-    ///     keep their rendering inside the closure provided to Winit.
+    ///   For portability it's strongly recommended that applications should
+    ///   keep their rendering inside the closure provided to Winit.
     /// - Any lifecycle events, such as `Suspended` / `Resumed`.
     ///
-    ///     The handling of these events needs to be synchronized with the
-    ///     operating system and it would never be appropriate to buffer a
-    ///     notification that your application has been suspended or resumed and
-    ///     then handled that later since there would always be a chance that
-    ///     other lifecycle events occur while the event is buffered.
+    ///   The handling of these events needs to be synchronized with the
+    ///   operating system and it would never be appropriate to buffer a
+    ///   notification that your application has been suspended or resumed and
+    ///   then handled that later since there would always be a chance that
+    ///   other lifecycle events occur while the event is buffered.
     ///
     /// ## Supported Platforms
     ///
@@ -75,20 +75,20 @@ pub trait EventLoopExtPumpEvents {
     /// ## Unsupported Platforms
     ///
     /// - **Web:**  This API is fundamentally incompatible with the event-based way in which
-    ///     Web browsers work because it's not possible to have a long-running external
-    ///     loop that would block the browser and there is nothing that can be
-    ///     polled to ask for new new events. Events are delivered via callbacks based
-    ///     on an event loop that is internal to the browser itself.
+    ///   Web browsers work because it's not possible to have a long-running external
+    ///   loop that would block the browser and there is nothing that can be
+    ///   polled to ask for new new events. Events are delivered via callbacks based
+    ///   on an event loop that is internal to the browser itself.
     /// - **iOS:** It's not possible to stop and start an `NSApplication` repeatedly on iOS so
-    ///     there's no way to support the same approach to polling as on MacOS.
+    ///   there's no way to support the same approach to polling as on MacOS.
     ///
     /// ## Platform-specific
     ///
     /// - **Windows**: The implementation will use `PeekMessage` when checking for window messages
-    ///     to avoid blocking your external event loop.
+    ///   to avoid blocking your external event loop.
     ///
     /// - **MacOS**: The implementation works in terms of stopping the global application whenever
-    ///     the application `RunLoop` indicates that it is preparing to block and wait for new events.
+    ///   the application `RunLoop` indicates that it is preparing to block and wait for new events.
     ///
     ///   This is very different to the polling APIs that are available on other
     ///   platforms (the lower level polling primitives on MacOS are private

@@ -29,9 +29,16 @@ pub struct ImageProperties {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RichTextLinesRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RichText {
     pub id: usize,
     pub position: [f32; 2],
+    pub lines: Option<RichTextLinesRange>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

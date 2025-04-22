@@ -123,6 +123,7 @@ impl ApplicationHandler for Application {
             Object::RichText(RichText {
                 id: self.rich_texts[0],
                 position: [5., 5.],
+                lines: None,
             }),
             Object::Quad(Quad {
                 color: [1.0, 0.5, 0.5, 0.5],
@@ -138,6 +139,7 @@ impl ApplicationHandler for Application {
             Object::RichText(RichText {
                 id: self.rich_texts[1],
                 position: [220., 5.],
+                lines: None,
             }),
             Object::Quad(Quad {
                 color: [1.0, 0.5, 0.5, 0.5],
@@ -153,6 +155,7 @@ impl ApplicationHandler for Application {
             Object::RichText(RichText {
                 id: self.rich_texts[2],
                 position: [440., 5.],
+                lines: None,
             }),
         ];
 

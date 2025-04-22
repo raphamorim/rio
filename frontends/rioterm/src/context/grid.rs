@@ -212,6 +212,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 target.push(Object::RichText(RichText {
                     id: item.val.rich_text_id,
                     position: [self.margin.x, self.margin.top_y],
+                    lines: None,
                 }));
             }
         } else {
@@ -234,6 +235,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 objects.push(Object::RichText(RichText {
                     id: item.val.rich_text_id,
                     position: [self.margin.x, self.margin.top_y],
+                    lines: None,
                 }));
             }
         } else {
@@ -341,6 +343,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             objects.push(Object::RichText(RichText {
                 id: item.val.rich_text_id,
                 position: [margin.x, margin.top_y],
+                lines: None,
             }));
 
             let scale = self.inner[self.current].val.dimension.dimension.scale;
@@ -1109,6 +1112,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: rich_text_id,
                 position: [10., 20.],
+                lines: None,
             },)]
         );
     }
@@ -1174,6 +1178,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
         grid.split_right(second_context);
@@ -1184,12 +1189,14 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [600., 0.0]
+                    position: [600., 0.0],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [600.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
@@ -1219,18 +1226,21 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [0.0, 800.0], [598., 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [598.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [600.0, 0.0]
+                    position: [600.0, 0.0],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [600.0, 800.0], [298.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [898.0, 0.0], [1.0, 800.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [900.0, 0.0]
+                    position: [900.0, 0.0],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [900.0, 800.0], [300.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [1200.0, 0.0], [1.0, 800.0]),
@@ -1299,6 +1309,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [margin.x, margin.top_y],
+                lines: None,
             },)]
         );
         grid.split_right(second_context);
@@ -1332,12 +1343,14 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [167.0, margin.top_y]
+                    position: [167.0, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [145.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [312.0, margin.top_y], [1.0, 300.0]),
@@ -1367,18 +1380,21 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [167.0, margin.top_y]
+                    position: [167.0, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [65.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [232.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [236.5, margin.top_y]
+                    position: [236.5, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [236.5, 330.0], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [304.0, margin.top_y], [1.0, 300.0]),
@@ -1432,24 +1448,28 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.0], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [167.0, margin.top_y]
+                    position: [167.0, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.0], [25.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: fourth_context_id,
-                    position: [196.75, margin.top_y]
+                    position: [196.75, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.0], [27.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [228.5, margin.top_y]
+                    position: [228.5, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.0], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
@@ -1518,6 +1538,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [margin.x, margin.top_y],
+                lines: None,
             },)]
         );
 
@@ -1710,6 +1731,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [margin.x, margin.top_y],
+                lines: None,
             },)]
         );
 
@@ -1835,6 +1857,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
         grid.split_down(second_context);
@@ -1845,11 +1868,13 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [0.0, 202.0]
+                    position: [0.0, 202.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
@@ -1909,18 +1934,21 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [298.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [0.0, 202.0]
+                    position: [0.0, 202.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [298.0, 0.0], [1.0, 198.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [302.0, 0.0]
+                    position: [302.0, 0.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [302.0, 198.0], [300.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [602.0, 0.0], [1.0, 198.0]),
@@ -1989,6 +2017,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [margin.x, margin.top_y],
+                lines: None,
             },)]
         );
         grid.split_right(second_context);
@@ -2068,24 +2097,28 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [margin.x, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [20.0, 330.], [143.0, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [163.0, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [167.0, margin.top_y]
+                    position: [167.0, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [167.0, 330.], [25.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [192.75, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: fourth_context_id,
-                    position: [196.75, margin.top_y]
+                    position: [196.75, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [196.75, 330.], [27.75, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [224.5, margin.top_y], [1.0, 300.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [228.5, margin.top_y]
+                    position: [228.5, margin.top_y],
+                    lines: None,
                 },),
                 create_border([1.0, 0.0, 0.0, 0.0], [228.5, 330.], [67.5, 1.0]),
                 create_border([1.0, 0.0, 0.0, 0.0], [296.0, margin.top_y], [1.0, 300.0]),
@@ -2187,6 +2220,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
         grid.split_down(second_context);
@@ -2197,11 +2231,13 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [0.0, 202.0]
+                    position: [0.0, 202.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 402.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 202.0], [1.0, 200.0]),
@@ -2232,16 +2268,19 @@ pub mod test {
                 Object::RichText(RichText {
                     id: first_context_id,
                     position: [0.0, 0.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 198.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: second_context_id,
-                    position: [0.0, 202.0]
+                    position: [0.0, 202.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 300.0], [600.0, 1.0]),
                 Object::RichText(RichText {
                     id: third_context_id,
-                    position: [0.0, 304.0]
+                    position: [0.0, 304.0],
+                    lines: None,
                 },),
                 create_border([0.0, 0.0, 1.0, 0.0], [0.0, 404.0], [600.0, 1.0]),
                 create_border([0.0, 0.0, 1.0, 0.0], [600.0, 304.0], [1.0, 100.0]),
@@ -2327,6 +2366,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2430,6 +2470,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2521,6 +2562,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2618,6 +2660,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2729,6 +2772,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2820,6 +2864,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -2917,6 +2962,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -3088,6 +3134,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -3305,6 +3352,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
@@ -3621,6 +3669,7 @@ pub mod test {
             vec![Object::RichText(RichText {
                 id: first_context_id,
                 position: [0., 0.],
+                lines: None,
             },)]
         );
 
