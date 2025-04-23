@@ -128,6 +128,80 @@ pub enum DrawableChar {
     DarkShade,   // ▓
     FullBlock,   // █
 
+    // Additional double line box drawing
+    DoubleCross,                       // ╬
+    DoubleVerticalRight,               // ╠
+    DoubleVerticalLeft,                // ╣
+    DoubleHorizontalDown,              // ╦
+    DoubleHorizontalUp,                // ╩
+    VerticalDoubleAndHorizontalSingle, // ╫
+
+    // Additional double/single hybrid box drawing
+    DownDoubleAndRightSingle,     // ╒
+    DownDoubleAndLeftSingle,      // ╕
+    VerticalDoubleAndRightSingle, // ╞
+    VerticalDoubleAndLeftSingle,  // ╡
+    VerticalSingleAndRightDouble, // ╟
+    VerticalSingleAndLeftDouble,  // ╢
+    DownSingleAndRightDouble,     // ╓
+    DownSingleAndLeftDouble,      // ╖
+
+    // Heavy box drawing
+    HeavyDownAndRight,      // ┏
+    HeavyDownAndLeft,       // ┓
+    HeavyUpAndRight,        // ┗
+    HeavyUpAndLeft,         // ┛
+    HeavyVerticalAndRight,  // ┣
+    HeavyVerticalAndLeft,   // ┫
+    HeavyHorizontalAndDown, // ┳
+    HeavyHorizontalAndUp,   // ┻
+    HeavyCross,             // ╋
+
+    // Mixed weight box drawing
+    LightDownAndHeavyRight, // ┍
+    LightDownAndHeavyLeft,  // ┑
+    HeavyDownAndLightRight, // ┎
+    HeavyDownAndLightLeft,  // ┒
+    LightUpAndHeavyRight,   // ┕
+    LightUpAndHeavyLeft,    // ┙
+    HeavyUpAndLightRight,   // ┖
+    HeavyUpAndLightLeft,    // ┚
+
+    // Additional block elements
+    LowerHalfBlock,                  // ▄
+    LeftHalfBlock,                   // ▌
+    RightHalfBlock,                  // ▐
+    UpperOneQuarterBlock,            // ▀
+    LowerFiveEighthsBlock,           // ▅
+    LowerThreeQuartersBlock,         // ▆
+    LowerSevenEighthsBlock,          // ▇
+    QuadrantUpperLeftAndLowerLeft,   // ▚
+    QuadrantUpperLeftAndLowerRight,  // ▞
+    QuadrantUpperLeftAndUpperRight,  // ▀
+    QuadrantUpperRightAndLowerLeft,  // ▟
+    QuadrantUpperRightAndLowerRight, // ▙
+
+    // Additional diagonal and rounded elements
+    DiagonalRisingBar,  // ╱
+    DiagonalFallingBar, // ╲
+    DiagonalCross,      // ╳
+
+    // Additional character symbols
+    BlackSquare,                // ■
+    WhiteSquare,                // □
+    BlackCircle,                // ●
+    WhiteCircle,                // ○
+    BlackUpPointingTriangle,    // ▲
+    WhiteUpPointingTriangle,    // △
+    BlackRightPointingTriangle, // ▶
+    WhiteRightPointingTriangle, // ▷
+    BlackDownPointingTriangle,  // ▼
+    WhiteDownPointingTriangle,  // ▽
+    BlackLeftPointingTriangle,  // ◀
+    WhiteLeftPointingTriangle,  // ◁
+    BlackDiamond,               // ◆
+    WhiteDiamond,               // ◇
+
     // LeftHalfBlackCircle, // ◖
     // RightHalfBlackCircle, // ◗
 
@@ -494,6 +568,68 @@ impl TryFrom<char> for DrawableChar {
             '▒' => DrawableChar::MediumShade,
             '▓' => DrawableChar::DarkShade,
             '█' => DrawableChar::FullBlock,
+
+            '╬' => DrawableChar::DoubleCross,
+            '╠' => DrawableChar::DoubleVerticalRight,
+            '╣' => DrawableChar::DoubleVerticalLeft,
+            '╦' => DrawableChar::DoubleHorizontalDown,
+            '╩' => DrawableChar::DoubleHorizontalUp,
+            '╫' => DrawableChar::VerticalDoubleAndHorizontalSingle,
+
+            '╒' => DrawableChar::DownDoubleAndRightSingle,
+            '╕' => DrawableChar::DownDoubleAndLeftSingle,
+            '╞' => DrawableChar::VerticalDoubleAndRightSingle,
+            '╡' => DrawableChar::VerticalDoubleAndLeftSingle,
+            '╟' => DrawableChar::VerticalSingleAndRightDouble,
+            '╢' => DrawableChar::VerticalSingleAndLeftDouble,
+            '╓' => DrawableChar::DownSingleAndRightDouble,
+            '╖' => DrawableChar::DownSingleAndLeftDouble,
+
+            '┏' => DrawableChar::HeavyDownAndRight,
+            '┓' => DrawableChar::HeavyDownAndLeft,
+            '┗' => DrawableChar::HeavyUpAndRight,
+            '┛' => DrawableChar::HeavyUpAndLeft,
+            '┣' => DrawableChar::HeavyVerticalAndRight,
+            '┫' => DrawableChar::HeavyVerticalAndLeft,
+            '┳' => DrawableChar::HeavyHorizontalAndDown,
+            '┻' => DrawableChar::HeavyHorizontalAndUp,
+            '╋' => DrawableChar::HeavyCross,
+
+            '┍' => DrawableChar::LightDownAndHeavyRight,
+            '┑' => DrawableChar::LightDownAndHeavyLeft,
+            '┎' => DrawableChar::HeavyDownAndLightRight,
+            '┒' => DrawableChar::HeavyDownAndLightLeft,
+            '┕' => DrawableChar::LightUpAndHeavyRight,
+            '┙' => DrawableChar::LightUpAndHeavyLeft,
+            '┖' => DrawableChar::HeavyUpAndLightRight,
+            '┚' => DrawableChar::HeavyUpAndLightLeft,
+
+            '▅' => DrawableChar::LowerFiveEighthsBlock,
+            '▆' => DrawableChar::LowerThreeQuartersBlock,
+            '▇' => DrawableChar::LowerSevenEighthsBlock,
+            '▚' => DrawableChar::QuadrantUpperLeftAndLowerLeft,
+            '▞' => DrawableChar::QuadrantUpperLeftAndLowerRight,
+            '▟' => DrawableChar::QuadrantUpperRightAndLowerLeft,
+            '▙' => DrawableChar::QuadrantUpperRightAndLowerRight,
+
+            '╱' => DrawableChar::DiagonalRisingBar,
+            '╲' => DrawableChar::DiagonalFallingBar,
+            '╳' => DrawableChar::DiagonalCross,
+
+            '■' => DrawableChar::BlackSquare,
+            '□' => DrawableChar::WhiteSquare,
+            '●' => DrawableChar::BlackCircle,
+            '○' => DrawableChar::WhiteCircle,
+            '▲' => DrawableChar::BlackUpPointingTriangle,
+            '△' => DrawableChar::WhiteUpPointingTriangle,
+            '▶' => DrawableChar::BlackRightPointingTriangle,
+            '▷' => DrawableChar::WhiteRightPointingTriangle,
+            '▼' => DrawableChar::BlackDownPointingTriangle,
+            '▽' => DrawableChar::WhiteDownPointingTriangle,
+            '◀' => DrawableChar::BlackLeftPointingTriangle,
+            '◁' => DrawableChar::WhiteLeftPointingTriangle,
+            '◆' => DrawableChar::BlackDiamond,
+            '◇' => DrawableChar::WhiteDiamond,
 
             // Quick test:
             // echo "\ue0b0 \ue0b1 \ue0b2 \ue0b3 \ue0b4 \ue0b5 \ue0b6 \ue0b7"

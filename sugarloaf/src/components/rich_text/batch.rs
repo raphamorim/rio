@@ -921,6 +921,1716 @@ impl BatchManager {
                 };
                 self.add_rect(&rect, depth, &color);
             }
+            DrawableChar::DoubleCross => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal double lines
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DoubleVerticalRight => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal double lines going right from center
+                let top_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DoubleVerticalLeft => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal double lines going left from center
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DoubleHorizontalDown => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5;
+
+                // Horizontal double lines
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Vertical double lines going down from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Draw all rectangles
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+            }
+            DrawableChar::DoubleHorizontalUp => {
+                // Calculate spacing between the double lines
+                let gap = stroke * 1.5;
+
+                // Horizontal double lines
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Vertical double lines going up from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Draw all rectangles
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+            }
+            DrawableChar::VerticalDoubleAndHorizontalSingle => {
+                // Calculate spacing between the double vertical lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal single line
+                let horiz_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width,
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::DownDoubleAndRightSingle => {
+                // Calculate spacing between the double vertical lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines going down from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Horizontal single line going right from center
+                let horiz_rect = Rect {
+                    x: center_x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::DownDoubleAndLeftSingle => {
+                // Calculate spacing between the double vertical lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines going down from center
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Horizontal single line going left from center
+                let horiz_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::VerticalDoubleAndRightSingle => {
+                // Calculate spacing between the double vertical lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal single line going right from center
+                let horiz_rect = Rect {
+                    x: center_x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::VerticalDoubleAndLeftSingle => {
+                // Calculate spacing between the double vertical lines
+                let gap = stroke * 1.5;
+
+                // Vertical double lines
+                let left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                let right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal single line going left from center
+                let horiz_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&left_vertical_rect, depth, &color);
+                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&horiz_rect, depth, &color);
+            }
+            DrawableChar::VerticalSingleAndRightDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5;
+
+                // Vertical single line
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal double lines going right from center
+                let top_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::VerticalSingleAndLeftDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5;
+
+                // Vertical single line
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height,
+                };
+
+                // Horizontal double lines going left from center
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DownSingleAndRightDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5;
+
+                // Vertical single line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Horizontal double lines going right from center
+                let top_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::DownSingleAndLeftDouble => {
+                // Calculate spacing between the double horizontal lines
+                let gap = stroke * 1.5;
+
+                // Vertical single line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Horizontal double lines going left from center
+                let top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                let bottom_horizontal_rect = Rect {
+                    x,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw all rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&top_horizontal_rect, depth, &color);
+                self.add_rect(&bottom_horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyDownAndRight => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y: center_y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Heavy horizontal line going right from center
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Right half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyDownAndLeft => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y: center_y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Heavy horizontal line going left from center
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Left half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyUpAndRight => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Heavy horizontal line going right from center
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Right half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyUpAndLeft => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Heavy horizontal line going left from center
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Left half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyVerticalAndRight => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height,
+                };
+
+                // Heavy horizontal line going right from center
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Right half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyVerticalAndLeft => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height,
+                };
+
+                // Heavy horizontal line going left from center
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Left half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyHorizontalAndDown => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy horizontal line
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width,
+                    height: heavy_stroke,
+                };
+
+                // Heavy vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y: center_y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Draw both rectangles
+                self.add_rect(&horizontal_rect, depth, &color);
+                self.add_rect(&vertical_rect, depth, &color);
+            }
+            DrawableChar::HeavyHorizontalAndUp => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy horizontal line
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width,
+                    height: heavy_stroke,
+                };
+
+                // Heavy vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Draw both rectangles
+                self.add_rect(&horizontal_rect, depth, &color);
+                self.add_rect(&vertical_rect, depth, &color);
+            }
+            DrawableChar::HeavyCross => {
+                let heavy_stroke = stroke * 2.0;
+
+                // Heavy vertical line
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height,
+                };
+
+                // Heavy horizontal line
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width,
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::LightDownAndHeavyRight => {
+                // Light vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Heavy horizontal line going right from center
+                let heavy_stroke = stroke * 2.0;
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Right half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::LightDownAndHeavyLeft => {
+                // Light vertical line going down from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y: center_y,
+                    width: stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Heavy horizontal line going left from center
+                let heavy_stroke = stroke * 2.0;
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Left half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyDownAndLightRight => {
+                // Heavy vertical line going down from center
+                let heavy_stroke = stroke * 2.0;
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y: center_y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Light horizontal line going right from center
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyDownAndLightLeft => {
+                // Heavy vertical line going down from center
+                let heavy_stroke = stroke * 2.0;
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y: center_y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Bottom half
+                };
+
+                // Light horizontal line going left from center
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::LightUpAndHeavyRight => {
+                // Light vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Heavy horizontal line going right from center
+                let heavy_stroke = stroke * 2.0;
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Right half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::LightUpAndHeavyLeft => {
+                // Light vertical line going up from center
+                let vertical_rect = Rect {
+                    x: center_x - (stroke / 2.0),
+                    y,
+                    width: stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Heavy horizontal line going left from center
+                let heavy_stroke = stroke * 2.0;
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - heavy_stroke / 2.0,
+                    width: line_width / 2.0, // Left half
+                    height: heavy_stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyUpAndLightRight => {
+                // Heavy vertical line going up from center
+                let heavy_stroke = stroke * 2.0;
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Light horizontal line going right from center
+                let horizontal_rect = Rect {
+                    x: center_x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Right half
+                    height: stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::HeavyUpAndLightLeft => {
+                // Heavy vertical line going up from center
+                let heavy_stroke = stroke * 2.0;
+                let vertical_rect = Rect {
+                    x: center_x - heavy_stroke / 2.0,
+                    y,
+                    width: heavy_stroke,
+                    height: line_height / 2.0, // Top half
+                };
+
+                // Light horizontal line going left from center
+                let horizontal_rect = Rect {
+                    x,
+                    y: center_y - (stroke / 2.0),
+                    width: line_width / 2.0, // Left half
+                    height: stroke,
+                };
+
+                // Draw both rectangles
+                self.add_rect(&vertical_rect, depth, &color);
+                self.add_rect(&horizontal_rect, depth, &color);
+            }
+            DrawableChar::LowerHalfBlock => {
+                // Lower Half Block (▄) - fills bottom half of the cell
+                let block_rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::LeftHalfBlock => {
+                // Left Half Block (▌) - fills left half of the cell
+                let block_rect = Rect {
+                    x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::RightHalfBlock => {
+                // Right Half Block (▐) - fills right half of the cell
+                let block_rect = Rect {
+                    x: center_x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::UpperOneQuarterBlock => {
+                // Upper One Quarter Block (▀) - fills top 1/4 of the cell
+                let block_height = line_height / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y,
+                    width: line_width,
+                    height: block_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::LowerFiveEighthsBlock => {
+                // Lower Five Eighths Block (▅) - fills bottom 5/8 of the cell
+                let block_height = (line_height * 5.0) / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height,
+                    width: line_width,
+                    height: block_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::LowerThreeQuartersBlock => {
+                // Lower Three Quarters Block (▆) - fills bottom 3/4 of the cell
+                let block_height = (line_height * 3.0) / 4.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height,
+                    width: line_width,
+                    height: block_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::LowerSevenEighthsBlock => {
+                // Lower Seven Eighths Block (▇) - fills bottom 7/8 of the cell
+                let block_height = (line_height * 7.0) / 8.0;
+                let block_rect = Rect {
+                    x,
+                    y: y + line_height - block_height,
+                    width: line_width,
+                    height: block_height,
+                };
+                self.add_rect(&block_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperLeftAndLowerLeft => {
+                // QuadrantUpperLeftAndLowerLeft (▚) - fills left half in two quadrants
+                let left_rect = Rect {
+                    x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.add_rect(&left_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperLeftAndLowerRight => {
+                // QuadrantUpperLeftAndLowerRight (▞) - fills upper-left and lower-right quadrants
+                let upper_left_rect = Rect {
+                    x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                let lower_right_rect = Rect {
+                    x: center_x,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&upper_left_rect, depth, &color);
+                self.add_rect(&lower_right_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperLeftAndUpperRight => {
+                // QuadrantUpperLeftAndUpperRight (▀) - fills upper half of the cell
+                let upper_rect = Rect {
+                    x,
+                    y,
+                    width: line_width,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&upper_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperRightAndLowerLeft => {
+                // QuadrantUpperRightAndLowerLeft (▟) - fills upper-right and lower-left quadrants
+                let upper_right_rect = Rect {
+                    x: center_x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                let lower_left_rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&upper_right_rect, depth, &color);
+                self.add_rect(&lower_left_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperRightAndLowerRight => {
+                // QuadrantUpperRightAndLowerRight (▙) - fills right half in two quadrants
+                let right_rect = Rect {
+                    x: center_x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                self.add_rect(&right_rect, depth, &color);
+            }
+            DrawableChar::DiagonalRisingBar => {
+                // DiagonalRisingBar (╱) - diagonal line from bottom-left to top-right
+                // We'll approximate this with a rotated rectangle
+                let diagonal_width =
+                    (line_width * line_width + line_height * line_height).sqrt();
+                let diagonal_height = stroke;
+
+                // Calculate the angle of rotation in radians
+                let angle = (line_height / line_width).atan();
+
+                // Calculate the offset to center the rotated rectangle
+                let offset_x = (diagonal_width - line_width) / 2.0;
+                let offset_y = (diagonal_height - line_height) / 2.0;
+
+                // Create a path for the diagonal line
+                let path = vec![
+                    (x, y + line_height),          // bottom-left
+                    (x + stroke, y + line_height), // bottom-left + stroke width
+                    (x + line_width, y),           // top-right
+                    (x + line_width - stroke, y),  // top-right - stroke width
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::DiagonalFallingBar => {
+                // DiagonalFallingBar (╲) - diagonal line from top-left to bottom-right
+                // We'll approximate this with a rotated rectangle
+                let diagonal_width =
+                    (line_width * line_width + line_height * line_height).sqrt();
+                let diagonal_height = stroke;
+
+                // Calculate the angle of rotation in radians
+                let angle = (line_height / line_width).atan();
+
+                // Create a path for the diagonal line
+                let path = vec![
+                    (x, y),                                     // top-left
+                    (x + stroke, y),                            // top-left + stroke width
+                    (x + line_width, y + line_height),          // bottom-right
+                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::DiagonalCross => {
+                // DiagonalCross (╳) - combination of rising and falling diagonals
+                // Create paths for both diagonals
+                let rising_path = vec![
+                    (x, y + line_height),          // bottom-left
+                    (x + stroke, y + line_height), // bottom-left + stroke width
+                    (x + line_width, y),           // top-right
+                    (x + line_width - stroke, y),  // top-right - stroke width
+                ];
+
+                let falling_path = vec![
+                    (x, y),                                     // top-left
+                    (x + stroke, y),                            // top-left + stroke width
+                    (x + line_width, y + line_height),          // bottom-right
+                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
+                ];
+
+                self.add_polygon(&rising_path, depth, color);
+                self.add_polygon(&falling_path, depth, color);
+            }
+            DrawableChar::BlackSquare => {
+                // Black Square (■) - filled square centered in the cell
+                let square_size = f32::min(line_width, line_height) * 0.6; // 60% of the smallest dimension
+                let square_x = center_x - square_size / 2.0;
+                let square_y = center_y - square_size / 2.0;
+
+                let square_rect = Rect {
+                    x: square_x,
+                    y: square_y,
+                    width: square_size,
+                    height: square_size,
+                };
+
+                self.add_rect(&square_rect, depth, &color);
+            }
+            DrawableChar::WhiteSquare => {
+                // White Square (□) - outlined square centered in the cell
+                let square_size = f32::min(line_width, line_height) * 0.6; // 60% of the smallest dimension
+                let square_x = center_x - square_size / 2.0;
+                let square_y = center_y - square_size / 2.0;
+
+                // Draw the four sides of the square
+                // Top
+                let top_rect = Rect {
+                    x: square_x,
+                    y: square_y,
+                    width: square_size,
+                    height: stroke,
+                };
+
+                // Right
+                let right_rect = Rect {
+                    x: square_x + square_size - stroke,
+                    y: square_y,
+                    width: stroke,
+                    height: square_size,
+                };
+
+                // Bottom
+                let bottom_rect = Rect {
+                    x: square_x,
+                    y: square_y + square_size - stroke,
+                    width: square_size,
+                    height: stroke,
+                };
+
+                // Left
+                let left_rect = Rect {
+                    x: square_x,
+                    y: square_y,
+                    width: stroke,
+                    height: square_size,
+                };
+
+                self.add_rect(&top_rect, depth, &color);
+                self.add_rect(&right_rect, depth, &color);
+                self.add_rect(&bottom_rect, depth, &color);
+                self.add_rect(&left_rect, depth, &color);
+            }
+            DrawableChar::BlackCircle => {
+                // Black Circle (●) - filled circle centered in the cell
+                // For a proper circle, we would need a circle drawing function
+                // Here we'll use an approximation with a polygon
+                let radius = f32::min(line_width, line_height) * 0.3; // 30% of the smallest dimension
+
+                // Create a circular polygon with many points
+                let num_points = 16; // Adjust for smoother circle
+                let mut path = Vec::with_capacity(num_points);
+
+                for i in 0..num_points {
+                    let angle =
+                        2.0 * std::f32::consts::PI * (i as f32) / (num_points as f32);
+                    let point_x = center_x + radius * angle.cos();
+                    let point_y = center_y + radius * angle.sin();
+                    path.push((point_x, point_y));
+                }
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::WhiteCircle => {
+                // White Circle (○) - outlined circle centered in the cell
+                // For a proper circle outline, we would need a circle drawing function
+                // Here we'll use an approximation with line segments
+                let radius = f32::min(line_width, line_height) * 0.3; // 30% of the smallest dimension
+                let thickness = stroke;
+
+                // Create two circular polygons with many points
+                let num_points = 16; // Adjust for smoother circle
+                let mut outer_path = Vec::with_capacity(num_points);
+                let mut inner_path = Vec::with_capacity(num_points);
+
+                for i in 0..num_points {
+                    let angle =
+                        2.0 * std::f32::consts::PI * (i as f32) / (num_points as f32);
+
+                    // Outer circle points
+                    let outer_x = center_x + (radius + thickness / 2.0) * angle.cos();
+                    let outer_y = center_y + (radius + thickness / 2.0) * angle.sin();
+                    outer_path.push((outer_x, outer_y));
+
+                    // Inner circle points (in reverse order)
+                    let inner_x = center_x + (radius - thickness / 2.0) * angle.cos();
+                    let inner_y = center_y + (radius - thickness / 2.0) * angle.sin();
+                    inner_path.push((inner_x, inner_y));
+                }
+
+                // Combine paths to create a ring
+                let mut ring_path = outer_path;
+                ring_path.extend(inner_path.into_iter().rev());
+
+                self.add_polygon(&ring_path, depth, color);
+            }
+            DrawableChar::BlackUpPointingTriangle => {
+                // Black Up Pointing Triangle (▲)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+
+                let path = vec![
+                    (center_x, center_y - triangle_size / 2.0), // top
+                    (
+                        center_x - triangle_size / 2.0,
+                        center_y + triangle_size / 2.0,
+                    ), // bottom-left
+                    (
+                        center_x + triangle_size / 2.0,
+                        center_y + triangle_size / 2.0,
+                    ), // bottom-right
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::WhiteUpPointingTriangle => {
+                // White Up Pointing Triangle (△)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+                let thickness = stroke;
+
+                // Triangle vertices
+                let top = (center_x, center_y - triangle_size / 2.0);
+                let bottom_left = (
+                    center_x - triangle_size / 2.0,
+                    center_y + triangle_size / 2.0,
+                );
+                let bottom_right = (
+                    center_x + triangle_size / 2.0,
+                    center_y + triangle_size / 2.0,
+                );
+
+                // Draw three lines for the triangle
+                // Left side
+                let left_path = vec![top, bottom_left];
+
+                // Right side
+                let right_path = vec![top, bottom_right];
+
+                // Bottom side
+                let bottom_path = vec![bottom_left, bottom_right];
+
+                // For each path, expand to a rectangle with the appropriate thickness
+                // This is a simplified approach; a proper implementation would handle line joins
+
+                // Left line
+                let dx = bottom_left.0 - top.0;
+                let dy = bottom_left.1 - top.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len; // normalized perpendicular vector
+                let ny = dx / len;
+
+                let left_rect = vec![
+                    (top.0 - thickness / 2.0 * nx, top.1 - thickness / 2.0 * ny),
+                    (top.0 + thickness / 2.0 * nx, top.1 + thickness / 2.0 * ny),
+                    (
+                        bottom_left.0 + thickness / 2.0 * nx,
+                        bottom_left.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom_left.0 - thickness / 2.0 * nx,
+                        bottom_left.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Right line (similar calculation)
+                let dx = bottom_right.0 - top.0;
+                let dy = bottom_right.1 - top.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let right_rect = vec![
+                    (top.0 - thickness / 2.0 * nx, top.1 - thickness / 2.0 * ny),
+                    (top.0 + thickness / 2.0 * nx, top.1 + thickness / 2.0 * ny),
+                    (
+                        bottom_right.0 + thickness / 2.0 * nx,
+                        bottom_right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom_right.0 - thickness / 2.0 * nx,
+                        bottom_right.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Bottom line
+                let bottom_rect = Rect {
+                    x: bottom_left.0,
+                    y: bottom_left.1 - thickness / 2.0,
+                    width: bottom_right.0 - bottom_left.0,
+                    height: thickness,
+                };
+
+                self.add_polygon(&left_rect, depth, color);
+                self.add_polygon(&right_rect, depth, color);
+                self.add_rect(&bottom_rect, depth, &color);
+            }
+            DrawableChar::BlackRightPointingTriangle => {
+                // Black Right Pointing Triangle (▶)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+
+                let path = vec![
+                    (center_x + triangle_size / 2.0, center_y), // right-point
+                    (
+                        center_x - triangle_size / 2.0,
+                        center_y - triangle_size / 2.0,
+                    ), // top-left
+                    (
+                        center_x - triangle_size / 2.0,
+                        center_y + triangle_size / 2.0,
+                    ), // bottom-left
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::WhiteRightPointingTriangle => {
+                // White Right Pointing Triangle (▷)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+                let thickness = stroke;
+
+                // Triangle vertices
+                let right_point = (center_x + triangle_size / 2.0, center_y);
+                let top_left = (
+                    center_x - triangle_size / 2.0,
+                    center_y - triangle_size / 2.0,
+                );
+                let bottom_left = (
+                    center_x - triangle_size / 2.0,
+                    center_y + triangle_size / 2.0,
+                );
+
+                // Calculate paths for the three sides and convert to polygons with thickness
+                // Top side
+                let top_path = vec![top_left, right_point];
+
+                // Bottom side
+                let bottom_path = vec![bottom_left, right_point];
+
+                // Left side
+                let left_path = vec![top_left, bottom_left];
+
+                // For each path, expand to a rectangle with the appropriate thickness
+                // This is a simplified approach; a proper implementation would handle line joins
+
+                // Similar calculation as for the white up-pointing triangle
+                // For simplicity, we'll use rectangles where possible
+
+                // Left vertical line
+                let left_rect = Rect {
+                    x: top_left.0 - thickness / 2.0,
+                    y: top_left.1,
+                    width: thickness,
+                    height: bottom_left.1 - top_left.1,
+                };
+
+                // Top and bottom sides would be more complex and require polygon creation
+                // Similar to the calculation for white up-pointing triangle
+
+                // Top line polygon
+                let dx = right_point.0 - top_left.0;
+                let dy = right_point.1 - top_left.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len; // normalized perpendicular vector
+                let ny = dx / len;
+
+                let top_rect = vec![
+                    (
+                        top_left.0 - thickness / 2.0 * nx,
+                        top_left.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        top_left.0 + thickness / 2.0 * nx,
+                        top_left.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        right_point.0 + thickness / 2.0 * nx,
+                        right_point.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        right_point.0 - thickness / 2.0 * nx,
+                        right_point.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Bottom line polygon
+                let dx = right_point.0 - bottom_left.0;
+                let dy = right_point.1 - bottom_left.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let bottom_rect = vec![
+                    (
+                        bottom_left.0 - thickness / 2.0 * nx,
+                        bottom_left.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom_left.0 + thickness / 2.0 * nx,
+                        bottom_left.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        right_point.0 + thickness / 2.0 * nx,
+                        right_point.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        right_point.0 - thickness / 2.0 * nx,
+                        right_point.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                self.add_rect(&left_rect, depth, &color);
+                self.add_polygon(&top_rect, depth, color);
+                self.add_polygon(&bottom_rect, depth, color);
+            }
+            DrawableChar::BlackDownPointingTriangle => {
+                // Black Down Pointing Triangle (▼)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+
+                let path = vec![
+                    (center_x, center_y + triangle_size / 2.0), // bottom
+                    (
+                        center_x - triangle_size / 2.0,
+                        center_y - triangle_size / 2.0,
+                    ), // top-left
+                    (
+                        center_x + triangle_size / 2.0,
+                        center_y - triangle_size / 2.0,
+                    ), // top-right
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+
+            DrawableChar::WhiteDownPointingTriangle => {
+                // White Down Pointing Triangle (▽)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+                let thickness = stroke;
+
+                // Triangle vertices
+                let bottom = (center_x, center_y + triangle_size / 2.0);
+                let top_left = (
+                    center_x - triangle_size / 2.0,
+                    center_y - triangle_size / 2.0,
+                );
+                let top_right = (
+                    center_x + triangle_size / 2.0,
+                    center_y - triangle_size / 2.0,
+                );
+
+                // Left side
+                let dx = bottom.0 - top_left.0;
+                let dy = bottom.1 - top_left.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len; // normalized perpendicular vector
+                let ny = dx / len;
+
+                let left_rect = vec![
+                    (
+                        top_left.0 - thickness / 2.0 * nx,
+                        top_left.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        top_left.0 + thickness / 2.0 * nx,
+                        top_left.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 + thickness / 2.0 * nx,
+                        bottom.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 - thickness / 2.0 * nx,
+                        bottom.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Right side
+                let dx = bottom.0 - top_right.0;
+                let dy = bottom.1 - top_right.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let right_rect = vec![
+                    (
+                        top_right.0 - thickness / 2.0 * nx,
+                        top_right.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        top_right.0 + thickness / 2.0 * nx,
+                        top_right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 + thickness / 2.0 * nx,
+                        bottom.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 - thickness / 2.0 * nx,
+                        bottom.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Top side
+                let top_rect = Rect {
+                    x: top_left.0,
+                    y: top_left.1 - thickness / 2.0,
+                    width: top_right.0 - top_left.0,
+                    height: thickness,
+                };
+
+                self.add_polygon(&left_rect, depth, color);
+                self.add_polygon(&right_rect, depth, color);
+                self.add_rect(&top_rect, depth, &color);
+            }
+
+            DrawableChar::BlackLeftPointingTriangle => {
+                // Black Left Pointing Triangle (◀)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+
+                let path = vec![
+                    (center_x - triangle_size / 2.0, center_y), // left-point
+                    (
+                        center_x + triangle_size / 2.0,
+                        center_y - triangle_size / 2.0,
+                    ), // top-right
+                    (
+                        center_x + triangle_size / 2.0,
+                        center_y + triangle_size / 2.0,
+                    ), // bottom-right
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+
+            DrawableChar::WhiteLeftPointingTriangle => {
+                // White Left Pointing Triangle (◁)
+                let triangle_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+                let thickness = stroke;
+
+                // Triangle vertices
+                let left_point = (center_x - triangle_size / 2.0, center_y);
+                let top_right = (
+                    center_x + triangle_size / 2.0,
+                    center_y - triangle_size / 2.0,
+                );
+                let bottom_right = (
+                    center_x + triangle_size / 2.0,
+                    center_y + triangle_size / 2.0,
+                );
+
+                // Right vertical line
+                let right_rect = Rect {
+                    x: top_right.0 - thickness / 2.0,
+                    y: top_right.1,
+                    width: thickness,
+                    height: bottom_right.1 - top_right.1,
+                };
+
+                // Top line polygon
+                let dx = left_point.0 - top_right.0;
+                let dy = left_point.1 - top_right.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len; // normalized perpendicular vector
+                let ny = dx / len;
+
+                let top_rect = vec![
+                    (
+                        top_right.0 - thickness / 2.0 * nx,
+                        top_right.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        top_right.0 + thickness / 2.0 * nx,
+                        top_right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        left_point.0 + thickness / 2.0 * nx,
+                        left_point.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        left_point.0 - thickness / 2.0 * nx,
+                        left_point.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Bottom line polygon
+                let dx = left_point.0 - bottom_right.0;
+                let dy = left_point.1 - bottom_right.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let bottom_rect = vec![
+                    (
+                        bottom_right.0 - thickness / 2.0 * nx,
+                        bottom_right.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom_right.0 + thickness / 2.0 * nx,
+                        bottom_right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        left_point.0 + thickness / 2.0 * nx,
+                        left_point.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        left_point.0 - thickness / 2.0 * nx,
+                        left_point.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                self.add_rect(&right_rect, depth, &color);
+                self.add_polygon(&top_rect, depth, color);
+                self.add_polygon(&bottom_rect, depth, color);
+            }
+
+            DrawableChar::BlackDiamond => {
+                // Black Diamond (◆)
+                let diamond_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+
+                let path = vec![
+                    (center_x, center_y - diamond_size / 2.0), // top
+                    (center_x + diamond_size / 2.0, center_y), // right
+                    (center_x, center_y + diamond_size / 2.0), // bottom
+                    (center_x - diamond_size / 2.0, center_y), // left
+                ];
+
+                self.add_polygon(&path, depth, color);
+            }
+            DrawableChar::WhiteDiamond => {
+                // White Diamond (◇)
+                let diamond_size = f32::min(line_width, line_height) * 0.5; // 50% of the smallest dimension
+                let thickness = stroke;
+
+                // Diamond vertices
+                let top = (center_x, center_y - diamond_size / 2.0);
+                let right = (center_x + diamond_size / 2.0, center_y);
+                let bottom = (center_x, center_y + diamond_size / 2.0);
+                let left = (center_x - diamond_size / 2.0, center_y);
+
+                // Top-right edge
+                let dx = right.0 - top.0;
+                let dy = right.1 - top.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len; // normalized perpendicular vector
+                let ny = dx / len;
+
+                let top_right_rect = vec![
+                    (top.0 - thickness / 2.0 * nx, top.1 - thickness / 2.0 * ny),
+                    (top.0 + thickness / 2.0 * nx, top.1 + thickness / 2.0 * ny),
+                    (
+                        right.0 + thickness / 2.0 * nx,
+                        right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        right.0 - thickness / 2.0 * nx,
+                        right.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Bottom-right edge
+                let dx = bottom.0 - right.0;
+                let dy = bottom.1 - right.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let bottom_right_rect = vec![
+                    (
+                        right.0 - thickness / 2.0 * nx,
+                        right.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        right.0 + thickness / 2.0 * nx,
+                        right.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 + thickness / 2.0 * nx,
+                        bottom.1 + thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 - thickness / 2.0 * nx,
+                        bottom.1 - thickness / 2.0 * ny,
+                    ),
+                ];
+
+                // Bottom-left edge
+                let dx = left.0 - bottom.0;
+                let dy = left.1 - bottom.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let bottom_left_rect = vec![
+                    (
+                        bottom.0 - thickness / 2.0 * nx,
+                        bottom.1 - thickness / 2.0 * ny,
+                    ),
+                    (
+                        bottom.0 + thickness / 2.0 * nx,
+                        bottom.1 + thickness / 2.0 * ny,
+                    ),
+                    (left.0 + thickness / 2.0 * nx, left.1 + thickness / 2.0 * ny),
+                    (left.0 - thickness / 2.0 * nx, left.1 - thickness / 2.0 * ny),
+                ];
+
+                // Top-left edge
+                let dx = top.0 - left.0;
+                let dy = top.1 - left.1;
+                let len = (dx * dx + dy * dy).sqrt();
+                let nx = -dy / len;
+                let ny = dx / len;
+
+                let top_left_rect = vec![
+                    (left.0 - thickness / 2.0 * nx, left.1 - thickness / 2.0 * ny),
+                    (left.0 + thickness / 2.0 * nx, left.1 + thickness / 2.0 * ny),
+                    (top.0 + thickness / 2.0 * nx, top.1 + thickness / 2.0 * ny),
+                    (top.0 - thickness / 2.0 * nx, top.1 - thickness / 2.0 * ny),
+                ];
+
+                self.add_polygon(&top_right_rect, depth, color);
+                self.add_polygon(&bottom_right_rect, depth, color);
+                self.add_polygon(&bottom_left_rect, depth, color);
+                self.add_polygon(&top_left_rect, depth, color);
+            }
             DrawableChar::LowerOneEighthBlock => {
                 // Lower One Eighth Block (▁) - fills bottom 1/8 of the cell
                 let block_height = line_height / 8.0;
