@@ -395,6 +395,62 @@ The list of characters:
 - `▒` MediumShade
 - `▓` DarkShade
 - `█` FullBlock
+- `╬` - DoubleCross
+- `╠` - DoubleVerticalRight
+- `╣` - DoubleVerticalLeft
+- `╦` - DoubleHorizontalDown
+- `╩` - DoubleHorizontalUp
+- `╫` - VerticalDoubleAndHorizontalSingle
+- `╒` - DownDoubleAndRightSingle
+- `╕` - DownDoubleAndLeftSingle
+- `╞` - VerticalDoubleAndRightSingle
+- `╡` - VerticalDoubleAndLeftSingle
+- `╟` - VerticalSingleAndRightDouble
+- `╢` - VerticalSingleAndLeftDouble
+- `╓` - DownSingleAndRightDouble
+- `╖` - DownSingleAndLeftDouble
+- `┏` - HeavyDownAndRight
+- `┓` - HeavyDownAndLeft
+- `┗` - HeavyUpAndRight
+- `┛` - HeavyUpAndLeft
+- `┣` - HeavyVerticalAndRight
+- `┫` - HeavyVerticalAndLeft
+- `┳` - HeavyHorizontalAndDown
+- `┻` - HeavyHorizontalAndUp
+- `╋` - HeavyCross
+
+- `┍` - LightDownAndHeavyRight
+- `┑` - LightDownAndHeavyLeft
+- `┎` - HeavyDownAndLightRight
+- `┒` - HeavyDownAndLightLeft
+- `┕` - LightUpAndHeavyRight
+- `┙` - LightUpAndHeavyLeft
+- `┖` - HeavyUpAndLightRight
+- `┚` - HeavyUpAndLightLeft
+- `▅` - LowerFiveEighthsBlock
+- `▆` - LowerThreeQuartersBlock
+- `▇` - LowerSevenEighthsBlock
+- `▚` - QuadrantUpperLeftAndLowerLeft
+- `▞` - QuadrantUpperLeftAndLowerRight
+- `▟` - QuadrantUpperRightAndLowerLeft
+- `▙` - QuadrantUpperRightAndLowerRight
+- `╱` - DiagonalRisingBar
+- `╲` - DiagonalFallingBar
+- `╳` - DiagonalCross
+- `■` - BlackSquare
+- `□` - WhiteSquare
+- `●` - BlackCircle
+- `○` - WhiteCircle
+- `▲` - BlackUpPointingTriangle
+- `△` - WhiteUpPointingTriangle
+- `▶` - BlackRightPointingTriangle
+- `▷` - WhiteRightPointingTriangle
+- `▼` - BlackDownPointingTriangle
+- `▽` - WhiteDownPointingTriangle
+- `◀` - BlackLeftPointingTriangle
+- `◁` - WhiteLeftPointingTriangle
+- `◆` - BlackDiamond
+- `◇` - WhiteDiamond
 - `` PowerlineLeftSolid
 - `` PowerlineRightSolid
 - `` PowerlineLeftHollow
