@@ -176,22 +176,6 @@ pub enum DrawableChar {
     QuadrantLowerLeft,               // ▖
     QuadrantLowerRight,              // ▗
 
-    // Sextants
-    SextantUpperLeft,   // 🬁
-    SextantUpperMiddle, // 🬂
-    SextantUpperRight,  // 🬃
-    SextantLowerLeft,   // 🬄
-    SextantLowerMiddle, // 🬅
-    SextantLowerRight,  // 🬆
-
-    // Separated Sextants
-    SeparatedSextantUpperLeft,   // 🬉
-    SeparatedSextantUpperMiddle, // 🬊
-    SeparatedSextantUpperRight,  // 🬋
-    SeparatedSextantLowerLeft,   // 🬌
-    SeparatedSextantLowerMiddle, // 🬍
-    SeparatedSextantLowerRight,  // 🬎
-
     // Separated Quadrants
     SeparatedQuadrantUpperLeft,  // 🬓
     SeparatedQuadrantUpperRight, // 🬔
@@ -218,6 +202,9 @@ pub enum DrawableChar {
     WhiteLeftPointingTriangle,  // ◁
     BlackDiamond,               // ◆
     WhiteDiamond,               // ◇
+
+    Sextant(u8), // Represents any of the 64 possible sextant patterns
+    Octant(u8),  // Represents any of the 256 possible octant patterns
 
     // LeftHalfBlackCircle, // ◖
     // RightHalfBlackCircle, // ◗
@@ -586,20 +573,6 @@ impl TryFrom<char> for DrawableChar {
             '▓' => DrawableChar::DarkShade,
             '█' => DrawableChar::FullBlock,
 
-            '🬁' => DrawableChar::SextantUpperLeft,
-            '🬂' => DrawableChar::SextantUpperMiddle,
-            '🬃' => DrawableChar::SextantUpperRight,
-            '🬄' => DrawableChar::SextantLowerLeft,
-            '🬅' => DrawableChar::SextantLowerMiddle,
-            '🬆' => DrawableChar::SextantLowerRight,
-
-            '🬉' => DrawableChar::SeparatedSextantUpperLeft,
-            '🬊' => DrawableChar::SeparatedSextantUpperMiddle,
-            '🬋' => DrawableChar::SeparatedSextantUpperRight,
-            '🬌' => DrawableChar::SeparatedSextantLowerLeft,
-            '🬍' => DrawableChar::SeparatedSextantLowerMiddle,
-            '🬎' => DrawableChar::SeparatedSextantLowerRight,
-
             '🬓' => DrawableChar::SeparatedQuadrantUpperLeft,
             '🬔' => DrawableChar::SeparatedQuadrantUpperRight,
             '🬕' => DrawableChar::SeparatedQuadrantLowerLeft,
@@ -687,6 +660,22 @@ impl TryFrom<char> for DrawableChar {
             '\u{e0bd}' => DrawableChar::PowerlineForwardslashSeparatorRedundant,
             '\u{e0be}' => DrawableChar::PowerlineUpperRightTriangle,
             '\u{e0bf}' => DrawableChar::PowerlineBackslashSeparatorRedundant,
+
+            // Sextant characters (Unicode block U+1FB00 to U+1FB3F)
+            c @ '\u{1FB00}'..='\u{1FB3F}' => {
+                // Convert the character to its decimal value and subtract the base value
+                // to get a value between 0 and 63
+                let bit_pattern = (c as u32 - 0x1FB00) as u8;
+                DrawableChar::Sextant(bit_pattern)
+            }
+
+            // Octant characters (Unicode block U+2840 to U+28FF for Braille patterns)
+            c @ '\u{1CD00}'..='\u{1CDE5}' => {
+                // Convert the character to its decimal value and subtract the base value
+                // to get a value between 0 and 255
+                let bit_pattern = (c as u32 - 0x2840) as u8;
+                DrawableChar::Octant(bit_pattern)
+            }
 
             '⠀' => DrawableChar::BrailleBlank,
             '⠁' => DrawableChar::Braille(Braille::Dots1),
