@@ -1792,36 +1792,6 @@ impl BatchManager {
                 self.add_rect(&vertical_rect, depth, &color);
                 self.add_rect(&horizontal_rect, depth, &color);
             }
-            DrawableChar::LowerHalfBlock => {
-                // Lower Half Block (▄) - fills bottom half of the cell
-                let block_rect = Rect {
-                    x,
-                    y: center_y,
-                    width: line_width,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&block_rect, depth, &color);
-            }
-            DrawableChar::LeftHalfBlock => {
-                // Left Half Block (▌) - fills left half of the cell
-                let block_rect = Rect {
-                    x,
-                    y,
-                    width: line_width / 2.0,
-                    height: line_height,
-                };
-                self.add_rect(&block_rect, depth, &color);
-            }
-            DrawableChar::RightHalfBlock => {
-                // Right Half Block (▐) - fills right half of the cell
-                let block_rect = Rect {
-                    x: center_x,
-                    y,
-                    width: line_width / 2.0,
-                    height: line_height,
-                };
-                self.add_rect(&block_rect, depth, &color);
-            }
             DrawableChar::UpperOneQuarterBlock => {
                 // Upper One Quarter Block (▀) - fills top 1/4 of the cell
                 let block_height = line_height / 4.0;
@@ -4148,6 +4118,181 @@ impl BatchManager {
                     };
                     self.add_rect(&rect, depth, &color);
                 }
+            }
+            // Sextants
+            DrawableChar::SextantUpperLeft => {
+                // Upper left sextant (🬁) - fills the upper-left sixth of the cell
+                let sextant_rect = Rect {
+                    x,
+                    y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SextantUpperMiddle => {
+                // Upper middle sextant (🬂) - fills the upper-middle sixth of the cell
+                let sextant_rect = Rect {
+                    x: x + line_width / 3.0,
+                    y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SextantUpperRight => {
+                // Upper right sextant (🬃) - fills the upper-right sixth of the cell
+                let sextant_rect = Rect {
+                    x: x + (2.0 * line_width / 3.0),
+                    y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SextantLowerLeft => {
+                // Lower left sextant (🬄) - fills the lower-left sixth of the cell
+                let sextant_rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SextantLowerMiddle => {
+                // Lower middle sextant (🬅) - fills the lower-middle sixth of the cell
+                let sextant_rect = Rect {
+                    x: x + line_width / 3.0,
+                    y: center_y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SextantLowerRight => {
+                // Lower right sextant (🬆) - fills the lower-right sixth of the cell
+                let sextant_rect = Rect {
+                    x: x + (2.0 * line_width / 3.0),
+                    y: center_y,
+                    width: line_width / 3.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+
+            // Separated Sextants (slightly smaller with some padding)
+            DrawableChar::SeparatedSextantUpperLeft => {
+                // Separated upper left sextant (🬉)
+                let padding = line_width / 15.0; // About 1/15th padding
+                let sextant_rect = Rect {
+                    x: x + padding,
+                    y: y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedSextantUpperMiddle => {
+                // Separated upper middle sextant (🬊)
+                let padding = line_width / 15.0;
+                let sextant_rect = Rect {
+                    x: x + (line_width / 3.0) + padding,
+                    y: y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedSextantUpperRight => {
+                // Separated upper right sextant (🬋)
+                let padding = line_width / 15.0;
+                let sextant_rect = Rect {
+                    x: x + (2.0 * line_width / 3.0) + padding,
+                    y: y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedSextantLowerLeft => {
+                // Separated lower left sextant (🬌)
+                let padding = line_width / 15.0;
+                let sextant_rect = Rect {
+                    x: x + padding,
+                    y: center_y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedSextantLowerMiddle => {
+                // Separated lower middle sextant (🬍)
+                let padding = line_width / 15.0;
+                let sextant_rect = Rect {
+                    x: x + (line_width / 3.0) + padding,
+                    y: center_y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedSextantLowerRight => {
+                // Separated lower right sextant (🬎)
+                let padding = line_width / 15.0;
+                let sextant_rect = Rect {
+                    x: x + (2.0 * line_width / 3.0) + padding,
+                    y: center_y + padding,
+                    width: (line_width / 3.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&sextant_rect, depth, &color);
+            }
+
+            // Separated Quadrants (slightly smaller with some padding)
+            DrawableChar::SeparatedQuadrantUpperLeft => {
+                // Separated upper left quadrant (🬓)
+                let padding = line_width / 15.0;
+                let quadrant_rect = Rect {
+                    x: x + padding,
+                    y: y + padding,
+                    width: (line_width / 2.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&quadrant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedQuadrantUpperRight => {
+                // Separated upper right quadrant (🬔)
+                let padding = line_width / 15.0;
+                let quadrant_rect = Rect {
+                    x: center_x + padding,
+                    y: y + padding,
+                    width: (line_width / 2.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&quadrant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedQuadrantLowerLeft => {
+                // Separated lower left quadrant (🬕)
+                let padding = line_width / 15.0;
+                let quadrant_rect = Rect {
+                    x: x + padding,
+                    y: center_y + padding,
+                    width: (line_width / 2.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&quadrant_rect, depth, &color);
+            }
+            DrawableChar::SeparatedQuadrantLowerRight => {
+                // Separated lower right quadrant (🬖)
+                let padding = line_width / 15.0;
+                let quadrant_rect = Rect {
+                    x: center_x + padding,
+                    y: center_y + padding,
+                    width: (line_width / 2.0) - (2.0 * padding),
+                    height: (line_height / 2.0) - (2.0 * padding),
+                };
+                self.add_rect(&quadrant_rect, depth, &color);
             }
             // Braille patterns
             DrawableChar::BrailleBlank => {
