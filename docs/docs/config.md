@@ -331,8 +331,9 @@ When set `true`, Rio terminal will use built-in draw system for specific set of 
 fonts.use-drawable-chars = true
 ```
 
-The list of characters:
-
+<details>
+  <summary>The list of characters</summary>
+  <p>
 - `─` Horizontal
 - `═` DoubleHorizontal
 - `│` Vertical
@@ -418,7 +419,6 @@ The list of characters:
 - `┳` - HeavyHorizontalAndDown
 - `┻` - HeavyHorizontalAndUp
 - `╋` - HeavyCross
-
 - `┍` - LightDownAndHeavyRight
 - `┑` - LightDownAndHeavyLeft
 - `┎` - HeavyDownAndLightRight
@@ -722,6 +722,8 @@ The list of characters:
 - `⣻` BrailleDots1245678
 - `⣹` BrailleDots145678
 - `⣺` BrailleDots245678
+</p>
+</details>
 
 ## ignore-selection-foreground-color
 
