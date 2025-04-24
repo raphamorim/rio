@@ -113,15 +113,6 @@ pub enum DrawableChar {
     VerticalHeavyDoubleDash, // ┋
     VerticalLightTripleDash, // ╎
     VerticalHeavyTripleDash, // ╏
-    // Block elements
-    QuadrantUpperLeft,  // ▘
-    QuadrantUpperRight, // ▝
-    QuadrantLowerLeft,  // ▖
-    QuadrantLowerRight, // ▗
-    UpperHalf,          // ▀
-    LowerHalf,          // ▄
-    LeftHalf,           // ▌
-    RightHalf,          // ▐
     // Shade blocks
     LightShade,  // ░
     MediumShade, // ▒
@@ -167,10 +158,10 @@ pub enum DrawableChar {
     HeavyUpAndLightRight,   // ┖
     HeavyUpAndLightLeft,    // ┚
 
-    // Additional block elements
-    LowerHalfBlock,                  // ▄
-    LeftHalfBlock,                   // ▌
-    RightHalfBlock,                  // ▐
+    LowerHalf,                       // ▄
+    LeftHalf,                        // ▌
+    RightHalf,                       // ▐
+    UpperHalf,                       // ▀
     UpperOneQuarterBlock,            // ▀
     LowerFiveEighthsBlock,           // ▅
     LowerThreeQuartersBlock,         // ▆
@@ -180,6 +171,32 @@ pub enum DrawableChar {
     QuadrantUpperLeftAndUpperRight,  // ▀
     QuadrantUpperRightAndLowerLeft,  // ▟
     QuadrantUpperRightAndLowerRight, // ▙
+    QuadrantUpperLeft,               // ▘
+    QuadrantUpperRight,              // ▝
+    QuadrantLowerLeft,               // ▖
+    QuadrantLowerRight,              // ▗
+
+    // Sextants
+    SextantUpperLeft,   // 🬁
+    SextantUpperMiddle, // 🬂
+    SextantUpperRight,  // 🬃
+    SextantLowerLeft,   // 🬄
+    SextantLowerMiddle, // 🬅
+    SextantLowerRight,  // 🬆
+
+    // Separated Sextants
+    SeparatedSextantUpperLeft,   // 🬉
+    SeparatedSextantUpperMiddle, // 🬊
+    SeparatedSextantUpperRight,  // 🬋
+    SeparatedSextantLowerLeft,   // 🬌
+    SeparatedSextantLowerMiddle, // 🬍
+    SeparatedSextantLowerRight,  // 🬎
+
+    // Separated Quadrants
+    SeparatedQuadrantUpperLeft,  // 🬓
+    SeparatedQuadrantUpperRight, // 🬔
+    SeparatedQuadrantLowerLeft,  // 🬕
+    SeparatedQuadrantLowerRight, // 🬖
 
     // Additional diagonal and rounded elements
     DiagonalRisingBar,  // ╱
@@ -568,6 +585,25 @@ impl TryFrom<char> for DrawableChar {
             '▒' => DrawableChar::MediumShade,
             '▓' => DrawableChar::DarkShade,
             '█' => DrawableChar::FullBlock,
+
+            '🬁' => DrawableChar::SextantUpperLeft,
+            '🬂' => DrawableChar::SextantUpperMiddle,
+            '🬃' => DrawableChar::SextantUpperRight,
+            '🬄' => DrawableChar::SextantLowerLeft,
+            '🬅' => DrawableChar::SextantLowerMiddle,
+            '🬆' => DrawableChar::SextantLowerRight,
+
+            '🬉' => DrawableChar::SeparatedSextantUpperLeft,
+            '🬊' => DrawableChar::SeparatedSextantUpperMiddle,
+            '🬋' => DrawableChar::SeparatedSextantUpperRight,
+            '🬌' => DrawableChar::SeparatedSextantLowerLeft,
+            '🬍' => DrawableChar::SeparatedSextantLowerMiddle,
+            '🬎' => DrawableChar::SeparatedSextantLowerRight,
+
+            '🬓' => DrawableChar::SeparatedQuadrantUpperLeft,
+            '🬔' => DrawableChar::SeparatedQuadrantUpperRight,
+            '🬕' => DrawableChar::SeparatedQuadrantLowerLeft,
+            '🬖' => DrawableChar::SeparatedQuadrantLowerRight,
 
             '╬' => DrawableChar::DoubleCross,
             '╠' => DrawableChar::DoubleVerticalRight,
