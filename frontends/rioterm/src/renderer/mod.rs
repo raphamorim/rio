@@ -61,11 +61,6 @@ pub struct Renderer {
     >,
 }
 
-const POWERLINE_RIGHT_SOLID: char = '\u{e0b0}';
-const POWERLINE_BACKSLASH_SEPARATOR: char = '\u{e0bf}';
-const BRAILLE_BLANK: char = '\u{2800}';
-const BRAILLE_DOTS12345678: char = '\u{28FF}';
-
 impl Renderer {
     pub fn new(
         config: &Config,
@@ -357,8 +352,14 @@ impl Renderer {
                 match square_content {
                     '\u{2500}'..='\u{259f}'
                     | '\u{1fb00}'..='\u{1fb3b}'
-                    | POWERLINE_RIGHT_SOLID..=POWERLINE_BACKSLASH_SEPARATOR
-                    | BRAILLE_BLANK..=BRAILLE_DOTS12345678 => {
+                    // Powerlines
+                    | '\u{e0b0}'..='\u{e0bf}'
+                    // Brailles
+                    | '\u{2800}'..='\u{28FF}'
+                    // Sextants
+                    | '\u{1FB00}'..='\u{1FB3F}'
+                    // Octants
+                    | '\u{1CD00}'..='\u{1CDE5}'  => {
                         if let Ok(character) = DrawableChar::try_from(square_content) {
                             style.drawable_char = Some(character);
                             if !content.is_empty() {

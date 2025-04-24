@@ -4119,136 +4119,6 @@ impl BatchManager {
                     self.add_rect(&rect, depth, &color);
                 }
             }
-            // Sextants
-            DrawableChar::SextantUpperLeft => {
-                // Upper left sextant (🬁) - fills the upper-left sixth of the cell
-                let sextant_rect = Rect {
-                    x,
-                    y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SextantUpperMiddle => {
-                // Upper middle sextant (🬂) - fills the upper-middle sixth of the cell
-                let sextant_rect = Rect {
-                    x: x + line_width / 3.0,
-                    y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SextantUpperRight => {
-                // Upper right sextant (🬃) - fills the upper-right sixth of the cell
-                let sextant_rect = Rect {
-                    x: x + (2.0 * line_width / 3.0),
-                    y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SextantLowerLeft => {
-                // Lower left sextant (🬄) - fills the lower-left sixth of the cell
-                let sextant_rect = Rect {
-                    x,
-                    y: center_y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SextantLowerMiddle => {
-                // Lower middle sextant (🬅) - fills the lower-middle sixth of the cell
-                let sextant_rect = Rect {
-                    x: x + line_width / 3.0,
-                    y: center_y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SextantLowerRight => {
-                // Lower right sextant (🬆) - fills the lower-right sixth of the cell
-                let sextant_rect = Rect {
-                    x: x + (2.0 * line_width / 3.0),
-                    y: center_y,
-                    width: line_width / 3.0,
-                    height: line_height / 2.0,
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-
-            // Separated Sextants (slightly smaller with some padding)
-            DrawableChar::SeparatedSextantUpperLeft => {
-                // Separated upper left sextant (🬉)
-                let padding = line_width / 15.0; // About 1/15th padding
-                let sextant_rect = Rect {
-                    x: x + padding,
-                    y: y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SeparatedSextantUpperMiddle => {
-                // Separated upper middle sextant (🬊)
-                let padding = line_width / 15.0;
-                let sextant_rect = Rect {
-                    x: x + (line_width / 3.0) + padding,
-                    y: y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SeparatedSextantUpperRight => {
-                // Separated upper right sextant (🬋)
-                let padding = line_width / 15.0;
-                let sextant_rect = Rect {
-                    x: x + (2.0 * line_width / 3.0) + padding,
-                    y: y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SeparatedSextantLowerLeft => {
-                // Separated lower left sextant (🬌)
-                let padding = line_width / 15.0;
-                let sextant_rect = Rect {
-                    x: x + padding,
-                    y: center_y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SeparatedSextantLowerMiddle => {
-                // Separated lower middle sextant (🬍)
-                let padding = line_width / 15.0;
-                let sextant_rect = Rect {
-                    x: x + (line_width / 3.0) + padding,
-                    y: center_y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-            DrawableChar::SeparatedSextantLowerRight => {
-                // Separated lower right sextant (🬎)
-                let padding = line_width / 15.0;
-                let sextant_rect = Rect {
-                    x: x + (2.0 * line_width / 3.0) + padding,
-                    y: center_y + padding,
-                    width: (line_width / 3.0) - (2.0 * padding),
-                    height: (line_height / 2.0) - (2.0 * padding),
-                };
-                self.add_rect(&sextant_rect, depth, &color);
-            }
-
             // Separated Quadrants (slightly smaller with some padding)
             DrawableChar::SeparatedQuadrantUpperLeft => {
                 // Separated upper left quadrant (🬓)
@@ -4420,6 +4290,74 @@ impl BatchManager {
                         height: dot_size,
                     };
                     self.add_rect(&dot_rect, depth, &color);
+                }
+            }
+            DrawableChar::Octant(pattern) => {
+                // Octants are on a 2×4 grid:
+                // ╭───┬───╮
+                // │ 0 │ 1 │
+                // ├───┼───┤
+                // │ 2 │ 3 │
+                // ├───┼───┤
+                // │ 4 │ 5 │
+                // ├───┼───┤
+                // │ 6 │ 7 │
+                // ╰───┴───╯
+
+                let cell_width = line_width / 2.0; // 2 columns
+                let cell_height = line_height / 4.0; // 4 rows
+
+                // Loop through each bit in the pattern
+                for i in 0..8 {
+                    // Check if this octant should be filled
+                    if pattern & (1 << i) != 0 {
+                        // Calculate the octant position
+                        let row = i / 2; // integer division gives row (0-3)
+                        let col = i % 2; // modulo gives column (0-1)
+
+                        // Calculate the rectangle for this octant
+                        let octant_rect = Rect {
+                            x: x + (col as f32 * cell_width),
+                            y: y + (row as f32 * cell_height),
+                            width: cell_width,
+                            height: cell_height,
+                        };
+
+                        self.add_rect(&octant_rect, depth, &color);
+                    }
+                }
+            }
+            DrawableChar::Sextant(pattern) => {
+                // Sextants are on a 2×3 grid:
+                // ╭───┬───╮
+                // │ 0 │ 1 │
+                // ├───┼───┤
+                // │ 2 │ 3 │
+                // ├───┼───┤
+                // │ 4 │ 5 │
+                // ╰───┴───╯
+
+                let cell_width = line_width / 2.0; // 2 columns
+                let cell_height = line_height / 3.0; // 3 rows
+
+                // Loop through each bit in the pattern
+                for i in 0..6 {
+                    // Check if this sextant should be filled
+                    if pattern & (1 << i) != 0 {
+                        // Calculate the sextant position
+                        let row = i / 2; // integer division gives row (0-2)
+                        let col = i % 2; // modulo gives column (0-1)
+
+                        // Calculate the rectangle for this sextant
+                        let sextant_rect = Rect {
+                            x: x + (col as f32 * cell_width),
+                            y: y + (row as f32 * cell_height),
+                            width: cell_width,
+                            height: cell_height,
+                        };
+
+                        self.add_rect(&sextant_rect, depth, &color);
+                    }
                 }
             }
         }
