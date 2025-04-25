@@ -433,6 +433,19 @@ impl Config {
                             }
                         }
 
+                        let config_home_font_dir = std::env::var("RIO_CONFIG_HOME")
+                            .map(PathBuf::from)
+                            .unwrap_or(PathBuf::from("~/rio"))
+                            .join("fonts")
+                            .to_string_lossy()
+                            .into_owned();
+
+                        decoded
+                            .fonts
+                            .additional_dirs
+                            .get_or_insert_with(Vec::new)
+                            .push(config_home_font_dir);
+
                         Ok(decoded)
                     }
                     Err(err_message) => {
