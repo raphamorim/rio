@@ -28,6 +28,8 @@ language: 'en'
 - Fix: Request: Option to change click-link modifier key [#1059](https://github.com/raphamorim/rio/issues/1059).
 - Fix: Unexpected tmux previous-window [#1062](https://github.com/raphamorim/rio/issues/1062).
 - Rewrite the way Rio deals with line diff and updates computation.
+- Support for setting a custom config directory using `$RIO_CONFIG_HOME`
+- Support for additional font dirs using `fonts.additional-dirs`
 
 ## 0.2.12
 
