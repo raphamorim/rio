@@ -8,8 +8,9 @@ pub(crate) const MAX_PARAMS: usize = 32;
 pub struct Params {
     /// Number of subparameters for each parameter.
     ///
-    /// For each entry in the `params` slice, this stores the length of the param as number of
-    /// subparams at the same index as the param in the `params` slice.
+    /// For each entry in the `params` slice, this stores the length of the
+    /// param as number of subparams at the same index as the param in the
+    /// `params` slice.
     ///
     /// At the subparam positions the length will always be `0`.
     subparams: [u8; MAX_PARAMS],
