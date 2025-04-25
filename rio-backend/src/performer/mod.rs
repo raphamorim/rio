@@ -48,7 +48,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
 pub struct State {
     write_list: VecDeque<Cow<'static, [u8]>>,
     writing: Option<Writing>,
-    parser: handler::ParserProcessor,
+    parser: handler::Processor,
 }
 
 impl State {
@@ -177,9 +177,7 @@ where
             };
 
             // Parse the incoming bytes.
-            for byte in &buf[..unprocessed] {
-                state.parser.advance(&mut **terminal, *byte);
-            }
+            state.parser.advance(&mut **terminal, &buf[..unprocessed]);
 
             processed += unprocessed;
             unprocessed = 0;
@@ -294,10 +292,12 @@ where
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
-                let sync_timeout = state.parser.sync_timeout();
-                let timeout =
-                    sync_timeout.map(|st| st.saturating_duration_since(Instant::now()));
+                let handler = state.parser.sync_timeout();
+                let timeout = handler
+                    .sync_timeout()
+                    .map(|st| st.saturating_duration_since(Instant::now()));
 
+                events.clear();
                 if let Err(err) = self.poll.poll(&mut events, timeout) {
                     match err.kind() {
                         ErrorKind::Interrupted => continue,

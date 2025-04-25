@@ -28,8 +28,8 @@ pub fn generate_state_changes(item: proc_macro::TokenStream) -> proc_macro::Toke
     let assignments_stream = states_stream(&mut iter);
 
     quote!(
-        const fn #fn_name() -> [[u8; 256]; 16] {
-            let mut state_changes = [[0; 256]; 16];
+        const fn #fn_name() -> [[u8; 256]; 13] {
+            let mut state_changes = [[0; 256]; 13];
 
             #assignments_stream
 
@@ -74,7 +74,8 @@ fn state_entry_stream(iter: &mut Peekable<token_stream::IntoIter>) -> TokenStrea
     tokens
 }
 
-/// Generate the array assignment statement for a single byte->target mapping for one state.
+/// Generate the array assignment statement for a single byte->target mapping
+/// for one state.
 fn change_stream(
     iter: &mut Peekable<token_stream::IntoIter>,
     state: &TokenTree,
@@ -107,8 +108,6 @@ fn change_stream(
 
         // Create a new entry for every byte in the range
         for byte in start..=end {
-            // TODO: Force adding `State::` and `Action::`?
-            // TODO: Should we really use `pack` here without import?
             tokens.extend(quote!(
                 state_changes[State::#state as usize][#byte] =
                     pack(State::#target_state, Action::#target_action);
@@ -154,7 +153,8 @@ fn expect_punct(iter: &mut impl Iterator<Item = TokenTree>, c: char) {
 ///
 /// # Panics
 ///
-/// Panics if the next token is not a [`usize`] in hex or decimal literal format.
+/// Panics if the next token is not a [`usize`] in hex or decimal literal
+/// format.
 fn next_usize(iter: &mut impl Iterator<Item = TokenTree>) -> usize {
     match iter.next() {
         Some(Literal(literal)) => {
