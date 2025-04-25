@@ -9,11 +9,13 @@ version = { workspace = true }
 name = "copa"
 edition = "2021"
 
-[dependencies]
-rio-proc-macros = { workspace = true }
-arrayvec = { version = "0.7.6", default-features = false, optional = true }
-
 [features]
 default = []
 no_std = ["arrayvec"]
-nightly = []
+serde = ["dep:serde"]
+
+[dependencies]
+arrayvec = { version = "0.7.2", default-features = false, optional = true }
+memchr = "2.7.4"
+serde = { version = "1.0.160", features = ["derive"], optional = true }
+rio-proc-macros = { workspace = true }

@@ -531,7 +531,9 @@ name = "copa"
 version = "0.2.13"
 dependencies = [
  "arrayvec",
+ "memchr",
  "rio-proc-macros",
+ "serde",
 ]
 
 [[package]]
@@ -2826,6 +2828,7 @@ dependencies = [
  "dirs",
  "image",
  "libc",
+ "memchr",
  "parking_lot",
  "raw-window-handle",
  "regex",
