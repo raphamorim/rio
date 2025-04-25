@@ -10,8 +10,7 @@ MacOS and Linux configuration file path is `~/.config/rio/config.toml`.
 Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
 
 You can also set a custom config path by using the `$RIO_CONFIG_HOME` env var. It will be used as a replacement
-for `~/.config/rio` reading configs, themes, fonts...
-
+for `~/.config/rio` reading configs, themes...
 Updates to the configuration file automatically triggers Rio to render the terminal with the new configuration.
 
 Note that all parameters without a header must be at the beginning of the file, otherwise they will be ignored. Example:
