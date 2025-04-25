@@ -275,6 +275,12 @@ impl FontLibraryData {
         let mut db = loader::Database::new();
         db.load_system_fonts();
 
+        spec.additional_dirs
+            .unwrap_or_default()
+            .into_iter()
+            .map(PathBuf::from)
+            .for_each(|p| db.load_fonts_dir(p));
+
         match find_font(&db, spec.regular, false, false) {
             FindResult::Found(data) => {
                 self.insert(data);

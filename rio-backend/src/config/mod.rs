@@ -174,15 +174,23 @@ pub struct CursorConfig {
 #[cfg(not(target_os = "windows"))]
 #[inline]
 pub fn config_dir_path() -> PathBuf {
-    let home_dir = dirs::home_dir().unwrap();
-    home_dir.join(".config").join("rio")
+    std::env::var("RIO_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or(dirs::home_dir().unwrap().join(".config").join("rio"))
 }
 
 #[cfg(target_os = "windows")]
 #[inline]
 pub fn config_dir_path() -> PathBuf {
-    let home_dir = dirs::home_dir().unwrap();
-    home_dir.join("AppData").join("Local").join("rio")
+    std::env::var("RIO_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or(
+            dirs::home_dir()
+                .unwrap()
+                .join("AppData")
+                .join("Local")
+                .join("rio"),
+        )
 }
 
 #[inline]
