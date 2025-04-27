@@ -155,30 +155,35 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        // Skip rendering for unfocused windows if disabled
+                        // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
                             return;
                         }
 
-                        // TODO: Optionally Allow check if is the current route
-                        // before schedule render. Using the following code below:
-                        // if route_id == route.window.screen.ctx().current_route() {
+                        // Check if this is the current route
+                        if route_id == route.window.screen.ctx().current_route() {
+                            // Check if we need to throttle based on timing
+                            if let Some(wait_duration) = route.window.wait_until() {
+                                // We need to wait before rendering again
+                                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                                let event = EventPayload::new(
+                                    RioEventType::Rio(RioEvent::Render),
+                                    window_id,
+                                );
 
-                        let timer_id = TimerId::new(Topic::RenderRoute, route_id);
-                        let event = EventPayload::new(
-                            RioEventType::Rio(RioEvent::Render),
-                            window_id,
-                        );
-
-                        // Only proceed if this event isn't already scheduled
-                        if !self.scheduler.scheduled(timer_id) {
-                            if let Some(limit) = route.window.wait_until() {
-                                // Schedule for future without updating timestamp yet
-                                self.scheduler.schedule(event, limit, false, timer_id);
+                                // Only schedule if not already scheduled
+                                if !self.scheduler.scheduled(timer_id) {
+                                    self.scheduler.schedule(
+                                        event,
+                                        wait_duration,
+                                        false,
+                                        timer_id,
+                                    );
+                                }
                             } else {
-                                // Request immediate redraw without updating timestamp
+                                // We can render immediately
                                 route.request_redraw();
                             }
                         }
@@ -1133,7 +1138,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // }
 
                 if self.config.renderer.strategy.is_game() {
-                    // route.request_frame(&mut self.scheduler);
                     route.request_redraw();
                 }
 

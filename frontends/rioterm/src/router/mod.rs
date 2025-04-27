@@ -380,16 +380,24 @@ impl<'a> RouteWindow<'a> {
     }
 
     pub fn wait_until(&self) -> Option<Duration> {
-        let elapsed_time = Instant::now()
-            .duration_since(self.render_timestamp)
-            .as_millis() as u64;
-        let vblank_interval = self.vblank_interval.as_millis() as u64;
+        let now = Instant::now();
+        let elapsed = now.duration_since(self.render_timestamp);
+        let vblank = self.vblank_interval;
 
-        if vblank_interval >= elapsed_time {
-            // We're ahead of schedule, wait for the appropriate time
-            Some(Duration::from_millis(vblank_interval - elapsed_time))
+        // Calculate how many complete frames have elapsed
+        let frames_elapsed = elapsed.as_nanos() / vblank.as_nanos();
+
+        // Calculate when the next frame should occur
+        let next_frame_time = self.render_timestamp
+            + Duration::from_nanos(
+                (frames_elapsed + 1) as u64 * vblank.as_nanos() as u64,
+            );
+
+        if next_frame_time > now {
+            // Return the time to wait until the next ideal frame time
+            Some(next_frame_time.duration_since(now))
         } else {
-            // We're behind schedule, render immediately
+            // We've missed the target frame time, render immediately
             None
         }
     }
