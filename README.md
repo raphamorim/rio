@@ -1,7 +1,7 @@
 <!-- LOGO -->
 <h1>
 <p align="center">
-  <img src="https://raphamorim.io/rio/assets/rio-logo.png" alt="Rio terminal logo" width="128">
+  <img src="https://rioterm.com/assets/rio-logo.png" alt="Rio terminal logo" width="128">
   <br>Rio Terminal
 </h1>
   <p align="center">
@@ -9,9 +9,9 @@
     <br />
     <a href="#about">About</a>
     ·
-    <a href="https://raphamorim.io/rio/docs/install">Install</a>
+    <a href="https://rioterm.com/docs/install">Install</a>
     ·
-    <a href="https://raphamorim.io/rio/docs/config">Config</a>
+    <a href="https://rioterm.com/docs/config">Config</a>
     ·
     <a href="https://github.com/sponsors/raphamorim">Sponsor</a>
   </p>
@@ -19,7 +19,7 @@
 
 ## About
 
-Documentation: https://raphamorim.io/rio
+Documentation: https://rioterm.com
 
 If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
 
