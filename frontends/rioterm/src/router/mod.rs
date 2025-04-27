@@ -402,6 +402,25 @@ impl<'a> RouteWindow<'a> {
         }
     }
 
+    // TODO: Use it whenever animated cursor is done
+    // pub fn request_animation_frame(&mut self) {
+    //     if self.config.renderer.strategy.is_event_based() {
+    //         // Schedule a render for the next frame time
+    //         let route_id = self.window.screen.ctx().current_route();
+    //         let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+    //         let event = EventPayload::new(
+    //             RioEventType::Rio(RioEvent::RenderRoute(route_id)),
+    //             self.window.winit_window.id(),
+    //         );
+
+    //         // Always schedule at the next vblank interval
+    //         self.scheduler.schedule(event, self.window.vblank_interval, false, timer_id);
+    //     } else {
+    //         // For game loop rendering, the standard redraw is fine
+    //         self.request_redraw();
+    //     }
+    // }
+
     pub fn update_vblank_interval(&mut self) {
         if !self.has_fps_target {
             // Get the display refresh rate, default to 60Hz if unavailable
