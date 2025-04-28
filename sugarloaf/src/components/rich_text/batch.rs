@@ -926,40 +926,72 @@ impl BatchManager {
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
-                let left_vertical_rect = Rect {
+                let top_left_vertical_rect = Rect {
                     x: center_x - gap,
                     y,
                     width: stroke,
-                    height: line_height,
+                    height: (line_height / 2.0) - gap,
                 };
 
-                let right_vertical_rect = Rect {
+                let top_right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
                     y,
                     width: stroke,
-                    height: line_height,
+                    height: (line_height / 2.0) - gap,
+                };
+
+                let bottom_left_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y + gap,
+                    width: stroke,
+                    height: (line_height / 2.0) - gap,
+                };
+
+                let bottom_right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y + gap,
+                    width: stroke,
+                    height: (line_height / 2.0) - gap,
                 };
 
                 // Horizontal double lines
-                let top_horizontal_rect = Rect {
+                let left_top_horizontal_rect = Rect {
                     x,
                     y: center_y - gap,
-                    width: line_width,
+                    width: (line_width - stroke) / 2.0,
                     height: stroke,
                 };
 
-                let bottom_horizontal_rect = Rect {
+                let left_bottom_horizontal_rect = Rect {
                     x,
                     y: center_y + gap - stroke,
-                    width: line_width,
+                    width: (line_width - stroke) / 2.0,
+                    height: stroke,
+                };
+
+                let right_top_horizontal_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y - gap,
+                    width: line_width / 2.0,
+                    height: stroke,
+                };
+
+                let right_bottom_horizontal_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y + gap - stroke,
+                    width: line_width / 2.0,
                     height: stroke,
                 };
 
                 // Draw all rectangles
-                self.add_rect(&left_vertical_rect, depth, &color);
-                self.add_rect(&right_vertical_rect, depth, &color);
-                self.add_rect(&top_horizontal_rect, depth, &color);
-                self.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.add_rect(&top_left_vertical_rect, depth, &color);
+                self.add_rect(&top_right_vertical_rect, depth, &color);
+                self.add_rect(&bottom_left_vertical_rect, depth, &color);
+                self.add_rect(&bottom_right_vertical_rect, depth, &color);
+                self.add_rect(&left_top_horizontal_rect, depth, &color);
+                self.add_rect(&left_bottom_horizontal_rect, depth, &color);
+                self.add_rect(&right_top_horizontal_rect, depth, &color);
+                self.add_rect(&right_bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleVerticalRight => {
                 // Calculate spacing between the double lines
@@ -973,31 +1005,39 @@ impl BatchManager {
                     height: line_height,
                 };
 
-                let right_vertical_rect = Rect {
+                let top_right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
                     y,
                     width: stroke,
-                    height: line_height,
+                    height: (line_height / 2.) - (gap - stroke),
+                };
+
+                let bottom_right_vertical_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y + gap - stroke,
+                    width: stroke,
+                    height: (line_height / 2.) - (gap - stroke),
                 };
 
                 // Horizontal double lines going right from center
                 let top_horizontal_rect = Rect {
-                    x: center_x,
+                    x: center_x + gap,
                     y: center_y - gap,
-                    width: line_width / 2.0, // Right half
+                    width: (line_width / 2.0) - gap, // Right half
                     height: stroke,
                 };
 
                 let bottom_horizontal_rect = Rect {
-                    x: center_x,
+                    x: center_x + gap,
                     y: center_y + gap - stroke,
-                    width: line_width / 2.0, // Right half
+                    width: (line_width / 2.0) - gap, // Right half
                     height: stroke,
                 };
 
                 // Draw all rectangles
                 self.add_rect(&left_vertical_rect, depth, &color);
-                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&top_right_vertical_rect, depth, &color);
+                self.add_rect(&bottom_right_vertical_rect, depth, &color);
                 self.add_rect(&top_horizontal_rect, depth, &color);
                 self.add_rect(&bottom_horizontal_rect, depth, &color);
             }
