@@ -1952,16 +1952,16 @@ impl BatchManager {
             DrawableChar::DiagonalRisingBar => {
                 // DiagonalRisingBar (╱) - diagonal line from bottom-left to top-right
                 // We'll approximate this with a rotated rectangle
-                let diagonal_width =
-                    (line_width * line_width + line_height * line_height).sqrt();
-                let diagonal_height = stroke;
+                // let diagonal_width =
+                // (line_width * line_width + line_height * line_height).sqrt();
+                // let diagonal_height = stroke;
 
                 // Calculate the angle of rotation in radians
-                let angle = (line_height / line_width).atan();
+                // let angle = (line_height / line_width).atan();
 
                 // Calculate the offset to center the rotated rectangle
-                let offset_x = (diagonal_width - line_width) / 2.0;
-                let offset_y = (diagonal_height - line_height) / 2.0;
+                // let offset_x = (diagonal_width - line_width) / 2.0;
+                // let offset_y = (diagonal_height - line_height) / 2.0;
 
                 // Create a path for the diagonal line
                 let path = vec![
@@ -1976,12 +1976,12 @@ impl BatchManager {
             DrawableChar::DiagonalFallingBar => {
                 // DiagonalFallingBar (╲) - diagonal line from top-left to bottom-right
                 // We'll approximate this with a rotated rectangle
-                let diagonal_width =
-                    (line_width * line_width + line_height * line_height).sqrt();
-                let diagonal_height = stroke;
+                // let diagonal_width =
+                //     (line_width * line_width + line_height * line_height).sqrt();
+                // let diagonal_height = stroke;
 
-                // Calculate the angle of rotation in radians
-                let angle = (line_height / line_width).atan();
+                // // Calculate the angle of rotation in radians
+                // let angle = (line_height / line_width).atan();
 
                 // Create a path for the diagonal line
                 let path = vec![
@@ -2161,13 +2161,13 @@ impl BatchManager {
 
                 // Draw three lines for the triangle
                 // Left side
-                let left_path = vec![top, bottom_left];
+                // let _left_path = vec![top, bottom_left];
 
                 // Right side
-                let right_path = vec![top, bottom_right];
+                // let _right_path = vec![top, bottom_right];
 
                 // Bottom side
-                let bottom_path = vec![bottom_left, bottom_right];
+                // let _bottom_path = vec![bottom_left, bottom_right];
 
                 // For each path, expand to a rectangle with the appropriate thickness
                 // This is a simplified approach; a proper implementation would handle line joins
@@ -2260,13 +2260,13 @@ impl BatchManager {
 
                 // Calculate paths for the three sides and convert to polygons with thickness
                 // Top side
-                let top_path = vec![top_left, right_point];
+                // let _top_path = vec![top_left, right_point];
 
                 // Bottom side
-                let bottom_path = vec![bottom_left, right_point];
+                // let _bottom_path = vec![bottom_left, right_point];
 
                 // Left side
-                let left_path = vec![top_left, bottom_left];
+                // let _left_path = vec![top_left, bottom_left];
 
                 // For each path, expand to a rectangle with the appropriate thickness
                 // This is a simplified approach; a proper implementation would handle line joins

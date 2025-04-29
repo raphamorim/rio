@@ -1579,7 +1579,7 @@ impl Screen<'_> {
             .search_state
             .history
             .front()
-            .map_or(true, |regex| !regex.is_empty())
+            .is_none_or(|regex| !regex.is_empty())
         {
             self.search_state.history.push_front(String::new());
             self.search_state.history.truncate(MAX_SEARCH_HISTORY_SIZE);
