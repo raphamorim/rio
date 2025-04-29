@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pl/assets/css/styles.390fc736.css">
-<script src="/pl/assets/js/runtime~main.9c3129ef.js" defer="defer"></script>
+<script src="/pl/assets/js/runtime~main.de440dea.js" defer="defer"></script>
 <script src="/pl/assets/js/main.9288a400.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -105,8 +105,7 @@ will always look for regular font bounds whene</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="fontsuse-drawable-chars">fonts.use-drawable-chars<a href="#fontsuse-drawable-chars" class="hash-link" aria-label="Bezpośredni link do fonts.use-drawable-chars" title="Bezpośredni link do fonts.use-drawable-chars">​</a></h2>
 <p>When set <code>true</code>, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters <code>(Unicode points U+2500 - U+259F)</code>, legacy computing symbols <code>(U+1FB00 - U+1FB3B)</code>, and powerline symbols <code>(U+E0B0 - U+E0BF)</code>).</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">fonts.use-drawable-chars</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Kopiuj do schowka" title="Kopiuj" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
-<p>The list of characters:</p>
-<ul>
+<details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>The list of characters</summary><div><div class="collapsibleContent_i85q"><p></p><ul>
 <li><code>─</code> Horizontal</li>
 <li><code>═</code> DoubleHorizontal</li>
 <li><code>│</code> Vertical</li>
@@ -169,6 +168,77 @@ will always look for regular font bounds whene</p>
 <li><code>▒</code> MediumShade</li>
 <li><code>▓</code> DarkShade</li>
 <li><code>█</code> FullBlock</li>
+<li><code>╬</code> - DoubleCross</li>
+<li><code>╠</code> - DoubleVerticalRight</li>
+<li><code>╣</code> - DoubleVerticalLeft</li>
+<li><code>╦</code> - DoubleHorizontalDown</li>
+<li><code>╩</code> - DoubleHorizontalUp</li>
+<li><code>╫</code> - VerticalDoubleAndHorizontalSingle</li>
+<li><code>╒</code> - DownDoubleAndRightSingle</li>
+<li><code>╕</code> - DownDoubleAndLeftSingle</li>
+<li><code>╞</code> - VerticalDoubleAndRightSingle</li>
+<li><code>╡</code> - VerticalDoubleAndLeftSingle</li>
+<li><code>╟</code> - VerticalSingleAndRightDouble</li>
+<li><code>╢</code> - VerticalSingleAndLeftDouble</li>
+<li><code>╓</code> - DownSingleAndRightDouble</li>
+<li><code>╖</code> - DownSingleAndLeftDouble</li>
+<li><code>┏</code> - HeavyDownAndRight</li>
+<li><code>┓</code> - HeavyDownAndLeft</li>
+<li><code>┗</code> - HeavyUpAndRight</li>
+<li><code>┛</code> - HeavyUpAndLeft</li>
+<li><code>┣</code> - HeavyVerticalAndRight</li>
+<li><code>┫</code> - HeavyVerticalAndLeft</li>
+<li><code>┳</code> - HeavyHorizontalAndDown</li>
+<li><code>┻</code> - HeavyHorizontalAndUp</li>
+<li><code>╋</code> - HeavyCross</li>
+<li><code>┍</code> - LightDownAndHeavyRight</li>
+<li><code>┑</code> - LightDownAndHeavyLeft</li>
+<li><code>┎</code> - HeavyDownAndLightRight</li>
+<li><code>┒</code> - HeavyDownAndLightLeft</li>
+<li><code>┕</code> - LightUpAndHeavyRight</li>
+<li><code>┙</code> - LightUpAndHeavyLeft</li>
+<li><code>┖</code> - HeavyUpAndLightRight</li>
+<li><code>┚</code> - HeavyUpAndLightLeft</li>
+<li><code>▅</code> - LowerFiveEighthsBlock</li>
+<li><code>▆</code> - LowerThreeQuartersBlock</li>
+<li><code>▇</code> - LowerSevenEighthsBlock</li>
+<li><code>▚</code> - QuadrantUpperLeftAndLowerLeft</li>
+<li><code>▞</code> - QuadrantUpperLeftAndLowerRight</li>
+<li><code>▟</code> - QuadrantUpperRightAndLowerLeft</li>
+<li><code>▙</code> - QuadrantUpperRightAndLowerRight</li>
+<li><code>🬁</code> - SextantUpperLeft</li>
+<li><code>🬂</code> - SextantUpperMiddle</li>
+<li><code>🬃</code> - SextantUpperRight</li>
+<li><code>🬄</code> - SextantLowerLeft</li>
+<li><code>🬅</code> - SextantLowerMiddle</li>
+<li><code>🬆</code> - SextantLowerRight</li>
+<li><code>🬉</code> - SeparatedSextantUpperLeft</li>
+<li><code>🬊</code> - SeparatedSextantUpperMiddle</li>
+<li><code>🬋</code> - SeparatedSextantUpperRight</li>
+<li><code>🬌</code> - SeparatedSextantLowerLeft</li>
+<li><code>🬍</code> - SeparatedSextantLowerMiddle</li>
+<li><code>🬎</code> - SeparatedSextantLowerRight</li>
+<li><code>🬓</code> - SeparatedQuadrantUpperLeft</li>
+<li><code>🬔</code> - SeparatedQuadrantUpperRight</li>
+<li><code>🬕</code> - SeparatedQuadrantLowerLeft</li>
+<li><code>🬖</code> - SeparatedQuadrantLowerRight</li>
+<li><code>╱</code> - DiagonalRisingBar</li>
+<li><code>╲</code> - DiagonalFallingBar</li>
+<li><code>╳</code> - DiagonalCross</li>
+<li><code>■</code> - BlackSquare</li>
+<li><code>□</code> - WhiteSquare</li>
+<li><code>●</code> - BlackCircle</li>
+<li><code>○</code> - WhiteCircle</li>
+<li><code>▲</code> - BlackUpPointingTriangle</li>
+<li><code>△</code> - WhiteUpPointingTriangle</li>
+<li><code>▶</code> - BlackRightPointingTriangle</li>
+<li><code>▷</code> - WhiteRightPointingTriangle</li>
+<li><code>▼</code> - BlackDownPointingTriangle</li>
+<li><code>▽</code> - WhiteDownPointingTriangle</li>
+<li><code>◀</code> - BlackLeftPointingTriangle</li>
+<li><code>◁</code> - WhiteLeftPointingTriangle</li>
+<li><code>◆</code> - BlackDiamond</li>
+<li><code>◇</code> - WhiteDiamond</li>
 <li><code></code> PowerlineLeftSolid</li>
 <li><code></code> PowerlineRightSolid</li>
 <li><code></code> PowerlineLeftHollow</li>
@@ -440,7 +510,7 @@ will always look for regular font bounds whene</p>
 <li><code>⣻</code> BrailleDots1245678</li>
 <li><code>⣹</code> BrailleDots145678</li>
 <li><code>⣺</code> BrailleDots245678</li>
-</ul>
+</ul><p></p></div></div></details>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="ignore-selection-foreground-color">ignore-selection-foreground-color<a href="#ignore-selection-foreground-color" class="hash-link" aria-label="Bezpośredni link do ignore-selection-foreground-color" title="Bezpośredni link do ignore-selection-foreground-color">​</a></h2>
 <p>Default is <code>false</code></p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">ignore-selection-foreground-color</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="Kopiuj do schowka" title="Kopiuj" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>

@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.390fc736.css">
-<script src="/ko/assets/js/runtime~main.4b4eaddd.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.fc3675ed.js" defer="defer"></script>
 <script src="/ko/assets/js/main.46d93418.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -105,8 +105,7 @@ will always look for regular font bounds whene</p>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="fontsuse-drawable-chars">fonts.use-drawable-chars<a href="#fontsuse-drawable-chars" class="hash-link" aria-label="fonts.use-drawable-chars에 대한 직접 링크" title="fonts.use-drawable-chars에 대한 직접 링크">​</a></h2>
 <p>When set <code>true</code>, Rio terminal will use built-in draw system for specific set of characters (including box drawing characters <code>(Unicode points U+2500 - U+259F)</code>, legacy computing symbols <code>(U+1FB00 - U+1FB3B)</code>, and powerline symbols <code>(U+E0B0 - U+E0BF)</code>).</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">fonts.use-drawable-chars</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
-<p>The list of characters:</p>
-<ul>
+<details class="details_lb9f alert alert--info details_b_Ee" data-collapsed="true"><summary>The list of characters</summary><div><div class="collapsibleContent_i85q"><p></p><ul>
 <li><code>─</code> Horizontal</li>
 <li><code>═</code> DoubleHorizontal</li>
 <li><code>│</code> Vertical</li>
@@ -114,7 +113,7 @@ will always look for regular font bounds whene</p>
 <li><code>━</code> HeavyHorizontal</li>
 <li><code>┃</code> HeavyVertical</li>
 <li><code>└</code> TopRight</li>
-<li><code>┘</code> TopLeft</li>
+<li><code>  ┘</code> TopLeft</li>
 <li><code>┌</code> BottomRight</li>
 <li><code>┐</code> BottomLeft</li>
 <li><code>┼</code> Cross</li>
@@ -169,6 +168,77 @@ will always look for regular font bounds whene</p>
 <li><code>▒</code> MediumShade</li>
 <li><code>▓</code> DarkShade</li>
 <li><code>█</code> FullBlock</li>
+<li><code>╬</code> - DoubleCross</li>
+<li><code>╠</code> - DoubleVerticalRight</li>
+<li><code>╣</code> - DoubleVerticalLeft</li>
+<li><code>╦</code> - DoubleHorizontalDown</li>
+<li><code>╩</code> - DoubleHorizontalUp</li>
+<li><code>╫</code> - VerticalDoubleAndHorizontalSingle</li>
+<li><code>╒</code> - DownDoubleAndRightSingle</li>
+<li><code>╕</code> - DownDoubleAndLeftSingle</li>
+<li><code>╞</code> - VerticalDoubleAndRightSingle</li>
+<li><code>╡</code> - VerticalDoubleAndLeftSingle</li>
+<li><code>╟</code> - VerticalSingleAndRightDouble</li>
+<li><code>╢</code> - VerticalSingleAndLeftDouble</li>
+<li><code>╓</code> - DownSingleAndRightDouble</li>
+<li><code>╖</code> - DownSingleAndLeftDouble</li>
+<li><code>┏</code> - HeavyDownAndRight</li>
+<li><code>┓</code> - HeavyDownAndLeft</li>
+<li><code>┗</code> - HeavyUpAndRight</li>
+<li><code>┛</code> - HeavyUpAndLeft</li>
+<li><code>┣</code> - HeavyVerticalAndRight</li>
+<li><code>┫</code> - HeavyVerticalAndLeft</li>
+<li><code>┳</code> - HeavyHorizontalAndDown</li>
+<li><code>┻</code> - HeavyHorizontalAndUp</li>
+<li><code>╋</code> - HeavyCross</li>
+<li><code>┍</code> - LightDownAndHeavyRight</li>
+<li><code>┑</code> - LightDownAndHeavyLeft</li>
+<li><code>┎</code> - HeavyDownAndLightRight</li>
+<li><code>┒</code> - HeavyDownAndLightLeft</li>
+<li><code>┕</code> - LightUpAndHeavyRight</li>
+<li><code>┙</code> - LightUpAndHeavyLeft</li>
+<li><code>┖</code> - HeavyUpAndLightRight</li>
+<li><code>┚</code> - HeavyUpAndLightLeft</li>
+<li><code>▅</code> - LowerFiveEighthsBlock</li>
+<li><code>▆</code> - LowerThreeQuartersBlock</li>
+<li><code>▇</code> - LowerSevenEighthsBlock</li>
+<li><code>▚</code> - QuadrantUpperLeftAndLowerLeft</li>
+<li><code>▞</code> - QuadrantUpperLeftAndLowerRight</li>
+<li><code>▟</code> - QuadrantUpperRightAndLowerLeft</li>
+<li><code>▙</code> - QuadrantUpperRightAndLowerRight</li>
+<li><code>🬁</code> - SextantUpperLeft</li>
+<li><code>🬂</code> - SextantUpperMiddle</li>
+<li><code>🬃</code> - SextantUpperRight</li>
+<li><code>🬄</code> - SextantLowerLeft</li>
+<li><code>🬅</code> - SextantLowerMiddle</li>
+<li><code>🬆</code> - SextantLowerRight</li>
+<li><code>🬉</code> - SeparatedSextantUpperLeft</li>
+<li><code>🬊</code> - SeparatedSextantUpperMiddle</li>
+<li><code>🬋</code> - SeparatedSextantUpperRight</li>
+<li><code>🬌</code> - SeparatedSextantLowerLeft</li>
+<li><code>🬍</code> - SeparatedSextantLowerMiddle</li>
+<li><code>🬎</code> - SeparatedSextantLowerRight</li>
+<li><code>🬓</code> - SeparatedQuadrantUpperLeft</li>
+<li><code>🬔</code> - SeparatedQuadrantUpperRight</li>
+<li><code>🬕</code> - SeparatedQuadrantLowerLeft</li>
+<li><code>🬖</code> - SeparatedQuadrantLowerRight</li>
+<li><code>╱</code> - DiagonalRisingBar</li>
+<li><code>╲</code> - DiagonalFallingBar</li>
+<li><code>╳</code> - DiagonalCross</li>
+<li><code>■</code> - BlackSquare</li>
+<li><code>□</code> - WhiteSquare</li>
+<li><code>●</code> - BlackCircle</li>
+<li><code>○</code> - WhiteCircle</li>
+<li><code>▲</code> - BlackUpPointingTriangle</li>
+<li><code>△</code> - WhiteUpPointingTriangle</li>
+<li><code>▶</code> - BlackRightPointingTriangle</li>
+<li><code>▷</code> - WhiteRightPointingTriangle</li>
+<li><code>▼</code> - BlackDownPointingTriangle</li>
+<li><code>▽</code> - WhiteDownPointingTriangle</li>
+<li><code>◀</code> - BlackLeftPointingTriangle</li>
+<li><code>◁</code> - WhiteLeftPointingTriangle</li>
+<li><code>◆</code> - BlackDiamond</li>
+<li><code>◇</code> - WhiteDiamond</li>
 <li><code></code> PowerlineLeftSolid</li>
 <li><code></code> PowerlineRightSolid</li>
 <li><code></code> PowerlineLeftHollow</li>
@@ -364,7 +434,7 @@ will always look for regular font bounds whene</p>
 <li><code>⢰</code> BrailleDots568</li>
 <li><code>⢱</code> BrailleDots1568</li>
 <li><code>⢲</code> BrailleDots2568</li>
-<li><code>⢳</code> BrailleDots12568</li>
+<li><code> ⢳</code> BrailleDots12568</li>
 <li><code>⢴</code> BrailleDots3568</li>
 <li><code>⢵</code> BrailleDots13568</li>
 <li><code>⢶</code> BrailleDots23568</li>
@@ -440,7 +510,7 @@ will always look for regular font bounds whene</p>
 <li><code>⣻</code> BrailleDots1245678</li>
 <li><code>⣹</code> BrailleDots145678</li>
 <li><code>⣺</code> BrailleDots245678</li>
-</ul>
+</ul><p></p></div></div></details>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="ignore-selection-foreground-color">ignore-selection-foreground-color<a href="#ignore-selection-foreground-color" class="hash-link" aria-label="ignore-selection-foreground-color에 대한 직접 링크" title="ignore-selection-foreground-color에 대한 직접 링크">​</a></h2>
 <p>Default is <code>false</code></p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">ignore-selection-foreground-color</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">false</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
@@ -484,7 +554,7 @@ will always look for regular font bounds whene</p>
 <img alt="Demo TopTab" src="/rio/assets/features/demo-top-tab.png" width="70%">
 <p>Usage:</p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">colors</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">tabs</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;#000000&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">navigation</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">mode</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;TopTab&quot;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="plain">Plain<a href="#plain" class="hash-link" aria-label="Plain에 대한 직접 링크" title="Plain에 대한 직접 링크">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="plain">Plain<a href="#plain" class="hash-link" aria-label="Plain에 대한 직접 링크" title="Plain에 대한 직접   링크">​</a></h4>
 <p>Plain navigation mode will simply turn off any tab key binding.</p>
 <p>This mode is perfect if you use Rio terminal with tmux or zellij.</p>
 <p>Usage:</p>
@@ -622,7 +692,7 @@ will always look for regular font bounds whene</p>
 <table><thead><tr><th>Platform</th><th>Path</th></tr></thead><tbody><tr><td>Mac</td><td><code>/Users/YOUR_USERNAME/.config/rio/themes</code></td></tr><tr><td>Linux</td><td><code>/home/YOUR_USERNAME/.config/rio/themes</code></td></tr><tr><td>Windows</td><td><code>C:\Users\YOUR_USERNAME\AppData\Local\rio\themes</code></td></tr></tbody></table>
 <p>In the example below, we will setup the Dracula theme for Rio. The theme can be downloaded from <a href="https://github.com/dracula/rio-terminal" target="_blank" rel="noopener noreferrer">github.com/dracula/rio-terminal</a>.</p>
 <p>After downloading the <code>dracula.toml</code> file, move it inside the folder <code>themes</code> in the configuration folder.</p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)">#  ~/.config/rio/config.toml</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;dracula&quot;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token comment" style="color:rgb(98, 114, 164)">#  ~/.config/rio/config.toml</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;dracula&quot;</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복 사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p>It should look like this:</p>
 <p><img decoding="async" loading="lazy" alt="Dracula theme example" src="/ko/assets/images/dracula-nvim-a1d1457e2aa3780989b7e3378e473316.png" width="1824" height="1424" class="img_ev3q"></p>
 <p>Another option would be to install the <a href="https://github.com/raphamorim/lucario/#rio-terminal" target="_blank" rel="noopener noreferrer">Lucario color scheme for Rio terminal</a>, by moving the downloaded file to <code>~/.config/rio/themes/lucario.toml</code> and setting the <code>theme</code> property:</p>
