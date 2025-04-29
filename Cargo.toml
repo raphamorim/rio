@@ -33,7 +33,7 @@ rio-backend = { path = "rio-backend", version = "0.2.13" }
 rio-window = { path = "rio-window", version = "0.2.13", default-features = false }
 
 # Own dependencies
-copa = { path = "copa", default-features = false, version = "0.2.13" }
+copa = { path = "copa", default-features = true, version = "0.2.13" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.2.13" }
 corcovado = { path = "corcovado", version = "0.2.13" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
