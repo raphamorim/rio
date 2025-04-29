@@ -846,7 +846,7 @@ impl BatchManager {
             }
             DrawableChar::DoubleHorizontal => {
                 // Calculate spacing between the two horizontal lines
-                let gap = stroke * 1.5; // Adjust this value as needed for desired appearance
+                let gap = stroke * 1.5;
 
                 // Top horizontal line
                 let top_rect = Rect {
@@ -888,8 +888,7 @@ impl BatchManager {
                 self.add_rect(&rect, depth, &color);
             }
             DrawableChar::DoubleVertical => {
-                // Calculate spacing between the two vertical lines
-                let gap = stroke * 1.5; // Adjust this value as needed for desired appearance
+                let gap = stroke * 1.5;
 
                 // Left vertical line
                 let left_rect = Rect {
@@ -922,7 +921,6 @@ impl BatchManager {
                 self.add_rect(&rect, depth, &color);
             }
             DrawableChar::DoubleCross => {
-                // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
@@ -994,7 +992,6 @@ impl BatchManager {
                 self.add_rect(&right_bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleVerticalRight => {
-                // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
@@ -1042,7 +1039,6 @@ impl BatchManager {
                 self.add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleVerticalLeft => {
-                // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
                 // Right vertical line - split into top and bottom portions
                 let right_top_vertical_rect = Rect {
@@ -1085,7 +1081,6 @@ impl BatchManager {
                 self.add_rect(&bottom_horizontal_rect, depth, &color);
             }
             DrawableChar::DoubleHorizontalDown => {
-                // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
 
                 // Horizontal double lines
@@ -1132,18 +1127,11 @@ impl BatchManager {
                 self.add_rect(&left_vertical_rect, depth, &color);
                 self.add_rect(&right_vertical_rect, depth, &color);
             }
+            // ╦ ╩
             DrawableChar::DoubleHorizontalUp => {
-                // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
 
                 // Horizontal double lines
-                let top_horizontal_rect = Rect {
-                    x,
-                    y: center_y - gap,
-                    width: line_width,
-                    height: stroke,
-                };
-
                 let bottom_horizontal_rect = Rect {
                     x,
                     y: center_y + gap - stroke,
@@ -1151,29 +1139,43 @@ impl BatchManager {
                     height: stroke,
                 };
 
-                // Vertical double lines going up from center
+                let left_top_horizontal_rect = Rect {
+                    x,
+                    y: center_y - gap,
+                    width: (line_width / 2.0) - (gap - stroke),
+                    height: stroke,
+                };
+
+                let right_top_horizontal_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y - gap,
+                    width: (line_width / 2.0) - (gap - stroke),
+                    height: stroke,
+                };
+
+                // Vertical double lines going down from center
                 let left_vertical_rect = Rect {
                     x: center_x - gap,
                     y,
                     width: stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) - gap, // Bottom half
                 };
 
                 let right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
                     y,
                     width: stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) - gap, // Bottom half
                 };
 
                 // Draw all rectangles
-                self.add_rect(&top_horizontal_rect, depth, &color);
                 self.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.add_rect(&left_top_horizontal_rect, depth, &color);
+                self.add_rect(&right_top_horizontal_rect, depth, &color);
                 self.add_rect(&left_vertical_rect, depth, &color);
                 self.add_rect(&right_vertical_rect, depth, &color);
             }
             DrawableChar::VerticalDoubleAndHorizontalSingle => {
-                // Calculate spacing between the double vertical lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
@@ -1205,7 +1207,6 @@ impl BatchManager {
                 self.add_rect(&horiz_rect, depth, &color);
             }
             DrawableChar::DownDoubleAndRightSingle => {
-                // Calculate spacing between the double vertical lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines going down from center
@@ -1237,7 +1238,6 @@ impl BatchManager {
                 self.add_rect(&horiz_rect, depth, &color);
             }
             DrawableChar::DownDoubleAndLeftSingle => {
-                // Calculate spacing between the double vertical lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines going down from center
@@ -1269,7 +1269,6 @@ impl BatchManager {
                 self.add_rect(&horiz_rect, depth, &color);
             }
             DrawableChar::VerticalDoubleAndRightSingle => {
-                // Calculate spacing between the double vertical lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
@@ -1301,7 +1300,6 @@ impl BatchManager {
                 self.add_rect(&horiz_rect, depth, &color);
             }
             DrawableChar::VerticalDoubleAndLeftSingle => {
-                // Calculate spacing between the double vertical lines
                 let gap = stroke * 1.5;
 
                 // Vertical double lines
