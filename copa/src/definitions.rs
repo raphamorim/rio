@@ -16,7 +16,9 @@ pub enum State {
     Escape,
     EscapeIntermediate,
     OscString,
-    SosPmApcString,
+    SosString,
+    ApcString,
+    PmString,
     Anywhere,
     #[default]
     Ground,
