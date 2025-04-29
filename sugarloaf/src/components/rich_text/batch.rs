@@ -1212,23 +1212,23 @@ impl BatchManager {
                 // Vertical double lines going down from center
                 let left_vertical_rect = Rect {
                     x: center_x - gap,
-                    y: center_y,
+                    y: center_y + (gap - stroke),
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - (gap - stroke), // Bottom half
                 };
 
                 let right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
-                    y: center_y,
+                    y: center_y + (gap - stroke),
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - (gap - stroke), // Bottom half
                 };
 
                 // Horizontal single line going right from center
                 let horiz_rect = Rect {
-                    x: center_x,
+                    x: center_x - gap,
                     y: center_y - (stroke / 2.0),
-                    width: line_width / 2.0, // Right half
+                    width: (line_width / 2.0) + gap, // Right half
                     height: stroke,
                 };
 
@@ -1243,23 +1243,23 @@ impl BatchManager {
                 // Vertical double lines going down from center
                 let left_vertical_rect = Rect {
                     x: center_x - gap,
-                    y: center_y,
+                    y: center_y + (gap - stroke),
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - (gap - stroke), // Bottom half
                 };
 
                 let right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
-                    y: center_y,
+                    y: center_y + (gap - stroke),
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - (gap - stroke), // Bottom half
                 };
 
                 // Horizontal single line going left from center
                 let horiz_rect = Rect {
                     x,
                     y: center_y - (stroke / 2.0),
-                    width: line_width / 2.0, // Left half
+                    width: (line_width / 2.0) + gap, // Left half
                     height: stroke,
                 };
 
