@@ -1096,31 +1096,39 @@ impl BatchManager {
                     height: stroke,
                 };
 
-                let bottom_horizontal_rect = Rect {
+                let left_bottom_horizontal_rect = Rect {
                     x,
                     y: center_y + gap - stroke,
-                    width: line_width,
+                    width: (line_width / 2.0) - (gap - stroke),
+                    height: stroke,
+                };
+
+                let right_bottom_horizontal_rect = Rect {
+                    x: center_x + gap - stroke,
+                    y: center_y + gap - stroke,
+                    width: (line_width / 2.0) - (gap - stroke),
                     height: stroke,
                 };
 
                 // Vertical double lines going down from center
                 let left_vertical_rect = Rect {
                     x: center_x - gap,
-                    y: center_y,
+                    y: center_y + gap,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - gap, // Bottom half
                 };
 
                 let right_vertical_rect = Rect {
                     x: center_x + gap - stroke,
-                    y: center_y,
+                    y: center_y + gap,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) - gap, // Bottom half
                 };
 
                 // Draw all rectangles
                 self.add_rect(&top_horizontal_rect, depth, &color);
-                self.add_rect(&bottom_horizontal_rect, depth, &color);
+                self.add_rect(&left_bottom_horizontal_rect, depth, &color);
+                self.add_rect(&right_bottom_horizontal_rect, depth, &color);
                 self.add_rect(&left_vertical_rect, depth, &color);
                 self.add_rect(&right_vertical_rect, depth, &color);
             }
