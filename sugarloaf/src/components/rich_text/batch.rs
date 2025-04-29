@@ -1044,40 +1044,43 @@ impl BatchManager {
             DrawableChar::DoubleVerticalLeft => {
                 // Calculate spacing between the double lines
                 let gap = stroke * 1.5;
-
-                // Vertical double lines
-                let left_vertical_rect = Rect {
+                // Right vertical line - split into top and bottom portions
+                let right_top_vertical_rect = Rect {
                     x: center_x - gap,
                     y,
                     width: stroke,
-                    height: line_height,
+                    height: (line_height / 2.) - (gap - stroke),
                 };
-
-                let right_vertical_rect = Rect {
+                let right_bottom_vertical_rect = Rect {
+                    x: center_x - gap,
+                    y: center_y + gap - stroke,
+                    width: stroke,
+                    height: (line_height / 2.) - (gap - stroke),
+                };
+                // Left vertical line - full height
+                let left_vertical_rect = Rect {
                     x: center_x + gap - stroke,
                     y,
                     width: stroke,
                     height: line_height,
                 };
-
-                // Horizontal double lines going left from center
+                // Horizontal lines going left from center
                 let top_horizontal_rect = Rect {
                     x,
                     y: center_y - gap,
-                    width: line_width / 2.0, // Left half
+                    width: (line_width / 2.0) - gap, // Left half
                     height: stroke,
                 };
-
                 let bottom_horizontal_rect = Rect {
                     x,
                     y: center_y + gap - stroke,
-                    width: line_width / 2.0, // Left half
+                    width: (line_width / 2.0) - gap, // Left half
                     height: stroke,
                 };
-
                 // Draw all rectangles
                 self.add_rect(&left_vertical_rect, depth, &color);
-                self.add_rect(&right_vertical_rect, depth, &color);
+                self.add_rect(&right_top_vertical_rect, depth, &color);
+                self.add_rect(&right_bottom_vertical_rect, depth, &color);
                 self.add_rect(&top_horizontal_rect, depth, &color);
                 self.add_rect(&bottom_horizontal_rect, depth, &color);
             }
