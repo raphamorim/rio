@@ -85,7 +85,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     /// Call with a const-generic param on `Parser`, like:
     ///
     /// ```rust
-    /// let mut p = vte::Parser::<64>::new_with_size();
+    /// let mut p = copa::Parser::<64>::new_with_size();
     /// ```
     #[cfg(not(feature = "std"))]
     pub fn new_with_size() -> Parser<OSC_RAW_BUF_SIZE> {
