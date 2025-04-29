@@ -10,12 +10,12 @@ name = "copa"
 edition = "2021"
 
 [features]
-default = []
-no_std = ["arrayvec"]
+default = ["std"]
+std = ["memchr/std"]
 serde = ["dep:serde"]
 
 [dependencies]
-arrayvec = { version = "0.7.2", default-features = false, optional = true }
-memchr = "2.7.4"
+arrayvec = { version = "0.7.2", default-features = false }
+memchr = { version = "2.7.4", default-features = false }
 serde = { version = "1.0.160", features = ["derive"], optional = true }
 rio-proc-macros = { workspace = true }

@@ -30,7 +30,8 @@ language: 'en'
 - Rewrite the way Rio deals with line diff and updates computation.
 - Support for setting a custom config directory using `$RIO_CONFIG_HOME`
 - Support for additional font dirs using `fonts.additional-dirs`
-- Rio's MSRV is 1.86.0.
+- Rio's MSRV is 1.85.0.
+- Add support for custom parsing of APC, SOS and PM sequences.
 
 ## 0.2.12
 
