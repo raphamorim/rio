@@ -187,22 +187,6 @@ pub enum DrawableChar {
     DiagonalFallingBar, // ╲
     DiagonalCross,      // ╳
 
-    // Additional character symbols
-    BlackSquare,                // ■
-    WhiteSquare,                // □
-    BlackCircle,                // ●
-    WhiteCircle,                // ○
-    BlackUpPointingTriangle,    // ▲
-    WhiteUpPointingTriangle,    // △
-    BlackRightPointingTriangle, // ▶
-    WhiteRightPointingTriangle, // ▷
-    BlackDownPointingTriangle,  // ▼
-    WhiteDownPointingTriangle,  // ▽
-    BlackLeftPointingTriangle,  // ◀
-    WhiteLeftPointingTriangle,  // ◁
-    BlackDiamond,               // ◆
-    WhiteDiamond,               // ◇
-
     Sextant(u8), // Represents any of the 64 possible sextant patterns
     Octant(u8),  // Represents any of the 256 possible octant patterns
 
@@ -624,21 +608,6 @@ impl TryFrom<char> for DrawableChar {
             '╱' => DrawableChar::DiagonalRisingBar,
             '╲' => DrawableChar::DiagonalFallingBar,
             '╳' => DrawableChar::DiagonalCross,
-
-            '■' => DrawableChar::BlackSquare,
-            '□' => DrawableChar::WhiteSquare,
-            '●' => DrawableChar::BlackCircle,
-            '○' => DrawableChar::WhiteCircle,
-            '▲' => DrawableChar::BlackUpPointingTriangle,
-            '△' => DrawableChar::WhiteUpPointingTriangle,
-            '▶' => DrawableChar::BlackRightPointingTriangle,
-            '▷' => DrawableChar::WhiteRightPointingTriangle,
-            '▼' => DrawableChar::BlackDownPointingTriangle,
-            '▽' => DrawableChar::WhiteDownPointingTriangle,
-            '◀' => DrawableChar::BlackLeftPointingTriangle,
-            '◁' => DrawableChar::WhiteLeftPointingTriangle,
-            '◆' => DrawableChar::BlackDiamond,
-            '◇' => DrawableChar::WhiteDiamond,
 
             // Quick test:
             // echo "\ue0b0 \ue0b1 \ue0b2 \ue0b3 \ue0b4 \ue0b5 \ue0b6 \ue0b7"

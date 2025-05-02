@@ -359,7 +359,7 @@ impl Renderer {
                     // Sextants
                     | '\u{1FB00}'..='\u{1FB3F}'
                     // Octants
-                    | '\u{1CD00}'..='\u{1CDE5}'  => {
+                    | '\u{1CD00}'..='\u{1CDE5}' => {
                         if let Ok(character) = DrawableChar::try_from(square_content) {
                             style.drawable_char = Some(character);
                             if !content.is_empty() {
