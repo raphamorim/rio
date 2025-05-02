@@ -128,14 +128,14 @@ pub enum DrawableChar {
     VerticalDoubleAndHorizontalSingle, // ╫
 
     // Additional double/single hybrid box drawing
-    DownDoubleAndRightSingle,     // ╒
-    DownDoubleAndLeftSingle,      // ╕
-    VerticalDoubleAndRightSingle, // ╞
-    VerticalDoubleAndLeftSingle,  // ╡
-    VerticalSingleAndRightDouble, // ╟
-    VerticalSingleAndLeftDouble,  // ╢
-    DownSingleAndRightDouble,     // ╓
-    DownSingleAndLeftDouble,      // ╖
+    DownDoubleAndRightSingle,     // ╓
+    DownDoubleAndLeftSingle,      // ╖
+    VerticalDoubleAndRightSingle, // ╟
+    VerticalDoubleAndLeftSingle,  // ╢
+    VerticalSingleAndRightDouble, // ╞
+    VerticalSingleAndLeftDouble,  // ╡
+    DownSingleAndRightDouble,     // ╒
+    DownSingleAndLeftDouble,      // ╕
 
     // Heavy box drawing
     HeavyDownAndRight,      // ┏
@@ -585,14 +585,14 @@ impl TryFrom<char> for DrawableChar {
             '╩' => DrawableChar::DoubleHorizontalUp,
             '╫' => DrawableChar::VerticalDoubleAndHorizontalSingle,
 
-            '╒' => DrawableChar::DownDoubleAndRightSingle,
-            '╕' => DrawableChar::DownDoubleAndLeftSingle,
-            '╞' => DrawableChar::VerticalDoubleAndRightSingle,
-            '╡' => DrawableChar::VerticalDoubleAndLeftSingle,
-            '╟' => DrawableChar::VerticalSingleAndRightDouble,
-            '╢' => DrawableChar::VerticalSingleAndLeftDouble,
-            '╓' => DrawableChar::DownSingleAndRightDouble,
-            '╖' => DrawableChar::DownSingleAndLeftDouble,
+            '╓' => DrawableChar::DownDoubleAndRightSingle,
+            '╖' => DrawableChar::DownDoubleAndLeftSingle,
+            '╟' => DrawableChar::VerticalDoubleAndRightSingle,
+            '╢' => DrawableChar::VerticalDoubleAndLeftSingle,
+            '╞' => DrawableChar::VerticalSingleAndRightDouble,
+            '╡' => DrawableChar::VerticalSingleAndLeftDouble,
+            '╒' => DrawableChar::DownSingleAndRightDouble,
+            '╕' => DrawableChar::DownSingleAndLeftDouble,
 
             '┏' => DrawableChar::HeavyDownAndRight,
             '┓' => DrawableChar::HeavyDownAndLeft,

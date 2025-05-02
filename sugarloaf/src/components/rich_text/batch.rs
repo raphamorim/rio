@@ -1288,9 +1288,9 @@ impl BatchManager {
 
                 // Horizontal single line going right from center
                 let horiz_rect = Rect {
-                    x: center_x,
+                    x: center_x + gap,
                     y: center_y - (stroke / 2.0),
-                    width: line_width / 2.0, // Right half
+                    width: (line_width / 2.0) - gap, // Right half
                     height: stroke,
                 };
 
@@ -1321,7 +1321,7 @@ impl BatchManager {
                 let horiz_rect = Rect {
                     x,
                     y: center_y - (stroke / 2.0),
-                    width: line_width / 2.0, // Left half
+                    width: (line_width / 2.0) - gap, // Left half
                     height: stroke,
                 };
 
@@ -1401,9 +1401,9 @@ impl BatchManager {
                 // Vertical single line going down from center
                 let vertical_rect = Rect {
                     x: center_x - (stroke / 2.0),
-                    y: center_y,
+                    y: center_y - gap,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + gap, // Bottom half
                 };
 
                 // Horizontal double lines going right from center
@@ -1433,9 +1433,9 @@ impl BatchManager {
                 // Vertical single line going down from center
                 let vertical_rect = Rect {
                     x: center_x - (stroke / 2.0),
-                    y: center_y,
+                    y: center_y - gap,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + gap, // Bottom half
                 };
 
                 // Horizontal double lines going left from center
@@ -1464,9 +1464,9 @@ impl BatchManager {
                 // Heavy vertical line going down from center
                 let vertical_rect = Rect {
                     x: center_x - heavy_stroke / 2.0,
-                    y: center_y,
+                    y: center_y - heavy_stroke / 2.0,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + heavy_stroke / 2.0, // Bottom half
                 };
 
                 // Heavy horizontal line going right from center
@@ -1487,9 +1487,9 @@ impl BatchManager {
                 // Heavy vertical line going down from center
                 let vertical_rect = Rect {
                     x: center_x - heavy_stroke / 2.0,
-                    y: center_y,
+                    y: center_y - heavy_stroke / 2.0,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + heavy_stroke / 2.0, // Bottom half
                 };
 
                 // Heavy horizontal line going left from center
@@ -1512,7 +1512,7 @@ impl BatchManager {
                     x: center_x - heavy_stroke / 2.0,
                     y,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + heavy_stroke / 2.0, // Top half
                 };
 
                 // Heavy horizontal line going right from center
@@ -1535,7 +1535,7 @@ impl BatchManager {
                     x: center_x - heavy_stroke / 2.0,
                     y,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + heavy_stroke / 2.0, // Top half
                 };
 
                 // Heavy horizontal line going left from center
