@@ -1885,8 +1885,7 @@ impl BatchManager {
                 };
                 self.add_rect(&block_rect, depth, &color);
             }
-            DrawableChar::QuadrantUpperLeftAndLowerLeft => {
-                // QuadrantUpperLeftAndLowerLeft (▚) - fills left half in two quadrants
+            DrawableChar::QuadrantUpperRightAndLowerLeft => {
                 let left_rect = Rect {
                     x,
                     y,
@@ -1895,8 +1894,7 @@ impl BatchManager {
                 };
                 self.add_rect(&left_rect, depth, &color);
             }
-            DrawableChar::QuadrantUpperLeftAndLowerRight => {
-                // QuadrantUpperLeftAndLowerRight (▞) - fills upper-left and lower-right quadrants
+            DrawableChar::QuadrantUpperLeftAndLowerLeft => {
                 let upper_left_rect = Rect {
                     x,
                     y,
@@ -1922,8 +1920,7 @@ impl BatchManager {
                 };
                 self.add_rect(&upper_rect, depth, &color);
             }
-            DrawableChar::QuadrantUpperRightAndLowerLeft => {
-                // QuadrantUpperRightAndLowerLeft (▟) - fills upper-right and lower-left quadrants
+            DrawableChar::QuadrantUpperLeftAndLowerRight => {
                 let upper_right_rect = Rect {
                     x: center_x,
                     y,
