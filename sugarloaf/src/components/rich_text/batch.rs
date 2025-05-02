@@ -1669,9 +1669,9 @@ impl BatchManager {
                 // Light vertical line going down from center
                 let vertical_rect = Rect {
                     x: center_x - (stroke / 2.0),
-                    y: center_y,
+                    y: center_y - stroke,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + stroke, // Bottom half
                 };
 
                 // Heavy horizontal line going right from center
@@ -1691,9 +1691,9 @@ impl BatchManager {
                 // Light vertical line going down from center
                 let vertical_rect = Rect {
                     x: center_x - (stroke / 2.0),
-                    y: center_y,
+                    y: center_y - stroke,
                     width: stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + stroke, // Bottom half
                 };
 
                 // Heavy horizontal line going left from center
@@ -1714,9 +1714,9 @@ impl BatchManager {
                 let heavy_stroke = stroke * 2.0;
                 let vertical_rect = Rect {
                     x: center_x - heavy_stroke / 2.0,
-                    y: center_y,
+                    y: center_y - (stroke / 2.0),
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + (stroke / 2.0), // Bottom half
                 };
 
                 // Light horizontal line going right from center
@@ -1736,9 +1736,9 @@ impl BatchManager {
                 let heavy_stroke = stroke * 2.0;
                 let vertical_rect = Rect {
                     x: center_x - heavy_stroke / 2.0,
-                    y: center_y,
+                    y: center_y - (stroke / 2.0),
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Bottom half
+                    height: (line_height / 2.0) + (stroke / 2.0), // Bottom half
                 };
 
                 // Light horizontal line going left from center
@@ -1759,7 +1759,7 @@ impl BatchManager {
                     x: center_x - (stroke / 2.0),
                     y,
                     width: stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + stroke, // Top half
                 };
 
                 // Heavy horizontal line going right from center
@@ -1781,7 +1781,7 @@ impl BatchManager {
                     x: center_x - (stroke / 2.0),
                     y,
                     width: stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + stroke, // Top half
                 };
 
                 // Heavy horizontal line going left from center
@@ -1804,7 +1804,7 @@ impl BatchManager {
                     x: center_x - heavy_stroke / 2.0,
                     y,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + (stroke / 2.0), // Top half
                 };
 
                 // Light horizontal line going right from center
@@ -1826,7 +1826,7 @@ impl BatchManager {
                     x: center_x - heavy_stroke / 2.0,
                     y,
                     width: heavy_stroke,
-                    height: line_height / 2.0, // Top half
+                    height: (line_height / 2.0) + (stroke / 2.0), // Top half
                 };
 
                 // Light horizontal line going left from center
