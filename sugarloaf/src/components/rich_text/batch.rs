@@ -1886,13 +1886,38 @@ impl BatchManager {
                 self.add_rect(&block_rect, depth, &color);
             }
             DrawableChar::QuadrantUpperRightAndLowerLeft => {
-                let left_rect = Rect {
+                // QuadrantUpperRightAndLowerLeft (▟) - fills upper right and lower left quadrants
+                let upper_right_rect = Rect {
+                    x: center_x,
+                    y,
+                    width: line_width / 2.0,
+                    height: line_height,
+                };
+                let lower_left_rect = Rect {
+                    x,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&upper_right_rect, depth, &color);
+                self.add_rect(&lower_left_rect, depth, &color);
+            }
+            DrawableChar::QuadrantUpperRightAndLowerRight => {
+                // QuadrantUpperRightAndLowerRight (▙) - fills upper right and lower right quadrants
+                let upper_left_rect = Rect {
                     x,
                     y,
                     width: line_width / 2.0,
                     height: line_height,
                 };
-                self.add_rect(&left_rect, depth, &color);
+                let lower_right_rect = Rect {
+                    x: center_x,
+                    y: center_y,
+                    width: line_width / 2.0,
+                    height: line_height / 2.0,
+                };
+                self.add_rect(&upper_left_rect, depth, &color);
+                self.add_rect(&lower_right_rect, depth, &color);
             }
             DrawableChar::QuadrantUpperLeftAndLowerLeft => {
                 let upper_left_rect = Rect {
@@ -1935,16 +1960,6 @@ impl BatchManager {
                 };
                 self.add_rect(&upper_right_rect, depth, &color);
                 self.add_rect(&lower_left_rect, depth, &color);
-            }
-            DrawableChar::QuadrantUpperRightAndLowerRight => {
-                // QuadrantUpperRightAndLowerRight (▙) - fills right half in two quadrants
-                let right_rect = Rect {
-                    x: center_x,
-                    y,
-                    width: line_width / 2.0,
-                    height: line_height,
-                };
-                self.add_rect(&right_rect, depth, &color);
             }
             DrawableChar::DiagonalRisingBar => {
                 // DiagonalRisingBar (╱) - diagonal line from bottom-left to top-right
