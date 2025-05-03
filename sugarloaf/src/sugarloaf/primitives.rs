@@ -54,6 +54,28 @@ pub enum CornerType {
     BottomRight,
 }
 
+pub fn drawable_character(character: char) -> Option<DrawableChar> {
+    match character {
+        '\u{2500}'..='\u{259f}'
+        | '\u{1fb00}'..='\u{1fb3b}'
+        // Powerlines
+        | '\u{e0b0}'..='\u{e0bf}'
+        // Brailles
+        | '\u{2800}'..='\u{28FF}'
+        // Sextants
+        | '\u{1FB00}'..='\u{1FB3F}'
+        // Octants
+        | '\u{1CD00}'..='\u{1CDE5}' => {
+            if let Ok(character) = DrawableChar::try_from(character) {
+                return Some(character)
+            }
+        }
+        _ => {},
+    }
+
+    None
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DrawableChar {
     // Original box-drawing characters

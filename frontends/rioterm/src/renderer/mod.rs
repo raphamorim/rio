@@ -20,8 +20,8 @@ use rio_backend::config::Config;
 use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    Content, DrawableChar, FragmentStyle, FragmentStyleDecoration, Graphic, Stretch,
-    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
+    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -349,43 +349,22 @@ impl Renderer {
             // TODO: In the future it should use same logic to render everything
             // at once.
             if self.use_drawable_chars {
-                match square_content {
-                    '\u{2500}'..='\u{259f}'
-                    | '\u{1fb00}'..='\u{1fb3b}'
-                    // Powerlines
-                    | '\u{e0b0}'..='\u{e0bf}'
-                    // Brailles
-                    | '\u{2800}'..='\u{28FF}'
-                    // Sextants
-                    | '\u{1FB00}'..='\u{1FB3F}'
-                    // Octants
-                    | '\u{1CD00}'..='\u{1CDE5}' => {
-                        if let Ok(character) = DrawableChar::try_from(square_content) {
-                            style.drawable_char = Some(character);
-                            if !content.is_empty() {
-                                if let Some(line) = line_opt {
-                                    builder.add_text_on_line(line, &content, last_style);
-                                } else {
-                                    builder.add_text(&content, last_style);
-                                }
-                                content.clear();
-                            }
-
-                            last_style = style;
-
-                            // Ignore font shaping
-                            content.push(' ');
+                if let Some(character) = drawable_character(square_content) {
+                    style.drawable_char = Some(character);
+                    if !content.is_empty() {
+                        if let Some(line) = line_opt {
+                            builder.add_text_on_line(line, &content, last_style);
                         } else {
-                            // Used solely for debugging purposes:
-                            // panic!("Could not find {:?}", square_content);
-                            tracing::warn!(
-                                "use_drawable_chars: Could not find {:?} on sugarloaf",
-                                square_content
-                            );
+                            builder.add_text(&content, last_style);
                         }
+                        content.clear();
                     }
-                    _ => {}
-                };
+
+                    last_style = style;
+
+                    // Ignore font shaping
+                    content.push(' ');
+                }
             }
 
             let has_drawable_char = style.drawable_char.is_some();
