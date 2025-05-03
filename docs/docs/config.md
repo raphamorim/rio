@@ -724,6 +724,8 @@ fonts.use-drawable-chars = true
 - `⣻` BrailleDots1245678
 - `⣹` BrailleDots145678
 - `⣺` BrailleDots245678
+- Sextants characters
+- Octants characters
 </p>
 </details>
 
