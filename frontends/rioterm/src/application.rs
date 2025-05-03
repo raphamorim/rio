@@ -992,7 +992,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if key_event.state == ElementState::Released
                 {
                     // TODO: Implement cursor to position on screen
-                    route.window.set_ime_cursor_area(400., 200.);
+                    let pos = route.window.screen.set_ime_cursor_area_from_cursor();
+                    route.window.set_ime_cursor_area(pos.0, pos.1);
                     if self.config.hide_cursor_when_typing {
                         route.window.winit_window.set_cursor_visible(false);
                     }
