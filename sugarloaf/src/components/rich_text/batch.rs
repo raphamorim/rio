@@ -3764,6 +3764,10 @@ impl BatchManager {
                 let cell_width = line_width / 2.0; // 2 columns
                 let cell_height = line_height / 3.0; // 3 rows
 
+                // Unicode Block Sextant mapping:
+                // The Unicode codepoints U+1FB00 to U+1FB3F represent different sextant combinations
+                // The pattern value is the offset from U+1FB00, which encodes which sextants are filled
+
                 // Loop through each bit in the pattern
                 for i in 0..6 {
                     // Check if this sextant should be filled
