@@ -21,6 +21,8 @@ pub mod search;
 pub mod square;
 pub mod vi_mode;
 
+use crate::ansi::drcs::DrcsSet;
+use rustc_hash::FxHashMap;
 use crate::ansi::graphics::GraphicCell;
 use crate::ansi::graphics::Graphics;
 use crate::ansi::graphics::TextureRef;
@@ -456,6 +458,12 @@ where
 
     // Currently inactive keyboard mode stack.
     inactive_keyboard_mode_stack: Vec<KeyboardModes>,
+
+    /// The DRCS character sets
+    drcs_sets: FxHashMap<u8, DrcsSet>,
+
+    /// The currently active DRCS set
+    active_drcs_set: u8,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -506,6 +514,8 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_stack: Default::default(),
+            drcs_sets: FxHashMap::default(),
+            active_drcs_set: 0,
         }
     }
 
@@ -1350,6 +1360,29 @@ impl<U: EventListener> Crosswords<U> {
 
         point
     }
+
+    fn get_or_create_drcs_set(&mut self, set_id: u8) -> &mut DrcsSet {
+        self.drcs_sets.entry(set_id).or_insert_with(DrcsSet::new)
+    }
+
+    fn active_drcs_set(&mut self) -> &mut DrcsSet {
+        self.get_or_create_drcs_set(self.active_drcs_set)
+    }
+
+    pub fn is_drcs_character(&self, char_code: u8) -> bool {
+        self.drcs_sets
+            .get(&self.active_drcs_set)
+            .and_then(|set| set.get_character(char_code))
+            .is_some()
+    }
+
+    /// Render a DRCS character to a bitmap
+    pub fn render_drcs_character(&self, char_code: u8) -> Option<Vec<u8>> {
+        self.drcs_sets
+            .get(&self.active_drcs_set)
+            .and_then(|set| set.get_character(char_code))
+            .map(|character| character.data.clone())
+    }
 }
 
 impl<U: EventListener> Handler for Crosswords<U> {
@@ -1711,6 +1744,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.damage
             .damage_line(line, self.grid.cursor.pos.col.0, old_col);
     }
+
+
 
     #[inline]
     fn goto_line(&mut self, line: Line) {
@@ -2610,6 +2645,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
         debug!("text_area_size_chars {:?}", text);
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    fn define_soft_character(&mut self, char_code: u8, width: u8, height: u8, data: Vec<u8>) {
+        let drcs_set = self.active_drcs_set();
+        drcs_set.define_character(char_code, width, height, data);
+    }
+
+    fn select_drcs_set(&mut self, set_id: u8) {
+        self.active_drcs_set = set_id;
+    }
+
+    fn reset_soft_characters(&mut self) {
+        self.drcs_sets.clear();
     }
 
     #[inline]
