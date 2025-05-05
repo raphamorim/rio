@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.13 (unreleased)
+## 0.2.14 (unreleased)
+
+- TBD.
+
+## 0.2.13
 
 - *Breaking change*: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
 - Fix dimension for whenever a new tab is created from a view with splits.
