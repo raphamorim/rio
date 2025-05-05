@@ -825,6 +825,16 @@ impl Renderer {
                 result
             };
 
+            // If the last line is bigger than the actual visible rows, then some resize
+            // has happened. In this case, request full draw.
+            if let Some(ref lines) = specific_lines {
+                if let Some(max_value) = lines.iter().max() {
+                    if max_value > &(visible_rows.len() - 1) {
+                        specific_lines = None;
+                    }
+                }
+            }
+
             // let duration = start.elapsed();
             // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
@@ -897,18 +907,20 @@ impl Renderer {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
-                        self.create_line(
-                            content,
-                            &visible_rows[line],
-                            has_cursor,
-                            Some(line),
-                            Line(line as i32),
-                            &context.renderable_content,
-                            hints,
-                            focused_match,
-                            &colors,
-                            is_active,
-                        );
+                        if let Some(visible_row) = visible_rows.get(line) {
+                            self.create_line(
+                                content,
+                                visible_row,
+                                has_cursor,
+                                Some(line),
+                                Line(line as i32),
+                                &context.renderable_content,
+                                hints,
+                                focused_match,
+                                &colors,
+                                is_active,
+                            );
+                        }
                     }
                 }
             };
