@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.14 (unreleased)
 
-- TBD.
+- Fix: panic and crash of terminal window during sudo apt update [#1093](https://github.com/raphamorim/rio/issues/1093).
 
 ## 0.2.13
 
