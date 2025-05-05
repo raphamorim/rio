@@ -43,6 +43,7 @@ pub struct Renderer {
     pub colors: List,
     pub navigation: ScreenNavigation,
     unfocused_split_opacity: f32,
+    last_active: usize,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -91,6 +92,7 @@ impl Renderer {
 
         Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
+            last_active: 0,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -754,6 +756,12 @@ impl Renderer {
 
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
+        let mut has_active_changed = false;
+        if self.last_active != active_index {
+            has_active_changed = true;
+
+            self.last_active = active_index;
+        }
 
         for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
             let is_active = active_index == index;
@@ -777,7 +785,8 @@ impl Renderer {
             // let duration = start.elapsed();
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
-            let force_full_damage = context.renderable_content.has_pending_updates
+            let force_full_damage = has_active_changed
+                || context.renderable_content.has_pending_updates
                 || is_active
                     && (context.renderable_content.selection_range.is_some()
                         || hints.is_some());
