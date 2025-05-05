@@ -33,6 +33,7 @@ language: 'en'
 - Rio's MSRV is 1.85.0.
 - Support to Sextants.
 - Fix: Octant support [#814](https://github.com/raphamorim/rio/issues/814).
+- Fix: Issue regarding split not updating opacity style when getting unfocused.
 - Add support for custom parsing of APC, SOS and PM sequences.
 
 ## 0.2.12
