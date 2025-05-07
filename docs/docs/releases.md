@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.15 (unreleased)
 
-- TBD.
+- Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13. [#1094](https://github.com/raphamorim/rio/issues/1094).
 
 ## 0.2.14
 
