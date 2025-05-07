@@ -1,6 +1,7 @@
 use lru::LruCache;
 use rio_backend::sugarloaf::font::ops::FontOps;
 use rio_backend::sugarloaf::font_introspector::Attributes;
+use rio_backend::sugarloaf::is_private_user_area;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -11,13 +12,21 @@ use unicode_width::UnicodeWidthChar;
 /// Increased for better performance with complex terminal content
 const MAX_FONT_CACHE_SIZE: usize = 8192;
 
+/// Font cache data including PUA information
+#[derive(Debug, Clone, Copy)]
+pub struct FontCacheData {
+    pub font_id: usize,
+    pub width: f32,
+    pub is_pua: bool,
+}
+
 /// LRU cache for font metrics to prevent unbounded memory growth
 /// Uses a two-tier caching strategy for better performance
 pub struct FontCache {
     // Hot cache for most frequently used characters (ASCII)
-    hot_cache: HashMap<(char, Attributes), (usize, f32)>,
+    hot_cache: HashMap<(char, Attributes), FontCacheData>,
     // LRU cache for less frequent characters
-    cache: LruCache<(char, Attributes), (usize, f32)>,
+    cache: LruCache<(char, Attributes), FontCacheData>,
 }
 
 impl FontCache {
@@ -32,7 +41,7 @@ impl FontCache {
     }
 
     /// Get font metrics from cache with hot path optimization
-    pub fn get(&mut self, key: &(char, Attributes)) -> Option<&(usize, f32)> {
+    pub fn get(&mut self, key: &(char, Attributes)) -> Option<&FontCacheData> {
         // Check hot cache first for ASCII characters
         if key.0.is_ascii() {
             if let Some(value) = self.hot_cache.get(key) {
@@ -52,7 +61,7 @@ impl FontCache {
     }
 
     /// Insert font metrics into cache with hot path optimization
-    pub fn insert(&mut self, key: (char, Attributes), value: (usize, f32)) {
+    pub fn insert(&mut self, key: (char, Attributes), value: FontCacheData) {
         // Store ASCII characters in hot cache for faster access
         if key.0.is_ascii() && self.hot_cache.len() < 128 {
             self.hot_cache.insert(key, value);
@@ -149,7 +158,12 @@ impl FontCache {
                             if is_emoji {
                                 width = 2.0;
                             }
-                            self.insert(key, (font_id, width));
+                            let is_pua = is_private_user_area(&ch);
+                            self.insert(key, FontCacheData {
+                                font_id,
+                                width,
+                                is_pua,
+                            });
                         }
                     }
                 }
@@ -180,7 +194,11 @@ mod tests {
         // Test insertion and retrieval
         let attrs = Attributes::new(Stretch::NORMAL, Weight::NORMAL, Style::Normal);
         let key = ('a', attrs);
-        let value = (1, 1.0);
+        let value = FontCacheData {
+            font_id: 1,
+            width: 1.0,
+            is_pua: false,
+        };
 
         cache.insert(key, value);
         assert!(!cache.is_empty());
@@ -200,7 +218,11 @@ mod tests {
         for i in 0..=test_size {
             let attrs = Attributes::new(Stretch::NORMAL, Weight::NORMAL, Style::Normal);
             let key = (char::from_u32(i as u32 + 65).unwrap_or('A'), attrs);
-            let value = (i, i as f32);
+            let value = FontCacheData {
+                font_id: i,
+                width: i as f32,
+                is_pua: false,
+            };
             cache.insert(key, value);
         }
 
@@ -217,7 +239,11 @@ mod tests {
         for i in 0..10 {
             let attrs = Attributes::new(Stretch::NORMAL, Weight::NORMAL, Style::Normal);
             let key = (char::from_u32(i as u32 + 65).unwrap_or('A'), attrs);
-            let value = (i, i as f32);
+            let value = FontCacheData {
+                font_id: i,
+                width: i as f32,
+                is_pua: false,
+            };
             cache.insert(key, value);
         }
 

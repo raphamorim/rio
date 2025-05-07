@@ -54,6 +54,15 @@ pub enum CornerType {
     BottomRight,
 }
 
+#[inline]
+pub fn is_private_user_area(character: &char) -> bool {
+    match character {
+        '\u{E000}'..='\u{F8FF}' => true,
+        _ => false,
+    }
+}
+
+#[inline]
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
     match character {
         '\u{2500}'..='\u{259f}'
