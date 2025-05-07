@@ -45,7 +45,7 @@ raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
 approx = "0.5.1"
 lru = "0.13.0"
-skrifa = "0.29.0"
+skrifa = "0.30.0"
 halfbrown = "0.3.0"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }

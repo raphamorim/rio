@@ -883,6 +883,7 @@ impl<'a> Render<'a> {
                             .format(self.format)
                             .origin(Origin::BottomLeft)
                             .style(self.style)
+                            .offset(self.offset)
                             .render_offset(self.offset)
                             .inspect(|fmt, w, h| {
                                 image.data.resize(fmt.buffer_size(w, h), 0);
@@ -948,6 +949,7 @@ impl<'a> Render<'a> {
                             let placement = Mask::with_scratch(layer.path(), rcx)
                                 .origin(Origin::BottomLeft)
                                 .style(self.style)
+                                .offset(self.offset)
                                 .render_offset(self.offset)
                                 .inspect(|fmt, w, h| {
                                     scratch.resize(fmt.buffer_size(w, h), 0);
