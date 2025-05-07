@@ -136,7 +136,7 @@ impl ScreenNavigation {
             let renderable = Quad {
                 position: [initial_position, 0.0],
                 color,
-                size: [30.0, size],
+                size: [15.0, size],
                 ..Quad::default()
             };
             initial_position -= position_modifier;
