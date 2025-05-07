@@ -8,6 +8,9 @@ language: 'en'
 ## 0.2.15 (unreleased)
 
 - Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13. [#1094](https://github.com/raphamorim/rio/issues/1094).
+- Support private user area (NF) auto decrease of width in case of next cell is occupied.
+- Replace Cascadia Code Regular with Cascadia Code NF Regular.
+- Remove Symbols Nerd Font Mono font in favor of Cascadia Code NF Regular.
 
 ## 0.2.14
 
