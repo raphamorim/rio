@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.15 (unreleased)
+## 0.2.16 (unreleased)
+
+- TBD.
+
+## 0.2.15
 
 - Fix: In some cases, the first typed character doesn't display until after a delay, or until another key is hit [#1098](https://github.com/raphamorim/rio/issues/1098).
 - Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13. [#1094](https://github.com/raphamorim/rio/issues/1094).
