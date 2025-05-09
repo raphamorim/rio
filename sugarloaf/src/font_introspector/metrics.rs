@@ -178,6 +178,24 @@ impl MetricsProxy {
                 self.leading = hhea.line_gap();
             }
         }
+        const DEFAULT_SPACING: i16 = 2380;
+        let current_sum = (self.ascent + self.descent + self.leading) as f32;
+        if current_sum != 0.0 {
+            let scale = DEFAULT_SPACING as f32 / current_sum;
+            self.ascent = (self.ascent as f32 * scale) as i16;
+            self.descent = (self.descent as f32 * scale) as i16;
+            self.leading = (self.leading as f32 * scale) as i16;
+
+            let final_sum = self.ascent + self.descent + self.leading;
+            if final_sum != DEFAULT_SPACING {
+                let diff = DEFAULT_SPACING - final_sum;
+                if diff > 0 {
+                    self.leading += diff;
+                } else {
+                    self.descent += diff;
+                }
+            }
+        }
         let vhea = font.vhea();
         if let Some(vhea) = vhea {
             self.has_vertical_metrics = true;
