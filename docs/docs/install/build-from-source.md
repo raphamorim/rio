@@ -8,7 +8,7 @@ language: 'en'
 Before compiling Rio terminal, you'll have to first clone the source code:
 
 ```sh
-git clone https://github.com/raphamorim/rio.git
+git clone --depth=1 https://github.com/raphamorim/rio.git
 ```
 
 Then install the Rust compiler with `rustup` ([rustup.rs](https://rustup.rs/)).
