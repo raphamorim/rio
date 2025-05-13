@@ -152,7 +152,8 @@ pub fn default_config_file_content() -> String {
 # Theme
 #
 # It makes Rio look for the specified theme in the themes folder
-# (macos and linux: ~/.config/rio/themes/dracula.toml)
+# (macos: ~/.config/rio/themes/dracula.toml)
+# (linux: $XDG_HOME_CONFIG/rio/themes/dracula.toml or ~/.config/rio/themes/dracula.toml)
 # (windows: C:\Users\USER\AppData\Local\rio\themes\dracula.toml)
 #
 # Example:

@@ -5,7 +5,9 @@ language: 'en'
 
 The configuration should be the following paths otherwise Rio will use the default configuration.
 
-MacOS and Linux configuration file path is `~/.config/rio/config.toml`.
+MacOS configuration file path is `~/.config/rio/config.toml`.
+
+Linux configuration file path is `$XDG_CONFIG_HOME/rio/config.toml` or `~/.config/rio/config.toml`.
 
 Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
 
