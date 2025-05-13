@@ -171,7 +171,7 @@ pub struct CursorConfig {
     pub blinking_interval: u64,
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 #[inline]
 pub fn config_dir_path() -> PathBuf {
     std::env::var("RIO_CONFIG_HOME")
@@ -189,6 +189,19 @@ pub fn config_dir_path() -> PathBuf {
                 .unwrap()
                 .join("AppData")
                 .join("Local")
+                .join("rio"),
+        )
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+#[inline]
+pub fn config_dir_path() -> PathBuf {
+    std::env::var("RIO_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or(
+            std::env::var("XDG_CONFIG_HOME")
+                .map(PathBuf::from)
+                .unwrap_or(dirs::home_dir().unwrap().join(".config"))
                 .join("rio"),
         )
 }
