@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.16 (unreleased)
 
-- TBD.
+- *Breaking*: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105).
 
 ## 0.2.15
 
