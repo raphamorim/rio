@@ -458,8 +458,10 @@ impl Content {
     pub fn clear_line(&mut self, line_to_clear: usize) -> &mut Content {
         if let Some(selector) = self.selector {
             if let Some(state) = self.states.get_mut(&selector) {
-                state.lines[line_to_clear].fragments.clear();
-                state.lines[line_to_clear].render_data.clear();
+                if let Some(line) = state.lines.get_mut(line_to_clear) {
+                    line.fragments.clear();
+                    line.render_data.clear();
+                }
             }
         }
 
@@ -507,19 +509,19 @@ impl Content {
     #[inline]
     pub fn add_text_on_line(
         &mut self,
-        line: usize,
+        line_idx: usize,
         text: &str,
         style: FragmentStyle,
     ) -> &mut Content {
         if let Some(selector) = self.selector {
             if let Some(state) = self.states.get_mut(&selector) {
-                state.mark_line_dirty(line);
-                let line = &mut state.lines[line];
-
-                line.fragments.push(FragmentData {
-                    content: text.to_string(),
-                    style,
-                });
+                state.mark_line_dirty(line_idx);
+                if let Some(line) = state.lines.get_mut(line_idx) {
+                    line.fragments.push(FragmentData {
+                        content: text.to_string(),
+                        style,
+                    });
+                }
             }
         }
 
