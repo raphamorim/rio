@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.390fc736.css">
-<script src="/ko/assets/js/runtime~main.536ef332.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.a55610d3.js" defer="defer"></script>
 <script src="/ko/assets/js/main.46d93418.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -25,6 +25,7 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0216-unreleased">0.2.16 (unreleased)<a href="#0216-unreleased" class="hash-link" aria-label="0.2.16 (unreleased)에 대한 직접 링크" title="0.2.16 (unreleased)에 대한 직접 링크">​</a></h2>
 <ul>
 <li><em>Breaking</em>: support reading from config directory using <code>$XDG_CONFIG_HOME</code> on Linux <a href="https://github.com/raphamorim/rio/pull/1105" target="_blank" rel="noopener noreferrer">#1105</a>.</li>
+<li>Fix: Crash on whenever attempting to clean an invalid line index.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0215">0.2.15<a href="#0215" class="hash-link" aria-label="0.2.15에 대한 직접 링크" title="0.2.15에 대한 직접 링크">​</a></h2>
 <ul>
@@ -117,7 +118,7 @@
 <li>fix: Can the &quot;base 16&quot; colors be changed at runtime through Ansi escape sequences? <a href="https://github.com/raphamorim/rio/issues/188" target="_blank" rel="noopener noreferrer">#188</a></li>
 <li>fix: Changing release and nightly build Ubuntu runners for x86 (<code>ubuntu-latest</code> to <code>ubuntu-22.04</code>) and arm (<code>ubuntu-24.04-arm</code> to <code>ubuntu-22.04-arm</code>)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6에 대한 직접 링크" title="0.2.6에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6에 대한 직접 링크" title="0.2.6에  대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix: 0.2.5 doesn&#x27;t render grey scale font on macOS <a href="https://github.com/raphamorim/rio/issues/937" target="_blank" rel="noopener noreferrer">#937</a>.</li>
 <li>fix: fix duplicate tab_id by monotonic counter for unique tab IDs by <a href="https://github.com/hilaolu" target="_blank" rel="noopener noreferrer">@hilaolu</a>.</li>
@@ -520,7 +521,7 @@
 <li>Corrections for transparency and blur for MacOS windows.</li>
 <li>Apply dynamic background logic only for images and keep alpha channel on background.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0037">0.0.37<a href="#0037" class="hash-link" aria-label="0.0.37에 대한 직접 링크" title="0.0.37에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0037">0.0.37<a href="#0037" class="hash-link" aria-label="0.0.37에 대한 직접 링크" title="0.0.37에 대한 직접 링 크">​</a></h2>
 <ul>
 <li><em>Breaking change:</em> Reduced font size to <code>16.0</code>.</li>
 <li><em>Breaking change:</em> Set <code>VI mode</code> trigger with CTRL + SHIFT + SPACE on Windows.</li>
@@ -879,7 +880,7 @@
 <p><strong>before</strong></p>
 <div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;dracula&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain" style="display:inline-block"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token punctuation" style="color:rgb(248, 248, 242)">[</span><span class="token table class-name">advanced</span><span class="token punctuation" style="color:rgb(248, 248, 242)">]</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-render-when-unfocused</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <p><strong>now</strong></p>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;dracula&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-unfocused-render</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">theme</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token string" style="color:rgb(255, 121, 198)">&quot;dracula&quot;</span><span class="token plain"></span><br></span><span class="token-line" style="color:#F8F8F2"><span class="token plain"></span><span class="token key property">disable-unfocused-render</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립  보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Support to <strong>spawn and fork processes</strong>, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable <code>use-fork</code> in the configuration file:</li>
 </ul>
@@ -942,7 +943,7 @@
 <li>Fix <code>exit</code> command not closing the app (<a href="https://github.com/raphamorim/rio/issues/87" target="_blank" rel="noopener noreferrer">#87</a>).</li>
 <li>Changed default <code>light-black</code> color.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="006">0.0.6<a href="#006" class="hash-link" aria-label="0.0.6에 대  한 직접 링크" title="0.0.6에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="006">0.0.6<a href="#006" class="hash-link" aria-label="0.0.6에 대한 직접 링크" title="0.0.6에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix: support to clipboard in linux by <a href="https://github.com/joseemds" target="_blank" rel="noopener noreferrer">@joseemds</a>.</li>
 <li>Font style for custom fonts by <a href="https://github.com/OlshaMB" target="_blank" rel="noopener noreferrer">@OlshaMB</a> (closed <a href="https://github.com/raphamorim/rio/issues/80" target="_blank" rel="noopener noreferrer">#80</a> and <a href="https://github.com/raphamorim/rio/issues/81" target="_blank" rel="noopener noreferrer">#81</a>)</li>
