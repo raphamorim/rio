@@ -59,86 +59,105 @@
   <releases>
     <release version="0.2.15" date="2025-05-08">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.15</url>
-      <description>
-        <ul>
-          <li>Fix: In some cases, the first typed character doesn't display until after a delay, or until another key is hit.</li>
-          <li>Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13.</li>
-        </ul>
-      </description>
     </release>
     <release version="0.2.14" date="2025-05-05">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.14</url>
-      <description>
-        <ul>
-          <li>Fix: panic and crash of terminal window during sudo apt update.</li>
-        </ul>
-      </description>
     </release>
     <release version="0.2.13" date="2025-05-05">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.13</url>
-      <description>
-        <ul>
-          <li><em>Breaking change</em>: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from <code>alt</code> to <code>shift</code>.</li>
-          <li>Fix dimension for whenever a new tab is created from a view with splits.</li>
-          <li>Drop subtables with empty coverage by @xorgy.</li>
-          <li>Fix font size affecting tabs size.</li>
-          <li>Support to drawable characters by using <code>fonts.use-drawable-chars = true</code>.</li>
-          <li>Fix: Wrong unicode character alignment.</li>
-          <li>Fix: Built-in font for box drawing.</li>
-          <li>Fix: U+E0B6 and U+E0B4 Unicode with different sizes.</li>
-          <li>Update wgpu to v25.</li>
-          <li>Fix: Custom rendering (alignment) of Braille symbols.</li>
-          <li>Fix: Drawing char ⡿ in column 1 causes the entire terminal to stutter.</li>
-          <li>Fix: Some glyphs (e.g. braille symbol) are rendered with gaps in between.</li>
-          <li>Introduce <code>fonts.disable-warnings-not-found</code> to disable warning regarding fonts not found.</li>
-          <li>Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras.</li>
-          <li>Fix: Add branch drawing symbols to box characters.</li>
-          <li>Fix: macOS: fallback for missing font glyph?.</li>
-          <li>Fix: FPS calculation, before it was rendering avg 48 on 60fps screen, however it was due to wrong frame scheduling computations, now it's up to 56-58.</li>
-          <li>Fix: Shift+Tab event is doubled, as if hit twice.</li>
-          <li>Fix: Request: Option to change click-link modifier key.</li>
-          <li>Fix: Unexpected tmux previous-window.</li>
-          <li>Rewrite the way Rio deals with line diff and updates computation.</li>
-          <li>Support for setting a custom config directory using <code>$RIO_CONFIG_HOME</code></li>
-          <li>Support for additional font dirs using <code>fonts.additional-dirs</code></li>
-          <li>Rio's MSRV is 1.85.0.</li>
-          <li>Support to Sextants.</li>
-          <li>Fix: Octant support.</li>
-          <li>Fix: Issue regarding split not updating opacity style when getting unfocused.</li>
-          <li>Add support for custom parsing of APC, SOS and PM sequences.</li>
-        </ul>
-      </description>
     </release>
-    <release version="0.2.12" date="2025-03-28" />
-    <release version="0.2.11" date="2025-03-27" />
-    <release version="0.2.10" date="2025-03-13" />
-    <release version="0.2.9" date="2025-03-10" />
-    <release version="0.2.8" date="2025-02-26" />
-    <release version="0.2.7" date="2025-02-11" />
-    <release version="0.2.6" date="2025-02-08" />
-    <release version="0.2.5" date="2025-01-30" />
-    <release version="0.2.4" date="2025-01-17" />
-    <release version="0.2.3" date="2025-01-13" />
-    <release version="0.2.2" date="2024-11-23" />
-    <release version="0.2.1" date="2024-11-16" />
-    <release version="0.2.0" date="2024-11-13" />
-    <release version="0.1.17" date="2024-10-06" />
-    <release version="0.1.16" date="2024-09-24" />
-    <release version="0.1.15" date="2024-09-19" />
-    <release version="0.1.14" date="2024-09-17" />
-    <release version="0.1.13" date="2024-09-09" />
-    <release version="0.1.12" date="2024-09-07" />
-    <release version="0.1.11" date="2024-09-04" />
-    <release version="0.1.10" date="2024-08-27" />
-    <release version="0.1.9" date="2024-08-25" />
-    <release version="0.1.8" date="2024-08-21" />
-    <release version="0.1.7" date="2024-08-16" />
-    <release version="0.1.6" date="2024-08-12" />
-    <release version="0.1.5" date="2024-08-08" />
-    <release version="0.1.4" date="2024-08-05" />
-    <release version="0.1.3" date="2024-07-27" />
-    <release version="0.1.2" date="2024-07-21" />
-    <release version="0.1.1" date="2024-06-16" />
-    <release version="0.1.0" date="2024-06-10" />
+    <release version="0.2.12" date="2025-03-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.12</url>
+    </release>
+    <release version="0.2.11" date="2025-03-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.11</url>
+    </release>
+    <release version="0.2.10" date="2025-03-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.10</url>
+    </release>
+    <release version="0.2.9" date="2025-03-10">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.9</url>
+    </release>
+    <release version="0.2.8" date="2025-02-26">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.8</url>
+    </release>
+    <release version="0.2.7" date="2025-02-11">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.7</url>
+    </release>
+    <release version="0.2.6" date="2025-02-08">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.6</url>
+    </release>
+    <release version="0.2.5" date="2025-01-30">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.5</url>
+    </release>
+    <release version="0.2.4" date="2025-01-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.4</url>
+    </release>
+    <release version="0.2.3" date="2025-01-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.3</url>
+    </release>
+    <release version="0.2.2" date="2024-11-23">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.2</url>
+    </release>
+    <release version="0.2.1" date="2024-11-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.1</url>
+    </release>
+    <release version="0.2.0" date="2024-11-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.0</url>
+    </release>
+    <release version="0.1.17" date="2024-10-06">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.17</url>
+    </release>
+    <release version="0.1.16" date="2024-09-24">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.16</url>
+    </release>
+    <release version="0.1.15" date="2024-09-19">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.15</url>
+    </release>
+    <release version="0.1.14" date="2024-09-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.14</url>
+    </release>
+    <release version="0.1.13" date="2024-09-09">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.13</url>
+    </release>
+    <release version="0.1.12" date="2024-09-07">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.12</url>
+    </release>
+    <release version="0.1.11" date="2024-09-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.11</url>
+    </release>
+    <release version="0.1.10" date="2024-08-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.10</url>
+    </release>
+    <release version="0.1.9" date="2024-08-25">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.9</url>
+    </release>
+    <release version="0.1.8" date="2024-08-21">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.8</url>
+    </release>
+    <release version="0.1.7" date="2024-08-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.7</url>
+    </release>
+    <release version="0.1.6" date="2024-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.6</url>
+    </release>
+    <release version="0.1.5" date="2024-08-08">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.5</url>
+    </release>
+    <release version="0.1.4" date="2024-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.4</url>
+    </release>
+    <release version="0.1.3" date="2024-07-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.3</url>
+    </release>
+    <release version="0.1.2" date="2024-07-21">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.2</url>
+    </release>
+    <release version="0.1.1" date="2024-06-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.1</url>
+    </release>
+    <release version="0.1.0" date="2024-06-10">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.0</url>
+    </release>
   </releases>
 </component>
