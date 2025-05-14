@@ -7,11 +7,8 @@
   <summary>Hardware-accelerated GPU terminal emulator powered by WebGPU</summary>
 
   <description>
-    <p>Rio is a hardware-accelerated GPU terminal emulator. It is designed to be fast and
-      efficient, with a focus on performance and usability.</p>
-    <p>Rio is built using the latest technologies, including Rust and WebGPU, to provide a
-      modern and responsive user experience. It supports a wide range of features, including
-      split panes, tabs, and customizable themes.</p>
+    <p>Rio is a hardware-accelerated GPU terminal emulator. It is designed to be fast and efficient, with a focus on performance and usability.</p>
+    <p>Rio is built using the latest technologies, including Rust and WebGPU, to provide a modern and responsive user experience. It supports a wide range of features, including split panes, tabs, and customizable themes.</p>
     <p>Rio is open source and available for Windows, macOS, and Linux.</p>
   </description>
 
@@ -39,28 +36,23 @@
   <screenshots>
     <screenshot type="default">
       <caption>Terminal view running fastfetch</caption>
-      <image>
-        https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/default.png</image>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/default.png</image>
     </screenshot>
     <screenshot>
       <caption>Split panel showing parallel workflows</caption>
-      <image>
-        https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/split-panels.png</image>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/split-panels.png</image>
     </screenshot>
     <screenshot>
       <caption>Transparency support with adjustable opacity</caption>
-      <image>
-        https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/transparency.png</image>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/transparency.png</image>
     </screenshot>
     <screenshot>
       <caption>Rendering ligatures with a supported font</caption>
-      <image>
-        https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/ligatures.png</image>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/ligatures.png</image>
     </screenshot>
     <screenshot>
       <caption>Image display using Sixel protocol</caption>
-      <image>
-        https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/sixel.png</image>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/sixel.png</image>
     </screenshot>
   </screenshots>
 
@@ -69,10 +61,8 @@
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.15</url>
       <description>
         <ul>
-          <li>Fix: In some cases, the first typed character doesn't display until after a delay, or
-            until another key is hit.</li>
-          <li>Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14
-            and 0.13.</li>
+          <li>Fix: In some cases, the first typed character doesn't display until after a delay, or until another key is hit.</li>
+          <li>Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13.</li>
         </ul>
       </description>
     </release>
@@ -88,8 +78,7 @@
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.13</url>
       <description>
         <ul>
-          <li><em>Breaking change</em>: For Windows and Linux users, hyperlink trigger whenever
-            hovering a link was changed from <code>alt</code> to <code>shift</code>.</li>
+          <li><em>Breaking change</em>: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from <code>alt</code> to <code>shift</code>.</li>
           <li>Fix dimension for whenever a new tab is created from a view with splits.</li>
           <li>Drop subtables with empty coverage by @xorgy.</li>
           <li>Fix font size affecting tabs size.</li>
@@ -101,13 +90,11 @@
           <li>Fix: Custom rendering (alignment) of Braille symbols.</li>
           <li>Fix: Drawing char ⡿ in column 1 causes the entire terminal to stutter.</li>
           <li>Fix: Some glyphs (e.g. braille symbol) are rendered with gaps in between.</li>
-          <li>Introduce <code>fonts.disable-warnings-not-found</code> to disable warning regarding
-            fonts not found.</li>
+          <li>Introduce <code>fonts.disable-warnings-not-found</code> to disable warning regarding fonts not found.</li>
           <li>Fix: Request: silently ignore missing fonts from fonts.family and fonts.family.extras.</li>
           <li>Fix: Add branch drawing symbols to box characters.</li>
           <li>Fix: macOS: fallback for missing font glyph?.</li>
-          <li>Fix: FPS calculation, before it was rendering avg 48 on 60fps screen, however it was
-            due to wrong frame scheduling computations, now it's up to 56-58.</li>
+          <li>Fix: FPS calculation, before it was rendering avg 48 on 60fps screen, however it was due to wrong frame scheduling computations, now it's up to 56-58.</li>
           <li>Fix: Shift+Tab event is doubled, as if hit twice.</li>
           <li>Fix: Request: Option to change click-link modifier key.</li>
           <li>Fix: Unexpected tmux previous-window.</li>
