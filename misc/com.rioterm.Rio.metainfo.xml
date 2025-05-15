@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.rioterm.Rio</id>
+  <content_rating type="oars-1.1" />
+
+  <name>Rio</name>
+  <summary>Hardware-accelerated GPU terminal emulator powered by WebGPU</summary>
+
+  <description>
+    <p>Rio is a hardware-accelerated GPU terminal emulator. It is designed to be fast and efficient, with a focus on performance and usability.</p>
+    <p>Rio is built using the latest technologies, including Rust and WebGPU, to provide a modern and responsive user experience. It supports a wide range of features, including split panes, tabs, and customizable themes.</p>
+    <p>Rio is open source and available for Windows, macOS, and Linux.</p>
+  </description>
+
+  <project_license>MIT</project_license>
+  <metadata_license>CC0-1.0</metadata_license>
+
+  <launchable type="desktop-id">com.rioterm.Rio.desktop</launchable>
+
+  <url type="homepage">https://rioterm.com/</url>
+  <url type="help">https://rioterm.com/docs/config</url>
+  <url type="bugtracker">https://github.com/raphamorim/rio/issues</url>
+  <url type="donation">https://github.com/sponsors/raphamorim</url>
+
+  <developer id="io.raphamorim">
+    <name>Raphael Amorim</name>
+    <url type="homepage">https://raphamorim.io/</url>
+  </developer>
+
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </recommends>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Terminal view running fastfetch</caption>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/default.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Split panel showing parallel workflows</caption>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/split-panels.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Transparency support with adjustable opacity</caption>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/transparency.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Rendering ligatures with a supported font</caption>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/ligatures.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Image display using Sixel protocol</caption>
+      <image>https://raw.githubusercontent.com/raphamorim/rio/refs/heads/main/docs/static/assets/appstream/sixel.png</image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.2.15" date="2025-05-08">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.15</url>
+    </release>
+    <release version="0.2.14" date="2025-05-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.14</url>
+    </release>
+    <release version="0.2.13" date="2025-05-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.13</url>
+    </release>
+    <release version="0.2.12" date="2025-03-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.12</url>
+    </release>
+    <release version="0.2.11" date="2025-03-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.11</url>
+    </release>
+    <release version="0.2.10" date="2025-03-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.10</url>
+    </release>
+    <release version="0.2.9" date="2025-03-10">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.9</url>
+    </release>
+    <release version="0.2.8" date="2025-02-26">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.8</url>
+    </release>
+    <release version="0.2.7" date="2025-02-11">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.7</url>
+    </release>
+    <release version="0.2.6" date="2025-02-08">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.6</url>
+    </release>
+    <release version="0.2.5" date="2025-01-30">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.5</url>
+    </release>
+    <release version="0.2.4" date="2025-01-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.4</url>
+    </release>
+    <release version="0.2.3" date="2025-01-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.3</url>
+    </release>
+    <release version="0.2.2" date="2024-11-23">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.2</url>
+    </release>
+    <release version="0.2.1" date="2024-11-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.1</url>
+    </release>
+    <release version="0.2.0" date="2024-11-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.2.0</url>
+    </release>
+    <release version="0.1.17" date="2024-10-06">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.17</url>
+    </release>
+    <release version="0.1.16" date="2024-09-24">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.16</url>
+    </release>
+    <release version="0.1.15" date="2024-09-19">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.15</url>
+    </release>
+    <release version="0.1.14" date="2024-09-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.14</url>
+    </release>
+    <release version="0.1.13" date="2024-09-09">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.13</url>
+    </release>
+    <release version="0.1.12" date="2024-09-07">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.12</url>
+    </release>
+    <release version="0.1.11" date="2024-09-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.11</url>
+    </release>
+    <release version="0.1.10" date="2024-08-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.10</url>
+    </release>
+    <release version="0.1.9" date="2024-08-25">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.9</url>
+    </release>
+    <release version="0.1.8" date="2024-08-21">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.8</url>
+    </release>
+    <release version="0.1.7" date="2024-08-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.7</url>
+    </release>
+    <release version="0.1.6" date="2024-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.6</url>
+    </release>
+    <release version="0.1.5" date="2024-08-08">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.5</url>
+    </release>
+    <release version="0.1.4" date="2024-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.4</url>
+    </release>
+    <release version="0.1.3" date="2024-07-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.3</url>
+    </release>
+    <release version="0.1.2" date="2024-07-21">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.2</url>
+    </release>
+    <release version="0.1.1" date="2024-06-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.1</url>
+    </release>
+    <release version="0.1.0" date="2024-06-10">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.0</url>
+    </release>
+  </releases>
+</component>
