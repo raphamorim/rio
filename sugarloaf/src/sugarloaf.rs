@@ -30,7 +30,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
-    filters_brush: FiltersBrush<'a>,
+    filters_brush: FiltersBrush,
 }
 
 #[derive(Debug)]

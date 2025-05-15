@@ -11,21 +11,20 @@ pub type Filter = String;
 
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
-pub struct FiltersBrush<'a> {
+pub struct FiltersBrush {
     filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
-    filter_parameters: Vec<&'a librashader_runtime::parameters::RuntimeParameters>,
     framecount: usize,
 }
 
-impl<'a> FiltersBrush<'a> {
+impl FiltersBrush {
     #[inline]
     pub fn parameters(&self) -> Vec<HashMap<String, f32>> {
-        self.filter_parameters
+        self.filter_chains
             .iter()
-            .map(|p| {
-                (&*p.parameters())
-                    .iter()
+            .map(|f| f.parameters().parameters())
+            .map(|map| {
+                map.iter()
                     .map(|(k, &v)| (k.to_string(), v))
                     .collect::<HashMap<_, _>>()
             })
@@ -34,15 +33,18 @@ impl<'a> FiltersBrush<'a> {
 
     #[inline]
     pub fn set_parameter(&self, name: &str, value: f32) {
-        self.filter_parameters.iter().for_each(|p| {
-            if p.parameter_value(name).is_some() {
-                p.set_parameter_value(name, value);
-            }
-        });
+        self.filter_chains
+            .iter()
+            .map(|f| f.parameters())
+            .for_each(|p| {
+                if p.parameter_value(name).is_some() {
+                    p.set_parameter_value(name, value);
+                }
+            });
     }
 
     #[inline]
-    pub fn update_filters(&'a mut self, ctx: &Context, filters: &[Filter]) {
+    pub fn update_filters(&mut self, ctx: &Context, filters: &[Filter]) {
         self.filter_chains.clear();
         self.filter_intermediates.clear();
 
@@ -110,9 +112,6 @@ impl<'a> FiltersBrush<'a> {
                 }
             }
         }
-
-        self.filter_parameters =
-            self.filter_chains.iter().map(|f| f.parameters()).collect();
 
         self.filter_intermediates.reserve(self.filter_chains.len());
 
