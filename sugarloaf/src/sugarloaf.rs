@@ -20,6 +20,7 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use state::SugarState;
+use std::collections::HashMap;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
@@ -197,6 +198,16 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn update_filters(&mut self, filters: &[Filter]) {
         self.filters_brush.update_filters(&self.ctx, filters);
+    }
+
+    #[inline]
+    pub fn get_filter_parameters(&self) -> Vec<HashMap<String, f32>> {
+        self.filters_brush.parameters()
+    }
+
+    #[inline]
+    pub fn set_filter_parameter(&self, name: &str, value: f32) {
+        self.filters_brush.set_parameter(name, value);
     }
 
     #[inline]
