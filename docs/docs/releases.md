@@ -5,10 +5,15 @@ language: 'en'
 
 # Releases
 
-## 0.2.16 (unreleased)
+## 0.2.17 (unreleased)
 
-- *Breaking*: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105).
+- TBD.
+
+## 0.2.16
+
+- *Breaking*: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105) by [@ranisalt](https://github.com/ranisalt).
 - Fix: Crash on whenever attempting to clean an invalid line index.
+- Add metainfo and screenshots for appstream by [@ranisalt](https://github.com/ranisalt).
 
 ## 0.2.15
 
