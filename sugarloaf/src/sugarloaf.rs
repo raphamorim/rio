@@ -110,8 +110,8 @@ impl HasDisplayHandle for SugarloafWindow {
 unsafe impl Send for SugarloafWindow {}
 unsafe impl Sync for SugarloafWindow {}
 
-impl<'a> Sugarloaf<'a> {
-    pub fn new(
+impl Sugarloaf<'_> {
+    pub fn new<'a>(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
@@ -195,7 +195,7 @@ impl<'a> Sugarloaf<'a> {
     }
 
     #[inline]
-    pub fn update_filters(&'a mut self, filters: &[Filter]) {
+    pub fn update_filters(&mut self, filters: &[Filter]) {
         self.filters_brush.update_filters(&self.ctx, filters);
     }
 
