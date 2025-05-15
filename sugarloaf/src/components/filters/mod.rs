@@ -4,21 +4,23 @@ mod runtime;
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
+use librashader_runtime::parameters::FilterChainParameters;
 use std::sync::Arc;
 
 pub type Filter = String;
 
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
-pub struct FiltersBrush {
+pub struct FiltersBrush<'a> {
     filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
+    filter_parameters: Vec<&'a librashader_runtime::parameters::RuntimeParameters>,
     framecount: usize,
 }
 
-impl FiltersBrush {
+impl<'a> FiltersBrush<'a> {
     #[inline]
-    pub fn update_filters(&mut self, ctx: &Context, filters: &[Filter]) {
+    pub fn update_filters(&'a mut self, ctx: &Context, filters: &[Filter]) {
         self.filter_chains.clear();
         self.filter_intermediates.clear();
 
@@ -86,6 +88,9 @@ impl FiltersBrush {
                 }
             }
         }
+
+        self.filter_parameters =
+            self.filter_chains.iter().map(|f| f.parameters()).collect();
 
         self.filter_intermediates.reserve(self.filter_chains.len());
 
