@@ -20,7 +20,7 @@ pub struct FiltersBrush<'a> {
 
 impl<'a> FiltersBrush<'a> {
     #[inline]
-    fn parameters(&self) -> Vec<HashMap<String, f32>> {
+    pub fn parameters(&self) -> Vec<HashMap<String, f32>> {
         self.filter_parameters
             .iter()
             .map(|p| {
@@ -33,7 +33,7 @@ impl<'a> FiltersBrush<'a> {
     }
 
     #[inline]
-    fn set_parameter(&self, name: &str, value: f32) {
+    pub fn set_parameter(&self, name: &str, value: f32) {
         self.filter_parameters.iter().for_each(|p| {
             if p.parameter_value(name).is_some() {
                 p.set_parameter_value(name, value);

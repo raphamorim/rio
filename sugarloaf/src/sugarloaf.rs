@@ -30,7 +30,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
-    filters_brush: FiltersBrush,
+    filters_brush: FiltersBrush<'a>,
 }
 
 #[derive(Debug)]
@@ -110,8 +110,8 @@ impl HasDisplayHandle for SugarloafWindow {
 unsafe impl Send for SugarloafWindow {}
 unsafe impl Sync for SugarloafWindow {}
 
-impl Sugarloaf<'_> {
-    pub fn new<'a>(
+impl<'a> Sugarloaf<'a> {
+    pub fn new(
         window: SugarloafWindow,
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
@@ -195,7 +195,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn update_filters(&mut self, filters: &[Filter]) {
+    pub fn update_filters(&'a mut self, filters: &[Filter]) {
         self.filters_brush.update_filters(&self.ctx, filters);
     }
 
