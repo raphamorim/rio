@@ -12,7 +12,7 @@ Rust and Cargo can be installed from [rust-lang.org](https://www.rust-lang.org/l
 You might need to install additional packages depending on your platform. See the guide to [building from source](/docs/install/build-from-source) for more information.
 
 ```sh
-cargo install rioterm
+cargo install rioterm --locked
 ```
 
 Then simply run `rio` to open the terminal.
