@@ -4,7 +4,7 @@ mod runtime;
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
-use librashader_runtime::parameters::FilterChainParameters;
+use librashader_runtime::parameters::FilterChainParameters as _;
 use std::{collections::HashMap, sync::Arc};
 
 pub type Filter = String;
