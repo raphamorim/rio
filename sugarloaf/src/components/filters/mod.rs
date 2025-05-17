@@ -4,7 +4,8 @@ mod runtime;
 use crate::context::Context;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
-use std::sync::Arc;
+use librashader_runtime::parameters::FilterChainParameters as _;
+use std::{collections::HashMap, sync::Arc};
 
 pub type Filter = String;
 
@@ -17,6 +18,31 @@ pub struct FiltersBrush {
 }
 
 impl FiltersBrush {
+    #[inline]
+    pub fn parameters(&self) -> Vec<HashMap<String, f32>> {
+        self.filter_chains
+            .iter()
+            .map(|f| f.parameters().parameters())
+            .map(|map| {
+                map.iter()
+                    .map(|(k, &v)| (k.to_string(), v))
+                    .collect::<HashMap<_, _>>()
+            })
+            .collect()
+    }
+
+    #[inline]
+    pub fn set_parameter(&self, name: &str, value: f32) {
+        self.filter_chains
+            .iter()
+            .map(|f| f.parameters())
+            .for_each(|p| {
+                if p.parameter_value(name).is_some() {
+                    p.set_parameter_value(name, value);
+                }
+            });
+    }
+
     #[inline]
     pub fn update_filters(&mut self, ctx: &Context, filters: &[Filter]) {
         self.filter_chains.clear();
