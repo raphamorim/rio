@@ -1618,6 +1618,31 @@ impl Screen<'_> {
         self.render();
     }
 
+    pub fn set_ime_cursor_area_from_cursor(&mut self) -> (f32, f32) {
+        let current_grid = self.context_manager.current_grid();
+        let (context, margin) = current_grid.current_context_with_computed_dimension();
+        let context_dimension = context.dimension;
+        let cursor_pos = context.renderable_content.cursor.state.pos;
+
+        // Calculate cell width and height in pixels
+        let cell_width = context_dimension.dimension.width;
+        let cell_height = context_dimension.dimension.height;
+
+        println!("{:?}", cell_height);
+
+        // Calculate the pixel position of the cursor
+        // Start with the margins
+        let mut x = margin.x;
+        let mut y = margin.top_y;
+
+        let half_cell_width = cell_width / 2.0;
+        x += ((cursor_pos.col.0 + 1) as f32 * cell_width) - half_cell_width;
+        y += ((cursor_pos.row.0) as f32) * cell_height;
+
+        println!("{:?}", y);
+        (x, y)
+    }
+
     #[inline]
     fn confirm_search(&mut self) {
         // Just cancel search when not in vi mode.
