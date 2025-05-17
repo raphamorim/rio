@@ -10,6 +10,7 @@ Installation options:
 - Nix package: [NixOS/nixpkgs/rio](https://github.com/NixOS/nixpkgs/blob/nixos-unstable/pkgs/by-name/ri/rio/package.nix)
 - Nix flake: [NixOS Flake Installation](#nixos-flake-installation)
 - openSUSE package: [openSUSE:Factory/rioterm](https://software.opensuse.org/package/rioterm)
+- Flathub: [flathub.org/apps/com.rioterm.Rio](https://flathub.org/apps/com.rioterm.Rio)
 - Void Linux package: https://github.com/void-linux/void-packages/tree/master/srcpkgs/rio
 
 Note: Debian packages (`.deb`) and Red Hat packages (`.rpm`) are packaged and released along with [GitHub releases](https://github.com/raphamorim/rio/releases).
