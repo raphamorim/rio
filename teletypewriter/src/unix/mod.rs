@@ -463,7 +463,8 @@ pub fn create_pty_with_spawn(
             let mut with_args = vec![
                 "--host".to_string(),
                 "--watch-bus".to_string(),
-                "--env=TERM_PROGRAM=rio".to_string(),
+                "--env=COLORTERM=truecolor".to_string(),
+                "--env=TERM=rio".to_string(),
             ];
 
             if let Some(directory) = working_directory {
