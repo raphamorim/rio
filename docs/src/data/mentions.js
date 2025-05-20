@@ -189,6 +189,16 @@ const MENTIONS = [
         Rapha is not only one of the most talented programmers I've ever met but also one of the best friends I've had in my life. It’s no surprise to me that Rio embodies such exceptional quality and speed. As a terminal emulator, Rio has set a new standard—it’s unquestionably the go-to solution.
       </>
     ),
+  },
+  {
+    url: 'https://x.com/abhimanyu003/status/1923384576803553591',
+    username: '@abhimanyu003',
+    source: '/assets/mentions/abhimanyu003.jpg',
+    quote: (
+      <>
+        Rio is best terminal emulator out there. I switched to it and it has exceeded my expectations. Great work.
+      </>
+    ),
   }
 ];
 
