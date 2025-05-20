@@ -453,28 +453,26 @@ pub fn create_pty_with_spawn(
         cmd
     };
 
-    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
+    #[cfg(target_os = "linux")]
     {
         // If running inside a flatpak sandbox.
         // Must retrieve $SHELL from outside the sandbox, so ask the host.
         if std::path::PathBuf::from("/.flatpak-info").exists() {
             builder = Command::new("flatpak-spawn");
-            let mut with_args = vec!["--host".to_string(), "--watch-bus".to_string()];
+
+            let mut with_args = vec![
+                "--host".to_string(),
+                "--watch-bus".to_string(),
+                "--env=COLORTERM=truecolor".to_string(),
+                "--env=TERM=rio".to_string(),
+            ];
+
             if let Some(directory) = working_directory {
                 with_args.push(format!(
                     "--directory={}",
                     std::path::Path::new(directory).display()
                 ));
             }
-
-            // Map only base environment variables
-            for (k, v) in std::env::vars_os() {
-                let key: String = k.into_string().unwrap_or_default();
-                let value: String = v.into_string().unwrap_or_default();
-                with_args.push(format!("--env={key}={value}"));
-            }
-
-            with_args.push("--env=TERM_PROGRAM=rio".to_string());
 
             let output = std::process::Command::new("flatpak-spawn")
                 .args(["--host", "sh", "-c", "echo $SHELL"])

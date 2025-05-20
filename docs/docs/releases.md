@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.17 (unreleased)
 
-- TBD.
+- Skip passing sandbox env in Flatpak, fixes user environment in spawned shell [#1116](https://github.com/raphamorim/rio/pull/1116) by [@ranisalt](https://github.com/ranisalt).
 
 ## 0.2.16
 
