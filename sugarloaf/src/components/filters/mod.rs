@@ -1,33 +1,28 @@
 mod builtin;
-mod runtime;
 
 use crate::context::Context;
+use librashader_common::map::{FastHashMap, ShortString};
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
 use librashader_runtime::parameters::FilterChainParameters as _;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 pub type Filter = String;
 
 /// A brush for applying RetroArch filters.
 #[derive(Default)]
 pub struct FiltersBrush {
-    filter_chains: Vec<crate::components::filters::runtime::FilterChain>,
+    filter_chains: Vec<librashader_runtime_wgpu::FilterChainWgpu>,
     filter_intermediates: Vec<Arc<wgpu::Texture>>,
     framecount: usize,
 }
 
 impl FiltersBrush {
     #[inline]
-    pub fn parameters(&self) -> Vec<HashMap<String, f32>> {
+    pub fn parameters(&self) -> Vec<FastHashMap<ShortString, f32>> {
         self.filter_chains
             .iter()
-            .map(|f| f.parameters().parameters())
-            .map(|map| {
-                map.iter()
-                    .map(|(k, &v)| (k.to_string(), v))
-                    .collect::<HashMap<_, _>>()
-            })
+            .map(|f| (*f.parameters().parameters()).clone())
             .collect()
     }
 
@@ -78,7 +73,7 @@ impl FiltersBrush {
 
                     match builtin_filter() {
                         Ok(shader_preset) => {
-                            match crate::components::filters::runtime::FilterChain::load_from_preset(
+                            match librashader_runtime_wgpu::FilterChainWgpu::load_from_preset(
                                 shader_preset,
                                 &ctx.device,
                                 &ctx.queue,
@@ -97,7 +92,7 @@ impl FiltersBrush {
                 _ => {
                     tracing::debug!("Loading filter {}", filter);
 
-                    match crate::components::filters::runtime::FilterChain::load_from_path(
+                    match librashader_runtime_wgpu::FilterChainWgpu::load_from_path(
                         filter,
                         ShaderFeatures::NONE,
                         &ctx.device,
@@ -223,24 +218,23 @@ impl FiltersBrush {
 
             let dst_texture_view =
                 filter_dst_texture.create_view(&wgpu::TextureViewDescriptor::default());
-            let dst_output_view =
-                crate::components::filters::runtime::WgpuOutputView::new_from_raw(
-                    &dst_texture_view,
-                    view_size,
-                    ctx.format,
-                );
+            let dst_output_view = librashader_runtime_wgpu::WgpuOutputView::new_from_raw(
+                &dst_texture_view,
+                view_size,
+                ctx.format,
+            );
             let dst_viewport =
                 Viewport::new_render_target_sized_origin(dst_output_view, None).unwrap();
 
             // Framecount should be added forever: https://github.com/raphamorim/rio/issues/753
             self.framecount = self.framecount.wrapping_add(1);
             if let Err(err) = filter.frame(
-                filter_src_texture,
+                &*filter_src_texture,
                 &dst_viewport,
                 encoder,
                 self.framecount,
                 None,
-                ctx,
+                // ctx,
             ) {
                 tracing::error!("Filter rendering failed: {err}");
             }

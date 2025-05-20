@@ -52,16 +52,19 @@ yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.2", optional = true }
 futures = { workspace = true }
 
-librashader-common = "0.7.1"
-librashader-presets = "0.7.1"
-librashader-preprocess = "0.7.1"
-librashader-pack = "0.7.1"
-librashader-reflect = { version = "0.7.1", features = [
+librashader-common = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-common" }
+librashader-presets = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-presets" }
+librashader-preprocess = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-preprocess" }
+librashader-pack = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-pack" }
+librashader-reflect = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-reflect", features = [
     "stable",
     "wgsl",
 ], default-features = false }
-librashader-runtime = "0.7.1"
-librashader-cache = "0.7.1"
+librashader-runtime = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-runtime" }
+librashader-runtime-wgpu = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-runtime-wgpu", features = [
+    "stable",
+], default-features = false }
+librashader-cache = { git = "https://github.com/SnowflakePowered/librashader", branch = "passmeta-presets", package = "librashader-cache" }
 thiserror = "2.0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
