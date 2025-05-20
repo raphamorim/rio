@@ -38,14 +38,6 @@ impl ApplicationHandler for State {
         .unwrap();
         sugarloaf.update_filters(&["newpixiecrt".to_string()]);
         println!("{:?}", sugarloaf.get_filter_parameters());
-        sugarloaf.update_filters(&["fubax_vr".to_string()]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
-        sugarloaf.update_filters(&[
-            "C:\\Users\\jrbro\\AppData\\Local\\rio\\shaders\\glitch.slangp".to_string(),
-        ]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
-        sugarloaf.update_filters(&["fubax_vr".to_string(), "newpixiecrt".to_string()]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
         event_loop.exit();
     }
 }
