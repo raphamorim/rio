@@ -162,14 +162,14 @@ sctk = { package = "smithay-client-toolkit", version = "0.19.2", default-feature
     "calloop",
 ], optional = true }
 sctk-adwaita = { version = "0.10.1", default-features = false, optional = true }
-wayland-backend = { version = "0.3.5", default-features = false, features = [
+wayland-backend = { version = "0.3.10", default-features = false, features = [
     "client_system",
 ], optional = true }
-wayland-client = { version = "0.31.4", optional = true }
-wayland-protocols = { version = "0.32.2", features = [
+wayland-client = { version = "0.31.10", optional = true }
+wayland-protocols = { version = "0.32.8", features = [
     "staging",
 ], optional = true }
-wayland-protocols-plasma = { version = "0.3.2", features = [
+wayland-protocols-plasma = { version = "0.3.8", features = [
     "client",
 ], optional = true }
 x11-dl = { version = "2.19.1", optional = true }
