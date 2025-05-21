@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub mod charset;
 pub mod control;
 pub mod graphics;
+pub mod drcs;
 pub mod iterm2_image_protocol;
 pub mod mode;
 pub mod sixel;
