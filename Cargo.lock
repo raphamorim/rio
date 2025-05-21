@@ -890,7 +890,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1589,7 +1589,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.0",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1707,7 +1707,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if 1.0.0",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1718,8 +1718,9 @@ checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
 name = "librashader-cache"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad65a463b92031137a2a782be25dd189b141f8f65631d5e8664ac638df6dfa8b"
 dependencies = [
  "bincode",
  "blake3",
@@ -1734,8 +1735,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-common"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87364d6097b0163f1f13c423fb2c9df1aea371812d7458ce4293168d26696355"
 dependencies = [
  "bitflags 2.9.0",
  "halfbrown 0.2.5",
@@ -1748,8 +1750,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-pack"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd70c5646970f296c600d26b193efb41373692ee18007f7606b2dbdc09cfb79c"
 dependencies = [
  "image",
  "librashader-preprocess",
@@ -1760,8 +1763,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-preprocess"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e1e32c7d57a2f29223b24a0e6be6723087bec394fd65a638e4d049324205fb"
 dependencies = [
  "encoding_rs",
  "librashader-common",
@@ -1772,8 +1776,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-presets"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57373632c122fad07da917fae6049febfdb1b2c206511cf4c1fad0f97f93e634"
 dependencies = [
  "librashader-common",
  "nom",
@@ -1788,8 +1793,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-reflect"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d5c788fa74fef0e3410762307020ee20699e084bef73e524c9828f7944a604b"
 dependencies = [
  "bitflags 2.9.0",
  "bytemuck",
@@ -1809,8 +1815,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-runtime"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c2fe70b4a6341a7874875768086a486f5a84c73831bb6a26e3ebdeb28c5cd1"
 dependencies = [
  "arc-swap",
  "array-concat",
@@ -1826,8 +1833,9 @@ dependencies = [
 
 [[package]]
 name = "librashader-runtime-wgpu"
-version = "0.8.0"
-source = "git+https://github.com/SnowflakePowered/librashader?branch=passmeta-presets#8a12c2b76928c2663703a936efec893f80463237"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8cc71c29ddd684604f866c1b7ac587306e32bed1c904111c26ce8d2f1931f53"
 dependencies = [
  "array-concat",
  "bytemuck",
@@ -2934,7 +2942,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4166,7 +4174,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

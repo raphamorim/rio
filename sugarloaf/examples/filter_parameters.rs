@@ -38,6 +38,10 @@ impl ApplicationHandler for State {
         .unwrap();
         sugarloaf.update_filters(&["newpixiecrt".to_string()]);
         println!("{:?}", sugarloaf.get_filter_parameters());
+        sugarloaf.update_filters(&["fubax_vr".to_string()]);
+        println!("{:?}", sugarloaf.get_filter_parameters());
+        sugarloaf.update_filters(&["newpixiecrt".to_string(), "fubax_vr".to_string()]);
+        println!("{:?}", sugarloaf.get_filter_parameters());
         event_loop.exit();
     }
 }
