@@ -7,6 +7,8 @@ use sugarloaf::{
     SugarloafWindowSize,
 };
 
+use librashader_common::map::ShortString;
+
 struct State;
 
 impl ApplicationHandler for State {
@@ -36,12 +38,13 @@ impl ApplicationHandler for State {
             RootStyle::default(),
         )
         .unwrap();
-        sugarloaf.update_filters(&["newpixiecrt".to_string()]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
-        sugarloaf.update_filters(&["fubax_vr".to_string()]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
-        sugarloaf.update_filters(&["newpixiecrt".to_string(), "fubax_vr".to_string()]);
-        println!("{:?}", sugarloaf.get_filter_parameters());
+        sugarloaf.update_filters(&["newpixiecrt".to_string(), "newpixiecrt".to_string()]);
+        let mut parameters = sugarloaf.get_filter_parameters();
+        *parameters[0]
+            .get_mut(&ShortString::from("acc_modulate"))
+            .unwrap() = 0.5;
+        sugarloaf.update_filter_parameter(0, parameters[0].clone());
+        assert_eq!(sugarloaf.get_filter_parameters(), parameters);
         event_loop.exit();
     }
 }

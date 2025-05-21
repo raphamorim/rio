@@ -27,15 +27,15 @@ impl FiltersBrush {
     }
 
     #[inline]
-    pub fn set_parameter(&self, name: &str, value: f32) {
-        self.filter_chains
-            .iter()
-            .map(|f| f.parameters())
-            .for_each(|p| {
-                if p.parameter_value(name).is_some() {
-                    p.set_parameter_value(name, value);
-                }
-            });
+    pub fn update_parameters(
+        &self,
+        filter_index: usize,
+        parameters: FastHashMap<ShortString, f32>,
+    ) {
+        self.filter_chains.get(filter_index).map(|f| {
+            f.parameters()
+                .update_parameters(|value| *value = parameters)
+        });
     }
 
     #[inline]

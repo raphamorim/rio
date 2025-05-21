@@ -207,8 +207,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_filter_parameter(&self, name: &str, value: f32) {
-        self.filters_brush.set_parameter(name, value);
+    pub fn update_filter_parameter(
+        &self,
+        filter_index: usize,
+        parameters: FastHashMap<ShortString, f32>,
+    ) {
+        self.filters_brush
+            .update_parameters(filter_index, parameters);
     }
 
     #[inline]
