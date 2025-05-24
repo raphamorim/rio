@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.15"
+version = "0.2.16"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -28,15 +28,15 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.2.15" }
-rio-backend = { path = "rio-backend", version = "0.2.15" }
-rio-window = { path = "rio-window", version = "0.2.15", default-features = false }
-sugarloaf = { path = "sugarloaf", version = "0.2.15" }
+teletypewriter = { path = "teletypewriter", version = "0.2.16" }
+rio-backend = { path = "rio-backend", version = "0.2.16" }
+rio-window = { path = "rio-window", version = "0.2.16", default-features = false }
+sugarloaf = { path = "sugarloaf", version = "0.2.16" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.2.15" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.2.15" }
-corcovado = { path = "corcovado", version = "0.2.15" }
+copa = { path = "copa", default-features = true, version = "0.2.16" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.2.16" }
+corcovado = { path = "corcovado", version = "0.2.16" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.3", features = [
     "nightly",
