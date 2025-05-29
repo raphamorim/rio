@@ -22,11 +22,11 @@ Note that all parameters without a header must be at the beginning of the file, 
 program = "vi"
 args = []
 
-theme = "dracula" # ignore it, be under the `editor` header
+theme = "dracula" # won't work, because it's under the `editor` header
 ```
 
 ```toml
-theme = "dracula" # it works, be without heading
+theme = "dracula" # will work
 
 [editor]
 program = "vi"
