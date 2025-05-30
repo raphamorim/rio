@@ -22,7 +22,11 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn new(device: &wgpu::Device, backend: wgpu::Backend, context: &crate::context::Context) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        backend: wgpu::Backend,
+        context: &crate::context::Context,
+    ) -> Self {
         let layers = match backend {
             // On the GL backend we start with 2 layers, to help wgpu figure
             // out that this texture is `GL_TEXTURE_2D_ARRAY` rather than `GL_TEXTURE_2D`
@@ -75,6 +79,48 @@ impl Atlas {
 
     pub fn layer_count(&self) -> usize {
         self.layers.len()
+    }
+
+    pub fn clear(
+        &mut self,
+        device: &wgpu::Device,
+        backend: wgpu::Backend,
+        context: &crate::context::Context,
+    ) {
+        // Reset all layers to empty
+        self.layers = match backend {
+            wgpu::Backend::Gl => vec![Layer::Empty, Layer::Empty],
+            _ => vec![Layer::Empty],
+        };
+
+        // Recreate the texture with the reset layers
+        let extent = wgpu::Extent3d {
+            width: SIZE,
+            height: SIZE,
+            depth_or_array_layers: self.layers.len() as u32,
+        };
+
+        let texture_format = context.get_optimal_texture_format(4); // RGBA
+
+        self.texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("image texture atlas"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: texture_format,
+            usage: wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
+        tracing::info!("Layer atlas cleared");
     }
 
     pub fn upload(

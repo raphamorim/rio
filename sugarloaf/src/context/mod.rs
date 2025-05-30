@@ -258,7 +258,7 @@ impl Context<'_> {
                     let g = half::f16::from_f32(chunk[1] as f32 / 255.0);
                     let b = half::f16::from_f32(chunk[2] as f32 / 255.0);
                     let a = half::f16::from_f32(chunk[3] as f32 / 255.0);
-                    
+
                     f16_data.extend_from_slice(&r.to_le_bytes());
                     f16_data.extend_from_slice(&g.to_le_bytes());
                     f16_data.extend_from_slice(&b.to_le_bytes());

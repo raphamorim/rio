@@ -586,6 +586,13 @@ impl RichTextBrush {
     }
 
     #[inline]
+    pub fn clear_atlas(&mut self) {
+        self.images.clear_atlas();
+        self.glyphs = GlyphCache::new();
+        tracing::info!("RichTextBrush atlas and glyph cache cleared");
+    }
+
+    #[inline]
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut Context,

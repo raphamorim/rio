@@ -76,7 +76,9 @@ impl ImageCache {
                 alloc,
                 buffer: vec![
                     0u8;
-                    max_texture_size as usize * max_texture_size as usize * bytes_per_pixel
+                    max_texture_size as usize
+                        * max_texture_size as usize
+                        * bytes_per_pixel
                 ],
                 fresh: true,
                 dirty: true,
@@ -175,6 +177,32 @@ impl ImageCache {
                 (entry.y + entry.height) as f32 * s,
             ),
         })
+    }
+
+    /// Clears all entries and resets the atlas. Used when fonts change.
+    pub fn clear_atlas(&mut self) {
+        // Clear all entries
+        self.entries.clear();
+
+        // Reset the allocator
+        self.atlas.alloc =
+            AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
+
+        // Clear the buffer
+        let bytes_per_pixel = self.atlas.buffer.len()
+            / (self.max_texture_size as usize * self.max_texture_size as usize);
+        self.atlas.buffer = vec![
+            0u8;
+            self.max_texture_size as usize
+                * self.max_texture_size as usize
+                * bytes_per_pixel
+        ];
+
+        // Mark as fresh and dirty to trigger texture recreation
+        self.atlas.fresh = true;
+        self.atlas.dirty = true;
+
+        tracing::info!("Atlas cleared due to font change");
     }
 
     /// Returns true if the image is valid.
