@@ -506,6 +506,29 @@ impl LayerBrush {
         }
     }
 
+    pub fn clear_atlas(
+        &mut self,
+        device: &wgpu::Device,
+        backend: wgpu::Backend,
+        context: &crate::context::Context,
+    ) {
+        self.texture_atlas.clear(device, backend, context);
+        self.texture_version = self.texture_atlas.layer_count();
+
+        // Recreate the bind group with the new atlas
+        self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("image texture atlas bind group"),
+            layout: &self.texture_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(self.texture_atlas.view()),
+            }],
+        });
+
+        // Clear the raster cache as well
+        self.raster_cache.borrow_mut().clear();
+    }
+
     pub fn end_frame(&mut self) {
         self.raster_cache.borrow_mut().trim(&mut self.texture_atlas);
 

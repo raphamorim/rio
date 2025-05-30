@@ -240,11 +240,8 @@ impl Context<'_> {
     }
 
     pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {
-        if self.supports_f16 {
-            wgpu::TextureSampleType::Float { filterable: true }
-        } else {
-            wgpu::TextureSampleType::Float { filterable: true }
-        }
+        // Both Rgba16Float (f16) and Rgba8Unorm (f32) use Float sample type with filtering
+        wgpu::TextureSampleType::Float { filterable: true }
     }
 
     pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {

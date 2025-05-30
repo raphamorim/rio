@@ -7,7 +7,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Object, RichText, Sugarloaf, SugarloafWindow,
+    SugarloafWindowSize,
 };
 
 fn main() {
@@ -146,7 +147,6 @@ impl ApplicationHandler for Application {
                         },
                     )
                     .new_line()
-                    .new_line()
                     .add_text(
                         "Texture Formats:",
                         FragmentStyle {
@@ -183,9 +183,15 @@ impl ApplicationHandler for Application {
                             color: [0.7, 0.7, 0.7, 1.0],
                             ..FragmentStyle::default()
                         },
-                    );
+                    )
+                    .build();
 
-                let _ = sugarloaf.render();
+                sugarloaf.set_objects(vec![Object::RichText(RichText {
+                    id: self.rich_text,
+                    position: [10., 0.],
+                    lines: None,
+                })]);
+                sugarloaf.render();
             }
             _ => {}
         }
