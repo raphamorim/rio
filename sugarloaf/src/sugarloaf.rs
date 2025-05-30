@@ -15,6 +15,8 @@ use crate::Content;
 use crate::SugarDimensions;
 use crate::{context::Context, Object};
 use core::fmt::{Debug, Formatter};
+use librashader_common::map::FastHashMap;
+use librashader_common::map::ShortString;
 use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
@@ -207,6 +209,21 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn update_filters(&mut self, filters: &[Filter]) {
         self.filters_brush.update_filters(&self.ctx, filters);
+    }
+
+    #[inline]
+    pub fn get_filter_parameters(&self) -> Vec<FastHashMap<ShortString, f32>> {
+        self.filters_brush.parameters()
+    }
+
+    #[inline]
+    pub fn update_filter_parameter(
+        &self,
+        filter_index: usize,
+        parameters: FastHashMap<ShortString, f32>,
+    ) {
+        self.filters_brush
+            .update_parameters(filter_index, parameters);
     }
 
     #[inline]
