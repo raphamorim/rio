@@ -113,17 +113,19 @@ impl QuadBrush {
                     bind_group_layouts: &[&constant_layout],
                 });
 
+        let shader_source = if context.supports_f16() {
+            include_str!("./quad_f16.wgsl")
+        } else {
+            include_str!("./quad_f32_combined.wgsl")
+        };
+
         let shader = context
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("sugarloaf::quad shader"),
-                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(concat!(
-                    include_str!("./quad.wgsl"),
-                    "\n",
-                    include_str!("./vertex.wgsl"),
-                    "\n",
-                    include_str!("./composed_quad.wgsl"),
-                ))),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(
+                    shader_source,
+                )),
             });
 
         let pipeline =

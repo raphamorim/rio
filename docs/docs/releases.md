@@ -7,6 +7,8 @@ language: 'en'
 
 ## 0.2.17 (unreleased)
 
+- F16 Texture supports whenever is available.
+- Clear font atlas whenever the font is changed.
 - Skip passing sandbox env in Flatpak, fixes user environment in spawned shell [#1116](https://github.com/raphamorim/rio/pull/1116) by [@ranisalt](https://github.com/ranisalt).
 - On Windows, fixed crash in should_apps_use_dark_mode() for Windows versions < 17763.
 

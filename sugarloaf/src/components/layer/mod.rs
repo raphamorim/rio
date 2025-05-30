@@ -170,7 +170,7 @@ impl LayerBrush {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: context.get_optimal_texture_sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
@@ -184,11 +184,15 @@ impl LayerBrush {
             bind_group_layouts: &[&constant_layout, &texture_layout],
         });
 
+        let shader_source = if context.supports_f16() {
+            include_str!("image.wgsl")
+        } else {
+            include_str!("image_f32.wgsl")
+        };
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("layer image shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
-                "image.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -269,7 +273,7 @@ impl LayerBrush {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let texture_atlas = Atlas::new(device, context.adapter_info.backend);
+        let texture_atlas = Atlas::new(device, context.adapter_info.backend, context);
 
         let texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image texture atlas bind group"),
@@ -500,6 +504,29 @@ impl LayerBrush {
 
             drop(render_pass);
         }
+    }
+
+    pub fn clear_atlas(
+        &mut self,
+        device: &wgpu::Device,
+        backend: wgpu::Backend,
+        context: &crate::context::Context,
+    ) {
+        self.texture_atlas.clear(device, backend, context);
+        self.texture_version = self.texture_atlas.layer_count();
+
+        // Recreate the bind group with the new atlas
+        self.texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("image texture atlas bind group"),
+            layout: &self.texture_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(self.texture_atlas.view()),
+            }],
+        });
+
+        // Clear the raster cache as well
+        self.raster_cache.borrow_mut().clear();
     }
 
     pub fn end_frame(&mut self) {
