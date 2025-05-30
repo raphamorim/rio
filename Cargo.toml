@@ -77,11 +77,13 @@ memmap2 = "0.9.5"
 url = "2.5.4"
 
 [profile.release]
-lto = true
-strip = true
-debug = "limited"
-codegen-units = 1
-incremental = false
+codegen-units = 1           # reduces binary size by ~2%
+debug = "full"              # No one needs an undebuggable release binary
+lto = true                  # reduces binary size by ~14%
+opt-level = "s"             # reduces binary size by ~25%
+panic = "abort"             # reduces binary size by ~50% in combination with -Zbuild-std-features=panic_immediate_abort
+split-debuginfo = "packed"  # generates a separate *.dwp/*.dSYM so the binary can get stripped
+strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
 
 [profile.dev]
 split-debuginfo = "unpacked"
