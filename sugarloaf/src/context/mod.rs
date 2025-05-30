@@ -11,6 +11,7 @@ pub struct Context<'a> {
     alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
     surface_caps: wgpu::SurfaceCapabilities,
+    pub supports_f16: bool,
 }
 
 #[inline]
@@ -109,29 +110,44 @@ impl Context<'_> {
         #[cfg(not(target_os = "macos"))]
         let format = find_best_texture_format(surface_caps.formats.as_slice());
 
-        let (device, queue) = {
+        let (device, queue, supports_f16) = {
             {
                 if let Ok(result) = futures::executor::block_on(adapter.request_device(
                     // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
+                    // SHADER_F16 enables half precision floating point support
                     &wgpu::DeviceDescriptor {
                         required_features: wgpu::Features::empty()
-                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
+                            | wgpu::Features::SHADER_F16,
                         ..Default::default()
                     },
                 )) {
-                    result
+                    (result.0, result.1, true)
                 } else {
-                    // These downlevel limits will allow the code to run on all possible hardware
-                    futures::executor::block_on(adapter.request_device(
-                        &wgpu::DeviceDescriptor {
-                            memory_hints: wgpu::MemoryHints::Performance,
-                            label: None,
-                            required_features: wgpu::Features::empty(),
-                            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                    // Fallback without f16 support for compatibility
+                    if let Ok(result) = futures::executor::block_on(
+                        adapter.request_device(&wgpu::DeviceDescriptor {
+                            required_features: wgpu::Features::empty()
+                                | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
                             ..Default::default()
-                        },
-                    ))
-                    .expect("Request device")
+                        }),
+                    ) {
+                        (result.0, result.1, false)
+                    } else {
+                        // These downlevel limits will allow the code to run on all possible hardware
+                        let result = futures::executor::block_on(adapter.request_device(
+                            &wgpu::DeviceDescriptor {
+                                memory_hints: wgpu::MemoryHints::Performance,
+                                label: None,
+                                required_features: wgpu::Features::empty(),
+                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
+                                ),
+                                ..Default::default()
+                            },
+                        ))
+                        .expect("Request device");
+                        (result.0, result.1, false)
+                    }
                 }
             }
         };
@@ -164,6 +180,8 @@ impl Context<'_> {
             },
         );
 
+        tracing::info!("F16 shader support: {}", supports_f16);
+
         Context {
             device,
             queue,
@@ -177,6 +195,7 @@ impl Context<'_> {
             scale,
             adapter_info,
             surface_caps,
+            supports_f16,
         }
     }
 
@@ -201,6 +220,10 @@ impl Context<'_> {
 
     pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
         &self.surface_caps
+    }
+
+    pub fn supports_f16(&self) -> bool {
+        self.supports_f16
     }
 
     fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {

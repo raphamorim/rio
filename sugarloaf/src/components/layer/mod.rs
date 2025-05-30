@@ -184,11 +184,15 @@ impl LayerBrush {
             bind_group_layouts: &[&constant_layout, &texture_layout],
         });
 
+        let shader_source = if context.supports_f16() {
+            include_str!("image.wgsl")
+        } else {
+            include_str!("image_f32.wgsl")
+        };
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("layer image shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(include_str!(
-                "image.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {

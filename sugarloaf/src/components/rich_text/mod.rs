@@ -159,11 +159,15 @@ impl RichTextBrush {
             label: Some("rich_text::layout_bind_group"),
         });
 
+        let shader_source = if context.supports_f16() {
+            include_str!("rich_text.wgsl")
+        } else {
+            include_str!("rich_text_f32.wgsl")
+        };
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "rich_text.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
