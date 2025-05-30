@@ -6,7 +6,7 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var font_sampler: sampler;
-@group(1) @binding(0) var font_texture: texture_2d<f32>;
+@group(1) @binding(0) var font_texture: texture_2d<f32>; // f16 textures are sampled as f32
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,

@@ -22,7 +22,7 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn new(device: &wgpu::Device, backend: wgpu::Backend) -> Self {
+    pub fn new(device: &wgpu::Device, backend: wgpu::Backend, context: &crate::context::Context) -> Self {
         let layers = match backend {
             // On the GL backend we start with 2 layers, to help wgpu figure
             // out that this texture is `GL_TEXTURE_2D_ARRAY` rather than `GL_TEXTURE_2D`
@@ -37,13 +37,15 @@ impl Atlas {
             depth_or_array_layers: layers.len() as u32,
         };
 
+        let texture_format = context.get_optimal_texture_format(4); // RGBA
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("image texture atlas"),
             size: extent,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: texture_format,
             // with gamma correction
             // wgpu::TextureFormat::Rgba8UnormSrgb
             // } else {

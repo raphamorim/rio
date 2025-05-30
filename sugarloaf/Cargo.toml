@@ -47,6 +47,7 @@ approx = "0.5.1"
 lru = "0.13.0"
 skrifa = "0.30.0"
 halfbrown = "0.3.0"
+half = "2.4.1"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.2", optional = true }

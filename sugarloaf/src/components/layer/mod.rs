@@ -170,7 +170,7 @@ impl LayerBrush {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: context.get_optimal_texture_sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
@@ -273,7 +273,7 @@ impl LayerBrush {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let texture_atlas = Atlas::new(device, context.adapter_info.backend);
+        let texture_atlas = Atlas::new(device, context.adapter_info.backend, context);
 
         let texture = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("image texture atlas bind group"),

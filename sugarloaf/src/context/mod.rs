@@ -226,6 +226,51 @@ impl Context<'_> {
         self.supports_f16
     }
 
+    pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
+        if self.supports_f16 {
+            match channels {
+                1 => wgpu::TextureFormat::R16Float,
+                2 => wgpu::TextureFormat::Rg16Float,
+                4 => wgpu::TextureFormat::Rgba16Float,
+                _ => wgpu::TextureFormat::Rgba8Unorm, // fallback
+            }
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        }
+    }
+
+    pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {
+        if self.supports_f16 {
+            wgpu::TextureSampleType::Float { filterable: true }
+        } else {
+            wgpu::TextureSampleType::Float { filterable: true }
+        }
+    }
+
+    pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {
+        if self.supports_f16 {
+            // Convert u8 RGBA to f16 RGBA
+            let mut f16_data = Vec::with_capacity(rgba8_data.len() * 2);
+            for chunk in rgba8_data.chunks(4) {
+                if chunk.len() == 4 {
+                    // Convert u8 [0-255] to f16 [0.0-1.0]
+                    let r = half::f16::from_f32(chunk[0] as f32 / 255.0);
+                    let g = half::f16::from_f32(chunk[1] as f32 / 255.0);
+                    let b = half::f16::from_f32(chunk[2] as f32 / 255.0);
+                    let a = half::f16::from_f32(chunk[3] as f32 / 255.0);
+                    
+                    f16_data.extend_from_slice(&r.to_le_bytes());
+                    f16_data.extend_from_slice(&g.to_le_bytes());
+                    f16_data.extend_from_slice(&b.to_le_bytes());
+                    f16_data.extend_from_slice(&a.to_le_bytes());
+                }
+            }
+            f16_data
+        } else {
+            rgba8_data.to_vec()
+        }
+    }
+
     fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
         let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
 

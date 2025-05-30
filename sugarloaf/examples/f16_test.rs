@@ -144,6 +144,45 @@ impl ApplicationHandler for Application {
                             color: [0.6, 0.6, 0.6, 1.0],
                             ..FragmentStyle::default()
                         },
+                    )
+                    .new_line()
+                    .new_line()
+                    .add_text(
+                        "Texture Formats:",
+                        FragmentStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        &format!(
+                            "• RGBA: {}",
+                            if f16_supported {
+                                "Rgba16Float (8 bytes/pixel)"
+                            } else {
+                                "Rgba8Unorm (4 bytes/pixel)"
+                            }
+                        ),
+                        FragmentStyle {
+                            color: [0.7, 0.7, 0.7, 1.0],
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_text(
+                        &format!(
+                            "• Memory savings: {}",
+                            if f16_supported {
+                                "~50% bandwidth reduction for interpolated data"
+                            } else {
+                                "Using standard precision"
+                            }
+                        ),
+                        FragmentStyle {
+                            color: [0.7, 0.7, 0.7, 1.0],
+                            ..FragmentStyle::default()
+                        },
                     );
 
                 let _ = sugarloaf.render();

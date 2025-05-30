@@ -47,6 +47,8 @@ impl ImageCache {
         // let max_texture_size = max_texture_size.clamp(1024, 8192);
         let max_texture_size = SIZE;
 
+        let texture_format = context.get_optimal_texture_format(4); // RGBA
+
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text create texture"),
             size: wgpu::Extent3d {
@@ -56,7 +58,7 @@ impl ImageCache {
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: texture_format,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
@@ -65,13 +67,16 @@ impl ImageCache {
 
         let alloc = AtlasAllocator::new(max_texture_size, max_texture_size);
 
+        // Buffer size depends on texture format
+        let bytes_per_pixel = if context.supports_f16() { 8 } else { 4 }; // f16 RGBA = 8 bytes, u8 RGBA = 4 bytes
+
         Self {
             entries: Vec::new(),
             atlas: Atlas {
                 alloc,
                 buffer: vec![
                     0u8;
-                    max_texture_size as usize * max_texture_size as usize * 4
+                    max_texture_size as usize * max_texture_size as usize * bytes_per_pixel
                 ],
                 fresh: true,
                 dirty: true,
