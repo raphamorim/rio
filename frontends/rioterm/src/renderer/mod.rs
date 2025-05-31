@@ -23,8 +23,9 @@ use rio_backend::config::Config;
 use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, is_private_user_area, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, is_private_user_area, Content, FragmentStyle,
+    FragmentStyleDecoration, Graphic, Stretch, Style, SugarCursor, Sugarloaf,
+    UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -262,6 +263,7 @@ impl Renderer {
         let mut content = String::with_capacity(columns);
         let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
+        let mut skip_next_column = false;
 
         // Collect all characters that need font lookups to batch them
         let mut font_lookups = Vec::new();
@@ -269,6 +271,12 @@ impl Renderer {
 
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
+            // Skip this column if the previous PUA character expanded to width 2
+            if skip_next_column {
+                skip_next_column = false;
+                continue;
+            }
+
             let square = &row.inner[column];
 
             if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
@@ -377,18 +385,28 @@ impl Renderer {
                 // the subsequent character is empty, then we allow it to use
                 // the full glyph size.
                 if is_pua {
-                    if is_last {
-                        style.width = 2.0;
+                    let should_expand_width = if is_last {
+                        // At the end of line, allow expansion
+                        true
                     } else {
-                        let next = &row.inner[column+1];
-                        let next_content = if next.c == '\t' || next.flags.contains(Flags::HIDDEN) {
-                            ' '
-                        } else {
-                            next.c
-                        };
+                        let next = &row.inner[column + 1];
+                        let next_content =
+                            if next.c == '\t' || next.flags.contains(Flags::HIDDEN) {
+                                ' '
+                            } else {
+                                next.c
+                            };
 
-                        if next_content == ' ' || next.flags.contains(Flags::WIDE_CHAR_SPACER) {
-                            style.width = 2.0;
+                        // Allow expansion if next cell is empty space or wide char spacer
+                        next_content == ' '
+                            || next.flags.contains(Flags::WIDE_CHAR_SPACER)
+                    };
+
+                    if should_expand_width {
+                        style.width = 2.0;
+                        // Skip the next column since this character now occupies 2 cells
+                        if !is_last {
+                            skip_next_column = true;
                         }
                     }
                 }

@@ -731,6 +731,28 @@ impl RichTextBrush {
                         }
                     }
 
+                    // Calculate effective font size for PUA characters with width 2.0
+                    let effective_font_size = if char_width >= 2.0 {
+                        // Scale font size for wide PUA characters
+                        run.size * 1.6 // Conservative scaling to fit within 2 cells
+                    } else {
+                        run.size
+                    };
+
+                    // Update font session if needed
+                    if font != current_font || effective_font_size != current_font_size {
+                        current_font = font;
+                        current_font_size = effective_font_size;
+
+                        session = glyphs_cache.session(
+                            image_cache,
+                            current_font,
+                            font_library,
+                            font_coords,
+                            effective_font_size,
+                        );
+                    }
+
                     // Handle graphics if in layout mode
                     if !is_dimensions_only {
                         if let Some(graphic) = run.span.media {
