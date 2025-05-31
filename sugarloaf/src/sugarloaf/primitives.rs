@@ -56,10 +56,7 @@ pub enum CornerType {
 
 #[inline]
 pub fn is_private_user_area(character: &char) -> bool {
-    match character {
-        '\u{E000}'..='\u{F8FF}' => true,
-        _ => false,
-    }
+    matches!(character, '\u{E000}'..='\u{F8FF}')
 }
 
 #[inline]
