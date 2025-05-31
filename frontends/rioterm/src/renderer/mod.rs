@@ -404,7 +404,8 @@ impl Renderer {
 
                     if should_expand_width {
                         style.width = 2.0;
-                        // Skip the next column since this character now occupies 2 cells
+                        style.should_scale = true; // Mark for scaling
+                                                   // Skip the next column since this character now occupies 2 cells
                         if !is_last {
                             skip_next_column = true;
                         }

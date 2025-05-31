@@ -731,9 +731,9 @@ impl RichTextBrush {
                         }
                     }
 
-                    // Calculate effective font size for PUA characters with width 2.0
-                    let effective_font_size = if char_width >= 2.0 {
-                        // Scale font size for wide PUA characters
+                    // Calculate effective font size for characters that should be scaled
+                    let effective_font_size = if run.span.should_scale {
+                        // Scale font size for characters marked for scaling
                         run.size * 1.6 // Conservative scaling to fit within 2 cells
                     } else {
                         run.size

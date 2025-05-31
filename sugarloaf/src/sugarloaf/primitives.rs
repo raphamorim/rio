@@ -56,7 +56,15 @@ pub enum CornerType {
 
 #[inline]
 pub fn is_private_user_area(character: &char) -> bool {
-    matches!(character, '\u{E000}'..='\u{F8FF}')
+    matches!(
+        character,
+        // Private Use Area (BMP)
+        '\u{E000}'..='\u{F8FF}' |
+        // Supplementary Private Use Area-A
+        '\u{F0000}'..='\u{FFFFD}' |
+        // Supplementary Private Use Area-B
+        '\u{100000}'..='\u{10FFFD}'
+    )
 }
 
 #[inline]
@@ -2343,3 +2351,40 @@ const OCTANT_PATTERNS: [u8; 230] = [
     0b11111101, // 1CDE4;BLOCK OCTANT-1345678
     0b11111110, // 1CDE5;BLOCK OCTANT-2345678
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_private_user_area() {
+        // Test Private Use Area (BMP) - U+E000 to U+F8FF
+        assert!(is_private_user_area(&'\u{E000}'));
+        assert!(is_private_user_area(&'\u{F000}'));
+        assert!(is_private_user_area(&'\u{F8FF}'));
+
+        // Test Nerd Font character (U+F01C4) - this is the specific character mentioned
+        assert!(is_private_user_area(&'\u{F01C4}'));
+
+        // Test Supplementary Private Use Area-A - U+F0000 to U+FFFFD
+        assert!(is_private_user_area(&'\u{F0000}'));
+        assert!(is_private_user_area(&'\u{F5000}'));
+        assert!(is_private_user_area(&'\u{FFFFD}'));
+
+        // Test Supplementary Private Use Area-B - U+100000 to U+10FFFD
+        assert!(is_private_user_area(&'\u{100000}'));
+        assert!(is_private_user_area(&'\u{105000}'));
+        assert!(is_private_user_area(&'\u{10FFFD}'));
+
+        // Test regular characters that should NOT be private use area
+        assert!(!is_private_user_area(&'A'));
+        assert!(!is_private_user_area(&'z'));
+        assert!(!is_private_user_area(&'0'));
+        assert!(!is_private_user_area(&'€'));
+        assert!(!is_private_user_area(&'\u{1F600}')); // 😀 emoji
+
+        // Test boundary cases
+        assert!(!is_private_user_area(&'\u{D7FF}')); // Just before surrogates
+        assert!(!is_private_user_area(&'\u{F900}')); // Just after PUA
+    }
+}
