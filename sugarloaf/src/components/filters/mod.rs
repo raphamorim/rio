@@ -5,7 +5,6 @@ use librashader_common::map::{FastHashMap, ShortString};
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
 use librashader_runtime::parameters::FilterChainParameters as _;
-use std::sync::Arc;
 
 pub type Filter = String;
 
@@ -13,7 +12,7 @@ pub type Filter = String;
 #[derive(Default)]
 pub struct FiltersBrush {
     filter_chains: Vec<librashader_runtime_wgpu::FilterChainWgpu>,
-    filter_intermediates: Vec<Arc<wgpu::Texture>>,
+    filter_intermediates: Vec<wgpu::Texture>,
     framecount: usize,
 }
 
@@ -126,7 +125,7 @@ impl FiltersBrush {
 
         for _ in self.filter_chains.iter().skip(skip) {
             let intermediate_texture =
-                Arc::new(ctx.device.create_texture(&wgpu::TextureDescriptor {
+                ctx.device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("Filter Intermediate Texture"),
                     size,
                     mip_level_count: 1,
@@ -138,7 +137,7 @@ impl FiltersBrush {
                         | wgpu::TextureUsages::COPY_SRC
                         | wgpu::TextureUsages::COPY_DST,
                     view_formats: &[ctx.format],
-                }));
+                });
 
             self.filter_intermediates.push(intermediate_texture);
         }
@@ -169,22 +168,20 @@ impl FiltersBrush {
 
         // Some shaders can do some specific things for which WGPU (at least the Vulkan backend)
         // requires the src and dst textures to be different, otherwise it will crash.
-        // Also librashader requires a texture to be in Arc, so we need to make a copy anyway
         let src_texture = {
-            let new_src_texture =
-                Arc::new(ctx.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("Filters Source Texture"),
-                    size: src_texture.size(),
-                    mip_level_count: src_texture.mip_level_count(),
-                    sample_count: src_texture.sample_count(),
-                    dimension: src_texture.dimension(),
-                    format: src_texture.format(),
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::COPY_DST,
-                    view_formats: &[src_texture.format()],
-                }));
+            let new_src_texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Filters Source Texture"),
+                size: src_texture.size(),
+                mip_level_count: src_texture.mip_level_count(),
+                sample_count: src_texture.sample_count(),
+                dimension: src_texture.dimension(),
+                format: src_texture.format(),
+                usage: wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[src_texture.format()],
+            });
 
             encoder.copy_texture_to_texture(
                 src_texture.as_image_copy(),
@@ -197,11 +194,11 @@ impl FiltersBrush {
 
         let view_size = Size::new(ctx.size.width as u32, ctx.size.height as u32);
         for (idx, filter) in self.filter_chains.iter_mut().enumerate() {
-            let filter_src_texture: Arc<wgpu::Texture>;
+            let filter_src_texture: &wgpu::Texture;
             let filter_dst_texture: &wgpu::Texture;
 
             if idx == 0 {
-                filter_src_texture = src_texture.clone();
+                filter_src_texture = &src_texture;
 
                 if filters_count == 1 {
                     filter_dst_texture = dst_texture;
@@ -209,10 +206,10 @@ impl FiltersBrush {
                     filter_dst_texture = &self.filter_intermediates[0];
                 }
             } else if idx == filters_count - 1 {
-                filter_src_texture = self.filter_intermediates[idx - 1].clone();
+                filter_src_texture = &self.filter_intermediates[idx - 1];
                 filter_dst_texture = dst_texture;
             } else {
-                filter_src_texture = self.filter_intermediates[idx - 1].clone();
+                filter_src_texture = &self.filter_intermediates[idx - 1];
                 filter_dst_texture = &self.filter_intermediates[idx];
             }
 
@@ -229,7 +226,7 @@ impl FiltersBrush {
             // Framecount should be added forever: https://github.com/raphamorim/rio/issues/753
             self.framecount = self.framecount.wrapping_add(1);
             if let Err(err) = filter.frame(
-                &*filter_src_texture,
+                filter_src_texture,
                 &dst_viewport,
                 encoder,
                 self.framecount,
