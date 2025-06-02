@@ -12,6 +12,7 @@ Installation options:
 - openSUSE package: [openSUSE:Factory/rioterm](https://software.opensuse.org/package/rioterm)
 - Flathub: [flathub.org/apps/com.rioterm.Rio](https://flathub.org/apps/com.rioterm.Rio)
 - Void Linux package: https://github.com/void-linux/void-packages/tree/master/srcpkgs/rio
+- Terra (Fedora) package: https://github.com/terrapkg/packages/tree/frawhide/anda/devs/rio
 
 Note: Debian packages (`.deb`) and Red Hat packages (`.rpm`) are packaged and released along with [GitHub releases](https://github.com/raphamorim/rio/releases).
 
