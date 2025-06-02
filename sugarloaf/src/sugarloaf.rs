@@ -147,6 +147,16 @@ impl Sugarloaf<'_> {
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
 
+        // Clear the atlas to remove old font glyphs
+        self.rich_text_brush.clear_atlas();
+
+        // Clear the layer atlas to remove old cached images
+        self.layer_brush.clear_atlas(
+            &self.ctx.device,
+            self.ctx.adapter_info.backend,
+            &self.ctx,
+        );
+
         self.state.reset();
         self.state
             .set_fonts(font_library, &mut self.rich_text_brush);
