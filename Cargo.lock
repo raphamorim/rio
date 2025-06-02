@@ -3303,6 +3303,7 @@ dependencies = [
  "fontconfig-parser",
  "futures",
  "guillotiere",
+ "half",
  "halfbrown 0.3.0",
  "image",
  "js-sys",

@@ -122,6 +122,12 @@ impl Cache {
         }
     }
 
+    /// Clear all cached images
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.hits.clear();
+    }
+
     /// Trim cache misses from cache
     pub fn trim(&mut self, atlas: &mut Atlas) {
         let hits = &self.hits;
