@@ -99,7 +99,7 @@ impl RichTextBrush {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type: context.get_optimal_texture_sample_type(),
                         view_dimension: wgpu::TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -159,11 +159,15 @@ impl RichTextBrush {
             label: Some("rich_text::layout_bind_group"),
         });
 
+        let shader_source = if context.supports_f16() {
+            include_str!("rich_text.wgsl")
+        } else {
+            include_str!("rich_text_f32.wgsl")
+        };
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                "rich_text.wgsl"
-            ))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -579,6 +583,13 @@ impl RichTextBrush {
     #[inline]
     pub fn reset(&mut self) {
         self.glyphs = GlyphCache::new();
+    }
+
+    #[inline]
+    pub fn clear_atlas(&mut self) {
+        self.images.clear_atlas();
+        self.glyphs = GlyphCache::new();
+        tracing::info!("RichTextBrush atlas and glyph cache cleared");
     }
 
     #[inline]
