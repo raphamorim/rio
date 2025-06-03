@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.17 (unreleased)
+## 0.2.18 (unreleased)
+
+- TBD.
+
+## 0.2.17
 
 - *Breaking:* Decorations as `Enabled` is default on MacOS (instead of `Transparent`).
 - F16 Texture supports whenever is available.
