@@ -436,10 +436,7 @@ impl<T> Evented for Timer<T> {
         opts: PollOpt,
     ) -> io::Result<()> {
         if self.inner.borrow().is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "timer already registered",
-            ));
+            return Err(io::Error::other("timer already registered"));
         }
 
         let (registration, set_readiness) = Registration::new2();
@@ -477,20 +474,14 @@ impl<T> Evented for Timer<T> {
     ) -> io::Result<()> {
         match self.inner.borrow() {
             Some(inner) => poll.reregister(&inner.registration, token, interest, opts),
-            None => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "receiver not registered",
-            )),
+            None => Err(io::Error::other("receiver not registered")),
         }
     }
 
     fn deregister(&self, poll: &Poll) -> io::Result<()> {
         match self.inner.borrow() {
             Some(inner) => poll.deregister(&inner.registration),
-            None => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "receiver not registered",
-            )),
+            None => Err(io::Error::other("receiver not registered")),
         }
     }
 }

@@ -1247,7 +1247,7 @@ impl Poll {
 
 fn validate_args(token: Token) -> io::Result<()> {
     if token == AWAKEN {
-        return Err(io::Error::new(io::ErrorKind::Other, "invalid token"));
+        return Err(io::Error::other("invalid token"));
     }
 
     Ok(())
@@ -1973,8 +1973,7 @@ impl RegistrationInner {
                 // The CAS failed, another thread set the queue pointer, so ensure
                 // that the pointer and `other` match
                 if actual != other {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
+                    return Err(io::Error::other(
                         "registration handle associated with another `Poll` instance",
                     ));
                 }
@@ -1982,8 +1981,7 @@ impl RegistrationInner {
 
             queue = other;
         } else if queue != other {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
+            return Err(io::Error::other(
                 "registration handle associated with another `Poll` instance",
             ));
         }
@@ -2842,10 +2840,7 @@ impl SelectorId {
         let selector_id = self.id.load(Ordering::SeqCst);
 
         if selector_id != 0 && selector_id != poll.selector.id() {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
-                "socket already registered",
-            ))
+            Err(io::Error::other("socket already registered"))
         } else {
             self.id.store(poll.selector.id(), Ordering::SeqCst);
             Ok(())

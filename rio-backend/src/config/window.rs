@@ -29,12 +29,6 @@ pub enum Decorations {
 #[allow(clippy::derivable_impls)]
 impl Default for Decorations {
     fn default() -> Decorations {
-        #[cfg(target_os = "macos")]
-        {
-            Decorations::Transparent
-        }
-
-        #[cfg(not(target_os = "macos"))]
         Decorations::Enabled
     }
 }

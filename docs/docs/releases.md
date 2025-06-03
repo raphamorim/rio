@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.17 (unreleased)
 
+- *Breaking:* Decorations as `Enabled` is default on MacOS (instead of `Transparent`).
 - F16 Texture supports whenever is available.
 - Clear font atlas whenever the font is changed.
 - Skip passing sandbox env in Flatpak, fixes user environment in spawned shell [#1116](https://github.com/raphamorim/rio/pull/1116) by [@ranisalt](https://github.com/ranisalt).
