@@ -15,7 +15,7 @@ use signals::Signals;
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::os::fd::OwnedFd;
@@ -428,7 +428,7 @@ pub fn create_pty_with_spawn(
     };
 
     if res < 0 {
-        return Err(Error::new(ErrorKind::Other, "openpty failed"));
+        return Err(Error::other("openpty failed"));
     }
 
     let mut shell_program = shell;
@@ -506,7 +506,7 @@ pub fn create_pty_with_spawn(
             // Create a new process group.
             let err = libc::setsid();
             if err == -1 {
-                return Err(Error::new(ErrorKind::Other, "Failed to set session id"));
+                return Err(Error::other("Failed to set session id"));
             }
 
             if is_controling_terminal {
@@ -616,10 +616,10 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
     } {
         0 => {
             default_shell_command(shell_program);
-            Err(Error::new(
-                ErrorKind::Other,
-                format!("forkpty has reach unreachable with {}", shell_program),
-            ))
+            Err(Error::other(format!(
+                "forkpty has reach unreachable with {}",
+                shell_program
+            )))
         }
         id if id > 0 => {
             // TODO: Currently we fork the process and don't wait to know if led to failure
@@ -647,10 +647,10 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
                 signals_token: corcovado::Token(0),
             })
         }
-        _ => Err(Error::new(
-            ErrorKind::Other,
-            format!("forkpty failed using {}", shell_program),
-        )),
+        _ => Err(Error::other(format!(
+            "forkpty failed using {}",
+            shell_program
+        ))),
     }
 }
 
@@ -834,11 +834,11 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     let entry = unsafe { entry.assume_init() };
 
     if status < 0 {
-        return Err(Error::new(ErrorKind::Other, "getpwuid_r failed"));
+        return Err(Error::other("getpwuid_r failed"));
     }
 
     if res.is_null() {
-        return Err(Error::new(ErrorKind::Other, "pw not found"));
+        return Err(Error::other("pw not found"));
     }
 
     // Sanity check.

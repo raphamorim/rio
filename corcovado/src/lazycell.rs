@@ -68,7 +68,7 @@ impl<T> LazyCell<T> {
     /// This function returns the previous value, if any.
     #[allow(unused)]
     pub fn replace(&mut self, value: T) -> Option<T> {
-        mem::replace(unsafe { &mut *self.inner.get() }, Some(value))
+        unsafe { &mut *self.inner.get() }.replace(value)
     }
 
     /// Test whether this cell has been previously filled.
@@ -259,7 +259,7 @@ impl<T> AtomicLazyCell<T> {
             NONE | SOME => {}
             _ => panic!("cell in inconsistent state"),
         }
-        mem::replace(unsafe { &mut *self.inner.get() }, Some(value))
+        unsafe { &mut *self.inner.get() }.replace(value)
     }
 
     /// Test whether this cell has been previously filled.

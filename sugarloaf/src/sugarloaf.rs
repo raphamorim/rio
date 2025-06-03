@@ -116,7 +116,7 @@ impl Sugarloaf<'_> {
         renderer: SugarloafRenderer,
         font_library: &FontLibrary,
         layout: RootStyle,
-    ) -> Result<Sugarloaf<'a>, SugarloafWithErrors<'a>> {
+    ) -> Result<Sugarloaf<'a>, Box<SugarloafWithErrors<'a>>> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 

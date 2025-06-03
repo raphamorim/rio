@@ -278,10 +278,7 @@ impl Evented for ReceiverCtl {
         opts: PollOpt,
     ) -> io::Result<()> {
         if self.registration.borrow().is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "receiver already registered",
-            ));
+            return Err(io::Error::other("receiver already registered"));
         }
 
         let (registration, set_readiness) = Registration::new2();
@@ -312,20 +309,14 @@ impl Evented for ReceiverCtl {
     ) -> io::Result<()> {
         match self.registration.borrow() {
             Some(registration) => poll.reregister(registration, token, interest, opts),
-            None => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "receiver not registered",
-            )),
+            None => Err(io::Error::other("receiver not registered")),
         }
     }
 
     fn deregister(&self, poll: &Poll) -> io::Result<()> {
         match self.registration.borrow() {
             Some(registration) => poll.deregister(registration),
-            None => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "receiver not registered",
-            )),
+            None => Err(io::Error::other("receiver not registered")),
         }
     }
 }
