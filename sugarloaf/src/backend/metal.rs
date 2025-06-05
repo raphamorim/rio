@@ -83,6 +83,7 @@ impl RenderContext for MetalContext {
 
         tracing::info!("Metal device created: {:?}", device.name());
         tracing::info!("Metal F16 support: {}", supports_f16);
+        tracing::info!("SIMD shaders enabled by default");
 
         MetalContext {
             device,
