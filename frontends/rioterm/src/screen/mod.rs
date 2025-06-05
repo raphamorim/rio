@@ -44,8 +44,8 @@ use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, RenderBackend, Sugarloaf, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -138,25 +138,36 @@ impl Screen<'_> {
             RendererPerformance::Low => wgpu::PowerPreference::LowPower,
         };
 
-        let backend = match config.renderer.backend {
+        let (backend, render_backend) = match config.renderer.backend {
             RendererBackend::Automatic => {
                 #[cfg(target_arch = "wasm32")]
                 let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
                 #[cfg(not(target_arch = "wasm32"))]
                 let default_backend = wgpu::Backends::all();
 
-                default_backend
+                (default_backend, RenderBackend::WebGpu)
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
+            RendererBackend::Vulkan => (wgpu::Backends::VULKAN, RenderBackend::WebGpu),
+            RendererBackend::GL => (wgpu::Backends::GL, RenderBackend::WebGpu),
+            RendererBackend::Metal => {
+                #[cfg(target_os = "macos")]
+                {
+                    (wgpu::Backends::METAL, RenderBackend::Metal)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    (wgpu::Backends::METAL, RenderBackend::WebGpu)
+                }
+            }
+            RendererBackend::WgpuMetal => (wgpu::Backends::METAL, RenderBackend::WebGpu),
+            RendererBackend::DX12 => (wgpu::Backends::DX12, RenderBackend::WebGpu),
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
             power_preference,
             backend,
             font_features: config.fonts.features.clone(),
+            render_backend,
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
