@@ -73,6 +73,14 @@ impl Atlas {
         }
     }
 
+    fn get_bytes_per_pixel(&self) -> u32 {
+        match self.texture.format() {
+            wgpu::TextureFormat::Rgba16Float => 8, // F16 RGBA = 8 bytes
+            wgpu::TextureFormat::Rgba8Unorm => 4,  // U8 RGBA = 4 bytes
+            _ => 4,                                // Default fallback
+        }
+    }
+
     pub fn view(&self) -> &wgpu::TextureView {
         &self.texture_view
     }
@@ -130,6 +138,7 @@ impl Atlas {
         width: u32,
         height: u32,
         data: &[u8],
+        context: &crate::context::Context,
     ) -> Option<Entry> {
         let entry = {
             let current_size = self.layers.len();
@@ -144,22 +153,28 @@ impl Atlas {
 
         tracing::info!("Allocated atlas entry: {:?}", entry);
 
+        // Convert input data to the target texture format
+        let converted_data = context.convert_rgba8_to_optimal_format(data);
+        let bytes_per_pixel = self.get_bytes_per_pixel();
+
         // It is a webgpu requirement that:
         //   BufferCopyView.layout.bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0
         // So we calculate padded_width by rounding width up to the next
         // multiple of wgpu::COPY_BYTES_PER_ROW_ALIGNMENT.
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
-        let padding = (align - (4 * width) % align) % align;
-        let padded_width = (4 * width + padding) as usize;
+        let row_bytes = bytes_per_pixel * width;
+        let padding = (align - row_bytes % align) % align;
+        let padded_width = (row_bytes + padding) as usize;
         let padded_data_size = padded_width * height as usize;
 
         let mut padded_data = vec![0; padded_data_size];
 
         for row in 0..height as usize {
             let offset = row * padded_width;
+            let src_row_bytes = (bytes_per_pixel * width) as usize;
 
-            padded_data[offset..offset + 4 * width as usize].copy_from_slice(
-                &data[row * 4 * width as usize..(row + 1) * 4 * width as usize],
+            padded_data[offset..offset + src_row_bytes].copy_from_slice(
+                &converted_data[row * src_row_bytes..(row + 1) * src_row_bytes],
             )
         }
 
@@ -177,7 +192,7 @@ impl Atlas {
             Entry::Fragmented { fragments, .. } => {
                 for fragment in fragments {
                     let (x, y) = fragment.position;
-                    let offset = (y * padded_width as u32 + 4 * x) as usize;
+                    let offset = (y * padded_width as u32 + bytes_per_pixel * x) as usize;
 
                     self.upload_allocation(
                         &padded_data,
@@ -365,7 +380,9 @@ impl Atlas {
                 buffer: &buffer,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: offset as u64,
-                    bytes_per_row: Some(4 * image_dimensions.0 + padding),
+                    bytes_per_row: Some(
+                        self.get_bytes_per_pixel() * image_dimensions.0 + padding,
+                    ),
                     rows_per_image: Some(image_dimensions.1),
                 },
             },

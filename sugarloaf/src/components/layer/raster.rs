@@ -104,13 +104,14 @@ impl Cache {
         encoder: &mut wgpu::CommandEncoder,
         handle: &crate::components::layer::image::Handle,
         atlas: &mut Atlas,
+        context: &crate::context::Context,
     ) -> Option<&atlas::Entry> {
         let memory = self.load(handle);
 
         if let Memory::Host(image) = memory {
             let (width, height) = image.dimensions();
 
-            let entry = atlas.upload(device, encoder, width, height, image)?;
+            let entry = atlas.upload(device, encoder, width, height, image, context)?;
 
             *memory = Memory::Device(entry);
         }
