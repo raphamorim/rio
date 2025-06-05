@@ -328,6 +328,7 @@ impl LayerBrush {
                 encoder,
                 &image.handle,
                 &mut self.texture_atlas,
+                ctx,
             ) {
                 add_instances(
                     [bounds.x, bounds.y],
@@ -388,7 +389,7 @@ impl LayerBrush {
         let mut raster_cache = self.raster_cache.borrow_mut();
 
         if let Some(atlas_entry) =
-            raster_cache.upload(device, encoder, handle, &mut self.texture_atlas)
+            raster_cache.upload(device, encoder, handle, &mut self.texture_atlas, ctx)
         {
             add_instances(
                 [bounds.x, bounds.y],
