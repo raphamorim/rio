@@ -91,6 +91,9 @@ pub enum Backend {
     #[serde(alias = "dx12")]
     DX12,
     // Supported on macOS/iOS
+    #[serde(alias = "wgpu-metal")]
+    WgpuMetal,
+    // Supported on macOS/iOS
     #[serde(alias = "metal")]
     Metal,
 }
@@ -103,6 +106,9 @@ impl Display for Backend {
             }
             Backend::Metal => {
                 write!(f, "Metal")
+            }
+            Backend::WgpuMetal => {
+                write!(f, "WgpuMetal")
             }
             Backend::Vulkan => {
                 write!(f, "Vulkan")
