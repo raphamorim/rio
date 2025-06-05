@@ -78,6 +78,7 @@ impl Display for Performance {
 #[derive(Debug, Default, Deserialize, Clone, PartialEq)]
 pub enum Backend {
     // Leave Sugarloaf/WGPU to decide
+    #[cfg(not(target_os = "macos"))]
     #[default]
     #[serde(alias = "automatic")]
     Automatic,
@@ -93,9 +94,18 @@ pub enum Backend {
     // Supported on macOS/iOS
     #[serde(alias = "wgpu-metal")]
     WgpuMetal,
-    // Supported on macOS/iOS
+    // Supported on macOS/iOS - Default on macOS for better performance
+    #[cfg(target_os = "macos")]
+    #[default]
     #[serde(alias = "metal")]
     Metal,
+    // Supported on macOS/iOS
+    #[cfg(not(target_os = "macos"))]
+    #[serde(alias = "metal")]
+    Metal,
+    #[cfg(target_os = "macos")]
+    #[serde(alias = "automatic")]
+    Automatic,
 }
 
 impl Display for Backend {

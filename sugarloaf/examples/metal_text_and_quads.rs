@@ -77,17 +77,26 @@ impl ApplicationHandler for App {
                 if sugarloaf.is_using_metal() {
                     println!("🚀 Metal context is available and initialized!");
                     println!("📱 Using native Metal backend");
-                    println!("🔧 Metal F16 support: {}", sugarloaf.get_context().supports_f16);
+                    println!(
+                        "🔧 Metal F16 support: {}",
+                        sugarloaf.get_context().supports_f16
+                    );
                     println!("💾 Metal supports half-precision for better performance!");
                 } else {
                     println!("🔧 Using WGPU with Metal backend");
-                    println!("📱 Backend info: {:?}", sugarloaf.get_context().adapter_info.backend);
+                    println!(
+                        "📱 Backend info: {:?}",
+                        sugarloaf.get_context().adapter_info.backend
+                    );
                 }
-                
+
                 #[cfg(not(target_os = "macos"))]
                 {
                     println!("🔧 Using WGPU with Metal backend");
-                    println!("📱 Backend info: {:?}", sugarloaf.get_context().adapter_info.backend);
+                    println!(
+                        "📱 Backend info: {:?}",
+                        sugarloaf.get_context().adapter_info.backend
+                    );
                 }
 
                 // Setup demo content
@@ -234,17 +243,34 @@ impl ApplicationHandler for App {
 
                                         #[cfg(target_os = "macos")]
                                         if sugarloaf.is_using_metal() {
-                                            println!("🚀 Switched to native Metal backend!");
-                                            println!("🔧 Metal F16 support: {}", sugarloaf.get_context().supports_f16);
+                                            println!(
+                                                "🚀 Switched to native Metal backend!"
+                                            );
+                                            println!(
+                                                "🔧 Metal F16 support: {}",
+                                                sugarloaf.get_context().supports_f16
+                                            );
                                         } else {
                                             println!("🔧 Using WGPU with Metal backend");
-                                            println!("📱 Backend info: {:?}", sugarloaf.get_context().adapter_info.backend);
+                                            println!(
+                                                "📱 Backend info: {:?}",
+                                                sugarloaf
+                                                    .get_context()
+                                                    .adapter_info
+                                                    .backend
+                                            );
                                         }
-                                        
+
                                         #[cfg(not(target_os = "macos"))]
                                         {
                                             println!("🔧 Using WGPU with Metal backend");
-                                            println!("📱 Backend info: {:?}", sugarloaf.get_context().adapter_info.backend);
+                                            println!(
+                                                "📱 Backend info: {:?}",
+                                                sugarloaf
+                                                    .get_context()
+                                                    .adapter_info
+                                                    .backend
+                                            );
                                         }
 
                                         self.setup_demo_content(&mut sugarloaf);
@@ -437,7 +463,8 @@ impl App {
         #[cfg(target_os = "macos")]
         if sugarloaf.is_using_metal() {
             let device_name = "\nMetal Device: Native Metal Backend";
-            let f16_support = format!("\nF16 Support: {}", sugarloaf.get_context().supports_f16);
+            let f16_support =
+                format!("\nF16 Support: {}", sugarloaf.get_context().supports_f16);
 
             sugarloaf.content().sel(text_id).add_text(
                 device_name,
@@ -473,8 +500,11 @@ impl App {
                 },
             );
         } else {
-            let backend_info = format!("\nBackend: {:?}", sugarloaf.get_context().adapter_info.backend);
-            
+            let backend_info = format!(
+                "\nBackend: {:?}",
+                sugarloaf.get_context().adapter_info.backend
+            );
+
             sugarloaf.content().sel(text_id).add_text(
                 &backend_info,
                 FragmentStyle {
@@ -492,11 +522,14 @@ impl App {
                 },
             );
         }
-        
+
         #[cfg(not(target_os = "macos"))]
         {
-            let backend_info = format!("\nBackend: {:?}", sugarloaf.get_context().adapter_info.backend);
-            
+            let backend_info = format!(
+                "\nBackend: {:?}",
+                sugarloaf.get_context().adapter_info.backend
+            );
+
             sugarloaf.content().sel(text_id).add_text(
                 &backend_info,
                 FragmentStyle {

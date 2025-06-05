@@ -75,7 +75,10 @@ impl ApplicationHandler for App {
                 if sugarloaf.is_using_metal() {
                     println!("🚀 Metal context is available and initialized!");
                     println!("📱 Using native Metal backend");
-                    println!("🔧 Metal F16 support: {}", sugarloaf.get_context().supports_f16);
+                    println!(
+                        "🔧 Metal F16 support: {}",
+                        sugarloaf.get_context().supports_f16
+                    );
                     println!("💾 Metal supports half-precision for better performance!");
                 } else {
                     println!("🌐 Using WebGPU backend for rendering");

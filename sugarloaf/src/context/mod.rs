@@ -227,7 +227,11 @@ impl Context<'_> {
     }
 
     pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
-        if self.supports_f16 {
+        // Force RGBA8Unorm for Metal backend to avoid potential f16 texture issues
+        let use_f16 = self.supports_f16
+            && !matches!(self.adapter_info.backend, wgpu::Backend::Metal);
+
+        if use_f16 {
             match channels {
                 1 => wgpu::TextureFormat::R16Float,
                 2 => wgpu::TextureFormat::Rg16Float,
@@ -245,7 +249,11 @@ impl Context<'_> {
     }
 
     pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {
-        if self.supports_f16 {
+        // Force u8 format for Metal backend to avoid potential f16 conversion issues
+        let use_f16 = self.supports_f16
+            && !matches!(self.adapter_info.backend, wgpu::Backend::Metal);
+
+        if use_f16 {
             // Convert u8 RGBA to f16 RGBA
             let mut f16_data = Vec::with_capacity(rgba8_data.len() * 2);
             for chunk in rgba8_data.chunks(4) {
