@@ -5,9 +5,13 @@ language: 'en'
 
 # Releases
 
-## 0.2.18 (unreleased)
+## 0.2.19 (unreleased)
 
 - TBD.
+
+## 0.2.18
+
+- Fix image display crashing the application whenever f16 is available.
 
 ## 0.2.17
 
