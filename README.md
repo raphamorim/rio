@@ -13,6 +13,8 @@
     ·
     <a href="https://rioterm.com/docs/config">Config</a>
     ·
+    <a href="https://rioterm.com/docs/releases">Changelog</a>
+    ·
     <a href="https://github.com/sponsors/raphamorim">Sponsor</a>
   </p>
 </p>
