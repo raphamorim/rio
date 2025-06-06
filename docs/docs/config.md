@@ -1454,9 +1454,9 @@ y = 0.0
 
 Set window decorations.
 
-- `Enabled` (default for Windows/Linux/BSD) enable window decorations.
+- `Enabled` (default for Windows/Linux/BSD/macOS) enable window decorations.
 - `Disabled` disable all window decorations.
-- `Transparent` (default for MacOS) window decorations with transparency.
+- `Transparent` window decorations with transparency.
 - `Buttonless` remove buttons from window decorations.
 
 Example:
