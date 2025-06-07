@@ -9,7 +9,7 @@ MacOS configuration file path is `~/.config/rio/config.toml`.
 
 Linux configuration file path is `$XDG_CONFIG_HOME/rio/config.toml` or `~/.config/rio/config.toml`.
 
-Windows configuration file path is `C:\Users\USER\AppData\Local\rio\config.toml` (replace "USER" with your user name).
+Windows configuration file path is `%USERPROFILE%\AppData\Local\rio\config.toml` or `$env:USERPROFILE$\AppData\Local\rio\config.toml`(PowerShell).
 
 You can also set a custom config path by using the `$RIO_CONFIG_HOME` env var. It will be used as a replacement
 for `~/.config/rio` reading configs, themes...
