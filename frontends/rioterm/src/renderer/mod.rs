@@ -20,8 +20,9 @@ use rio_backend::config::Config;
 use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, is_private_user_area, Content, FragmentStyle,
+    FragmentStyleDecoration, Graphic, Stretch, Style, SugarCursor, Sugarloaf,
+    UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
@@ -58,8 +59,14 @@ pub struct Renderer {
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FxHashMap<
         (char, rio_backend::sugarloaf::font_introspector::Attributes),
-        (usize, f32),
+        FontCacheData,
     >,
+}
+
+struct FontCacheData {
+    font_id: usize,
+    width: f32,
+    is_pua: bool,
 }
 
 impl Renderer {
@@ -258,14 +265,22 @@ impl Renderer {
         let mut content = String::default();
         let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
+        let mut skip_next_column = false;
 
         for column in 0..columns {
+            // Skip this column if the previous PUA character expanded to width 2
+            if skip_next_column {
+                skip_next_column = false;
+                continue;
+            }
+
             let square = &row.inner[column];
 
             if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
 
+            let is_last = column == (columns - 1);
             let (mut style, square_content) =
                 if has_cursor && column == cursor.state.pos.col {
                     self.create_cursor_style(square, cursor, is_active, term_colors)
@@ -371,11 +386,12 @@ impl Renderer {
 
             let has_drawable_char = style.drawable_char.is_some();
             if !has_drawable_char {
-                if let Some((font_id, width)) =
+                let is_pua = if let Some(cached_data) =
                     self.font_cache.get(&(square_content, style.font_attrs))
                 {
-                    style.font_id = *font_id;
-                    style.width = *width;
+                    style.font_id = cached_data.font_id;
+                    style.width = cached_data.width;
+                    cached_data.is_pua
                 } else {
                     let mut width = square.c.width().unwrap_or(1) as f32;
                     let mut font_ctx = self.font_context.inner.lock();
@@ -399,11 +415,54 @@ impl Renderer {
                     }
                     style.width = width;
 
+                    let is_pua = is_private_user_area(&square.c);
                     self.font_cache.insert(
                         (square_content, style.font_attrs),
-                        (style.font_id, style.width),
+                        FontCacheData {
+                            font_id: style.font_id,
+                            width: style.width,
+                            is_pua,
+                        },
                     );
+
+                    is_pua
                 };
+
+                // If we are a codepoint in the private use area and
+                // we are at the end or the next cell
+                // is not empty, we need to constrain rendering.
+                //
+                // We do this specifically so that Nerd Fonts can render their
+                // icons without overlapping with subsequent characters. But if
+                // the subsequent character is empty, then we allow it to use
+                // the full glyph size.
+                if is_pua {
+                    let should_expand_width = if is_last {
+                        // At the end of line, allow expansion
+                        true
+                    } else {
+                        let next = &row.inner[column + 1];
+                        let next_content =
+                            if next.c == '\t' || next.flags.contains(Flags::HIDDEN) {
+                                ' '
+                            } else {
+                                next.c
+                            };
+
+                        // Allow expansion if next cell is empty space or wide char spacer
+                        next_content == ' '
+                            || next.flags.contains(Flags::WIDE_CHAR_SPACER)
+                    };
+
+                    if should_expand_width {
+                        style.width = 2.0;
+                        style.should_scale = true; // Mark for scaling
+                                                   // Skip the next column since this character now occupies 2 cells
+                        if !is_last {
+                            skip_next_column = true;
+                        }
+                    }
+                }
 
                 if square_content == ' ' {
                     if !last_char_was_space {
@@ -449,7 +508,7 @@ impl Renderer {
             }
 
             // Render last column and break row
-            if column == (columns - 1) {
+            if is_last {
                 if !content.is_empty() {
                     if let Some(line) = line_opt {
                         builder.add_text_on_line(line, &content, last_style);
@@ -701,11 +760,11 @@ impl Renderer {
                     line.clear().new_line().add_text("Search: ", style);
 
                     for character in active_search_content.chars() {
-                        if let Some((font_id, width)) =
+                        if let Some(cached_data) =
                             self.font_cache.get(&(character, style.font_attrs))
                         {
-                            style.font_id = *font_id;
-                            style.width = *width;
+                            style.font_id = cached_data.font_id;
+                            style.width = cached_data.width;
                         } else {
                             let mut width = character.width().unwrap_or(1) as f32;
                             let mut font_ctx = self.font_context.inner.lock();

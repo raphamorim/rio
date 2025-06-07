@@ -492,17 +492,25 @@ impl RichTextBrush {
                         dimensions.height = line_height.round();
                     }
 
+                    // Calculate effective font size for characters that should be scaled
+                    let effective_font_size = if run.span.should_scale {
+                        // Scale font size for characters marked for scaling
+                        run.size * 1.6 // Conservative scaling to fit within 2 cells
+                    } else {
+                        run.size
+                    };
+
                     // Update font session if needed
-                    if font != current_font || style.font_size != current_font_size {
+                    if font != current_font || effective_font_size != current_font_size {
                         current_font = font;
-                        current_font_size = style.font_size;
+                        current_font_size = effective_font_size;
 
                         session = glyphs_cache.session(
                             image_cache,
                             current_font,
                             font_library,
                             font_coords,
-                            style.font_size,
+                            effective_font_size,
                         );
                     }
 
