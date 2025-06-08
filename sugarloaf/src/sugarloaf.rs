@@ -2,6 +2,7 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
+use crate::backend::RenderBackend;
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::components::layer::{self, LayerBrush};
@@ -31,6 +32,7 @@ pub struct Sugarloaf<'a> {
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
     filters_brush: FiltersBrush,
+    render_backend: RenderBackend,
 }
 
 #[derive(Debug)]
@@ -66,6 +68,7 @@ pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
     pub font_features: Option<Vec<String>>,
+    pub render_backend: RenderBackend,
 }
 
 impl Default for SugarloafRenderer {
@@ -79,6 +82,7 @@ impl Default for SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
             font_features: None,
+            render_backend: RenderBackend::default(),
         }
     }
 }
@@ -118,6 +122,7 @@ impl Sugarloaf<'_> {
         layout: RootStyle,
     ) -> Result<Sugarloaf<'a>, Box<SugarloafWithErrors<'a>>> {
         let font_features = renderer.font_features.to_owned();
+        let render_backend = renderer.render_backend;
         let ctx = Context::new(window, renderer);
 
         let layer_brush = LayerBrush::new(&ctx);
@@ -136,6 +141,7 @@ impl Sugarloaf<'_> {
             rich_text_brush,
             graphics: Graphics::default(),
             filters_brush,
+            render_backend,
         };
 
         Ok(instance)
@@ -434,5 +440,22 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
+    }
+
+    #[inline]
+    pub fn render_backend(&self) -> RenderBackend {
+        self.render_backend
+    }
+
+    #[inline]
+    pub fn is_using_metal(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            matches!(self.render_backend, RenderBackend::Metal)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
     }
 }

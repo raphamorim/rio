@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod components;
 pub mod context;
 pub mod font;
@@ -19,6 +20,7 @@ pub use crate::sugarloaf::{
     Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
     SugarloafWithErrors,
 };
+pub use backend::RenderBackend;
 pub use components::filters::Filter;
 pub use components::quad::Quad;
 pub use layout::{

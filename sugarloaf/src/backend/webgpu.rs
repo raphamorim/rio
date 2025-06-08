@@ -1,7 +1,7 @@
+use crate::backend::{RenderBackend, RenderContext};
 use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
-use crate::SugarloafRenderer;
 
-pub struct Context<'a> {
+pub struct WebGpuContext<'a> {
     pub device: wgpu::Device,
     pub surface: wgpu::Surface<'a>,
     pub queue: wgpu::Queue,
@@ -53,11 +53,22 @@ fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFor
     format
 }
 
-impl Context<'_> {
-    pub fn new<'a>(
-        sugarloaf_window: SugarloafWindow,
-        renderer_config: SugarloafRenderer,
-    ) -> Context<'a> {
+impl<'a> RenderContext for WebGpuContext<'a> {
+    type Device = wgpu::Device;
+    type Queue = wgpu::Queue;
+    type Surface = wgpu::Surface<'a>;
+    type TextureFormat = wgpu::TextureFormat;
+    type CommandEncoder = wgpu::CommandEncoder;
+    type RenderPass<'b> = wgpu::RenderPass<'b>;
+    type Texture = wgpu::SurfaceTexture;
+    type TextureView = wgpu::TextureView;
+    type Buffer = wgpu::Buffer;
+    type BindGroup = wgpu::BindGroup;
+    type RenderPipeline = wgpu::RenderPipeline;
+    type ComputePipeline = wgpu::ComputePipeline;
+    type Sampler = wgpu::Sampler;
+
+    fn new(sugarloaf_window: SugarloafWindow, _backend: RenderBackend) -> Self {
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
         // will be used. The following values are allowed:
@@ -68,7 +79,7 @@ impl Context<'_> {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend = wgpu::Backends::from_env().unwrap_or(renderer_config.backend);
+        let backend = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::all());
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
@@ -93,7 +104,7 @@ impl Context<'_> {
             instance.create_surface(sugarloaf_window).unwrap();
         let adapter = futures::executor::block_on(instance.request_adapter(
             &wgpu::RequestAdapterOptions {
-                power_preference: renderer_config.power_preference,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
@@ -182,7 +193,7 @@ impl Context<'_> {
 
         tracing::info!("F16 shader support: {}", supports_f16);
 
-        Context {
+        WebGpuContext {
             device,
             queue,
             surface,
@@ -199,7 +210,7 @@ impl Context<'_> {
         }
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
+    fn resize(&mut self, width: u32, height: u32) {
         self.size.width = width as f32;
         self.size.height = height as f32;
 
@@ -218,20 +229,45 @@ impl Context<'_> {
         );
     }
 
+    fn get_current_texture(&self) -> Result<Self::Texture, String> {
+        self.surface
+            .get_current_texture()
+            .map_err(|e| e.to_string())
+    }
+
+    fn create_command_encoder(&self) -> Self::CommandEncoder {
+        self.device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None })
+    }
+
+    fn submit_commands(&self, encoder: Self::CommandEncoder) {
+        self.queue.submit(Some(encoder.finish()));
+    }
+
+    fn present_texture(&self, texture: Self::Texture) {
+        texture.present();
+    }
+
+    fn size(&self) -> SugarloafWindowSize {
+        self.size
+    }
+
+    fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    fn supports_f16(&self) -> bool {
+        self.supports_f16
+    }
+}
+
+impl<'a> WebGpuContext<'a> {
     pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
         &self.surface_caps
     }
 
-    pub fn supports_f16(&self) -> bool {
-        self.supports_f16
-    }
-
     pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
-        // Force RGBA8Unorm for Metal backend to avoid potential f16 texture issues
-        let use_f16 = self.supports_f16
-            && !matches!(self.adapter_info.backend, wgpu::Backend::Metal);
-
-        if use_f16 {
+        if self.supports_f16 {
             match channels {
                 1 => wgpu::TextureFormat::R16Float,
                 2 => wgpu::TextureFormat::Rg16Float,
@@ -249,11 +285,7 @@ impl Context<'_> {
     }
 
     pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {
-        // Force u8 format for Metal backend to avoid potential f16 conversion issues
-        let use_f16 = self.supports_f16
-            && !matches!(self.adapter_info.backend, wgpu::Backend::Metal);
-
-        if use_f16 {
+        if self.supports_f16 {
             // Convert u8 RGBA to f16 RGBA
             let mut f16_data = Vec::with_capacity(rgba8_data.len() * 2);
             for chunk in rgba8_data.chunks(4) {

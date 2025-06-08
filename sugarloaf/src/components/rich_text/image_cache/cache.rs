@@ -103,26 +103,6 @@ impl ImageCache {
         }
 
         let atlas_data = self.atlas.alloc.allocate(width, height);
-        // if atlas_data.is_none() {
-        // return None;
-        // Grow atlas to fit
-        // self.max_texture_size += SIZE;
-        // self.atlas.fresh = true;
-        // self.atlas.dirty = true;
-        // self.entries.clear();
-        // println!("{:?}", self.max_texture_size);
-        // self.atlas.alloc = AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
-        // self.atlas.buffer = vec![
-        //     0u8;
-        //     self.max_texture_size as usize * self.max_texture_size as usize * 4
-        // ];
-        // atlas_data = self.atlas.alloc.allocate(width, height);
-        // println!("{:?}", atlas_data);
-
-        // if self.max_texture_size > MAX_SIZE {
-        //     println!("should try to grow or reset atlas");
-        // }
-        // }
         let (x, y) = atlas_data?;
         let entry_index = self.entries.len();
         self.entries.push(Entry {
@@ -147,9 +127,6 @@ impl ImageCache {
         ImageId::new(entry_index as u32, request.has_alpha)
     }
 
-    // Evaluate if does make sense to deallocate from atlas and if yes, which case?
-    // considering that a terminal uses a short/limited of glyphs compared to a wide text editor
-    // if deallocate an image then is necessary to cleanup cache of draw_layout fn
     /// Deallocates the specified image.
     #[allow(unused)]
     pub fn deallocate(&mut self, image: ImageId) -> Option<()> {
@@ -214,26 +191,6 @@ impl ImageCache {
         }
     }
 
-    /// Updates an image with the specified data.
-    // pub fn update(&mut self, handle: ImageId, data: &[u8]) -> Option<()> {
-    //     let entry = self.entries.get_mut(handle.index())?;
-    //     if entry.flags & ENTRY_ALLOCATED == 0 {
-    //         return None;
-    //     }
-    //         let atlas = self.atlases.get_mut(entry.owner as usize)?;
-    //         fill(
-    //             entry.x,
-    //             entry.y,
-    //             entry.width,
-    //             entry.height,
-    //             data,
-    //             ATLAS_DIM,
-    //             &mut atlas.buffer,
-    //             4,
-    //         );
-    //         atlas.dirty = true;
-    //     Some(())
-    // }
     #[inline]
     pub fn process_atlases(&mut self, context: &mut Context) {
         if !self.atlas.dirty {

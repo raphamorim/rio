@@ -113,7 +113,10 @@ impl QuadBrush {
                     bind_group_layouts: &[&constant_layout],
                 });
 
-        let shader_source = if context.supports_f16() {
+        // Force f32 shaders when using Metal backend to avoid potential f16 issues
+        let use_f16 = context.supports_f16()
+            && !matches!(context.adapter_info.backend, wgpu::Backend::Metal);
+        let shader_source = if use_f16 {
             include_str!("./quad_f16.wgsl")
         } else {
             include_str!("./quad_f32_combined.wgsl")
