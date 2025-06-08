@@ -57,7 +57,7 @@ mod compile {
     pub fn compile_passes(
         shaders: Vec<PassResource>,
         textures: &[TextureResource],
-    ) -> Result<(Vec<ShaderPassMeta>, ShaderSemantics), FilterChainError> {
+    ) -> Result<(Vec<ShaderPassMeta>, ShaderSemantics), Box<FilterChainError>> {
         let (passes, semantics) = WGSL::compile_preset_passes::<
             SpirvCompilation,
             Naga,
@@ -102,9 +102,14 @@ impl FilterChain {
         device: &Device,
         queue: &wgpu::Queue,
         options: Option<&FilterChainOptionsWgpu>,
-    ) -> error::Result<FilterChain> {
+    ) -> Result<FilterChain, Box<error::FilterChainError>> {
         // load passes from preset
-        let preset = ShaderPreset::try_parse(path, features)?;
+        let preset = match ShaderPreset::try_parse(path, features) {
+            Ok(preset) => preset,
+            Err(error) => {
+                return Err(Box::new(FilterChainError::ShaderPresetError(error)))
+            }
+        };
 
         Self::load_from_preset(preset, device, queue, options)
     }
@@ -115,7 +120,7 @@ impl FilterChain {
         device: &Device,
         queue: &wgpu::Queue,
         options: Option<&FilterChainOptionsWgpu>,
-    ) -> error::Result<FilterChain> {
+    ) -> Result<FilterChain, Box<FilterChainError>> {
         let preset = ShaderPresetPack::load_from_preset::<FilterChainError>(preset)?;
         Self::load_from_pack(preset, device, queue, options)
     }
@@ -126,7 +131,7 @@ impl FilterChain {
         device: &Device,
         queue: &wgpu::Queue,
         options: Option<&FilterChainOptionsWgpu>,
-    ) -> error::Result<FilterChain> {
+    ) -> Result<FilterChain, Box<FilterChainError>> {
         let mut cmd = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("librashader load cmd"),
         });
@@ -156,7 +161,7 @@ impl FilterChain {
         queue: &wgpu::Queue,
         cmd: &mut wgpu::CommandEncoder,
         options: Option<&FilterChainOptionsWgpu>,
-    ) -> error::Result<FilterChain> {
+    ) -> Result<FilterChain, Box<FilterChainError>> {
         let preset = ShaderPresetPack::load_from_preset::<FilterChainError>(preset)?;
         Self::load_from_pack_deferred(preset, device, queue, cmd, options)
     }
@@ -174,8 +179,11 @@ impl FilterChain {
         queue: &wgpu::Queue,
         cmd: &mut wgpu::CommandEncoder,
         options: Option<&FilterChainOptionsWgpu>,
-    ) -> error::Result<FilterChain> {
-        let (passes, semantics) = compile_passes(preset.passes, &preset.textures)?;
+    ) -> Result<FilterChain, Box<FilterChainError>> {
+        let (passes, semantics) = match compile_passes(preset.passes, &preset.textures) {
+            Ok((passes, semantics)) => (passes, semantics),
+            Err(error) => return Err(error),
+        };
 
         // cache is opt-in for wgpu, not opt-out because of feature requirements.
         let disable_cache = options.is_none_or(|o| !o.enable_cache);
@@ -317,7 +325,7 @@ impl FilterChain {
         semantics: &ShaderSemantics,
         adapter_info: Option<&wgpu::AdapterInfo>,
         disable_cache: bool,
-    ) -> error::Result<Box<[FilterPass]>> {
+    ) -> Result<Box<[FilterPass]>, Box<FilterChainError>> {
         #[cfg(not(target_arch = "wasm32"))]
         let filter_creation_fn = || {
             let passes_iter = passes.into_par_iter();

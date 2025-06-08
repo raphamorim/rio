@@ -7,7 +7,8 @@ language: 'en'
 
 ## 0.2.19 (unreleased)
 
-- TBD.
+- Fix: `Enter`,`Tab`, `Backspace` not disambiguated with `shift` in kitty keyboard's disambiguate mode.
+- Search matching a wrapping fullwidth character in the last column.
 
 ## 0.2.18
 
