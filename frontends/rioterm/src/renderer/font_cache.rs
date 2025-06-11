@@ -1,7 +1,8 @@
 use lru::LruCache;
 use rio_backend::sugarloaf::font_introspector::Attributes;
-use std::num::NonZeroUsize;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use unicode_width::UnicodeWidthChar;
 
 /// Maximum number of font cache entries to keep in memory
 /// Increased for better performance with complex terminal content
@@ -35,7 +36,7 @@ impl FontCache {
                 return Some(value);
             }
         }
-        
+
         // Fall back to LRU cache
         self.cache.get(key)
     }
@@ -67,6 +68,66 @@ impl FontCache {
     pub fn clear(&mut self) {
         self.hot_cache.clear();
         self.cache.clear();
+    }
+
+    /// Pre-populate cache with common characters to improve hit rate
+    /// This should be called during initialization with the font context
+    pub fn pre_populate(
+        &mut self,
+        font_context: &rio_backend::sugarloaf::font::FontLibrary,
+    ) {
+        let common_chars = [
+            // ASCII printable characters (most common)
+            ' ', '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.',
+            '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<', '=',
+            '>', '?', '@', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+            'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '[',
+            '\\', ']', '^', '_', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+            'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y',
+            'z', '{', '|', '}', '~',
+        ];
+
+        let common_attrs = [
+            Attributes::new(
+                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
+                rio_backend::sugarloaf::font_introspector::Weight::NORMAL,
+                rio_backend::sugarloaf::font_introspector::Style::Normal,
+            ),
+            Attributes::new(
+                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
+                rio_backend::sugarloaf::font_introspector::Weight::BOLD,
+                rio_backend::sugarloaf::font_introspector::Style::Normal,
+            ),
+            Attributes::new(
+                rio_backend::sugarloaf::font_introspector::Stretch::NORMAL,
+                rio_backend::sugarloaf::font_introspector::Weight::NORMAL,
+                rio_backend::sugarloaf::font_introspector::Style::Italic,
+            ),
+        ];
+
+        if let Some(mut font_ctx) = font_context.inner.try_lock() {
+            for &ch in &common_chars {
+                for &attrs in &common_attrs {
+                    let key = (ch, attrs);
+                    if self.get(&mut key.clone()).is_none() {
+                        let style = rio_backend::sugarloaf::FragmentStyle {
+                            font_attrs: attrs,
+                            ..Default::default()
+                        };
+
+                        let mut width = ch.width().unwrap_or(1) as f32;
+                        if let Some((font_id, is_emoji)) =
+                            font_ctx.find_best_font_match(ch, &style)
+                        {
+                            if is_emoji {
+                                width = 2.0;
+                            }
+                            self.insert(key, (font_id, width));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
