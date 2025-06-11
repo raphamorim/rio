@@ -1,6 +1,9 @@
+mod font_cache;
 pub mod navigation;
 mod search;
 pub mod utils;
+
+use font_cache::FontCache;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -26,7 +29,6 @@ use rio_backend::sugarloaf::{
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
-use rustc_hash::FxHashMap;
 use unicode_width::UnicodeWidthChar;
 
 #[derive(Default)]
@@ -56,10 +58,7 @@ pub struct Renderer {
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
-    font_cache: FxHashMap<
-        (char, rio_backend::sugarloaf::font_introspector::Attributes),
-        (usize, f32),
-    >,
+    font_cache: FontCache,
 }
 
 impl Renderer {
@@ -110,7 +109,7 @@ impl Renderer {
             named_colors,
             dynamic_background,
             search: Search::default(),
-            font_cache: FxHashMap::default(),
+            font_cache: FontCache::new(),
             font_context: font_context.clone(),
         }
     }
