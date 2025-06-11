@@ -1311,7 +1311,7 @@ You can use `||` operator, in case the value is empty or non-existent it will us
 
 ```toml
 [title]
-content = "{{ TITLE | PROGRAM }}"
+content = "{{ TITLE || PROGRAM }}"
 ```
 
 In this case, `TITLE` is non-existent so will use `PROGRAM`.
