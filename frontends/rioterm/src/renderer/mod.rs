@@ -254,7 +254,7 @@ impl Renderer {
         let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
-        let mut content = String::default();
+        let mut content = String::with_capacity(columns);
         let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
 
@@ -812,8 +812,9 @@ impl Renderer {
 
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
-                        let mut own_lines =
-                            std::collections::HashSet::with_capacity(result.3.len());
+                        // Pre-allocate with estimated capacity to reduce allocations
+                        let capacity = lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
+                        let mut own_lines = std::collections::HashSet::with_capacity(capacity);
                         for line in lines {
                             own_lines.insert(line.line);
                         }

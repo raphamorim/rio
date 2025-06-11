@@ -1,19 +1,25 @@
 use lru::LruCache;
 use rio_backend::sugarloaf::font_introspector::Attributes;
 use std::num::NonZeroUsize;
+use std::collections::HashMap;
 
 /// Maximum number of font cache entries to keep in memory
-/// This should be enough for most terminal usage while preventing unbounded growth
-const MAX_FONT_CACHE_SIZE: usize = 2048;
+/// Increased for better performance with complex terminal content
+const MAX_FONT_CACHE_SIZE: usize = 8192;
 
 /// LRU cache for font metrics to prevent unbounded memory growth
+/// Uses a two-tier caching strategy for better performance
 pub struct FontCache {
+    // Hot cache for most frequently used characters (ASCII)
+    hot_cache: HashMap<(char, Attributes), (usize, f32)>,
+    // LRU cache for less frequent characters
     cache: LruCache<(char, Attributes), (usize, f32)>,
 }
 
 impl FontCache {
     pub fn new() -> Self {
         Self {
+            hot_cache: HashMap::with_capacity(128), // ASCII + common chars
             cache: LruCache::new(
                 NonZeroUsize::new(MAX_FONT_CACHE_SIZE)
                     .expect("Cache size must be non-zero"),
@@ -21,31 +27,45 @@ impl FontCache {
         }
     }
 
-    /// Get font metrics from cache
+    /// Get font metrics from cache with hot path optimization
     pub fn get(&mut self, key: &(char, Attributes)) -> Option<&(usize, f32)> {
+        // Check hot cache first for ASCII characters
+        if key.0.is_ascii() {
+            if let Some(value) = self.hot_cache.get(key) {
+                return Some(value);
+            }
+        }
+        
+        // Fall back to LRU cache
         self.cache.get(key)
     }
 
-    /// Insert font metrics into cache
+    /// Insert font metrics into cache with hot path optimization
     pub fn insert(&mut self, key: (char, Attributes), value: (usize, f32)) {
-        self.cache.put(key, value);
+        // Store ASCII characters in hot cache for faster access
+        if key.0.is_ascii() && self.hot_cache.len() < 128 {
+            self.hot_cache.insert(key, value);
+        } else {
+            self.cache.put(key, value);
+        }
     }
 
     /// Get current cache size (for debugging/monitoring)
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
-        self.cache.len()
+        self.hot_cache.len() + self.cache.len()
     }
 
     /// Check if cache is empty
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        self.cache.is_empty()
+        self.hot_cache.is_empty() && self.cache.is_empty()
     }
 
     /// Clear all cache entries
     #[allow(dead_code)]
     pub fn clear(&mut self) {
+        self.hot_cache.clear();
         self.cache.clear();
     }
 }

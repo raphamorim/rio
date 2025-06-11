@@ -616,7 +616,8 @@ impl RichTextBrush {
         if self.vertices.len() > self.supported_vertex_buffer {
             self.vertex_buffer.destroy();
 
-            self.supported_vertex_buffer = self.vertices.len();
+            // Allocate 25% more buffer space to reduce frequent reallocations
+            self.supported_vertex_buffer = (self.vertices.len() as f32 * 1.25) as usize;
             self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("sugarloaf::rich_text::Pipeline vertices"),
                 size: mem::size_of::<Vertex>() as u64
