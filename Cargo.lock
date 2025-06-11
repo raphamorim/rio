@@ -2907,6 +2907,7 @@ dependencies = [
  "futures",
  "image",
  "libc",
+ "lru",
  "notify",
  "objc-rs",
  "parking_lot",
