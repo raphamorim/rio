@@ -89,7 +89,7 @@ impl Renderer {
                 .insert(rule.path.clone(), rule.color);
         }
 
-        Renderer {
+        let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             last_active: 0,
             use_drawable_chars: config.fonts.use_drawable_chars,
@@ -111,7 +111,12 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
-        }
+        };
+
+        // Pre-populate font cache with common characters for better performance
+        renderer.font_cache.pre_populate(font_context);
+
+        renderer
     }
 
     #[inline]
@@ -258,6 +263,11 @@ impl Renderer {
         let mut last_char_was_space = false;
         let mut last_style = FragmentStyle::default();
 
+        // Collect all characters that need font lookups to batch them
+        let mut font_lookups = Vec::new();
+        let mut styles_and_chars = Vec::with_capacity(columns);
+
+        // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
             let square = &row.inner[column];
 
@@ -323,17 +333,6 @@ impl Renderer {
             }
 
             if square.flags.contains(Flags::GRAPHICS) {
-                // let graphics = square.graphics().map(|graphics| {
-                //     graphics
-                //         .iter()
-                //         .map(|graphic| Graphic {
-                //             id: graphic.texture.id,
-                //             offset_x: graphic.offset_x,
-                //             offset_y: graphic.offset_y,
-                //         })
-                //         .collect::<_>()
-                // });
-                // style.media = Some(graphics);
                 let graphic = &square.graphics().unwrap()[0];
                 style.media = Some(Graphic {
                     id: graphic.texture.id,
@@ -343,28 +342,10 @@ impl Renderer {
                 style.background_color = None;
             }
 
-            // In case we have a drawable character then we will:
-            // 1. Ignore font cache and find width since it's known already.
-            // 2. Wrap up the content and send to sugarloaf.
-            //
-            // TODO: In the future it should use same logic to render everything
-            // at once.
+            // Handle drawable characters
             if self.use_drawable_chars {
                 if let Some(character) = drawable_character(square_content) {
                     style.drawable_char = Some(character);
-                    if !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_style = style;
-
-                    // Ignore font shaping
-                    content.push(' ');
                 }
             }
 
@@ -376,34 +357,56 @@ impl Renderer {
                     style.font_id = *font_id;
                     style.width = *width;
                 } else {
-                    let mut width = square.c.width().unwrap_or(1) as f32;
-                    let mut font_ctx = self.font_context.inner.lock();
+                    // Mark this character for font lookup
+                    font_lookups.push((
+                        styles_and_chars.len(),
+                        square_content,
+                        style.font_attrs,
+                    ));
+                }
+            }
 
-                    // There is no simple way to define what's emoji
-                    // could have to refer to the Unicode tables. However it could
-                    // be leading to misleading results. For example if we used
-                    // unicode and internationalization functionalities like
-                    // https://github.com/open-i18n/rust-unic/, then characters
-                    // like "◼" would be valid emojis. For a terminal context,
-                    // the character "◼" is not an emoji and should be treated as
-                    // single width. So, we completely rely on what font is
-                    // being used and then set width 2 for it.
-                    if let Some((font_id, is_emoji)) =
-                        font_ctx.find_best_font_match(square_content, &style)
-                    {
-                        style.font_id = font_id;
-                        if is_emoji {
-                            width = 2.0;
-                        }
+            styles_and_chars.push((style, square_content, column));
+        }
+
+        // Batch font lookups with a single lock acquisition
+        if !font_lookups.is_empty() {
+            let mut font_ctx = self.font_context.inner.lock();
+            for (style_index, square_content, font_attrs) in font_lookups {
+                let mut width = square_content.width().unwrap_or(1) as f32;
+                let style = &mut styles_and_chars[style_index].0;
+
+                if let Some((font_id, is_emoji)) =
+                    font_ctx.find_best_font_match(square_content, style)
+                {
+                    style.font_id = font_id;
+                    if is_emoji {
+                        width = 2.0;
                     }
-                    style.width = width;
+                }
+                style.width = width;
 
-                    self.font_cache.insert(
-                        (square_content, style.font_attrs),
-                        (style.font_id, style.width),
-                    );
-                };
+                self.font_cache
+                    .insert((square_content, font_attrs), (style.font_id, style.width));
+            }
+        }
 
+        // Second pass: render the line using the resolved styles
+        for (style, square_content, column) in styles_and_chars {
+            // Handle drawable characters
+            if style.drawable_char.is_some() {
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
+                    content.clear();
+                }
+
+                last_style = style;
+                content.push(' '); // Ignore font shaping
+            } else {
                 if square_content == ' ' {
                     if !last_char_was_space {
                         if !content.is_empty() {
@@ -692,40 +695,56 @@ impl Renderer {
                         )
                         .build();
                 } else {
-                    let mut style = FragmentStyle {
+                    let style = FragmentStyle {
                         color: self.named_colors.foreground,
                         ..FragmentStyle::default()
                     };
                     let line = content.sel(search_rich_text);
                     line.clear().new_line().add_text("Search: ", style);
 
+                    // Collect characters that need font lookups
+                    let mut font_lookups = Vec::new();
+                    let mut char_styles = Vec::new();
+
                     for character in active_search_content.chars() {
+                        let mut char_style = style;
                         if let Some((font_id, width)) =
                             self.font_cache.get(&(character, style.font_attrs))
                         {
-                            style.font_id = *font_id;
-                            style.width = *width;
+                            char_style.font_id = *font_id;
+                            char_style.width = *width;
                         } else {
-                            let mut width = character.width().unwrap_or(1) as f32;
-                            let mut font_ctx = self.font_context.inner.lock();
+                            font_lookups.push((char_styles.len(), character));
+                        }
+                        char_styles.push((char_style, character));
+                    }
 
-                            // Note we don't update cache from search bar
+                    // Batch font lookups with a single lock acquisition
+                    if !font_lookups.is_empty() {
+                        let mut font_ctx = self.font_context.inner.lock();
+                        for (style_index, character) in font_lookups {
+                            let mut width = character.width().unwrap_or(1) as f32;
+                            let char_style = &mut char_styles[style_index].0;
+
                             if let Some((font_id, is_emoji)) =
-                                font_ctx.find_best_font_match(character, &style)
+                                font_ctx.find_best_font_match(character, char_style)
                             {
-                                style.font_id = font_id;
+                                char_style.font_id = font_id;
                                 if is_emoji {
                                     width = 2.0;
                                 }
                             }
-                            style.width = width;
-                        };
+                            char_style.width = width;
+                        }
+                    }
 
+                    // Render all characters
+                    for (char_style, character) in char_styles {
                         line.add_text_on_line(
                             // Add on first line
                             1,
                             &character.to_string(),
-                            style,
+                            char_style,
                         );
                     }
 
@@ -813,8 +832,10 @@ impl Renderer {
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         // Pre-allocate with estimated capacity to reduce allocations
-                        let capacity = lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
-                        let mut own_lines = std::collections::HashSet::with_capacity(capacity);
+                        let capacity =
+                            lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
+                        let mut own_lines =
+                            std::collections::HashSet::with_capacity(capacity);
                         for line in lines {
                             own_lines.insert(line.line);
                         }
@@ -879,6 +900,7 @@ impl Renderer {
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
+                    let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
