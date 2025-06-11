@@ -272,6 +272,8 @@ pub struct FragmentStyle {
     pub media: Option<Graphic>,
     /// Drawable character
     pub drawable_char: Option<DrawableChar>,
+    /// Whether this character should be scaled
+    pub should_scale: bool,
 }
 
 impl Default for FragmentStyle {
@@ -291,6 +293,7 @@ impl Default for FragmentStyle {
             decoration_color: None,
             media: None,
             drawable_char: None,
+            should_scale: false,
         }
     }
 }
