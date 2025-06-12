@@ -45,6 +45,7 @@ copa = { workspace = true }
 url = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.13.0"
+rayon = "1.10.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }

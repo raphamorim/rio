@@ -13,6 +13,7 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
+use rayon::prelude::*;
 use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
@@ -259,9 +260,7 @@ impl Renderer {
         let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
-        let mut content = String::with_capacity(columns);
         let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
 
         // Collect all characters that need font lookups to batch them
         let mut font_lookups = Vec::new();
@@ -392,75 +391,87 @@ impl Renderer {
         }
 
         // Second pass: render the line using the resolved styles
+        // Group styles and characters for more efficient rendering
+        let mut grouped_segments = Vec::new();
+        let mut current_segment = Vec::new();
+        let mut last_style = None;
+
         for (style, square_content, column) in styles_and_chars {
             // Handle drawable characters
             if style.drawable_char.is_some() {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
+                // Flush current segment
+                if !current_segment.is_empty() {
+                    if let Some(last_style) = last_style {
+                        grouped_segments.push((last_style, current_segment));
                     }
-                    content.clear();
+                    current_segment = Vec::new();
                 }
 
-                last_style = style;
-                content.push(' '); // Ignore font shaping
+                // Add drawable character as separate segment
+                grouped_segments.push((style, vec![(' ', column)]));
+                last_style = None;
             } else {
                 if square_content == ' ' {
                     if !last_char_was_space {
-                        if !content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_text_on_line(line, &content, last_style);
-                            } else {
-                                builder.add_text(&content, last_style);
+                        // Flush current segment
+                        if !current_segment.is_empty() {
+                            if let Some(last_style) = last_style {
+                                grouped_segments.push((last_style, current_segment));
                             }
-                            content.clear();
+                            current_segment = Vec::new();
                         }
-
                         last_char_was_space = true;
-                        last_style = style;
+                        last_style = Some(style);
                     }
                 } else {
-                    if last_char_was_space && !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
+                    if last_char_was_space && !current_segment.is_empty() {
+                        // Flush current segment
+                        if let Some(last_style) = last_style {
+                            grouped_segments.push((last_style, current_segment));
                         }
-                        content.clear();
+                        current_segment = Vec::new();
                     }
-
                     last_char_was_space = false;
                 }
 
-                if last_style != style {
-                    if !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
+                if last_style.as_ref() != Some(&style) {
+                    // Style changed, flush current segment
+                    if !current_segment.is_empty() {
+                        if let Some(last_style) = last_style {
+                            grouped_segments.push((last_style, current_segment));
                         }
-                        content.clear();
+                        current_segment = Vec::new();
                     }
-
-                    last_style = style;
+                    last_style = Some(style);
                 }
 
-                content.push(square_content);
+                current_segment.push((square_content, column));
             }
+        }
 
-            // Render last column and break row
-            if column == (columns - 1) {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
-                    }
+        // Flush final segment
+        if !current_segment.is_empty() {
+            if let Some(last_style) = last_style {
+                grouped_segments.push((last_style, current_segment));
+            }
+        }
+
+        // Render grouped segments
+        for (style, chars) in grouped_segments {
+            let text: String = chars.iter().map(|(ch, _)| *ch).collect();
+
+            if style.drawable_char.is_some() {
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, &text, style);
+                } else {
+                    builder.add_text(&text, style);
                 }
-
-                break;
+            } else {
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, &text, style);
+                } else {
+                    builder.add_text(&text, style);
+                }
             }
         }
 
@@ -777,10 +788,10 @@ impl Renderer {
         let mut has_active_changed = false;
         if self.last_active != active_index {
             has_active_changed = true;
-
             self.last_active = active_index;
         }
 
+        // Process contexts sequentially but parallelize line rendering within each context
         for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
             let is_active = active_index == index;
             let context = grid_context.context_mut();
@@ -809,29 +820,21 @@ impl Renderer {
                     && (context.renderable_content.selection_range.is_some()
                         || hints.is_some());
 
-            let mut specific_lines = None;
-            let (colors, display_offset, blinking_cursor, visible_rows) = {
+            // Extract all needed data in a single, minimal lock scope
+            let (
+                colors,
+                display_offset,
+                blinking_cursor,
+                visible_rows,
+                cursor_state,
+                graphics_queues_to_add,
+                mut specific_lines,
+            ) = {
                 let mut terminal = context.terminal.lock();
-                let result = (
-                    terminal.colors,
-                    terminal.display_offset(),
-                    terminal.blinking_cursor,
-                    terminal.visible_rows(),
-                );
 
-                context.renderable_content.cursor.state = terminal.cursor();
-
-                if let Some(queues_to_add) = terminal.graphics_take_queues() {
-                    if let Some(ref mut queues) = graphic_queues {
-                        queues.push(queues_to_add);
-                    } else {
-                        graphic_queues = Some(vec![queues_to_add]);
-                    }
-                }
-
-                if !force_full_damage && !terminal.is_fully_damaged() {
+                // Collect damage info first to minimize lock time
+                let damage_lines = if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
-                        // Pre-allocate with estimated capacity to reduce allocations
                         let capacity =
                             lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
                         let mut own_lines =
@@ -839,12 +842,39 @@ impl Renderer {
                         for line in lines {
                             own_lines.insert(line.line);
                         }
-                        specific_lines = Some(own_lines);
-                    };
-                }
+                        Some(own_lines)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let result = (
+                    terminal.colors,
+                    terminal.display_offset(),
+                    terminal.blinking_cursor,
+                    terminal.visible_rows(),
+                    terminal.cursor(),
+                    terminal.graphics_take_queues(),
+                    damage_lines,
+                );
+
                 terminal.reset_damage();
+
                 result
             };
+
+            // Process extracted data outside the lock
+            context.renderable_content.cursor.state = cursor_state;
+
+            if let Some(queues_to_add) = graphics_queues_to_add {
+                if let Some(ref mut queues) = graphic_queues {
+                    queues.push(queues_to_add);
+                } else {
+                    graphic_queues = Some(vec![queues_to_add]);
+                }
+            }
 
             // If the last line is bigger than the actual visible rows, then some resize
             // has happened. In this case, request full draw.
@@ -903,9 +933,22 @@ impl Renderer {
                     let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
-                    for (i, row) in visible_rows.iter().enumerate() {
-                        let has_cursor = is_cursor_visible
-                            && context.renderable_content.cursor.state.pos.row == i;
+
+                    // Use parallel processing for row enumeration and then sequential rendering
+                    let row_data: Vec<_> = visible_rows
+                        .par_iter()
+                        .enumerate()
+                        .map(|(i, row)| {
+                            let has_cursor = is_cursor_visible
+                                && context.renderable_content.cursor.state.pos.row.0
+                                    as usize
+                                    == i;
+                            (i, row, has_cursor)
+                        })
+                        .collect();
+
+                    // Sequential rendering with pre-computed data
+                    for (i, row, has_cursor) in row_data {
                         self.create_line(
                             content,
                             row,
@@ -919,31 +962,52 @@ impl Renderer {
                             is_active,
                         );
                     }
+
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    let duration = start.elapsed();
+                    println!(
+                        "Time elapsed in -renderer.TermDamage::Full (optimized) is: {:?}",
+                        duration
+                    );
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
-                    for line in lines {
-                        let has_cursor = is_cursor_visible
-                            && context.renderable_content.cursor.state.pos.row == line;
+                    let start = std::time::Instant::now();
+                    let line_2 = lines.clone();
+
+                    // Use parallel processing for partial damage rendering
+                    let line_data: Vec<_> = lines
+                        .par_iter()
+                        .filter_map(|&line| {
+                            let has_cursor = is_cursor_visible
+                                && context.renderable_content.cursor.state.pos.row.0
+                                    as usize
+                                    == line;
+                            visible_rows
+                                .get(line)
+                                .map(|visible_row| (line, visible_row, has_cursor))
+                        })
+                        .collect();
+
+                    // Sequential rendering with pre-computed data
+                    for (line, visible_row, has_cursor) in line_data {
                         content.clear_line(line);
-                        if let Some(visible_row) = visible_rows.get(line) {
-                            self.create_line(
-                                content,
-                                visible_row,
-                                has_cursor,
-                                Some(line),
-                                Line(line as i32),
-                                &context.renderable_content,
-                                hints,
-                                focused_match,
-                                &colors,
-                                is_active,
-                            );
-                        }
+                        self.create_line(
+                            content,
+                            visible_row,
+                            has_cursor,
+                            Some(line),
+                            Line(line as i32),
+                            &context.renderable_content,
+                            hints,
+                            focused_match,
+                            &colors,
+                            is_active,
+                        );
                     }
+
+                    let duration = start.elapsed();
+                    println!("Time elapsed in -renderer.TermDamage::Lines({:?}) (optimized) is: {:?}", line_2, duration);
                 }
             };
         }
