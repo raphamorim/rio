@@ -2913,6 +2913,7 @@ dependencies = [
  "parking_lot",
  "pretty_assertions",
  "raw-window-handle",
+ "rayon",
  "regex",
  "rio-backend",
  "rio-window",
