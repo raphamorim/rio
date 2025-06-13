@@ -1,4 +1,5 @@
 use crate::ansi::iterm2_image_protocol;
+use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -679,6 +680,36 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             self.handler.sixel_graphic_finish();
         } else {
             debug!("[unhandled dcs_unhook]");
+        }
+    }
+
+    fn apc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        warn!("[apc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+
+        fn unhandled(params: &[&[u8]]) {
+            let mut buf = String::new();
+            for items in params {
+                buf.push('[');
+                for item in *items {
+                    let _ = write!(buf, "{:?}", *item as char);
+                }
+                buf.push_str("],");
+            }
+            warn!("[unhandled osc_dispatch]: [{}] at line {}", &buf, line!());
+        }
+
+        if params.is_empty() || params[0].is_empty() {
+            return;
+        }
+
+        match params[0] {
+            b"G" => {
+                // Write handler for kitty graphics
+                kitty_graphics_protocol::parse(params);
+                todo!();
+            }
+            _ => unhandled(params),
         }
     }
 
