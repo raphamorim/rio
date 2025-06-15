@@ -900,7 +900,7 @@ impl Renderer {
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    let start = std::time::Instant::now();
+                    // let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
