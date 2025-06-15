@@ -292,8 +292,28 @@ impl Renderer {
 
         // Reset and prepare reusable buffers
         self.line_buffers.reset(columns);
-        let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
+
+        // Text coalescing: batch consecutive fragments with same style
+        let mut coalesced_content = String::new();
+        let mut coalesced_style = FragmentStyle::default();
+        let mut has_coalesced_content = false;
+
+        // Helper closure to flush coalesced content to sugarloaf
+        let flush_coalesced = |builder: &mut Content,
+                               content: &mut String,
+                               style: FragmentStyle,
+                               has_content: &mut bool,
+                               line_opt: Option<usize>| {
+            if *has_content && !content.is_empty() {
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, content, style);
+                } else {
+                    builder.add_text(content, style);
+                }
+                content.clear();
+                *has_content = false;
+            }
+        };
 
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
@@ -423,95 +443,59 @@ impl Renderer {
             }
         }
 
-        // Second pass: render the line using the resolved styles
+        // Second pass: render the line using text coalescing to reduce sugarloaf calls
         for (style, square_content, column) in &self.line_buffers.styles_and_chars {
-            // Handle drawable characters
+            // Handle drawable characters - these break coalescing and need immediate rendering
             if style.drawable_char.is_some() {
-                if !self.line_buffers.content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(
-                            line,
-                            &self.line_buffers.content,
-                            last_style,
-                        );
-                    } else {
-                        builder.add_text(&self.line_buffers.content, last_style);
-                    }
-                    self.line_buffers.content.clear();
-                }
+                // Flush any coalesced content first
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
 
-                last_style = *style;
-                self.line_buffers.content.push(' '); // Ignore font shaping
-            } else {
-                if *square_content == ' ' {
-                    if !last_char_was_space {
-                        if !self.line_buffers.content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_text_on_line(
-                                    line,
-                                    &self.line_buffers.content,
-                                    last_style,
-                                );
-                            } else {
-                                builder.add_text(&self.line_buffers.content, last_style);
-                            }
-                            self.line_buffers.content.clear();
-                        }
-
-                        last_char_was_space = true;
-                        last_style = *style;
-                    }
+                // Render drawable character immediately (space placeholder for font shaping)
+                let drawable_content = " ";
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, drawable_content, *style);
                 } else {
-                    if last_char_was_space && !self.line_buffers.content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(
-                                line,
-                                &self.line_buffers.content,
-                                last_style,
-                            );
-                        } else {
-                            builder.add_text(&self.line_buffers.content, last_style);
-                        }
-                        self.line_buffers.content.clear();
-                    }
-
-                    last_char_was_space = false;
+                    builder.add_text(drawable_content, *style);
                 }
-
-                if last_style != *style {
-                    if !self.line_buffers.content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(
-                                line,
-                                &self.line_buffers.content,
-                                last_style,
-                            );
-                        } else {
-                            builder.add_text(&self.line_buffers.content, last_style);
-                        }
-                        self.line_buffers.content.clear();
-                    }
-
-                    last_style = *style;
-                }
-
-                self.line_buffers.content.push(*square_content);
+                continue;
             }
 
-            // Render last column and break row
-            if *column == (columns - 1) {
-                if !self.line_buffers.content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(
-                            line,
-                            &self.line_buffers.content,
-                            last_style,
-                        );
-                    } else {
-                        builder.add_text(&self.line_buffers.content, last_style);
-                    }
-                }
+            // Text coalescing: batch consecutive characters with the same style
+            if has_coalesced_content && coalesced_style != *style {
+                // Style changed - flush current batch and start new one
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
+            }
 
+            // Initialize or continue coalescing
+            if !has_coalesced_content {
+                coalesced_style = *style;
+                has_coalesced_content = true;
+            }
+
+            // Add character to coalesced batch
+            coalesced_content.push(*square_content);
+
+            // Flush at end of line
+            if *column == (columns - 1) {
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
                 break;
             }
         }
