@@ -810,6 +810,7 @@ impl Renderer {
                         || hints.is_some());
 
             let mut specific_lines = None;
+            let start = std::time::Instant::now();
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let result = (
@@ -845,6 +846,8 @@ impl Renderer {
                 terminal.reset_damage();
                 result
             };
+            let duration = start.elapsed();
+            println!("Time elapsed in -renderer to get the lock is: {:?}", duration);
 
             // If the last line is bigger than the actual visible rows, then some resize
             // has happened. In this case, request full draw.

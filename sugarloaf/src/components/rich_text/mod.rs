@@ -251,6 +251,7 @@ impl RichTextBrush {
             return;
         }
 
+        let start = std::time::Instant::now();
         self.comp.begin();
         let library = state.content.font_library();
 
@@ -291,6 +292,8 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
+        let duration = start.elapsed();
+        println!("Time elapsed in -sugarloaf:rich_text:prepare is: {:?}", duration);
     }
 
     #[inline]
