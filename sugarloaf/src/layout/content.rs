@@ -301,7 +301,7 @@ pub struct Content {
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
     pub states: FxHashMap<usize, BuilderState>,
-    word_cache: WordCache,
+    text_cache: ImprovedTextCache,
     selector: Option<usize>,
     counter: RichTextCounter,
 }
@@ -313,7 +313,7 @@ impl Content {
             fonts: font_library.clone(),
             scx: ShapeContext::new(),
             states: FxHashMap::default(),
-            word_cache: WordCache::new(),
+            text_cache: ImprovedTextCache::new(),
             font_features: vec![],
             selector: None,
             counter: RichTextCounter::new(),
@@ -335,7 +335,7 @@ impl Content {
     #[inline]
     pub fn set_font_library(&mut self, font_library: &FontLibrary) {
         self.fonts = font_library.clone();
-        self.word_cache = WordCache::new();
+        self.text_cache = ImprovedTextCache::new();
         for line in self.states.values_mut() {
             line.metrics_cache = MetricsCache::default();
         }
@@ -583,8 +583,11 @@ impl Content {
             // Get vars for this fragment
             let vars: Vec<_> = state.vars.get(font_vars).to_vec();
 
+            // Create cache key for this text run
+            let cache_key = ShapingCacheKey::new(&style, content, scaled_font_size, script as u8);
+
             // Check if the shaped text is already in the cache
-            if let Some(cache_entry) = self.word_cache.get(&font_id, content) {
+            if let Some(cache_entry) = self.text_cache.get_run(&cache_key) {
                 if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
                     if line.render_data.push_run_without_shaper(
                         style,
@@ -598,10 +601,46 @@ impl Content {
                 }
             }
 
-            // If not in cache, shape the text
-            // Set up cache entry info
-            self.word_cache.font_id = font_id;
-            self.word_cache.content = content.clone();
+            // Try ASCII cache for single safe characters
+            let ascii_cache_hit = if content.chars().count() == 1 {
+                let ch = content.chars().next().unwrap();
+                if ch.is_ascii() {
+                    let ascii_key = AsciCacheKey::new(&style, scaled_font_size);
+                    if let Some(cache_entry) = self.text_cache.get_ascii_char(&ascii_key, ch) {
+                        if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
+                            if line.render_data.push_run_without_shaper(
+                                style,
+                                scaled_font_size,
+                                line_number as u32,
+                                &cache_entry,
+                                metrics,
+                            ) {
+                                // Also promote to run cache for future use
+                                self.text_cache.put_run(&cache_key, cache_entry);
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if ascii_cache_hit {
+                continue;
+            }
+
+            // If not in cache, shape the text and cache the result
+            // Start building cache entry
+            self.text_cache.start_entry(cache_key.clone());
 
             // Process the font data directly without cloning FontRef
             {
@@ -625,13 +664,13 @@ impl Content {
                         .entry(font_id)
                         .or_insert_with(|| shaper.metrics());
 
-                    // Push run to render data
+                    // Push run to render data and cache
                     line.render_data.push_run(
                         style,
                         scaled_font_size,
                         line_number as u32,
                         shaper,
-                        &mut self.word_cache,
+                        &mut self.text_cache,
                     );
                 }
             }
@@ -666,65 +705,198 @@ impl Content {
 }
 
 #[derive(Default)]
-pub struct WordCache {
-    pub inner: FxHashMap<usize, LruCache<String, Vec<OwnedGlyphCluster>>>,
+pub struct ImprovedTextCache {
+    /// Primary cache: Shaped text runs with full context
+    /// Key includes font info + style + content + shaping context
+    run_cache: Option<LruCache<ShapingCacheKey, Vec<OwnedGlyphCluster>>>,
+    /// Secondary cache: Common single characters (ASCII) for non-ligature cases
+    /// Only used when we can guarantee no ligature context affects the character
+    ascii_cache: FxHashMap<AsciCacheKey, LruCache<char, Vec<OwnedGlyphCluster>>>,
+    /// Temporary storage for building cache entries
     stash: Vec<OwnedGlyphCluster>,
-    font_id: usize,
-    content: String,
+    current_key: Option<ShapingCacheKey>,
 }
 
-impl WordCache {
+/// Comprehensive cache key for shaped text runs
+/// Includes everything that affects shaping output
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ShapingCacheKey {
+    /// Font and style information
+    font_id: usize,
+    font_attrs: Attributes,
+    font_vars: FontSettingKey,
+    size: u32, // Font size in fixed point for consistent hashing
+    /// Content hash - critical for ligatures
+    content_hash: u64,
+    content_len: usize, // Length helps with cache sizing decisions
+    /// Shaping context that affects ligatures
+    script: u8, // Script affects shaping behavior
+    /// Style information that affects shaping (not just rendering)
+    has_decoration: bool, // Some decorations can affect glyph selection
+}
+
+/// Simplified key for ASCII-only characters where ligatures are impossible
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct AsciCacheKey {
+    font_id: usize,
+    font_attrs: Attributes,
+    font_vars: FontSettingKey,
+    size: u32,
+}
+
+impl ImprovedTextCache {
     pub fn new() -> Self {
-        WordCache {
-            inner: FxHashMap::default(),
-            stash: vec![],
-            font_id: 0,
-            content: String::new(),
+        Self {
+            // Larger cache for shaped runs since this is our primary cache
+            run_cache: Some(LruCache::new(NonZeroUsize::new(2048).unwrap())),
+            ascii_cache: FxHashMap::default(),
+            stash: Vec::new(),
+            current_key: None,
         }
     }
 
-    #[inline]
-    pub fn get(
-        &mut self,
-        font_id: &usize,
-        content: &str,
-    ) -> Option<&Vec<OwnedGlyphCluster>> {
-        if let Some(cache) = self.inner.get_mut(font_id) {
-            return cache.get(content);
-        }
-        None
+    /// Get cached shaped text for a run
+    /// Returns None if not in cache - caller must shape and cache the result
+    pub fn get_run(&mut self, key: &ShapingCacheKey) -> Option<&Vec<OwnedGlyphCluster>> {
+        self.run_cache.as_mut()?.get(key)
     }
 
-    #[inline]
+    /// Get cached ASCII character if it's safe to do so
+    /// Only use this for single ASCII characters in isolation
+    pub fn get_ascii_char(&mut self, key: &AsciCacheKey, ch: char) -> Option<Vec<OwnedGlyphCluster>> {
+        // Only cache ASCII characters that can't be part of ligatures
+        if !ch.is_ascii() || !Self::is_safe_ascii_char(ch) {
+            return None;
+        }
+
+        if let Some(char_cache) = self.ascii_cache.get_mut(key) {
+            char_cache.get(&ch).cloned()
+        } else {
+            None
+        }
+    }
+
+    /// Check if an ASCII character is safe to cache individually
+    /// Some ASCII characters commonly participate in ligatures
+    fn is_safe_ascii_char(ch: char) -> bool {
+        match ch {
+            // Common ligature participants - don't cache individually
+            '-' | '=' | '>' | '<' | '!' | '|' | '&' | '*' | '/' | '\\' | '+' => false,
+            // Letters that might form ligatures in programming fonts
+            'f' | 'r' | 't' | 'l' => false,
+            // Safe characters that rarely participate in ligatures
+            ' ' | '0'..='9' | 'A'..='Z' | 'a'..='e' | 'g'..='q' | 's' | 'u'..='z' => true,
+            // Punctuation that's usually safe
+            '.' | ',' | ';' | ':' | '(' | ')' | '[' | ']' | '{' | '}' | '"' | '\'' => true,
+            _ => false,
+        }
+    }
+
+    /// Cache shaped text run
+    pub fn put_run(&mut self, key: &ShapingCacheKey, clusters: Vec<OwnedGlyphCluster>) {
+        // Always cache at run level
+        if let Some(ref mut cache) = self.run_cache {
+            cache.put(key.clone(), clusters.clone());
+        }
+    }
+
+    /// Cache a single ASCII character (when we know it's safe)
+    pub fn put_ascii_char(&mut self, key: AsciCacheKey, ch: char, clusters: Vec<OwnedGlyphCluster>) {
+        if !Self::is_safe_ascii_char(ch) {
+            return;
+        }
+
+        let char_cache = self.ascii_cache
+            .entry(key)
+            .or_insert_with(|| {
+                // Smaller cache for ASCII characters
+                LruCache::new(NonZeroUsize::new(128).unwrap())
+            });
+        char_cache.put(ch, clusters);
+    }
+
+    /// Start building a cache entry
+    pub fn start_entry(&mut self, key: ShapingCacheKey) {
+        self.current_key = Some(key);
+        self.stash.clear();
+    }
+
+    /// Add glyph cluster to current entry
     pub fn add_glyph_cluster(&mut self, glyph_cluster: &GlyphCluster) {
         self.stash.push(glyph_cluster.into());
     }
 
-    #[inline]
-    pub fn finish(&mut self) {
-        if !self.content.is_empty() && !self.stash.is_empty() {
-            if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                cache.put(
-                    std::mem::take(&mut self.content),
-                    std::mem::take(&mut self.stash),
-                );
-            } else {
-                // If font id is main
-                let size = if self.font_id == 0 { 512 } else { 128 };
-                let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
-                cache.put(
-                    std::mem::take(&mut self.content),
-                    std::mem::take(&mut self.stash),
-                );
-                self.inner.insert(self.font_id, cache);
+    /// Finish and cache the current entry
+    pub fn finish_entry(&mut self) {
+        if let Some(key) = self.current_key.take() {
+            if !self.stash.is_empty() {
+                let clusters = std::mem::take(&mut self.stash);
+                self.put_run(&key, clusters);
             }
-
-            self.font_id = 0;
-            return;
         }
         self.stash.clear();
-        self.font_id = 0;
-        self.content.clear();
+    }
+
+    /// Clear all caches
+    pub fn clear(&mut self) {
+        if let Some(ref mut cache) = self.run_cache {
+            cache.clear();
+        }
+        self.ascii_cache.clear();
+        self.stash.clear();
+        self.current_key = None;
+    }
+
+    /// Get cache statistics for monitoring
+    pub fn stats(&self) -> CacheStats {
+        CacheStats {
+            run_cache_len: self.run_cache.as_ref().map_or(0, |c| c.len()),
+            ascii_caches: self.ascii_cache.len(),
+            total_ascii_entries: self.ascii_cache.values()
+                .map(|cache| cache.len())
+                .sum(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct CacheStats {
+    pub run_cache_len: usize,
+    pub ascii_caches: usize,
+    pub total_ascii_entries: usize,
+}
+
+/// Helper to create cache keys
+impl ShapingCacheKey {
+    pub fn new(style: &FragmentStyle, content: &str, font_size: f32, script: u8) -> Self {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        let content_hash = hasher.finish();
+
+        Self {
+            font_id: style.font_id,
+            font_attrs: style.font_attrs,
+            font_vars: style.font_vars,
+            size: (font_size * 64.0) as u32, // Fixed point for consistent hashing
+            content_hash,
+            content_len: content.chars().count(),
+            script,
+            has_decoration: style.decoration.is_some(),
+        }
+    }
+}
+
+impl AsciCacheKey {
+    pub fn new(style: &FragmentStyle, font_size: f32) -> Self {
+        Self {
+            font_id: style.font_id,
+            font_attrs: style.font_attrs,
+            font_vars: style.font_vars,
+            size: (font_size * 64.0) as u32,
+        }
     }
 }
 

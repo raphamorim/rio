@@ -14,7 +14,7 @@ use super::glyph::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::Shaper;
 use crate::font_introspector::Metrics;
-use crate::layout::content::{FragmentStyleDecoration, WordCache};
+use crate::layout::content::{FragmentStyleDecoration, ImprovedTextCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
@@ -75,7 +75,7 @@ impl RenderData {
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
-        shaper_cache: &mut WordCache,
+        text_cache: &mut ImprovedTextCache,
     ) {
         // let clusters_start = self.data.clusters.len() as u32;
         let metrics = shaper.metrics();
@@ -85,7 +85,7 @@ impl RenderData {
         let mut advance = 0.;
 
         shaper.shape_with(|c| {
-            shaper_cache.add_glyph_cluster(c);
+            text_cache.add_glyph_cluster(c);
 
             let mut cluster_advance = 0.;
             for glyph in c.glyphs {
@@ -112,7 +112,7 @@ impl RenderData {
             }
             advance += cluster_advance;
         });
-        shaper_cache.finish();
+        text_cache.finish_entry();
         if let Some(graphic) = style.media {
             self.graphics.insert(graphic.id);
         }
