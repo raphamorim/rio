@@ -18,7 +18,7 @@ edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal", "application"]
 # Minimal stable rust version (MSRV)
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
@@ -38,7 +38,7 @@ copa = { path = "copa", default-features = true, version = "0.2.19" }
 rio-proc-macros = { path = "rio-proc-macros", version = "0.2.19" }
 corcovado = { path = "corcovado", version = "0.2.19" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
-parking_lot = { version = "0.12.3", features = [
+parking_lot = { version = "0.12.4", features = [
     "nightly",
     "hardware-lock-elision",
 ] }
@@ -57,16 +57,16 @@ image_rs = { package = "image", version = "0.25.5", default-features = false, fe
     "bmp",
 ] }
 regex = "1.11.1"
-bytemuck = { version = "1.22.0", features = ["derive"] }
+bytemuck = { version = "1.23.1", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 wgpu = "25.0.2"
-libc = "0.2.171"
+libc = "0.2.173"
 smol_str = "0.3.2"
 futures = "0.3.31"
 wasm-bindgen = "0.2.87"
 wasm-bindgen-futures = "0.4.34"
 wasm-bindgen-test = "0.3.42"
-env_logger = "0.11.3"
+env_logger = "0.11.8"
 console_log = "0.2.2"
 bitflags = "2.9.0"
 iovec = "0.1.4"
@@ -84,7 +84,7 @@ codegen-units = 1
 incremental = false
 lto = true                  # reduces binary size by ~14%
 panic = "abort"             # reduces binary size by ~50% in combination with -Zbuild-std-features=panic_immediate_abort
-# opt-level = "s"             # reduces binary size by ~25%
+opt-level = "s"             # reduces binary size by ~25%
 
 [profile.dev]
 split-debuginfo = "unpacked"
