@@ -96,7 +96,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: nightly
-          args: release --clean --split ${{ matrix._ids }}
+          args: release --clean --split ${{ matrix._ids }} --skip=winget
       - if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/v'))) && steps.cache-check.outputs.cache-hit != 'true'
         uses: goreleaser/goreleaser-action@v6.3.0
         with:
