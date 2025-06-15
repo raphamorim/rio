@@ -900,7 +900,7 @@ impl Renderer {
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    // let start = std::time::Instant::now();
+                    let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
@@ -920,11 +920,13 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    let duration = start.elapsed();
+                    println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
                 }
                 Some(lines) => {
+                    let start = std::time::Instant::now();
                     content.sel(rich_text_id);
+                    let lines_c = lines.clone();
                     for line in lines {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
@@ -944,6 +946,8 @@ impl Renderer {
                             );
                         }
                     }
+                    let duration = start.elapsed();
+                    println!("Time elapsed in -renderer.TermDamage::Lines({:?}) is: {:?}", lines_c, duration);
                 }
             };
         }

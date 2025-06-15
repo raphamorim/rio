@@ -1109,7 +1109,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                // let start = std::time::Instant::now();
+                let start = std::time::Instant::now();
                 route.window.winit_window.pre_present_notify();
 
                 route.begin_render();
@@ -1133,8 +1133,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // let duration = start.elapsed();
-                // println!("Time elapsed in render() is: {:?}", duration);
+                let duration = start.elapsed();
+                println!("Time elapsed in render() is: {:?}\n", duration);
                 // }
 
                 if self.config.renderer.strategy.is_game() {
