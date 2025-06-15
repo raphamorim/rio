@@ -8,6 +8,7 @@ language: 'en'
 ## 0.2.19 (unreleased)
 
 - Fix: `Enter`,`Tab`, `Backspace` not disambiguated with `shift` in kitty keyboard's disambiguate mode.
+- Fix: line-height adds small gaps for box-drawing characters [#1126](https://github.com/raphamorim/rio/issues/1126).
 - Search matching a wrapping fullwidth character in the last column.
 
 ## 0.2.18
