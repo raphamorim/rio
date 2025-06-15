@@ -453,7 +453,7 @@ impl Compositor {
                 builtin_character,
                 color,
                 depth,
-                style.line_height_without_mod,
+                style.line_height,
             );
             if let Some(cache) = &mut cache_operations {
                 cache.push(BatchOperation::DrawableChar {
@@ -463,7 +463,7 @@ impl Compositor {
                     char_type: builtin_character,
                     color,
                     depth,
-                    line_height: style.line_height_without_mod,
+                    line_height: style.line_height,
                 });
             }
         } else {
