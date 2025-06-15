@@ -293,7 +293,10 @@ impl RichTextBrush {
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
         let duration = start.elapsed();
-        println!("Time elapsed in -sugarloaf:rich_text:prepare is: {:?}", duration);
+        println!(
+            "Time elapsed in -sugarloaf:rich_text:prepare is: {:?}",
+            duration
+        );
     }
 
     #[inline]
