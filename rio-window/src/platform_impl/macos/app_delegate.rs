@@ -164,68 +164,6 @@ declare_class!(
             Retained::<NSMenu>::autorelease_return(menubar)
         }
 
-        #[method(rioCreateWindow:)]
-        fn create_window(
-            &self,
-            _sender: Option<&AnyObject>,
-        ) {
-            if self.is_launched() {
-                self.dispatch_create_window_event();
-            }
-        }
-
-        #[method(copy:)]
-        fn copy(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Copy);
-            }
-        }
-
-        #[method(paste:)]
-        fn paste(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Paste);
-            }
-        }
-
-        #[method(rioCreateTab:)]
-        fn create_tab(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::CreateTab);
-            }
-        }
-
-        #[method(rioClose:)]
-        fn close_tab(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Close);
-            }
-        }
-
-        #[method(rioSplitDown:)]
-        fn split_down(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::SplitDown);
-            }
-        }
-
-        #[method(rioSplitRight:)]
-        fn split_right(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::SplitRight);
-            }
-        }
-
-        #[method(openConfig:)]
-        fn open_configuration(
-            &self,
-            _sender: Option<&AnyObject>,
-        ) {
-            if self.is_launched() {
-                self.dispatch_open_configuration();
-            }
-        }
-
         #[method(applicationShouldHandleReopen:hasVisibleWindows:)]
         fn should_handle_reopen(&self,
             _sender: Option<&AnyObject>,
@@ -311,6 +249,65 @@ declare_class!(
             self.open_urls(open_urls);
 
             trace_scope!("Completed `application:openURLs:`");
+        }
+    }
+
+    // Custom methods for menu actions
+    unsafe impl ApplicationDelegate {
+        #[method(rioCreateWindow:)]
+        fn create_window(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_create_window_event();
+            }
+        }
+
+        #[method(copy:)]
+        fn copy(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Copy);
+            }
+        }
+
+        #[method(paste:)]
+        fn paste(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Paste);
+            }
+        }
+
+        #[method(rioCreateTab:)]
+        fn create_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::CreateTab);
+            }
+        }
+
+        #[method(rioClose:)]
+        fn close_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::Close);
+            }
+        }
+
+        #[method(rioSplitDown:)]
+        fn split_down(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitDown);
+            }
+        }
+
+        #[method(rioSplitRight:)]
+        fn split_right(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_hook(Hook::SplitRight);
+            }
+        }
+
+        #[method(openConfig:)]
+        fn open_configuration(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_open_configuration();
+            }
         }
     }
 );
