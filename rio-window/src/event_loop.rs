@@ -696,7 +696,9 @@ pub(crate) fn dispatch_event_for_app<T: 'static, A: ApplicationHandler<T>>(
         Event::LoopExiting => app.exiting(event_loop),
         Event::MemoryWarning => app.memory_warning(event_loop),
         Event::Opened { urls } => app.open_urls(event_loop, urls),
-        Event::HookEvent(hook) => app.hook_event(event_loop, &hook),
+        Event::HookEvent(hook, modifiers) => {
+            app.hook_event(event_loop, &hook, &modifiers)
+        }
         Event::OpenConfig => app.open_config(event_loop),
     }
 }
