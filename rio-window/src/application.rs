@@ -1,6 +1,7 @@
 //! End user application handling.
 
-use crate::event::{DeviceEvent, DeviceId, Hook, StartCause, WindowEvent};
+use crate::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
+use crate::event::{KeyEvent, Modifiers};
 use crate::event_loop::ActiveEventLoop;
 use crate::window::WindowId;
 
@@ -231,7 +232,12 @@ pub trait ApplicationHandler<T: 'static = ()> {
         let _ = event_loop;
     }
 
-    fn hook_event(&mut self, event_loop: &ActiveEventLoop, hook: &Hook) {
-        let _ = (event_loop, hook);
+    fn hook_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        hook: &KeyEvent,
+        modifiers: &Modifiers,
+    ) {
+        let _ = (event_loop, hook, modifiers);
     }
 }

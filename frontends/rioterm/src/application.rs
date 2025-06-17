@@ -10,8 +10,7 @@ use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::ColorRgb;
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
-    ElementState, Hook, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase,
-    WindowEvent,
+    ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
 };
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::event_loop::ControlFlow;
@@ -1170,7 +1169,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         }
     }
 
-    fn hook_event(&mut self, _event_loop: &ActiveEventLoop, hook: &Hook) {
+    fn hook_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        key: &rio_window::event::KeyEvent,
+        modifiers: &rio_window::event::Modifiers,
+    ) {
         let window_id = match self.router.get_focused_route() {
             Some(window_id) => window_id,
             None => return,
@@ -1181,38 +1185,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None => return,
         };
 
-        match hook {
-            Hook::Copy => {
-                route.window.screen.copy_selection(ClipboardType::Clipboard);
-            }
-            Hook::Paste => {
-                let content = route
-                    .window
-                    .screen
-                    .clipboard
-                    .borrow_mut()
-                    .get(ClipboardType::Selection);
-                route.window.screen.paste(&content, true);
-            }
-            Hook::CreateTab => {
-                if self.config.navigation.has_navigation_key_bindings() {
-                    route.window.screen.create_tab();
-                }
-            }
-            Hook::Close => {
-                route.window.screen.close_split_or_tab();
-            }
-            Hook::SplitDown => {
-                if self.config.navigation.use_split {
-                    route.window.screen.split_down();
-                }
-            }
-            Hook::SplitRight => {
-                if self.config.navigation.use_split {
-                    route.window.screen.split_right();
-                }
-            }
-        }
+        // For menu-triggered events, we need to temporarily set the correct modifiers
+        // since menu events don't trigger ModifiersChanged events.
+        let original_modifiers = route.window.screen.modifiers;
+
+        // Use the modifiers passed from the menu action
+        route.window.screen.set_modifiers(*modifiers);
+
+        // Process the key event
+        route.window.screen.process_key_event(&key);
+
+        // Restore the original modifiers
+        route.window.screen.set_modifiers(original_modifiers);
     }
 
     // Emitted when the event loop is being shut down.

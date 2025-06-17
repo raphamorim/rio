@@ -113,7 +113,7 @@ pub enum Event<T: 'static> {
     },
 
     OpenConfig,
-    HookEvent(Hook),
+    HookEvent(KeyEvent, Modifiers),
 }
 
 impl<T> Event<T> {
@@ -132,19 +132,9 @@ impl<T> Event<T> {
             MemoryWarning => Ok(MemoryWarning),
             Opened { urls } => Ok(Opened { urls }),
             OpenConfig => Ok(OpenConfig),
-            HookEvent(hook) => Ok(HookEvent(hook)),
+            HookEvent(hook, modifiers) => Ok(HookEvent(hook, modifiers)),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Hook {
-    CreateTab,
-    Close,
-    Copy,
-    Paste,
-    SplitDown,
-    SplitRight,
 }
 
 /// Describes the reason the event loop is resuming.
