@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.19 (unreleased)
+## 0.2.20 (unreleased)
+
+- TBD.
+
+## 0.2.19
 
 - Reduced the bundle size by ~20.81% (MacOS, Linux, BSD).
 - Performance: stop saving empty images in the image cache.
