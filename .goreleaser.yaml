@@ -46,30 +46,39 @@ builds:
     flags: [--release, -p=rioterm]
     env:
       - MACOSX_DEPLOYMENT_TARGET={{ if eq .Arch "amd64" }}10.15{{ else }}11.0{{ end }}
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-apple-darwin, aarch64-apple-darwin]
 
   - id: linux-arm64-wayland
     builder: rust
     command: build
     flags: [--release, -p=rioterm, --no-default-features, --features=wayland]
+    env:
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [aarch64-unknown-linux-gnu]
 
   - id: linux-arm64-x11
     builder: rust
     command: build
     flags: [--release, -p=rioterm, --no-default-features, --features=x11]
+    env:
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [aarch64-unknown-linux-gnu]
 
   - id: linux-x64-wayland
     builder: rust
     command: build
     flags: [--release, -p=rioterm, --no-default-features, --features=wayland]
+    env:
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
   - id: linux-x64-x11
     builder: rust
     command: build
     flags: [--release, -p=rioterm, --no-default-features, --features=x11]
+    env:
+      - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
 release:
