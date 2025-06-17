@@ -7,6 +7,7 @@ language: 'en'
 
 ## 0.2.19 (unreleased)
 
+- Performance: stop saving empty images in the image cache.
 - Fix: On MacOS, keybind definition to ignore cmd-w does not work [#879](https://github.com/raphamorim/rio/issues/879).
 - Fix: Build for MacOS 26 Tahoe.
 - Fix: `Enter`,`Tab`, `Backspace` not disambiguated with `shift` in kitty keyboard's disambiguate mode.
