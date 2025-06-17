@@ -18,7 +18,7 @@ language: 'en'
 - Fix: `Enter`,`Tab`, `Backspace` not disambiguated with `shift` in kitty keyboard's disambiguate mode.
 - Fix: line-height adds small gaps for box-drawing characters [#1126](https://github.com/raphamorim/rio/issues/1126).
 - Search matching a wrapping fullwidth character in the last column.
-- Update Rust to 1.86.0.
+- Update Rust to 1.87.0.
 
 ## 0.2.18
 
