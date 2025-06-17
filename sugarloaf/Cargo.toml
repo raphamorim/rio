@@ -36,7 +36,7 @@ targets = [
 wgpu = { workspace = true }
 bytemuck = { workspace = true }
 tracing = { workspace = true }
-serde = { version = "1.0.208", features = ["derive"] }
+serde = { workspace = true, features = ["derive"] }
 image_rs = { workspace = true }
 unicode-width = { workspace = true }
 guillotiere = "0.6.2"
@@ -44,13 +44,13 @@ rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
 approx = "0.5.1"
-lru = "0.13.0"
-skrifa = "0.30.0"
+lru = "0.14.0"
+skrifa = "0.31.3"
 halfbrown = "0.3.0"
-half = "2.4.1"
+half = "2.6.0"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
-zeno = { version = "0.3.2", optional = true }
+zeno = { version = "0.3.3", optional = true }
 futures = { workspace = true }
 
 librashader-common = "0.7.1"
@@ -73,17 +73,17 @@ twox-hash = { version = "2.1.0", default-features = false, features = [
     "std",
     "xxhash64",
 ] }
-memmap2 = "0.9.5"
+memmap2 = { workspace = true }
 slotmap = { version = "1.0.7", default-features = false }
 tinyvec = { version = "1.9.0", features = ["alloc"] }
 ttf-parser = { version = "0.25.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names", "no-std-float"] }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
-fontconfig-parser = { version = "0.5.7", default-features = false }
+fontconfig-parser = { version = "0.5.8", default-features = false }
 
 [dev-dependencies]
 rio-window = { workspace = true }
-png = "0.17.8"
+png = "0.17.16"
 deflate = "1.0.0"
 criterion = "0.5.1"
 

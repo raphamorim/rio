@@ -160,6 +160,21 @@ impl GlyphCacheSession<'_> {
                 let p = self.scaled_image.placement;
                 let w = p.width as u16;
                 let h = p.height as u16;
+
+                // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
+                if w == 0 || h == 0 {
+                    let entry = GlyphEntry {
+                        left: p.left,
+                        top: p.top,
+                        width: w,
+                        height: h,
+                        image: ImageId::empty(), // Use a special empty image ID
+                        is_bitmap: false,
+                    };
+                    self.entry.glyphs.insert(key, entry);
+                    return Some(entry);
+                }
+
                 let req = AddImage {
                     width: w,
                     height: h,
