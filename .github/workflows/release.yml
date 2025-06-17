@@ -56,6 +56,10 @@ jobs:
           lookup-only: true
           fail-on-cache-miss: false
         id: cache-check
+      - if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev pkg-config
       - if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
       - if: matrix.os == 'windows-latest'
