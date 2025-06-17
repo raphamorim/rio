@@ -94,6 +94,11 @@ impl ImageCache {
         let width = request.width;
         let height = request.height;
 
+        // Reject zero-sized images
+        if width == 0 || height == 0 {
+            return None;
+        }
+
         // Check buffer size
         buffer_size(width as u32, height as u32)?;
 
@@ -165,6 +170,11 @@ impl ImageCache {
 
     /// Retrieves the image for the specified handle and updates the epoch.
     pub fn get(&self, handle: &ImageId) -> Option<ImageLocation> {
+        // Empty images have no location (for zero-sized glyphs)
+        if handle.is_empty() {
+            return None;
+        }
+
         let entry = self.entries.get(handle.index())?;
         if !entry.allocated {
             return None;
@@ -207,6 +217,11 @@ impl ImageCache {
 
     /// Returns true if the image is valid.
     pub fn is_valid(&self, image: ImageId) -> bool {
+        // Empty images are always valid (for zero-sized glyphs)
+        if image.is_empty() {
+            return true;
+        }
+
         if let Some(entry) = self.entries.get(image.index()) {
             entry.allocated
         } else {
