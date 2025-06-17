@@ -1,3 +1,5 @@
+use crate::event::KeyEvent;
+use crate::keyboard::{KeyCode, ModifiersState};
 use crate::platform_impl::platform::menu::menu_item;
 use objc2::sel;
 use objc2_app_kit::NSMenu;
@@ -25,7 +27,9 @@ use super::observer::{EventLoopWaker, RunLoop};
 use super::window::WinitWindow;
 use super::{menu, WindowId, DEVICE_ID};
 use crate::dpi::PhysicalSize;
-use crate::event::{DeviceEvent, Event, Hook, InnerSizeWriter, StartCause, WindowEvent};
+use crate::event::{
+    DeviceEvent, Event, InnerSizeWriter, Modifiers, StartCause, WindowEvent,
+};
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
 
@@ -164,68 +168,6 @@ declare_class!(
             Retained::<NSMenu>::autorelease_return(menubar)
         }
 
-        #[method(rioCreateWindow:)]
-        fn create_window(
-            &self,
-            _sender: Option<&AnyObject>,
-        ) {
-            if self.is_launched() {
-                self.dispatch_create_window_event();
-            }
-        }
-
-        #[method(copy:)]
-        fn copy(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Copy);
-            }
-        }
-
-        #[method(paste:)]
-        fn paste(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Paste);
-            }
-        }
-
-        #[method(rioCreateTab:)]
-        fn create_tab(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::CreateTab);
-            }
-        }
-
-        #[method(rioClose:)]
-        fn close_tab(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::Close);
-            }
-        }
-
-        #[method(rioSplitDown:)]
-        fn split_down(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::SplitDown);
-            }
-        }
-
-        #[method(rioSplitRight:)]
-        fn split_right(&self, _sender: Option<&AnyObject>) {
-            if self.is_launched() {
-                self.dispatch_hook(Hook::SplitRight);
-            }
-        }
-
-        #[method(openConfig:)]
-        fn open_configuration(
-            &self,
-            _sender: Option<&AnyObject>,
-        ) {
-            if self.is_launched() {
-                self.dispatch_open_configuration();
-            }
-        }
-
         #[method(applicationShouldHandleReopen:hasVisibleWindows:)]
         fn should_handle_reopen(&self,
             _sender: Option<&AnyObject>,
@@ -311,6 +253,107 @@ declare_class!(
             self.open_urls(open_urls);
 
             trace_scope!("Completed `application:openURLs:`");
+        }
+    }
+
+    // Custom methods for menu actions
+    unsafe impl ApplicationDelegate {
+        #[method(rioCreateWindow:)]
+        fn create_window(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_create_window_event();
+            }
+        }
+
+        #[method(copy:)]
+        fn copy(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyC,
+                    modifiers_state,
+                    Some("c")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(paste:)]
+        fn paste(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyV,
+                    modifiers_state,
+                    Some("v")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(rioCreateTab:)]
+        fn create_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyT,
+                    modifiers_state,
+                    Some("t")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(rioClose:)]
+        fn close_tab(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyW,
+                    modifiers_state,
+                    Some("w")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(rioSplitRight:)]
+        fn split_right(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyD,
+                    modifiers_state,
+                    Some("d")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(rioSplitDown:)]
+        fn split_down(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                let modifiers_state = ModifiersState::SUPER | ModifiersState::SHIFT;
+                let modifiers: Modifiers = modifiers_state.into();
+                let key_event = Self::create_key_event(
+                    KeyCode::KeyD,
+                    modifiers_state,
+                    Some("d")
+                );
+                self.dispatch_hook(key_event, modifiers);
+            }
+        }
+
+        #[method(openConfig:)]
+        fn open_configuration(&self, _sender: Option<&AnyObject>) {
+            if self.is_launched() {
+                self.dispatch_open_configuration();
+            }
         }
     }
 );
@@ -522,8 +565,40 @@ impl ApplicationDelegate {
         self.handle_event(Event::NewEvents(StartCause::CreateWindow));
     }
 
-    pub fn dispatch_hook(&self, hook: Hook) {
-        self.handle_event(Event::HookEvent(hook));
+    pub fn dispatch_hook(&self, key: KeyEvent, modifiers: Modifiers) {
+        self.handle_event(Event::HookEvent(key, modifiers));
+    }
+
+    /// Create a KeyEvent for common shortcuts
+    fn create_key_event(
+        key_code: KeyCode,
+        _modifiers: ModifiersState,
+        character: Option<&str>,
+    ) -> crate::event::KeyEvent {
+        use crate::event::ElementState;
+        use crate::keyboard::{Key, KeyLocation, NativeKey, PhysicalKey};
+        use crate::platform_impl::KeyEventExtra;
+        use smol_str::SmolStr;
+
+        let logical_key = if let Some(ch) = character {
+            Key::Character(SmolStr::new(ch))
+        } else {
+            // For keys without character representation, use Unidentified
+            Key::Unidentified(NativeKey::MacOS(0))
+        };
+
+        crate::event::KeyEvent {
+            physical_key: PhysicalKey::Code(key_code),
+            logical_key: logical_key.clone(),
+            text: character.map(SmolStr::new),
+            location: KeyLocation::Standard,
+            state: ElementState::Pressed,
+            repeat: false,
+            platform_specific: KeyEventExtra {
+                text_with_all_modifiers: character.map(SmolStr::new),
+                key_without_modifiers: logical_key,
+            },
+        }
     }
 
     pub fn dispatch_open_configuration(&self) {
