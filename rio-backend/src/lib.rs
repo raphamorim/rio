@@ -1,4 +1,6 @@
 pub mod ansi;
+pub mod batch_utf8;
+pub mod batched_parser;
 pub mod clipboard;
 pub mod config;
 pub mod crosswords;

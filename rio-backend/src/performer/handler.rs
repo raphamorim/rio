@@ -1,6 +1,7 @@
 use crate::ansi::iterm2_image_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::batched_parser::BatchedParser;
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
@@ -465,7 +466,7 @@ impl Timeout for StdSyncHandler {
 #[derive(Default)]
 pub struct Processor<T: Timeout = StdSyncHandler> {
     state: ProcessorState<T>,
-    parser: copa::Parser,
+    parser: BatchedParser<1024>,
 }
 
 impl<T: Timeout> Processor<T> {
@@ -498,6 +499,16 @@ impl<T: Timeout> Processor<T> {
         }
     }
 
+    /// Flush any pending batched input
+    #[inline]
+    pub fn flush<H>(&mut self, handler: &mut H)
+    where
+        H: Handler,
+    {
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.flush(&mut performer);
+    }
+
     /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
@@ -523,6 +534,8 @@ impl<T: Timeout> Processor<T> {
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
+        // Flush any pending batched input from synchronized processing
+        self.parser.flush(&mut performer);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
