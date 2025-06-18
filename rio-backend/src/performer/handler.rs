@@ -1657,6 +1657,28 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_capabilities_comprehensive() {
+        // Test two valid capabilities
+        let response = process_xtgettcap_request(b"544E3B436F"); // "TN;Co"
+        assert_eq!(response, "\x1bP1+r544E=72696F;436F=323536\x1b\\");
+
+        // Test three valid capabilities
+        let response = process_xtgettcap_request(b"544E3B436F3B524742"); // "TN;Co;RGB"
+        assert_eq!(
+            response,
+            "\x1bP1+r544E=72696F;436F=323536;524742=382F382F38\x1b\\"
+        );
+
+        // Test that invalid capability stops processing (per XTerm spec)
+        let response = process_xtgettcap_request(b"544E3B58583B436F"); // "TN;XX;Co"
+        assert_eq!(response, "\x1bP0+r\x1b\\"); // Should error on XX and not process Co
+
+        // Test single valid capability
+        let response = process_xtgettcap_request(b"544E"); // "TN"
+        assert_eq!(response, "\x1bP1+r544E=72696F\x1b\\");
+    }
+
+    #[test]
     fn test_capability_lookup() {
         assert_eq!(get_termcap_capability("TN"), Some("rio".to_string()));
         assert_eq!(get_termcap_capability("Co"), Some("256".to_string()));
