@@ -1371,92 +1371,234 @@ fn encode_hex_string(s: &str) -> String {
 }
 
 /// Get termcap/terminfo capability value for Rio terminal.
+/// Based on misc/rio.termcap and misc/rio.terminfo files.
 fn get_termcap_capability(name: &str) -> Option<String> {
     match name {
         // Terminal name
         "TN" | "name" => Some("rio".to_string()),
 
-        // Colors capability
+        // Colors capability - from terminfo: colors#0x100 (256), pairs#0x7FFF
         "Co" | "colors" => Some("256".to_string()),
+        "pa" | "pairs" => Some("32767".to_string()),
 
-        // RGB/direct color support
+        // RGB/direct color support - from terminfo: ccc capability
         "RGB" => Some("8/8/8".to_string()),
+        "ccc" => Some("".to_string()),
 
-        // Common capabilities from Rio's terminfo
-        "am" => Some("".to_string()),   // Automatic margins
-        "bce" => Some("".to_string()),  // Background color erase
-        "km" => Some("".to_string()),   // Has meta key
-        "mir" => Some("".to_string()),  // Safe to move in insert mode
-        "msgr" => Some("".to_string()), // Safe to move in standout mode
-        "xenl" => Some("".to_string()), // Newline ignored after 80 cols
-        "AX" => Some("".to_string()),   // Default color pair is white on black
-        "XT" => Some("".to_string()),   // Supports title setting
+        // Terminal dimensions - from termcap: co#80:li#24
+        "co" | "cols" => Some("80".to_string()),
+        "li" | "lines" => Some("24".to_string()),
+        "it" => Some("8".to_string()), // Tab stops
 
-        // Cursor movement
-        "cup" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
-        "cuu1" => Some("\\E[A".to_string()),
-        "cud1" => Some("\\n".to_string()),
-        "cuf1" => Some("\\E[C".to_string()),
-        "cub1" => Some("^H".to_string()),
-        "home" => Some("\\E[H".to_string()),
+        // Boolean capabilities from terminfo
+        "OTbs" | "bs" => Some("".to_string()),  // Backspace overstrike
+        "am" => Some("".to_string()),    // Automatic margins
+        "bce" => Some("".to_string()),   // Background color erase
+        "km" => Some("".to_string()),    // Has meta key
+        "mir" => Some("".to_string()),   // Safe to move in insert mode
+        "msgr" => Some("".to_string()),  // Safe to move in standout mode
+        "xenl" | "xn" => Some("".to_string()), // Newline ignored after 80 cols
+        "AX" => Some("".to_string()),    // Default color pair is white on black
+        "XT" => Some("".to_string()),    // Supports title setting
+        "XF" => Some("".to_string()),    // Xterm focus events
+        "hs" => Some("".to_string()),    // Has status line
+        "ms" => Some("".to_string()),    // Safe to move in standout mode
+        "mi" => Some("".to_string()),    // Safe to move in insert mode
+        "mc5i" => Some("".to_string()),  // Printer won't echo on screen
+        "npc" => Some("".to_string()),   // No pad character
+
+        // Cursor movement - from terminfo
+        "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
+        "cuu1" | "up" => Some("\\E[A".to_string()),
+        "cud1" | "do" => Some("\\n".to_string()),
+        "cuf1" | "nd" => Some("\\E[C".to_string()),
+        "cub1" | "le" => Some("^H".to_string()),
+        "home" | "ho" => Some("\\E[H".to_string()),
+        "cuu" | "UP" => Some("\\E[%p1%dA".to_string()),
+        "cud" | "DO" => Some("\\E[%p1%dB".to_string()),
+        "cuf" | "RI" => Some("\\E[%p1%dC".to_string()),
+        "cub" | "LE" => Some("\\E[%p1%dD".to_string()),
+        "hpa" => Some("\\E[%i%p1%dG".to_string()),
+        "vpa" => Some("\\E[%i%p1%dd".to_string()),
 
         // Clear operations
-        "clear" => Some("\\E[H\\E[2J".to_string()),
-        "el" => Some("\\E[K".to_string()),
-        "ed" => Some("\\E[J".to_string()),
+        "clear" | "cl" => Some("\\E[H\\E[2J".to_string()),
+        "el" | "ce" => Some("\\E[K".to_string()),
+        "ed" | "cd" => Some("\\E[J".to_string()),
+        "el1" => Some("\\E[1K".to_string()),
+        "E3" => Some("\\E[3J".to_string()),
 
-        // Colors
-        "setaf" => Some("\\E[3%p1%dm".to_string()),
-        "setab" => Some("\\E[4%p1%dm".to_string()),
+        // Colors and attributes
+        "setaf" => Some("\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m".to_string()),
+        "setab" => Some("\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m".to_string()),
+        "setf" => Some("\\E[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
+        "setb" => Some("\\E[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
         "op" => Some("\\E[39;49m".to_string()),
+        "oc" => Some("\\E]104\\007".to_string()),
+        "initc" => Some("\\E]4;%p1%d;rgb\\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\\E\\\\".to_string()),
 
         // Text attributes
-        "bold" => Some("\\E[1m".to_string()),
-        "dim" => Some("\\E[2m".to_string()),
-        "smul" => Some("\\E[4m".to_string()),
-        "rmul" => Some("\\E[24m".to_string()),
-        "rev" => Some("\\E[7m".to_string()),
-        "smso" => Some("\\E[7m".to_string()),
-        "rmso" => Some("\\E[27m".to_string()),
+        "bold" | "md" => Some("\\E[1m".to_string()),
+        "dim" | "mh" => Some("\\E[2m".to_string()),
+        "smul" | "us" => Some("\\E[4m".to_string()),
+        "rmul" | "ue" => Some("\\E[24m".to_string()),
+        "rev" | "mr" => Some("\\E[7m".to_string()),
+        "smso" | "so" => Some("\\E[7m".to_string()),
+        "rmso" | "se" => Some("\\E[27m".to_string()),
         "invis" => Some("\\E[8m".to_string()),
-        "sgr0" => Some("\\E(B\\E[m".to_string()),
+        "blink" | "mb" => Some("\\E[5m".to_string()),
+        "sitm" => Some("\\E[3m".to_string()),
+        "ritm" => Some("\\E[23m".to_string()),
+        "smxx" => Some("\\E[9m".to_string()),
+        "rmxx" => Some("\\E[29m".to_string()),
+        "sgr0" | "me" => Some("\\E(B\\E[m".to_string()),
+        "sgr" => Some("%?%p9%t\\E(0%e\\E(B%;\\E[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m".to_string()),
 
-        // Insert/delete
-        "ich" => Some("\\E[%p1%d@".to_string()),
-        "dch" => Some("\\E[%p1%dP".to_string()),
-        "il" => Some("\\E[%p1%dL".to_string()),
-        "dl" => Some("\\E[%p1%dM".to_string()),
+        // Character sets
+        "smacs" | "as" => Some("\\E(0".to_string()),
+        "rmacs" | "ae" => Some("\\E(B".to_string()),
+        "acsc" => Some("``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~".to_string()),
+
+        // Insert/delete operations
+        "ich" | "IC" => Some("\\E[%p1%d@".to_string()),
+        "dch1" | "dc" => Some("\\E[P".to_string()),
+        "dch" | "DC" => Some("\\E[%p1%dP".to_string()),
+        "il1" | "al" => Some("\\E[L".to_string()),
+        "il" | "AL" => Some("\\E[%p1%dL".to_string()),
+        "dl1" => Some("\\E[M".to_string()),
+        "dl" | "DL" => Some("\\E[%p1%dM".to_string()),
+        "ech" | "ec" => Some("\\E[%p1%dX".to_string()),
 
         // Scrolling
-        "csr" => Some("\\E[%i%p1%d;%p2%dr".to_string()),
-        "ri" => Some("\\EM".to_string()),
-        "ind" => Some("\\n".to_string()),
+        "csr" | "cs" => Some("\\E[%i%p1%d;%p2%dr".to_string()),
+        "ri" | "sr" => Some("\\EM".to_string()),
+        "ind" | "sf" => Some("\\n".to_string()),
+        "indn" | "SF" => Some("\\E[%p1%dS".to_string()),
+        "rin" | "SR" => Some("\\E[%p1%dT".to_string()),
 
         // Cursor visibility
-        "civis" => Some("\\E[?25l".to_string()),
-        "cnorm" => Some("\\E[?12l\\E[?25h".to_string()),
-        "cvvis" => Some("\\E[?12;25h".to_string()),
+        "civis" | "vi" => Some("\\E[?25l".to_string()),
+        "cnorm" | "ve" => Some("\\E[?12l\\E[?25h".to_string()),
+        "cvvis" | "vs" => Some("\\E[?12;25h".to_string()),
 
-        // Keypad
-        "smkx" => Some("\\E[?1h\\E=".to_string()),
-        "rmkx" => Some("\\E[?1l\\E>".to_string()),
+        // Cursor styles
+        "Ss" => Some("\\E[%p1%d q".to_string()),
+        "Se" => Some("\\E[0 q".to_string()),
+        "Cs" => Some("\\E]12;%p1%s\\007".to_string()),
+        "Cr" => Some("\\E]112\\007".to_string()),
+
+        // Keypad and modes
+        "smkx" | "ks" => Some("\\E[?1h\\E=".to_string()),
+        "rmkx" | "ke" => Some("\\E[?1l\\E>".to_string()),
+        "smir" | "im" => Some("\\E[4h".to_string()),
+        "rmir" | "ei" => Some("\\E[4l".to_string()),
+        "smam" => Some("\\E[?7h".to_string()),
+        "rmam" => Some("\\E[?7l".to_string()),
+        "smm" => Some("\\E[?1034h".to_string()),
+        "rmm" => Some("\\E[?1034l".to_string()),
+
+        // Alternate screen
+        "smcup" | "ti" => Some("\\E[?1049h\\E[22;0;0t".to_string()),
+        "rmcup" | "te" => Some("\\E[?1049l\\E[23;0;0t".to_string()),
+
+        // Save/restore cursor
+        "sc" => Some("\\E7".to_string()),
+        "rc" => Some("\\E8".to_string()),
+
+        // Tabs
+        "ht" | "ta" => Some("^I".to_string()),
+        "hts" | "st" => Some("\\EH".to_string()),
+        "tbc" | "ct" => Some("\\E[3g".to_string()),
+        "cbt" | "bt" => Some("\\E[Z".to_string()),
+
+        // Bell and flash
+        "bel" | "bl" => Some("^G".to_string()),
+        "flash" | "vb" => Some("\\E[?5h$<100/>\\E[?5l".to_string()),
+
+        // Status line
+        "tsl" | "ts" => Some("\\E]2;".to_string()),
+        "fsl" | "fs" => Some("^G".to_string()),
+        "dsl" | "ds" => Some("\\E]2;\\007".to_string()),
 
         // Function keys
-        "kf1" => Some("\\EOP".to_string()),
-        "kf2" => Some("\\EOQ".to_string()),
-        "kf3" => Some("\\EOR".to_string()),
-        "kf4" => Some("\\EOS".to_string()),
+        "kf1" | "k1" => Some("\\EOP".to_string()),
+        "kf2" | "k2" => Some("\\EOQ".to_string()),
+        "kf3" | "k3" => Some("\\EOR".to_string()),
+        "kf4" | "k4" => Some("\\EOS".to_string()),
+        "kf5" | "k5" => Some("\\E[15~".to_string()),
+        "kf6" | "k6" => Some("\\E[17~".to_string()),
+        "kf7" | "k7" => Some("\\E[18~".to_string()),
+        "kf8" | "k8" => Some("\\E[19~".to_string()),
+        "kf9" | "k9" => Some("\\E[20~".to_string()),
+        "kf10" => Some("\\E[21~".to_string()),
+        "kf11" => Some("\\E[23~".to_string()),
+        "kf12" => Some("\\E[24~".to_string()),
 
         // Arrow keys
-        "kcuu1" => Some("\\EOA".to_string()),
-        "kcud1" => Some("\\EOB".to_string()),
-        "kcuf1" => Some("\\EOC".to_string()),
-        "kcub1" => Some("\\EOD".to_string()),
+        "kcuu1" | "ku" => Some("\\EOA".to_string()),
+        "kcud1" | "kd" => Some("\\EOB".to_string()),
+        "kcuf1" | "kr" => Some("\\EOC".to_string()),
+        "kcub1" | "kl" => Some("\\EOD".to_string()),
 
-        // Other keys
-        "khome" => Some("\\EOH".to_string()),
+        // Navigation keys
+        "khome" | "kh" => Some("\\EOH".to_string()),
         "kend" => Some("\\EOF".to_string()),
-        "kbs" => Some("^?".to_string()),
+        "kbs" | "kb" => Some("^?".to_string()),
+        "kdch1" | "kD" => Some("\\E[3~".to_string()),
+        "kich1" | "kI" => Some("\\E[2~".to_string()),
+        "knp" | "kN" => Some("\\E[6~".to_string()),
+        "kpp" | "kP" => Some("\\E[5~".to_string()),
+        "kb2" => Some("\\EOE".to_string()),
+        "kcbt" => Some("\\E[Z".to_string()),
+        "kent" => Some("\\EOM".to_string()),
+
+        // Mouse
+        "kmous" => Some("\\E[M".to_string()),
+
+        // Memory operations
+        "meml" => Some("\\El".to_string()),
+        "memu" => Some("\\Em".to_string()),
+
+        // Printing
+        "mc0" => Some("\\E[i".to_string()),
+        "mc4" => Some("\\E[4i".to_string()),
+        "mc5" => Some("\\E[5i".to_string()),
+
+        // Reset sequences
+        "rs1" => Some("\\Ec".to_string()),
+        "rs2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+        "is2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+
+        // Device control
+        "u6" => Some("\\E[%i%d;%dR".to_string()),
+        "u7" => Some("\\E[6n".to_string()),
+        "u8" => Some("\\E[?%[;0123456789]c".to_string()),
+        "u9" => Some("\\E[c".to_string()),
+
+        // Repeat character
+        "rep" => Some("%p1%c\\E[%p2%{1}%-%db".to_string()),
+
+        // Extended underline
+        "Smulx" => Some("\\E[4\\:%p1%dm".to_string()),
+
+        // Synchronized output
+        "Sync" => Some("\\EP=%p1%ds\\E\\\\".to_string()),
+
+        // Focus events
+        "kxIN" => Some("\\E[I".to_string()),
+        "kxOUT" => Some("\\E[O".to_string()),
+
+        // Bracketed paste
+        "BE" => Some("\\E[?2004h".to_string()),
+        "BD" => Some("\\E[?2004l".to_string()),
+        "PS" => Some("\\E[200~".to_string()),
+        "PE" => Some("\\E[201~".to_string()),
+
+        // Clipboard
+        "Ms" => Some("\\E]52;%p1%s;%p2%s\\007".to_string()),
+
+        // Carriage return
+        "cr" => Some("\\r".to_string()),
 
         _ => None,
     }
