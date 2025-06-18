@@ -6,5 +6,6 @@ pub mod error;
 pub mod event;
 pub mod performer;
 pub mod selection;
+pub mod simd_utf8;
 
 pub use sugarloaf;
