@@ -113,4 +113,4 @@ brevity.
 | ESCAPE    | STATUS   | NOTE                            |
 | --------- | -------- | ------------------------------- |
 | `DCS = s` | REJECTED | CSI ? 2026 h/l are used instead |
-| `DCS + q` | SUPPORTED | XTGETTCAP - Query terminal capabilities |
+| `DCS + q` | SUPPORTED | XTGETTCAP - Query terminal capabilities (only one capability per request is supported) |
