@@ -1636,12 +1636,23 @@ mod tests {
         assert!(response.starts_with("\x1bP1+r"));
         assert!(response.contains("436F="));
 
+        // Test multiple capabilities (TN;Co)
+        let response = process_xtgettcap_request(b"544E3B436F");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("544E="));
+        assert!(response.contains("436F="));
+        assert!(response.contains(";"));
+
         // Test invalid capability
         let response = process_xtgettcap_request(b"5858"); // "XX"
         assert_eq!(response, "\x1bP0+r\x1b\\");
 
         // Test invalid hex
         let response = process_xtgettcap_request(b"ZZ");
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+
+        // Test mixed valid and invalid capabilities (should return error)
+        let response = process_xtgettcap_request(b"544E3B5858"); // "TN;XX"
         assert_eq!(response, "\x1bP0+r\x1b\\");
     }
 
