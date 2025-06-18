@@ -1303,27 +1303,26 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 /// Process XTGETTCAP request and return DCS response.
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
     // Decode hex-encoded capability names
-    let capability_names = match decode_hex_string(buffer) {
-        Ok(names) => names,
-        Err(_) => {
-            // Invalid hex encoding - return error response
-            return "\x1bP0+r\x1b\\".to_string();
-        }
-    };
-
-    // Split by semicolons to get individual capability names
-    let names: Vec<&str> = capability_names.split(';').collect();
     let mut responses = Vec::new();
+    for cap in buffer.split(|&b| b == b';') {
+        let capability_names = match decode_hex_string(cap) {
+            Ok(names) => names,
+            Err(_) => {
+                // Invalid hex encoding - return error response
+                return "\x1bP0+r\x1b\\".to_string();
+            }
+        };
 
-    for name in names {
-        if let Some(value) = get_termcap_capability(name) {
-            // Encode both name and value in hex
-            let hex_name = encode_hex_string(name);
-            let hex_value = encode_hex_string(&value);
-            responses.push(format!("{}={}", hex_name, hex_value));
-        } else {
-            // Invalid capability name - return error response
-            return "\x1bP0+r\x1b\\".to_string();
+        // Split by semicolons to get individual capability names
+        let names: Vec<&str> = capability_names.split(';').collect();
+
+        for name in names {
+            if let Some(value) = get_termcap_capability(name) {
+                // Encode both name and value in hex
+                let hex_name = encode_hex_string(name);
+                let hex_value = encode_hex_string(&value);
+                responses.push(format!("{}={}", hex_name, hex_value));
+            }
         }
     }
 
