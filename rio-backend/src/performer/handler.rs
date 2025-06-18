@@ -391,6 +391,9 @@ pub trait Handler {
         _behavior: KeyboardModesApplyBehavior,
     ) {
     }
+
+    /// Handle XTGETTCAP response.
+    fn xtgettcap_response(&mut self, _response: String) {}
 }
 
 pub trait Timeout: Default {
@@ -413,6 +416,9 @@ struct ProcessorState<T: Timeout> {
 
     /// State for synchronized terminal updates.
     sync_state: SyncState<T>,
+
+    /// State for XTGETTCAP requests.
+    xtgettcap_state: XtgettcapState,
 }
 
 #[derive(Debug)]
@@ -421,6 +427,15 @@ struct SyncState<T: Timeout> {
     timeout: T,
 
     /// Bytes read during the synchronized update.
+    buffer: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct XtgettcapState {
+    /// Whether we're currently processing an XTGETTCAP request.
+    active: bool,
+
+    /// Buffer for collecting hex-encoded capability names.
     buffer: Vec<u8>,
 }
 
@@ -670,6 +685,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             ('q', []) => {
                 self.handler.sixel_graphic_start(params);
             }
+            ('q', [b'+']) => {
+                // XTGETTCAP request: DCS + q <hex-encoded-names> ST
+                self.state.xtgettcap_state.active = true;
+                self.state.xtgettcap_state.buffer.clear();
+            }
             _ => debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
                 params, intermediates, ignore, action
@@ -683,6 +703,9 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 tracing::warn!("Failed to parse Sixel data: {}", err);
                 self.handler.sixel_graphic_reset();
             }
+        } else if self.state.xtgettcap_state.active {
+            // Collect hex-encoded capability names for XTGETTCAP
+            self.state.xtgettcap_state.buffer.push(byte);
         } else {
             debug!("[unhandled put] byte={:?}", byte);
         }
@@ -692,6 +715,14 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
     fn unhook(&mut self) {
         if self.handler.is_sixel_graphic_active() {
             self.handler.sixel_graphic_finish();
+        } else if self.state.xtgettcap_state.active {
+            // Process XTGETTCAP request
+            let response = process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
+            self.handler.xtgettcap_response(response);
+
+            // Reset state
+            self.state.xtgettcap_state.active = false;
+            self.state.xtgettcap_state.buffer.clear();
         } else {
             debug!("[unhandled dcs_unhook]");
         }
@@ -1282,4 +1313,201 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     }
 
     attrs
+}
+
+/// Process XTGETTCAP request and return DCS response.
+fn process_xtgettcap_request(buffer: &[u8]) -> String {
+    // Decode hex-encoded capability names
+    let capability_names = match decode_hex_string(buffer) {
+        Ok(names) => names,
+        Err(_) => {
+            // Invalid hex encoding - return error response
+            return "\x1bP0+r\x1b\\".to_string();
+        }
+    };
+
+    // Split by semicolons to get individual capability names
+    let names: Vec<&str> = capability_names.split(';').collect();
+    let mut responses = Vec::new();
+
+    for name in names {
+        if let Some(value) = get_termcap_capability(name) {
+            // Encode both name and value in hex
+            let hex_name = encode_hex_string(name);
+            let hex_value = encode_hex_string(&value);
+            responses.push(format!("{}={}", hex_name, hex_value));
+        } else {
+            // Invalid capability name - return error response
+            return "\x1bP0+r\x1b\\".to_string();
+        }
+    }
+
+    if responses.is_empty() {
+        "\x1bP0+r\x1b\\".to_string()
+    } else {
+        format!("\x1bP1+r{}\x1b\\", responses.join(";"))
+    }
+}
+
+/// Decode hex-encoded string (2 hex digits per character).
+fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
+    if hex_bytes.len() % 2 != 0 {
+        return Err("Invalid hex string length");
+    }
+
+    let mut result = Vec::new();
+    for chunk in hex_bytes.chunks(2) {
+        let hex_str = std::str::from_utf8(chunk).map_err(|_| "Invalid UTF-8")?;
+        let byte = u8::from_str_radix(hex_str, 16).map_err(|_| "Invalid hex digit")?;
+        result.push(byte);
+    }
+
+    String::from_utf8(result).map_err(|_| "Invalid UTF-8 in decoded string")
+}
+
+/// Encode string as hex (2 hex digits per character).
+fn encode_hex_string(s: &str) -> String {
+    s.bytes().map(|b| format!("{:02X}", b)).collect()
+}
+
+/// Get termcap/terminfo capability value for Rio terminal.
+fn get_termcap_capability(name: &str) -> Option<String> {
+    match name {
+        // Terminal name
+        "TN" | "name" => Some("rio".to_string()),
+
+        // Colors capability
+        "Co" | "colors" => Some("256".to_string()),
+
+        // RGB/direct color support
+        "RGB" => Some("8/8/8".to_string()),
+
+        // Common capabilities from Rio's terminfo
+        "am" => Some("".to_string()),   // Automatic margins
+        "bce" => Some("".to_string()),  // Background color erase
+        "km" => Some("".to_string()),   // Has meta key
+        "mir" => Some("".to_string()),  // Safe to move in insert mode
+        "msgr" => Some("".to_string()), // Safe to move in standout mode
+        "xenl" => Some("".to_string()), // Newline ignored after 80 cols
+        "AX" => Some("".to_string()),   // Default color pair is white on black
+        "XT" => Some("".to_string()),   // Supports title setting
+
+        // Cursor movement
+        "cup" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
+        "cuu1" => Some("\\E[A".to_string()),
+        "cud1" => Some("\\n".to_string()),
+        "cuf1" => Some("\\E[C".to_string()),
+        "cub1" => Some("^H".to_string()),
+        "home" => Some("\\E[H".to_string()),
+
+        // Clear operations
+        "clear" => Some("\\E[H\\E[2J".to_string()),
+        "el" => Some("\\E[K".to_string()),
+        "ed" => Some("\\E[J".to_string()),
+
+        // Colors
+        "setaf" => Some("\\E[3%p1%dm".to_string()),
+        "setab" => Some("\\E[4%p1%dm".to_string()),
+        "op" => Some("\\E[39;49m".to_string()),
+
+        // Text attributes
+        "bold" => Some("\\E[1m".to_string()),
+        "dim" => Some("\\E[2m".to_string()),
+        "smul" => Some("\\E[4m".to_string()),
+        "rmul" => Some("\\E[24m".to_string()),
+        "rev" => Some("\\E[7m".to_string()),
+        "smso" => Some("\\E[7m".to_string()),
+        "rmso" => Some("\\E[27m".to_string()),
+        "invis" => Some("\\E[8m".to_string()),
+        "sgr0" => Some("\\E(B\\E[m".to_string()),
+
+        // Insert/delete
+        "ich" => Some("\\E[%p1%d@".to_string()),
+        "dch" => Some("\\E[%p1%dP".to_string()),
+        "il" => Some("\\E[%p1%dL".to_string()),
+        "dl" => Some("\\E[%p1%dM".to_string()),
+
+        // Scrolling
+        "csr" => Some("\\E[%i%p1%d;%p2%dr".to_string()),
+        "ri" => Some("\\EM".to_string()),
+        "ind" => Some("\\n".to_string()),
+
+        // Cursor visibility
+        "civis" => Some("\\E[?25l".to_string()),
+        "cnorm" => Some("\\E[?12l\\E[?25h".to_string()),
+        "cvvis" => Some("\\E[?12;25h".to_string()),
+
+        // Keypad
+        "smkx" => Some("\\E[?1h\\E=".to_string()),
+        "rmkx" => Some("\\E[?1l\\E>".to_string()),
+
+        // Function keys
+        "kf1" => Some("\\EOP".to_string()),
+        "kf2" => Some("\\EOQ".to_string()),
+        "kf3" => Some("\\EOR".to_string()),
+        "kf4" => Some("\\EOS".to_string()),
+
+        // Arrow keys
+        "kcuu1" => Some("\\EOA".to_string()),
+        "kcud1" => Some("\\EOB".to_string()),
+        "kcuf1" => Some("\\EOC".to_string()),
+        "kcub1" => Some("\\EOD".to_string()),
+
+        // Other keys
+        "khome" => Some("\\EOH".to_string()),
+        "kend" => Some("\\EOF".to_string()),
+        "kbs" => Some("^?".to_string()),
+
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hex_encoding() {
+        assert_eq!(encode_hex_string("TN"), "544E");
+        assert_eq!(encode_hex_string("Co"), "436F");
+        assert_eq!(encode_hex_string("RGB"), "524742");
+    }
+
+    #[test]
+    fn test_hex_decoding() {
+        assert_eq!(decode_hex_string(b"544E").unwrap(), "TN");
+        assert_eq!(decode_hex_string(b"436F").unwrap(), "Co");
+        assert_eq!(decode_hex_string(b"524742").unwrap(), "RGB");
+        assert_eq!(decode_hex_string(b"544E3B436F").unwrap(), "TN;Co");
+    }
+
+    #[test]
+    fn test_xtgettcap_processing() {
+        // Test terminal name query
+        let response = process_xtgettcap_request(b"544E");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("544E="));
+        assert!(response.ends_with("\x1b\\"));
+
+        // Test colors query
+        let response = process_xtgettcap_request(b"436F");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("436F="));
+
+        // Test invalid capability
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+
+        // Test invalid hex
+        let response = process_xtgettcap_request(b"ZZ");
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+    }
+
+    #[test]
+    fn test_capability_lookup() {
+        assert_eq!(get_termcap_capability("TN"), Some("rio".to_string()));
+        assert_eq!(get_termcap_capability("Co"), Some("256".to_string()));
+        assert_eq!(get_termcap_capability("RGB"), Some("8/8/8".to_string()));
+        assert_eq!(get_termcap_capability("invalid"), None);
+    }
 }
