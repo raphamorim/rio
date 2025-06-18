@@ -2939,6 +2939,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ..graphic
         });
     }
+
+    #[inline]
+    fn xtgettcap_response(&mut self, response: String) {
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
 }
 
 pub struct CrosswordsSize {
