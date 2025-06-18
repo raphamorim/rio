@@ -1317,35 +1317,23 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 
 /// Process XTGETTCAP request and return DCS response.
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
-    // Decode hex-encoded capability names
-    let capability_names = match decode_hex_string(buffer) {
-        Ok(names) => names,
+    // Decode hex-encoded capability name
+    let capability_name = match decode_hex_string(buffer) {
+        Ok(name) => name,
         Err(_) => {
             // Invalid hex encoding - return error response
             return "\x1bP0+r\x1b\\".to_string();
         }
     };
 
-    // Split by semicolons to get individual capability names
-    let names: Vec<&str> = capability_names.split(';').collect();
-    let mut responses = Vec::new();
-
-    for name in names {
-        if let Some(value) = get_termcap_capability(name) {
-            // Encode both name and value in hex
-            let hex_name = encode_hex_string(name);
-            let hex_value = encode_hex_string(&value);
-            responses.push(format!("{}={}", hex_name, hex_value));
-        } else {
-            // Invalid capability name - return error response
-            return "\x1bP0+r\x1b\\".to_string();
-        }
-    }
-
-    if responses.is_empty() {
-        "\x1bP0+r\x1b\\".to_string()
+    if let Some(value) = get_termcap_capability(&capability_name) {
+        // Encode both name and value in hex
+        let hex_name = encode_hex_string(&capability_name);
+        let hex_value = encode_hex_string(&value);
+        format!("\x1bP1+r{}={}\x1b\\", hex_name, hex_value)
     } else {
-        format!("\x1bP1+r{}\x1b\\", responses.join(";"))
+        // Invalid capability name - return error response
+        "\x1bP0+r\x1b\\".to_string()
     }
 }
 
@@ -1620,7 +1608,6 @@ mod tests {
         assert_eq!(decode_hex_string(b"544E").unwrap(), "TN");
         assert_eq!(decode_hex_string(b"436F").unwrap(), "Co");
         assert_eq!(decode_hex_string(b"524742").unwrap(), "RGB");
-        assert_eq!(decode_hex_string(b"544E3B436F").unwrap(), "TN;Co");
     }
 
     #[test]
@@ -1636,13 +1623,6 @@ mod tests {
         assert!(response.starts_with("\x1bP1+r"));
         assert!(response.contains("436F="));
 
-        // Test multiple capabilities (TN;Co)
-        let response = process_xtgettcap_request(b"544E3B436F");
-        assert!(response.starts_with("\x1bP1+r"));
-        assert!(response.contains("544E="));
-        assert!(response.contains("436F="));
-        assert!(response.contains(";"));
-
         // Test invalid capability
         let response = process_xtgettcap_request(b"5858"); // "XX"
         assert_eq!(response, "\x1bP0+r\x1b\\");
@@ -1650,32 +1630,25 @@ mod tests {
         // Test invalid hex
         let response = process_xtgettcap_request(b"ZZ");
         assert_eq!(response, "\x1bP0+r\x1b\\");
-
-        // Test mixed valid and invalid capabilities (should return error)
-        let response = process_xtgettcap_request(b"544E3B5858"); // "TN;XX"
-        assert_eq!(response, "\x1bP0+r\x1b\\");
     }
 
     #[test]
-    fn test_multiple_capabilities_comprehensive() {
-        // Test two valid capabilities
-        let response = process_xtgettcap_request(b"544E3B436F"); // "TN;Co"
-        assert_eq!(response, "\x1bP1+r544E=72696F;436F=323536\x1b\\");
-
-        // Test three valid capabilities
-        let response = process_xtgettcap_request(b"544E3B436F3B524742"); // "TN;Co;RGB"
-        assert_eq!(
-            response,
-            "\x1bP1+r544E=72696F;436F=323536;524742=382F382F38\x1b\\"
-        );
-
-        // Test that invalid capability stops processing (per XTerm spec)
-        let response = process_xtgettcap_request(b"544E3B58583B436F"); // "TN;XX;Co"
-        assert_eq!(response, "\x1bP0+r\x1b\\"); // Should error on XX and not process Co
-
-        // Test single valid capability
+    fn test_single_capability_requests() {
+        // Test terminal name
         let response = process_xtgettcap_request(b"544E"); // "TN"
         assert_eq!(response, "\x1bP1+r544E=72696F\x1b\\");
+
+        // Test colors capability
+        let response = process_xtgettcap_request(b"436F"); // "Co"
+        assert_eq!(response, "\x1bP1+r436F=323536\x1b\\");
+
+        // Test RGB capability
+        let response = process_xtgettcap_request(b"524742"); // "RGB"
+        assert_eq!(response, "\x1bP1+r524742=382F382F38\x1b\\");
+
+        // Test invalid capability
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r\x1b\\");
     }
 
     #[test]
