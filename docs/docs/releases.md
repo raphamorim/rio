@@ -7,14 +7,10 @@ language: 'en'
 
 ## 0.2.20 (unreleased)
 
-- **Performance**: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
-  - **Pure ASCII text**: 2.6-3.2x faster validation
-  - **Mixed UTF-8 content**: Up to 1536x faster validation
-  - **Heavy UTF-8 content**: Up to 479x faster validation
-  - **Architecture support**: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
-  - **Automatic optimization**: Runtime detection selects fastest implementation available
-  - **Improved areas**: ANSI escape sequence parsing, terminal text processing, OSC parameter handling, hyperlink processing, image protocol parsing, and clipboard operations
-- TBD.
+- Performance: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
+  - Architecture support: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
+  - Automatic optimization: Runtime detection selects fastest implementation available
+- Support for XTGETTCAP (XTerm Get Termcap) escape sequence for querying terminal capabilities.
 
 ## 0.2.19
 
