@@ -43,10 +43,10 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
         // Process normal terminal input immediately for responsiveness
         if bytes.len() < self.batch_threshold {
             self.stats.record_immediate(bytes.len());
-            
+
             #[cfg(feature = "debug")]
             debug!("BatchedParser: immediate processing {} bytes", bytes.len());
-            
+
             self.parser.advance(performer, bytes);
             return;
         }
@@ -55,16 +55,20 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
         self.input_buffer.extend_from_slice(bytes);
 
         #[cfg(feature = "debug")]
-        debug!("BatchedParser: added {} bytes to buffer (total: {})", bytes.len(), self.input_buffer.len());
+        debug!(
+            "BatchedParser: added {} bytes to buffer (total: {})",
+            bytes.len(),
+            self.input_buffer.len()
+        );
 
         // Process immediately if we have a large batch
         if self.input_buffer.len() >= self.batch_threshold {
             let batch_size = self.input_buffer.len();
             self.stats.record_batch(batch_size);
-            
+
             #[cfg(feature = "debug")]
             debug!("BatchedParser: flushing batch of {} bytes", batch_size);
-            
+
             self.flush_batch(performer);
         }
     }
@@ -87,7 +91,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
 
         // Clear the buffer and shrink if it's grown too large
         self.input_buffer.clear();
-        
+
         // Prevent memory bloat by shrinking oversized buffers
         if self.input_buffer.capacity() > 16384 {
             self.input_buffer.shrink_to(4096);

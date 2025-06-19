@@ -21,11 +21,24 @@ impl Perform for MockPerformer {
         self.escapes_received += 1;
     }
 
-    fn hook(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {}
+    fn hook(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
+    }
     fn put(&mut self, _byte: u8) {}
     fn unhook(&mut self) {}
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
-    fn csi_dispatch(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {
+    fn csi_dispatch(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
         self.escapes_received += 1;
     }
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
@@ -80,17 +93,28 @@ fn main() {
 
         let total_bytes: usize = chunks.iter().map(|chunk| chunk.len()).sum();
         let avg_chunk_size = total_bytes / chunks.len();
-        println!("   Total bytes: {}, Avg chunk: {} bytes", total_bytes, avg_chunk_size);
+        println!(
+            "   Total bytes: {}, Avg chunk: {} bytes",
+            total_bytes, avg_chunk_size
+        );
 
-        let iterations = if total_bytes > 50000 { 50 } else if total_bytes > 10000 { 100 } else { 1000 };
+        let iterations = if total_bytes > 50000 {
+            50
+        } else if total_bytes > 10000 {
+            100
+        } else {
+            1000
+        };
 
         // Benchmark Copa parser
         let copa_duration = benchmark_copa_advance_until_terminated(chunks, iterations);
 
         // Benchmark BatchedParser
-        let batched_duration = benchmark_batched_advance_until_terminated(chunks, iterations);
+        let batched_duration =
+            benchmark_batched_advance_until_terminated(chunks, iterations);
 
-        let speedup = copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
+        let speedup =
+            copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
 
         println!(
             "   Copa parser:        {:>8.2}ms",
@@ -112,20 +136,32 @@ fn main() {
 
         // Show batching behavior
         let batching_threshold = 1024;
-        let chunks_that_batch: usize = chunks.iter().filter(|c| c.len() >= batching_threshold).count();
-        println!("   Chunks that trigger batching: {}/{}", chunks_that_batch, chunks.len());
+        let chunks_that_batch: usize = chunks
+            .iter()
+            .filter(|c| c.len() >= batching_threshold)
+            .count();
+        println!(
+            "   Chunks that trigger batching: {}/{}",
+            chunks_that_batch,
+            chunks.len()
+        );
     }
 
     println!("\n🚀 advance_until_terminated analysis:");
     println!("   • Tiny chunks: Should show minimal overhead (immediate processing)");
     println!("   • Small chunks: Should show similar performance (immediate processing)");
-    println!("   • Medium chunks: Should show similar performance (immediate processing)");
+    println!(
+        "   • Medium chunks: Should show similar performance (immediate processing)"
+    );
     println!("   • Large chunks: Should show batching benefits (1KB+ threshold)");
     println!("   • Very large chunks: Should show significant batching benefits");
     println!("\n💡 Batching threshold: 1024 bytes (only large inputs are batched)");
 }
 
-fn benchmark_copa_advance_until_terminated(chunks: &[Vec<u8>], iterations: usize) -> std::time::Duration {
+fn benchmark_copa_advance_until_terminated(
+    chunks: &[Vec<u8>],
+    iterations: usize,
+) -> std::time::Duration {
     let start = Instant::now();
 
     for _ in 0..iterations {
@@ -140,7 +176,10 @@ fn benchmark_copa_advance_until_terminated(chunks: &[Vec<u8>], iterations: usize
     start.elapsed()
 }
 
-fn benchmark_batched_advance_until_terminated(chunks: &[Vec<u8>], iterations: usize) -> std::time::Duration {
+fn benchmark_batched_advance_until_terminated(
+    chunks: &[Vec<u8>],
+    iterations: usize,
+) -> std::time::Duration {
     let start = Instant::now();
 
     for _ in 0..iterations {
@@ -178,22 +217,35 @@ fn create_small_chunks(count: usize) -> Vec<Vec<u8>> {
 }
 
 fn create_medium_chunks(count: usize) -> Vec<Vec<u8>> {
-    let base_text = "This is a medium-sized chunk of text that represents typical terminal output. ";
+    let base_text =
+        "This is a medium-sized chunk of text that represents typical terminal output. ";
     (0..count)
-        .map(|i| format!("{}{}\n", base_text.repeat(2), i).as_bytes().to_vec())
+        .map(|i| {
+            format!("{}{}\n", base_text.repeat(2), i)
+                .as_bytes()
+                .to_vec()
+        })
         .collect()
 }
 
 fn create_large_chunks(count: usize) -> Vec<Vec<u8>> {
     let base_text = "This is a large chunk of text that would trigger batching. ";
     (0..count)
-        .map(|i| format!("{}{}\n", base_text.repeat(20), i).as_bytes().to_vec())
+        .map(|i| {
+            format!("{}{}\n", base_text.repeat(20), i)
+                .as_bytes()
+                .to_vec()
+        })
         .collect()
 }
 
 fn create_very_large_chunks(count: usize) -> Vec<Vec<u8>> {
     let base_text = "This is a very large chunk of text simulating heavy terminal output or paste operations. ";
     (0..count)
-        .map(|i| format!("{}{}\n", base_text.repeat(100), i).as_bytes().to_vec())
+        .map(|i| {
+            format!("{}{}\n", base_text.repeat(100), i)
+                .as_bytes()
+                .to_vec()
+        })
         .collect()
 }

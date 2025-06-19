@@ -21,11 +21,24 @@ impl Perform for MockPerformer {
         self.escapes_received += 1;
     }
 
-    fn hook(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {}
+    fn hook(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
+    }
     fn put(&mut self, _byte: u8) {}
     fn unhook(&mut self) {}
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
-    fn csi_dispatch(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {
+    fn csi_dispatch(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
         self.escapes_received += 1;
     }
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
@@ -43,14 +56,22 @@ impl MockPerformer {
 }
 
 // Simulate Rio's actual advance method
-fn simulate_rio_advance_copa(parser: &mut Parser<1024>, performer: &mut MockPerformer, bytes: &[u8]) {
+fn simulate_rio_advance_copa(
+    parser: &mut Parser<1024>,
+    performer: &mut MockPerformer,
+    bytes: &[u8],
+) {
     let mut processed = 0;
     while processed != bytes.len() {
         processed += parser.advance_until_terminated(performer, &bytes[processed..]);
     }
 }
 
-fn simulate_rio_advance_batched(parser: &mut BatchedParser<1024>, performer: &mut MockPerformer, bytes: &[u8]) {
+fn simulate_rio_advance_batched(
+    parser: &mut BatchedParser<1024>,
+    performer: &mut MockPerformer,
+    bytes: &[u8],
+) {
     let mut processed = 0;
     while processed != bytes.len() {
         processed += parser.advance_until_terminated(performer, &bytes[processed..]);
@@ -102,7 +123,8 @@ fn main() {
         // Benchmark BatchedParser
         let batched_duration = benchmark_batched_rio_usage(data, iterations);
 
-        let speedup = copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
+        let speedup =
+            copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
 
         println!(
             "   Copa parser:        {:>8.2}ms",
@@ -124,7 +146,10 @@ fn main() {
 
         // Memory usage simulation
         let chunks_over_1kb = data.windows(1024).filter(|w| w.len() >= 1024).count();
-        println!("   Potential batching opportunities: {} chunks ≥1KB", chunks_over_1kb);
+        println!(
+            "   Potential batching opportunities: {} chunks ≥1KB",
+            chunks_over_1kb
+        );
     }
 
     println!("\n🚀 Real usage pattern analysis:");
@@ -172,13 +197,13 @@ fn create_typing_session() -> Vec<u8> {
         "vim file.txt\n",
         ":wq\n",
     ];
-    
+
     commands.join("").as_bytes().to_vec()
 }
 
 fn create_colorized_output() -> Vec<u8> {
     let mut output = Vec::new();
-    
+
     // Simulate ls --color output
     for i in 0..20 {
         let line = format!(
@@ -187,7 +212,7 @@ fn create_colorized_output() -> Vec<u8> {
         );
         output.extend_from_slice(line.as_bytes());
     }
-    
+
     output
 }
 
@@ -222,16 +247,16 @@ impl MyStruct {
     }
 }
 "#;
-    
+
     code_content.repeat(10).as_bytes().to_vec()
 }
 
 fn create_tui_output() -> Vec<u8> {
     let mut output = Vec::new();
-    
+
     // Simulate htop-like output with cursor movements and colors
     output.extend_from_slice(b"\x1b[2J\x1b[H"); // Clear screen, move to top
-    
+
     for row in 1..25 {
         let line = format!(
             "\x1b[{};1H\x1b[2K\x1b[32m{:>5}\x1b[0m \x1b[33muser\x1b[0m \x1b[36m{:>6.1}%\x1b[0m \x1b[35m{:>6.1}%\x1b[0m process_{}\n",
@@ -239,13 +264,13 @@ fn create_tui_output() -> Vec<u8> {
         );
         output.extend_from_slice(line.as_bytes());
     }
-    
+
     output
 }
 
 fn create_mixed_workload() -> Vec<u8> {
     let mut output = Vec::new();
-    
+
     // Mix of different types of terminal output
     output.extend_from_slice(&create_typing_session());
     output.extend_from_slice(&create_colorized_output());
@@ -253,6 +278,6 @@ fn create_mixed_workload() -> Vec<u8> {
     output.extend_from_slice(&create_tui_output()[..500]); // Partial TUI output
     output.extend_from_slice(b"\x1b[31mError: Something went wrong\x1b[0m\n");
     output.extend_from_slice(&create_paste_operation()[..1000]); // Partial paste
-    
+
     output
 }

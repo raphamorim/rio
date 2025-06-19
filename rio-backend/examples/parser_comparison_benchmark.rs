@@ -21,11 +21,24 @@ impl Perform for MockPerformer {
         self.escapes_received += 1;
     }
 
-    fn hook(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {}
+    fn hook(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
+    }
     fn put(&mut self, _byte: u8) {}
     fn unhook(&mut self) {}
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
-    fn csi_dispatch(&mut self, _params: &copa::Params, _intermediates: &[u8], _ignore: bool, _c: char) {
+    fn csi_dispatch(
+        &mut self,
+        _params: &copa::Params,
+        _intermediates: &[u8],
+        _ignore: bool,
+        _c: char,
+    ) {
         self.escapes_received += 1;
     }
     fn esc_dispatch(&mut self, _intermediates: &[u8], _ignore: bool, _byte: u8) {
@@ -94,7 +107,8 @@ fn main() {
         // Benchmark BatchedParser
         let batched_duration = benchmark_batched_parser(chunks, iterations);
 
-        let speedup = copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
+        let speedup =
+            copa_duration.as_nanos() as f64 / batched_duration.as_nanos() as f64;
 
         println!(
             "   Copa parser:        {:>8.2}ms",
@@ -138,7 +152,10 @@ fn benchmark_copa_parser(chunks: &[Vec<u8>], iterations: usize) -> std::time::Du
     start.elapsed()
 }
 
-fn benchmark_batched_parser(chunks: &[Vec<u8>], iterations: usize) -> std::time::Duration {
+fn benchmark_batched_parser(
+    chunks: &[Vec<u8>],
+    iterations: usize,
+) -> std::time::Duration {
     let start = Instant::now();
 
     for _ in 0..iterations {
@@ -177,15 +194,14 @@ fn create_ansi_chunks(count: usize) -> Vec<Vec<u8>> {
 }
 
 fn create_paste_chunks(count: usize) -> Vec<Vec<u8>> {
-    let large_text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(50);
-    (0..count)
-        .map(|_| large_text.as_bytes().to_vec())
-        .collect()
+    let large_text =
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(50);
+    (0..count).map(|_| large_text.as_bytes().to_vec()).collect()
 }
 
 fn create_mixed_workload(count: usize) -> Vec<Vec<u8>> {
     let mut chunks = Vec::new();
-    
+
     for i in 0..count {
         match i % 4 {
             0 => chunks.push("ls -la\n".as_bytes().to_vec()),
@@ -195,7 +211,7 @@ fn create_mixed_workload(count: usize) -> Vec<Vec<u8>> {
             _ => unreachable!(),
         }
     }
-    
+
     chunks
 }
 
@@ -205,10 +221,8 @@ fn create_tui_chunks(count: usize) -> Vec<Vec<u8>> {
         "\x1b[2K\x1b[{}H\x1b[32m{:>5}\x1b[0m \x1b[33m{}\x1b[0m \x1b[36m{:>6.1}%\x1b[0m \x1b[35m{:>6.1}%\x1b[0m {}",
         1, 1234, "user", 15.5, 8.2, "some_process"
     );
-    
+
     (0..count)
-        .map(|i| {
-            format!("{}{}", tui_line, i).as_bytes().to_vec()
-        })
+        .map(|i| format!("{}{}", tui_line, i).as_bytes().to_vec())
         .collect()
 }
