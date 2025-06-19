@@ -125,7 +125,7 @@ fn create_large_chunks(pattern: &str, count: usize) -> Vec<Vec<u8>> {
 }
 
 fn create_mixed_utf8_chunks(count: usize) -> Vec<Vec<u8>> {
-    let patterns = vec![
+    let patterns = [
         "ASCII text ",
         "UTF-8: 世界 ",
         "Emoji: 🌍🚀 ",

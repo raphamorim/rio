@@ -187,7 +187,7 @@ fn benchmark_batched_rio_usage(data: &[u8], iterations: usize) -> std::time::Dur
 }
 
 fn create_typing_session() -> Vec<u8> {
-    let commands = vec![
+    let commands = [
         "ls -la\n",
         "cd Documents\n",
         "pwd\n",

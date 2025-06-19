@@ -216,9 +216,9 @@ mod tests {
         let mut processor = BatchUtf8Processor::with_capacity(100, 10);
 
         // Should batch normal chunks
-        assert!(processor.try_batch(&vec![b'a'; 50]));
+        assert!(processor.try_batch(&[b'a'; 50]));
 
         // Should reject chunk that would exceed limit
-        assert!(!processor.try_batch(&vec![b'b'; 60]));
+        assert!(!processor.try_batch(&[b'b'; 60]));
     }
 }

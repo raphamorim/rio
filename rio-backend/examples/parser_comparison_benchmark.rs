@@ -54,6 +54,7 @@ impl MockPerformer {
         }
     }
 
+    #[allow(unused)]
     fn reset(&mut self) {
         self.chars_received = 0;
         self.escapes_received = 0;
@@ -173,14 +174,14 @@ fn benchmark_batched_parser(
 }
 
 fn create_typing_chunks(count: usize) -> Vec<Vec<u8>> {
-    let patterns = vec!["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d", "\n"];
+    let patterns = ["h", "e", "l", "l", "o", " ", "w", "o", "r", "l", "d", "\n"];
     (0..count)
         .map(|i| patterns[i % patterns.len()].as_bytes().to_vec())
         .collect()
 }
 
 fn create_ansi_chunks(count: usize) -> Vec<Vec<u8>> {
-    let patterns = vec![
+    let patterns = [
         "\x1b[31mRed text\x1b[0m",
         "\x1b[32mGreen text\x1b[0m",
         "\x1b[33mYellow text\x1b[0m",

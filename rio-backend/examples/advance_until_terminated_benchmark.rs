@@ -169,7 +169,7 @@ fn benchmark_copa_advance_until_terminated(
         let mut performer = MockPerformer::new();
 
         for chunk in chunks {
-            parser.advance_until_terminated(&mut performer, chunk);
+            let _ = parser.advance_until_terminated(&mut performer, chunk);
         }
     }
 
@@ -197,14 +197,14 @@ fn benchmark_batched_advance_until_terminated(
 }
 
 fn create_tiny_chunks(count: usize) -> Vec<Vec<u8>> {
-    let patterns = vec!["a", "b", "c", "\n", "\x1b", "[", "A"];
+    let patterns = ["a", "b", "c", "\n", "\x1b", "[", "A"];
     (0..count)
         .map(|i| patterns[i % patterns.len()].as_bytes().to_vec())
         .collect()
 }
 
 fn create_small_chunks(count: usize) -> Vec<Vec<u8>> {
-    let patterns = vec![
+    let patterns = [
         "ls\n",
         "pwd\n",
         "echo hello\n",
