@@ -101,7 +101,10 @@ mod tests {
         assert_eq!(decoded.bindings.keys[0].action.to_owned(), "");
         assert!(decoded.bindings.keys[0].text.to_owned().is_empty());
         let binding = decoded.bindings.keys[0].bytes.to_owned();
-        assert_eq!(std::str::from_utf8(&binding).unwrap(), "\x1bOH".to_string());
+        assert_eq!(
+            crate::simd_utf8::from_utf8_fast(&binding).unwrap(),
+            "\x1bOH".to_string()
+        );
     }
 
     #[test]

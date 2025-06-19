@@ -1,9 +1,11 @@
 use crate::ansi::iterm2_image_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::batched_parser::BatchedParser;
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
+use crate::simd_utf8;
 use cursor_icon::CursorIcon;
 use std::mem;
 use std::str::FromStr;
@@ -51,7 +53,7 @@ fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
 
 /// Parse colors in `rgb:r(rrr)/g(ggg)/b(bbb)` format.
 fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
-    let colors = std::str::from_utf8(color)
+    let colors = simd_utf8::from_utf8_fast(color)
         .ok()?
         .split('/')
         .collect::<Vec<_>>();
@@ -84,7 +86,8 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
 
     // Truncate/Fill to two byte precision.
     let color_from_slice = |slice: &[u8]| {
-        let col = usize::from_str_radix(std::str::from_utf8(slice).ok()?, 16).ok()? << 4;
+        let col =
+            usize::from_str_radix(simd_utf8::from_utf8_fast(slice).ok()?, 16).ok()? << 4;
         Some((col >> (4 * slice.len().saturating_sub(1))) as u8)
     };
 
@@ -463,7 +466,7 @@ impl Timeout for StdSyncHandler {
 #[derive(Default)]
 pub struct Processor<T: Timeout = StdSyncHandler> {
     state: ProcessorState<T>,
-    parser: copa::Parser,
+    parser: BatchedParser<1024>,
 }
 
 impl<T: Timeout> Processor<T> {
@@ -496,6 +499,16 @@ impl<T: Timeout> Processor<T> {
         }
     }
 
+    /// Flush any pending batched input
+    #[inline]
+    pub fn flush<H>(&mut self, handler: &mut H)
+    where
+        H: Handler,
+    {
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.flush(&mut performer);
+    }
+
     /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
@@ -521,6 +534,8 @@ impl<T: Timeout> Processor<T> {
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
+        // Flush any pending batched input from synchronized processing
+        self.parser.flush(&mut performer);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -709,7 +724,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 if params.len() >= 2 {
                     let title = params[1..]
                         .iter()
-                        .flat_map(|x| std::str::from_utf8(x))
+                        .flat_map(|x| simd_utf8::from_utf8_fast(x))
                         .collect::<Vec<&str>>()
                         .join(";")
                         .trim()
@@ -753,7 +768,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Inform current directory.
             b"7" => {
-                if let Ok(s) = std::str::from_utf8(params[1]) {
+                if let Ok(s) = simd_utf8::from_utf8_fast(params[1]) {
                     if let Ok(url) = url::Url::parse(s) {
                         let path = url.path();
 
@@ -770,7 +785,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             // Hyperlink.
             b"8" if params.len() > 2 => {
                 let link_params = params[1];
-                let uri = std::str::from_utf8(params[2]).unwrap_or_default();
+                let uri = simd_utf8::from_utf8_fast(params[2]).unwrap_or_default();
 
                 // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
                 if uri.is_empty() {
@@ -783,7 +798,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 let id = link_params
                     .split(|&b| b == b':')
                     .find_map(|kv| kv.strip_prefix(b"id="))
-                    .and_then(|kv| std::str::from_utf8(kv).ok());
+                    .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok());
 
                 self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
             }
@@ -823,7 +838,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Set mouse cursor shape.
             b"22" if params.len() == 2 => {
-                let shape = String::from_utf8_lossy(params[1]);
+                let shape = simd_utf8::from_utf8_lossy_fast(params[1]);
                 match CursorIcon::from_str(&shape) {
                     Ok(cursor_icon) => self.handler.set_mouse_cursor_icon(cursor_icon),
                     Err(_) => {

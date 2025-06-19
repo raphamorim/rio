@@ -15,6 +15,8 @@ use std::str;
 use base64::engine::general_purpose::STANDARD as Base64;
 use base64::Engine;
 
+use crate::simd_utf8;
+
 /// Parse the OSC 1337 parameters to add a graphic to the grid.
 pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
     let (params, contents) = param_values(params)?;
@@ -88,7 +90,10 @@ fn param_values<'a>(
                 }
             }
 
-            if let (Ok(key), Ok(value)) = (str::from_utf8(key), str::from_utf8(value)) {
+            if let (Ok(key), Ok(value)) = (
+                simd_utf8::from_utf8_fast(key),
+                simd_utf8::from_utf8_fast(value),
+            ) {
                 map.insert(key, value);
             }
         }
