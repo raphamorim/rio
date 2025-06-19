@@ -1,4 +1,4 @@
-use crate::ansi::iterm2_image_protocol;
+use crate::ansi::{drcs, iterm2_image_protocol};
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::batched_parser::BatchedParser;
@@ -391,6 +391,15 @@ pub trait Handler {
         _behavior: KeyboardModesApplyBehavior,
     ) {
     }
+
+    /// Define a new soft character
+    fn define_soft_character(&mut self, char_code: u8, width: u8, height: u8, data: Vec<u8>);
+
+    /// Select a specific DRCS character set
+    fn select_drcs_set(&mut self, set_id: u8);
+
+    /// Reset all soft characters
+    fn reset_soft_characters(&mut self);
 }
 
 pub trait Timeout: Default {
@@ -847,6 +856,26 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 }
             }
 
+            // Define soft character (DRCS - VT320 Soft Characters)
+            // OSC 53 ; char_code ; width ; height ; base64_data ST
+            b"53" => {
+                if let Some((char_code, width, height, data)) = drcs::parse_drcs(params) {
+                    self.handler.define_soft_character(char_code, width, height, data);
+                    return;
+                }
+                unhandled(params);
+            }
+
+            // Select DRCS character set
+            // OSC 54 ; set_id ST
+            b"54" => {
+                if let Some(set_id) = drcs::parse_drcs_select(params) {
+                    self.handler.select_drcs_set(set_id);
+                    return;
+                }
+                unhandled(params);
+            }
+
             // Set cursor style.
             b"50" => {
                 if params.len() >= 2
@@ -904,6 +933,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Reset text cursor color.
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
+
+            // Reset soft characters (DRCS)
+            b"153" => {
+                self.handler.reset_soft_characters();
+            }
 
             // OSC 1337 is not necessarily only used by iTerm2 protocol
             // OSC 1337 is equal to xterm OSC 50
