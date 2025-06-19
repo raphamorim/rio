@@ -45,10 +45,10 @@ fn main() {
         }
         let simd_duration = start.elapsed();
 
-        // Benchmark simdutf8::compat::from_utf8
+        // Benchmark simdutf8::basic::from_utf8 (was compat)
         let start = Instant::now();
         for _ in 0..iterations {
-            let _ = simdutf8::compat::from_utf8(bytes);
+            let _ = simdutf8::basic::from_utf8(bytes);
         }
         let simd_compat_duration = start.elapsed();
 
@@ -67,7 +67,7 @@ fn main() {
             speedup_basic
         );
         println!(
-            "  simdutf8::compat::from_utf8:{:>8.2}ms ({:.1}x faster)",
+            "  simdutf8::basic::from_utf8 (was compat):{:>8.2}ms ({:.1}x faster)",
             simd_compat_duration.as_secs_f64() * 1000.0,
             speedup_compat
         );
