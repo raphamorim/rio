@@ -3,7 +3,7 @@ use std::time::Instant;
 fn main() {
     println!("Rio Terminal - SIMD UTF-8 Performance Test");
     println!("==========================================");
-    
+
     // Test cases representing common terminal content
     let test_cases = vec![
         ("Pure ASCII", create_ascii_content()),
@@ -11,37 +11,42 @@ fn main() {
         ("Heavy UTF-8", create_heavy_utf8_content()),
         ("ANSI Sequences", create_ansi_content()),
     ];
-    
+
     for (name, content) in &test_cases {
         println!("\nTesting: {} ({} bytes)", name, content.len());
-        
+
         let iterations = if content.len() > 10000 { 1000 } else { 10000 };
-        
+
         // Test std::str::from_utf8 performance
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = std::str::from_utf8(content);
         }
         let std_duration = start.elapsed();
-        
+
         // Test simdutf8 performance
         let start = Instant::now();
         for _ in 0..iterations {
             let _ = simdutf8::basic::from_utf8(content);
         }
         let simd_duration = start.elapsed();
-        
+
         let speedup = std_duration.as_nanos() as f64 / simd_duration.as_nanos() as f64;
-        
-        println!("  std::str::from_utf8: {:.2}ms", std_duration.as_secs_f64() * 1000.0);
-        println!("  simdutf8::from_utf8: {:.2}ms ({:.2}x {})", 
-                 simd_duration.as_secs_f64() * 1000.0,
-                 speedup,
-                 if speedup > 1.0 { "faster" } else { "slower" });
-        
+
+        println!(
+            "  std::str::from_utf8: {:.2}ms",
+            std_duration.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  simdutf8::from_utf8: {:.2}ms ({:.2}x {})",
+            simd_duration.as_secs_f64() * 1000.0,
+            speedup,
+            if speedup > 1.0 { "faster" } else { "slower" }
+        );
+
         // Test with chunks (simulating terminal input)
         let chunks: Vec<&[u8]> = content.chunks(64).collect();
-        
+
         let start = Instant::now();
         for _ in 0..iterations {
             for chunk in &chunks {
@@ -49,7 +54,7 @@ fn main() {
             }
         }
         let std_chunked_duration = start.elapsed();
-        
+
         let start = Instant::now();
         for _ in 0..iterations {
             for chunk in &chunks {
@@ -57,14 +62,24 @@ fn main() {
             }
         }
         let simd_chunked_duration = start.elapsed();
-        
-        let chunked_speedup = std_chunked_duration.as_nanos() as f64 / simd_chunked_duration.as_nanos() as f64;
-        
-        println!("  std chunked:         {:.2}ms", std_chunked_duration.as_secs_f64() * 1000.0);
-        println!("  simd chunked:        {:.2}ms ({:.2}x {})", 
-                 simd_chunked_duration.as_secs_f64() * 1000.0,
-                 chunked_speedup,
-                 if chunked_speedup > 1.0 { "faster" } else { "slower" });
+
+        let chunked_speedup = std_chunked_duration.as_nanos() as f64
+            / simd_chunked_duration.as_nanos() as f64;
+
+        println!(
+            "  std chunked:         {:.2}ms",
+            std_chunked_duration.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  simd chunked:        {:.2}ms ({:.2}x {})",
+            simd_chunked_duration.as_secs_f64() * 1000.0,
+            chunked_speedup,
+            if chunked_speedup > 1.0 {
+                "faster"
+            } else {
+                "slower"
+            }
+        );
     }
 }
 
