@@ -46,7 +46,6 @@ simdutf8 = { version = "0.1.5", default-features = false }
 
 [features]
 default = ["wayland", "x11"]
-debug = []
 x11 = [
     "copypasta/x11"
 ]

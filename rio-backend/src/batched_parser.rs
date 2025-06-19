@@ -5,7 +5,6 @@
 
 use copa::{Parser, Perform};
 
-#[cfg(feature = "debug")]
 use tracing::debug;
 
 /// Enhanced parser wrapper that adds batch UTF-8 processing
@@ -44,7 +43,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
         if bytes.len() < self.batch_threshold {
             self.stats.record_immediate(bytes.len());
 
-            #[cfg(feature = "debug")]
             debug!("BatchedParser: immediate processing {} bytes", bytes.len());
 
             self.parser.advance(performer, bytes);
@@ -54,7 +52,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
         // For large inputs, use batching
         self.input_buffer.extend_from_slice(bytes);
 
-        #[cfg(feature = "debug")]
         debug!(
             "BatchedParser: added {} bytes to buffer (total: {})",
             bytes.len(),
@@ -66,7 +63,6 @@ impl<const OSC_RAW_BUF_SIZE: usize> BatchedParser<OSC_RAW_BUF_SIZE> {
             let batch_size = self.input_buffer.len();
             self.stats.record_batch(batch_size);
 
-            #[cfg(feature = "debug")]
             debug!("BatchedParser: flushing batch of {} bytes", batch_size);
 
             self.flush_batch(performer);
