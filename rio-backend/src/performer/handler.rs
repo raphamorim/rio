@@ -1395,6 +1395,10 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         "mc5i" => Some("".to_string()),  // Printer won't echo on screen
         "npc" => Some("".to_string()),   // No pad character
 
+        // Image protocol support
+        "sixel" => Some("".to_string()), // Sixel graphics support
+        "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+
         // Cursor movement - from terminfo
         "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
         "cuu1" | "up" => Some("\\E[A".to_string()),
@@ -1522,6 +1526,59 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         "kf11" => Some("\\E[23~".to_string()),
         "kf12" => Some("\\E[24~".to_string()),
 
+        // Extended function keys with modifiers
+        "kf13" => Some("\\E[1;2P".to_string()),
+        "kf14" => Some("\\E[1;2Q".to_string()),
+        "kf15" => Some("\\E[1;2R".to_string()),
+        "kf16" => Some("\\E[1;2S".to_string()),
+        "kf17" => Some("\\E[15;2~".to_string()),
+        "kf18" => Some("\\E[17;2~".to_string()),
+        "kf19" => Some("\\E[18;2~".to_string()),
+        "kf20" => Some("\\E[19;2~".to_string()),
+        "kf21" => Some("\\E[20;2~".to_string()),
+        "kf22" => Some("\\E[21;2~".to_string()),
+        "kf23" => Some("\\E[23;2~".to_string()),
+        "kf24" => Some("\\E[24;2~".to_string()),
+        "kf25" => Some("\\E[1;5P".to_string()),
+        "kf26" => Some("\\E[1;5Q".to_string()),
+        "kf27" => Some("\\E[1;5R".to_string()),
+        "kf28" => Some("\\E[1;5S".to_string()),
+        "kf29" => Some("\\E[15;5~".to_string()),
+        "kf30" => Some("\\E[17;5~".to_string()),
+        "kf31" => Some("\\E[18;5~".to_string()),
+        "kf32" => Some("\\E[19;5~".to_string()),
+        "kf33" => Some("\\E[20;5~".to_string()),
+        "kf34" => Some("\\E[21;5~".to_string()),
+        "kf35" => Some("\\E[23;5~".to_string()),
+        "kf36" => Some("\\E[24;5~".to_string()),
+        "kf37" => Some("\\E[1;6P".to_string()),
+        "kf38" => Some("\\E[1;6Q".to_string()),
+        "kf39" => Some("\\E[1;6R".to_string()),
+        "kf40" => Some("\\E[1;6S".to_string()),
+        "kf41" => Some("\\E[15;6~".to_string()),
+        "kf42" => Some("\\E[17;6~".to_string()),
+        "kf43" => Some("\\E[18;6~".to_string()),
+        "kf44" => Some("\\E[19;6~".to_string()),
+        "kf45" => Some("\\E[20;6~".to_string()),
+        "kf46" => Some("\\E[21;6~".to_string()),
+        "kf47" => Some("\\E[23;6~".to_string()),
+        "kf48" => Some("\\E[24;6~".to_string()),
+        "kf49" => Some("\\E[1;3P".to_string()),
+        "kf50" => Some("\\E[1;3Q".to_string()),
+        "kf51" => Some("\\E[1;3R".to_string()),
+        "kf52" => Some("\\E[1;3S".to_string()),
+        "kf53" => Some("\\E[15;3~".to_string()),
+        "kf54" => Some("\\E[17;3~".to_string()),
+        "kf55" => Some("\\E[18;3~".to_string()),
+        "kf56" => Some("\\E[19;3~".to_string()),
+        "kf57" => Some("\\E[20;3~".to_string()),
+        "kf58" => Some("\\E[21;3~".to_string()),
+        "kf59" => Some("\\E[23;3~".to_string()),
+        "kf60" => Some("\\E[24;3~".to_string()),
+        "kf61" => Some("\\E[1;4P".to_string()),
+        "kf62" => Some("\\E[1;4Q".to_string()),
+        "kf63" => Some("\\E[1;4R".to_string()),
+
         // Arrow keys
         "kcuu1" | "ku" => Some("\\EOA".to_string()),
         "kcud1" | "kd" => Some("\\EOB".to_string()),
@@ -1540,6 +1597,92 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         "kcbt" => Some("\\E[Z".to_string()),
         "kent" => Some("\\EOM".to_string()),
 
+        // Modified arrow keys
+        "kLFT" => Some("\\E[1;2D".to_string()),
+        "kRIT" => Some("\\E[1;2C".to_string()),
+        "kind" => Some("\\E[1;2B".to_string()),
+        "kri" => Some("\\E[1;2A".to_string()),
+        "kDN" => Some("\\E[1;2B".to_string()),
+        "kUP" => Some("\\E[1;2A".to_string()),
+
+        // Arrow keys with Alt modifier
+        "kDN3" => Some("\\E[1;3B".to_string()),
+        "kLFT3" => Some("\\E[1;3D".to_string()),
+        "kRIT3" => Some("\\E[1;3C".to_string()),
+        "kUP3" => Some("\\E[1;3A".to_string()),
+
+        // Arrow keys with Shift+Alt modifier
+        "kDN4" => Some("\\E[1;4B".to_string()),
+        "kLFT4" => Some("\\E[1;4D".to_string()),
+        "kRIT4" => Some("\\E[1;4C".to_string()),
+        "kUP4" => Some("\\E[1;4A".to_string()),
+
+        // Arrow keys with Ctrl modifier
+        "kDN5" => Some("\\E[1;5B".to_string()),
+        "kLFT5" => Some("\\E[1;5D".to_string()),
+        "kRIT5" => Some("\\E[1;5C".to_string()),
+        "kUP5" => Some("\\E[1;5A".to_string()),
+
+        // Arrow keys with Ctrl+Shift modifier
+        "kDN6" => Some("\\E[1;6B".to_string()),
+        "kLFT6" => Some("\\E[1;6D".to_string()),
+        "kRIT6" => Some("\\E[1;6C".to_string()),
+        "kUP6" => Some("\\E[1;6A".to_string()),
+
+        // Arrow keys with Ctrl+Alt modifier
+        "kDN7" => Some("\\E[1;7B".to_string()),
+        "kLFT7" => Some("\\E[1;7D".to_string()),
+        "kRIT7" => Some("\\E[1;7C".to_string()),
+        "kUP7" => Some("\\E[1;7A".to_string()),
+
+        // Modified navigation keys
+        "kDC" => Some("\\E[3;2~".to_string()),
+        "kEND" => Some("\\E[1;2F".to_string()),
+        "kHOM" => Some("\\E[1;2H".to_string()),
+        "kIC" => Some("\\E[2;2~".to_string()),
+        "kNXT" => Some("\\E[6;2~".to_string()),
+        "kPRV" => Some("\\E[5;2~".to_string()),
+
+        // Navigation keys with Alt modifier
+        "kDC3" => Some("\\E[3;3~".to_string()),
+        "kEND3" => Some("\\E[1;3F".to_string()),
+        "kHOM3" => Some("\\E[1;3H".to_string()),
+        "kIC3" => Some("\\E[2;3~".to_string()),
+        "kNXT3" => Some("\\E[6;3~".to_string()),
+        "kPRV3" => Some("\\E[5;3~".to_string()),
+
+        // Navigation keys with Shift+Alt modifier
+        "kDC4" => Some("\\E[3;4~".to_string()),
+        "kEND4" => Some("\\E[1;4F".to_string()),
+        "kHOM4" => Some("\\E[1;4H".to_string()),
+        "kIC4" => Some("\\E[2;4~".to_string()),
+        "kNXT4" => Some("\\E[6;4~".to_string()),
+        "kPRV4" => Some("\\E[5;4~".to_string()),
+
+        // Navigation keys with Ctrl modifier
+        "kDC5" => Some("\\E[3;5~".to_string()),
+        "kEND5" => Some("\\E[1;5F".to_string()),
+        "kHOM5" => Some("\\E[1;5H".to_string()),
+        "kIC5" => Some("\\E[2;5~".to_string()),
+        "kNXT5" => Some("\\E[6;5~".to_string()),
+        "kPRV5" => Some("\\E[5;5~".to_string()),
+
+        // Navigation keys with Ctrl+Shift modifier
+        "kDC6" => Some("\\E[3;6~".to_string()),
+        "kEND6" => Some("\\E[1;6F".to_string()),
+        "kHOM6" => Some("\\E[1;6H".to_string()),
+        "kIC6" => Some("\\E[2;6~".to_string()),
+        "kNXT6" => Some("\\E[6;6~".to_string()),
+        "kPRV6" => Some("\\E[5;6~".to_string()),
+
+        // Navigation keys with Ctrl+Alt modifier
+        "kDC7" => Some("\\E[3;7~".to_string()),
+        "kEND7" => Some("\\E[1;7F".to_string()),
+        "kHOM7" => Some("\\E[1;7H".to_string()),
+        "kIC7" => Some("\\E[2;7~".to_string()),
+        "kNXT7" => Some("\\E[6;7~".to_string()),
+        "kPRV7" => Some("\\E[5;7~".to_string()),
+
         // Mouse
         "kmous" => Some("\\E[M".to_string()),
 
@@ -1553,7 +1696,7 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         "mc5" => Some("\\E[5i".to_string()),
 
         // Reset sequences
-        "rs1" => Some("\\Ec".to_string()),
+        "rs1" => Some("\\Ec\\E]104\\007".to_string()),
         "rs2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
         "is2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
 
@@ -1657,5 +1800,33 @@ mod tests {
         assert_eq!(get_termcap_capability("Co"), Some("256".to_string()));
         assert_eq!(get_termcap_capability("RGB"), Some("8/8/8".to_string()));
         assert_eq!(get_termcap_capability("invalid"), None);
+    }
+
+    #[test]
+    fn test_extended_capabilities() {
+        // Test extended function keys
+        assert_eq!(get_termcap_capability("kf13"), Some("\\E[1;2P".to_string()));
+        assert_eq!(get_termcap_capability("kf25"), Some("\\E[1;5P".to_string()));
+
+        // Test modified arrow keys
+        assert_eq!(get_termcap_capability("kLFT"), Some("\\E[1;2D".to_string()));
+        assert_eq!(get_termcap_capability("kUP3"), Some("\\E[1;3A".to_string()));
+
+        // Test modified navigation keys
+        assert_eq!(get_termcap_capability("kDC5"), Some("\\E[3;5~".to_string()));
+        assert_eq!(
+            get_termcap_capability("kHOM7"),
+            Some("\\E[1;7H".to_string())
+        );
+
+        // Test updated reset sequence
+        assert_eq!(
+            get_termcap_capability("rs1"),
+            Some("\\Ec\\E]104\\007".to_string())
+        );
+
+        // Test image protocol capabilities
+        assert_eq!(get_termcap_capability("sixel"), Some("".to_string()));
+        assert_eq!(get_termcap_capability("iterm2"), Some("".to_string()));
     }
 }
