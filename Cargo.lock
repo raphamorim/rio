@@ -530,6 +530,7 @@ name = "copa"
 version = "0.2.19"
 dependencies = [
  "arrayvec",
+ "criterion",
  "memchr",
  "rio-proc-macros",
  "serde",
