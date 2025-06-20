@@ -22,6 +22,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::font_introspector::Attributes;
 use rio_backend::sugarloaf::{
     drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
@@ -35,6 +36,32 @@ use unicode_width::UnicodeWidthChar;
 pub struct Search {
     rich_text_id: Option<usize>,
     active_search: Option<String>,
+}
+
+/// Reusable buffers for create_line to avoid repeated allocations
+struct LineBuffers {
+    font_lookups: Vec<(usize, char, Attributes)>,
+    styles_and_chars: Vec<(FragmentStyle, char, usize)>,
+    content: String,
+}
+
+impl LineBuffers {
+    fn new() -> Self {
+        Self {
+            font_lookups: Vec::new(),
+            styles_and_chars: Vec::new(),
+            content: String::new(),
+        }
+    }
+
+    #[inline]
+    fn reset(&mut self, columns: usize) {
+        self.font_lookups.clear();
+        self.styles_and_chars.clear();
+        self.styles_and_chars.reserve(columns);
+        self.content.clear();
+        self.content.reserve(columns);
+    }
 }
 
 pub struct Renderer {
@@ -59,6 +86,8 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    // Reusable buffers to avoid allocations in create_line
+    line_buffers: LineBuffers,
 }
 
 impl Renderer {
@@ -111,6 +140,7 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
+            line_buffers: LineBuffers::new(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -259,13 +289,31 @@ impl Renderer {
         let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
-        let mut content = String::with_capacity(columns);
-        let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
 
-        // Collect all characters that need font lookups to batch them
-        let mut font_lookups = Vec::new();
-        let mut styles_and_chars = Vec::with_capacity(columns);
+        // Reset and prepare reusable buffers
+        self.line_buffers.reset(columns);
+
+        // Text coalescing: batch consecutive fragments with same style
+        let mut coalesced_content = String::new();
+        let mut coalesced_style = FragmentStyle::default();
+        let mut has_coalesced_content = false;
+
+        // Helper closure to flush coalesced content to sugarloaf
+        let flush_coalesced = |builder: &mut Content,
+                               content: &mut String,
+                               style: FragmentStyle,
+                               has_content: &mut bool,
+                               line_opt: Option<usize>| {
+            if *has_content && !content.is_empty() {
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, content, style);
+                } else {
+                    builder.add_text(content, style);
+                }
+                content.clear();
+                *has_content = false;
+            }
+        };
 
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
@@ -357,27 +405,31 @@ impl Renderer {
                     style.font_id = *font_id;
                     style.width = *width;
                 } else {
-                    // Mark this character for font lookup
-                    font_lookups.push((
-                        styles_and_chars.len(),
+                    // Mark this character for font lookup using reusable buffer
+                    self.line_buffers.font_lookups.push((
+                        self.line_buffers.styles_and_chars.len(),
                         square_content,
                         style.font_attrs,
                     ));
                 }
             }
 
-            styles_and_chars.push((style, square_content, column));
+            self.line_buffers
+                .styles_and_chars
+                .push((style, square_content, column));
         }
 
         // Batch font lookups with a single lock acquisition
-        if !font_lookups.is_empty() {
+        if !self.line_buffers.font_lookups.is_empty() {
             let mut font_ctx = self.font_context.inner.lock();
-            for (style_index, square_content, font_attrs) in font_lookups {
+            for (style_index, square_content, font_attrs) in
+                &self.line_buffers.font_lookups
+            {
                 let mut width = square_content.width().unwrap_or(1) as f32;
-                let style = &mut styles_and_chars[style_index].0;
+                let style = &mut self.line_buffers.styles_and_chars[*style_index].0;
 
                 if let Some((font_id, is_emoji)) =
-                    font_ctx.find_best_font_match(square_content, style)
+                    font_ctx.find_best_font_match(*square_content, style)
                 {
                     style.font_id = font_id;
                     if is_emoji {
@@ -387,79 +439,63 @@ impl Renderer {
                 style.width = width;
 
                 self.font_cache
-                    .insert((square_content, font_attrs), (style.font_id, style.width));
+                    .insert((*square_content, *font_attrs), (style.font_id, style.width));
             }
         }
 
-        // Second pass: render the line using the resolved styles
-        for (style, square_content, column) in styles_and_chars {
-            // Handle drawable characters
+        // Second pass: render the line using text coalescing to reduce sugarloaf calls
+        for (style, square_content, column) in &self.line_buffers.styles_and_chars {
+            // Handle drawable characters - these break coalescing and need immediate rendering
             if style.drawable_char.is_some() {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
-                    }
-                    content.clear();
-                }
+                // Flush any coalesced content first
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
 
-                last_style = style;
-                content.push(' '); // Ignore font shaping
-            } else {
-                if square_content == ' ' {
-                    if !last_char_was_space {
-                        if !content.is_empty() {
-                            if let Some(line) = line_opt {
-                                builder.add_text_on_line(line, &content, last_style);
-                            } else {
-                                builder.add_text(&content, last_style);
-                            }
-                            content.clear();
-                        }
-
-                        last_char_was_space = true;
-                        last_style = style;
-                    }
+                // Render drawable character immediately (space placeholder for font shaping)
+                let drawable_content = " ";
+                if let Some(line) = line_opt {
+                    builder.add_text_on_line(line, drawable_content, *style);
                 } else {
-                    if last_char_was_space && !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_char_was_space = false;
+                    builder.add_text(drawable_content, *style);
                 }
-
-                if last_style != style {
-                    if !content.is_empty() {
-                        if let Some(line) = line_opt {
-                            builder.add_text_on_line(line, &content, last_style);
-                        } else {
-                            builder.add_text(&content, last_style);
-                        }
-                        content.clear();
-                    }
-
-                    last_style = style;
-                }
-
-                content.push(square_content);
+                continue;
             }
 
-            // Render last column and break row
-            if column == (columns - 1) {
-                if !content.is_empty() {
-                    if let Some(line) = line_opt {
-                        builder.add_text_on_line(line, &content, last_style);
-                    } else {
-                        builder.add_text(&content, last_style);
-                    }
-                }
+            // Text coalescing: batch consecutive characters with the same style
+            if has_coalesced_content && coalesced_style != *style {
+                // Style changed - flush current batch and start new one
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
+            }
 
+            // Initialize or continue coalescing
+            if !has_coalesced_content {
+                coalesced_style = *style;
+                has_coalesced_content = true;
+            }
+
+            // Add character to coalesced batch
+            coalesced_content.push(*square_content);
+
+            // Flush at end of line
+            if *column == (columns - 1) {
+                flush_coalesced(
+                    builder,
+                    &mut coalesced_content,
+                    coalesced_style,
+                    &mut has_coalesced_content,
+                    line_opt,
+                );
                 break;
             }
         }
@@ -810,6 +846,7 @@ impl Renderer {
                         || hints.is_some());
 
             let mut specific_lines = None;
+            let start = std::time::Instant::now();
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let result = (
@@ -845,6 +882,11 @@ impl Renderer {
                 terminal.reset_damage();
                 result
             };
+            let duration = start.elapsed();
+            println!(
+                "Time elapsed in -renderer to get the lock is: {:?}",
+                duration
+            );
 
             // If the last line is bigger than the actual visible rows, then some resize
             // has happened. In this case, request full draw.
@@ -900,7 +942,7 @@ impl Renderer {
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    // let start = std::time::Instant::now();
+                    let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
@@ -920,11 +962,16 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    let duration = start.elapsed();
+                    println!(
+                        "Time elapsed in -renderer.TermDamage::Full is: {:?}",
+                        duration
+                    );
                 }
                 Some(lines) => {
+                    let start = std::time::Instant::now();
                     content.sel(rich_text_id);
+                    let lines_c = lines.clone();
                     for line in lines {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
@@ -944,6 +991,11 @@ impl Renderer {
                             );
                         }
                     }
+                    let duration = start.elapsed();
+                    println!(
+                        "Time elapsed in -renderer.TermDamage::Lines({:?}) is: {:?}",
+                        lines_c, duration
+                    );
                 }
             };
         }
