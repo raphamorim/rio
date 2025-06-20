@@ -5,11 +5,11 @@
 
 use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
-use crate::font_introspector::shape::cluster::GlyphCluster;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::Metrics;
+use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
 use crate::Graphics;
@@ -605,11 +605,17 @@ impl Content {
 
             // Process the font data directly without cloning FontRef
             {
-                let font_library = &mut self.fonts.inner.lock();
-                if let Some(data) = font_library.get_data(&font_id) {
+                let font_library = &self.fonts.inner.read();
+                if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
+                {
+                    let font_ref = FontRef {
+                        data: shared_data.as_ref(),
+                        offset,
+                        key,
+                    };
                     let mut shaper = self
                         .scx
-                        .builder(data) // Use reference directly without cloning
+                        .builder(font_ref) // Use reference directly without cloning
                         .script(script)
                         .size(scaled_font_size)
                         .features(features.iter().copied())
