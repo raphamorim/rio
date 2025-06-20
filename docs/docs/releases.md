@@ -11,6 +11,8 @@ language: 'en'
   - Architecture support: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
   - Automatic optimization: Runtime detection selects fastest implementation available
 - Support for XTGETTCAP (XTerm Get Termcap) escape sequence for querying terminal capabilities.
+- Font library is now under a RWLock instead of Mutex to allow multiple tabs readings same font data.
+- Fix: crash on openSUSE Tumbleweed [#1160](https://github.com/raphamorim/rio/issues/1160).
 
 ## 0.2.19
 
