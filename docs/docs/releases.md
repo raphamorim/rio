@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.20 (unreleased)
+## 0.2.21 (unreleased)
+
+- TBD.
+
+## 0.2.20
 
 - Performance: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
   - Architecture support: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
