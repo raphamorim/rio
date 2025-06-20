@@ -105,11 +105,11 @@ impl FontCache {
             ),
         ];
 
-        if let Some(mut font_ctx) = font_context.inner.try_lock() {
+        if let Some(font_ctx) = font_context.inner.try_read() {
             for &ch in &common_chars {
                 for &attrs in &common_attrs {
                     let key = (ch, attrs);
-                    if self.get(&mut key.clone()).is_none() {
+                    if self.get(&key).is_none() {
                         let style = rio_backend::sugarloaf::FragmentStyle {
                             font_attrs: attrs,
                             ..Default::default()

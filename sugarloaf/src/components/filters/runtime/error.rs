@@ -18,9 +18,9 @@ pub enum FilterChainError {
     #[error("shader preprocess error")]
     ShaderPreprocessError(#[from] PreprocessError),
     #[error("shader compile error")]
-    ShaderCompileError(#[from] ShaderCompileError),
+    ShaderCompileError(#[source] Box<ShaderCompileError>),
     #[error("shader reflect error")]
-    ShaderReflectError(#[from] ShaderReflectError),
+    ShaderReflectError(#[source] Box<ShaderReflectError>),
     #[error("lut loading error")]
     LutLoadError(#[from] ImageError),
     #[error("unreachable")]
@@ -29,3 +29,15 @@ pub enum FilterChainError {
 
 /// Result type for wgpu filter chains.
 pub type Result<T> = std::result::Result<T, FilterChainError>;
+
+impl From<ShaderCompileError> for FilterChainError {
+    fn from(error: ShaderCompileError) -> Self {
+        FilterChainError::ShaderCompileError(Box::new(error))
+    }
+}
+
+impl From<ShaderReflectError> for FilterChainError {
+    fn from(error: ShaderReflectError) -> Self {
+        FilterChainError::ShaderReflectError(Box::new(error))
+    }
+}
