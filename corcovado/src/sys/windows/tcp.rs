@@ -1,5 +1,5 @@
 use std::fmt;
-use std::io::{self, ErrorKind, Read};
+use std::io::{self, Read};
 use std::mem;
 use std::net::{self, Shutdown, SocketAddr};
 use std::os::windows::prelude::*;
