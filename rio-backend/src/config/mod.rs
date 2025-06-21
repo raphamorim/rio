@@ -19,7 +19,7 @@ use crate::config::window::Window;
 use colors::Colors;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{default::Default, fs::File};
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, Theme};
@@ -208,7 +208,14 @@ pub fn config_dir_path() -> PathBuf {
 
 #[inline]
 pub fn config_file_path() -> PathBuf {
-    config_dir_path().join("config.toml")
+    let config_file = config_dir_path().join("config.toml");
+    if config_file.exists() {
+        return config_file;
+    }
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("config.toml")))
+        .unwrap_or(config_file)
 }
 
 #[inline]
