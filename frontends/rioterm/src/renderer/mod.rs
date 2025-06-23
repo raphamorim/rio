@@ -371,7 +371,7 @@ impl Renderer {
 
         // Batch font lookups with a single lock acquisition
         if !font_lookups.is_empty() {
-            let mut font_ctx = self.font_context.inner.lock();
+            let font_ctx = self.font_context.inner.read();
             for (style_index, square_content, font_attrs) in font_lookups {
                 let mut width = square_content.width().unwrap_or(1) as f32;
                 let style = &mut styles_and_chars[style_index].0;
@@ -721,7 +721,7 @@ impl Renderer {
 
                     // Batch font lookups with a single lock acquisition
                     if !font_lookups.is_empty() {
-                        let mut font_ctx = self.font_context.inner.lock();
+                        let font_ctx = self.font_context.inner.read();
                         for (style_index, character) in font_lookups {
                             let mut width = character.width().unwrap_or(1) as f32;
                             let char_style = &mut char_styles[style_index].0;

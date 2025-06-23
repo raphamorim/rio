@@ -16,10 +16,8 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
-use lru::LruCache;
-use parking_lot::FairMutex;
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -29,7 +27,7 @@ pub use crate::font_introspector::{Style, Weight};
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
-    library: &mut FontLibraryData,
+    library: &FontLibraryData,
     spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
@@ -62,8 +60,13 @@ pub fn lookup_for_font_match(
             }
         }
 
-        if let Some(data) = library.get_data(&font_id) {
-            let charmap = data.charmap();
+        if let Some((shared_data, offset, key)) = library.get_data(&font_id) {
+            let font_ref = FontRef {
+                data: shared_data.as_ref(),
+                offset,
+                key,
+            };
+            let charmap = font_ref.charmap();
             let status = cluster.map(|ch| charmap.map(ch));
             if status != Status::Discard {
                 *synth = font_synth;
@@ -84,7 +87,7 @@ pub fn lookup_for_font_match(
 
 #[derive(Clone)]
 pub struct FontLibrary {
-    pub inner: Arc<FairMutex<FontLibraryData>>,
+    pub inner: Arc<RwLock<FontLibraryData>>,
 }
 
 impl FontLibrary {
@@ -100,7 +103,7 @@ impl FontLibrary {
 
         (
             Self {
-                inner: Arc::new(FairMutex::new(font_library)),
+                inner: Arc::new(RwLock::new(font_library)),
             },
             sugarloaf_errors,
         )
@@ -113,7 +116,7 @@ impl Default for FontLibrary {
         let _fonts_not_found = font_library.load(SugarloafFonts::default());
 
         Self {
-            inner: Arc::new(FairMutex::new(font_library)),
+            inner: Arc::new(RwLock::new(font_library)),
         }
     }
 }
@@ -127,7 +130,6 @@ pub struct FontLibraryData {
     // Standard is fallback for everything, it is also the inner number 0
     pub inner: FxHashMap<usize, FontData>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
-    pub stash: LruCache<usize, SharedData>,
     pub hinting: bool,
 }
 
@@ -135,7 +137,6 @@ impl Default for FontLibraryData {
     fn default() -> Self {
         Self {
             inner: FxHashMap::default(),
-            stash: LruCache::new(NonZeroUsize::new(2).unwrap()),
             hinting: true,
             symbol_maps: None,
         }
@@ -145,7 +146,7 @@ impl Default for FontLibraryData {
 impl FontLibraryData {
     #[inline]
     pub fn find_best_font_match(
-        &mut self,
+        &self,
         ch: char,
         fragment_style: &FragmentStyle,
     ) -> Option<(usize, bool)> {
@@ -205,39 +206,22 @@ impl FontLibraryData {
     }
 
     #[inline]
-    pub fn get(&mut self, font_id: &usize) -> &FontData {
+    pub fn get(&self, font_id: &usize) -> &FontData {
         &self.inner[font_id]
     }
 
-    pub fn get_data<'a>(&'a mut self, font_id: &usize) -> Option<FontRef<'a>> {
+    pub fn get_data(&self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
         if let Some(font) = self.inner.get(font_id) {
-            match &font.data {
-                Some(data) => {
-                    return Some(FontRef {
-                        data: data.as_ref(),
-                        offset: font.offset,
-                        key: font.key,
-                    })
-                }
-                None => {
-                    if !self.stash.contains(font_id) {
-                        if let Some(path) = &font.path {
-                            if let Some(raw_data) = load_from_font_source(path) {
-                                self.stash.put(*font_id, SharedData::new(raw_data));
-                            }
-                        }
-                    }
+            if let Some(data) = &font.data {
+                return Some((data.clone(), font.offset, font.key));
+            } else if let Some(path) = &font.path {
+                // Load font data directly from file when needed
+                if let Some(raw_data) = load_from_font_source(path) {
+                    let shared_data = SharedData::new(raw_data);
+                    return Some((shared_data, font.offset, font.key));
                 }
             }
-
-            if let Some(data) = self.stash.get(font_id) {
-                return Some(FontRef {
-                    data: data.as_ref(),
-                    offset: font.offset,
-                    key: font.key,
-                });
-            }
-        };
+        }
 
         None
     }

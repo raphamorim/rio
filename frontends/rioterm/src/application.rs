@@ -1193,7 +1193,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         route.window.screen.set_modifiers(*modifiers);
 
         // Process the key event
-        route.window.screen.process_key_event(&key);
+        route.window.screen.process_key_event(key);
 
         // Restore the original modifiers
         route.window.screen.set_modifiers(original_modifiers);

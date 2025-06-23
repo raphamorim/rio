@@ -758,7 +758,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             return 1;
         }
 
-        match str::from_utf8(&bytes[..plain_chars]) {
+        match simdutf8::basic::from_utf8(&bytes[..plain_chars]) {
             Ok(parsed) => {
                 Self::ground_dispatch(performer, parsed);
                 let mut processed = plain_chars;
@@ -773,13 +773,17 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 processed
             }
             // Handle invalid and partial utf8.
-            Err(err) => {
+            Err(_) => {
+                // Use simdutf8::compat::from_utf8 to get detailed error information
+                let compat_err =
+                    simdutf8::compat::from_utf8(&bytes[..plain_chars]).unwrap_err();
+
                 // Dispatch all the valid bytes.
-                let valid_bytes = err.valid_up_to();
+                let valid_bytes = compat_err.valid_up_to();
                 let parsed = unsafe { str::from_utf8_unchecked(&bytes[..valid_bytes]) };
                 Self::ground_dispatch(performer, parsed);
 
-                match err.error_len() {
+                match compat_err.error_len() {
                     Some(len) => {
                         // Execute C1 escapes or emit replacement character.
                         if len == 1 && bytes[valid_bytes] <= 0x9F {
@@ -834,7 +838,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
         self.partial_utf8_len += to_copy;
 
         // Parse the unicode character.
-        match str::from_utf8(&self.partial_utf8[..self.partial_utf8_len]) {
+        match simdutf8::basic::from_utf8(&self.partial_utf8[..self.partial_utf8_len]) {
             // If the entire buffer is valid, use the first character and continue parsing.
             Ok(parsed) => {
                 let c = unsafe { parsed.chars().next().unwrap_unchecked() };
@@ -843,8 +847,14 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.partial_utf8_len = 0;
                 c.len_utf8() - old_bytes
             }
-            Err(err) => {
-                let valid_bytes = err.valid_up_to();
+            Err(_) => {
+                // Use simdutf8::compat::from_utf8 to get detailed error information
+                let compat_err = simdutf8::compat::from_utf8(
+                    &self.partial_utf8[..self.partial_utf8_len],
+                )
+                .unwrap_err();
+                let valid_bytes = compat_err.valid_up_to();
+
                 // If we have any valid bytes, that means we partially copied another
                 // utf8 character into `partial_utf8`. Since we only care about the
                 // first character, we just ignore the rest.
@@ -861,7 +871,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                     return valid_bytes - old_bytes;
                 }
 
-                match err.error_len() {
+                match compat_err.error_len() {
                     // If the partial character was also invalid, emit the replacement
                     // character.
                     Some(invalid_len) => {

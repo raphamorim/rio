@@ -1,5 +1,5 @@
 use std::fmt;
-use std::io::{self, ErrorKind, Read};
+use std::io::{self, Read};
 use std::mem;
 use std::net::{self, Shutdown, SocketAddr};
 use std::os::windows::prelude::*;
@@ -875,9 +875,8 @@ fn accept_done(status: &OVERLAPPED_ENTRY) {
         .accept_complete(&socket)
         .and_then(|()| me.accept_buf.parse(&me2.inner.socket))
         .and_then(|buf| {
-            buf.remote().ok_or_else(|| {
-                io::Error::new(ErrorKind::Other, "could not obtain remote address")
-            })
+            buf.remote()
+                .ok_or_else(|| io::Error::other("could not obtain remote address"))
         });
     me.accept = match result {
         Ok(remote_addr) => State::Ready((socket, remote_addr)),

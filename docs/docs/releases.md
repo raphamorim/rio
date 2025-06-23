@@ -5,12 +5,29 @@ language: 'en'
 
 # Releases
 
-## 0.2.19 (unreleased)
+## 0.2.21 (unreleased)
 
+- TBD.
+
+## 0.2.20
+
+- Performance: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
+  - Architecture support: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
+  - Automatic optimization: Runtime detection selects fastest implementation available
+- Support for XTGETTCAP (XTerm Get Termcap) escape sequence for querying terminal capabilities.
+- Font library is now under a RWLock instead of Mutex to allow multiple tabs readings same font data.
+- Fix: crash on openSUSE Tumbleweed [#1160](https://github.com/raphamorim/rio/issues/1160).
+
+## 0.2.19
+
+- Reduced the bundle size by ~20.81% (MacOS, Linux, BSD).
+- Performance: stop saving empty images in the image cache.
+- Fix: On MacOS, keybind definition to ignore cmd-w does not work [#879](https://github.com/raphamorim/rio/issues/879).
 - Fix: Build for MacOS 26 Tahoe.
 - Fix: `Enter`,`Tab`, `Backspace` not disambiguated with `shift` in kitty keyboard's disambiguate mode.
 - Fix: line-height adds small gaps for box-drawing characters [#1126](https://github.com/raphamorim/rio/issues/1126).
 - Search matching a wrapping fullwidth character in the last column.
+- Update Rust to 1.87.0.
 
 ## 0.2.18
 

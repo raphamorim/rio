@@ -18,4 +18,20 @@ serde = ["dep:serde"]
 arrayvec = { version = "0.7.2", default-features = false }
 memchr = { version = "2.7.4", default-features = false }
 serde = { version = "1.0.160", features = ["derive"], optional = true }
+simdutf8 = { version = "0.1.5", default-features = false }
 rio-proc-macros = { workspace = true }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "parser_benchmark"
+harness = false
+
+[[example]]
+name = "benchmark_comparison"
+required-features = []
+
+[[example]]
+name = "advanced_benchmark"
+required-features = []

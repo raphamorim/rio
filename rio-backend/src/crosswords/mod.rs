@@ -41,6 +41,7 @@ use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent};
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
+use crate::simd_utf8;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
@@ -2045,7 +2046,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         };
 
         if let Ok(bytes) = general_purpose::STANDARD.decode(base64) {
-            if let Ok(text) = String::from_utf8(bytes) {
+            if let Ok(text) = simd_utf8::from_utf8_to_string(&bytes) {
                 self.event_proxy.send_event(
                     RioEvent::ClipboardStore(clipboard_type, text),
                     self.window_id,
@@ -2938,6 +2939,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             id: graphic_id,
             ..graphic
         });
+    }
+
+    #[inline]
+    fn xtgettcap_response(&mut self, response: String) {
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
 }
 

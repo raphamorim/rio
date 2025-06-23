@@ -23,8 +23,18 @@ impl ImageId {
         Some(Self(handle))
     }
 
+    /// Creates an empty image ID for zero-sized glyphs.
+    pub fn empty() -> Self {
+        Self(0)
+    }
+
     fn index(self) -> usize {
         (self.0 & ID_INDEX_MASK) as usize
+    }
+
+    /// Returns true if this is an empty image ID.
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
     }
 
     /// Returns true if the image contains transparency.

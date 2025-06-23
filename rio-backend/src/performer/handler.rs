@@ -2,9 +2,11 @@ use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
+use crate::batched_parser::BatchedParser;
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
+use crate::simd_utf8;
 use cursor_icon::CursorIcon;
 use std::mem;
 use std::str::FromStr;
@@ -52,7 +54,7 @@ fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
 
 /// Parse colors in `rgb:r(rrr)/g(ggg)/b(bbb)` format.
 fn parse_rgb_color(color: &[u8]) -> Option<ColorRgb> {
-    let colors = std::str::from_utf8(color)
+    let colors = simd_utf8::from_utf8_fast(color)
         .ok()?
         .split('/')
         .collect::<Vec<_>>();
@@ -85,7 +87,8 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
 
     // Truncate/Fill to two byte precision.
     let color_from_slice = |slice: &[u8]| {
-        let col = usize::from_str_radix(std::str::from_utf8(slice).ok()?, 16).ok()? << 4;
+        let col =
+            usize::from_str_radix(simd_utf8::from_utf8_fast(slice).ok()?, 16).ok()? << 4;
         Some((col >> (4 * slice.len().saturating_sub(1))) as u8)
     };
 
@@ -389,6 +392,9 @@ pub trait Handler {
         _behavior: KeyboardModesApplyBehavior,
     ) {
     }
+
+    /// Handle XTGETTCAP response.
+    fn xtgettcap_response(&mut self, _response: String) {}
 }
 
 pub trait Timeout: Default {
@@ -411,6 +417,9 @@ struct ProcessorState<T: Timeout> {
 
     /// State for synchronized terminal updates.
     sync_state: SyncState<T>,
+
+    /// State for XTGETTCAP requests.
+    xtgettcap_state: XtgettcapState,
 }
 
 #[derive(Debug)]
@@ -419,6 +428,15 @@ struct SyncState<T: Timeout> {
     timeout: T,
 
     /// Bytes read during the synchronized update.
+    buffer: Vec<u8>,
+}
+
+#[derive(Debug, Default)]
+struct XtgettcapState {
+    /// Whether we're currently processing an XTGETTCAP request.
+    active: bool,
+
+    /// Buffer for collecting hex-encoded capability names.
     buffer: Vec<u8>,
 }
 
@@ -464,7 +482,7 @@ impl Timeout for StdSyncHandler {
 #[derive(Default)]
 pub struct Processor<T: Timeout = StdSyncHandler> {
     state: ProcessorState<T>,
-    parser: copa::Parser,
+    parser: BatchedParser<1024>,
 }
 
 impl<T: Timeout> Processor<T> {
@@ -497,6 +515,16 @@ impl<T: Timeout> Processor<T> {
         }
     }
 
+    /// Flush any pending batched input
+    #[inline]
+    pub fn flush<H>(&mut self, handler: &mut H)
+    where
+        H: Handler,
+    {
+        let mut performer = Performer::new(&mut self.state, handler);
+        self.parser.flush(&mut performer);
+    }
+
     /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
@@ -522,6 +550,8 @@ impl<T: Timeout> Processor<T> {
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
+        // Flush any pending batched input from synchronized processing
+        self.parser.flush(&mut performer);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -656,6 +686,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             ('q', []) => {
                 self.handler.sixel_graphic_start(params);
             }
+            ('q', [b'+']) => {
+                // XTGETTCAP request: DCS + q <hex-encoded-names> ST
+                self.state.xtgettcap_state.active = true;
+                self.state.xtgettcap_state.buffer.clear();
+            }
             _ => debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
                 params, intermediates, ignore, action
@@ -669,6 +704,9 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 tracing::warn!("Failed to parse Sixel data: {}", err);
                 self.handler.sixel_graphic_reset();
             }
+        } else if self.state.xtgettcap_state.active {
+            // Collect hex-encoded capability names for XTGETTCAP
+            self.state.xtgettcap_state.buffer.push(byte);
         } else {
             debug!("[unhandled put] byte={:?}", byte);
         }
@@ -678,6 +716,14 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
     fn unhook(&mut self) {
         if self.handler.is_sixel_graphic_active() {
             self.handler.sixel_graphic_finish();
+        } else if self.state.xtgettcap_state.active {
+            // Process XTGETTCAP request
+            let response = process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
+            self.handler.xtgettcap_response(response);
+
+            // Reset state
+            self.state.xtgettcap_state.active = false;
+            self.state.xtgettcap_state.buffer.clear();
         } else {
             debug!("[unhandled dcs_unhook]");
         }
@@ -740,7 +786,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 if params.len() >= 2 {
                     let title = params[1..]
                         .iter()
-                        .flat_map(|x| std::str::from_utf8(x))
+                        .flat_map(|x| simd_utf8::from_utf8_fast(x))
                         .collect::<Vec<&str>>()
                         .join(";")
                         .trim()
@@ -784,7 +830,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Inform current directory.
             b"7" => {
-                if let Ok(s) = std::str::from_utf8(params[1]) {
+                if let Ok(s) = simd_utf8::from_utf8_fast(params[1]) {
                     if let Ok(url) = url::Url::parse(s) {
                         let path = url.path();
 
@@ -801,7 +847,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             // Hyperlink.
             b"8" if params.len() > 2 => {
                 let link_params = params[1];
-                let uri = std::str::from_utf8(params[2]).unwrap_or_default();
+                let uri = simd_utf8::from_utf8_fast(params[2]).unwrap_or_default();
 
                 // The OSC 8 escape sequence must be stopped when getting an empty `uri`.
                 if uri.is_empty() {
@@ -814,7 +860,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 let id = link_params
                     .split(|&b| b == b':')
                     .find_map(|kv| kv.strip_prefix(b"id="))
-                    .and_then(|kv| std::str::from_utf8(kv).ok());
+                    .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok());
 
                 self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
             }
@@ -854,7 +900,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Set mouse cursor shape.
             b"22" if params.len() == 2 => {
-                let shape = String::from_utf8_lossy(params[1]);
+                let shape = simd_utf8::from_utf8_lossy_fast(params[1]);
                 match CursorIcon::from_str(&shape) {
                     Ok(cursor_icon) => self.handler.set_mouse_cursor_icon(cursor_icon),
                     Err(_) => {
@@ -1298,4 +1344,520 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
     }
 
     attrs
+}
+
+/// Process XTGETTCAP request and return DCS response.
+fn process_xtgettcap_request(buffer: &[u8]) -> String {
+    // Decode hex-encoded capability name
+    let capability_name = match decode_hex_string(buffer) {
+        Ok(name) => name,
+        Err(_) => {
+            // Invalid hex encoding - return error response
+            return "\x1bP0+r\x1b\\".to_string();
+        }
+    };
+
+    if let Some(value) = get_termcap_capability(&capability_name) {
+        // Encode both name and value in hex
+        let hex_name = encode_hex_string(&capability_name);
+        let hex_value = encode_hex_string(&value);
+        format!("\x1bP1+r{}={}\x1b\\", hex_name, hex_value)
+    } else {
+        // Invalid capability name - return error response
+        "\x1bP0+r\x1b\\".to_string()
+    }
+}
+
+/// Decode hex-encoded string (2 hex digits per character).
+fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
+    if hex_bytes.len() % 2 != 0 {
+        return Err("Invalid hex string length");
+    }
+
+    let mut result = Vec::new();
+    for chunk in hex_bytes.chunks(2) {
+        let hex_str = std::str::from_utf8(chunk).map_err(|_| "Invalid UTF-8")?;
+        let byte = u8::from_str_radix(hex_str, 16).map_err(|_| "Invalid hex digit")?;
+        result.push(byte);
+    }
+
+    String::from_utf8(result).map_err(|_| "Invalid UTF-8 in decoded string")
+}
+
+/// Encode string as hex (2 hex digits per character).
+fn encode_hex_string(s: &str) -> String {
+    s.bytes().map(|b| format!("{:02X}", b)).collect()
+}
+
+/// Get termcap/terminfo capability value for Rio terminal.
+/// Based on misc/rio.termcap and misc/rio.terminfo files.
+fn get_termcap_capability(name: &str) -> Option<String> {
+    match name {
+        // Terminal name
+        "TN" | "name" => Some("rio".to_string()),
+
+        // Colors capability - from terminfo: colors#0x100 (256), pairs#0x7FFF
+        "Co" | "colors" => Some("256".to_string()),
+        "pa" | "pairs" => Some("32767".to_string()),
+
+        // RGB/direct color support - from terminfo: ccc capability
+        "RGB" => Some("8/8/8".to_string()),
+        "ccc" => Some("".to_string()),
+
+        // Terminal dimensions - from termcap: co#80:li#24
+        "co" | "cols" => Some("80".to_string()),
+        "li" | "lines" => Some("24".to_string()),
+        "it" => Some("8".to_string()), // Tab stops
+
+        // Boolean capabilities from terminfo
+        "OTbs" | "bs" => Some("".to_string()),  // Backspace overstrike
+        "am" => Some("".to_string()),    // Automatic margins
+        "bce" => Some("".to_string()),   // Background color erase
+        "km" => Some("".to_string()),    // Has meta key
+        "mir" => Some("".to_string()),   // Safe to move in insert mode
+        "msgr" => Some("".to_string()),  // Safe to move in standout mode
+        "xenl" | "xn" => Some("".to_string()), // Newline ignored after 80 cols
+        "AX" => Some("".to_string()),    // Default color pair is white on black
+        "XT" => Some("".to_string()),    // Supports title setting
+        "XF" => Some("".to_string()),    // Xterm focus events
+        "hs" => Some("".to_string()),    // Has status line
+        "ms" => Some("".to_string()),    // Safe to move in standout mode
+        "mi" => Some("".to_string()),    // Safe to move in insert mode
+        "mc5i" => Some("".to_string()),  // Printer won't echo on screen
+        "npc" => Some("".to_string()),   // No pad character
+
+        // Image protocol support
+        "sixel" => Some("".to_string()), // Sixel graphics support
+        "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+
+        // Cursor movement - from terminfo
+        "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),
+        "cuu1" | "up" => Some("\\E[A".to_string()),
+        "cud1" | "do" => Some("\\n".to_string()),
+        "cuf1" | "nd" => Some("\\E[C".to_string()),
+        "cub1" | "le" => Some("^H".to_string()),
+        "home" | "ho" => Some("\\E[H".to_string()),
+        "cuu" | "UP" => Some("\\E[%p1%dA".to_string()),
+        "cud" | "DO" => Some("\\E[%p1%dB".to_string()),
+        "cuf" | "RI" => Some("\\E[%p1%dC".to_string()),
+        "cub" | "LE" => Some("\\E[%p1%dD".to_string()),
+        "hpa" => Some("\\E[%i%p1%dG".to_string()),
+        "vpa" => Some("\\E[%i%p1%dd".to_string()),
+
+        // Clear operations
+        "clear" | "cl" => Some("\\E[H\\E[2J".to_string()),
+        "el" | "ce" => Some("\\E[K".to_string()),
+        "ed" | "cd" => Some("\\E[J".to_string()),
+        "el1" => Some("\\E[1K".to_string()),
+        "E3" => Some("\\E[3J".to_string()),
+
+        // Colors and attributes
+        "setaf" => Some("\\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m".to_string()),
+        "setab" => Some("\\E[%?%p1%{8}%<%t4%p1%d%e%p1%{16}%<%t10%p1%{8}%-%d%e48;5;%p1%d%;m".to_string()),
+        "setf" => Some("\\E[3%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
+        "setb" => Some("\\E[4%?%p1%{1}%=%t4%e%p1%{3}%=%t6%e%p1%{4}%=%t1%e%p1%{6}%=%t3%e%p1%d%;m".to_string()),
+        "op" => Some("\\E[39;49m".to_string()),
+        "oc" => Some("\\E]104\\007".to_string()),
+        "initc" => Some("\\E]4;%p1%d;rgb\\:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\\E\\\\".to_string()),
+
+        // Text attributes
+        "bold" | "md" => Some("\\E[1m".to_string()),
+        "dim" | "mh" => Some("\\E[2m".to_string()),
+        "smul" | "us" => Some("\\E[4m".to_string()),
+        "rmul" | "ue" => Some("\\E[24m".to_string()),
+        "rev" | "mr" => Some("\\E[7m".to_string()),
+        "smso" | "so" => Some("\\E[7m".to_string()),
+        "rmso" | "se" => Some("\\E[27m".to_string()),
+        "invis" => Some("\\E[8m".to_string()),
+        "blink" | "mb" => Some("\\E[5m".to_string()),
+        "sitm" => Some("\\E[3m".to_string()),
+        "ritm" => Some("\\E[23m".to_string()),
+        "smxx" => Some("\\E[9m".to_string()),
+        "rmxx" => Some("\\E[29m".to_string()),
+        "sgr0" | "me" => Some("\\E(B\\E[m".to_string()),
+        "sgr" => Some("%?%p9%t\\E(0%e\\E(B%;\\E[0%?%p6%t;1%;%?%p5%t;2%;%?%p2%t;4%;%?%p1%p3%|%t;7%;%?%p4%t;5%;%?%p7%t;8%;m".to_string()),
+
+        // Character sets
+        "smacs" | "as" => Some("\\E(0".to_string()),
+        "rmacs" | "ae" => Some("\\E(B".to_string()),
+        "acsc" => Some("``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~".to_string()),
+
+        // Insert/delete operations
+        "ich" | "IC" => Some("\\E[%p1%d@".to_string()),
+        "dch1" | "dc" => Some("\\E[P".to_string()),
+        "dch" | "DC" => Some("\\E[%p1%dP".to_string()),
+        "il1" | "al" => Some("\\E[L".to_string()),
+        "il" | "AL" => Some("\\E[%p1%dL".to_string()),
+        "dl1" => Some("\\E[M".to_string()),
+        "dl" | "DL" => Some("\\E[%p1%dM".to_string()),
+        "ech" | "ec" => Some("\\E[%p1%dX".to_string()),
+
+        // Scrolling
+        "csr" | "cs" => Some("\\E[%i%p1%d;%p2%dr".to_string()),
+        "ri" | "sr" => Some("\\EM".to_string()),
+        "ind" | "sf" => Some("\\n".to_string()),
+        "indn" | "SF" => Some("\\E[%p1%dS".to_string()),
+        "rin" | "SR" => Some("\\E[%p1%dT".to_string()),
+
+        // Cursor visibility
+        "civis" | "vi" => Some("\\E[?25l".to_string()),
+        "cnorm" | "ve" => Some("\\E[?12l\\E[?25h".to_string()),
+        "cvvis" | "vs" => Some("\\E[?12;25h".to_string()),
+
+        // Cursor styles
+        "Ss" => Some("\\E[%p1%d q".to_string()),
+        "Se" => Some("\\E[0 q".to_string()),
+        "Cs" => Some("\\E]12;%p1%s\\007".to_string()),
+        "Cr" => Some("\\E]112\\007".to_string()),
+
+        // Keypad and modes
+        "smkx" | "ks" => Some("\\E[?1h\\E=".to_string()),
+        "rmkx" | "ke" => Some("\\E[?1l\\E>".to_string()),
+        "smir" | "im" => Some("\\E[4h".to_string()),
+        "rmir" | "ei" => Some("\\E[4l".to_string()),
+        "smam" => Some("\\E[?7h".to_string()),
+        "rmam" => Some("\\E[?7l".to_string()),
+        "smm" => Some("\\E[?1034h".to_string()),
+        "rmm" => Some("\\E[?1034l".to_string()),
+
+        // Alternate screen
+        "smcup" | "ti" => Some("\\E[?1049h\\E[22;0;0t".to_string()),
+        "rmcup" | "te" => Some("\\E[?1049l\\E[23;0;0t".to_string()),
+
+        // Save/restore cursor
+        "sc" => Some("\\E7".to_string()),
+        "rc" => Some("\\E8".to_string()),
+
+        // Tabs
+        "ht" | "ta" => Some("^I".to_string()),
+        "hts" | "st" => Some("\\EH".to_string()),
+        "tbc" | "ct" => Some("\\E[3g".to_string()),
+        "cbt" | "bt" => Some("\\E[Z".to_string()),
+
+        // Bell and flash
+        "bel" | "bl" => Some("^G".to_string()),
+        "flash" | "vb" => Some("\\E[?5h$<100/>\\E[?5l".to_string()),
+
+        // Status line
+        "tsl" | "ts" => Some("\\E]2;".to_string()),
+        "fsl" | "fs" => Some("^G".to_string()),
+        "dsl" | "ds" => Some("\\E]2;\\007".to_string()),
+
+        // Function keys
+        "kf1" | "k1" => Some("\\EOP".to_string()),
+        "kf2" | "k2" => Some("\\EOQ".to_string()),
+        "kf3" | "k3" => Some("\\EOR".to_string()),
+        "kf4" | "k4" => Some("\\EOS".to_string()),
+        "kf5" | "k5" => Some("\\E[15~".to_string()),
+        "kf6" | "k6" => Some("\\E[17~".to_string()),
+        "kf7" | "k7" => Some("\\E[18~".to_string()),
+        "kf8" | "k8" => Some("\\E[19~".to_string()),
+        "kf9" | "k9" => Some("\\E[20~".to_string()),
+        "kf10" => Some("\\E[21~".to_string()),
+        "kf11" => Some("\\E[23~".to_string()),
+        "kf12" => Some("\\E[24~".to_string()),
+
+        // Extended function keys with modifiers
+        "kf13" => Some("\\E[1;2P".to_string()),
+        "kf14" => Some("\\E[1;2Q".to_string()),
+        "kf15" => Some("\\E[1;2R".to_string()),
+        "kf16" => Some("\\E[1;2S".to_string()),
+        "kf17" => Some("\\E[15;2~".to_string()),
+        "kf18" => Some("\\E[17;2~".to_string()),
+        "kf19" => Some("\\E[18;2~".to_string()),
+        "kf20" => Some("\\E[19;2~".to_string()),
+        "kf21" => Some("\\E[20;2~".to_string()),
+        "kf22" => Some("\\E[21;2~".to_string()),
+        "kf23" => Some("\\E[23;2~".to_string()),
+        "kf24" => Some("\\E[24;2~".to_string()),
+        "kf25" => Some("\\E[1;5P".to_string()),
+        "kf26" => Some("\\E[1;5Q".to_string()),
+        "kf27" => Some("\\E[1;5R".to_string()),
+        "kf28" => Some("\\E[1;5S".to_string()),
+        "kf29" => Some("\\E[15;5~".to_string()),
+        "kf30" => Some("\\E[17;5~".to_string()),
+        "kf31" => Some("\\E[18;5~".to_string()),
+        "kf32" => Some("\\E[19;5~".to_string()),
+        "kf33" => Some("\\E[20;5~".to_string()),
+        "kf34" => Some("\\E[21;5~".to_string()),
+        "kf35" => Some("\\E[23;5~".to_string()),
+        "kf36" => Some("\\E[24;5~".to_string()),
+        "kf37" => Some("\\E[1;6P".to_string()),
+        "kf38" => Some("\\E[1;6Q".to_string()),
+        "kf39" => Some("\\E[1;6R".to_string()),
+        "kf40" => Some("\\E[1;6S".to_string()),
+        "kf41" => Some("\\E[15;6~".to_string()),
+        "kf42" => Some("\\E[17;6~".to_string()),
+        "kf43" => Some("\\E[18;6~".to_string()),
+        "kf44" => Some("\\E[19;6~".to_string()),
+        "kf45" => Some("\\E[20;6~".to_string()),
+        "kf46" => Some("\\E[21;6~".to_string()),
+        "kf47" => Some("\\E[23;6~".to_string()),
+        "kf48" => Some("\\E[24;6~".to_string()),
+        "kf49" => Some("\\E[1;3P".to_string()),
+        "kf50" => Some("\\E[1;3Q".to_string()),
+        "kf51" => Some("\\E[1;3R".to_string()),
+        "kf52" => Some("\\E[1;3S".to_string()),
+        "kf53" => Some("\\E[15;3~".to_string()),
+        "kf54" => Some("\\E[17;3~".to_string()),
+        "kf55" => Some("\\E[18;3~".to_string()),
+        "kf56" => Some("\\E[19;3~".to_string()),
+        "kf57" => Some("\\E[20;3~".to_string()),
+        "kf58" => Some("\\E[21;3~".to_string()),
+        "kf59" => Some("\\E[23;3~".to_string()),
+        "kf60" => Some("\\E[24;3~".to_string()),
+        "kf61" => Some("\\E[1;4P".to_string()),
+        "kf62" => Some("\\E[1;4Q".to_string()),
+        "kf63" => Some("\\E[1;4R".to_string()),
+
+        // Arrow keys
+        "kcuu1" | "ku" => Some("\\EOA".to_string()),
+        "kcud1" | "kd" => Some("\\EOB".to_string()),
+        "kcuf1" | "kr" => Some("\\EOC".to_string()),
+        "kcub1" | "kl" => Some("\\EOD".to_string()),
+
+        // Navigation keys
+        "khome" | "kh" => Some("\\EOH".to_string()),
+        "kend" => Some("\\EOF".to_string()),
+        "kbs" | "kb" => Some("^?".to_string()),
+        "kdch1" | "kD" => Some("\\E[3~".to_string()),
+        "kich1" | "kI" => Some("\\E[2~".to_string()),
+        "knp" | "kN" => Some("\\E[6~".to_string()),
+        "kpp" | "kP" => Some("\\E[5~".to_string()),
+        "kb2" => Some("\\EOE".to_string()),
+        "kcbt" => Some("\\E[Z".to_string()),
+        "kent" => Some("\\EOM".to_string()),
+
+        // Modified arrow keys
+        "kLFT" => Some("\\E[1;2D".to_string()),
+        "kRIT" => Some("\\E[1;2C".to_string()),
+        "kind" => Some("\\E[1;2B".to_string()),
+        "kri" => Some("\\E[1;2A".to_string()),
+        "kDN" => Some("\\E[1;2B".to_string()),
+        "kUP" => Some("\\E[1;2A".to_string()),
+
+        // Arrow keys with Alt modifier
+        "kDN3" => Some("\\E[1;3B".to_string()),
+        "kLFT3" => Some("\\E[1;3D".to_string()),
+        "kRIT3" => Some("\\E[1;3C".to_string()),
+        "kUP3" => Some("\\E[1;3A".to_string()),
+
+        // Arrow keys with Shift+Alt modifier
+        "kDN4" => Some("\\E[1;4B".to_string()),
+        "kLFT4" => Some("\\E[1;4D".to_string()),
+        "kRIT4" => Some("\\E[1;4C".to_string()),
+        "kUP4" => Some("\\E[1;4A".to_string()),
+
+        // Arrow keys with Ctrl modifier
+        "kDN5" => Some("\\E[1;5B".to_string()),
+        "kLFT5" => Some("\\E[1;5D".to_string()),
+        "kRIT5" => Some("\\E[1;5C".to_string()),
+        "kUP5" => Some("\\E[1;5A".to_string()),
+
+        // Arrow keys with Ctrl+Shift modifier
+        "kDN6" => Some("\\E[1;6B".to_string()),
+        "kLFT6" => Some("\\E[1;6D".to_string()),
+        "kRIT6" => Some("\\E[1;6C".to_string()),
+        "kUP6" => Some("\\E[1;6A".to_string()),
+
+        // Arrow keys with Ctrl+Alt modifier
+        "kDN7" => Some("\\E[1;7B".to_string()),
+        "kLFT7" => Some("\\E[1;7D".to_string()),
+        "kRIT7" => Some("\\E[1;7C".to_string()),
+        "kUP7" => Some("\\E[1;7A".to_string()),
+
+        // Modified navigation keys
+        "kDC" => Some("\\E[3;2~".to_string()),
+        "kEND" => Some("\\E[1;2F".to_string()),
+        "kHOM" => Some("\\E[1;2H".to_string()),
+        "kIC" => Some("\\E[2;2~".to_string()),
+        "kNXT" => Some("\\E[6;2~".to_string()),
+        "kPRV" => Some("\\E[5;2~".to_string()),
+
+        // Navigation keys with Alt modifier
+        "kDC3" => Some("\\E[3;3~".to_string()),
+        "kEND3" => Some("\\E[1;3F".to_string()),
+        "kHOM3" => Some("\\E[1;3H".to_string()),
+        "kIC3" => Some("\\E[2;3~".to_string()),
+        "kNXT3" => Some("\\E[6;3~".to_string()),
+        "kPRV3" => Some("\\E[5;3~".to_string()),
+
+        // Navigation keys with Shift+Alt modifier
+        "kDC4" => Some("\\E[3;4~".to_string()),
+        "kEND4" => Some("\\E[1;4F".to_string()),
+        "kHOM4" => Some("\\E[1;4H".to_string()),
+        "kIC4" => Some("\\E[2;4~".to_string()),
+        "kNXT4" => Some("\\E[6;4~".to_string()),
+        "kPRV4" => Some("\\E[5;4~".to_string()),
+
+        // Navigation keys with Ctrl modifier
+        "kDC5" => Some("\\E[3;5~".to_string()),
+        "kEND5" => Some("\\E[1;5F".to_string()),
+        "kHOM5" => Some("\\E[1;5H".to_string()),
+        "kIC5" => Some("\\E[2;5~".to_string()),
+        "kNXT5" => Some("\\E[6;5~".to_string()),
+        "kPRV5" => Some("\\E[5;5~".to_string()),
+
+        // Navigation keys with Ctrl+Shift modifier
+        "kDC6" => Some("\\E[3;6~".to_string()),
+        "kEND6" => Some("\\E[1;6F".to_string()),
+        "kHOM6" => Some("\\E[1;6H".to_string()),
+        "kIC6" => Some("\\E[2;6~".to_string()),
+        "kNXT6" => Some("\\E[6;6~".to_string()),
+        "kPRV6" => Some("\\E[5;6~".to_string()),
+
+        // Navigation keys with Ctrl+Alt modifier
+        "kDC7" => Some("\\E[3;7~".to_string()),
+        "kEND7" => Some("\\E[1;7F".to_string()),
+        "kHOM7" => Some("\\E[1;7H".to_string()),
+        "kIC7" => Some("\\E[2;7~".to_string()),
+        "kNXT7" => Some("\\E[6;7~".to_string()),
+        "kPRV7" => Some("\\E[5;7~".to_string()),
+
+        // Mouse
+        "kmous" => Some("\\E[M".to_string()),
+
+        // Memory operations
+        "meml" => Some("\\El".to_string()),
+        "memu" => Some("\\Em".to_string()),
+
+        // Printing
+        "mc0" => Some("\\E[i".to_string()),
+        "mc4" => Some("\\E[4i".to_string()),
+        "mc5" => Some("\\E[5i".to_string()),
+
+        // Reset sequences
+        "rs1" => Some("\\Ec\\E]104\\007".to_string()),
+        "rs2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+        "is2" => Some("\\E[!p\\E[?3;4l\\E[4l\\E>".to_string()),
+
+        // Device control
+        "u6" => Some("\\E[%i%d;%dR".to_string()),
+        "u7" => Some("\\E[6n".to_string()),
+        "u8" => Some("\\E[?%[;0123456789]c".to_string()),
+        "u9" => Some("\\E[c".to_string()),
+
+        // Repeat character
+        "rep" => Some("%p1%c\\E[%p2%{1}%-%db".to_string()),
+
+        // Extended underline
+        "Smulx" => Some("\\E[4\\:%p1%dm".to_string()),
+
+        // Synchronized output
+        "Sync" => Some("\\EP=%p1%ds\\E\\\\".to_string()),
+
+        // Focus events
+        "kxIN" => Some("\\E[I".to_string()),
+        "kxOUT" => Some("\\E[O".to_string()),
+
+        // Bracketed paste
+        "BE" => Some("\\E[?2004h".to_string()),
+        "BD" => Some("\\E[?2004l".to_string()),
+        "PS" => Some("\\E[200~".to_string()),
+        "PE" => Some("\\E[201~".to_string()),
+
+        // Clipboard
+        "Ms" => Some("\\E]52;%p1%s;%p2%s\\007".to_string()),
+
+        // Carriage return
+        "cr" => Some("\\r".to_string()),
+
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hex_encoding() {
+        assert_eq!(encode_hex_string("TN"), "544E");
+        assert_eq!(encode_hex_string("Co"), "436F");
+        assert_eq!(encode_hex_string("RGB"), "524742");
+    }
+
+    #[test]
+    fn test_hex_decoding() {
+        assert_eq!(decode_hex_string(b"544E").unwrap(), "TN");
+        assert_eq!(decode_hex_string(b"436F").unwrap(), "Co");
+        assert_eq!(decode_hex_string(b"524742").unwrap(), "RGB");
+    }
+
+    #[test]
+    fn test_xtgettcap_processing() {
+        // Test terminal name query
+        let response = process_xtgettcap_request(b"544E");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("544E="));
+        assert!(response.ends_with("\x1b\\"));
+
+        // Test colors query
+        let response = process_xtgettcap_request(b"436F");
+        assert!(response.starts_with("\x1bP1+r"));
+        assert!(response.contains("436F="));
+
+        // Test invalid capability
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+
+        // Test invalid hex
+        let response = process_xtgettcap_request(b"ZZ");
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+    }
+
+    #[test]
+    fn test_single_capability_requests() {
+        // Test terminal name
+        let response = process_xtgettcap_request(b"544E"); // "TN"
+        assert_eq!(response, "\x1bP1+r544E=72696F\x1b\\");
+
+        // Test colors capability
+        let response = process_xtgettcap_request(b"436F"); // "Co"
+        assert_eq!(response, "\x1bP1+r436F=323536\x1b\\");
+
+        // Test RGB capability
+        let response = process_xtgettcap_request(b"524742"); // "RGB"
+        assert_eq!(response, "\x1bP1+r524742=382F382F38\x1b\\");
+
+        // Test invalid capability
+        let response = process_xtgettcap_request(b"5858"); // "XX"
+        assert_eq!(response, "\x1bP0+r\x1b\\");
+    }
+
+    #[test]
+    fn test_capability_lookup() {
+        assert_eq!(get_termcap_capability("TN"), Some("rio".to_string()));
+        assert_eq!(get_termcap_capability("Co"), Some("256".to_string()));
+        assert_eq!(get_termcap_capability("RGB"), Some("8/8/8".to_string()));
+        assert_eq!(get_termcap_capability("invalid"), None);
+    }
+
+    #[test]
+    fn test_extended_capabilities() {
+        // Test extended function keys
+        assert_eq!(get_termcap_capability("kf13"), Some("\\E[1;2P".to_string()));
+        assert_eq!(get_termcap_capability("kf25"), Some("\\E[1;5P".to_string()));
+
+        // Test modified arrow keys
+        assert_eq!(get_termcap_capability("kLFT"), Some("\\E[1;2D".to_string()));
+        assert_eq!(get_termcap_capability("kUP3"), Some("\\E[1;3A".to_string()));
+
+        // Test modified navigation keys
+        assert_eq!(get_termcap_capability("kDC5"), Some("\\E[3;5~".to_string()));
+        assert_eq!(
+            get_termcap_capability("kHOM7"),
+            Some("\\E[1;7H".to_string())
+        );
+
+        // Test updated reset sequence
+        assert_eq!(
+            get_termcap_capability("rs1"),
+            Some("\\Ec\\E]104\\007".to_string())
+        );
+
+        // Test image protocol capabilities
+        assert_eq!(get_termcap_capability("sixel"), Some("".to_string()));
+        assert_eq!(get_termcap_capability("iterm2"), Some("".to_string()));
+    }
 }

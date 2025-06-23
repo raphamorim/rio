@@ -1,11 +1,14 @@
 use super::cache::ImageCache;
 use super::{AddImage, ImageData, ImageId, ImageLocation};
 use crate::font::FontLibrary;
-use crate::font_introspector::scale::{
-    image::{Content, Image as GlyphImage},
-    *,
-};
 use crate::font_introspector::zeno::Format;
+use crate::font_introspector::{
+    scale::{
+        image::{Content, Image as GlyphImage},
+        *,
+    },
+    FontRef,
+};
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
@@ -120,16 +123,23 @@ impl GlyphCacheSession<'_> {
         }
 
         self.scaled_image.data.clear();
-        let mut font_library_data = self.font_library.inner.lock();
+        let font_library_data = self.font_library.inner.read();
         let enable_hint = font_library_data.hinting;
         let font_data = font_library_data.get(&self.font);
         let should_embolden = font_data.should_embolden;
         let should_italicize = font_data.should_italicize;
 
-        if let Some(data) = font_library_data.get_data(&self.font) {
+        if let Some((shared_data, offset, cache_key)) =
+            font_library_data.get_data(&self.font)
+        {
+            let font_ref = FontRef {
+                data: shared_data.as_ref(),
+                offset,
+                key: cache_key,
+            };
             let mut scaler = self
                 .scale_context
-                .builder(data)
+                .builder(font_ref)
                 // With the advent of high-DPI displays (displays with >300 pixels per inch),
                 // font hinting has become less relevant, as aliasing effects become
                 // un-noticeable to the human eye.
@@ -160,6 +170,21 @@ impl GlyphCacheSession<'_> {
                 let p = self.scaled_image.placement;
                 let w = p.width as u16;
                 let h = p.height as u16;
+
+                // Handle zero-sized glyphs (spaces, zero-width characters) efficiently
+                if w == 0 || h == 0 {
+                    let entry = GlyphEntry {
+                        left: p.left,
+                        top: p.top,
+                        width: w,
+                        height: h,
+                        image: ImageId::empty(), // Use a special empty image ID
+                        is_bitmap: false,
+                    };
+                    self.entry.glyphs.insert(key, entry);
+                    return Some(entry);
+                }
+
                 let req = AddImage {
                     width: w,
                     height: h,
