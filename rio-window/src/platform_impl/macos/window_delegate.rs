@@ -54,6 +54,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub tabbing_identifier: Option<String>,
     pub option_as_alt: OptionAsAlt,
     pub unified_titlebar: bool,
+    pub colorspace: Option<crate::platform::macos::Colorspace>,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -72,6 +73,7 @@ impl Default for PlatformSpecificWindowAttributes {
             tabbing_identifier: None,
             option_as_alt: Default::default(),
             unified_titlebar: false,
+            colorspace: None,
         }
     }
 }
@@ -626,6 +628,11 @@ fn new_window(
             NSFilenamesPboardType
         }
         .copy()]));
+
+        // Configure colorspace if specified
+        if let Some(colorspace) = attrs.platform_specific.colorspace {
+            configure_window_colorspace(&window, colorspace);
+        }
 
         Some(window)
     })
@@ -1864,6 +1871,11 @@ impl WindowExtMacOS for WindowDelegate {
         }
     }
 
+    fn set_colorspace(&self, colorspace: crate::platform::macos::Colorspace) {
+        let window = self.window();
+        configure_window_colorspace(window, colorspace);
+    }
+
     fn unified_titlebar(&self) -> bool {
         let window = self.window();
         unsafe {
@@ -1932,5 +1944,27 @@ pub fn appearance_to_theme(appearance: &NSAppearance) -> Theme {
         );
         // Default to light in this case
         Theme::Light
+    }
+}
+
+fn configure_window_colorspace(
+    window: &WinitWindow,
+    colorspace: crate::platform::macos::Colorspace,
+) {
+    // Configure the window's content view for colorspace support
+    if let Some(content_view) = window.contentView() {
+        // Enable layer backing which is required for colorspace configuration
+        content_view.setWantsLayer(true);
+
+        // The colorspace will be applied at the Metal rendering level in sugarloaf
+        // Here we ensure the window is properly configured for wide color support
+
+        tracing::info!(
+            "Configured window {:?} for colorspace: {:?} (layer-backed view enabled)",
+            unsafe { window.windowNumber() },
+            colorspace
+        );
+    } else {
+        tracing::warn!("Window has no content view for colorspace configuration");
     }
 }

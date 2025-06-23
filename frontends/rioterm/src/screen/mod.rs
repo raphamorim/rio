@@ -157,6 +157,7 @@ impl Screen<'_> {
             power_preference,
             backend,
             font_features: config.fonts.features.clone(),
+            colorspace: config.window.colorspace.to_sugarloaf_colorspace(),
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(

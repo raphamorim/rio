@@ -263,6 +263,11 @@ pub fn default_config_file_content() -> String {
 #
 # • decorations - Set window decorations, options: "Enabled", "Disabled", "Transparent", "Buttonless"
 #
+# • colorspace - Set the color space for the window
+#     - "srgb" (default on non-macOS)
+#     - "display-p3" (default on macOS)
+#     - "rec2020"
+#
 # Example:
 # [window]
 # width = 600
@@ -271,6 +276,7 @@ pub fn default_config_file_content() -> String {
 # opacity = 1.0
 # blur = false
 # decorations = "enabled"
+# colorspace = "display-p3"
 
 # Renderer
 #
