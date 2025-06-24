@@ -134,6 +134,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
         );
 
+        // Schedule title updates every 1s
+        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
+        if !self.scheduler.scheduled(timer_id) {
+            self.scheduler.schedule(
+                EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
+                    rio_window::window::WindowId::dummy()
+                }),
+                Duration::from_secs(1),
+                true,
+                timer_id,
+            );
+        }
+
         tracing::info!("Initialisation complete");
     }
 
@@ -362,6 +375,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.set_window_title(&title);
                     route.set_window_subtitle(&subtitle);
                 }
+            }
+            RioEventType::Rio(RioEvent::UpdateTitles) => {
+                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -1149,10 +1165,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
-            None => {
-                self.router.update_titles();
-                ControlFlow::Wait
-            }
+            None => ControlFlow::Wait,
         };
         event_loop.set_control_flow(control_flow);
     }
