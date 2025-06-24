@@ -27,6 +27,7 @@ pub enum Topic {
     RenderRoute,
     UpdateConfig,
     CursorBlinking,
+    UpdateTitles,
 }
 
 /// Event scheduled to be emitted at a specific time.

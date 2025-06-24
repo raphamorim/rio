@@ -131,6 +131,9 @@ pub enum RioEvent {
 
     BlinkCursor(u64, usize),
 
+    /// Update window titles.
+    UpdateTitles,
+
     // No operation
     Noop,
 }
@@ -188,6 +191,7 @@ impl Debug for RioEvent {
             RioEvent::BlinkCursor(timeout, route_id) => {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
+            RioEvent::UpdateTitles => write!(f, "UpdateTitles"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),
