@@ -6,7 +6,10 @@ use unicode_width::UnicodeWidthChar;
 
 /// Maximum number of font cache entries to keep in memory
 /// Increased for better performance with complex terminal content
-const MAX_FONT_CACHE_SIZE: usize = 8192;
+const MAX_FONT_CACHE_SIZE: usize = 16384; // Doubled for better hit rates
+
+/// Hot cache size for ASCII characters - increased for better performance
+const HOT_CACHE_SIZE: usize = 256;
 
 /// LRU cache for font metrics to prevent unbounded memory growth
 /// Uses a two-tier caching strategy for better performance
@@ -20,7 +23,7 @@ pub struct FontCache {
 impl FontCache {
     pub fn new() -> Self {
         Self {
-            hot_cache: HashMap::with_capacity(128), // ASCII + common chars
+            hot_cache: HashMap::with_capacity(HOT_CACHE_SIZE), // Increased capacity
             cache: LruCache::new(
                 NonZeroUsize::new(MAX_FONT_CACHE_SIZE)
                     .expect("Cache size must be non-zero"),
@@ -43,8 +46,10 @@ impl FontCache {
 
     /// Insert font metrics into cache with hot path optimization
     pub fn insert(&mut self, key: (char, Attributes), value: (usize, f32)) {
-        // Store ASCII characters in hot cache for faster access
-        if key.0.is_ascii() && self.hot_cache.len() < 128 {
+        // Store ASCII characters and common Unicode in hot cache for faster access
+        if (key.0.is_ascii() || key.0 as u32 <= 0x00FF)
+            && self.hot_cache.len() < HOT_CACHE_SIZE
+        {
             self.hot_cache.insert(key, value);
         } else {
             self.cache.put(key, value);

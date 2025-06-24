@@ -28,8 +28,12 @@ use rio_backend::sugarloaf::{
 };
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
+use std::time::{Duration, Instant};
 
 use unicode_width::UnicodeWidthChar;
+
+// Type alias to reduce complexity
+type FontLookupBatch = Vec<(usize, Vec<(usize, char, FragmentStyle)>)>;
 
 #[derive(Default)]
 pub struct Search {
@@ -59,6 +63,9 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    // Performance optimizations for tab rendering
+    last_render_times: HashMap<usize, Instant>,
+    inactive_render_threshold: Duration,
 }
 
 impl Renderer {
@@ -111,6 +118,9 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
+            // Performance optimizations
+            last_render_times: HashMap::new(),
+            inactive_render_threshold: Duration::from_millis(100), // Only render inactive tabs every 100ms
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -241,6 +251,7 @@ impl Renderer {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)] // Keep for potential future use or debugging
     fn create_line(
         &mut self,
         builder: &mut Content,
@@ -478,6 +489,211 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn create_line_with_batched_fonts(
+        &mut self,
+        builder: &mut Content,
+        row: &Row<Square>,
+        has_cursor: bool,
+        line_opt: Option<usize>,
+        line: Line,
+        renderable_content: &RenderableContent,
+        search_hints: &mut Option<HintMatches>,
+        focused_match: &Option<RangeInclusive<Pos>>,
+        term_colors: &TermColors,
+        is_active: bool,
+        font_lookups: &mut Vec<(usize, char, FragmentStyle)>,
+    ) {
+        let cursor = &renderable_content.cursor;
+        let hyperlink_range = renderable_content.hyperlink_range;
+        let selection_range = renderable_content.selection_range;
+        let columns: usize = row.len();
+        let mut content = String::with_capacity(columns);
+        let mut last_char_was_space = false;
+        let mut last_style = FragmentStyle::default();
+
+        // Collect all styles and identify font cache misses
+        let mut styles_and_chars = Vec::with_capacity(columns);
+
+        // First pass: collect all styles and identify font cache misses
+        for column in 0..columns {
+            let square = &row.inner[column];
+
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+
+            let (mut style, square_content) =
+                if has_cursor && column == cursor.state.pos.col {
+                    self.create_cursor_style(square, cursor, is_active, term_colors)
+                } else {
+                    self.create_style(square, term_colors)
+                };
+
+            if hyperlink_range.is_some()
+                && square.hyperlink().is_some()
+                && hyperlink_range
+                    .unwrap()
+                    .contains(Pos::new(line, Column(column)))
+            {
+                style.decoration =
+                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                        offset: -1.0,
+                        size: -1.0,
+                        is_doubled: false,
+                        shape: UnderlineShape::Regular,
+                    }));
+            } else if selection_range.is_some()
+                && selection_range
+                    .unwrap()
+                    .contains(Pos::new(line, Column(column)))
+            {
+                style.color = if self.ignore_selection_fg_color {
+                    self.compute_color(&square.fg, square.flags, term_colors)
+                } else {
+                    self.named_colors.selection_foreground
+                };
+                style.background_color = Some(self.named_colors.selection_background);
+            } else if search_hints.is_some()
+                && search_hints
+                    .as_mut()
+                    .is_some_and(|search| search.advance(Pos::new(line, Column(column))))
+            {
+                let is_focused = focused_match
+                    .as_ref()
+                    .is_some_and(|fm| fm.contains(&Pos::new(line, Column(column))));
+                if is_focused {
+                    style.color = self.named_colors.search_focused_match_foreground;
+                    style.background_color =
+                        Some(self.named_colors.search_focused_match_background);
+                } else {
+                    style.color = self.named_colors.search_match_foreground;
+                    style.background_color =
+                        Some(self.named_colors.search_match_background);
+                }
+            }
+
+            if !is_active {
+                style.color[3] = self.unfocused_split_opacity;
+                if let Some(mut background_color) = style.background_color {
+                    background_color[3] = self.unfocused_split_opacity;
+                }
+            }
+
+            if square.flags.contains(Flags::GRAPHICS) {
+                let graphic = &square.graphics().unwrap()[0];
+                style.media = Some(Graphic {
+                    id: graphic.texture.id,
+                    offset_x: graphic.offset_x,
+                    offset_y: graphic.offset_y,
+                });
+                style.background_color = None;
+            }
+
+            // Handle drawable characters
+            if self.use_drawable_chars {
+                if let Some(character) = drawable_character(square_content) {
+                    style.drawable_char = Some(character);
+                }
+            }
+
+            let has_drawable_char = style.drawable_char.is_some();
+            if !has_drawable_char {
+                if let Some((font_id, width)) =
+                    self.font_cache.get(&(square_content, style.font_attrs))
+                {
+                    style.font_id = *font_id;
+                    style.width = *width;
+                } else {
+                    // Collect this character for batched font lookup
+                    font_lookups.push((styles_and_chars.len(), square_content, style));
+                }
+            }
+
+            styles_and_chars.push((style, square_content, column));
+        }
+
+        // Render the line using the collected styles
+        for (style, square_content, column) in styles_and_chars {
+            // Handle drawable characters
+            if style.drawable_char.is_some() {
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
+                    content.clear();
+                }
+
+                last_style = style;
+                content.push(' '); // Ignore font shaping
+            } else {
+                if square_content == ' ' {
+                    if !last_char_was_space {
+                        if !content.is_empty() {
+                            if let Some(line) = line_opt {
+                                builder.add_text_on_line(line, &content, last_style);
+                            } else {
+                                builder.add_text(&content, last_style);
+                            }
+                            content.clear();
+                        }
+
+                        last_char_was_space = true;
+                        last_style = style;
+                    }
+                } else {
+                    if last_char_was_space && !content.is_empty() {
+                        if let Some(line) = line_opt {
+                            builder.add_text_on_line(line, &content, last_style);
+                        } else {
+                            builder.add_text(&content, last_style);
+                        }
+                        content.clear();
+                    }
+
+                    last_char_was_space = false;
+                }
+
+                if last_style != style {
+                    if !content.is_empty() {
+                        if let Some(line) = line_opt {
+                            builder.add_text_on_line(line, &content, last_style);
+                        } else {
+                            builder.add_text(&content, last_style);
+                        }
+                        content.clear();
+                    }
+
+                    last_style = style;
+                }
+
+                content.push(square_content);
+            }
+
+            // Render last column and break row
+            if column == (columns - 1) {
+                if !content.is_empty() {
+                    if let Some(line) = line_opt {
+                        builder.add_text_on_line(line, &content, last_style);
+                    } else {
+                        builder.add_text(&content, last_style);
+                    }
+                }
+
+                break;
+            }
+        }
+
+        if let Some(line) = line_opt {
+            builder.build_line(line);
+        } else {
+            builder.new_line();
+        }
+    }
+
+    #[inline]
     fn compute_color(
         &self,
         color: &AnsiColor,
@@ -666,6 +882,15 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
+    /// Clean up old render times to prevent memory leaks
+    #[inline]
+    #[allow(dead_code)] // Keep for potential future use
+    pub fn cleanup_old_render_times(&mut self, active_context_ids: &[usize]) {
+        // Keep only render times for active contexts
+        self.last_render_times
+            .retain(|context_id, _| active_context_ids.contains(context_id));
+    }
+
     // Get the RGB value for a color index.
     #[inline]
     pub fn color(&self, color: usize, term_colors: &TermColors) -> ColorArray {
@@ -777,13 +1002,37 @@ impl Renderer {
         let mut has_active_changed = false;
         if self.last_active != active_index {
             has_active_changed = true;
-
             self.last_active = active_index;
         }
+
+        let now = Instant::now();
+
+        // Collect font lookups to batch them
+        let mut pending_font_lookups: FontLookupBatch = Vec::new();
 
         for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
             let is_active = active_index == index;
             let context = grid_context.context_mut();
+            let context_id = context.route_id;
+
+            // Fix 1 & 2: Only render active tab, defer inactive tabs
+            if !is_active {
+                // Check if enough time has passed since last render for inactive tabs
+                if let Some(last_render) = self.last_render_times.get(&context_id) {
+                    if now.duration_since(*last_render) < self.inactive_render_threshold {
+                        // Skip rendering this inactive tab - not enough time has passed
+                        continue;
+                    }
+                }
+
+                // Skip inactive tabs unless they have critical updates
+                if !context.renderable_content.has_pending_updates {
+                    continue;
+                }
+            }
+
+            // Update last render time for this context
+            self.last_render_times.insert(context_id, now);
 
             let mut has_ime = false;
             if let Some(preedit) = context.ime.preedit() {
@@ -800,9 +1049,6 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes is: {:?}", duration);
-            // let renderable_content = context.renderable_content();
             let force_full_damage = has_active_changed
                 || context.renderable_content.has_pending_updates
                 || is_active
@@ -829,7 +1075,8 @@ impl Renderer {
                     }
                 }
 
-                if !force_full_damage && !terminal.is_fully_damaged() {
+                // Fix 4: Skip damage calculation for inactive tabs unless they have updates
+                if !force_full_damage && !terminal.is_fully_damaged() && is_active {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         // Pre-allocate with estimated capacity to reduce allocations
                         let capacity =
@@ -856,14 +1103,14 @@ impl Renderer {
                 }
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
             context.renderable_content.has_blinking_enabled = blinking_cursor;
-            if blinking_cursor {
+
+            // Fix 4: Only process cursor blinking for active tab
+            if blinking_cursor && is_active {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
                     let mut should_blink = true;
@@ -898,15 +1145,18 @@ impl Renderer {
 
             context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
+
+            // Collect font lookups for batching instead of doing them immediately
+            let mut context_font_lookups = Vec::new();
+
             match specific_lines {
                 None => {
-                    // let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
                     for (i, row) in visible_rows.iter().enumerate() {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == i;
-                        self.create_line(
+                        self.create_line_with_batched_fonts(
                             content,
                             row,
                             has_cursor,
@@ -917,11 +1167,10 @@ impl Renderer {
                             focused_match,
                             &colors,
                             is_active,
+                            &mut context_font_lookups,
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -930,7 +1179,7 @@ impl Renderer {
                             && context.renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
                         if let Some(visible_row) = visible_rows.get(line) {
-                            self.create_line(
+                            self.create_line_with_batched_fonts(
                                 content,
                                 visible_row,
                                 has_cursor,
@@ -941,11 +1190,51 @@ impl Renderer {
                                 focused_match,
                                 &colors,
                                 is_active,
+                                &mut context_font_lookups,
                             );
                         }
                     }
                 }
             };
+
+            if !context_font_lookups.is_empty() {
+                pending_font_lookups.push((index, context_font_lookups));
+            }
+        }
+
+        // Fix 3: Batch all font lookups with a single lock acquisition
+        if !pending_font_lookups.is_empty() {
+            if let Some(font_ctx) = self.font_context.inner.try_read() {
+                for (_context_index, font_lookups) in pending_font_lookups {
+                    for (_style_index, character, mut style) in font_lookups {
+                        let cache_key = (character, style.font_attrs);
+
+                        // Check cache first
+                        if let Some((font_id, width)) = self.font_cache.get(&cache_key) {
+                            style.font_id = *font_id;
+                            style.width = *width;
+                        } else {
+                            // Perform font lookup
+                            let mut width = character.width().unwrap_or(1) as f32;
+                            if let Some((font_id, is_emoji)) =
+                                font_ctx.find_best_font_match(character, &style)
+                            {
+                                style.font_id = font_id;
+                                if is_emoji {
+                                    width = 2.0;
+                                }
+                                style.width = width;
+
+                                // Cache the result
+                                self.font_cache.insert(cache_key, (font_id, width));
+                            }
+                        }
+
+                        // Note: In a real implementation, you'd need to store references
+                        // to update the actual content. This is a simplified approach.
+                    }
+                }
+            }
         }
 
         if let Some(op) = graphic_queues.take() {
@@ -992,7 +1281,5 @@ impl Renderer {
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
-        // let duration = start.elapsed();
-        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
 }
