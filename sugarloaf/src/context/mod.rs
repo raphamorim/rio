@@ -44,20 +44,33 @@ fn find_best_texture_format(
         .iter()
         .copied()
         .filter(|&x| {
-            let is_srgb_compatible = match colorspace {
+            let is_compatible = match colorspace {
                 Colorspace::Srgb => {
-                    wgpu::TextureFormat::is_srgb(&x) || !wgpu::TextureFormat::is_srgb(&x)
+                    // For sRGB colorspace, prefer sRGB formats
+                    wgpu::TextureFormat::is_srgb(&x)
                 }
                 Colorspace::DisplayP3 | Colorspace::Rec2020 => {
+                    // For wide color gamut, avoid sRGB formats
                     !wgpu::TextureFormat::is_srgb(&x)
                 }
             };
-            is_srgb_compatible && !unsupported_formats.contains(&x)
+            is_compatible && !unsupported_formats.contains(&x)
         })
         .collect();
 
-    if !filtered_formats.is_empty() {
-        filtered_formats.first().unwrap().clone_into(&mut format);
+    // If no compatible formats found, fall back to any non-unsupported format
+    let final_formats = if filtered_formats.is_empty() {
+        formats
+            .iter()
+            .copied()
+            .filter(|&x| !unsupported_formats.contains(&x))
+            .collect()
+    } else {
+        filtered_formats
+    };
+
+    if !final_formats.is_empty() {
+        final_formats.first().unwrap().clone_into(&mut format);
     }
 
     tracing::info!(
