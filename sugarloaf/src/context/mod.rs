@@ -1,4 +1,4 @@
-use crate::sugarloaf::{SugarloafWindow, SugarloafWindowSize};
+use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
 
 pub struct Context<'a> {
@@ -12,11 +12,15 @@ pub struct Context<'a> {
     pub adapter_info: wgpu::AdapterInfo,
     surface_caps: wgpu::SurfaceCapabilities,
     pub supports_f16: bool,
+    pub colorspace: Colorspace,
 }
 
 #[inline]
 #[cfg(not(target_os = "macos"))]
-fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFormat {
+fn find_best_texture_format(
+    formats: &[wgpu::TextureFormat],
+    colorspace: Colorspace,
+) -> wgpu::TextureFormat {
     let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
 
     // TODO: Fix formats with signs
@@ -40,7 +44,15 @@ fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFor
         .iter()
         .copied()
         .filter(|&x| {
-            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
+            let is_srgb_compatible = match colorspace {
+                Colorspace::Srgb => {
+                    wgpu::TextureFormat::is_srgb(&x) || !wgpu::TextureFormat::is_srgb(&x)
+                }
+                Colorspace::DisplayP3 | Colorspace::Rec2020 => {
+                    !wgpu::TextureFormat::is_srgb(&x)
+                }
+            };
+            is_srgb_compatible && !unsupported_formats.contains(&x)
         })
         .collect();
 
@@ -48,9 +60,22 @@ fn find_best_texture_format(formats: &[wgpu::TextureFormat]) -> wgpu::TextureFor
         filtered_formats.first().unwrap().clone_into(&mut format);
     }
 
-    tracing::info!("Sugarloaf selected format: {format:?} from {:?}", formats);
+    tracing::info!(
+        "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",
+        formats,
+        colorspace
+    );
 
     format
+}
+
+#[inline]
+#[cfg(target_os = "macos")]
+fn get_macos_texture_format(colorspace: Colorspace) -> wgpu::TextureFormat {
+    match colorspace {
+        Colorspace::Srgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+        Colorspace::DisplayP3 | Colorspace::Rec2020 => wgpu::TextureFormat::Bgra8Unorm,
+    }
 }
 
 impl Context<'_> {
@@ -106,9 +131,12 @@ impl Context<'_> {
         let surface_caps = surface.get_capabilities(&adapter);
 
         #[cfg(target_os = "macos")]
-        let format = wgpu::TextureFormat::Bgra8Unorm;
+        let format = get_macos_texture_format(renderer_config.colorspace);
         #[cfg(not(target_os = "macos"))]
-        let format = find_best_texture_format(surface_caps.formats.as_slice());
+        let format = find_best_texture_format(
+            surface_caps.formats.as_slice(),
+            renderer_config.colorspace,
+        );
 
         let (device, queue, supports_f16) = {
             {
@@ -166,6 +194,18 @@ impl Context<'_> {
             wgpu::CompositeAlphaMode::Auto
         };
 
+        // Configure view formats for wide color gamut support
+        let view_formats = match renderer_config.colorspace {
+            Colorspace::DisplayP3 | Colorspace::Rec2020 => {
+                // For wide color gamut, we may want to support additional view formats
+                // This allows the surface to be viewed in different formats
+                vec![format]
+            }
+            Colorspace::Srgb => {
+                vec![]
+            }
+        };
+
         surface.configure(
             &device,
             &wgpu::SurfaceConfiguration {
@@ -173,7 +213,7 @@ impl Context<'_> {
                 format,
                 width: size.width as u32,
                 height: size.height as u32,
-                view_formats: vec![],
+                view_formats,
                 alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
                 desired_maximum_frame_latency: 2,
@@ -181,6 +221,8 @@ impl Context<'_> {
         );
 
         tracing::info!("F16 shader support: {}", supports_f16);
+        tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
+        tracing::info!("Surface format: {:?}", format);
 
         Context {
             device,
@@ -196,12 +238,23 @@ impl Context<'_> {
             adapter_info,
             surface_caps,
             supports_f16,
+            colorspace: renderer_config.colorspace,
         }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         self.size.width = width as f32;
         self.size.height = height as f32;
+
+        // Configure view formats for wide color gamut support
+        let view_formats = match self.colorspace {
+            Colorspace::DisplayP3 | Colorspace::Rec2020 => {
+                vec![self.format]
+            }
+            Colorspace::Srgb => {
+                vec![]
+            }
+        };
 
         self.surface.configure(
             &self.device,
@@ -210,7 +263,7 @@ impl Context<'_> {
                 format: self.format,
                 width,
                 height,
-                view_formats: vec![],
+                view_formats,
                 alpha_mode: self.alpha_mode,
                 present_mode: wgpu::PresentMode::Fifo,
                 desired_maximum_frame_latency: 2,

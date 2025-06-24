@@ -1094,4 +1094,34 @@ mod tests {
         assert_eq!(parse_unicode(&symbol_map[1].start), Some('\u{E0C0}'));
         assert_eq!(parse_unicode(&symbol_map[1].end), Some('\u{E0C7}'));
     }
+
+    #[test]
+    fn test_window_colorspace() {
+        let result = create_temporary_config(
+            "window-colorspace",
+            r#"
+            [window]
+            colorspace = "display-p3"
+        "#,
+        );
+
+        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    #[test]
+    fn test_window_colorspace_default() {
+        let result = create_temporary_config(
+            "window-colorspace-default",
+            r#"
+            [window]
+            width = 800
+            height = 600
+        "#,
+        );
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
+    }
 }

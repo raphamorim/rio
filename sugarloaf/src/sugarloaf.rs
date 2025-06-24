@@ -66,6 +66,30 @@ pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
     pub backend: wgpu::Backends,
     pub font_features: Option<Vec<String>>,
+    pub colorspace: Colorspace,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Colorspace {
+    Srgb,
+    DisplayP3,
+    Rec2020,
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::derivable_impls)]
+impl Default for Colorspace {
+    fn default() -> Colorspace {
+        Colorspace::DisplayP3
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[allow(clippy::derivable_impls)]
+impl Default for Colorspace {
+    fn default() -> Colorspace {
+        Colorspace::Srgb
+    }
 }
 
 impl Default for SugarloafRenderer {
@@ -79,6 +103,7 @@ impl Default for SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
             backend: default_backend,
             font_features: None,
+            colorspace: Colorspace::default(),
         }
     }
 }

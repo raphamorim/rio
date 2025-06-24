@@ -97,6 +97,10 @@ pub fn create_window_builder(
         // MacOS is always transparent
         window_builder = window_builder.with_transparent(true);
 
+        // Configure colorspace
+        window_builder = window_builder
+            .with_colorspace(config.window.colorspace.to_rio_window_colorspace());
+
         if config.navigation.is_native() {
             if let Some(identifier) = tab_id {
                 window_builder = window_builder
