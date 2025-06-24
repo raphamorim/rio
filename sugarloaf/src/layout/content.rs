@@ -15,9 +15,12 @@ use crate::layout::RichTextLayout;
 use crate::Graphics;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use string_cache::DefaultAtom;
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
@@ -600,8 +603,7 @@ impl Content {
 
             // If not in cache, shape the text
             // Set up cache entry info
-            self.word_cache.font_id = font_id;
-            self.word_cache.content = content.clone();
+            self.word_cache.set_content(font_id, content);
 
             // Process the font data directly without cloning FontRef
             {
@@ -672,21 +674,68 @@ impl Content {
 }
 
 #[derive(Default)]
+pub struct StringInterner {
+    strings: FxHashMap<String, DefaultAtom>,
+}
+
+impl StringInterner {
+    pub fn new() -> Self {
+        Self {
+            strings: FxHashMap::default(),
+        }
+    }
+
+    #[inline]
+    pub fn intern(&mut self, s: &str) -> DefaultAtom {
+        if let Some(atom) = self.strings.get(s) {
+            atom.clone()
+        } else {
+            let atom = DefaultAtom::from(s);
+            self.strings.insert(s.to_string(), atom.clone());
+            atom
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct WordCache {
-    pub inner: FxHashMap<usize, LruCache<String, Vec<OwnedGlyphCluster>>>,
+    pub inner: FxHashMap<usize, LruCache<u64, Vec<OwnedGlyphCluster>>>,
     stash: Vec<OwnedGlyphCluster>,
     font_id: usize,
-    content: String,
+    content_hash: u64,
+    interner: StringInterner,
 }
 
 impl WordCache {
     pub fn new() -> Self {
         WordCache {
             inner: FxHashMap::default(),
-            stash: vec![],
+            stash: Vec::with_capacity(64), // Pre-allocate stash capacity
             font_id: 0,
-            content: String::new(),
+            content_hash: 0,
+            interner: StringInterner::new(),
         }
+    }
+
+    /// Generate a hash-based cache key from content and font_id
+    #[inline]
+    fn cache_key_simple(content: &str, font_id: usize) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        font_id.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Generate a hash-based cache key from content and font_id
+    /// Uses string interning for frequently repeated content
+    #[inline]
+    fn cache_key_with_interning(&mut self, content: &str, font_id: usize) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        // Intern the string to reduce memory usage for repeated content
+        let interned = self.interner.intern(content);
+        interned.hash(&mut hasher);
+        font_id.hash(&mut hasher);
+        hasher.finish()
     }
 
     #[inline]
@@ -695,8 +744,9 @@ impl WordCache {
         font_id: &usize,
         content: &str,
     ) -> Option<&Vec<OwnedGlyphCluster>> {
+        let key = Self::cache_key_simple(content, *font_id);
         if let Some(cache) = self.inner.get_mut(font_id) {
-            return cache.get(content);
+            return cache.get(&key);
         }
         None
     }
@@ -707,30 +757,32 @@ impl WordCache {
     }
 
     #[inline]
+    pub fn set_content(&mut self, font_id: usize, content: &str) {
+        self.font_id = font_id;
+        // Use interning for cache storage to benefit from deduplication
+        self.content_hash = self.cache_key_with_interning(content, font_id);
+    }
+
+    #[inline]
     pub fn finish(&mut self) {
-        if !self.content.is_empty() && !self.stash.is_empty() {
+        if self.content_hash != 0 && !self.stash.is_empty() {
             if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                cache.put(
-                    std::mem::take(&mut self.content),
-                    std::mem::take(&mut self.stash),
-                );
+                cache.put(self.content_hash, std::mem::take(&mut self.stash));
             } else {
                 // If font id is main
                 let size = if self.font_id == 0 { 512 } else { 128 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
-                cache.put(
-                    std::mem::take(&mut self.content),
-                    std::mem::take(&mut self.stash),
-                );
+                cache.put(self.content_hash, std::mem::take(&mut self.stash));
                 self.inner.insert(self.font_id, cache);
             }
 
             self.font_id = 0;
+            self.content_hash = 0;
             return;
         }
         self.stash.clear();
         self.font_id = 0;
-        self.content.clear();
+        self.content_hash = 0;
     }
 }
 
