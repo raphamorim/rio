@@ -20,6 +20,17 @@ use crate::event_loop::{ActiveEventLoop, EventLoopBuilder};
 use crate::monitor::MonitorHandle;
 use crate::window::{Window, WindowAttributes};
 
+/// Colorspace options for macOS windows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Colorspace {
+    /// Standard sRGB colorspace
+    Srgb,
+    /// Display P3 wide color gamut
+    DisplayP3,
+    /// Rec. 2020 ultra-wide color gamut
+    Rec2020,
+}
+
 /// Additional methods on [`Window`] that are specific to MacOS.
 pub trait WindowExtMacOS {
     /// Returns whether or not the window is in simple fullscreen mode.
@@ -100,6 +111,9 @@ pub trait WindowExtMacOS {
     fn set_unified_titlebar(&self, unified_titlebar: bool);
     /// Getter for the [`WindowExtMacOS::set_unified_titlebar`].
     fn unified_titlebar(&self) -> bool;
+
+    /// Sets the window's colorspace for wide color gamut support.
+    fn set_colorspace(&self, colorspace: Colorspace);
 }
 
 impl WindowExtMacOS for Window {
@@ -195,6 +209,12 @@ impl WindowExtMacOS for Window {
     fn unified_titlebar(&self) -> bool {
         self.window.maybe_wait_on_main(|w| w.unified_titlebar())
     }
+
+    #[inline]
+    fn set_colorspace(&self, colorspace: Colorspace) {
+        self.window
+            .maybe_queue_on_main(move |w| w.set_colorspace(colorspace))
+    }
 }
 
 /// Corresponds to `NSApplicationActivationPolicy`.
@@ -250,6 +270,8 @@ pub trait WindowAttributesExtMacOS {
     fn with_option_as_alt(self, option_as_alt: OptionAsAlt) -> Self;
     /// See [`WindowExtMacOS::set_unified_titlebar`] for details on what this means if set.
     fn with_unified_titlebar(self, unified_titlebar: bool) -> Self;
+    /// Sets the window's colorspace for wide color gamut support.
+    fn with_colorspace(self, colorspace: Colorspace) -> Self;
 }
 
 impl WindowAttributesExtMacOS for WindowAttributes {
@@ -328,6 +350,12 @@ impl WindowAttributesExtMacOS for WindowAttributes {
     #[inline]
     fn with_unified_titlebar(mut self, unified_titlebar: bool) -> Self {
         self.platform_specific.unified_titlebar = unified_titlebar;
+        self
+    }
+
+    #[inline]
+    fn with_colorspace(mut self, colorspace: Colorspace) -> Self {
+        self.platform_specific.colorspace = Some(colorspace);
         self
     }
 }

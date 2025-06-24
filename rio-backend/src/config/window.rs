@@ -15,6 +15,32 @@ pub enum WindowMode {
 }
 
 #[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum Colorspace {
+    #[serde(alias = "srgb")]
+    Srgb,
+    #[serde(alias = "display-p3")]
+    DisplayP3,
+    #[serde(alias = "rec2020")]
+    Rec2020,
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::derivable_impls)]
+impl Default for Colorspace {
+    fn default() -> Colorspace {
+        Colorspace::DisplayP3
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+#[allow(clippy::derivable_impls)]
+impl Default for Colorspace {
+    fn default() -> Colorspace {
+        Colorspace::Srgb
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
 pub enum Decorations {
     #[serde(alias = "enabled")]
     Enabled,
@@ -76,6 +102,8 @@ pub struct Window {
     pub windows_use_no_redirection_bitmap: Option<bool>,
     #[serde(rename = "windows-corner-preference", default = "Option::default")]
     pub windows_corner_preference: Option<WindowsCornerPreference>,
+    #[serde(default = "Colorspace::default")]
+    pub colorspace: Colorspace,
 }
 
 impl Default for Window {
@@ -94,7 +122,32 @@ impl Default for Window {
             windows_use_undecorated_shadow: None,
             windows_use_no_redirection_bitmap: None,
             windows_corner_preference: None,
+            colorspace: Colorspace::default(),
         }
+    }
+}
+
+impl Colorspace {
+    pub fn to_sugarloaf_colorspace(&self) -> sugarloaf::Colorspace {
+        match self {
+            Colorspace::Srgb => sugarloaf::Colorspace::Srgb,
+            Colorspace::DisplayP3 => sugarloaf::Colorspace::DisplayP3,
+            Colorspace::Rec2020 => sugarloaf::Colorspace::Rec2020,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn to_rio_window_colorspace(&self) -> rio_window::platform::macos::Colorspace {
+        match self {
+            Colorspace::Srgb => rio_window::platform::macos::Colorspace::Srgb,
+            Colorspace::DisplayP3 => rio_window::platform::macos::Colorspace::DisplayP3,
+            Colorspace::Rec2020 => rio_window::platform::macos::Colorspace::Rec2020,
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn to_rio_window_colorspace(&self) -> () {
+        // No-op for non-macOS platforms
     }
 }
 
