@@ -44,7 +44,7 @@ fn find_best_texture_format(
         .iter()
         .copied()
         .filter(|&x| {
-            // On non-macOS platforms, always avoid sRGB formats (original behavior)
+            // On non-macOS platforms, always avoid sRGB formats
             // This maintains compatibility with existing Linux/Windows color handling
             !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
         })
