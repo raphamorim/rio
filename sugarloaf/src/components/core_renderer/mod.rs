@@ -1,4 +1,4 @@
-// Unified rendering system that handles all rendering types with a single shader
+// Core rendering system that handles all rendering types with a single shader
 
 use crate::context::Context;
 use crate::shaders::UnifiedVertex;
@@ -6,16 +6,25 @@ use std::borrow::Cow;
 use std::mem;
 use wgpu::util::DeviceExt;
 
-pub struct UnifiedRenderer {
+pub struct CoreRenderer {
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
     transform_buffer: wgpu::Buffer,
     current_transform: [f32; 16],
     vertices: Vec<UnifiedVertex>,
     supported_vertex_buffer: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TexturedQuadParams {
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub color: [f32; 4],
+    pub uv: [f32; 2],
+    pub layer: f32,
+    pub border_radius: f32,
 }
 
 #[repr(C)]
@@ -26,7 +35,7 @@ struct Uniforms {
     _padding: [f32; 3],
 }
 
-impl UnifiedRenderer {
+impl CoreRenderer {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let supported_vertex_buffer = 10000; // Large buffer for all rendering
@@ -36,19 +45,20 @@ impl UnifiedRenderer {
             context.size.height,
         );
 
-        let transform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("unified transform buffer"),
-            contents: bytemuck::cast_slice(&[Uniforms {
-                transform: current_transform,
-                scale: 1.0,
-                _padding: [0.0; 3],
-            }]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let transform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("core renderer transform buffer"),
+                contents: bytemuck::cast_slice(&[Uniforms {
+                    transform: current_transform,
+                    scale: 1.0,
+                    _padding: [0.0; 3],
+                }]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Create a dummy texture for now - this should be replaced with actual texture management
         let dummy_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("unified dummy texture"),
+            label: Some("core renderer dummy texture"),
             size: wgpu::Extent3d {
                 width: 1,
                 height: 1,
@@ -62,10 +72,11 @@ impl UnifiedRenderer {
             view_formats: &[],
         });
 
-        let dummy_texture_view = dummy_texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            ..Default::default()
-        });
+        let dummy_texture_view =
+            dummy_texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -80,22 +91,27 @@ impl UnifiedRenderer {
         // Create bind group layouts
         let constant_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("unified constant layout"),
+                label: Some("core renderer constant layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::VERTEX
+                            | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<Uniforms>() as u64),
+                            min_binding_size: wgpu::BufferSize::new(
+                                mem::size_of::<Uniforms>() as u64,
+                            ),
                         },
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        ty: wgpu::BindingType::Sampler(
+                            wgpu::SamplerBindingType::Filtering,
+                        ),
                         count: None,
                     },
                 ],
@@ -103,7 +119,7 @@ impl UnifiedRenderer {
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("unified texture layout"),
+                label: Some("core renderer texture layout"),
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -116,11 +132,15 @@ impl UnifiedRenderer {
                 }],
             });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("unified pipeline layout"),
-            push_constant_ranges: &[],
-            bind_group_layouts: &[&constant_bind_group_layout, &texture_bind_group_layout],
-        });
+        let pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("core renderer pipeline layout"),
+                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    &constant_bind_group_layout,
+                    &texture_bind_group_layout,
+                ],
+            });
 
         let constant_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &constant_bind_group_layout,
@@ -138,7 +158,7 @@ impl UnifiedRenderer {
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
-            label: Some("unified constant bind group"),
+            label: Some("core renderer constant bind group"),
         });
 
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -147,18 +167,18 @@ impl UnifiedRenderer {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(&dummy_texture_view),
             }],
-            label: Some("unified texture bind group"),
+            label: Some("core renderer texture bind group"),
         });
 
-        let shader_source = crate::shaders::get_unified_shader(context.supports_f16());
+        let shader_source = crate::shaders::get_core_shader(context.supports_f16());
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("unified shader"),
+            label: Some("core renderer shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             cache: None,
-            label: Some("unified render pipeline"),
+            label: Some("core renderer render pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -216,7 +236,7 @@ impl UnifiedRenderer {
         });
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("unified vertex buffer"),
+            label: Some("core renderer vertex buffer"),
             size: mem::size_of::<UnifiedVertex>() as u64 * supported_vertex_buffer as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -227,7 +247,6 @@ impl UnifiedRenderer {
             vertex_buffer,
             constant_bind_group,
             texture_bind_group,
-            texture_bind_group_layout,
             transform_buffer,
             current_transform,
             vertices: Vec::new(),
@@ -235,7 +254,13 @@ impl UnifiedRenderer {
         }
     }
 
-    pub fn add_quad(&mut self, position: [f32; 2], size: [f32; 2], color: [f32; 4], border_radius: f32) {
+    pub fn add_quad(
+        &mut self,
+        position: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        border_radius: f32,
+    ) {
         self.vertices.push(UnifiedVertex {
             position: [position[0], position[1], 0.0, 0.0], // render_mode = 0 for quad
             color,
@@ -245,17 +270,23 @@ impl UnifiedRenderer {
         });
     }
 
-    pub fn add_textured_quad(&mut self, position: [f32; 2], size: [f32; 2], color: [f32; 4], uv: [f32; 2], _uv_scale: [f32; 2], layer: f32, border_radius: f32) {
+    pub fn add_textured_quad(&mut self, params: TexturedQuadParams) {
         self.vertices.push(UnifiedVertex {
-            position: [position[0], position[1], 0.0, 0.0], // render_mode = 0 for quad
-            color,
-            uv_layer: [uv[0], uv[1], layer, 0.0],
-            size_border: [size[0], size[1], 0.0, border_radius],
+            position: [params.position[0], params.position[1], 0.0, 0.0], // render_mode = 0 for quad
+            color: params.color,
+            uv_layer: [params.uv[0], params.uv[1], params.layer, 0.0],
+            size_border: [params.size[0], params.size[1], 0.0, params.border_radius],
             extended: [0.0, 0.0, 0.0, 1.0], // texture_flag = 1.0 for textured quad
         });
     }
 
-    pub fn add_text(&mut self, position: [f32; 2], color: [f32; 4], uv: [f32; 2], layer: f32) {
+    pub fn add_text(
+        &mut self,
+        position: [f32; 2],
+        color: [f32; 4],
+        uv: [f32; 2],
+        layer: f32,
+    ) {
         self.vertices.push(UnifiedVertex {
             position: [position[0], position[1], 0.0, 1.0], // render_mode = 1 for text
             color,
@@ -278,18 +309,15 @@ impl UnifiedRenderer {
         if self.vertices.len() > self.supported_vertex_buffer {
             self.supported_vertex_buffer = self.vertices.len() * 2;
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("unified vertex buffer"),
-                size: mem::size_of::<UnifiedVertex>() as u64 * self.supported_vertex_buffer as u64,
+                label: Some("core renderer vertex buffer"),
+                size: mem::size_of::<UnifiedVertex>() as u64
+                    * self.supported_vertex_buffer as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
         }
 
-        queue.write_buffer(
-            &self.vertex_buffer,
-            0,
-            bytemuck::cast_slice(&self.vertices),
-        );
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
     }
 
     pub fn render<'a>(&'a self, render_pass: &mut wgpu::RenderPass<'a>) {
@@ -301,12 +329,17 @@ impl UnifiedRenderer {
         render_pass.set_bind_group(0, &self.constant_bind_group, &[]);
         render_pass.set_bind_group(1, &self.texture_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        
+
         // Draw 6 vertices (2 triangles) per instance
         render_pass.draw(0..6, 0..self.vertices.len() as u32);
     }
 
-    pub fn update_transform(&mut self, queue: &wgpu::Queue, transform: [f32; 16], scale: f32) {
+    pub fn update_transform(
+        &mut self,
+        queue: &wgpu::Queue,
+        transform: [f32; 16],
+        scale: f32,
+    ) {
         if self.current_transform != transform {
             self.current_transform = transform;
             queue.write_buffer(

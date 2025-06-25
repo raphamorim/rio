@@ -46,7 +46,7 @@ impl MipmapGen {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
-                crate::shaders::filters::BLIT_SHADER
+                crate::shaders::filters::BLIT_SHADER,
             )),
         });
 
