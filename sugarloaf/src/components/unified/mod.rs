@@ -241,7 +241,17 @@ impl UnifiedRenderer {
             color,
             uv_layer: [0.0, 0.0, 0.0, 0.0],
             size_border: [size[0], size[1], 0.0, border_radius],
-            extended: [0.0, 0.0, 0.0, 0.0],
+            extended: [0.0, 0.0, 0.0, 0.0], // texture_flag = 0.0 for solid quad
+        });
+    }
+
+    pub fn add_textured_quad(&mut self, position: [f32; 2], size: [f32; 2], color: [f32; 4], uv: [f32; 2], _uv_scale: [f32; 2], layer: f32, border_radius: f32) {
+        self.vertices.push(UnifiedVertex {
+            position: [position[0], position[1], 0.0, 0.0], // render_mode = 0 for quad
+            color,
+            uv_layer: [uv[0], uv[1], layer, 0.0],
+            size_border: [size[0], size[1], 0.0, border_radius],
+            extended: [0.0, 0.0, 0.0, 1.0], // texture_flag = 1.0 for textured quad
         });
     }
 
@@ -251,16 +261,6 @@ impl UnifiedRenderer {
             color,
             uv_layer: [uv[0], uv[1], layer, 0.0],
             size_border: [0.0, 0.0, 0.0, 0.0],
-            extended: [0.0, 0.0, 0.0, 0.0],
-        });
-    }
-
-    pub fn add_image(&mut self, position: [f32; 2], size: [f32; 2], uv: [f32; 2], layer: f32) {
-        self.vertices.push(UnifiedVertex {
-            position: [position[0], position[1], 0.0, 2.0], // render_mode = 2 for image
-            color: [1.0, 1.0, 1.0, 1.0],
-            uv_layer: [uv[0], uv[1], layer, 0.0],
-            size_border: [size[0], size[1], 0.0, 0.0],
             extended: [0.0, 0.0, 0.0, 0.0],
         });
     }

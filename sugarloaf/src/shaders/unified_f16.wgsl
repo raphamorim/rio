@@ -1,6 +1,7 @@
 // Unified shader for Rio Terminal - Single Point of Definition (SPD) - F16 Version
-// Handles all rendering types: quads, text, and images
-// render_mode: 0.0 = quad, 1.0 = text, 2.0 = image
+// Handles all rendering types: quads (solid/textured) and text
+// render_mode: 0.0 = quad, 1.0 = text
+// For quads: extended.w = 0.0 (solid) or 1.0 (textured)
 
 enable f16;
 
@@ -19,7 +20,7 @@ struct VertexInput {
     @location(1) color: vec4<f32>,        // r, g, b, a
     @location(2) uv_layer: vec4<f32>,     // u, v, layer, mask_layer
     @location(3) size_border: vec4<f32>,  // width, height, border_width, border_radius
-    @location(4) extended: vec4<f32>,     // shadow_blur, shadow_offset_x, shadow_offset_y, extra
+    @location(4) extended: vec4<f32>,     // shadow_blur, shadow_offset_x, shadow_offset_y, texture_flag
 }
 
 struct VertexOutput {
@@ -35,6 +36,7 @@ struct VertexOutput {
     @location(8) shadow_offset: vec2<f16>,
     @location(9) render_mode: f32,
     @location(10) world_pos: vec2<f16>,
+    @location(11) texture_flag: f32,
 }
 
 // Compute the normalized quad coordinates based on the vertex index
@@ -80,12 +82,13 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.border_radius = f16(input.size_border.w);
     out.shadow_blur = f16(input.extended.x);
     out.shadow_offset = vec2<f16>(input.extended.yz);
+    out.texture_flag = input.extended.w;
     out.render_mode = render_mode;
     
     var world_position: vec2<f32>;
     
     if render_mode == 0.0 {
-        // Quad rendering
+        // Quad rendering (solid or textured)
         var pos: vec2<f32> = (input.position.xy + min(input.extended.yz, vec2<f32>(0.0, 0.0)) - input.extended.x) * globals.scale;
         var scale: vec2<f32> = (input.size_border.xy + vec2<f32>(abs(input.extended.y), abs(input.extended.z)) + input.extended.x * 2.0) * globals.scale;
         var snap: vec2<f32> = vec2<f32>(0.0, 0.0);
@@ -106,22 +109,17 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
         world_position = input.position.xy * globals.scale + snap;
         out.position = globals.transform * transform * vec4<f32>(vertex_pos, 0.0, 1.0);
+        
+        // For textured quads, set up UV coordinates properly
+        if input.extended.w > 0.0 {
+            // Textured quad - use vertex position as UV base and apply atlas scaling
+            out.uv = vec2<f16>(vertex_pos * input.uv_layer.zw + input.uv_layer.xy);
+        }
+        
     } else if render_mode == 1.0 {
         // Text rendering
         world_position = input.position.xy;
         out.position = globals.transform * vec4<f32>(input.position.xy, 0.0, 1.0);
-    } else if render_mode == 2.0 {
-        // Image rendering
-        var transform: mat4x4<f32> = mat4x4<f32>(
-            vec4<f32>(input.size_border.x, 0.0, 0.0, 0.0),
-            vec4<f32>(0.0, input.size_border.y, 0.0, 0.0),
-            vec4<f32>(0.0, 0.0, 1.0, 0.0),
-            vec4<f32>(input.position.xy, 0.0, 1.0)
-        );
-        
-        out.uv = vec2<f16>(vertex_pos * input.uv_layer.zw + input.uv_layer.xy);
-        world_position = input.position.xy;
-        out.position = globals.transform * transform * vec4<f32>(vertex_pos, 0.0, 1.0);
     }
     
     out.world_pos = vec2<f16>(world_position);
@@ -133,10 +131,24 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let render_mode = input.render_mode;
     
     if render_mode == 0.0 {
-        // Quad rendering
-        var mixed_color: vec4<f16> = input.color;
+        // Quad rendering (solid or textured)
+        var base_color: vec4<f16>;
+        
+        if input.texture_flag > 0.0 {
+            // Textured quad - sample from texture
+            let tex_sample = textureSample(main_texture, main_sampler, vec2<f32>(input.uv), i32(input.layer));
+            base_color = vec4<f16>(tex_sample);
+            // Modulate with vertex color for tinting
+            base_color = base_color * input.color;
+        } else {
+            // Solid quad - use vertex color
+            base_color = input.color;
+        }
+        
+        var mixed_color: vec4<f16> = base_color;
         let border_radius = f32(input.border_radius);
         
+        // Apply border effects (works for both solid and textured quads)
         if f32(input.border_width) > 0.0 {
             let internal_border = max(border_radius - f32(input.border_width), 0.0);
             let internal_distance = distance_alg(
@@ -152,10 +164,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 internal_distance
             ));
             
-            // For now, use same color for border (can be extended later)
-            mixed_color = mix(input.color, input.color * f16(0.8), vec4<f16>(border_mix));
+            // Border color (darker version of base color)
+            let border_color = vec4<f16>(base_color.xyz * f16(0.8), base_color.w);
+            mixed_color = mix(base_color, border_color, vec4<f16>(border_mix));
         }
         
+        // Apply rounded corners (works for both solid and textured quads)
         let dist = distance_alg(
             input.position.xy,
             vec2<f32>(input.world_pos),
@@ -186,10 +200,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         }
         
         return vec4<f32>(out);
-        
-    } else if render_mode == 2.0 {
-        // Image rendering
-        return textureSample(main_texture, main_sampler, vec2<f32>(input.uv), i32(input.layer));
     }
     
     // Fallback
