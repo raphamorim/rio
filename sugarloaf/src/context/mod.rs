@@ -44,17 +44,9 @@ fn find_best_texture_format(
         .iter()
         .copied()
         .filter(|&x| {
-            let is_compatible = match colorspace {
-                Colorspace::Srgb => {
-                    // For sRGB colorspace, prefer sRGB formats
-                    wgpu::TextureFormat::is_srgb(&x)
-                }
-                Colorspace::DisplayP3 | Colorspace::Rec2020 => {
-                    // For wide color gamut, avoid sRGB formats
-                    !wgpu::TextureFormat::is_srgb(&x)
-                }
-            };
-            is_compatible && !unsupported_formats.contains(&x)
+            // On non-macOS platforms, always avoid sRGB formats (original behavior)
+            // This maintains compatibility with existing Linux/Windows color handling
+            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
         })
         .collect();
 
