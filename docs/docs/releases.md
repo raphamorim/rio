@@ -7,7 +7,9 @@ language: 'en'
 
 ## 0.2.21 (unreleased)
 
-- TBD.
+- Optimize the character cluster cache for wide space characters.
+- New font atlas, more efficient.
+- Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
 
 ## 0.2.20
 
