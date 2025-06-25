@@ -331,10 +331,7 @@ fn copy_via_compute(
         push_constant_ranges: &[],
     });
 
-    let source = String::from(include_str!("copy_texture_to_buffer.wgsl"));
-
-    let processed_source = source.replace(
-        "{{type}}",
+    let source = crate::shaders::test_utils::copy_texture_to_buffer_shader(
         match aspect {
             TextureAspect::DepthOnly => "f32",
             TextureAspect::StencilOnly => "u32",
@@ -344,7 +341,7 @@ fn copy_via_compute(
 
     let sm = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("shader copy_texture_to_buffer.wgsl"),
-        source: ShaderSource::Wgsl(Cow::Borrowed(&processed_source)),
+        source: ShaderSource::Wgsl(Cow::Owned(source)),
     });
 
     let pipeline_copy = device.create_compute_pipeline(&ComputePipelineDescriptor {

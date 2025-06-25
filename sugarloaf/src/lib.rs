@@ -3,6 +3,7 @@ pub mod context;
 pub mod font;
 pub mod font_introspector;
 pub mod layout;
+pub mod shaders;
 mod sugarloaf;
 
 // Expose WGPU
