@@ -6,7 +6,8 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var font_sampler: sampler;
-@group(1) @binding(0) var font_texture: texture_2d<f32>; // f16 textures are sampled as f32
+@group(1) @binding(0) var color_texture: texture_2d<f32>; // RGBA texture for color glyphs
+@group(1) @binding(1) var mask_texture: texture_2d<f32>;  // R8 texture for alpha masks
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
@@ -41,12 +42,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var out: vec4<f16> = input.f_color;
 
     if input.color_layer > 0 {
-        let tex_sample = textureSampleLevel(font_texture, font_sampler, vec2<f32>(input.f_uv), 0.0);
+        let tex_sample = textureSampleLevel(color_texture, font_sampler, vec2<f32>(input.f_uv), 0.0);
         out = vec4<f16>(tex_sample);
     }
 
     if input.mask_layer > 0 {
-        let tex_alpha = textureSampleLevel(font_texture, font_sampler, vec2<f32>(input.f_uv), 0.0).x;
+        let tex_alpha = textureSampleLevel(mask_texture, font_sampler, vec2<f32>(input.f_uv), 0.0).x;
         out = vec4<f16>(out.xyz, input.f_color.a * f16(tex_alpha));
     }
 

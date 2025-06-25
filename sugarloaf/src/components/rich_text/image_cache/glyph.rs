@@ -160,8 +160,7 @@ impl GlyphCacheSession<'_> {
 
             // let embolden = if IS_MACOS { 0.25 } else { 0. };
             if Render::new(SOURCES)
-                .format(Format::CustomSubpixel([0.3, 0., -0.3]))
-                // .format(Format::Alpha)
+                .format(Format::Alpha)
                 // .offset(Vector::new(subpx[0].to_f32(), subpx[1].to_f32()))
                 .embolden(if should_embolden { 0.5 } else { 0.0 })
                 .transform(if should_italicize {
@@ -192,11 +191,37 @@ impl GlyphCacheSession<'_> {
                     return Some(entry);
                 }
 
+                // Use the appropriate content type and data format
+                let (image_data, content_type) = match self.scaled_image.content {
+                    Content::Mask => {
+                        // Alpha format: use data directly for R8 texture
+                        (
+                            ImageData::Borrowed(&self.scaled_image.data),
+                            super::ContentType::Mask,
+                        )
+                    }
+                    Content::Color => {
+                        // Already RGBA format
+                        (
+                            ImageData::Borrowed(&self.scaled_image.data),
+                            super::ContentType::Color,
+                        )
+                    }
+                    Content::SubpixelMask => {
+                        // Subpixel format (should not happen with Format::Alpha)
+                        (
+                            ImageData::Borrowed(&self.scaled_image.data),
+                            super::ContentType::Color,
+                        )
+                    }
+                };
+
                 let req = AddImage {
                     width: w,
                     height: h,
                     has_alpha: true,
-                    data: ImageData::Borrowed(&self.scaled_image.data),
+                    data: image_data,
+                    content_type,
                 };
                 let image = self.images.allocate(req)?;
 

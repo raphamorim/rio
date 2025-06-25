@@ -2,7 +2,14 @@ use crate::context::Context;
 use tracing::debug;
 
 use super::atlas::*;
+use super::ContentType;
 use super::*;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AtlasKind {
+    Mask,  // R8 format for alpha masks
+    Color, // RGBA format for color glyphs
+}
 
 #[derive(Default)]
 pub struct Entry {
@@ -15,6 +22,14 @@ pub struct Entry {
     width: u16,
     /// Height of the image.
     height: u16,
+    /// Which atlas this entry belongs to
+    atlas_kind: AtlasKind,
+}
+
+impl Default for AtlasKind {
+    fn default() -> Self {
+        AtlasKind::Mask
+    }
 }
 
 pub struct Atlas {
@@ -22,14 +37,35 @@ pub struct Atlas {
     buffer: Vec<u8>,
     fresh: bool,
     dirty: bool,
+    channels: usize, // 1 for mask, 4 for color
+}
+
+impl Atlas {
+    fn new(kind: AtlasKind) -> Self {
+        let channels = match kind {
+            AtlasKind::Mask => 1,
+            AtlasKind::Color => 4, // Always 4 for Rgba8Unorm
+        };
+
+        Self {
+            alloc: AtlasAllocator::new(SIZE, SIZE),
+            buffer: vec![0; SIZE as usize * SIZE as usize * channels],
+            fresh: true,
+            dirty: false,
+            channels,
+        }
+    }
 }
 
 pub struct ImageCache {
     pub entries: Vec<Entry>,
-    atlas: Atlas,
+    mask_atlas: Atlas,
+    color_atlas: Atlas,
     max_texture_size: u16,
-    texture: wgpu::Texture,
-    pub texture_view: wgpu::TextureView,
+    mask_texture: wgpu::Texture,
+    color_texture: wgpu::Texture,
+    pub mask_texture_view: wgpu::TextureView,
+    pub color_texture_view: wgpu::TextureView,
 }
 
 #[inline]
@@ -42,16 +78,14 @@ pub fn buffer_size(width: u32, height: u32) -> Option<usize> {
 pub const SIZE: u16 = 2048;
 
 impl ImageCache {
-    /// Creates a new image cache.
+    /// Creates a new image cache with dual atlases.
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
-        // let max_texture_size = max_texture_size.clamp(1024, 8192);
         let max_texture_size = SIZE;
 
-        let texture_format = context.get_optimal_texture_format(4); // RGBA
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text create texture"),
+        // Create mask texture (R8 format for alpha masks)
+        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rich_text mask atlas"),
             size: wgpu::Extent3d {
                 width: SIZE as u32,
                 height: SIZE as u32,
@@ -59,34 +93,42 @@ impl ImageCache {
             },
             view_formats: &[],
             dimension: wgpu::TextureDimension::D2,
-            format: texture_format,
+            format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             mip_level_count: 1,
             sample_count: 1,
         });
-        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mask_texture_view =
+            mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let alloc = AtlasAllocator::new(max_texture_size, max_texture_size);
-
-        // Buffer size depends on texture format
-        let bytes_per_pixel = if context.supports_f16() { 8 } else { 4 }; // f16 RGBA = 8 bytes, u8 RGBA = 4 bytes
+        // Create color texture (RGBA8 format for color glyphs - simpler than f16)
+        let color_texture_format = wgpu::TextureFormat::Rgba8Unorm;
+        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("rich_text color atlas"),
+            size: wgpu::Extent3d {
+                width: SIZE as u32,
+                height: SIZE as u32,
+                depth_or_array_layers: 1,
+            },
+            view_formats: &[],
+            dimension: wgpu::TextureDimension::D2,
+            format: color_texture_format,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            mip_level_count: 1,
+            sample_count: 1,
+        });
+        let color_texture_view =
+            color_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         Self {
             entries: Vec::new(),
-            atlas: Atlas {
-                alloc,
-                buffer: vec![
-                    0u8;
-                    max_texture_size as usize
-                        * max_texture_size as usize
-                        * bytes_per_pixel
-                ],
-                fresh: true,
-                dirty: true,
-            },
+            mask_atlas: Atlas::new(AtlasKind::Mask),
+            color_atlas: Atlas::new(AtlasKind::Color), // Always 4 bytes per pixel for Rgba8Unorm
             max_texture_size,
-            texture_view,
-            texture,
+            mask_texture,
+            color_texture,
+            mask_texture_view,
+            color_texture_view,
         }
     }
 
@@ -108,13 +150,24 @@ impl ImageCache {
             return None;
         }
 
-        let atlas_data = self.atlas.alloc.allocate(width, height);
+        // Choose the appropriate atlas based on content type
+        let atlas_kind = match request.content_type {
+            ContentType::Mask => AtlasKind::Mask,
+            ContentType::Color => AtlasKind::Color,
+        };
+
+        let atlas = match atlas_kind {
+            AtlasKind::Mask => &mut self.mask_atlas,
+            AtlasKind::Color => &mut self.color_atlas,
+        };
+
+        let atlas_data = atlas.alloc.allocate(width, height);
 
         // Log cache miss when allocation fails
         if atlas_data.is_none() {
             debug!(
-                "ImageCache allocation failed for {}x{} - atlas full",
-                width, height
+                "ImageCache allocation failed for {}x{} - {:?} atlas full",
+                width, height, atlas_kind
             );
             return None;
         }
@@ -127,7 +180,9 @@ impl ImageCache {
             y,
             width,
             height,
+            atlas_kind,
         });
+
         if let Some(data) = request.data() {
             fill(
                 x,
@@ -136,10 +191,12 @@ impl ImageCache {
                 height,
                 data,
                 self.max_texture_size,
-                &mut self.atlas.buffer,
+                &mut atlas.buffer,
+                atlas.channels,
             );
-            self.atlas.dirty = true;
+            atlas.dirty = true;
         }
+
         ImageId::new(entry_index as u32, request.has_alpha)
     }
 
@@ -154,7 +211,12 @@ impl ImageCache {
             return None;
         }
 
-        self.atlas.alloc.deallocate(entry.x, entry.y, entry.width);
+        let atlas = match entry.atlas_kind {
+            AtlasKind::Mask => &mut self.mask_atlas,
+            AtlasKind::Color => &mut self.color_atlas,
+        };
+
+        atlas.alloc.deallocate(entry.x, entry.y, entry.width);
         entry.allocated = false;
         Some(())
     }
@@ -185,25 +247,11 @@ impl ImageCache {
         // Clear all entries
         self.entries.clear();
 
-        // Reset the allocator
-        self.atlas.alloc =
-            AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
+        // Reset both atlases
+        self.mask_atlas = Atlas::new(AtlasKind::Mask);
+        self.color_atlas = Atlas::new(AtlasKind::Color);
 
-        // Clear the buffer
-        let bytes_per_pixel = self.atlas.buffer.len()
-            / (self.max_texture_size as usize * self.max_texture_size as usize);
-        self.atlas.buffer = vec![
-            0u8;
-            self.max_texture_size as usize
-                * self.max_texture_size as usize
-                * bytes_per_pixel
-        ];
-
-        // Mark as fresh and dirty to trigger texture recreation
-        self.atlas.fresh = true;
-        self.atlas.dirty = true;
-
-        tracing::info!("Atlas cleared due to font change");
+        tracing::info!("Dual atlases cleared due to font change");
     }
 
     /// Returns true if the image is valid.
@@ -242,78 +290,65 @@ impl ImageCache {
     // }
     #[inline]
     pub fn process_atlases(&mut self, context: &mut Context) {
-        if !self.atlas.dirty {
-            return;
-        }
-        if self.atlas.fresh {
+        // Process mask atlas
+        if self.mask_atlas.dirty {
             let texture_size = wgpu::Extent3d {
-                width: (self.max_texture_size).into(),
-                height: (self.max_texture_size).into(),
+                width: self.max_texture_size as u32,
+                height: self.max_texture_size as u32,
                 depth_or_array_layers: 1,
             };
-            let new_texture = context.device.create_texture(&wgpu::TextureDescriptor {
-                size: texture_size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
-                label: Some("rich_text::fresh atlas"),
-                view_formats: &[],
-            });
 
             context.queue.write_texture(
-                // Tells wgpu where to copy the pixel data
                 wgpu::TexelCopyTextureInfo {
-                    texture: &new_texture,
+                    texture: &self.mask_texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                // The actual pixel data
-                &self.atlas.buffer,
-                // The layout of the texture
+                &self.mask_atlas.buffer,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some((self.max_texture_size * 4).into()),
-                    rows_per_image: Some((self.max_texture_size).into()),
+                    bytes_per_row: Some(
+                        self.max_texture_size as u32 * self.mask_atlas.channels as u32,
+                    ),
+                    rows_per_image: Some(self.max_texture_size as u32),
                 },
                 texture_size,
             );
 
-            self.texture = new_texture;
-            self.texture_view = self
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-        } else {
+            self.mask_atlas.fresh = false;
+            self.mask_atlas.dirty = false;
+        }
+
+        // Process color atlas
+        if self.color_atlas.dirty {
             let texture_size = wgpu::Extent3d {
-                width: (self.max_texture_size).into(),
-                height: (self.max_texture_size).into(),
+                width: self.max_texture_size as u32,
+                height: self.max_texture_size as u32,
                 depth_or_array_layers: 1,
             };
 
             context.queue.write_texture(
-                // Tells wgpu where to copy the pixel data
                 wgpu::TexelCopyTextureInfo {
-                    texture: &self.texture,
+                    texture: &self.color_texture,
                     mip_level: 0,
-                    origin: wgpu::Origin3d { x: 0, y: 0, z: 0 },
+                    origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
-                // The actual pixel data
-                &self.atlas.buffer,
-                // The layout of the texture
+                &self.color_atlas.buffer,
                 wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some((self.max_texture_size * 4).into()),
-                    rows_per_image: Some((self.max_texture_size).into()),
+                    bytes_per_row: Some(
+                        self.max_texture_size as u32 * self.color_atlas.channels as u32,
+                    ),
+                    rows_per_image: Some(self.max_texture_size as u32),
                 },
                 texture_size,
             );
+
+            self.color_atlas.fresh = false;
+            self.color_atlas.dirty = false;
         }
-        self.atlas.fresh = false;
-        self.atlas.dirty = false;
     }
 }
 
@@ -325,8 +360,8 @@ fn fill(
     image: &[u8],
     target_width: u16,
     target: &mut [u8],
+    channels: usize,
 ) -> Option<()> {
-    let channels = 4;
     let image_pitch = width as usize * channels;
     let buffer_pitch = target_width as usize * channels;
     let mut offset = y as usize * buffer_pitch + x as usize * channels;

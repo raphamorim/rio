@@ -975,7 +975,7 @@ impl WordCache {
                 cache.put(self.content_hash, cached_content);
             } else {
                 // If font id is main
-                let size = if self.font_id == 0 { 512 } else { 128 };
+                let size = if self.font_id == 0 { 512 } else { 256 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
                 debug!("WordCache creating new cache for font_id={}", self.font_id);
                 cache.put(self.content_hash, cached_content);
