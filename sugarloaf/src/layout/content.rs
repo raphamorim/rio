@@ -1007,7 +1007,7 @@ mod tests {
 
     fn create_test_glyph(id: u16, x: f32, y: f32, advance: f32) -> Glyph {
         Glyph {
-            id: id.into(),
+            id,
             info: Default::default(),
             x,
             y,
@@ -1187,7 +1187,7 @@ mod tests {
             assert_eq!(cluster.glyphs.len(), 1);
             let glyph = &cluster.glyphs[0];
             assert_eq!(glyph.advance, space_advance);
-            assert_eq!(glyph.id, space_glyph_id.into());
+            assert_eq!(glyph.id, space_glyph_id);
             // Note: x and y are 0 in cluster data because positioning
             // is handled by the renderer during layout
             assert_eq!(glyph.x, 0.0);
@@ -1473,7 +1473,7 @@ mod tests {
                     assert_eq!(cluster.glyphs.len(), 1);
 
                     let glyph = &cluster.glyphs[0];
-                    assert_eq!(glyph.id, (9999 as u16).into());
+                    assert_eq!(glyph.id, 9999_u16);
                     assert_eq!(glyph.x, 5.0);
                     assert_eq!(glyph.y, 10.0);
                     assert_eq!(glyph.advance, 20.5);
@@ -1551,13 +1551,13 @@ mod tests {
             match cached_4.unwrap() {
                 CachedContent::Normal(clusters) => {
                     assert_eq!(clusters.len(), 1); // Only one cluster was added manually
-                    let glyph_id_4: u16 = clusters[0].glyphs[0].id.into();
+                    let glyph_id_4: u16 = clusters[0].glyphs[0].id;
                     assert_eq!(glyph_id_4, 1004);
                 }
                 CachedContent::RepeatedWhitespace { .. } => {
                     let expanded_4 = cached_4.unwrap().expand(None);
                     assert_eq!(expanded_4.len(), 4);
-                    let glyph_id_4: u16 = expanded_4[0].glyphs[0].id.into();
+                    let glyph_id_4: u16 = expanded_4[0].glyphs[0].id;
                     assert_eq!(glyph_id_4, 1004);
                 }
             }
@@ -1596,14 +1596,14 @@ mod tests {
             match cached_tabs.unwrap() {
                 CachedContent::Normal(clusters) => {
                     assert_eq!(clusters.len(), 1); // Only one cluster was added manually
-                    let glyph_id_tabs: u16 = clusters[0].glyphs[0].id.into();
+                    let glyph_id_tabs: u16 = clusters[0].glyphs[0].id;
                     assert_eq!(glyph_id_tabs, 2004);
                     assert_eq!(clusters[0].glyphs[0].advance, 32.0);
                 }
                 CachedContent::RepeatedWhitespace { .. } => {
                     let expanded_tabs = cached_tabs.unwrap().expand(None);
                     assert_eq!(expanded_tabs.len(), 4);
-                    let glyph_id_tabs: u16 = expanded_tabs[0].glyphs[0].id.into();
+                    let glyph_id_tabs: u16 = expanded_tabs[0].glyphs[0].id;
                     assert_eq!(glyph_id_tabs, 2004);
                     assert_eq!(expanded_tabs[0].glyphs[0].advance, 32.0);
                 }
@@ -1910,11 +1910,7 @@ mod tests {
             assert_eq!(normal_result.len(), optimized_result.len());
 
             // Verify each cluster produces the same logical result
-            for (_i, (normal, optimized)) in normal_result
-                .iter()
-                .zip(optimized_result.iter())
-                .enumerate()
-            {
+            for (normal, optimized) in normal_result.iter().zip(optimized_result.iter()) {
                 assert_eq!(normal.source.start, optimized.source.start);
                 assert_eq!(normal.source.end, optimized.source.end);
                 assert_eq!(normal.glyphs.len(), optimized.glyphs.len());
@@ -1992,12 +1988,14 @@ mod tests {
         }
 
         // Create a minimal font spec pointing to our test font
-        let mut fonts_spec = SugarloafFonts::default();
-        fonts_spec.regular = SugarloafFont {
-            family: font_path.to_string_lossy().to_string(),
-            weight: Some(400),
-            style: SugarloafFontStyle::Normal,
-            width: None,
+        let fonts_spec = SugarloafFonts {
+            regular: SugarloafFont {
+                family: font_path.to_string_lossy().to_string(),
+                weight: Some(400),
+                style: SugarloafFontStyle::Normal,
+                width: None,
+            },
+            ..Default::default()
         };
 
         let (font_library, _errors) = FontLibrary::new(fonts_spec);
@@ -2033,7 +2031,7 @@ mod tests {
 
                     let mut clusters = Vec::new();
                     shaper.shape_with(|cluster| {
-                        cache.add_glyph_cluster(&cluster);
+                        cache.add_glyph_cluster(cluster);
                         clusters.push(cluster.into());
                     });
 
@@ -2197,7 +2195,7 @@ mod tests {
 
         // Add multiple clusters (simulating normal shaping of 10 spaces)
         for i in 0..10 {
-            let mut cluster_copy = cluster.clone();
+            let mut cluster_copy = cluster;
             cluster_copy.source.start = i as u32;
             cluster_copy.source.end = (i + 1) as u32;
             cache.add_glyph_cluster(&cluster_copy);

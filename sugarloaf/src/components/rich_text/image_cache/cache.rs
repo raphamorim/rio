@@ -5,9 +5,10 @@ use super::atlas::*;
 use super::ContentType;
 use super::*;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum AtlasKind {
-    Mask,  // R8 format for alpha masks
+    #[default]
+    Mask, // R8 format for alpha masks
     Color, // RGBA format for color glyphs
 }
 
@@ -24,12 +25,6 @@ pub struct Entry {
     height: u16,
     /// Which atlas this entry belongs to
     atlas_kind: AtlasKind,
-}
-
-impl Default for AtlasKind {
-    fn default() -> Self {
-        AtlasKind::Mask
-    }
 }
 
 pub struct Atlas {
@@ -185,14 +180,16 @@ impl ImageCache {
 
         if let Some(data) = request.data() {
             fill(
-                x,
-                y,
-                width,
-                height,
+                FillParams {
+                    x,
+                    y,
+                    width,
+                    _height: height,
+                    target_width: self.max_texture_size,
+                    channels: atlas.channels,
+                },
                 data,
-                self.max_texture_size,
                 &mut atlas.buffer,
-                atlas.channels,
             );
             atlas.dirty = true;
         }
@@ -352,19 +349,20 @@ impl ImageCache {
     }
 }
 
-fn fill(
+struct FillParams {
     x: u16,
     y: u16,
     width: u16,
     _height: u16,
-    image: &[u8],
     target_width: u16,
-    target: &mut [u8],
     channels: usize,
-) -> Option<()> {
-    let image_pitch = width as usize * channels;
-    let buffer_pitch = target_width as usize * channels;
-    let mut offset = y as usize * buffer_pitch + x as usize * channels;
+}
+
+fn fill(params: FillParams, image: &[u8], target: &mut [u8]) -> Option<()> {
+    let image_pitch = params.width as usize * params.channels;
+    let buffer_pitch = params.target_width as usize * params.channels;
+    let mut offset =
+        params.y as usize * buffer_pitch + params.x as usize * params.channels;
     for row in image.chunks(image_pitch) {
         let dest = target.get_mut(offset..offset + image_pitch)?;
         dest.copy_from_slice(row);
