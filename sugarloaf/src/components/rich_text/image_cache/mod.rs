@@ -63,6 +63,14 @@ pub struct AddImage<'a> {
     pub has_alpha: bool,
     /// The actual image data.
     pub data: ImageData<'a>,
+    /// Content type for atlas selection
+    pub content_type: ContentType,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ContentType {
+    Mask,  // Alpha mask data (1 channel)
+    Color, // Color data (4 channels)
 }
 
 impl<'a> AddImage<'a> {
