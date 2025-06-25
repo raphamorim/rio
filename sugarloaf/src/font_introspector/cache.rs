@@ -2,6 +2,7 @@
 // which is licensed under MIT license
 
 use super::FontRef;
+use tracing::debug;
 
 /// Uniquely generated value for identifying and caching fonts.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
@@ -55,6 +56,8 @@ impl<T> FontCache<T> {
             entry.epoch = self.epoch;
             (entry.id, &entry.data)
         } else {
+            // Log cache miss for debugging
+            debug!("FontCache miss for font_id={:?}", id);
             self.epoch += 1;
             let data = f(font);
             if index == self.entries.len() {

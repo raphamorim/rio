@@ -2,6 +2,7 @@ use lru::LruCache;
 use rio_backend::sugarloaf::font_introspector::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use tracing::debug;
 use unicode_width::UnicodeWidthChar;
 
 /// Maximum number of font cache entries to keep in memory
@@ -38,7 +39,14 @@ impl FontCache {
         }
 
         // Fall back to LRU cache
-        self.cache.get(key)
+        let result = self.cache.get(key);
+
+        // Log cache miss for debugging
+        if result.is_none() {
+            debug!("FontCache miss for char='{}' attrs={:?}", key.0, key.1);
+        }
+
+        result
     }
 
     /// Insert font metrics into cache with hot path optimization

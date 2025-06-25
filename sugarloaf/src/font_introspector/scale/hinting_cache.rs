@@ -5,6 +5,7 @@ use skrifa::{
         OutlineGlyphFormat,
     },
 };
+use tracing::debug;
 /// We keep this small to enable a simple LRU cache with a linear
 /// search. Regenerating hinting data is low to medium cost so it's fine
 /// to redo it occasionally.
@@ -48,6 +49,11 @@ impl HintingCache {
         self.serial += 1;
         entry.serial = self.serial;
         if !is_current {
+            // Log cache miss for debugging
+            debug!(
+                "HintingCache miss for font_id={:?} size={:?}",
+                key.id, key.size
+            );
             entry.id = key.id;
             entry
                 .instance

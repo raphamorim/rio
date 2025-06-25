@@ -20,6 +20,7 @@ use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use crate::{DrawableChar, SugarCursor};
 use halfbrown::HashMap;
+use tracing::debug;
 
 // First, let's define a structure to store the cached draw operations
 pub struct LineCache {
@@ -199,6 +200,12 @@ impl LineCache {
                 return true;
             }
         }
+
+        // Log cache miss for debugging
+        debug!(
+            "LineCache miss for rich_text_id={} line_number={}",
+            rich_text_id, line_number
+        );
         false
     }
 }
