@@ -1,7 +1,6 @@
-// Unified shader for Rio Terminal - Single Point of Definition (SPD)
-// Handles all rendering types: quads (solid/textured) and text
-// render_mode: 0.0 = quad, 1.0 = text
-// For quads: extended.w = 0.0 (solid) or 1.0 (textured)
+// Ultimate Unified Shader for Rio Terminal - Single Point of Definition (SPD)
+// Everything is a textured quad with different primitive types
+// primitive_type (extended.w): 0.0=solid, 1.0=textured, 2.0=glyph, 3.0=masked_textured
 
 struct Globals {
     transform: mat4x4<f32>,
@@ -14,11 +13,11 @@ struct Globals {
 
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
-    @location(0) position: vec4<f32>,     // x, y, z, render_mode
-    @location(1) color: vec4<f32>,        // r, g, b, a
+    @location(0) position: vec4<f32>,     // x, y, z, transform_mode (0.0=quad, 1.0=simple)
+    @location(1) color: vec4<f32>,        // r, g, b, a (tinting color)
     @location(2) uv_layer: vec4<f32>,     // u, v, layer, mask_layer
     @location(3) size_border: vec4<f32>,  // width, height, border_width, border_radius
-    @location(4) extended: vec4<f32>,     // shadow_blur, shadow_offset_x, shadow_offset_y, texture_flag
+    @location(4) extended: vec4<f32>,     // shadow_blur, shadow_offset_x, shadow_offset_y, primitive_type
 }
 
 struct VertexOutput {
@@ -32,9 +31,9 @@ struct VertexOutput {
     @location(6) border_radius: f32,
     @location(7) shadow_blur: f32,
     @location(8) shadow_offset: vec2<f32>,
-    @location(9) render_mode: f32,
+    @location(9) primitive_type: f32,
     @location(10) world_pos: vec2<f32>,
-    @location(11) texture_flag: f32,
+    @location(11) transform_mode: f32,
 }
 
 // Compute the normalized quad coordinates based on the vertex index
@@ -47,16 +46,6 @@ fn rounded_box_sdf(to_center: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
     return length(max(abs(to_center) - size + vec2<f32>(radius, radius), vec2<f32>(0.0, 0.0))) - radius;
 }
 
-// Select border radius based on fragment position
-fn select_border_radius(radii: vec4<f32>, position: vec2<f32>, center: vec2<f32>) -> f32 {
-    var rx = radii.x;
-    var ry = radii.y;
-    rx = select(radii.x, radii.y, position.x > center.x);
-    ry = select(radii.w, radii.z, position.x > center.x);
-    rx = select(rx, ry, position.y > center.y);
-    return rx;
-}
-
 fn distance_alg(frag_coord: vec2<f32>, position: vec2<f32>, size: vec2<f32>, radius: f32) -> f32 {
     var inner_half_size: vec2<f32> = (size - vec2<f32>(radius, radius) * 2.0) / 2.0;
     var top_left: vec2<f32> = position + vec2<f32>(radius, radius);
@@ -67,7 +56,8 @@ fn distance_alg(frag_coord: vec2<f32>, position: vec2<f32>, size: vec2<f32>, rad
 fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     
-    let render_mode = input.position.w;
+    let transform_mode = input.position.w;
+    let primitive_type = input.extended.w;
     let vertex_pos = vertex_position(input.vertex_index);
     
     // Common setup
@@ -80,13 +70,13 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.border_radius = input.size_border.w;
     out.shadow_blur = input.extended.x;
     out.shadow_offset = input.extended.yz;
-    out.texture_flag = input.extended.w;
-    out.render_mode = render_mode;
+    out.primitive_type = primitive_type;
+    out.transform_mode = transform_mode;
     
     var world_position: vec2<f32>;
     
-    if render_mode == 0.0 {
-        // Quad rendering (solid or textured)
+    if transform_mode == 0.0 {
+        // Complex quad transform (for UI elements, images with borders/shadows)
         var pos: vec2<f32> = (input.position.xy + min(input.extended.yz, vec2<f32>(0.0, 0.0)) - input.extended.x) * globals.scale;
         var scale: vec2<f32> = (input.size_border.xy + vec2<f32>(abs(input.extended.y), abs(input.extended.z)) + input.extended.x * 2.0) * globals.scale;
         var snap: vec2<f32> = vec2<f32>(0.0, 0.0);
@@ -108,16 +98,16 @@ fn vs_main(input: VertexInput) -> VertexOutput {
         world_position = input.position.xy * globals.scale + snap;
         out.position = globals.transform * transform * vec4<f32>(vertex_pos, 0.0, 1.0);
         
-        // For textured quads, set up UV coordinates properly
-        if input.extended.w > 0.0 {
-            // Textured quad - use vertex position as UV base and apply atlas scaling
+        // For textured primitives, set up UV coordinates
+        if primitive_type > 0.0 {
             out.uv = vertex_pos * input.uv_layer.zw + input.uv_layer.xy;
         }
         
-    } else if render_mode == 1.0 {
-        // Text rendering
+    } else {
+        // Simple transform (for text glyphs, simple images)
         world_position = input.position.xy;
         out.position = globals.transform * vec4<f32>(input.position.xy, 0.0, 1.0);
+        // UV coordinates are already set up correctly for simple primitives
     }
     
     out.world_pos = world_position;
@@ -126,26 +116,37 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let render_mode = input.render_mode;
+    let primitive_type = input.primitive_type;
+    var base_color: vec4<f32>;
     
-    if render_mode == 0.0 {
-        // Quad rendering (solid or textured)
-        var base_color: vec4<f32>;
-        
-        if input.texture_flag > 0.0 {
-            // Textured quad - sample from texture
-            base_color = textureSample(main_texture, main_sampler, input.uv, i32(input.layer));
-            // Modulate with vertex color for tinting
-            base_color = base_color * input.color;
+    // Step 1: Get base color based on primitive type
+    if primitive_type == 0.0 {
+        // Solid primitive - use vertex color directly
+        base_color = input.color;
+    } else {
+        // Textured primitive - sample from texture
+        if input.layer > 0.0 {
+            base_color = textureSampleLevel(main_texture, main_sampler, input.uv, i32(input.layer), 0.0);
         } else {
-            // Solid quad - use vertex color
-            base_color = input.color;
+            base_color = textureSample(main_texture, main_sampler, input.uv, i32(input.layer));
         }
         
+        // Apply masking for glyphs (primitive_type 2.0)
+        if primitive_type >= 2.0 && input.mask_layer > 0.0 {
+            let mask_alpha = textureSampleLevel(main_texture, main_sampler, input.uv, i32(input.mask_layer), 0.0).x;
+            base_color = vec4<f32>(base_color.xyz, mask_alpha);
+        }
+        
+        // Apply color tinting for all textured primitives
+        base_color = base_color * input.color;
+    }
+    
+    // Step 2: Apply SDF effects (borders, shadows, rounded corners) for complex transforms
+    if input.transform_mode == 0.0 {
         var mixed_color: vec4<f32> = base_color;
         let border_radius = input.border_radius;
         
-        // Apply border effects (works for both solid and textured quads)
+        // Apply border effects
         if input.border_width > 0.0 {
             let internal_border = max(border_radius - input.border_width, 0.0);
             let internal_distance = distance_alg(
@@ -166,37 +167,27 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             mixed_color = mix(base_color, border_color, vec4<f32>(border_mix));
         }
         
-        // Apply rounded corners (works for both solid and textured quads)
-        let dist = distance_alg(
-            input.position.xy,
-            input.world_pos,
-            input.size,
-            border_radius
-        );
-        
-        let radius_alpha = 1.0 - smoothstep(
-            max(border_radius - 0.5, 0.0),
-            border_radius + 0.5,
-            dist
-        );
-        
-        return vec4<f32>(mixed_color.xyz, mixed_color.w * radius_alpha);
-        
-    } else if render_mode == 1.0 {
-        // Text rendering
-        var out: vec4<f32> = input.color;
-        
-        if input.layer > 0.0 {
-            out = textureSampleLevel(main_texture, main_sampler, input.uv, i32(input.layer), 0.0);
+        // Apply rounded corners
+        if border_radius > 0.0 {
+            let dist = distance_alg(
+                input.position.xy,
+                input.world_pos,
+                input.size,
+                border_radius
+            );
+            
+            let radius_alpha = 1.0 - smoothstep(
+                max(border_radius - 0.5, 0.0),
+                border_radius + 0.5,
+                dist
+            );
+            
+            mixed_color = vec4<f32>(mixed_color.xyz, mixed_color.w * radius_alpha);
         }
         
-        if input.mask_layer > 0.0 {
-            out = vec4<f32>(out.xyz, input.color.a * textureSampleLevel(main_texture, main_sampler, input.uv, i32(input.mask_layer), 0.0).x);
-        }
-        
-        return out;
+        return mixed_color;
+    } else {
+        // Simple primitives (text, simple images) - no SDF effects
+        return base_color;
     }
-    
-    // Fallback
-    return input.color;
 }
