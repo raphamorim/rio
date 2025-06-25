@@ -21,10 +21,54 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use string_cache::DefaultAtom;
+use tracing::debug;
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
 use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
+
+/// Cached content that can be either normal clusters or optimized whitespace
+#[derive(Clone, Debug)]
+pub enum CachedContent {
+    /// Normal glyph clusters
+    Normal(Vec<OwnedGlyphCluster>),
+    /// Optimized repeated whitespace character
+    RepeatedWhitespace {
+        single_cluster: OwnedGlyphCluster,
+        original_count: usize,
+    },
+}
+
+impl CachedContent {
+    /// Expand the cached content to the actual glyph clusters
+    pub fn expand(&self, requested_count: Option<usize>) -> Vec<OwnedGlyphCluster> {
+        match self {
+            CachedContent::Normal(clusters) => clusters.clone(),
+            CachedContent::RepeatedWhitespace {
+                single_cluster,
+                original_count,
+            } => {
+                let count = requested_count.unwrap_or(*original_count);
+                let mut expanded = Vec::with_capacity(count);
+
+                // Calculate the advance of the single cluster
+                let cluster_advance: f32 =
+                    single_cluster.glyphs.iter().map(|g| g.advance).sum();
+
+                for i in 0..count {
+                    let mut new_cluster = single_cluster.clone();
+                    // Adjust the offset for each repetition
+                    let offset = (i as f32) * cluster_advance;
+                    for glyph in &mut new_cluster.glyphs {
+                        glyph.x += offset;
+                    }
+                    expanded.push(new_cluster);
+                }
+                expanded
+            }
+        }
+    }
+}
 
 pub struct RichTextCounter(AtomicUsize);
 
@@ -587,17 +631,39 @@ impl Content {
             let vars: Vec<_> = state.vars.get(font_vars).to_vec();
 
             // Check if the shaped text is already in the cache
-            if let Some(cache_entry) = self.word_cache.get(&font_id, content) {
+            if let Some(cached_content) =
+                self.word_cache.get_cached_content(&font_id, content)
+            {
                 if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
-                    if line.render_data.push_run_without_shaper(
-                        style,
-                        scaled_font_size,
-                        line_number as u32,
-                        cache_entry,
-                        metrics,
-                    ) {
-                        continue;
+                    // Handle different types of cached content
+                    match cached_content {
+                        CachedContent::Normal(clusters) => {
+                            if line.render_data.push_run_without_shaper(
+                                style,
+                                scaled_font_size,
+                                line_number as u32,
+                                clusters,
+                                metrics,
+                            ) {
+                                continue;
+                            }
+                        }
+                        CachedContent::RepeatedWhitespace { .. } => {
+                            // Expand the whitespace sequence to the actual clusters
+                            let expanded_clusters = cached_content.expand(None);
+                            if line.render_data.push_run_without_shaper(
+                                style,
+                                scaled_font_size,
+                                line_number as u32,
+                                &expanded_clusters,
+                                metrics,
+                            ) {
+                                continue;
+                            }
+                        }
                     }
+                } else {
+                    debug!("MetricsCache miss for font_id={}", font_id);
                 }
             }
 
@@ -627,11 +693,14 @@ impl Content {
                     shaper.add_str(content);
 
                     // Cache metrics if needed
-                    state
-                        .metrics_cache
-                        .inner
-                        .entry(font_id)
-                        .or_insert_with(|| shaper.metrics());
+                    let _metrics =
+                        state.metrics_cache.inner.entry(font_id).or_insert_with(|| {
+                            debug!(
+                                "MetricsCache storing new metrics for font_id={}",
+                                font_id
+                            );
+                            shaper.metrics()
+                        });
 
                     // Push run to render data
                     line.render_data.push_run(
@@ -699,11 +768,13 @@ impl StringInterner {
 
 #[derive(Default)]
 pub struct WordCache {
-    pub inner: FxHashMap<usize, LruCache<u64, Vec<OwnedGlyphCluster>>>,
+    pub inner: FxHashMap<usize, LruCache<u64, CachedContent>>,
     stash: Vec<OwnedGlyphCluster>,
     font_id: usize,
     content_hash: u64,
     interner: StringInterner,
+    // Track current content being processed
+    current_content: Option<String>,
 }
 
 impl WordCache {
@@ -714,16 +785,8 @@ impl WordCache {
             font_id: 0,
             content_hash: 0,
             interner: StringInterner::new(),
+            current_content: None,
         }
-    }
-
-    /// Generate a hash-based cache key from content and font_id
-    #[inline]
-    fn cache_key_simple(content: &str, font_id: usize) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        content.hash(&mut hasher);
-        font_id.hash(&mut hasher);
-        hasher.finish()
     }
 
     /// Generate a hash-based cache key from content and font_id
@@ -738,16 +801,87 @@ impl WordCache {
         hasher.finish()
     }
 
+    /// Check if content is a sequence of identical whitespace characters
     #[inline]
-    pub fn get(
+    fn analyze_whitespace_sequence(content: &str) -> Option<(char, usize)> {
+        // Temporarily disable whitespace optimization to debug rendering issues
+        return None;
+
+        #[allow(unreachable_code)]
+        {
+            if content.is_empty() {
+                return None;
+            }
+
+            let first_char = content.chars().next()?;
+            if !first_char.is_whitespace() {
+                return None;
+            }
+
+            // Check if all characters are the same whitespace character
+            let char_count = content.chars().count();
+            if content.chars().all(|c| c == first_char) && char_count > 3 {
+                Some((first_char, char_count))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Get cached content, handling both normal and optimized whitespace
+    #[inline]
+    pub fn get_cached_content(
         &mut self,
         font_id: &usize,
         content: &str,
-    ) -> Option<&Vec<OwnedGlyphCluster>> {
-        let key = Self::cache_key_simple(content, *font_id);
+    ) -> Option<&CachedContent> {
+        let key = self.cache_key_with_interning(content, *font_id);
         if let Some(cache) = self.inner.get_mut(font_id) {
-            return cache.get(&key);
+            if let Some(cached_content) = cache.get(&key) {
+                // Log cache hit with better formatting for whitespace sequences
+                if let Some((whitespace_char, count)) =
+                    Self::analyze_whitespace_sequence(content)
+                {
+                    match cached_content {
+                        CachedContent::RepeatedWhitespace { .. } => {
+                            debug!("WordCache hit (whitespace sequence optimized) for font_id={} char='{}' count={}", 
+                                   font_id, whitespace_char, count);
+                        }
+                        CachedContent::Normal(_) => {
+                            debug!("WordCache hit (whitespace sequence normal) for font_id={} char='{}' count={}", 
+                                   font_id, whitespace_char, count);
+                        }
+                    }
+                } else {
+                    debug!(
+                        "WordCache hit for font_id={} content='{}'",
+                        font_id, content
+                    );
+                }
+
+                return Some(cached_content);
+            } else {
+                // Log cache miss
+                if let Some((whitespace_char, count)) =
+                    Self::analyze_whitespace_sequence(content)
+                {
+                    debug!("WordCache miss (whitespace sequence) for font_id={} char='{}' count={}", 
+                           font_id, whitespace_char, count);
+                } else {
+                    debug!(
+                        "WordCache miss for font_id={} content='{}'",
+                        font_id, content
+                    );
+                }
+            }
+        } else {
+            // Log cache miss when font_id not found
+            debug!(
+                "WordCache miss: font_id={} not found, content='{}'",
+                font_id, content
+            );
         }
+
         None
     }
 
@@ -759,30 +893,64 @@ impl WordCache {
     #[inline]
     pub fn set_content(&mut self, font_id: usize, content: &str) {
         self.font_id = font_id;
-        // Use interning for cache storage to benefit from deduplication
         self.content_hash = self.cache_key_with_interning(content, font_id);
+        self.current_content = Some(content.to_string());
     }
 
     #[inline]
     pub fn finish(&mut self) {
         if self.content_hash != 0 && !self.stash.is_empty() {
+            let content = self
+                .current_content
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("");
+
+            // Determine what type of cached content to store
+            let cached_content = if let Some((whitespace_char, count)) =
+                Self::analyze_whitespace_sequence(content)
+            {
+                if let Some(first_cluster) = self.stash.first() {
+                    debug!("WordCache storing optimized whitespace for font_id={} char='{}' count={} (saved {} clusters)", 
+                           self.font_id, whitespace_char, count, count - 1);
+                    CachedContent::RepeatedWhitespace {
+                        single_cluster: first_cluster.clone(),
+                        original_count: count,
+                    }
+                } else {
+                    // Fallback to normal if no clusters
+                    CachedContent::Normal(std::mem::take(&mut self.stash))
+                }
+            } else {
+                debug!(
+                    "WordCache storing normal content for font_id={} clusters={}",
+                    self.font_id,
+                    self.stash.len()
+                );
+                CachedContent::Normal(std::mem::take(&mut self.stash))
+            };
+
+            // Store in cache
             if let Some(cache) = self.inner.get_mut(&self.font_id) {
-                cache.put(self.content_hash, std::mem::take(&mut self.stash));
+                cache.put(self.content_hash, cached_content);
             } else {
                 // If font id is main
                 let size = if self.font_id == 0 { 512 } else { 128 };
                 let mut cache = LruCache::new(NonZeroUsize::new(size).unwrap());
-                cache.put(self.content_hash, std::mem::take(&mut self.stash));
+                debug!("WordCache creating new cache for font_id={}", self.font_id);
+                cache.put(self.content_hash, cached_content);
                 self.inner.insert(self.font_id, cache);
             }
 
             self.font_id = 0;
             self.content_hash = 0;
+            self.current_content = None;
             return;
         }
         self.stash.clear();
         self.font_id = 0;
         self.content_hash = 0;
+        self.current_content = None;
     }
 }
 

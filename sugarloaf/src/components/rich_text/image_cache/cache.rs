@@ -1,4 +1,5 @@
 use crate::context::Context;
+use tracing::debug;
 
 use super::atlas::*;
 use super::*;
@@ -108,26 +109,16 @@ impl ImageCache {
         }
 
         let atlas_data = self.atlas.alloc.allocate(width, height);
-        // if atlas_data.is_none() {
-        // return None;
-        // Grow atlas to fit
-        // self.max_texture_size += SIZE;
-        // self.atlas.fresh = true;
-        // self.atlas.dirty = true;
-        // self.entries.clear();
-        // println!("{:?}", self.max_texture_size);
-        // self.atlas.alloc = AtlasAllocator::new(self.max_texture_size, self.max_texture_size);
-        // self.atlas.buffer = vec![
-        //     0u8;
-        //     self.max_texture_size as usize * self.max_texture_size as usize * 4
-        // ];
-        // atlas_data = self.atlas.alloc.allocate(width, height);
-        // println!("{:?}", atlas_data);
 
-        // if self.max_texture_size > MAX_SIZE {
-        //     println!("should try to grow or reset atlas");
-        // }
-        // }
+        // Log cache miss when allocation fails
+        if atlas_data.is_none() {
+            debug!(
+                "ImageCache allocation failed for {}x{} - atlas full",
+                width, height
+            );
+            return None;
+        }
+
         let (x, y) = atlas_data?;
         let entry_index = self.entries.len();
         self.entries.push(Entry {

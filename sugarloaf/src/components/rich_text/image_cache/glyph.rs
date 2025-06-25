@@ -12,6 +12,7 @@ use crate::font_introspector::{
 use core::borrow::Borrow;
 use core::hash::{Hash, Hasher};
 use rustc_hash::FxHashMap;
+use tracing::debug;
 use zeno::{Angle, Transform};
 
 // const IS_MACOS: bool = cfg!(target_os = "macos");
@@ -121,6 +122,12 @@ impl GlyphCacheSession<'_> {
                 return Some(*entry);
             }
         }
+
+        // Log cache miss for debugging
+        debug!(
+            "GlyphCache miss for glyph_id={} size={} font={}",
+            id, self.quant_size, self.font
+        );
 
         self.scaled_image.data.clear();
         let font_library_data = self.font_library.inner.read();
