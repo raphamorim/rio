@@ -1,7 +1,9 @@
 use lru::LruCache;
+use rio_backend::sugarloaf::font::background_ops::get_background_ops;
 use rio_backend::sugarloaf::font_introspector::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use tracing::debug;
 use unicode_width::UnicodeWidthChar;
 
@@ -71,11 +73,24 @@ impl FontCache {
         self.hot_cache.is_empty() && self.cache.is_empty()
     }
 
-    /// Clear all cache entries
-    #[allow(dead_code)]
+    /// Clear all cache entries with background cleanup
     pub fn clear(&mut self) {
+        // Schedule background cleanup for any expensive operations
+        get_background_ops().cleanup_cache();
+
         self.hot_cache.clear();
         self.cache.clear();
+    }
+
+    /// Clear cache entries and schedule background cleanup of font data
+    #[allow(dead_code)]
+    pub fn clear_with_font_data(&mut self, font_data: Vec<Arc<Vec<u8>>>) {
+        // Schedule font data release in background to prevent main thread blocking
+        if !font_data.is_empty() {
+            get_background_ops().release_font_data(font_data);
+        }
+
+        self.clear();
     }
 
     /// Pre-populate cache with common characters to improve hit rate
