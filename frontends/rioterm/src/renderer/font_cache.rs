@@ -1,5 +1,5 @@
 use lru::LruCache;
-use rio_backend::sugarloaf::font::background_ops::get_background_ops;
+use rio_backend::sugarloaf::font::ops::FontOps;
 use rio_backend::sugarloaf::font_introspector::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
@@ -73,24 +73,28 @@ impl FontCache {
         self.hot_cache.is_empty() && self.cache.is_empty()
     }
 
-    /// Clear all cache entries with background cleanup
-    pub fn clear(&mut self) {
-        // Schedule background cleanup for any expensive operations
-        get_background_ops().cleanup_cache();
+    /// Clear all cache entries with cleanup
+    pub fn clear(&mut self, font_ops: &FontOps) {
+        // Perform cleanup for any expensive operations
+        font_ops.cleanup_cache();
 
         self.hot_cache.clear();
         self.cache.clear();
     }
 
-    /// Clear cache entries and schedule background cleanup of font data
+    /// Clear cache entries and cleanup font data
     #[allow(dead_code)]
-    pub fn clear_with_font_data(&mut self, font_data: Vec<Arc<Vec<u8>>>) {
-        // Schedule font data release in background to prevent main thread blocking
+    pub fn clear_with_font_data(
+        &mut self,
+        font_ops: &FontOps,
+        font_data: Vec<Arc<Vec<u8>>>,
+    ) {
+        // Release font data synchronously (it's fast enough)
         if !font_data.is_empty() {
-            get_background_ops().release_font_data(font_data);
+            font_ops.release_font_data(font_data);
         }
 
-        self.clear();
+        self.clear(font_ops);
     }
 
     /// Pre-populate cache with common characters to improve hit rate
@@ -207,6 +211,7 @@ mod tests {
     #[test]
     fn test_font_cache_clear() {
         let mut cache = FontCache::new();
+        let font_ops = FontOps::new();
 
         // Add some entries
         for i in 0..10 {
@@ -218,7 +223,7 @@ mod tests {
 
         assert_eq!(cache.len(), 10);
 
-        cache.clear();
+        cache.clear(&font_ops);
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
     }

@@ -1,4 +1,4 @@
-use std::collections::hash_map::DefaultHasher;
+use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tracing::debug;
@@ -88,7 +88,8 @@ pub enum TextDirection {
 /// This replaces the previous separate line cache and shaping cache approach
 pub struct TextRunCache {
     /// Hash table with bucket chaining (256 buckets, 8 items per bucket)
-    buckets: Vec<Vec<(u64, TextRunKey, CachedTextRun)>>,
+    /// Each entry stores both hashes to avoid recomputation during fallback lookup
+    buckets: Vec<Vec<(u64, u64, TextRunKey, CachedTextRun)>>, // (hash_with_color, hash_without_color, key, run)
     /// Total number of cached items
     item_count: usize,
     /// Cache hit/miss statistics
@@ -123,13 +124,19 @@ impl TextRunCache {
     /// Get a cached text run with optional vertex data matching
     /// Returns different cache hit types based on what data is available
     pub fn get(&mut self, key: &TextRunKey) -> Option<CacheHitType> {
-        let hash = self.hash_key(key);
-        let bucket_index = (hash as usize) % 256;
+        let hash_with_color = self.hash_key(key);
+        let bucket_index = (hash_with_color as usize) % 256;
         let bucket = &self.buckets[bucket_index];
 
         // First try exact match (including color for vertex cache)
-        for (stored_hash, stored_key, cached_run) in bucket {
-            if *stored_hash == hash && stored_key == key {
+        for (
+            stored_hash_with_color,
+            _stored_hash_without_color,
+            stored_key,
+            cached_run,
+        ) in bucket
+        {
+            if *stored_hash_with_color == hash_with_color && stored_key == key {
                 self.hits += 1;
 
                 // Check what type of cache hit this is
@@ -158,8 +165,15 @@ impl TextRunCache {
             let bucket_index_without_color = (hash_without_color as usize) % 256;
             let bucket_without_color = &self.buckets[bucket_index_without_color];
 
-            for (stored_hash, stored_key, cached_run) in bucket_without_color {
-                if *stored_hash == hash_without_color && stored_key == &key_without_color
+            for (
+                _stored_hash_with_color,
+                stored_hash_without_color,
+                stored_key,
+                cached_run,
+            ) in bucket_without_color
+            {
+                if *stored_hash_without_color == hash_without_color
+                    && stored_key == &key_without_color
                 {
                     self.hits += 1;
                     self.shaping_hits += 1;
@@ -178,32 +192,45 @@ impl TextRunCache {
         let mut run_with_timestamp = run;
         run_with_timestamp.created_at = self.current_timestamp;
 
-        let hash = self.hash_key(&key);
-        let bucket_index = (hash as usize) % 256;
+        let hash_with_color = self.hash_key(&key);
+
+        // Pre-compute hash without color for faster fallback lookups
+        let key_without_color = TextRunKey {
+            color: None,
+            ..key.clone()
+        };
+        let hash_without_color = self.hash_key(&key_without_color);
+
+        let bucket_index = (hash_with_color as usize) % 256;
         let bucket = &mut self.buckets[bucket_index];
 
         // Check if key already exists and update
-        for (stored_hash, stored_key, cached_run) in bucket.iter_mut() {
-            if *stored_hash == hash && stored_key == &key {
+        for (stored_hash_with_color, stored_hash_without_color, stored_key, cached_run) in
+            bucket.iter_mut()
+        {
+            if *stored_hash_with_color == hash_with_color && stored_key == &key {
                 *cached_run = run_with_timestamp;
+                // Update the hash_without_color in case it changed
+                *stored_hash_without_color = hash_without_color;
                 return;
             }
         }
 
         // Add new entry if bucket has space
         if bucket.len() < 8 {
-            bucket.push((hash, key, run_with_timestamp));
+            bucket.push((hash_with_color, hash_without_color, key, run_with_timestamp));
             self.item_count += 1;
         } else {
             // Replace oldest entry (LRU eviction)
             let oldest_index = bucket
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, (_, _, run))| run.created_at)
+                .min_by_key(|(_, (_, _, _, run))| run.created_at)
                 .map(|(i, _)| i)
                 .unwrap_or(0);
 
-            bucket[oldest_index] = (hash, key, run_with_timestamp);
+            bucket[oldest_index] =
+                (hash_with_color, hash_without_color, key, run_with_timestamp);
         }
 
         // Log cache statistics periodically
@@ -229,12 +256,18 @@ impl TextRunCache {
         base_position: (f32, f32),
         color: [f32; 4],
     ) -> bool {
-        let hash = self.hash_key(key);
-        let bucket_index = (hash as usize) % 256;
+        let hash_with_color = self.hash_key(key);
+        let bucket_index = (hash_with_color as usize) % 256;
         let bucket = &mut self.buckets[bucket_index];
 
-        for (stored_hash, stored_key, cached_run) in bucket.iter_mut() {
-            if *stored_hash == hash && stored_key == key {
+        for (
+            stored_hash_with_color,
+            _stored_hash_without_color,
+            stored_key,
+            cached_run,
+        ) in bucket.iter_mut()
+        {
+            if *stored_hash_with_color == hash_with_color && stored_key == key {
                 cached_run.vertices = Some(Arc::new(vertices));
                 cached_run.base_position = Some(base_position);
                 cached_run.cached_color = Some(color);
@@ -275,9 +308,9 @@ impl TextRunCache {
         )
     }
 
-    /// Hash a text run key efficiently
+    /// Hash a text run key efficiently using FxHasher
     fn hash_key(&self, key: &TextRunKey) -> u64 {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = FxHasher::default();
         key.hash(&mut hasher);
         hasher.finish()
     }
@@ -297,7 +330,7 @@ impl TextRunCache {
         for bucket in &mut self.buckets {
             if bucket.len() > 4 {
                 // Sort by timestamp and keep only the 4 most recent entries
-                bucket.sort_by_key(|(_, _, run)| std::cmp::Reverse(run.created_at));
+                bucket.sort_by_key(|(_, _, _, run)| std::cmp::Reverse(run.created_at));
                 let old_len = bucket.len();
                 bucket.truncate(4);
                 removed += old_len - 4;
@@ -584,5 +617,137 @@ mod tests {
             None,
         );
         assert!(cache.get(&recent_key).is_some());
+    }
+
+    #[test]
+    fn test_performance_optimizations() {
+        // Test 1: TextRunCache with FxHasher and double hash avoidance
+        let mut cache = TextRunCache::new();
+
+        // Test cache misses
+        for i in 0..100 {
+            let key = create_text_run_key(
+                &format!("test text {}", i),
+                400,
+                0,
+                5,
+                12.0,
+                0,
+                TextDirection::LeftToRight,
+                Some([1.0, 1.0, 1.0, 1.0]),
+            );
+
+            // Try lookup (will miss initially)
+            let result = cache.get(&key);
+            assert!(result.is_none(), "Expected cache miss for new key");
+        }
+
+        // Test 2: Verify cache statistics after misses
+        let (items, hits, misses, hit_rate, _, _, _, _) = cache.stats();
+        assert_eq!(items, 0); // No items inserted, only lookups
+        assert_eq!(hits, 0);
+        assert_eq!(misses, 100);
+        assert_eq!(hit_rate, 0.0);
+
+        // Test 3: Insert some items and verify structure
+        for i in 0..10 {
+            let key = create_text_run_key(
+                &format!("cached text {}", i),
+                400,
+                0,
+                5,
+                12.0,
+                0,
+                TextDirection::LeftToRight,
+                Some([1.0, 1.0, 1.0, 1.0]),
+            );
+
+            let run = create_cached_text_run(
+                vec![],
+                0,
+                12.0,
+                false,
+                None,
+                None,
+                None,
+                Some([1.0, 1.0, 1.0, 1.0]),
+            );
+
+            cache.insert(key, run);
+        }
+
+        // Test 4: Verify cache hits work correctly
+        for i in 0..10 {
+            let key = create_text_run_key(
+                &format!("cached text {}", i),
+                400,
+                0,
+                5,
+                12.0,
+                0,
+                TextDirection::LeftToRight,
+                Some([1.0, 1.0, 1.0, 1.0]),
+            );
+
+            let result = cache.get(&key);
+            assert!(result.is_some(), "Expected cache hit for cached text {}", i);
+        }
+
+        // Test 5: Verify improved statistics
+        let (items, hits, misses, hit_rate, _, _, _, _) = cache.stats();
+        assert_eq!(items, 10);
+        assert_eq!(hits, 10);
+        assert_eq!(misses, 100); // Previous misses still count
+        assert!(hit_rate > 0.0);
+
+        // Test 6: Verify double hash optimization - fallback lookup without color
+        let key_with_color = create_text_run_key(
+            "fallback test",
+            400,
+            0,
+            5,
+            12.0,
+            0,
+            TextDirection::LeftToRight,
+            Some([1.0, 0.0, 0.0, 1.0]),
+        );
+
+        let key_without_color = create_text_run_key(
+            "fallback test",
+            400,
+            0,
+            5,
+            12.0,
+            0,
+            TextDirection::LeftToRight,
+            None,
+        );
+
+        // Insert shaping-only data (no color)
+        let run = create_cached_text_run(
+            vec![],
+            0,
+            12.0,
+            false,
+            Some(vec![1, 2, 3]), // Has shaping features
+            None,
+            None,
+            None,
+        );
+        cache.insert(key_without_color, run);
+
+        // Should find shaping data when looking up with color
+        let result = cache.get(&key_with_color);
+        assert!(
+            result.is_some(),
+            "Should find shaping data via fallback lookup"
+        );
+
+        match result.unwrap() {
+            CacheHitType::ShapingOnly(_) => {
+                // Expected - found shaping data without vertex data
+            }
+            _ => panic!("Expected ShapingOnly cache hit type"),
+        }
     }
 }
