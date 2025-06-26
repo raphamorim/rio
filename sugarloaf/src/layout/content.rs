@@ -15,7 +15,6 @@ use crate::layout::RichTextLayout;
 use crate::Graphics;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
@@ -902,10 +901,10 @@ impl WordCache {
     }
 
     /// Generate a hash-based cache key from content and font_id
-    /// Uses string interning for frequently repeated content
+    /// Uses string interning for frequently repeated content and FxHasher for speed
     #[inline]
-    fn cache_key_with_interning(&mut self, content: &str, font_id: usize) -> u64 {
-        let mut hasher = DefaultHasher::new();
+    pub fn cache_key_with_interning(&mut self, content: &str, font_id: usize) -> u64 {
+        let mut hasher = rustc_hash::FxHasher::default();
         // Intern the string to reduce memory usage for repeated content
         let interned = self.interner.intern(content);
         interned.hash(&mut hasher);
@@ -914,24 +913,412 @@ impl WordCache {
     }
 
     /// Check if content is a sequence of identical whitespace characters
+    /// Optimized version with SIMD fast paths for long sequences
     #[inline]
-    fn analyze_whitespace_sequence(content: &str) -> Option<(char, usize)> {
-        if content.is_empty() {
+    pub fn analyze_whitespace_sequence(content: &str) -> Option<(char, usize)> {
+        let bytes = content.as_bytes();
+        if bytes.len() < 4 {
             return None;
         }
 
-        let first_char = content.chars().next()?;
+        // Fast path for ASCII space (most common case)
+        if bytes[0] == b' ' {
+            if Self::simd_check_all_spaces(bytes) {
+                return Some((' ', bytes.len()));
+            }
+            return None; // Mixed content with spaces
+        }
+
+        // Fast path for ASCII tab
+        if bytes[0] == b'\t' {
+            if Self::simd_check_all_tabs(bytes) {
+                return Some(('\t', bytes.len()));
+            }
+            return None; // Mixed content with tabs
+        }
+
+        // Fallback to Unicode char iteration for other whitespace
+        let mut chars = content.chars();
+        let first_char = chars.next()?;
+
         if !first_char.is_whitespace() {
             return None;
         }
 
-        // Check if all characters are the same whitespace character
-        let char_count = content.chars().count();
-        if content.chars().all(|c| c == first_char) && char_count > 3 {
+        // Count chars while checking if all are the same
+        let mut char_count = 1;
+        for ch in chars {
+            if ch != first_char {
+                return None; // Mixed whitespace types
+            }
+            char_count += 1;
+        }
+
+        if char_count >= 4 {
             Some((first_char, char_count))
         } else {
             None
         }
+    }
+
+    /// SIMD-optimized check for all spaces using platform-specific instructions
+    #[inline]
+    fn simd_check_all_spaces(bytes: &[u8]) -> bool {
+        // For very long sequences, use SIMD when available
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        {
+            if bytes.len() >= 32 {
+                return Self::avx2_check_all_spaces(bytes);
+            }
+        }
+
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+        {
+            if bytes.len() >= 16 {
+                return Self::sse2_check_all_spaces(bytes);
+            }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            if bytes.len() >= 16 {
+                return Self::neon_check_all_spaces(bytes);
+            }
+        }
+
+        // Fallback to optimized scalar version
+        Self::scalar_check_all_spaces(bytes)
+    }
+
+    /// SIMD-optimized check for all tabs
+    #[inline]
+    fn simd_check_all_tabs(bytes: &[u8]) -> bool {
+        // Similar SIMD optimization for tabs
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        {
+            if bytes.len() >= 32 {
+                return Self::avx2_check_all_tabs(bytes);
+            }
+        }
+
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+        {
+            if bytes.len() >= 16 {
+                return Self::sse2_check_all_tabs(bytes);
+            }
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            if bytes.len() >= 16 {
+                return Self::neon_check_all_tabs(bytes);
+            }
+        }
+
+        // Fallback to optimized scalar version
+        Self::scalar_check_all_tabs(bytes)
+    }
+
+    /// AVX2 implementation for checking all spaces (32 bytes at a time)
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[inline]
+    fn avx2_check_all_spaces(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+
+            unsafe {
+                let space_vec = _mm256_set1_epi8(b' ' as i8);
+                let mut i = 0;
+
+                // Process 32 bytes at a time
+                while i + 32 <= bytes.len() {
+                    let chunk =
+                        _mm256_loadu_si256(bytes.as_ptr().add(i) as *const __m256i);
+                    let cmp = _mm256_cmpeq_epi8(chunk, space_vec);
+                    let mask = _mm256_movemask_epi8(cmp);
+
+                    if mask != -1 {
+                        return false; // Found non-space character
+                    }
+                    i += 32;
+                }
+
+                // Handle remaining bytes
+                for &byte in &bytes[i..] {
+                    if byte != b' ' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            Self::scalar_check_all_spaces(bytes)
+        }
+    }
+
+    /// SSE2 implementation for checking all spaces (16 bytes at a time)
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    #[inline]
+    fn sse2_check_all_spaces(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+
+            unsafe {
+                let space_vec = _mm_set1_epi8(b' ' as i8);
+                let mut i = 0;
+
+                // Process 16 bytes at a time
+                while i + 16 <= bytes.len() {
+                    let chunk = _mm_loadu_si128(bytes.as_ptr().add(i) as *const __m128i);
+                    let cmp = _mm_cmpeq_epi8(chunk, space_vec);
+                    let mask = _mm_movemask_epi8(cmp);
+
+                    if mask != 0xFFFF {
+                        return false; // Found non-space character
+                    }
+                    i += 16;
+                }
+
+                // Handle remaining bytes
+                for &byte in &bytes[i..] {
+                    if byte != b' ' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            Self::scalar_check_all_spaces(bytes)
+        }
+    }
+
+    /// ARM NEON implementation for checking all spaces
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    fn neon_check_all_spaces(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "aarch64")]
+        {
+            use std::arch::aarch64::*;
+
+            unsafe {
+                let space_vec = vdupq_n_u8(b' ');
+                let mut i = 0;
+
+                // Process 16 bytes at a time
+                while i + 16 <= bytes.len() {
+                    let chunk = vld1q_u8(bytes.as_ptr().add(i));
+                    let cmp = vceqq_u8(chunk, space_vec);
+
+                    // Check if all lanes are true (all spaces)
+                    let min_val = vminvq_u8(cmp);
+                    if min_val == 0 {
+                        return false; // Found non-space character
+                    }
+                    i += 16;
+                }
+
+                // Handle remaining bytes
+                for &byte in &bytes[i..] {
+                    if byte != b' ' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            Self::scalar_check_all_spaces(bytes)
+        }
+    }
+
+    /// Optimized scalar implementation for checking all spaces
+    #[inline]
+    fn scalar_check_all_spaces(bytes: &[u8]) -> bool {
+        // Process 8 bytes at a time using u64 comparison
+        let mut i = 0;
+        let space_pattern = 0x2020202020202020u64; // Eight spaces
+
+        while i + 8 <= bytes.len() {
+            let chunk = u64::from_ne_bytes([
+                bytes[i],
+                bytes[i + 1],
+                bytes[i + 2],
+                bytes[i + 3],
+                bytes[i + 4],
+                bytes[i + 5],
+                bytes[i + 6],
+                bytes[i + 7],
+            ]);
+
+            if chunk != space_pattern {
+                return false;
+            }
+            i += 8;
+        }
+
+        // Handle remaining bytes
+        for &byte in &bytes[i..] {
+            if byte != b' ' {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Similar implementations for tabs (0x09)
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[inline]
+    fn avx2_check_all_tabs(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+
+            unsafe {
+                let tab_vec = _mm256_set1_epi8(b'\t' as i8);
+                let mut i = 0;
+
+                while i + 32 <= bytes.len() {
+                    let chunk =
+                        _mm256_loadu_si256(bytes.as_ptr().add(i) as *const __m256i);
+                    let cmp = _mm256_cmpeq_epi8(chunk, tab_vec);
+                    let mask = _mm256_movemask_epi8(cmp);
+
+                    if mask != -1 {
+                        return false;
+                    }
+                    i += 32;
+                }
+
+                for &byte in &bytes[i..] {
+                    if byte != b'\t' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            Self::scalar_check_all_tabs(bytes)
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse2"))]
+    #[inline]
+    fn sse2_check_all_tabs(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+
+            unsafe {
+                let tab_vec = _mm_set1_epi8(b'\t' as i8);
+                let mut i = 0;
+
+                while i + 16 <= bytes.len() {
+                    let chunk = _mm_loadu_si128(bytes.as_ptr().add(i) as *const __m128i);
+                    let cmp = _mm_cmpeq_epi8(chunk, tab_vec);
+                    let mask = _mm_movemask_epi8(cmp);
+
+                    if mask != 0xFFFF {
+                        return false;
+                    }
+                    i += 16;
+                }
+
+                for &byte in &bytes[i..] {
+                    if byte != b'\t' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            Self::scalar_check_all_tabs(bytes)
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[inline]
+    fn neon_check_all_tabs(bytes: &[u8]) -> bool {
+        #[cfg(target_arch = "aarch64")]
+        {
+            use std::arch::aarch64::*;
+
+            unsafe {
+                let tab_vec = vdupq_n_u8(b'\t');
+                let mut i = 0;
+
+                while i + 16 <= bytes.len() {
+                    let chunk = vld1q_u8(bytes.as_ptr().add(i));
+                    let cmp = vceqq_u8(chunk, tab_vec);
+
+                    let min_val = vminvq_u8(cmp);
+                    if min_val == 0 {
+                        return false;
+                    }
+                    i += 16;
+                }
+
+                for &byte in &bytes[i..] {
+                    if byte != b'\t' {
+                        return false;
+                    }
+                }
+
+                true
+            }
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            Self::scalar_check_all_tabs(bytes)
+        }
+    }
+
+    #[inline]
+    fn scalar_check_all_tabs(bytes: &[u8]) -> bool {
+        let mut i = 0;
+        let tab_pattern = 0x0909090909090909u64; // Eight tabs
+
+        while i + 8 <= bytes.len() {
+            let chunk = u64::from_ne_bytes([
+                bytes[i],
+                bytes[i + 1],
+                bytes[i + 2],
+                bytes[i + 3],
+                bytes[i + 4],
+                bytes[i + 5],
+                bytes[i + 6],
+                bytes[i + 7],
+            ]);
+
+            if chunk != tab_pattern {
+                return false;
+            }
+            i += 8;
+        }
+
+        for &byte in &bytes[i..] {
+            if byte != b'\t' {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Get cached content, handling both normal and optimized whitespace
@@ -2498,5 +2885,157 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_optimized_whitespace_analysis_correctness() {
+        // Test cases covering different scenarios
+        let long_spaces = " ".repeat(100);
+        let long_tabs = "\t".repeat(50);
+        let test_cases = vec![
+            ("    ", true),         // 4 spaces - should optimize
+            ("          ", true),   // 10 spaces - should optimize
+            ("\t\t\t\t", true),     // 4 tabs - should optimize
+            (&long_spaces, true),   // 100 spaces - should optimize
+            (&long_tabs, true),     // 50 tabs - should optimize
+            ("hello world", false), // non-whitespace - should not optimize
+            ("  a  ", false),       // mixed content - should not optimize
+            (" \t  ", false),       // mixed whitespace - should not optimize
+            ("   ", false),         // 3 spaces - below threshold
+            ("\t\t\t", false),      // 3 tabs - below threshold
+        ];
+
+        // Verify correctness of all test cases
+        for (content, should_optimize) in &test_cases {
+            let result = WordCache::analyze_whitespace_sequence(content);
+            if *should_optimize {
+                assert!(
+                    result.is_some(),
+                    "Content '{}' should be optimized but wasn't",
+                    content.escape_debug()
+                );
+                let (ch, count) = result.unwrap();
+                assert!(
+                    ch.is_whitespace(),
+                    "Optimized character '{}' should be whitespace",
+                    ch.escape_debug()
+                );
+                assert!(count >= 4, "Optimized count {} should be >= 4", count);
+                assert_eq!(
+                    count,
+                    content.chars().count(),
+                    "Count should match actual character count"
+                );
+            } else {
+                assert!(
+                    result.is_none(),
+                    "Content '{}' should not be optimized but was: {:?}",
+                    content.escape_debug(),
+                    result
+                );
+            }
+        }
+
+        // Test specific optimization results
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence("    "),
+            Some((' ', 4))
+        );
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence("\t\t\t\t"),
+            Some(('\t', 4))
+        );
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence(&long_spaces),
+            Some((' ', 100))
+        );
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence(&long_tabs),
+            Some(('\t', 50))
+        );
+
+        // Test edge cases
+        assert_eq!(WordCache::analyze_whitespace_sequence(""), None);
+        assert_eq!(WordCache::analyze_whitespace_sequence("a"), None);
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence("   "), // exactly 3
+            None
+        );
+
+        // Test Unicode whitespace
+        let unicode_spaces = "\u{2000}".repeat(4); // En quad
+        assert_eq!(
+            WordCache::analyze_whitespace_sequence(&unicode_spaces),
+            Some(('\u{2000}', 4))
+        );
+    }
+
+    #[test]
+    fn test_word_cache_fx_hasher_functionality() {
+        let mut cache = WordCache::new();
+        let font_id = 0;
+
+        // Test 1: Cache key generation functionality (tests FxHasher)
+        let mut keys = Vec::new();
+        for i in 0..100 {
+            let content = format!("test_word_{}", i);
+            let key = cache.cache_key_with_interning(&content, font_id);
+            keys.push(key);
+        }
+
+        // Verify all keys are unique (no hash collisions for different content)
+        let mut unique_keys = keys.clone();
+        unique_keys.sort();
+        unique_keys.dedup();
+        assert_eq!(keys.len(), unique_keys.len(), "Hash collisions detected");
+
+        // Test 2: Cache lookup functionality (misses)
+        let mut miss_count = 0;
+        for i in 0..100 {
+            let content = format!("test_word_{}", i);
+            if cache.get_cached_content(&font_id, &content).is_none() {
+                miss_count += 1;
+            }
+        }
+
+        assert_eq!(
+            miss_count, 100,
+            "Expected all cache misses, got {} misses out of 100",
+            miss_count
+        );
+
+        // Test 3: String interning functionality
+        let content1 = "repeated_content".to_string();
+        let content2 = "repeated_content".to_string();
+
+        let atom1 = cache.interner.intern(&content1);
+        let atom2 = cache.interner.intern(&content2);
+
+        // Same content should produce same atom (interning working)
+        assert_eq!(
+            atom1, atom2,
+            "String interning should produce same atom for same content"
+        );
+
+        // Test 4: Hash consistency
+        let content = "test_content";
+        let key1 = cache.cache_key_with_interning(content, font_id);
+        let key2 = cache.cache_key_with_interning(content, font_id);
+
+        assert_eq!(key1, key2, "Same content should produce same hash");
+
+        // Different font_id should produce different hash
+        let key3 = cache.cache_key_with_interning(content, font_id + 1);
+        assert_ne!(
+            key1, key3,
+            "Different font_id should produce different hash"
+        );
+
+        // Different content should produce different hash
+        let key4 = cache.cache_key_with_interning("different_content", font_id);
+        assert_ne!(
+            key1, key4,
+            "Different content should produce different hash"
+        );
     }
 }

@@ -3,6 +3,8 @@ mod fallbacks;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
+pub mod ops;
+pub mod text_run_cache;
 
 pub const FONT_ID_REGULAR: usize = 0;
 
