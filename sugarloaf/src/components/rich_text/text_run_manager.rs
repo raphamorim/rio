@@ -12,6 +12,145 @@ use crate::font::text_run_cache::{
 use std::sync::Arc;
 use tracing::debug;
 
+/// Common terminal patterns for cache warming
+/// These patterns are frequently seen in terminal applications and benefit from pre-caching
+const COMMON_TERMINAL_PATTERNS: &[&str] = &[
+    // Common indentation patterns (programming)
+    "    ",             // 4 spaces
+    "        ",         // 8 spaces
+    "            ",     // 12 spaces
+    "                ", // 16 spaces
+    "\t",               // Single tab
+    "\t\t",             // Double tab
+    "\t\t\t",           // Triple tab
+    // Programming keywords and symbols
+    "const ",
+    "let ",
+    "var ",
+    "function ",
+    "class ",
+    "import ",
+    "export ",
+    "return ",
+    "if ",
+    "else ",
+    "for ",
+    "while ",
+    "switch ",
+    "case ",
+    "break ",
+    "continue ",
+    "try ",
+    "catch ",
+    "finally ",
+    "async ",
+    "await ",
+    "public ",
+    "private ",
+    "protected ",
+    "static ",
+    "void ",
+    "int ",
+    "string ",
+    "bool ",
+    "true",
+    "false",
+    "null",
+    "undefined",
+    // Common operators and punctuation
+    " = ",
+    " == ",
+    " === ",
+    " != ",
+    " !== ",
+    " <= ",
+    " >= ",
+    " && ",
+    " || ",
+    " => ",
+    " -> ",
+    "();",
+    "{}",
+    "[]",
+    "();",
+    "{};",
+    "[];",
+    // Shell prompts and common commands
+    "$ ",
+    "# ",
+    "> ",
+    "~ ",
+    "├── ",
+    "└── ",
+    "│   ",
+    "ls ",
+    "cd ",
+    "pwd",
+    "cat ",
+    "grep ",
+    "find ",
+    "git ",
+    "npm ",
+    "cargo ",
+    "make ",
+    "sudo ",
+    // Common file extensions and paths
+    ".js",
+    ".ts",
+    ".rs",
+    ".py",
+    ".go",
+    ".cpp",
+    ".c",
+    ".h",
+    ".json",
+    ".xml",
+    ".html",
+    ".css",
+    ".md",
+    ".txt",
+    ".log",
+    "/usr/",
+    "/home/",
+    "/var/",
+    "/etc/",
+    "./",
+    "../",
+    // Common error/log patterns
+    "Error: ",
+    "Warning: ",
+    "Info: ",
+    "Debug: ",
+    "[ERROR]",
+    "[WARN]",
+    "[INFO]",
+    "[DEBUG]",
+    "FAILED",
+    "SUCCESS",
+    "OK",
+    // Numbers and common values
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "10",
+    "100",
+    "1000",
+    "0.0",
+    "1.0",
+    "-1",
+    // Common terminal output
+    "...",
+    "---",
+    "===",
+    "***",
+    "+++",
+    ">>>",
+    "<<<",
+];
+
 /// Unified text run manager that handles shaping, glyph, and vertex caching
 /// This replaces the previous separate TextRunManager and line cache approach
 pub struct TextRunManager {
@@ -35,6 +174,62 @@ impl TextRunManager {
             glyph_hits: 0,
             cache_misses: 0,
         }
+    }
+
+    /// Warm the cache with common terminal patterns for improved hit rates
+    /// This should be called during initialization with the primary font configuration
+    #[allow(clippy::too_many_arguments)]
+    pub fn warm_cache(
+        &mut self,
+        font_id: usize,
+        font_size: f32,
+        font_weight: u16,
+        font_style: u8,
+        font_stretch: u8,
+        default_color: [f32; 4],
+    ) {
+        debug!(
+            "Warming text run cache with {} common patterns",
+            COMMON_TERMINAL_PATTERNS.len()
+        );
+
+        let mut warmed_count = 0;
+
+        for &pattern in COMMON_TERMINAL_PATTERNS {
+            // Create cache key for this pattern
+            let key = create_text_run_key(
+                pattern,
+                font_weight,
+                font_style,
+                font_stretch,
+                font_size,
+                0, // script
+                TextDirection::LeftToRight,
+                Some(default_color),
+            );
+
+            // Create minimal cached text run for warming (shaping-only level)
+            // In a real implementation, this would be populated by actual shaping
+            let cached_run = create_cached_text_run(
+                vec![], // Empty glyphs - will be populated when actually used
+                font_id,
+                font_size,
+                false, // has_emoji
+                None,  // shaping_features - will be populated on first use
+                None,  // vertices - will be populated on first render
+                None,  // base_position
+                Some(default_color),
+            );
+
+            // Insert into cache for future hits
+            self.unified_cache.insert(key, cached_run);
+            warmed_count += 1;
+        }
+
+        debug!(
+            "Cache warming completed: {} patterns pre-cached",
+            warmed_count
+        );
     }
 
     /// Get cached data for a text run - returns the best available cache level

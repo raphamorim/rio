@@ -5,10 +5,12 @@ mod image_cache;
 mod positioning_tests;
 pub mod text;
 mod text_run_manager;
+mod vertex_pool;
 
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
+use crate::components::rich_text::vertex_pool::VertexPool;
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -50,6 +52,7 @@ pub struct RichTextBrush {
     images: ImageCache,
     glyphs: GlyphCache,
     text_run_manager: TextRunManager,
+    vertex_pool: VertexPool,
 }
 
 impl RichTextBrush {
@@ -266,7 +269,33 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
+            vertex_pool: VertexPool::new(),
         }
+    }
+
+    /// Warm the text run cache with common terminal patterns
+    /// This should be called during initialization to improve cache hit rates
+    pub fn warm_cache(&mut self, _font_library: &FontLibrary) {
+        // Use the default font ID (0) which is always available
+        let font_id = 0; // FONT_ID_REGULAR
+        let font_size = 14.0; // Default terminal font size
+        let default_color = [1.0, 1.0, 1.0, 1.0]; // White text
+
+        self.text_run_manager.warm_cache(
+            font_id,
+            font_size,
+            400, // Normal weight
+            0,   // Normal style
+            5,   // Normal stretch
+            default_color,
+        );
+    }
+
+    /// Get vertex pool statistics for performance monitoring
+    pub fn vertex_pool_stats(
+        &self,
+    ) -> Option<crate::components::rich_text::vertex_pool::VertexPoolStats> {
+        self.vertex_pool.stats()
     }
 
     #[inline]
@@ -321,6 +350,10 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
+
+        // Performance monitoring
+        self.text_run_manager.maintenance();
+        self.vertex_pool.maybe_log_stats();
     }
 
     #[inline]
