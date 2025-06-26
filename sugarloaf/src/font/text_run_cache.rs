@@ -131,11 +131,12 @@ impl TextRunCache {
         for (stored_hash, stored_key, cached_run) in bucket {
             if *stored_hash == hash && stored_key == key {
                 self.hits += 1;
-                
+
                 // Check what type of cache hit this is
-                if cached_run.vertices.is_some() && 
-                   cached_run.cached_color.is_some() && 
-                   key.color.is_some() {
+                if cached_run.vertices.is_some()
+                    && cached_run.cached_color.is_some()
+                    && key.color.is_some()
+                {
                     self.vertex_hits += 1;
                     return Some(CacheHitType::FullRender(cached_run));
                 } else if cached_run.shaping_features.is_some() {
@@ -156,9 +157,10 @@ impl TextRunCache {
             let hash_without_color = self.hash_key(&key_without_color);
             let bucket_index_without_color = (hash_without_color as usize) % 256;
             let bucket_without_color = &self.buckets[bucket_index_without_color];
-            
+
             for (stored_hash, stored_key, cached_run) in bucket_without_color {
-                if *stored_hash == hash_without_color && stored_key == &key_without_color {
+                if *stored_hash == hash_without_color && stored_key == &key_without_color
+                {
                     self.hits += 1;
                     self.shaping_hits += 1;
                     return Some(CacheHitType::ShapingOnly(cached_run));
@@ -175,7 +177,7 @@ impl TextRunCache {
         self.current_timestamp += 1;
         let mut run_with_timestamp = run;
         run_with_timestamp.created_at = self.current_timestamp;
-        
+
         let hash = self.hash_key(&key);
         let bucket_index = (hash as usize) % 256;
         let bucket = &mut self.buckets[bucket_index];
@@ -194,12 +196,13 @@ impl TextRunCache {
             self.item_count += 1;
         } else {
             // Replace oldest entry (LRU eviction)
-            let oldest_index = bucket.iter()
+            let oldest_index = bucket
+                .iter()
                 .enumerate()
                 .min_by_key(|(_, (_, _, run))| run.created_at)
                 .map(|(i, _)| i)
                 .unwrap_or(0);
-            
+
             bucket[oldest_index] = (hash, key, run_with_timestamp);
         }
 
@@ -324,6 +327,7 @@ impl Default for TextRunCache {
 }
 
 /// Helper function to create a text run key from common parameters
+#[allow(clippy::too_many_arguments)]
 pub fn create_text_run_key(
     text: &str,
     font_weight: u16,
@@ -346,12 +350,14 @@ pub fn create_text_run_key(
         script,
         direction,
         // Scale color to avoid float precision issues
-        color: color.map(|c| [
-            (c[0] * 1000.0) as u32,
-            (c[1] * 1000.0) as u32,
-            (c[2] * 1000.0) as u32,
-            (c[3] * 1000.0) as u32,
-        ]),
+        color: color.map(|c| {
+            [
+                (c[0] * 1000.0) as u32,
+                (c[1] * 1000.0) as u32,
+                (c[2] * 1000.0) as u32,
+                (c[3] * 1000.0) as u32,
+            ]
+        }),
     }
 }
 
@@ -365,10 +371,20 @@ pub fn create_shaping_key(
     script: u32,
     direction: TextDirection,
 ) -> TextRunKey {
-    create_text_run_key(text, font_weight, font_style, font_stretch, font_size, script, direction, None)
+    create_text_run_key(
+        text,
+        font_weight,
+        font_style,
+        font_stretch,
+        font_size,
+        script,
+        direction,
+        None,
+    )
 }
 
 /// Helper function to create a cached text run with comprehensive data
+#[allow(clippy::too_many_arguments)]
 pub fn create_cached_text_run(
     glyphs: Vec<ShapedGlyph>,
     font_id: usize,
@@ -380,7 +396,7 @@ pub fn create_cached_text_run(
     color: Option<[f32; 4]>,
 ) -> CachedTextRun {
     let advance_width = glyphs.iter().map(|g| g.x_advance).sum();
-    
+
     CachedTextRun {
         glyphs: Arc::new(glyphs),
         font_id,
@@ -443,15 +459,8 @@ mod tests {
         let mut cache = TextRunCache::new();
 
         // Insert with shaping data only (no color)
-        let shaping_key = create_shaping_key(
-            "hello",
-            400,
-            0,
-            5,
-            12.0,
-            0,
-            TextDirection::LeftToRight,
-        );
+        let shaping_key =
+            create_shaping_key("hello", 400, 0, 5, 12.0, 0, TextDirection::LeftToRight);
 
         let run = create_cached_text_run(
             vec![],
@@ -513,22 +522,14 @@ mod tests {
             Some([1.0, 1.0, 1.0, 1.0]),
         );
 
-        let run = create_cached_text_run(
-            vec![],
-            0,
-            12.0,
-            false,
-            None,
-            None,
-            None,
-            None,
-        );
+        let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
 
         cache.insert(key.clone(), run);
 
         // Update with vertex data
         let vertices = vec![];
-        let updated = cache.update_vertices(&key, vertices, (10.0, 20.0), [1.0, 1.0, 1.0, 1.0]);
+        let updated =
+            cache.update_vertices(&key, vertices, (10.0, 20.0), [1.0, 1.0, 1.0, 1.0]);
         assert!(updated);
 
         // Should now get full render cache hit
@@ -562,23 +563,15 @@ mod tests {
                 None,
             );
 
-            let run = create_cached_text_run(
-                vec![],
-                0,
-                12.0,
-                false,
-                None,
-                None,
-                None,
-                None,
-            );
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
 
             cache.insert(key, run);
         }
 
         // Should not exceed bucket capacity
         assert!(cache.buckets.iter().all(|bucket| bucket.len() <= 8));
-        
+
         // Verify LRU behavior by checking that newer entries are preserved
         let recent_key = create_text_run_key(
             "text9",

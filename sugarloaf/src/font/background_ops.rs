@@ -1,5 +1,8 @@
-use std::sync::{mpsc::{self, Receiver, Sender}, LazyLock};
 use std::sync::Arc;
+use std::sync::{
+    mpsc::{self, Receiver, Sender},
+    LazyLock,
+};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tracing::{debug, error, warn};
@@ -161,7 +164,8 @@ impl Drop for FontBackgroundOps {
 }
 
 /// Global background operations instance using LazyLock for thread safety
-static BACKGROUND_OPS: LazyLock<FontBackgroundOps> = LazyLock::new(FontBackgroundOps::new);
+static BACKGROUND_OPS: LazyLock<FontBackgroundOps> =
+    LazyLock::new(FontBackgroundOps::new);
 
 /// Get the global background operations instance
 pub fn get_background_ops() -> &'static FontBackgroundOps {

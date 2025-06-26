@@ -6,8 +6,8 @@
 // Unified text run manager - replaces separate line cache and shaping cache
 
 use crate::font::text_run_cache::{
-    TextRunCache, create_text_run_key, create_shaping_key, create_cached_text_run,
-    TextDirection, ShapedGlyph, CacheHitType
+    create_cached_text_run, create_shaping_key, create_text_run_key, CacheHitType,
+    ShapedGlyph, TextDirection, TextRunCache,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -38,10 +38,11 @@ impl TextRunManager {
     }
 
     /// Get cached data for a text run - returns the best available cache level
+    #[allow(clippy::too_many_arguments)]
     pub fn get_cached_data(
         &mut self,
         text: &str,
-        font_id: usize,
+        _font_id: usize,
         font_size: f32,
         font_weight: u16,
         font_style: u8,
@@ -100,6 +101,7 @@ impl TextRunManager {
     }
 
     /// Cache shaping data for a text run (first level of caching)
+    #[allow(clippy::too_many_arguments)]
     pub fn cache_shaping_data(
         &mut self,
         text: &str,
@@ -136,73 +138,6 @@ impl TextRunManager {
         self.unified_cache.insert(key, cached_run);
     }
 
-    /// Cache complete render data for a text run (highest level of caching)
-    pub fn cache_render_data(
-        &mut self,
-        text: &str,
-        font_id: usize,
-        font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
-        color: [f32; 4],
-        glyphs: Vec<ShapedGlyph>,
-        vertices: Vec<u8>,
-        base_position: (f32, f32),
-        has_emoji: bool,
-        shaping_features: Option<Vec<u8>>,
-    ) {
-        let key = create_text_run_key(
-            text,
-            font_weight,
-            font_style,
-            font_stretch,
-            font_size,
-            0, // script
-            TextDirection::LeftToRight,
-            Some(color),
-        );
-
-        let cached_run = create_cached_text_run(
-            glyphs,
-            font_id,
-            font_size,
-            has_emoji,
-            shaping_features,
-            Some(vertices),
-            Some(base_position),
-            Some(color),
-        );
-
-        self.unified_cache.insert(key, cached_run);
-    }
-
-    /// Update existing cache entry with vertex data
-    pub fn update_with_vertices(
-        &mut self,
-        text: &str,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
-        font_size: f32,
-        color: [f32; 4],
-        vertices: Vec<u8>,
-        base_position: (f32, f32),
-    ) -> bool {
-        let key = create_text_run_key(
-            text,
-            font_weight,
-            font_style,
-            font_stretch,
-            font_size,
-            0, // script
-            TextDirection::LeftToRight,
-            Some(color),
-        );
-
-        self.unified_cache.update_vertices(&key, vertices, base_position, color)
-    }
-
     /// Apply cached vertices to output, adjusting for new position
     pub fn apply_cached_vertices(
         vertices_data: &[u8],
@@ -214,11 +149,11 @@ impl TextRunManager {
         // In a real implementation, you'd deserialize, adjust positions, and re-serialize
         let dx = new_position.0 - base_position.0;
         let dy = new_position.1 - base_position.1;
-        
+
         // This is a simplified implementation - in practice you'd need to properly
         // deserialize the vertex data, adjust positions, and serialize back
         output_vertices.extend_from_slice(vertices_data);
-        
+
         // TODO: Implement proper vertex position adjustment
         debug!("Applied cached vertices with offset ({}, {})", dx, dy);
     }
@@ -231,8 +166,16 @@ impl TextRunManager {
 
     /// Get comprehensive cache statistics
     pub fn stats(&self) -> TextRunManagerStats {
-        let (items, total_hits, total_misses, hit_rate, vertex_hits, vertex_misses, shaping_hits, shaping_misses) = 
-            self.unified_cache.stats();
+        let (
+            items,
+            total_hits,
+            total_misses,
+            hit_rate,
+            vertex_hits,
+            vertex_misses,
+            shaping_hits,
+            shaping_misses,
+        ) = self.unified_cache.stats();
 
         TextRunManagerStats {
             total_requests: self.total_requests,
@@ -256,13 +199,13 @@ impl TextRunManager {
         if self.unified_cache.needs_cleanup() {
             self.unified_cache.cleanup();
         }
-        
+
         // Log statistics periodically
         if self.total_requests % 1000 == 0 && self.total_requests > 0 {
             let stats = self.stats();
             debug!(
                 "UnifiedTextRunManager stats: {:.1}% hit rate ({} requests), Full: {}, Shaping: {}, Glyphs: {}, Miss: {}, {} items",
-                stats.overall_hit_rate, stats.total_requests, stats.full_render_hits, 
+                stats.overall_hit_rate, stats.total_requests, stats.full_render_hits,
                 stats.shaping_hits, stats.glyph_hits, stats.cache_misses, stats.cache_items
             );
         }
@@ -276,6 +219,7 @@ impl TextRunManager {
 
 /// Result of a cache lookup - indicates what level of cached data is available
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum CacheResult {
     /// Full render data available (glyphs + vertices + shaping)
     FullRender {
@@ -307,6 +251,7 @@ pub enum CacheResult {
 
 /// Comprehensive statistics for the unified text run manager
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TextRunManagerStats {
     pub total_requests: u64,
     pub cache_items: usize,
@@ -334,101 +279,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_unified_cache_levels() {
-        let mut manager = TextRunManager::new();
-        
-        // Test cache miss
-        let result = manager.get_cached_data("hello", 0, 12.0, 400, 0, 5, Some([1.0, 1.0, 1.0, 1.0]));
-        assert!(matches!(result, CacheResult::Miss));
-        
-        // Cache shaping data only
-        let glyphs = vec![ShapedGlyph {
-            glyph_id: 42,
-            x_advance: 10.0,
-            y_advance: 0.0,
-            x_offset: 0.0,
-            y_offset: 0.0,
-            cluster: 0,
-            atlas_coords: None,
-            atlas_layer: None,
-        }];
-        
-        manager.cache_shaping_data("hello", 0, 12.0, 400, 0, 5, glyphs.clone(), false, None);
-        
-        // Should get shaping cache hit
-        let result = manager.get_cached_data("hello", 0, 12.0, 400, 0, 5, Some([1.0, 1.0, 1.0, 1.0]));
-        assert!(matches!(result, CacheResult::ShapingOnly { .. }));
-        
-        // Cache full render data
-        let vertices = vec![];
-        manager.cache_render_data(
-            "hello", 0, 12.0, 400, 0, 5, [1.0, 1.0, 1.0, 1.0],
-            glyphs, vertices, (0.0, 0.0), false, None
-        );
-        
-        // Should get full render cache hit
-        let result = manager.get_cached_data("hello", 0, 12.0, 400, 0, 5, Some([1.0, 1.0, 1.0, 1.0]));
-        assert!(matches!(result, CacheResult::FullRender { .. }));
-        
-        let stats = manager.stats();
-        assert_eq!(stats.total_requests, 3);
-        assert_eq!(stats.cache_misses, 1);
-        assert_eq!(stats.shaping_hits, 1);
-        assert_eq!(stats.full_render_hits, 1);
-    }
-
-    #[test]
     fn test_vertex_positioning() {
         let vertices = vec![1, 2, 3, 4]; // Mock vertex data
         let mut output_vertices = Vec::new();
-        
+
         TextRunManager::apply_cached_vertices(
             &vertices,
             (100.0, 200.0),
             (150.0, 250.0),
-            &mut output_vertices
+            &mut output_vertices,
         );
-        
-        assert_eq!(output_vertices.len(), 4);
-        assert_eq!(output_vertices, vec![1, 2, 3, 4]);
-    }
 
-    #[test]
-    fn test_vertex_update() {
-        let mut manager = TextRunManager::new();
-        
-        // Cache initial render data with color (so we can update it)
-        let glyphs = vec![ShapedGlyph {
-            glyph_id: 42,
-            x_advance: 10.0,
-            y_advance: 0.0,
-            x_offset: 0.0,
-            y_offset: 0.0,
-            cluster: 0,
-            atlas_coords: None,
-            atlas_layer: None,
-        }];
-        
-        // Cache with color initially (but no vertices)
-        manager.cache_render_data(
-            "test", 0, 12.0, 400, 0, 5, [1.0, 1.0, 1.0, 1.0],
-            glyphs, vec![], (0.0, 0.0), false, None
-        );
-        
-        // Update with vertex data
-        let vertices = vec![1, 2, 3, 4]; // Mock vertex data
-        let updated = manager.update_with_vertices(
-            "test", 400, 0, 5, 12.0, [1.0, 1.0, 1.0, 1.0],
-            vertices, (10.0, 20.0)
-        );
-        assert!(updated);
-        
-        // Should now get full render cache hit
-        let result = manager.get_cached_data("test", 0, 12.0, 400, 0, 5, Some([1.0, 1.0, 1.0, 1.0]));
-        if let CacheResult::FullRender { base_position, .. } = result {
-            assert_eq!(base_position, (10.0, 20.0));
-        } else {
-            panic!("Expected full render cache hit");
-        }
+        assert_eq!(output_vertices, vertices);
     }
 }

@@ -30,56 +30,6 @@ impl Compositor {
         self.batches.build_display_list(vertices);
     }
 
-    /// Get current vertex count (for capturing vertices)
-    pub fn vertex_count(&self) -> usize {
-        let mut count = 0;
-        self.batches.build_display_list(&mut Vec::new()); // This is inefficient, but works for now
-        count
-    }
-
-    /// Capture vertices that were added since a given count
-    pub fn capture_vertices_since(&self, since_count: usize, output: &mut Vec<Vertex>) {
-        let mut all_vertices = Vec::new();
-        self.batches.build_display_list(&mut all_vertices);
-        if all_vertices.len() > since_count {
-            output.extend_from_slice(&all_vertices[since_count..]);
-        }
-    }
-
-    /// Draw a text run and optionally capture the generated vertices
-    #[inline]
-    pub fn draw_run_with_capture(
-        &mut self,
-        session: &mut GlyphCacheSession,
-        rect: impl Into<Rect>,
-        depth: f32,
-        style: &TextRunStyle,
-        glyphs: &[Glyph],
-        capture_vertices: bool,
-    ) -> Option<Vec<Vertex>> {
-        let vertices_before = if capture_vertices {
-            let mut temp_vertices = Vec::new();
-            self.batches.build_display_list(&mut temp_vertices);
-            Some(temp_vertices.len())
-        } else {
-            None
-        };
-
-        // Perform the actual rendering
-        self.draw_run_internal(session, rect, depth, style, glyphs);
-
-        // Capture vertices if requested
-        if let Some(before_count) = vertices_before {
-            let mut all_vertices = Vec::new();
-            self.batches.build_display_list(&mut all_vertices);
-            if all_vertices.len() > before_count {
-                return Some(all_vertices[before_count..].to_vec());
-            }
-        }
-
-        None
-    }
-
     /// Standard draw_run method (for compatibility)
     #[inline]
     pub fn draw_run(
@@ -185,12 +135,8 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Underline(cursor_color) => {
-                        let caret_rect = Rect::new(
-                            rect.x,
-                            style.baseline + 1.0,
-                            rect.width,
-                            2.0,
-                        );
+                        let caret_rect =
+                            Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                 }
@@ -306,12 +252,8 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Underline(cursor_color) => {
-                        let caret_rect = Rect::new(
-                            rect.x,
-                            style.baseline + 1.0,
-                            rect.width,
-                            2.0,
-                        );
+                        let caret_rect =
+                            Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                 }

@@ -1,14 +1,14 @@
 mod batch;
 mod compositor;
 mod image_cache;
-pub mod text;
-mod text_run_manager;
 #[cfg(test)]
 mod positioning_tests;
+pub mod text;
+mod text_run_manager;
 
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::text_run_manager::{TextRunManager, CacheResult};
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
+use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -469,10 +469,12 @@ impl RichTextBrush {
                     let run_x = px;
 
                     // Extract text from the run for caching
-                    let run_text = run.glyphs.iter()
+                    let run_text = run
+                        .glyphs
+                        .iter()
                         .filter_map(|g| char::from_u32(g.simple_data().0 as u32))
                         .collect::<String>();
-                    
+
                     // Try to get cached data for this text run
                     let cached_result = if !is_dimensions_only && !run_text.is_empty() {
                         self.text_run_manager.get_cached_data(
@@ -480,7 +482,7 @@ impl RichTextBrush {
                             font,
                             run.size,
                             400, // font_weight - would need to be extracted from font
-                            0,   // font_style - would need to be extracted from font  
+                            0,   // font_style - would need to be extracted from font
                             5,   // font_stretch - would need to be extracted from font
                             Some(run.span.color),
                         )
@@ -489,7 +491,12 @@ impl RichTextBrush {
                     };
 
                     match cached_result {
-                        CacheResult::FullRender { glyphs: cached_glyphs, vertices, base_position, .. } => {
+                        CacheResult::FullRender {
+                            glyphs: cached_glyphs,
+                            vertices,
+                            base_position,
+                            ..
+                        } => {
                             // Use cached render data - apply vertices directly
                             let mut vertex_output = Vec::new();
                             TextRunManager::apply_cached_vertices(
@@ -498,27 +505,35 @@ impl RichTextBrush {
                                 (run_x, py + padding_y),
                                 &mut vertex_output,
                             );
-                            
+
                             // Update position based on cached advance
-                            let cached_advance = cached_glyphs.iter().map(|g| g.x_advance).sum::<f32>();
+                            let cached_advance =
+                                cached_glyphs.iter().map(|g| g.x_advance).sum::<f32>();
                             if is_dimensions_only {
                                 px += cached_advance * char_width;
                             } else {
                                 px += rte_layout.unwrap().dimensions.width * char_width;
                             }
                         }
-                        CacheResult::ShapingOnly { glyphs: cached_glyphs, .. } |
-                        CacheResult::GlyphsOnly { glyphs: cached_glyphs, .. } => {
+                        CacheResult::ShapingOnly {
+                            glyphs: cached_glyphs,
+                            ..
+                        }
+                        | CacheResult::GlyphsOnly {
+                            glyphs: cached_glyphs,
+                            ..
+                        } => {
                             // Use cached glyph data but need to render
                             glyphs.clear();
                             for shaped_glyph in cached_glyphs.iter() {
                                 let x = px;
                                 let y = py + padding_y;
-                                
+
                                 if is_dimensions_only {
                                     px += shaped_glyph.x_advance * char_width;
                                 } else {
-                                    px += rte_layout.unwrap().dimensions.width * char_width;
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
                                 }
 
                                 glyphs.push(Glyph {
@@ -527,7 +542,7 @@ impl RichTextBrush {
                                     y,
                                 });
                             }
-                            
+
                             // Render using cached glyph data
                             if !is_dimensions_only {
                                 let style = TextRunStyle {
@@ -537,18 +552,23 @@ impl RichTextBrush {
                                     cursor: run.span.cursor,
                                     drawable_char: run.span.drawable_char,
                                     background_color: run.span.background_color,
-                                    baseline: baseline,
+                                    baseline,
                                     topline: py - ascent, // Use py for cursor positioning, not baseline
                                     line_height,
                                     padding_y,
                                     line_height_without_mod,
-                                    advance: cached_glyphs.iter().map(|g| g.x_advance).sum(),
+                                    advance: cached_glyphs
+                                        .iter()
+                                        .map(|g| g.x_advance)
+                                        .sum(),
                                     decoration: run.span.decoration,
                                     decoration_color: run.span.decoration_color,
                                 };
 
                                 // Update font session if needed
-                                if font != current_font || style.font_size != current_font_size {
+                                if font != current_font
+                                    || style.font_size != current_font_size
+                                {
                                     current_font = font;
                                     current_font_size = style.font_size;
 
@@ -575,7 +595,7 @@ impl RichTextBrush {
                             // No cached data - need to shape and render from scratch
                             glyphs.clear();
                             let mut shaped_glyphs = Vec::new();
-                            
+
                             for glyph in &run.glyphs {
                                 let x = px;
                                 let y = py + padding_y;
@@ -585,27 +605,26 @@ impl RichTextBrush {
                                 if is_dimensions_only {
                                     px += advance * char_width;
                                 } else {
-                                    px += rte_layout.unwrap().dimensions.width * char_width;
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
                                 }
 
                                 let glyph_id = glyph.simple_data().0;
-                                glyphs.push(Glyph {
-                                    id: glyph_id,
-                                    x,
-                                    y,
-                                });
-                                
+                                glyphs.push(Glyph { id: glyph_id, x, y });
+
                                 // Store for caching
-                                shaped_glyphs.push(crate::font::text_run_cache::ShapedGlyph {
-                                    glyph_id: glyph_id as u32,
-                                    x_advance: advance,
-                                    y_advance: 0.0,
-                                    x_offset: 0.0,
-                                    y_offset: 0.0,
-                                    cluster: 0,
-                                    atlas_coords: None,
-                                    atlas_layer: None,
-                                });
+                                shaped_glyphs.push(
+                                    crate::font::text_run_cache::ShapedGlyph {
+                                        glyph_id: glyph_id as u32,
+                                        x_advance: advance,
+                                        y_advance: 0.0,
+                                        x_offset: 0.0,
+                                        y_offset: 0.0,
+                                        cluster: 0,
+                                        atlas_coords: None,
+                                        atlas_layer: None,
+                                    },
+                                );
                             }
 
                             // Cache the shaped glyphs for future use
@@ -619,7 +638,7 @@ impl RichTextBrush {
                                     5,   // font_stretch
                                     shaped_glyphs,
                                     false, // has_emoji - would need to be detected
-                                    None,  // shaping_features - would need actual shaping data
+                                    None, // shaping_features - would need actual shaping data
                                 );
                             }
 
@@ -632,7 +651,7 @@ impl RichTextBrush {
                                     cursor: run.span.cursor,
                                     drawable_char: run.span.drawable_char,
                                     background_color: run.span.background_color,
-                                    baseline: baseline,
+                                    baseline,
                                     topline: py - ascent, // Use py for cursor positioning, not baseline
                                     line_height,
                                     padding_y,
@@ -643,7 +662,9 @@ impl RichTextBrush {
                                 };
 
                                 // Update font session if needed
-                                if font != current_font || style.font_size != current_font_size {
+                                if font != current_font
+                                    || style.font_size != current_font_size
+                                {
                                     current_font = font;
                                     current_font_size = style.font_size;
 
