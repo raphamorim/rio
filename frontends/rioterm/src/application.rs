@@ -1167,6 +1167,38 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Check for damage and automatically trigger render events (like Alacritty)
+        for (window_id, route) in self.router.routes.iter_mut() {
+            let context_manager = route.window.screen.ctx_mut();
+            let grid = context_manager.current_grid_mut();
+
+            // Check if any context has damage (read-only check, but needs mut for access)
+            let mut needs_redraw = false;
+            for grid_context in grid.contexts().iter() {
+                let terminal = grid_context.context().terminal.lock();
+                if terminal.is_fully_damaged() {
+                    needs_redraw = true;
+                    break;
+                }
+            }
+
+            if needs_redraw {
+                // Skip rendering for unfocused windows if configured
+                if self.config.renderer.disable_unfocused_render
+                    && !route.window.is_focused
+                {
+                    continue;
+                }
+
+                // Send route render event instead of direct request_redraw
+                let route_id = context_manager.current_route();
+                self.event_proxy.send_event(
+                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
+                    *window_id,
+                );
+            }
+        }
+
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
             None => ControlFlow::Wait,

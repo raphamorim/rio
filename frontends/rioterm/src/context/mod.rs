@@ -17,6 +17,7 @@ use crate::performer::Machine;
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
+use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -59,15 +60,16 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
-        let has_updated = (self.renderable_content.selection_range.is_none()
-            && selection_range.is_some())
-            || (self.renderable_content.selection_range.is_some()
-                && selection_range.is_none());
-        self.renderable_content.selection_range = selection_range;
+        let has_updated = self.renderable_content.selection_range != selection_range;
 
         if has_updated {
-            self.renderable_content.has_pending_updates = true;
+            let mut terminal = self.terminal.lock();
+            let display_offset = terminal.display_offset();
+            let columns = terminal.columns();
+            terminal.update_selection_damage(selection_range, display_offset, columns);
         }
+
+        self.renderable_content.selection_range = selection_range;
     }
 
     #[inline]
