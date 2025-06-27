@@ -134,6 +134,11 @@ pub fn default_disable_ctlseqs_alt() -> bool {
     }
 }
 
+#[inline]
+pub fn default_ime_cursor_positioning() -> bool {
+    true
+}
+
 pub fn default_config_file_content() -> String {
     r#"
 # Hide the cursor while typing
@@ -316,10 +321,15 @@ pub fn default_config_file_content() -> String {
 # disable-ctlseqs-alt - Disable ctlseqs with ALT keys
 #   - For example: Terminal.app does not deal with ctlseqs with ALT keys
 #
+# ime-cursor-positioning - Enable IME cursor positioning
+#   - When enabled, the IME input popup will appear at the cursor position
+#   - Default is true
+#
 # Example:
 # [keyboard]
 # use-kitty-keyboard-protocol = false
 # disable-ctlseqs-alt = false
+# ime-cursor-positioning = true
 
 # Fonts
 #

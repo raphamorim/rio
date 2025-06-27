@@ -335,12 +335,14 @@ declare_class!(
             trace_scope!("unmarkText");
             *self.ivars().marked_text.borrow_mut() = NSMutableAttributedString::new();
 
-            let input_context = self.inputContext().expect("input context");
-            input_context.discardMarkedText();
+            // Only discard marked text if we have an input context
+            if let Some(input_context) = self.inputContext() {
+                input_context.discardMarkedText();
+            }
 
             self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
             if self.is_ime_enabled() {
-                // Leave the Preedit self.ivars()
+                // Leave the Preedit state
                 self.ivars().ime_state.set(ImeState::Ground);
             } else {
                 tracing::warn!("Expected to have IME enabled when receiving unmarkText");
@@ -376,10 +378,21 @@ declare_class!(
             _actual_range: *mut NSRange,
         ) -> NSRect {
             trace_scope!("firstRectForCharacterRange:actualRange:");
-            let rect = NSRect::new(
-                self.ivars().ime_position.get(),
-                self.ivars().ime_size.get()
-            );
+
+            let position = self.ivars().ime_position.get();
+            let size = self.ivars().ime_size.get();
+
+            // Validate coordinates before creating rect
+            if position.x.is_nan() || position.y.is_nan() || size.width.is_nan() || size.height.is_nan() {
+                tracing::warn!("Invalid IME coordinates in firstRectForCharacterRange");
+                // Return a default rect at origin with minimal size
+                let default_rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(1.0, 1.0));
+                return self.window()
+                    .convertRectToScreen(self.convertRect_toView(default_rect, None));
+            }
+
+            let rect = NSRect::new(position, size);
+
             // Return value is expected to be in screen coordinates, so we need a conversion here
             self.window()
                 .convertRectToScreen(self.convertRect_toView(rect, None))
@@ -401,10 +414,24 @@ declare_class!(
             };
 
             let is_control = string.chars().next().is_some_and(|c| c.is_control());
+            let has_marked_text = unsafe { self.hasMarkedText() };
 
-            // Commit only if we have marked text.
-            if unsafe { self.hasMarkedText() } && self.is_ime_enabled() && !is_control {
-                self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
+            // Handle emoji and other Unicode input properly
+            if self.is_ime_enabled() {
+                if has_marked_text && !is_control {
+                    // Clear preedit and commit the text
+                    self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
+                    self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
+                    self.ivars().ime_state.set(ImeState::Committed);
+                } else if !is_control && !string.is_empty() {
+                    // Direct input (like emoji picker) without marked text
+                    self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
+                    self.ivars().ime_state.set(ImeState::Committed);
+                }
+            } else if !is_control && !string.is_empty() {
+                // IME is disabled but we still got text input (e.g., emoji picker)
+                // Temporarily enable IME for this input
+                self.queue_event(WindowEvent::Ime(Ime::Enabled));
                 self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                 self.ivars().ime_state.set(ImeState::Committed);
             }
@@ -900,10 +927,46 @@ impl WinitView {
     }
 
     pub(super) fn set_ime_cursor_area(&self, position: NSPoint, size: NSSize) {
+        // Validate coordinates to prevent invalid values that could cause IMK errors
+        if position.x.is_nan()
+            || position.y.is_nan()
+            || position.x < 0.0
+            || position.y < 0.0
+        {
+            tracing::warn!("Invalid IME cursor position: {:?}", position);
+            return;
+        }
+
+        if size.width.is_nan()
+            || size.height.is_nan()
+            || size.width <= 0.0
+            || size.height <= 0.0
+        {
+            tracing::warn!("Invalid IME cursor size: {:?}", size);
+            return;
+        }
+
+        // Only update if position or size has actually changed to avoid unnecessary IMK calls
+        let current_position = self.ivars().ime_position.get();
+        let current_size = self.ivars().ime_size.get();
+
+        if (current_position.x - position.x).abs() < 1.0
+            && (current_position.y - position.y).abs() < 1.0
+            && (current_size.width - size.width).abs() < 1.0
+            && (current_size.height - size.height).abs() < 1.0
+        {
+            return; // No significant change, skip update
+        }
+
         self.ivars().ime_position.set(position);
         self.ivars().ime_size.set(size);
-        let input_context = self.inputContext().expect("input context");
-        input_context.invalidateCharacterCoordinates();
+
+        // Only invalidate if we have an input context and IME is enabled
+        if let Some(input_context) = self.inputContext() {
+            if self.is_ime_enabled() {
+                input_context.invalidateCharacterCoordinates();
+            }
+        }
     }
 
     /// Reset modifiers and emit a synthetic ModifiersChanged event if deemed necessary.

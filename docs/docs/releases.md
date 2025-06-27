@@ -44,6 +44,15 @@ language: 'en'
 - Optimize the character cluster cache for wide space characters.
 - New font atlas, more efficient.
 - Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
+- **IME Cursor Positioning**: Added configurable IME cursor positioning based on terminal cell coordinates
+  - IME input popups now appear precisely at the cursor position
+  - Improves input experience for CJK languages (Chinese, Japanese, Korean)
+  - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
+- **macOS IME Improvements**: Fixed emoji input and IME stability issues
+  - Resolved `IMKCFRunLoopWakeUpReliable` errors when using emoji picker
+  - Improved coordinate validation and error handling for IME positioning
+  - Better handling of direct Unicode input (emoji picker, character viewer)
+  - Added throttling to prevent excessive IME coordinate updates
 - **Documentation**: Added comprehensive manual pages (man pages) for Unix-like systems
   - `man rio` - Main Rio terminal manual page with command-line options
   - `man 5 rio` - Complete configuration file format documentation

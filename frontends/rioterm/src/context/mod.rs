@@ -104,6 +104,7 @@ pub struct ContextManagerConfig {
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
     pub title: rio_backend::config::title::Title,
+    pub keyboard: rio_backend::config::keyboard::Keyboard,
 }
 
 pub struct ContextManager<T: EventListener> {
@@ -901,6 +902,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title,
+            keyboard: config.keyboard,
         };
 
         self.acc_current_route += 1;
