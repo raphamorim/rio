@@ -30,7 +30,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
-    filters_brush: FiltersBrush,
+    filters_brush: Option<FiltersBrush>,
 }
 
 #[derive(Debug)]
@@ -149,7 +149,6 @@ impl Sugarloaf<'_> {
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
-        let filters_brush = FiltersBrush::default();
 
         let instance = Sugarloaf {
             state,
@@ -160,7 +159,7 @@ impl Sugarloaf<'_> {
             background_image: None,
             rich_text_brush,
             graphics: Graphics::default(),
-            filters_brush,
+            filters_brush: None,
         };
 
         Ok(instance)
@@ -231,7 +230,16 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn update_filters(&mut self, filters: &[Filter]) {
-        self.filters_brush.update_filters(&self.ctx, filters);
+        if filters.is_empty() {
+            self.filters_brush = None;
+        } else {
+            if self.filters_brush.is_none() {
+                self.filters_brush = Some(FiltersBrush::default());
+            }
+            if let Some(ref mut brush) = self.filters_brush {
+                brush.update_filters(&self.ctx, filters);
+            }
+        }
     }
 
     #[inline]
@@ -442,12 +450,14 @@ impl Sugarloaf<'_> {
                     self.graphics.clear_top_layer();
                 }
 
-                self.filters_brush.render(
-                    &self.ctx,
-                    &mut encoder,
-                    &frame.texture,
-                    &frame.texture,
-                );
+                if let Some(ref mut filters_brush) = self.filters_brush {
+                    filters_brush.render(
+                        &self.ctx,
+                        &mut encoder,
+                        &frame.texture,
+                        &frame.texture,
+                    );
+                }
 
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
