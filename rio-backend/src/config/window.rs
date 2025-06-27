@@ -104,6 +104,21 @@ pub struct Window {
     pub windows_corner_preference: Option<WindowsCornerPreference>,
     #[serde(default = "Colorspace::default")]
     pub colorspace: Colorspace,
+    #[serde(
+        rename = "quake-width-percentage",
+        default = "default_quake_width_percentage"
+    )]
+    pub quake_width_percentage: f32,
+    #[serde(
+        rename = "quake-height-percentage",
+        default = "default_quake_height_percentage"
+    )]
+    pub quake_height_percentage: f32,
+    #[serde(
+        rename = "quake-animation-duration",
+        default = "default_quake_animation_duration"
+    )]
+    pub quake_animation_duration: f32,
 }
 
 impl Default for Window {
@@ -123,6 +138,9 @@ impl Default for Window {
             windows_use_no_redirection_bitmap: None,
             windows_corner_preference: None,
             colorspace: Colorspace::default(),
+            quake_width_percentage: default_quake_width_percentage(),
+            quake_height_percentage: default_quake_height_percentage(),
+            quake_animation_duration: default_quake_animation_duration(),
         }
     }
 }

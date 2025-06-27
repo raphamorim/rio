@@ -58,6 +58,9 @@ pub enum RioEvent {
     UpdateFontSize(u8),
     Scroll(Scroll),
     ToggleFullScreen,
+    ToggleQuake,
+    QuakeGlobalHotkey,
+    FocusWindow,
     Minimize(bool),
     Hide,
     HideOtherApplications,
@@ -188,6 +191,9 @@ impl Debug for RioEvent {
                 write!(f, "ReportToAssistant({})", error_report.report)
             }
             RioEvent::ToggleFullScreen => write!(f, "FullScreen"),
+            RioEvent::ToggleQuake => write!(f, "ToggleQuake"),
+            RioEvent::QuakeGlobalHotkey => write!(f, "QuakeGlobalHotkey"),
+            RioEvent::FocusWindow => write!(f, "FocusWindow"),
             RioEvent::BlinkCursor(timeout, route_id) => {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }

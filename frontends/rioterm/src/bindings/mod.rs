@@ -258,6 +258,8 @@ impl From<String> for Action {
             "selectprevsplitortab" => Some(Action::SelectPrevSplitOrTab),
             "togglevimode" => Some(Action::ToggleViMode),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
+            "togglequake" => Some(Action::ToggleQuake),
+            "quakeglobalhotkey" => Some(Action::QuakeGlobalHotkey),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -434,6 +436,11 @@ pub enum Action {
     /// Toggle fullscreen.
     #[allow(dead_code)]
     ToggleFullscreen,
+
+    /// Toggle Quake mode.
+    #[allow(dead_code)]
+    ToggleQuake,
+    QuakeGlobalHotkey,
 
     /// Toggle maximized.
     #[allow(dead_code)]
@@ -770,6 +777,7 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "8" => (Key::Character("8".into()), KeyLocation::Standard),
             "9" => (Key::Character("9".into()), KeyLocation::Standard),
             "0" => (Key::Character("0".into()), KeyLocation::Standard),
+            "grave" => (Key::Character("`".into()), KeyLocation::Standard),
 
             // Special case numpad.
             "numpadenter" => (Key::Named(Enter), KeyLocation::Numpad),
@@ -921,6 +929,8 @@ pub fn platform_key_bindings(
         "k", ModifiersState::SUPER, ~BindingMode::VI;  Action::ClearHistory;
         "v", ModifiersState::SUPER, ~BindingMode::VI; Action::Paste;
         "f", ModifiersState::CONTROL | ModifiersState::SUPER; Action::ToggleFullscreen;
+        Key::Named(Escape), ModifiersState::SUPER; Action::ToggleQuake;
+        Key::Named(Escape), ModifiersState::SUPER | ModifiersState::SHIFT; Action::QuakeGlobalHotkey;
         "c", ModifiersState::SUPER; Action::Copy;
         "c", ModifiersState::SUPER, +BindingMode::VI; Action::ClearSelection;
         "h", ModifiersState::SUPER; Action::Hide;

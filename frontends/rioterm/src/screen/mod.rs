@@ -996,6 +996,14 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleFullscreen => self.context_manager.toggle_full_screen(),
+                    Act::ToggleQuake => {
+                        tracing::info!("ToggleQuake action triggered!");
+                        self.context_manager.toggle_quake();
+                    }
+                    Act::QuakeGlobalHotkey => {
+                        tracing::info!("QuakeGlobalHotkey action triggered!");
+                        self.context_manager.quake_global_hotkey();
+                    }
                     Act::Minimize => {
                         self.context_manager.minimize();
                     }

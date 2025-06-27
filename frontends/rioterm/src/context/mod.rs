@@ -584,6 +584,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    pub fn toggle_quake(&mut self) {
+        tracing::info!("toggle_quake called, sending ToggleQuake event");
+        self.event_proxy
+            .send_event(RioEvent::ToggleQuake, self.window_id);
+    }
+
+    #[inline]
+    pub fn quake_global_hotkey(&mut self) {
+        tracing::info!("quake_global_hotkey called, sending QuakeGlobalHotkey event");
+        self.event_proxy
+            .send_event(RioEvent::QuakeGlobalHotkey, self.window_id);
+    }
+
+    #[inline]
     pub fn minimize(&mut self) {
         self.event_proxy
             .send_event(RioEvent::Minimize(true), self.window_id);

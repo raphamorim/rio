@@ -1,4 +1,5 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
+use crate::global_hotkey::GlobalHotkeyManager;
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
@@ -20,7 +21,7 @@ use rio_window::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
 use rio_window::platform::macos::WindowExtMacOS;
 use rio_window::window::WindowId;
-use rio_window::window::{CursorIcon, Fullscreen};
+use rio_window::window::{CursorIcon, Fullscreen, WindowLevel};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,9 @@ pub struct Application<'a> {
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
+    global_hotkey_manager: Option<GlobalHotkeyManager>,
+    #[allow(dead_code)]
+    previous_focused_app: Option<String>,
 }
 
 impl Application<'_> {
@@ -64,6 +68,8 @@ impl Application<'_> {
             event_proxy,
             router,
             scheduler,
+            global_hotkey_manager: None,
+            previous_focused_app: None,
         }
     }
 
@@ -94,6 +100,267 @@ impl Application<'_> {
     ) -> Result<(), Box<dyn Error>> {
         let result = event_loop.run_app(self);
         result.map_err(Into::into)
+    }
+
+    fn setup_global_hotkey(&mut self, window_id: WindowId) {
+        if let Some(hotkey_string) = &self.config.quake_global_hotkey {
+            tracing::info!("Setting up global hotkey: {}", hotkey_string);
+            let mut manager =
+                GlobalHotkeyManager::new(self.event_proxy.clone(), window_id);
+            if let Err(e) = manager.register_hotkey(hotkey_string) {
+                tracing::warn!(
+                    "Failed to register global hotkey '{}': {}",
+                    hotkey_string,
+                    e
+                );
+            } else {
+                tracing::info!("Registered global hotkey: {}", hotkey_string);
+                self.global_hotkey_manager = Some(manager);
+            }
+        } else {
+            tracing::info!("No global hotkey configured (quake-global-hotkey is None)");
+        }
+    }
+
+    fn toggle_quake_window(&mut self, window_id: WindowId) {
+        tracing::info!("toggle_quake_window called for window {:?}", window_id);
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            let window = &route.window.winit_window;
+
+            if route.window.is_quake_mode {
+                // Exit Quake mode - restore previous state
+                tracing::info!("Exiting Quake mode, restoring previous state");
+
+                if let Some(pre_state) = &route.window.pre_quake_state {
+                    // Restore decorations and resizability
+                    window.set_decorations(pre_state.is_decorated);
+                    window.set_resizable(pre_state.is_resizable);
+
+                    // Restore size and position
+                    let logical_size = rio_window::dpi::LogicalSize::new(
+                        pre_state.size.width as f64 / window.scale_factor(),
+                        pre_state.size.height as f64 / window.scale_factor(),
+                    );
+                    let logical_position = rio_window::dpi::LogicalPosition::new(
+                        pre_state.position.x as f64 / window.scale_factor(),
+                        pre_state.position.y as f64 / window.scale_factor(),
+                    );
+
+                    let _ = window.request_inner_size(logical_size);
+                    window.set_outer_position(logical_position);
+
+                    // Restore maximized state if needed
+                    if pre_state.is_maximized {
+                        window.set_maximized(true);
+                    }
+                }
+
+                route.window.is_quake_mode = false;
+                route.window.is_quake_visible = false;
+                route.window.pre_quake_state = None;
+
+                // Reset to normal level when exiting Quake mode
+                #[cfg(target_os = "macos")]
+                {
+                    window.set_window_level(WindowLevel::Normal);
+                }
+            } else {
+                // Enter Quake mode
+                self.enter_quake_mode(window_id);
+                return; // enter_quake_mode handles visibility and focus
+            }
+
+            // Only handle visibility and focus for exiting quake mode
+            tracing::info!(
+                "Setting window visible and focusing after exiting quake mode"
+            );
+            window.set_visible(true);
+            window.focus_window();
+            route.window.is_focused = true;
+
+            tracing::info!(
+                "Quake toggle completed, is_quake_mode: {}",
+                route.window.is_quake_mode
+            );
+        } else {
+            tracing::warn!("No route found for window {:?}", window_id);
+        }
+    }
+
+    fn handle_quake_global_hotkey(&mut self, window_id: WindowId) {
+        tracing::info!(
+            "handle_quake_global_hotkey called for window {:?}",
+            window_id
+        );
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            let window = &route.window.winit_window;
+
+            if route.window.is_quake_mode {
+                // Window is in quake mode - toggle visibility
+                if route.window.is_quake_visible {
+                    // Window is visible - hide it (slide up like Quake console)
+                    tracing::info!("Quake window is visible - hiding it");
+                    window.set_visible(false);
+                    route.window.is_quake_visible = false;
+                } else {
+                    // Window is hidden - show it (slide down like Quake console)
+                    tracing::info!("Quake window is hidden - showing it");
+                    window.set_visible(true);
+                    window.focus_window();
+                    route.window.is_focused = true;
+                    route.window.is_quake_visible = true;
+
+                    #[cfg(target_os = "macos")]
+                    {
+                        // Ensure window stays on top in quake mode
+                        window.set_window_level(WindowLevel::AlwaysOnTop);
+                    }
+                }
+            } else {
+                // Window is not in quake mode - enter quake mode
+                tracing::info!("Window not in quake mode - entering quake mode");
+                self.enter_quake_mode(window_id);
+            }
+        } else {
+            tracing::warn!("No route found for window {:?}", window_id);
+        }
+    }
+
+    fn enter_quake_mode(&mut self, window_id: WindowId) {
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            let window = &route.window.winit_window;
+
+            tracing::info!("Entering Quake mode, saving current state");
+            let current_position = window.outer_position().unwrap_or_default();
+            let current_size = window.inner_size();
+            let is_maximized = window.is_maximized();
+
+            // Save current state
+            route.window.pre_quake_state = Some(crate::router::PreQuakeState {
+                position: current_position,
+                size: current_size,
+                is_maximized,
+                is_decorated: true, // Assume decorated by default
+                is_resizable: true, // Assume resizable by default
+            });
+
+            // Apply Quake mode
+            window.set_maximized(false);
+            window.set_decorations(false);
+            window.set_resizable(false);
+
+            // Get current window position and scale factor
+            let current_window_pos = window.outer_position().unwrap_or_default();
+            let scale_factor = window.scale_factor();
+
+            // AVOID ALL MONITOR DETECTION - use current window position directly
+            let (quake_width, quake_height, quake_x, quake_y) = {
+                tracing::info!("Using direct position-based calculation");
+                tracing::info!(
+                    "Current window position: {}x{}",
+                    current_window_pos.x,
+                    current_window_pos.y
+                );
+
+                // Calculate quake dimensions based on config (assume Studio Display size for now)
+                let estimated_monitor_width = 5120u32;
+                let estimated_monitor_height = 2880u32;
+
+                let quake_width = (estimated_monitor_width as f64
+                    * self.config.window.quake_width_percentage as f64)
+                    as u32;
+                let quake_height = (estimated_monitor_height as f64
+                    * self.config.window.quake_height_percentage as f64)
+                    as u32;
+
+                // Position quake window on the SAME monitor as current window
+                // Keep it on the same monitor but center it horizontally
+                let quake_x = if current_window_pos.x >= 2560 {
+                    // Window is on a large monitor, center within that monitor's bounds
+                    // Find the left edge of the current monitor and center within it
+                    let monitor_left = (current_window_pos.x
+                        / estimated_monitor_width as i32)
+                        * estimated_monitor_width as i32;
+                    monitor_left + (estimated_monitor_width as i32 / 2)
+                        - (quake_width as i32 / 2)
+                } else {
+                    // Window is on the primary/left monitor, center it there
+                    (estimated_monitor_width as i32 / 2) - (quake_width as i32 / 2)
+                };
+
+                // For Y, go to the actual top of the current monitor
+                let quake_y = if current_window_pos.y < 0 {
+                    // Window is above the primary monitor (Studio Display above MacBook)
+                    tracing::info!(
+                        "Window is above primary, calculating top of current monitor"
+                    );
+                    // Find the actual top by using the current Y position
+                    let monitor_top = (current_window_pos.y
+                        / estimated_monitor_height as i32)
+                        * estimated_monitor_height as i32;
+                    tracing::info!(
+                        "Calculated monitor top: {} (current Y: {})",
+                        monitor_top,
+                        current_window_pos.y
+                    );
+                    monitor_top
+                } else {
+                    // Window is on or below primary monitor
+                    tracing::info!("Window is on/below primary, using Y = 0");
+                    0
+                };
+
+                tracing::info!(
+                    "Calculated quake position: {}x{} (size: {}x{})",
+                    quake_x,
+                    quake_y,
+                    quake_width,
+                    quake_height
+                );
+                (quake_width, quake_height, quake_x, quake_y)
+            };
+
+            // Use physical coordinates directly
+            let physical_position =
+                rio_window::dpi::PhysicalPosition::new(quake_x, quake_y);
+            let physical_size =
+                rio_window::dpi::PhysicalSize::new(quake_width, quake_height);
+
+            // Convert to logical
+            let logical_size: rio_window::dpi::LogicalSize<f64> =
+                physical_size.to_logical(scale_factor);
+            let logical_position: rio_window::dpi::LogicalPosition<f64> =
+                physical_position.to_logical(scale_factor);
+
+            tracing::info!(
+                "Setting logical position: {}x{}",
+                logical_position.x,
+                logical_position.y
+            );
+
+            let _ = window.request_inner_size(logical_size);
+            window.set_outer_position(logical_position);
+
+            route.window.is_quake_mode = true;
+
+            // Always ensure window is visible and focused after entering quake mode
+            tracing::info!("Setting window visible and focusing");
+            window.set_visible(true);
+
+            // Set window level appropriately
+            #[cfg(target_os = "macos")]
+            {
+                // Set window level to always on top for Quake mode
+                window.set_window_level(WindowLevel::AlwaysOnTop);
+            }
+
+            // Focus the window and mark route as focused
+            window.focus_window();
+            route.window.is_focused = true;
+            route.window.is_quake_visible = true;
+
+            tracing::info!("Entered quake mode successfully");
+        }
     }
 }
 
@@ -127,12 +394,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         update_colors_based_on_theme(&mut self.config, event_loop.system_theme());
 
+        // Create normal window - Quake mode is now a toggleable state
         self.router.create_window(
             event_loop,
             self.event_proxy.clone(),
             &self.config,
             None,
         );
+
+        // Set up global hotkey for any window if configured
+        if let Some(_hotkey_string) = &self.config.quake_global_hotkey {
+            if let Some((window_id, _)) = self.router.routes.iter().last() {
+                let window_id = *window_id;
+                self.setup_global_hotkey(window_id);
+            }
+        }
 
         // Schedule title updates every 1s
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
@@ -588,6 +864,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         _ => route.window.winit_window.set_fullscreen(None),
                     }
                 }
+            }
+            RioEventType::Rio(RioEvent::ToggleQuake) => {
+                self.toggle_quake_window(window_id);
+            }
+            RioEventType::Rio(RioEvent::QuakeGlobalHotkey) => {
+                self.handle_quake_global_hotkey(window_id);
             }
             _ => {}
         }
@@ -1072,6 +1354,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let has_regained_focus = !route.window.is_focused && focused;
                 route.window.is_focused = focused;
+
+                // Handle quake mode focus loss - hide window when clicking outside
+                if route.window.is_quake_mode && !focused {
+                    tracing::info!("Quake window lost focus - hiding window");
+                    route.window.winit_window.set_visible(false);
+                    route.window.is_quake_visible = false;
+                }
 
                 if has_regained_focus {
                     route.request_redraw();

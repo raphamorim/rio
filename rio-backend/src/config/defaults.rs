@@ -139,6 +139,21 @@ pub fn default_ime_cursor_positioning() -> bool {
     true
 }
 
+#[inline]
+pub fn default_quake_width_percentage() -> f32 {
+    1.0
+}
+
+#[inline]
+pub fn default_quake_height_percentage() -> f32 {
+    0.5
+}
+
+#[inline]
+pub fn default_quake_animation_duration() -> f32 {
+    0.2
+}
+
 pub fn default_config_file_content() -> String {
     r#"
 # Hide the cursor while typing
@@ -273,6 +288,11 @@ pub fn default_config_file_content() -> String {
 #     - "display-p3" (default on macOS)
 #     - "rec2020"
 #
+# • quake-global-hotkey - Set a global hotkey to toggle quake mode
+#     Format: "modifier+modifier+key" (e.g., "cmd+shift+escape")
+#     Modifiers: cmd/super, ctrl/control, alt/option, shift
+#     Keys: escape, space, enter, tab, backspace, delete, f1-f12, a-z, 0-9
+#
 # Example:
 # [window]
 # width = 600
@@ -282,6 +302,7 @@ pub fn default_config_file_content() -> String {
 # blur = false
 # decorations = "enabled"
 # colorspace = "display-p3"
+# quake-global-hotkey = "cmd+shift+escape"
 
 # Renderer
 #

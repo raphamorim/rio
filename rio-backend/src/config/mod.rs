@@ -159,6 +159,10 @@ pub struct Config {
     pub renderer: Renderer,
     #[serde(default = "bool::default", rename = "draw-bold-text-with-light-colors")]
     pub draw_bold_text_with_light_colors: bool,
+    #[serde(default = "Option::default", rename = "quake-global-hotkey")]
+    pub quake_global_hotkey: Option<String>,
+    #[serde(default = "Option::default", rename = "focus-global-hotkey")]
+    pub focus_global_hotkey: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -528,6 +532,8 @@ impl Default for Config {
             confirm_before_quit: true,
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
+            quake_global_hotkey: None,
+            focus_global_hotkey: None,
         }
     }
 }

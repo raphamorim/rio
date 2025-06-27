@@ -1,5 +1,5 @@
 pub mod routes;
-mod window;
+pub mod window;
 use crate::event::EventProxy;
 use crate::router::window::{configure_window, create_window_builder};
 use crate::screen::{Screen, ScreenWindowProperties};
@@ -8,6 +8,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+use rio_window::dpi::{PhysicalPosition, PhysicalSize};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -20,6 +21,15 @@ use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone)]
+pub struct PreQuakeState {
+    pub position: PhysicalPosition<i32>,
+    pub size: PhysicalSize<u32>,
+    pub is_maximized: bool,
+    pub is_decorated: bool,
+    pub is_resizable: bool,
+}
 
 // 𜱭𜱭 unicode is not available yet for all OS
 // https://www.unicode.org/charts/PDF/Unicode-16.0/U160-1CC00.pdf
@@ -372,6 +382,9 @@ pub struct RouteWindow<'a> {
     pub screen: Screen<'a>,
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
+    pub is_quake_mode: bool,
+    pub is_quake_visible: bool,
+    pub pre_quake_state: Option<PreQuakeState>,
 }
 
 impl<'a> RouteWindow<'a> {
@@ -517,6 +530,9 @@ impl<'a> RouteWindow<'a> {
             screen,
             #[cfg(target_os = "macos")]
             is_macos_deadzone: false,
+            is_quake_mode: false,
+            is_quake_visible: false,
+            pre_quake_state: None,
         }
     }
 }
