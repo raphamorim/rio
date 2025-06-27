@@ -744,11 +744,18 @@ ignore-selection-foreground-color = false
 - `disable-ctlseqs-alt` - Disable ctlseqs with ALT keys
   - Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
 
+- `ime-cursor-positioning` - Enable IME cursor positioning (default: `true`)
+  - When enabled, IME input popups (like emoji picker, character viewer, or CJK input methods) will appear precisely at the cursor position
+  - Improves input experience for languages that require IME (Chinese, Japanese, Korean, etc.)
+  - Automatically updates position when cursor moves via keyboard, mouse, or any other method
+  - Set to `false` to use system default IME positioning behavior
+
 Example:
 
 ```toml
 [keyboard]
 disable-ctlseqs-alt = false
+ime-cursor-positioning = true
 ```
 
 ## line-height

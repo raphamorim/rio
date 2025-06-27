@@ -1138,6 +1138,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::Terminal => {
                         route.window.screen.render();
+                        // Update IME cursor position after rendering to ensure it's current
+                        route.window.screen.update_ime_cursor_position_if_needed(
+                            &route.window.winit_window,
+                        );
                     }
                     RoutePath::ConfirmQuit => {
                         route.window.screen.render_dialog(

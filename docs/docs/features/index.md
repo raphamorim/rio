@@ -9,6 +9,7 @@ Short introduction of Rio terminal features.
 
 - [Vi mode](/docs/features/vi-mode)
 - [Hyperlinks](/docs/features/hyperlinks)
+- [IME Support](/docs/features/ime-support)
 - [iTerm2 image protocol](/docs/features/iterm2-image-protocol)
 - [Kitty keyboard protocol](/docs/features/kitty-keyboard-protocol)
 - [RetroArch shaders](/docs/features/retroarch-shaders)
