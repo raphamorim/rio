@@ -1167,7 +1167,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Check for damage and automatically trigger render events (like Alacritty)
+        // Check for damage and automatically trigger render events
         for (window_id, route) in self.router.routes.iter_mut() {
             let context_manager = route.window.screen.ctx_mut();
             let grid = context_manager.current_grid_mut();
