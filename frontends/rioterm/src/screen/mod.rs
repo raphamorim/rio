@@ -1313,9 +1313,15 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
-        current.renderable_content.selection_range = selection.to_range(&terminal);
+        let selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
+
+        // Use set_selection to trigger render
+        current.set_selection(selection_range);
+
+        // Request render to ensure it shows immediately
+        self.context_manager.request_render();
     }
 
     #[inline]
@@ -1376,9 +1382,15 @@ impl Screen<'_> {
             selection.include_all();
         }
 
-        current.renderable_content.selection_range = selection.to_range(&terminal);
+        let selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
+
+        // Use set_selection to trigger render
+        current.set_selection(selection_range);
+
+        // Request render to ensure it shows immediately
+        self.context_manager.request_render();
     }
 
     #[inline]
@@ -2037,6 +2049,9 @@ impl Screen<'_> {
                 self.search_input(c);
             }
         } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
@@ -2058,6 +2073,9 @@ impl Screen<'_> {
                 .messenger
                 .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger

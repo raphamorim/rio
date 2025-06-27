@@ -48,6 +48,24 @@ language: 'en'
   - IME input popups now appear precisely at the cursor position
   - Improves input experience for CJK languages (Chinese, Japanese, Korean)
   - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
+
+### Bug Fixes
+
+- **Selection Rendering**: Fixed selection highlight not appearing on first render
+  - Selection changes now properly trigger damage tracking and rendering
+  - Optimized selection damage to only redraw affected lines for better performance
+  - Selection highlights now appear immediately when making selections
+- **Text Selection**: Fixed selection behavior during input and paste operations
+  - Selection properly clears when typing or pasting text (both bracketed and regular paste)
+  - Selection coordinates remain stable during viewport scrolling (following Alacritty's approach)
+  - Prevents selection from being lost unexpectedly during normal terminal usage
+- **Auto-scroll on Input**: Fixed issue where typing after scrolling up wouldn't automatically scroll to bottom
+  - Now properly scrolls to bottom for both keyboard input and IME/paste operations
+  - Ensures cursor remains visible when typing new content
+- **Scroll Performance**: Improved scrolling performance by optimizing render event handling
+  - Moved scroll display offset update before mouse cursor dirty event
+  - Removed redundant render calls during scroll operations
+  - Implemented centralized damage-based rendering in event loop for better performance
 - **macOS IME Improvements**: Fixed emoji input and IME stability issues
   - Resolved `IMKCFRunLoopWakeUpReliable` errors when using emoji picker
   - Improved coordinate validation and error handling for IME positioning
