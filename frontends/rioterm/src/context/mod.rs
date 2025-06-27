@@ -67,7 +67,6 @@ impl<T: EventListener> Context<T> {
             let display_offset = terminal.display_offset();
             let columns = terminal.columns();
             terminal.update_selection_damage(selection_range, display_offset, columns);
-            self.renderable_content.has_pending_updates = true;
         }
 
         self.renderable_content.selection_range = selection_range;
