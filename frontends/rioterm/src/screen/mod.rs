@@ -84,6 +84,7 @@ pub struct Screen<'screen> {
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
     pub clipboard: Rc<RefCell<Clipboard>>,
+    last_ime_cursor_pos: Option<(f32, f32)>,
 }
 
 pub struct ScreenWindowProperties {
@@ -266,6 +267,7 @@ impl Screen<'_> {
             renderer,
             bindings,
             clipboard,
+            last_ime_cursor_pos: None,
         })
     }
 
@@ -2147,7 +2149,11 @@ impl Screen<'_> {
     }
 
     /// Update IME cursor position based on terminal cursor position
-    pub fn update_ime_cursor_position(&self, window: &rio_window::window::Window) {
+    /// This should be called after rendering to ensure cursor position is current
+    pub fn update_ime_cursor_position_if_needed(
+        &mut self,
+        window: &rio_window::window::Window,
+    ) {
         // Check if IME cursor positioning is enabled in config
         if !self.context_manager.config.keyboard.ime_cursor_positioning {
             return;
@@ -2165,11 +2171,37 @@ impl Screen<'_> {
         let margin_x = layout.margin.x * layout.dimension.scale;
         let margin_y = layout.margin.top_y * layout.dimension.scale;
 
+        // Validate dimensions before calculation
+        if cell_width <= 0.0 || cell_height <= 0.0 {
+            tracing::warn!(
+                "Invalid cell dimensions for IME cursor positioning: {}x{}",
+                cell_width,
+                cell_height
+            );
+            return;
+        }
+
         // Convert grid position to pixel position, centering horizontally in the cell
         let pixel_x =
             margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
         let pixel_y =
             margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+
+        // Validate final coordinates
+        if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
+            tracing::warn!("Invalid IME cursor coordinates: ({}, {})", pixel_x, pixel_y);
+            return;
+        }
+
+        // Check if position has changed significantly to avoid unnecessary updates
+        if let Some((last_x, last_y)) = self.last_ime_cursor_pos {
+            if (pixel_x - last_x).abs() < 1.0 && (pixel_y - last_y).abs() < 1.0 {
+                return; // Position hasn't changed significantly
+            }
+        }
+
+        // Update last position
+        self.last_ime_cursor_pos = Some((pixel_x, pixel_y));
 
         // Set IME cursor area
         window.set_ime_cursor_area(

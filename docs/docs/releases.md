@@ -48,7 +48,11 @@ language: 'en'
   - IME input popups now appear precisely at the cursor position
   - Improves input experience for CJK languages (Chinese, Japanese, Korean)
   - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
-  - Automatically updates position on cursor movement, key input, and mouse clicks
+- **macOS IME Improvements**: Fixed emoji input and IME stability issues
+  - Resolved `IMKCFRunLoopWakeUpReliable` errors when using emoji picker
+  - Improved coordinate validation and error handling for IME positioning
+  - Better handling of direct Unicode input (emoji picker, character viewer)
+  - Added throttling to prevent excessive IME coordinate updates
 
 ### Technical Details
 
