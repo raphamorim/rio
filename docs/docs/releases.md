@@ -44,6 +44,11 @@ language: 'en'
 - Optimize the character cluster cache for wide space characters.
 - New font atlas, more efficient.
 - Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
+- **IME Cursor Positioning**: Added configurable IME cursor positioning based on terminal cell coordinates
+  - IME input popups now appear precisely at the cursor position
+  - Improves input experience for CJK languages (Chinese, Japanese, Korean)
+  - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
+  - Automatically updates position on cursor movement, key input, and mouse clicks
 
 ### Technical Details
 

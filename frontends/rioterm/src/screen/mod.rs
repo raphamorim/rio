@@ -206,6 +206,7 @@ impl Screen<'_> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title.clone(),
+            keyboard: config.keyboard,
         };
 
         let rich_text_id = sugarloaf.create_rich_text();
@@ -403,6 +404,9 @@ impl Screen<'_> {
 
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
+
+        // Update keyboard config in context manager
+        self.context_manager.config.keyboard = config.keyboard;
 
         if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
@@ -2140,5 +2144,37 @@ impl Screen<'_> {
 
         // let duration = start_total.elapsed();
         // println!("Total whole render function is: {:?}\n", duration);
+    }
+
+    /// Update IME cursor position based on terminal cursor position
+    pub fn update_ime_cursor_position(&self, window: &rio_window::window::Window) {
+        // Check if IME cursor positioning is enabled in config
+        if !self.context_manager.config.keyboard.ime_cursor_positioning {
+            return;
+        }
+
+        let current_context = self.context_manager.current();
+        let terminal = current_context.terminal.lock();
+        let cursor_pos = terminal.grid.cursor.pos;
+        let layout = current_context.dimension;
+        drop(terminal);
+
+        // Calculate pixel position of cursor
+        let cell_width = layout.dimension.width;
+        let cell_height = layout.dimension.height;
+        let margin_x = layout.margin.x * layout.dimension.scale;
+        let margin_y = layout.margin.top_y * layout.dimension.scale;
+
+        // Convert grid position to pixel position, centering horizontally in the cell
+        let pixel_x =
+            margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y =
+            margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+
+        // Set IME cursor area
+        window.set_ime_cursor_area(
+            rio_window::dpi::PhysicalPosition::new(pixel_x as f64, pixel_y as f64),
+            rio_window::dpi::PhysicalSize::new(cell_width as f64, cell_height as f64),
+        );
     }
 }

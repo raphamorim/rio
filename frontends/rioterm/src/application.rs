@@ -779,6 +779,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
                                 route.window.screen.on_left_click(pos);
+                                // Update IME cursor position after mouse click
+                                route.window.screen.update_ime_cursor_position(
+                                    &route.window.winit_window,
+                                );
                             }
 
                             route.request_redraw();
@@ -1004,6 +1008,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.context_manager.set_last_typing();
                 route.window.screen.process_key_event(&key_event);
 
+                // Update IME cursor position after key processing
+                route
+                    .window
+                    .screen
+                    .update_ime_cursor_position(&route.window.winit_window);
+
                 if key_event.state == ElementState::Released
                     && self.config.hide_cursor_when_typing
                 {
@@ -1020,6 +1030,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     Ime::Commit(text) => {
                         // Don't use bracketed paste for single char input.
                         route.window.screen.paste(&text, text.chars().count() > 1);
+                        // Update IME cursor position after commit
+                        route
+                            .window
+                            .screen
+                            .update_ime_cursor_position(&route.window.winit_window);
                     }
                     Ime::Preedit(text, cursor_offset) => {
                         let preedit = if text.is_empty() {
@@ -1049,6 +1064,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .current_mut()
                             .ime
                             .set_enabled(true);
+                        // Update IME cursor position when enabled
+                        route
+                            .window
+                            .screen
+                            .update_ime_cursor_position(&route.window.winit_window);
                     }
                     Ime::Disabled => {
                         route
