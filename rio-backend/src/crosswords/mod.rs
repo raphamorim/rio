@@ -316,7 +316,6 @@ impl TermDamageState {
         self.lines[line].expand(left, right);
     }
 
-    #[allow(dead_code)]
     fn damage_selection(
         &mut self,
         selection: SelectionRange,
@@ -519,16 +518,29 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.full
     }
 
-    /// Collect the information about the changes in the lines, which
-    /// could be used to minimize the amount of drawing operations.
-    ///
-    /// The user controlled elements, like `Vi` mode cursor and `Selection` are **not** part of the
-    /// collected damage state. Those could easily be tracked by comparing their old and new
-    /// value between adjacent frames.
-    ///
-    /// After reading damage [`reset_damage`] should be called.
-    ///
-    /// [`reset_damage`]: Self::reset_damage
+    /// Update selection damage tracking.
+    /// This should be called when the selection changes to damage only the affected lines.
+    pub fn update_selection_damage(
+        &mut self,
+        new_selection: Option<SelectionRange>,
+        display_offset: usize,
+        num_cols: usize,
+    ) {
+        // Damage old selection lines if they exist
+        if let Some(old_selection) = self.damage.last_selection {
+            self.damage
+                .damage_selection(old_selection, display_offset, num_cols);
+        }
+
+        // Damage new selection lines if they exist
+        if let Some(new_selection) = new_selection {
+            self.damage
+                .damage_selection(new_selection, display_offset, num_cols);
+        }
+
+        // Update the stored selection
+        self.damage.last_selection = new_selection;
+    }
     #[must_use]
     pub fn damage(&mut self) -> TermDamage<'_> {
         // Ensure the entire terminal is damaged after entering insert mode.

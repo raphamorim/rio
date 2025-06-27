@@ -805,9 +805,7 @@ impl Renderer {
             // let renderable_content = context.renderable_content();
             let force_full_damage = has_active_changed
                 || context.renderable_content.has_pending_updates
-                || is_active
-                    && (context.renderable_content.selection_range.is_some()
-                        || hints.is_some());
+                || is_active && hints.is_some();
 
             let mut specific_lines = None;
             let (colors, display_offset, blinking_cursor, visible_rows) = {
@@ -839,7 +837,10 @@ impl Renderer {
                         for line in lines {
                             own_lines.insert(line.line);
                         }
-                        specific_lines = Some(own_lines);
+                        // Only set specific_lines if there are actually damaged lines
+                        if !own_lines.is_empty() {
+                            specific_lines = Some(own_lines);
+                        }
                     };
                 }
                 terminal.reset_damage();

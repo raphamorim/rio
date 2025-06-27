@@ -51,6 +51,10 @@ language: 'en'
 
 ### Bug Fixes
 
+- **Selection Rendering**: Fixed selection highlight not appearing on first render
+  - Selection changes now properly trigger damage tracking and rendering
+  - Optimized selection damage to only redraw affected lines for better performance
+  - Selection highlights now appear immediately when making selections
 - **Text Selection**: Fixed selection behavior during input and paste operations
   - Selection properly clears when typing or pasting text (both bracketed and regular paste)
   - Selection coordinates remain stable during viewport scrolling (following Alacritty's approach)
