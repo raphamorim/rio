@@ -19,7 +19,6 @@ use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use string_cache::DefaultAtom;
 use tracing::debug;
 
 use crate::font_introspector::Attributes;
@@ -854,36 +853,11 @@ impl Content {
 }
 
 #[derive(Default)]
-pub struct StringInterner {
-    strings: FxHashMap<String, DefaultAtom>,
-}
-
-impl StringInterner {
-    pub fn new() -> Self {
-        Self {
-            strings: FxHashMap::default(),
-        }
-    }
-
-    #[inline]
-    pub fn intern(&mut self, s: &str) -> DefaultAtom {
-        if let Some(atom) = self.strings.get(s) {
-            atom.clone()
-        } else {
-            let atom = DefaultAtom::from(s);
-            self.strings.insert(s.to_string(), atom.clone());
-            atom
-        }
-    }
-}
-
-#[derive(Default)]
 pub struct WordCache {
     pub inner: FxHashMap<usize, LruCache<u64, CachedContent>>,
     stash: Vec<OwnedGlyphCluster>,
     font_id: usize,
     content_hash: u64,
-    interner: StringInterner,
     // Track current content being processed
     current_content: Option<String>,
 }
@@ -895,19 +869,17 @@ impl WordCache {
             stash: Vec::with_capacity(64), // Pre-allocate stash capacity
             font_id: 0,
             content_hash: 0,
-            interner: StringInterner::new(),
             current_content: None,
         }
     }
 
     /// Generate a hash-based cache key from content and font_id
-    /// Uses string interning for frequently repeated content and FxHasher for speed
+    /// Uses direct string hashing to avoid hash collisions from string interning
     #[inline]
     pub fn cache_key_with_interning(&mut self, content: &str, font_id: usize) -> u64 {
         let mut hasher = rustc_hash::FxHasher::default();
-        // Intern the string to reduce memory usage for repeated content
-        let interned = self.interner.intern(content);
-        interned.hash(&mut hasher);
+        // Hash the actual string content directly to avoid atom hash collisions
+        content.hash(&mut hasher);
         font_id.hash(&mut hasher);
         hasher.finish()
     }
@@ -3004,18 +2976,15 @@ mod tests {
             miss_count
         );
 
-        // Test 3: String interning functionality
+        // Test 3: Hash consistency for repeated content
         let content1 = "repeated_content".to_string();
         let content2 = "repeated_content".to_string();
 
-        let atom1 = cache.interner.intern(&content1);
-        let atom2 = cache.interner.intern(&content2);
+        let key1 = cache.cache_key_with_interning(&content1, font_id);
+        let key2 = cache.cache_key_with_interning(&content2, font_id);
 
-        // Same content should produce same atom (interning working)
-        assert_eq!(
-            atom1, atom2,
-            "String interning should produce same atom for same content"
-        );
+        // Same content should produce same hash key
+        assert_eq!(key1, key2, "Same content should produce same hash key");
 
         // Test 4: Hash consistency
         let content = "test_content";
@@ -3036,6 +3005,109 @@ mod tests {
         assert_ne!(
             key1, key4,
             "Different content should produce different hash"
+        );
+    }
+
+    #[test]
+    fn test_hash_collision_along_clone() {
+        let mut cache = WordCache::new();
+        let font_id = 1;
+
+        // Test the specific case reported: "along" vs "clone"
+        let along_key = cache.cache_key_with_interning("along", font_id);
+        let clone_key = cache.cache_key_with_interning("clone", font_id);
+
+        assert_ne!(
+            along_key, clone_key,
+            "Hash collision detected: 'along' and 'clone' produce same hash key! along_key={}, clone_key={}",
+            along_key, clone_key
+        );
+
+        // Test other similar words that might collide
+        let test_words = [
+            "along", "clone", "alone", "close", "clown", "blown", "flown", "grown",
+            "shown", "known", "stone", "phone", "drone", "prone", "throne",
+        ];
+
+        let mut keys = std::collections::HashMap::new();
+        for word in &test_words {
+            let key = cache.cache_key_with_interning(word, font_id);
+            if let Some(existing_word) = keys.get(&key) {
+                panic!(
+                    "Hash collision detected: '{}' and '{}' produce same hash key {}",
+                    word, existing_word, key
+                );
+            }
+            keys.insert(key, word);
+        }
+    }
+
+    #[test]
+    fn test_string_interning_isolation() {
+        let mut cache = WordCache::new();
+
+        // Test that cache keys are different for different content
+        let content1 = "along";
+        let content2 = "clone";
+
+        // Test that cache keys (which now use direct string hashing) are different
+        let key1 = cache.cache_key_with_interning(content1, 1);
+        let key2 = cache.cache_key_with_interning(content2, 1);
+
+        assert_ne!(key1, key2,
+            "Cache keys should be different for 'along' and 'clone' after fix. key1={}, key2={}",
+            key1, key2);
+
+        // Test that same content produces same key
+        let key1_again = cache.cache_key_with_interning(content1, 1);
+        let key2_again = cache.cache_key_with_interning(content2, 1);
+
+        assert_eq!(
+            key1, key1_again,
+            "Same content should produce same cache key"
+        );
+        assert_eq!(
+            key2, key2_again,
+            "Same content should produce same cache key"
+        );
+    }
+
+    #[test]
+    fn test_cache_content_isolation() {
+        let mut cache = WordCache::new();
+        let font_id = 1;
+
+        // Test that cache keys are different for "along" and "clone"
+        let along_key = cache.cache_key_with_interning("along", font_id);
+        let clone_key = cache.cache_key_with_interning("clone", font_id);
+
+        // Verify keys are different (no collision)
+        assert_ne!(along_key, clone_key,
+            "Cache keys should be different for 'along' and 'clone'. along_key={}, clone_key={}",
+            along_key, clone_key);
+
+        // Test that cache lookup returns None for non-existent entries
+        assert!(
+            cache.get_cached_content(&font_id, "along").is_none(),
+            "Cache should be empty initially for 'along'"
+        );
+        assert!(
+            cache.get_cached_content(&font_id, "clone").is_none(),
+            "Cache should be empty initially for 'clone'"
+        );
+
+        // Test that different content produces different cache behavior
+        cache.set_content(font_id, "along");
+        let along_hash = cache.content_hash;
+        cache.finish(); // Reset state
+
+        cache.set_content(font_id, "clone");
+        let clone_hash = cache.content_hash;
+        cache.finish(); // Reset state
+
+        assert_ne!(
+            along_hash, clone_hash,
+            "Content hashes should be different for 'along' and 'clone'"
         );
     }
 }
