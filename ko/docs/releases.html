@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.390fc736.css">
-<script src="/ko/assets/js/runtime~main.5caf197e.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.9ee6b592.js" defer="defer"></script>
 <script src="/ko/assets/js/main.27a75c7a.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -75,6 +75,14 @@
 <li>Optimize the character cluster cache for wide space characters.</li>
 <li>New font atlas, more efficient.</li>
 <li>Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).</li>
+<li><strong>Documentation</strong>: Added comprehensive manual pages (man pages) for Unix-like systems<!-- -->
+<ul>
+<li><code>man rio</code> - Main Rio terminal manual page with command-line options</li>
+<li><code>man 5 rio</code> - Complete configuration file format documentation</li>
+<li><code>man 5 rio-bindings</code> - Key bindings reference and customization guide</li>
+<li>Available in <code>extra/man/</code> directory with build instructions</li>
+</ul>
+</li>
 </ul>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="technical-details">Technical Details<a href="#technical-details" class="hash-link" aria-label="Technical Details에 대한 직접 링크" title="Technical Details에 대한 직접 링크">​</a></h3>
 <p>The performance optimizations in this release represent a significant architectural improvement to Rio&#x27;s text rendering pipeline:</p>
@@ -526,7 +534,7 @@
 <li>Changed default font family to Cascadia Code.</li>
 <li>Changed default width to 800 and default height to 500.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="014">0.1.4<a href="#014" class="hash-link" aria-label="0.1.4에 대한 직접 링크" title="0.1.4에   대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="014">0.1.4<a href="#014" class="hash-link" aria-label="0.1.4에 대한 직접 링크" title="0.1.4에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix Bug Text Rendering Bug <a href="https://github.com/raphamorim/rio/issues/543" target="_blank" rel="noopener noreferrer">#543</a>.</li>
 <li>Fix Abnormal font display and incomplete Navigation content display <a href="https://github.com/raphamorim/rio/issues/554" target="_blank" rel="noopener noreferrer">#554</a>.</li>
@@ -824,7 +832,7 @@
 <li>Implemented <code>working-dir</code> parameter to cli <a href="https://github.com/raphamorim/rio/issues/258" target="_blank" rel="noopener noreferrer">https://github.com/raphamorim/rio/issues/258</a>.</li>
 <li>Remove legacy icns icons from bundle.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0020">0.0.20<a href="#0020" class="hash-link" aria-label="0.0.20에 대한 직접 링크" title="0.0.20에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0020">0.0.20<a href="#0020" class="hash-link" aria-label="0.0.20에 대한 직접 링  크" title="0.0.20에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix retrieve foreground process name to tabs.</li>
 <li>Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.</li>
@@ -990,7 +998,7 @@
 <ul>
 <li>Support to <strong>spawn and fork processes</strong>, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable <code>use-fork</code> in the configuration file:</li>
 </ul>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">use-fork</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드  에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">use-fork</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Introduced <code>RIO_LOG_LEVEL</code> variable usage. (<code>e.g: RIO_LOG_LEVEL=debug rio -e &quot;echo 1&quot;</code>)</li>
 <li>Increased max tabs from 6 to 9.</li>

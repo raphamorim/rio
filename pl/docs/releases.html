@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pl/assets/css/styles.390fc736.css">
-<script src="/pl/assets/js/runtime~main.127e8f00.js" defer="defer"></script>
+<script src="/pl/assets/js/runtime~main.d0b20e32.js" defer="defer"></script>
 <script src="/pl/assets/js/main.2a42770e.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -75,6 +75,14 @@
 <li>Optimize the character cluster cache for wide space characters.</li>
 <li>New font atlas, more efficient.</li>
 <li>Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).</li>
+<li><strong>Documentation</strong>: Added comprehensive manual pages (man pages) for Unix-like systems<!-- -->
+<ul>
+<li><code>man rio</code> - Main Rio terminal manual page with command-line options</li>
+<li><code>man 5 rio</code> - Complete configuration file format documentation</li>
+<li><code>man 5 rio-bindings</code> - Key bindings reference and customization guide</li>
+<li>Available in <code>extra/man/</code> directory with build instructions</li>
+</ul>
+</li>
 </ul>
 <h3 class="anchor anchorWithStickyNavbar_LWe7" id="technical-details">Technical Details<a href="#technical-details" class="hash-link" aria-label="Bezpośredni link do Technical Details" title="Bezpośredni link do Technical Details">​</a></h3>
 <p>The performance optimizations in this release represent a significant architectural improvement to Rio&#x27;s text rendering pipeline:</p>
