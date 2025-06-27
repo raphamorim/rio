@@ -79,3 +79,33 @@ For a less declarative installation:
 ```bash
 nix profile install github:raphamorim/rio/main
 ```
+
+## Manual Pages
+
+After installing Rio, you can optionally install manual pages for offline documentation:
+
+```bash
+# Install scdoc (required to build man pages)
+# Ubuntu/Debian:
+sudo apt install scdoc
+
+# Arch Linux:
+sudo pacman -S scdoc
+
+# Fedora:
+sudo dnf install scdoc
+
+# openSUSE:
+sudo zypper install scdoc
+
+# Build and install man pages from source
+git clone https://github.com/raphamorim/rio.git
+cd rio/extra/man
+make
+sudo make install
+
+# Access documentation
+man rio                # Main Rio manual
+man 5 rio             # Configuration file format
+man 5 rio-bindings    # Key bindings reference
+```

@@ -53,6 +53,11 @@ language: 'en'
   - Improved coordinate validation and error handling for IME positioning
   - Better handling of direct Unicode input (emoji picker, character viewer)
   - Added throttling to prevent excessive IME coordinate updates
+- **Documentation**: Added comprehensive manual pages (man pages) for Unix-like systems
+  - `man rio` - Main Rio terminal manual page with command-line options
+  - `man 5 rio` - Complete configuration file format documentation
+  - `man 5 rio-bindings` - Key bindings reference and customization guide
+  - Available in `extra/man/` directory with build instructions
 
 ### Technical Details
 
