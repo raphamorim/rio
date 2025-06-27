@@ -51,6 +51,10 @@ language: 'en'
 
 ### Bug Fixes
 
+- **Text Selection**: Fixed selection behavior during input and paste operations
+  - Selection properly clears when typing or pasting text (both bracketed and regular paste)
+  - Selection coordinates remain stable during viewport scrolling (following Alacritty's approach)
+  - Prevents selection from being lost unexpectedly during normal terminal usage
 - **Auto-scroll on Input**: Fixed issue where typing after scrolling up wouldn't automatically scroll to bottom
   - Now properly scrolls to bottom for both keyboard input and IME/paste operations
   - Ensures cursor remains visible when typing new content

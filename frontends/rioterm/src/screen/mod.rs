@@ -2038,6 +2038,7 @@ impl Screen<'_> {
             }
         } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
             self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
 
             self.ctx_mut()
                 .current_mut()
@@ -2061,6 +2062,7 @@ impl Screen<'_> {
                 .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
             self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
 
             self.ctx_mut()
                 .current_mut()
