@@ -32,3 +32,30 @@ You can also `RIO_LOG_LEVEL` environment variable for filter logs on-demand, for
 ```sh
 $ RIO_LOG_LEVEL=debug rio -e echo 85
 ```
+
+## Manual Pages
+
+Rio provides comprehensive manual pages that can be installed on Unix-like systems:
+
+- `man rio` - Main Rio terminal manual page
+- `man 5 rio` - Configuration file format documentation
+- `man 5 rio-bindings` - Key bindings reference
+
+### Installing Man Pages
+
+The man pages are available in the `extra/man/` directory and require `scdoc` to build:
+
+```sh
+# Install scdoc (macOS)
+brew install scdoc
+
+# Install scdoc (Ubuntu/Debian)
+sudo apt install scdoc
+
+# Build and install man pages
+cd extra/man
+make
+sudo make install
+```
+
+After installation, you can access the documentation offline using the `man` command.

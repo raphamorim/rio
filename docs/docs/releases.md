@@ -44,6 +44,11 @@ language: 'en'
 - Optimize the character cluster cache for wide space characters.
 - New font atlas, more efficient.
 - Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
+- **Documentation**: Added comprehensive manual pages (man pages) for Unix-like systems
+  - `man rio` - Main Rio terminal manual page with command-line options
+  - `man 5 rio` - Complete configuration file format documentation
+  - `man 5 rio-bindings` - Key bindings reference and customization guide
+  - Available in `extra/man/` directory with build instructions
 
 ### Technical Details
 
