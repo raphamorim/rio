@@ -15,6 +15,7 @@ use sctk::reexports::client::{Connection, Proxy, QueueHandle};
 use sctk::reexports::csd_frame::{
     DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowState as XdgWindowState,
 };
+use sctk::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 use sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
 use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
@@ -28,14 +29,12 @@ use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
-use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
-use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -142,8 +141,7 @@ pub struct WindowState {
 
     viewport: Option<WpViewport>,
     fractional_scale: Option<WpFractionalScaleV1>,
-    blur: Option<OrgKdeKwinBlur>,
-    blur_manager: Option<KWinBlurManager>,
+    background_effect: Option<ExtBackgroundEffectSurfaceV1>,
 
     /// Whether the client side decorations have pending move operations.
     ///
@@ -181,10 +179,13 @@ impl WindowState {
             .fractional_scaling_manager
             .as_ref()
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
+        let background_effect = winit_state
+            .background_effect_manager
+            .as_ref()
+            .map(|bem| bem.background_effect(window.wl_surface(), queue_handle));
 
         Self {
-            blur: None,
-            blur_manager: winit_state.kwin_blur_manager.clone(),
+            background_effect,
             compositor,
             connection,
             csd_fails: false,
@@ -1074,21 +1075,19 @@ impl WindowState {
     /// Make window background blurred
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
-        if blurred && self.blur.is_none() {
-            if let Some(blur_manager) = self.blur_manager.as_ref() {
-                let blur =
-                    blur_manager.blur(self.window.wl_surface(), &self.queue_handle);
-                blur.commit();
-                self.blur = Some(blur);
+        if let Some(background_effect) = self.background_effect.as_ref() {
+            if blurred {
+                if let Ok(region) = Region::new(&*self.compositor) {
+                    region.add(0, 0, i32::MAX, i32::MAX);
+                    background_effect.set_blur_region(Some(region.wl_region()));
+                } else {
+                    warn!("Failed to create blur region for window");
+                }
             } else {
-                info!("Blur manager unavailable, unable to change blur")
+                background_effect.set_blur_region(None);
             }
-        } else if !blurred && self.blur.is_some() {
-            self.blur_manager
-                .as_ref()
-                .unwrap()
-                .unset(self.window.wl_surface());
-            self.blur.take().unwrap().release();
+        } else {
+            info!("Background effect surface unavailable, unable to change blur");
         }
     }
 
@@ -1147,8 +1146,8 @@ impl WindowState {
 
 impl Drop for WindowState {
     fn drop(&mut self) {
-        if let Some(blur) = self.blur.take() {
-            blur.release();
+        if let Some(be) = self.background_effect.take() {
+            be.destroy();
         }
 
         if let Some(fs) = self.fractional_scale.take() {

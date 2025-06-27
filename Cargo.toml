@@ -90,3 +90,8 @@ split-debuginfo = "unpacked"
 lto = false
 incremental = true
 opt-level = 0
+
+[patch.crates-io]
+wayland-backend = { git = "https://github.com/Smithay/wayland-rs.git", rev = "9de018a", optional = true }
+wayland-client = { git = "https://github.com/Smithay/wayland-rs.git", rev = "9de018a", optional = true }
+wayland-protocols = { git = "https://github.com/Smithay/wayland-rs.git", rev = "9de018a", optional = true }
