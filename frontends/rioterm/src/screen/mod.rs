@@ -2037,6 +2037,8 @@ impl Screen<'_> {
                 self.search_input(c);
             }
         } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            self.scroll_bottom_when_cursor_not_visible();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
@@ -2058,6 +2060,8 @@ impl Screen<'_> {
                 .messenger
                 .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
+            self.scroll_bottom_when_cursor_not_visible();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
