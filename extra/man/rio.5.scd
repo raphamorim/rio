@@ -449,4 +449,4 @@ Found a bug? Please report it at _https://github.com/raphamorim/rio/issues_.
 
 # MAINTAINERS
 
-- Raphael Amorim <rapha@raphamorim.io>
+- Raphael Amorim <rapha850@gmail.com>
