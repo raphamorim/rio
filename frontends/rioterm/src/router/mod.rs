@@ -365,6 +365,7 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
+    pub needs_render_after_occlusion: bool,
     has_fps_target: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
@@ -380,6 +381,11 @@ impl<'a> RouteWindow<'a> {
     }
 
     pub fn wait_until(&self) -> Option<Duration> {
+        // If we need to render after occlusion, render immediately
+        if self.needs_render_after_occlusion {
+            return None;
+        }
+
         let now = Instant::now();
         let elapsed = now.duration_since(self.render_timestamp);
         let vblank = self.vblank_interval;
@@ -513,6 +519,7 @@ impl<'a> RouteWindow<'a> {
             render_timestamp: Instant::now(),
             is_focused: true,
             is_occluded: false,
+            needs_render_after_occlusion: false,
             winit_window,
             screen,
             #[cfg(target_os = "macos")]

@@ -1058,6 +1058,19 @@ Default is false.
 disable-unfocused-render = false
 ```
 
+## renderer.disable-occluded-render
+
+This property disables renderer processes while Rio windows/tabs are occluded (completely hidden from view). This is different from unfocused rendering as it depends on whether the window is minimized, set invisible, or fully occluded by another window.
+
+When a window becomes visible again after being occluded, Rio will automatically render one frame to update the display.
+
+Default is true.
+
+```toml
+[renderer]
+disable-occluded-render = true
+```
+
 ## renderer.target-fps
 
 This configuration is disabled by default but if isLimits the maximum number of frames per second that rio terminal will attempt to draw on a specific frame per second interval.
