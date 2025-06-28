@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/es/assets/css/styles.390fc736.css">
-<script src="/es/assets/js/runtime~main.f301d759.js" defer="defer"></script>
+<script src="/es/assets/js/runtime~main.afa65ec2.js" defer="defer"></script>
 <script src="/es/assets/js/main.4a4c77a3.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -67,6 +67,15 @@
 <li>Font data release and cleanup in dedicated background thread</li>
 <li>System font scanning and preloading without blocking main thread</li>
 <li>Prevents frame rate drops during font operations</li>
+</ul>
+</li>
+<li><strong>Occlusion-Based Rendering</strong>: Skip rendering for occluded windows/tabs<!-- -->
+<ul>
+<li>Automatically detects when windows are completely hidden by other windows</li>
+<li>Skips rendering for occluded windows to save GPU resources and improve performance</li>
+<li>Renders one frame when window becomes visible again to ensure display is updated</li>
+<li>Configurable via <code>[renderer] disable-occluded-render = true</code> (enabled by default)</li>
+<li>Significantly improves performance when running multiple tabs or windows</li>
 </ul>
 </li>
 </ul>
