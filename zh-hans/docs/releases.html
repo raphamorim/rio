@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hans/assets/css/styles.390fc736.css">
-<script src="/zh-hans/assets/js/runtime~main.fcb6ce5d.js" defer="defer"></script>
+<script src="/zh-hans/assets/js/runtime~main.785025aa.js" defer="defer"></script>
 <script src="/zh-hans/assets/js/main.34095e7c.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -80,6 +80,13 @@
 <li>IME input popups now appear precisely at the cursor position</li>
 <li>Improves input experience for CJK languages (Chinese, Japanese, Korean)</li>
 <li>Configurable via <code>[keyboard] ime-cursor-positioning = true</code> (enabled by default)</li>
+</ul>
+</li>
+<li><strong>Shift+Click Selection</strong>: Added Shift+click support for expanding text selections<!-- -->
+<ul>
+<li>Shift+clicking now extends the current selection to the clicked cell</li>
+<li>Provides standard terminal selection behavior expected by users</li>
+<li>Regular clicking without Shift still clears selection and starts new one as before</li>
 </ul>
 </li>
 </ul>
@@ -832,7 +839,7 @@
 <li>Colors/Themes got a new property called <code>vi-cursor</code>, you can specify any color you wish for VI Cursor.</li>
 <li>Alacritty&#x27;s VI Mode.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0023">0.0.23<a href="#0023" class="hash-link" aria-label="0.0.23的直接链接" title="0.0.23的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0023">0.0.23<a href="#0023" class="hash-link" aria-label="0.0.23的直接链接" title="0.0.23的直接链接"> ​</a></h2>
 <h4 class="anchor anchorWithStickyNavbar_LWe7" id="breaking-changes-1">Breaking changes<a href="#breaking-changes-1" class="hash-link" aria-label="Breaking changes的直接链接" title="Breaking changes的直接链接">​</a></h4>
 <ul>
 <li><code>navigation.mode = &quot;Plain&quot;</code> now only shutdowns the key bindings related to tab creation/manipulation.</li>
