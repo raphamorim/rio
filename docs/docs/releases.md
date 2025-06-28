@@ -48,6 +48,10 @@ language: 'en'
   - IME input popups now appear precisely at the cursor position
   - Improves input experience for CJK languages (Chinese, Japanese, Korean)
   - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
+- **Shift+Click Selection**: Added Shift+click support for expanding text selections
+  - Shift+clicking now extends the current selection to the clicked cell
+  - Provides standard terminal selection behavior expected by users
+  - Regular clicking without Shift still clears selection and starts new one as before
 
 ### Bug Fixes
 
