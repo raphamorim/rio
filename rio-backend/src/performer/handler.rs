@@ -1588,7 +1588,7 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         // Navigation keys
         "khome" | "kh" => Some("\\EOH".to_string()),
         "kend" => Some("\\EOF".to_string()),
-        "kbs" | "kb" => Some("^H".to_string()),
+        "kbs" | "kb" => Some("\x7f".to_string()),
         "kdch1" | "kD" => Some("\\E[3~".to_string()),
         "kich1" | "kI" => Some("\\E[2~".to_string()),
         "knp" | "kN" => Some("\\E[6~".to_string()),

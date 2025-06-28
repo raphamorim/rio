@@ -81,15 +81,6 @@ language: 'en'
   - `man 5 rio-bindings` - Key bindings reference and customization guide
   - Available in `extra/man/` directory with build instructions
 
-### Breaking Changes
-
-- **Backspace key behavior**: Changed from sending DEL (`^?`, ASCII 127) to backspace (`^H`, ASCII 8)
-  - Updated termcap/terminfo files: `kbs=^H` instead of `kbs=^?`
-  - Updated XTGETTCAP response to return `^H` for `kbs` capability
-  - Fixes vim delete key issue when `TERM=xterm-256color` [#1169](https://github.com/raphamorim/rio/issues/1169)
-  - Aligns with xterm standard behavior for better compatibility
-  - Applications expecting DEL for backspace may need adjustment
-
 ### Technical Details
 
 The performance optimizations in this release represent a significant architectural improvement to Rio's text rendering pipeline:
