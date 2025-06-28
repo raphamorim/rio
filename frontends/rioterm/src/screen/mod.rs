@@ -1572,13 +1572,18 @@ impl Screen<'_> {
 
         match self.mouse.click_state {
             ClickState::Click => {
-                self.clear_selection();
-
-                // Start new empty selection.
-                if self.modifiers.state().control_key() {
-                    self.start_selection(SelectionType::Block, point, side);
+                // If Shift is pressed and there's an existing selection, expand it
+                if self.modifiers.state().shift_key() && !self.selection_is_empty() {
+                    self.update_selection(point, side);
                 } else {
-                    self.start_selection(SelectionType::Simple, point, side);
+                    self.clear_selection();
+
+                    // Start new empty selection.
+                    if self.modifiers.state().control_key() {
+                        self.start_selection(SelectionType::Block, point, side);
+                    } else {
+                        self.start_selection(SelectionType::Simple, point, side);
+                    }
                 }
             }
             ClickState::DoubleClick => {
