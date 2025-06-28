@@ -155,10 +155,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event.payload {
             RioEventType::Rio(RioEvent::Render) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Skip rendering for unfocused windows if configured
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
                     {
                         return;
+                    }
+
+                    // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                    if self.config.renderer.disable_occluded_render
+                        && route.window.is_occluded
+                        && !route.window.needs_render_after_occlusion
+                    {
+                        return;
+                    }
+
+                    // Clear the one-time render flag if it was set
+                    if route.window.needs_render_after_occlusion {
+                        route.window.needs_render_after_occlusion = false;
                     }
 
                     route.request_redraw();
@@ -174,8 +188,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            return;
+                        }
+
                         // Check if this is the current route
                         if route_id == route.window.screen.ctx().current_route() {
+                            // Clear the one-time render flag if it was set
+                            if route.window.needs_render_after_occlusion {
+                                route.window.needs_render_after_occlusion = false;
+                            }
+
                             // Check if we need to throttle based on timing
                             if let Some(wait_duration) = route.window.wait_until() {
                                 // We need to wait before rendering again
@@ -1081,7 +1108,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Occluded(occluded) => {
+                let was_occluded = route.window.is_occluded;
                 route.window.is_occluded = occluded;
+
+                // If window was occluded and is now visible, mark for one-time render
+                if was_occluded && !occluded {
+                    route.window.needs_render_after_occlusion = true;
+                }
             }
 
             WindowEvent::ThemeChanged(new_theme) => {

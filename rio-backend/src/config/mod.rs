@@ -689,6 +689,27 @@ mod tests {
     }
 
     #[test]
+    fn test_change_config_renderer_occlusion() {
+        let result = create_temporary_config(
+            "change-renderer-occlusion",
+            r#"
+            [renderer]
+            disable-occluded-render = false
+        "#,
+        );
+
+        assert!(!result.renderer.disable_occluded_render);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
+        assert_eq!(result.fonts, SugarloafFonts::default());
+        assert_eq!(result.theme, String::default());
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
     fn test_change_config_environment_variables() {
         let result = create_temporary_config(
             "change-env-vars",

@@ -38,6 +38,12 @@ language: 'en'
   - Font data release and cleanup in dedicated background thread
   - System font scanning and preloading without blocking main thread
   - Prevents frame rate drops during font operations
+- **Occlusion-Based Rendering**: Skip rendering for occluded windows/tabs
+  - Automatically detects when windows are completely hidden by other windows
+  - Skips rendering for occluded windows to save GPU resources and improve performance
+  - Renders one frame when window becomes visible again to ensure display is updated
+  - Configurable via `[renderer] disable-occluded-render = true` (enabled by default)
+  - Significantly improves performance when running multiple tabs or windows
 
 ### Other Improvements
 
