@@ -106,6 +106,15 @@ These changes are particularly beneficial for:
 - Long-running sessions where cache warming provides sustained performance benefits
 - Systems with limited memory where reduced allocation overhead improves overall responsiveness
 
+### Bug Fixes
+
+- **Backspace Key Compatibility**: Fixed backspace key not working properly in vim when `TERM=xterm-256color`
+  - Changed backspace key bindings to send BS (0x08) instead of DEL (0x7F) 
+  - Updated Rio terminfo and termcap entries to match actual key behavior
+  - Updated XTGETTCAP response to return `^H` for `kbs` capability
+  - Ensures compatibility with applications expecting xterm-256color backspace behavior
+  - Fixes issue where vim would display `^?` instead of performing backspace operation
+
 ## 0.2.20
 
 - Performance: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
