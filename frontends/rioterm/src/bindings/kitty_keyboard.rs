@@ -344,7 +344,7 @@ impl SequenceBuilder {
             NamedKey::Enter => "13",
             NamedKey::Escape => "27",
             NamedKey::Space => "32",
-            NamedKey::Backspace => "8",
+            NamedKey::Backspace => "127",
             _ => "",
         };
 
