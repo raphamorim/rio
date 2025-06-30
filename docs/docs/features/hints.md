@@ -47,6 +47,16 @@ key = "O"
 mods = ["Control", "Shift"]
 ```
 
+### Customizing Hint Colors
+
+Hint label colors can be customized in the `[colors]` section of your configuration:
+
+```toml
+[colors]
+hint-foreground = '#181818'  # Text color for hint labels
+hint-background = '#f4bf75'  # Background color for hint labels
+```
+
 ## Configuration Options
 
 ### Global Settings
