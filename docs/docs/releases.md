@@ -81,6 +81,10 @@ language: 'en'
 - Optimize the character cluster cache for wide space characters.
 - New font atlas, more efficient.
 - Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
+- **Hint Label Damage Tracking**: Improved hint label rendering performance with proper damage tracking
+  - Hint label areas are now properly marked for re-rendering when cleared
+  - Eliminates visual artifacts when hint labels are removed
+  - Optimized rendering to only update affected screen regions
 - **IME Cursor Positioning**: Added configurable IME cursor positioning based on terminal cell coordinates
   - IME input popups now appear precisely at the cursor position
   - Improves input experience for CJK languages (Chinese, Japanese, Korean)
@@ -104,7 +108,7 @@ language: 'en'
   - Selection highlights now appear immediately when making selections
 - **Text Selection**: Fixed selection behavior during input and paste operations
   - Selection properly clears when typing or pasting text (both bracketed and regular paste)
-  - Selection coordinates remain stable during viewport scrolling (following Alacritty's approach)
+  - Selection coordinates remain stable during viewport scrolling
   - Prevents selection from being lost unexpectedly during normal terminal usage
 - **Auto-scroll on Input**: Fixed issue where typing after scrolling up wouldn't automatically scroll to bottom
   - Now properly scrolls to bottom for both keyboard input and IME/paste operations
