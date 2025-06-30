@@ -73,6 +73,10 @@ search-match-foreground = '#FFFFFF'
 search-focused-match-background = '#E6A003'
 search-focused-match-foreground = '#FFFFFF'
 
+# Hints
+hint-foreground = '#181818'
+hint-background = '#f4bf75'
+
 # Selection`
 selection-foreground = '#0F0D0E'
 selection-background = '#44C9F0'

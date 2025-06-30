@@ -294,6 +294,18 @@ pub struct Colors {
         rename = "search-focused-match-foreground"
     )]
     pub search_focused_match_foreground: ColorArray,
+    #[serde(
+        default = "defaults::hint_foreground",
+        deserialize_with = "deserialize_to_arr",
+        rename = "hint-foreground"
+    )]
+    pub hint_foreground: ColorArray,
+    #[serde(
+        default = "defaults::hint_background",
+        deserialize_with = "deserialize_to_arr",
+        rename = "hint-background"
+    )]
+    pub hint_background: ColorArray,
 }
 
 impl Default for Colors {
@@ -342,6 +354,8 @@ impl Default for Colors {
             search_match_foreground: defaults::search_match_foreground(),
             search_focused_match_background: defaults::search_focused_match_background(),
             search_focused_match_foreground: defaults::search_focused_match_foreground(),
+            hint_foreground: defaults::hint_foreground(),
+            hint_background: defaults::hint_background(),
         }
     }
 }

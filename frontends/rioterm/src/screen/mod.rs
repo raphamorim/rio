@@ -1734,7 +1734,6 @@ impl Screen<'_> {
 
             // For now, we don't check specific modifiers from hint_config.mouse.mods
 
-
             // Check hyperlinks if enabled
             if hint_config.hyperlinks {
                 if let Some(hyperlink_match) =
@@ -3014,7 +3013,6 @@ impl Screen<'_> {
 }
 
 /// Apply post-processing to hyperlink URIs to remove trailing delimiters and handle uneven brackets.
-
 fn post_process_hyperlink_uri(uri: &str) -> String {
     let chars: Vec<char> = uri.chars().collect();
     if chars.is_empty() {
