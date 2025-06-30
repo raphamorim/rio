@@ -223,3 +223,17 @@ pub fn search_focused_match_background() -> ColorArray {
 pub fn search_focused_match_foreground() -> ColorArray {
     [1., 1., 1., 1.]
 }
+#[inline]
+pub fn hint_foreground() -> ColorArray {
+    // Dark text color (#181818)
+    ColorBuilder::from_hex(String::from("#181818"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+#[inline]
+pub fn hint_background() -> ColorArray {
+    // Orange background color (#f4bf75)
+    ColorBuilder::from_hex(String::from("#f4bf75"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
