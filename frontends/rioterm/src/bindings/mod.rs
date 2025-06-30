@@ -327,8 +327,8 @@ pub enum Action {
     /// Scroll
     Scroll(i32),
 
-    // Regex keyboard hints.
-    // Hint(Hint),
+    /// Activate hint mode with the given hint index
+    Hint(std::rc::Rc<rio_backend::config::hints::Hint>),
 
     // Move vi mode cursor.
     ViMotion(ViMotion),

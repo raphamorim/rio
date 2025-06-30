@@ -37,7 +37,7 @@ pub struct HintMatches<'a> {
 
 impl<'a> HintMatches<'a> {
     /// Create new renderable matches iterator..
-    fn new(matches: impl Into<Cow<'a, [Match]>>) -> Self {
+    pub fn new(matches: impl Into<Cow<'a, [Match]>>) -> Self {
         Self {
             matches: matches.into(),
             index: 0,
