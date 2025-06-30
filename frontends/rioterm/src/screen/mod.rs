@@ -20,7 +20,7 @@ use crate::context::grid::{ContextDimension, Delta};
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
-    grid::{BidirectionalIterator, Dimensions, Scroll},
+    grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
     square::Hyperlink,
     vi_mode::ViMotion,
@@ -265,14 +265,33 @@ impl Screen<'_> {
             if let Some(binding_config) = &hint_config.binding {
                 // Parse key using the same logic as in bindings/mod.rs
                 let (key, location) = match binding_config.key.to_lowercase().as_str() {
-                    "o" => (rio_window::keyboard::Key::Character("o".into()), rio_window::keyboard::KeyLocation::Standard),
-                    "space" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Space), rio_window::keyboard::KeyLocation::Standard),
-                    "enter" | "return" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Enter), rio_window::keyboard::KeyLocation::Standard),
-                    "escape" | "esc" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Escape), rio_window::keyboard::KeyLocation::Standard),
+                    "o" => (
+                        rio_window::keyboard::Key::Character("o".into()),
+                        rio_window::keyboard::KeyLocation::Standard,
+                    ),
+                    "space" => (
+                        rio_window::keyboard::Key::Named(
+                            rio_window::keyboard::NamedKey::Space,
+                        ),
+                        rio_window::keyboard::KeyLocation::Standard,
+                    ),
+                    "enter" | "return" => (
+                        rio_window::keyboard::Key::Named(
+                            rio_window::keyboard::NamedKey::Enter,
+                        ),
+                        rio_window::keyboard::KeyLocation::Standard,
+                    ),
+                    "escape" | "esc" => (
+                        rio_window::keyboard::Key::Named(
+                            rio_window::keyboard::NamedKey::Escape,
+                        ),
+                        rio_window::keyboard::KeyLocation::Standard,
+                    ),
                     // Add more keys as needed
-                    single_char if single_char.len() == 1 => {
-                        (rio_window::keyboard::Key::Character(single_char.into()), rio_window::keyboard::KeyLocation::Standard)
-                    }
+                    single_char if single_char.len() == 1 => (
+                        rio_window::keyboard::Key::Character(single_char.into()),
+                        rio_window::keyboard::KeyLocation::Standard,
+                    ),
                     _ => continue, // Skip unknown keys
                 };
 
@@ -280,10 +299,14 @@ impl Screen<'_> {
                 let mut mods = rio_window::keyboard::ModifiersState::empty();
                 for mod_str in &binding_config.mods {
                     match mod_str.as_str() {
-                        "Control" => mods |= rio_window::keyboard::ModifiersState::CONTROL,
+                        "Control" => {
+                            mods |= rio_window::keyboard::ModifiersState::CONTROL
+                        }
                         "Shift" => mods |= rio_window::keyboard::ModifiersState::SHIFT,
                         "Alt" => mods |= rio_window::keyboard::ModifiersState::ALT,
-                        "Super" | "Cmd" => mods |= rio_window::keyboard::ModifiersState::SUPER,
+                        "Super" | "Cmd" => {
+                            mods |= rio_window::keyboard::ModifiersState::SUPER
+                        }
                         _ => {}
                     }
                 }
@@ -292,8 +315,11 @@ impl Screen<'_> {
                     trigger: crate::bindings::BindingKey::Keycode { key, location },
                     mods,
                     mode: crate::bindings::BindingMode::empty(),
-                    notmode: crate::bindings::BindingMode::SEARCH | crate::bindings::BindingMode::VI,
-                    action: crate::bindings::Action::Hint(std::rc::Rc::new(hint_config.clone())),
+                    notmode: crate::bindings::BindingMode::SEARCH
+                        | crate::bindings::BindingMode::VI,
+                    action: crate::bindings::Action::Hint(std::rc::Rc::new(
+                        hint_config.clone(),
+                    )),
                 };
                 hint_bindings.push(hint_binding);
             }
@@ -599,6 +625,112 @@ impl Screen<'_> {
             return;
         }
 
+        // All key bindings are disabled while a hint is being selected
+        // This check must happen BEFORE any other key processing to prevent ANY keys from reaching terminal
+        if self.hint_state.is_active() {
+            // Handle special keys first (for both press and release, but only act on release since that's what we receive)
+            match key.logical_key {
+                rio_window::keyboard::Key::Named(
+                    rio_window::keyboard::NamedKey::Escape,
+                ) => {
+                    // Process on key release since that's what we're receiving
+                    if key.state == ElementState::Released {
+                        self.hint_state.stop();
+                        // Clear hint labels with damage tracking
+                        self.clear_hint_labels_with_damage();
+                        self.render();
+                    }
+                    return;
+                }
+                rio_window::keyboard::Key::Named(
+                    rio_window::keyboard::NamedKey::Backspace,
+                ) => {
+                    // Process on key release since that's what we're receiving
+                    if key.state == ElementState::Released {
+                        let terminal = self.context_manager.current().terminal.lock();
+                        let was_active_before = self.hint_state.is_active();
+                        self.hint_state.keyboard_input(&*terminal, '\x08');
+                        drop(terminal);
+
+                        // Check if hint mode was stopped during keyboard_input
+                        if was_active_before && !self.hint_state.is_active() {
+                            // Clear hint labels with damage tracking
+                            self.clear_hint_labels_with_damage();
+                            self.render();
+                            return;
+                        }
+
+                        self.update_hint_labels();
+                        self.render();
+                    }
+                    return;
+                }
+                _ => {}
+            }
+
+            // Handle text input (only on key release since that's what we're receiving)
+            if key.state == ElementState::Released {
+                let text = key.text_with_all_modifiers().unwrap_or_default();
+
+                // Process all characters (even if text is empty)
+                for character in text.chars() {
+                    let terminal = self.context_manager.current().terminal.lock();
+                    let was_active_before = self.hint_state.is_active();
+                    if let Some(hint_match) =
+                        self.hint_state.keyboard_input(&*terminal, character)
+                    {
+                        drop(terminal);
+                        self.execute_hint_action(&hint_match);
+                        // Clear hint labels after executing action with damage tracking
+                        self.clear_hint_labels_with_damage();
+                        self.render();
+                        return;
+                    }
+                    drop(terminal);
+
+                    // Check if hint mode was stopped during keyboard_input (e.g., ESC pressed)
+                    if was_active_before && !self.hint_state.is_active() {
+                        // Clear hint labels with damage tracking
+                        self.clear_hint_labels_with_damage();
+                        self.render();
+                        return;
+                    }
+                }
+
+                // If text is empty, try to extract character from logical key
+                if text.is_empty() {
+                    if let rio_window::keyboard::Key::Character(ch) = &key.logical_key {
+                        for character in ch.chars() {
+                            let terminal = self.context_manager.current().terminal.lock();
+                            let was_active_before = self.hint_state.is_active();
+                            if let Some(hint_match) =
+                                self.hint_state.keyboard_input(&*terminal, character)
+                            {
+                                drop(terminal);
+                                self.execute_hint_action(&hint_match);
+                                // Clear hint labels after executing action with damage tracking
+                                self.clear_hint_labels_with_damage();
+                                self.render();
+                                return;
+                            }
+                            drop(terminal);
+
+                            // Check if hint mode was stopped during keyboard_input
+                            if was_active_before && !self.hint_state.is_active() {
+                                // Clear hint labels with damage tracking
+                                self.clear_hint_labels_with_damage();
+                                self.render();
+                                return;
+                            }
+                        }
+                    }
+                }
+                self.update_hint_labels();
+                self.render();
+            }
+            return;
+        }
+
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
@@ -606,6 +738,7 @@ impl Screen<'_> {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
+                || self.hint_state.is_active()
             {
                 return;
             }
@@ -874,7 +1007,6 @@ impl Screen<'_> {
                         self.copy_selection(ClipboardType::Clipboard);
                     }
                     Act::Hint(hint_config) => {
-                        println!("Starting hint mode with config");
                         self.start_hint_mode(hint_config.clone());
                     }
                     Act::SearchForward => {
@@ -1559,7 +1691,8 @@ impl Screen<'_> {
         #[cfg(not(target_os = "macos"))]
         let should_highlight = self.modifiers.state().shift_key();
 
-        let had_highlight = self.context_manager
+        let had_highlight = self
+            .context_manager
             .current()
             .renderable_content
             .highlighted_hint
@@ -1584,9 +1717,9 @@ impl Screen<'_> {
         let display_offset = terminal.display_offset();
         let mouse_point = self.mouse_position(display_offset);
 
-        // Find hint at mouse position using Alacritty's method
+        // Find hint at mouse position
         let highlighted_hint =
-            self.find_hint_at_point(&*terminal, mouse_point, self.modifiers.state());
+            self.find_hint_at_point(&terminal, mouse_point, self.modifiers.state());
         drop(terminal);
 
         let current = self.context_manager.current_mut();
@@ -1604,7 +1737,11 @@ impl Screen<'_> {
                     hint_match.end,
                     false,
                 );
-                terminal.update_selection_damage(Some(hint_range), display_offset, columns);
+                terminal.update_selection_damage(
+                    Some(hint_range),
+                    display_offset,
+                    columns,
+                );
             }
 
             current.renderable_content.highlighted_hint = Some(hint_match);
@@ -1623,7 +1760,7 @@ impl Screen<'_> {
         }
     }
 
-    /// Find hint at the specified point (similar to Alacritty's highlighted_at)
+    /// Find hint at the specified point
     fn find_hint_at_point(
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
@@ -1638,7 +1775,7 @@ impl Screen<'_> {
             }
 
             // For now, we don't check specific modifiers from hint_config.mouse.mods
-            // since Rio's config structure is different from Alacritty's
+
 
             // Check hyperlinks if enabled
             if hint_config.hyperlinks {
@@ -1773,10 +1910,15 @@ impl Screen<'_> {
                 let original_match_text = mat.as_str().to_string();
                 let mut match_text = original_match_text.clone();
 
-                // Apply Alacritty-style grid-based post-processing
+                // Apply grid-based post-processing
                 let (processed_start, processed_end) = if hint_config.post_processing {
-                    self.hint_post_processing(terminal, start_col, end_col, rio_backend::crosswords::pos::Line(point.row.0))
-                        .unwrap_or((start_col, end_col))
+                    self.hint_post_processing(
+                        terminal,
+                        start_col,
+                        end_col,
+                        rio_backend::crosswords::pos::Line(point.row.0),
+                    )
+                    .unwrap_or((start_col, end_col))
                 } else {
                     (start_col, end_col)
                 };
@@ -1785,7 +1927,8 @@ impl Screen<'_> {
                 if hint_config.post_processing {
                     let mut processed_text = String::new();
                     for col in processed_start.0..=processed_end.0 {
-                        let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
+                        let cell =
+                            &grid[point.row][rio_backend::crosswords::pos::Column(col)];
                         processed_text.push(cell.c);
                     }
                     match_text = processed_text.trim_end().to_string();
@@ -1793,7 +1936,10 @@ impl Screen<'_> {
 
                 return Some(crate::hints::HintMatch {
                     text: match_text,
-                    start: rio_backend::crosswords::pos::Pos::new(point.row, processed_start),
+                    start: rio_backend::crosswords::pos::Pos::new(
+                        point.row,
+                        processed_start,
+                    ),
                     end: rio_backend::crosswords::pos::Pos::new(point.row, processed_end),
                     hint: hint_config,
                 });
@@ -1812,7 +1958,12 @@ impl Screen<'_> {
         let is_hyperlink_key_active = self.modifiers.state().alt_key();
 
         if !is_hyperlink_key_active
-            || self.context_manager.current().renderable_content.highlighted_hint.is_none()
+            || self
+                .context_manager
+                .current()
+                .renderable_content
+                .highlighted_hint
+                .is_none()
         {
             return false;
         }
@@ -1835,8 +1986,9 @@ impl Screen<'_> {
     /// Trigger hint action at mouse position
     #[inline]
     pub fn trigger_hint(&mut self) -> bool {
-        // Take the highlighted hint (similar to Alacritty)
-        let hint_match = self.context_manager
+        // Take the highlighted hint
+        let hint_match = self
+            .context_manager
             .current_mut()
             .renderable_content
             .highlighted_hint
@@ -2546,11 +2698,6 @@ impl Screen<'_> {
             drop(terminal);
             hints
         } else if self.hint_state.is_active() {
-            // Update hint matches when in hint mode
-            let terminal = self.context_manager.current().terminal.lock();
-            self.hint_state.update_matches(&*terminal);
-            drop(terminal);
-
             // Update hint labels in renderable content
             self.update_hint_labels();
 
@@ -2669,7 +2816,7 @@ impl Screen<'_> {
         );
     }
 
-    /// Process a new character for keyboard hints (like Alacritty)
+    /// Process a new character for keyboard hints
     #[allow(dead_code)]
     pub fn hint_input(&mut self, c: char) {
         let terminal = self.context_manager.current().terminal.lock();
@@ -2687,23 +2834,21 @@ impl Screen<'_> {
         &mut self,
         hint: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) {
-        println!("Starting hint mode");
         self.hint_state.start(hint);
         let terminal = self.context_manager.current().terminal.lock();
         self.hint_state.update_matches(&*terminal);
-        let matches_count = self.hint_state.matches().len();
-        println!("Found {} hint matches", matches_count);
-        println!("Hint state is_active: {}", self.hint_state.is_active());
         drop(terminal);
-        self.render();
-    }
 
-    /// Get hint configuration by index
-    fn get_hint_config(
-        &self,
-        index: usize,
-    ) -> Option<std::rc::Rc<rio_backend::config::hints::Hint>> {
-        self.hints_config.get(index).cloned()
+        // If hint mode was stopped during update_matches (no matches found), clear labels
+        if !self.hint_state.is_active() {
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .hint_labels
+                .clear();
+        }
+
+        self.render();
     }
 
     /// Execute the action for a selected hint
@@ -2753,7 +2898,37 @@ impl Screen<'_> {
         }
     }
 
-    /// Update hint labels in the renderable content
+    /// Clear hint labels and mark their areas as damaged for re-rendering
+    fn clear_hint_labels_with_damage(&mut self) {
+        let current = self.context_manager.current_mut();
+
+        // Mark all hint label areas as damaged before clearing
+        if !current.renderable_content.hint_labels.is_empty() {
+            let mut terminal = current.terminal.lock();
+            let display_offset = terminal.display_offset();
+            let columns = terminal.columns();
+
+            // Mark each hint label position as damaged
+            for hint_label in &current.renderable_content.hint_labels {
+                let hint_range = rio_backend::selection::SelectionRange::new(
+                    hint_label.position,
+                    hint_label.position,
+                    false,
+                );
+                terminal.update_selection_damage(
+                    Some(hint_range),
+                    display_offset,
+                    columns,
+                );
+            }
+
+            // Clear the damage by setting to None (this marks the areas for re-rendering)
+            terminal.update_selection_damage(None, display_offset, columns);
+        }
+
+        // Now clear the hint labels
+        current.renderable_content.hint_labels.clear();
+    }
     fn update_hint_labels(&mut self) {
         use crate::context::renderable::HintLabel;
 
@@ -2788,8 +2963,8 @@ impl Screen<'_> {
             .hint_labels = hint_labels;
     }
 
-    /// Apply Alacritty-style grid-based hint post-processing.
-    /// 
+    /// Apply grid-based hint post-processing.
+    ///
     /// This iterates through the terminal grid character by character and adjusts
     /// the match bounds based on bracket balance and trailing delimiters.
     fn hint_post_processing(
@@ -2798,31 +2973,34 @@ impl Screen<'_> {
         start_col: rio_backend::crosswords::pos::Column,
         end_col: rio_backend::crosswords::pos::Column,
         row: rio_backend::crosswords::pos::Line,
-    ) -> Option<(rio_backend::crosswords::pos::Column, rio_backend::crosswords::pos::Column)> {
+    ) -> Option<(
+        rio_backend::crosswords::pos::Column,
+        rio_backend::crosswords::pos::Column,
+    )> {
         use rio_backend::crosswords::grid::BidirectionalIterator;
-        
+
         let grid = &terminal.grid;
         let start_pos = rio_backend::crosswords::pos::Pos::new(row, start_col);
         let end_pos = rio_backend::crosswords::pos::Pos::new(row, end_col);
-        
+
         let mut iter = grid.iter_from(start_pos);
         let mut current_pos = start_pos;
         let mut open_parents = 0;
         let mut open_brackets = 0;
-        
+
         // First pass: handle uneven brackets/parentheses
         while current_pos <= end_pos {
             if let Some(indexed) = iter.next() {
                 let c = indexed.square.c;
                 current_pos = indexed.pos;
-                
+
                 match c {
                     '(' => open_parents += 1,
                     '[' => open_brackets += 1,
                     ')' => {
                         if open_parents == 0 {
                             // Unmatched closing parenthesis, truncate here
-                            if let Some(_) = iter.prev() {
+                            if iter.prev().is_some() {
                                 return Some((start_col, iter.pos().col));
                             }
                             break;
@@ -2833,7 +3011,7 @@ impl Screen<'_> {
                     ']' => {
                         if open_brackets == 0 {
                             // Unmatched closing bracket, truncate here
-                            if let Some(_) = iter.prev() {
+                            if iter.prev().is_some() {
                                 return Some((start_col, iter.pos().col));
                             }
                             break;
@@ -2843,7 +3021,7 @@ impl Screen<'_> {
                     }
                     _ => (),
                 }
-                
+
                 if current_pos == end_pos {
                     break;
                 }
@@ -2851,21 +3029,21 @@ impl Screen<'_> {
                 break;
             }
         }
-        
+
         // Second pass: remove trailing delimiters
         let mut final_end = end_pos;
         let mut iter = grid.iter_from(end_pos);
-        
+
         while final_end > start_pos {
             if let Some(indexed) = iter.next() {
                 let c = indexed.square.c;
                 if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
                     break;
                 }
-                
+
                 if let Some(prev_indexed) = iter.prev() {
                     final_end = prev_indexed.pos;
-                    if let Some(_) = iter.prev() {
+                    if iter.prev().is_some() {
                         // Move iterator back one more position for next iteration
                     }
                 } else {
@@ -2875,13 +3053,13 @@ impl Screen<'_> {
                 break;
             }
         }
-        
+
         Some((start_col, final_end.col))
     }
 }
 
 /// Apply post-processing to hyperlink URIs to remove trailing delimiters and handle uneven brackets.
-/// This is similar to Alacritty's hint post-processing logic.
+
 fn post_process_hyperlink_uri(uri: &str) -> String {
     let chars: Vec<char> = uri.chars().collect();
     if chars.is_empty() {
