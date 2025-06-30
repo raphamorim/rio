@@ -339,13 +339,18 @@ impl Renderer {
 
                 // Apply hint label styling
                 if hint_label.is_first {
-                    // Start colors: dark text on orange background
-                    style.color = [0.094, 0.094, 0.094, 1.0]; // #181818
-                    style.background_color = Some([0.957, 0.749, 0.459, 1.0]); // #f4bf75
+                    // Use configurable hint colors
+                    style.color = self.named_colors.hint_foreground;
+                    style.background_color = Some(self.named_colors.hint_background);
                 } else {
-                    // End colors: different styling for continuation
-                    style.color = [0.094, 0.094, 0.094, 1.0]; // #181818
-                    style.background_color = Some([0.8, 0.6, 0.3, 1.0]); // Slightly different orange
+                    // End colors: use same foreground, slightly dimmed background
+                    style.color = self.named_colors.hint_foreground;
+                    let mut dimmed_bg = self.named_colors.hint_background;
+                    // Dim the background slightly for continuation labels
+                    dimmed_bg[0] *= 0.8;
+                    dimmed_bg[1] *= 0.8;
+                    dimmed_bg[2] *= 0.8;
+                    style.background_color = Some(dimmed_bg);
                 }
 
                 // Make hint labels bold for better visibility
