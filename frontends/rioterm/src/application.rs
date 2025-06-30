@@ -811,15 +811,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 route.window.screen.set_modifiers(modifiers);
-
-                if route.window.screen.search_nearest_hyperlink_from_pos() {
-                    if self.config.hide_cursor_when_typing {
-                        route.window.winit_window.set_cursor_visible(true);
-                    }
-
-                    route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.request_render();
-                }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
@@ -941,6 +932,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // Trigger hints highlighted by the mouse (like Alacritty)
+                        if button == MouseButton::Left && route.window.screen.trigger_hint() {
+                            return;
+                        }
+
                         if let MouseButton::Left | MouseButton::Right = button {
                             // Copy selection on release, to prevent flooding the display server.
                             route.window.screen.copy_selection(ClipboardType::Selection);
@@ -1015,7 +1011,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                if route.window.screen.search_nearest_hyperlink_from_pos() {
+                if route.window.screen.update_highlighted_hints() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
                     route.window.screen.context_manager.request_render();
                 } else {
@@ -1036,14 +1032,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .screen
                         .context_manager
                         .current()
-                        .has_hyperlink_range()
+                        .renderable_content
+                        .highlighted_hint
+                        .is_some()
                     {
                         route
                             .window
                             .screen
                             .context_manager
                             .current_mut()
-                            .set_hyperlink_range(None);
+                            .renderable_content
+                            .highlighted_hint = None;
                         route.window.screen.context_manager.request_render();
                     }
                 }

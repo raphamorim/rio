@@ -26,6 +26,7 @@ use crate::crosswords::{
     vi_mode::ViMotion,
     Mode,
 };
+use crate::hints::HintState;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::{
     utils::{padding_bottom_from_config, padding_top_from_config},
@@ -80,11 +81,13 @@ pub struct Screen<'screen> {
     pub mouse: Mouse,
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
+    pub hint_state: HintState,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
     pub clipboard: Rc<RefCell<Clipboard>>,
     last_ime_cursor_pos: Option<(f32, f32)>,
+    hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
 }
 
 pub struct ScreenWindowProperties {
@@ -256,8 +259,59 @@ impl Screen<'_> {
         }
         sugarloaf.render();
 
+        // Create hint bindings from config
+        let mut hint_bindings = Vec::new();
+        for hint_config in &config.hints.enabled {
+            if let Some(binding_config) = &hint_config.binding {
+                // Parse key using the same logic as in bindings/mod.rs
+                let (key, location) = match binding_config.key.to_lowercase().as_str() {
+                    "o" => (rio_window::keyboard::Key::Character("o".into()), rio_window::keyboard::KeyLocation::Standard),
+                    "space" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Space), rio_window::keyboard::KeyLocation::Standard),
+                    "enter" | "return" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Enter), rio_window::keyboard::KeyLocation::Standard),
+                    "escape" | "esc" => (rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Escape), rio_window::keyboard::KeyLocation::Standard),
+                    // Add more keys as needed
+                    single_char if single_char.len() == 1 => {
+                        (rio_window::keyboard::Key::Character(single_char.into()), rio_window::keyboard::KeyLocation::Standard)
+                    }
+                    _ => continue, // Skip unknown keys
+                };
+
+                // Parse modifiers
+                let mut mods = rio_window::keyboard::ModifiersState::empty();
+                for mod_str in &binding_config.mods {
+                    match mod_str.as_str() {
+                        "Control" => mods |= rio_window::keyboard::ModifiersState::CONTROL,
+                        "Shift" => mods |= rio_window::keyboard::ModifiersState::SHIFT,
+                        "Alt" => mods |= rio_window::keyboard::ModifiersState::ALT,
+                        "Super" | "Cmd" => mods |= rio_window::keyboard::ModifiersState::SUPER,
+                        _ => {}
+                    }
+                }
+
+                let hint_binding = crate::bindings::KeyBinding {
+                    trigger: crate::bindings::BindingKey::Keycode { key, location },
+                    mods,
+                    mode: crate::bindings::BindingMode::empty(),
+                    notmode: crate::bindings::BindingMode::SEARCH | crate::bindings::BindingMode::VI,
+                    action: crate::bindings::Action::Hint(std::rc::Rc::new(hint_config.clone())),
+                };
+                hint_bindings.push(hint_binding);
+            }
+        }
+
+        // Add hint bindings to the main bindings
+        let mut all_bindings = bindings;
+        all_bindings.extend(hint_bindings);
+
         Ok(Screen {
             search_state: SearchState::default(),
+            hint_state: HintState::new(config.hints.alphabet.clone()),
+            hints_config: config
+                .hints
+                .enabled
+                .iter()
+                .map(|h| std::rc::Rc::new(h.clone()))
+                .collect(),
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
@@ -265,7 +319,7 @@ impl Screen<'_> {
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
             renderer,
-            bindings,
+            bindings: all_bindings,
             clipboard,
             last_ime_cursor_pos: None,
         })
@@ -580,6 +634,63 @@ impl Screen<'_> {
             return;
         }
 
+        // All key bindings are disabled while a hint is being selected (like Alacritty)
+        if self.hint_state.is_active() {
+            println!("Hint mode is active, processing hint input");
+
+            // Handle special keys first
+            match key.logical_key {
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Escape) => {
+                    println!("ESC pressed, exiting hint mode");
+                    self.hint_state.stop();
+                    // Clear hint labels immediately
+                    self.context_manager
+                        .current_mut()
+                        .renderable_content
+                        .hint_labels
+                        .clear();
+                    self.render();
+                    return;
+                }
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Backspace) => {
+                    println!("Backspace pressed, removing last character");
+                    let terminal = self.context_manager.current().terminal.lock();
+                    self.hint_state.keyboard_input(&*terminal, '\x08');
+                    drop(terminal);
+                    self.update_hint_labels();
+                    self.render();
+                    return;
+                }
+                _ => {}
+            }
+
+            // Handle text input
+            let text = key.text_with_all_modifiers().unwrap_or_default();
+            for character in text.chars() {
+                println!("Processing hint character: '{}'", character);
+                let terminal = self.context_manager.current().terminal.lock();
+                if let Some(hint_match) =
+                    self.hint_state.keyboard_input(&*terminal, character)
+                {
+                    println!("Hint match found: {:?}", hint_match.text);
+                    drop(terminal);
+                    self.execute_hint_action(&hint_match);
+                    // Clear hint labels after executing action
+                    self.context_manager
+                        .current_mut()
+                        .renderable_content
+                        .hint_labels
+                        .clear();
+                    self.render();
+                    return;
+                }
+                drop(terminal);
+            }
+            self.update_hint_labels();
+            self.render();
+            return;
+        }
+
         let ignore_chars = self.process_key_bindings(key, &mode, mods);
         if ignore_chars {
             return;
@@ -761,6 +872,10 @@ impl Screen<'_> {
                     }
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard);
+                    }
+                    Act::Hint(hint_config) => {
+                        println!("Starting hint mode with config");
+                        self.start_hint_mode(hint_config.clone());
                     }
                     Act::SearchForward => {
                         self.start_search(Direction::Right);
@@ -1436,31 +1551,241 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn search_nearest_hyperlink_from_pos(&mut self) -> bool {
+    /// Update hint highlighting based on mouse position and modifiers
+    pub fn update_highlighted_hints(&mut self) -> bool {
+        // Check if we should highlight hints based on modifiers
         #[cfg(target_os = "macos")]
-        let is_hyperlink_key_active = self.modifiers.state().super_key();
-
+        let should_highlight = self.modifiers.state().super_key();
         #[cfg(not(target_os = "macos"))]
-        let is_hyperlink_key_active = self.modifiers.state().shift_key();
+        let should_highlight = self.modifiers.state().shift_key();
 
-        if !is_hyperlink_key_active {
-            return false;
+        let had_highlight = self.context_manager
+            .current()
+            .renderable_content
+            .highlighted_hint
+            .is_some();
+
+        if !should_highlight {
+            let current = self.context_manager.current_mut();
+
+            // Clear any previous hint damage
+            if current.renderable_content.highlighted_hint.is_some() {
+                let mut terminal = current.terminal.lock();
+                let display_offset = terminal.display_offset();
+                let columns = terminal.columns();
+                terminal.update_selection_damage(None, display_offset, columns);
+            }
+
+            current.renderable_content.highlighted_hint = None;
+            return had_highlight;
         }
 
-        let mut terminal = self.context_manager.current().terminal.lock();
+        let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
-        let pos = self.mouse_position(display_offset);
-        let search_result = terminal.search_nearest_hyperlink_from_pos(pos);
+        let mouse_point = self.mouse_position(display_offset);
+
+        // Find hint at mouse position using Alacritty's method
+        let highlighted_hint =
+            self.find_hint_at_point(&*terminal, mouse_point, self.modifiers.state());
         drop(terminal);
 
         let current = self.context_manager.current_mut();
-        if let Some(hyperlink_range) = search_result {
-            current.set_hyperlink_range(Some(hyperlink_range));
-            return true;
+
+        if let Some(hint_match) = highlighted_hint {
+            // Mark the hint range as damaged so it gets re-rendered
+            {
+                let mut terminal = current.terminal.lock();
+                let display_offset = terminal.display_offset();
+                let columns = terminal.columns();
+
+                // Create a temporary selection range for damage tracking
+                let hint_range = rio_backend::selection::SelectionRange::new(
+                    hint_match.start,
+                    hint_match.end,
+                    false,
+                );
+                terminal.update_selection_damage(Some(hint_range), display_offset, columns);
+            }
+
+            current.renderable_content.highlighted_hint = Some(hint_match);
+            true
+        } else {
+            // Clear any previous hint damage
+            if current.renderable_content.highlighted_hint.is_some() {
+                let mut terminal = current.terminal.lock();
+                let display_offset = terminal.display_offset();
+                let columns = terminal.columns();
+                terminal.update_selection_damage(None, display_offset, columns);
+            }
+
+            current.renderable_content.highlighted_hint = None;
+            had_highlight
+        }
+    }
+
+    /// Find hint at the specified point (similar to Alacritty's highlighted_at)
+    fn find_hint_at_point(
+        &self,
+        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
+        point: rio_backend::crosswords::pos::Pos,
+        _modifiers: rio_window::keyboard::ModifiersState,
+    ) -> Option<crate::hints::HintMatch> {
+        // Check each enabled hint configuration
+        for hint_config in &self.hints_config {
+            // Check if mouse highlighting is enabled for this hint
+            if !hint_config.mouse.enabled {
+                continue;
+            }
+
+            // For now, we don't check specific modifiers from hint_config.mouse.mods
+            // since Rio's config structure is different from Alacritty's
+
+            // Check hyperlinks if enabled
+            if hint_config.hyperlinks {
+                if let Some(hyperlink_match) =
+                    self.find_hyperlink_at_point(terminal, point)
+                {
+                    return Some(hyperlink_match);
+                }
+            }
+
+            // Check regex patterns if specified
+            if let Some(regex_pattern) = &hint_config.regex {
+                if let Ok(regex) = regex::Regex::new(regex_pattern) {
+                    if let Some(regex_match) = self.find_regex_match_at_point(
+                        terminal,
+                        point,
+                        &regex,
+                        hint_config.clone(),
+                    ) {
+                        return Some(regex_match);
+                    }
+                }
+            }
         }
 
-        current.set_hyperlink_range(None);
-        false
+        None
+    }
+
+    /// Find hyperlink at the specified point
+    fn find_hyperlink_at_point(
+        &self,
+        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
+        point: rio_backend::crosswords::pos::Pos,
+    ) -> Option<crate::hints::HintMatch> {
+        let grid = &terminal.grid;
+
+        // Check if the point is within grid bounds
+        if point.row >= grid.total_lines() as i32 || point.col.0 >= grid.columns() {
+            return None;
+        }
+
+        let cell = &grid[point.row][point.col];
+        if let Some(hyperlink) = cell.hyperlink() {
+            // Find the extent of this hyperlink
+            let mut start_col = point.col;
+            let mut end_col = point.col;
+
+            // Scan backward to find start
+            while start_col > rio_backend::crosswords::pos::Column(0) {
+                let prev_col = start_col - 1;
+                let prev_cell = &grid[point.row][prev_col];
+                if prev_cell.hyperlink().as_ref() == Some(&hyperlink) {
+                    start_col = prev_col;
+                } else {
+                    break;
+                }
+            }
+
+            // Scan forward to find end
+            while end_col < grid.columns() - 1 {
+                let next_col = end_col + 1;
+                let next_cell = &grid[point.row][next_col];
+                if next_cell.hyperlink().as_ref() == Some(&hyperlink) {
+                    end_col = next_col;
+                } else {
+                    break;
+                }
+            }
+
+            // Create a dummy hint config for hyperlinks
+            let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
+                regex: None,
+                hyperlinks: true,
+                post_processing: true,
+                persist: false,
+                action: rio_backend::config::hints::HintAction::Command {
+                    command: rio_backend::config::hints::HintCommand::Simple(
+                        "xdg-open".to_string(),
+                    ),
+                },
+                mouse: rio_backend::config::hints::HintMouse::default(),
+                binding: None,
+            });
+
+            let mut uri = hyperlink.uri().to_string();
+            if hint_config.post_processing {
+                uri = post_process_hyperlink_uri(&uri);
+            }
+
+            return Some(crate::hints::HintMatch {
+                text: uri,
+                start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+                end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+                hint: hint_config,
+            });
+        }
+
+        None
+    }
+
+    /// Find regex match at the specified point
+    fn find_regex_match_at_point(
+        &self,
+        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
+        point: rio_backend::crosswords::pos::Pos,
+        regex: &regex::Regex,
+        hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
+    ) -> Option<crate::hints::HintMatch> {
+        let grid = &terminal.grid;
+
+        // Check if the point is within grid bounds
+        if point.row >= grid.total_lines() as i32 || point.col.0 >= grid.columns() {
+            return None;
+        }
+
+        // Extract text from the line
+        let mut line_text = String::new();
+        for col in 0..grid.columns() {
+            let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
+            line_text.push(cell.c);
+        }
+        let line_text = line_text.trim_end();
+
+        // Find all matches in this line and check if point is within any of them
+        for mat in regex.find_iter(line_text) {
+            let start_col = rio_backend::crosswords::pos::Column(mat.start());
+            let end_col =
+                rio_backend::crosswords::pos::Column(mat.end().saturating_sub(1));
+
+            // Check if the point is within this match
+            if point.col >= start_col && point.col <= end_col {
+                let mut match_text = mat.as_str().to_string();
+
+                if hint_config.post_processing {
+                    match_text = post_process_hyperlink_uri(&match_text);
+                }
+
+                return Some(crate::hints::HintMatch {
+                    text: match_text,
+                    start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
+                    end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+                    hint: hint_config,
+                });
+            }
+        }
+
+        None
     }
 
     #[inline]
@@ -1472,7 +1797,7 @@ impl Screen<'_> {
         let is_hyperlink_key_active = self.modifiers.state().alt_key();
 
         if !is_hyperlink_key_active
-            || !self.context_manager.current().has_hyperlink_range()
+            || self.context_manager.current().renderable_content.highlighted_hint.is_none()
         {
             return false;
         }
@@ -1492,15 +1817,36 @@ impl Screen<'_> {
         false
     }
 
+    /// Trigger hint action at mouse position
+    #[inline]
+    pub fn trigger_hint(&mut self) -> bool {
+        // Take the highlighted hint (similar to Alacritty)
+        let hint_match = self.context_manager
+            .current_mut()
+            .renderable_content
+            .highlighted_hint
+            .take();
+
+        if let Some(hint_match) = hint_match {
+            self.execute_hint_action(&hint_match);
+            true
+        } else {
+            false
+        }
+    }
+
     fn open_hyperlink(&self, hyperlink: Hyperlink) {
+        // Apply post-processing to remove trailing delimiters and handle uneven brackets
+        let processed_uri = post_process_hyperlink_uri(hyperlink.uri());
+
         #[cfg(not(any(target_os = "macos", windows)))]
-        self.exec("xdg-open", [hyperlink.uri()]);
+        self.exec("xdg-open", [&processed_uri]);
 
         #[cfg(target_os = "macos")]
-        self.exec("open", [hyperlink.uri()]);
+        self.exec("open", [&processed_uri]);
 
         #[cfg(windows)]
-        self.exec("cmd", ["/c", "start", "", hyperlink.uri()]);
+        self.exec("cmd", ["/c", "start", "", &processed_uri]);
     }
 
     pub fn exec<I, S>(&self, program: &str, args: I)
@@ -2184,7 +2530,30 @@ impl Screen<'_> {
                 .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
             drop(terminal);
             hints
+        } else if self.hint_state.is_active() {
+            // Update hint matches when in hint mode
+            let terminal = self.context_manager.current().terminal.lock();
+            self.hint_state.update_matches(&*terminal);
+            drop(terminal);
+
+            // Update hint labels in renderable content
+            self.update_hint_labels();
+
+            // Convert hint matches to HintMatches format for rendering
+            let matches: Vec<rio_backend::crosswords::search::Match> = self
+                .hint_state
+                .matches()
+                .iter()
+                .map(|hint_match| hint_match.start..=hint_match.end)
+                .collect();
+            Some(crate::screen::hint::HintMatches::new(matches))
         } else {
+            // Clear hint labels when not in hint mode
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .hint_labels
+                .clear();
             None
         };
         // let search_hints_duration = search_hints_start.elapsed();
@@ -2199,12 +2568,7 @@ impl Screen<'_> {
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        // let renderer_run_duration = renderer_run_start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // tracing::debug!("[PERF] Screen renderer.run(): {:?}", renderer_run_duration);
-        // }
-
-        // In this case the configuration of blinking cursor is enabled
+        // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
         if self.renderer.config_has_blinking_enabled
@@ -2287,6 +2651,239 @@ impl Screen<'_> {
         window.set_ime_cursor_area(
             rio_window::dpi::PhysicalPosition::new(pixel_x as f64, pixel_y as f64),
             rio_window::dpi::PhysicalSize::new(cell_width as f64, cell_height as f64),
+        );
+    }
+
+    /// Process a new character for keyboard hints (like Alacritty)
+    #[allow(dead_code)]
+    pub fn hint_input(&mut self, c: char) {
+        let terminal = self.context_manager.current().terminal.lock();
+        if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
+            drop(terminal);
+            self.execute_hint_action(&hint_match);
+        } else {
+            drop(terminal);
+        }
+        self.render();
+    }
+
+    /// Start hint mode with the given hint configuration
+    pub fn start_hint_mode(
+        &mut self,
+        hint: std::rc::Rc<rio_backend::config::hints::Hint>,
+    ) {
+        println!("Starting hint mode");
+        self.hint_state.start(hint);
+        let terminal = self.context_manager.current().terminal.lock();
+        self.hint_state.update_matches(&*terminal);
+        let matches_count = self.hint_state.matches().len();
+        println!("Found {} hint matches", matches_count);
+        println!("Hint state is_active: {}", self.hint_state.is_active());
+        drop(terminal);
+        self.render();
+    }
+
+    /// Get hint configuration by index
+    fn get_hint_config(
+        &self,
+        index: usize,
+    ) -> Option<std::rc::Rc<rio_backend::config::hints::Hint>> {
+        self.hints_config.get(index).cloned()
+    }
+
+    /// Execute the action for a selected hint
+    fn execute_hint_action(&mut self, hint_match: &crate::hints::HintMatch) {
+        use rio_backend::config::hints::{HintAction, HintCommand, HintInternalAction};
+
+        match &hint_match.hint.action {
+            HintAction::Action { action } => match action {
+                HintInternalAction::Copy => {
+                    self.clipboard
+                        .borrow_mut()
+                        .set(ClipboardType::Clipboard, hint_match.text.clone());
+                }
+                HintInternalAction::Paste => {
+                    self.paste(&hint_match.text, true);
+                }
+                HintInternalAction::Select => {
+                    // Set selection to the hint match
+                    let selection = rio_backend::selection::SelectionRange::new(
+                        hint_match.start,
+                        hint_match.end,
+                        false, // not a block selection
+                    );
+                    self.context_manager
+                        .current_mut()
+                        .set_selection(Some(selection));
+                    self.render();
+                }
+                HintInternalAction::MoveViModeCursor => {
+                    // Move vi mode cursor to hint position
+                    let mut terminal = self.context_manager.current().terminal.lock();
+                    terminal.vi_mode_cursor.pos = hint_match.start;
+                    drop(terminal);
+                    self.render();
+                }
+            },
+            HintAction::Command { command } => match command {
+                HintCommand::Simple(program) => {
+                    self.exec(program, [&hint_match.text]);
+                }
+                HintCommand::WithArgs { program, args } => {
+                    let mut all_args = args.clone();
+                    all_args.push(hint_match.text.clone());
+                    self.exec(program, &all_args);
+                }
+            },
+        }
+    }
+
+    /// Update hint labels in the renderable content
+    fn update_hint_labels(&mut self) {
+        use crate::context::renderable::HintLabel;
+
+        let mut hint_labels = Vec::new();
+
+        if self.hint_state.is_active() {
+            let matches = self.hint_state.matches();
+            let visible_labels = self.hint_state.visible_labels();
+
+            for (match_index, remaining_label) in visible_labels {
+                if let Some(hint_match) = matches.get(match_index) {
+                    // Create labels for each character in the hint label
+                    for (char_index, &label_char) in remaining_label.iter().enumerate() {
+                        let position = rio_backend::crosswords::pos::Pos::new(
+                            hint_match.start.row,
+                            hint_match.start.col + char_index,
+                        );
+
+                        hint_labels.push(HintLabel {
+                            position,
+                            label: vec![label_char],
+                            is_first: char_index == 0, // First character gets different styling
+                        });
+                    }
+                }
+            }
+        }
+
+        self.context_manager
+            .current_mut()
+            .renderable_content
+            .hint_labels = hint_labels;
+    }
+}
+
+/// Apply post-processing to hyperlink URIs to remove trailing delimiters and handle uneven brackets.
+/// This is similar to Alacritty's hint post-processing logic.
+fn post_process_hyperlink_uri(uri: &str) -> String {
+    let chars: Vec<char> = uri.chars().collect();
+    if chars.is_empty() {
+        return String::new();
+    }
+
+    let mut end_idx = chars.len() - 1;
+    let mut open_parents = 0;
+    let mut open_brackets = 0;
+
+    // First pass: handle uneven brackets/parentheses
+    for (i, &c) in chars.iter().enumerate() {
+        match c {
+            '(' => open_parents += 1,
+            '[' => open_brackets += 1,
+            ')' => {
+                if open_parents == 0 {
+                    // Unmatched closing parenthesis, truncate here
+                    end_idx = i.saturating_sub(1);
+                    break;
+                } else {
+                    open_parents -= 1;
+                }
+            }
+            ']' => {
+                if open_brackets == 0 {
+                    // Unmatched closing bracket, truncate here
+                    end_idx = i.saturating_sub(1);
+                    break;
+                } else {
+                    open_brackets -= 1;
+                }
+            }
+            _ => (),
+        }
+    }
+
+    // Second pass: remove trailing delimiters
+    while end_idx > 0 {
+        match chars[end_idx] {
+            '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'' => {
+                end_idx = end_idx.saturating_sub(1);
+            }
+            _ => break,
+        }
+    }
+
+    chars.into_iter().take(end_idx + 1).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_post_process_hyperlink_uri() {
+        // Test removing trailing parenthesis
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com)"),
+            "https://example.com"
+        );
+
+        // Test removing trailing comma
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com,"),
+            "https://example.com"
+        );
+
+        // Test removing trailing period
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com."),
+            "https://example.com"
+        );
+
+        // Test handling balanced parentheses (should keep them)
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com/path(with)parens"),
+            "https://example.com/path(with)parens"
+        );
+
+        // Test handling unbalanced parentheses
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com/path)"),
+            "https://example.com/path"
+        );
+
+        // Test handling multiple trailing delimiters
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com.'),"),
+            "https://example.com"
+        );
+
+        // Test markdown-style URLs
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com)"),
+            "https://example.com"
+        );
+
+        // Test handling unbalanced brackets
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com/path]"),
+            "https://example.com/path"
+        );
+
+        // Test balanced brackets (should keep them)
+        assert_eq!(
+            post_process_hyperlink_uri("https://example.com/path[with]brackets"),
+            "https://example.com/path[with]brackets"
         );
     }
 }
