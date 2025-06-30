@@ -73,17 +73,6 @@ impl<T: EventListener> Context<T> {
     }
 
     #[inline]
-    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
-        self.renderable_content.hyperlink_range = hyperlink_range;
-        self.renderable_content.has_pending_updates = true;
-    }
-
-    #[inline]
-    pub fn has_hyperlink_range(&self) -> bool {
-        self.renderable_content.hyperlink_range.is_some()
-    }
-
-    #[inline]
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
             state: self.renderable_content.cursor.state.new_from_self(),
