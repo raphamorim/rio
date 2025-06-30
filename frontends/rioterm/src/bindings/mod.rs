@@ -1108,6 +1108,8 @@ pub fn platform_key_bindings(
         ));
     }
 
+    // Note: Hint bindings are added separately in Screen::new() based on config
+
     key_bindings
 }
 

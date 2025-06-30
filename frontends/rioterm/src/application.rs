@@ -899,8 +899,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Trigger hints highlighted by the mouse (like Alacritty)
-                        if button == MouseButton::Left && route.window.screen.trigger_hint() {
+                        // Trigger hints highlighted by the mouse
+                        if button == MouseButton::Left
+                            && route.window.screen.trigger_hint()
+                        {
                             return;
                         }
 
