@@ -282,12 +282,13 @@ impl Renderer {
             let should_underline = square.hyperlink().is_some() || {
                 if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
                     let current_pos = Pos::new(line, Column(column));
-                    highlighted_hint.start <= current_pos && current_pos <= highlighted_hint.end
+                    highlighted_hint.start <= current_pos
+                        && current_pos <= highlighted_hint.end
                 } else {
                     false
                 }
             };
-            
+
             if should_underline {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
@@ -295,7 +296,7 @@ impl Renderer {
                         shape: UnderlineShape::Regular,
                     }));
             }
-            
+
             if selection_range.is_some()
                 && selection_range
                     .unwrap()
@@ -329,31 +330,31 @@ impl Renderer {
             // Check for hint labels at this position
             if let Some(hint_label) = self.find_hint_label_at_position(
                 renderable_content,
-                Pos::new(line, Column(column))
+                Pos::new(line, Column(column)),
             ) {
                 // Override character with hint label character if available
                 if let Some(label_char) = hint_label.label.first() {
                     square_content = *label_char;
                 }
-                
-                // Apply hint label styling (similar to Alacritty's hint colors)
+
+                // Apply hint label styling
                 if hint_label.is_first {
                     // Start colors: dark text on orange background
                     style.color = [0.094, 0.094, 0.094, 1.0]; // #181818
                     style.background_color = Some([0.957, 0.749, 0.459, 1.0]); // #f4bf75
                 } else {
                     // End colors: different styling for continuation
-                    style.color = [0.094, 0.094, 0.094, 1.0]; // #181818  
+                    style.color = [0.094, 0.094, 0.094, 1.0]; // #181818
                     style.background_color = Some([0.8, 0.6, 0.3, 1.0]); // Slightly different orange
                 }
-                
+
                 // Make hint labels bold for better visibility
                 use rio_backend::sugarloaf::font_introspector::{Attributes, Weight};
                 let current_attrs = style.font_attrs;
                 style.font_attrs = Attributes::new(
                     current_attrs.stretch(),
                     Weight::BOLD,
-                    current_attrs.style()
+                    current_attrs.style(),
                 );
             }
 

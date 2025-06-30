@@ -12,7 +12,7 @@ pub struct HintState {
     /// Visible matches for the current hint
     matches: Vec<HintMatch>,
 
-    /// Labels for each match (as Vec<char> like Alacritty)
+    /// Labels for each match (as Vec<char>)
     labels: Vec<Vec<char>>,
 
     /// Keys pressed so far for hint selection
@@ -78,7 +78,9 @@ impl HintState {
 
         let hint = match &self.active_hint {
             Some(hint) => hint.clone(),
-            None => return,
+            None => {
+                return;
+            }
         };
 
         // Find regex matches if regex is specified
@@ -93,89 +95,55 @@ impl HintState {
             self.find_hyperlink_matches(term, hint.clone());
         }
 
-        println!("update_matches: found {} matches", self.matches.len());
-
         // Cancel hint mode if no matches found
         if self.matches.is_empty() {
-            println!("No matches found, stopping hint mode");
             self.stop();
             return;
         }
 
-        // Sort and dedup matches (like Alacritty)
+        // Sort and dedup matches
         self.matches.sort_by_key(|m| (m.start.row, m.start.col));
         self.matches.dedup_by_key(|m| m.start);
 
         // Generate labels for matches
         self.generate_labels();
-        println!("Generated {} labels: {:?}", self.labels.len(), self.labels);
     }
 
-    /// Handle keyboard input during hint selection (like Alacritty)
+    /// Handle keyboard input during hint selection
     pub fn keyboard_input<T: EventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
         c: char,
     ) -> Option<HintMatch> {
-        println!("keyboard_input called with character: '{}'", c);
-        
         match c {
             // Use backspace to remove the last character pressed
             '\x08' | '\x1f' => {
                 self.keys.pop();
-                println!("Backspace: keys after pop: {:?}", self.keys);
+                // Only update matches after backspace to regenerate visible labels
                 self.update_matches(term);
                 return None;
             }
             // Cancel hint highlighting on ESC/Ctrl+c
             '\x1b' | '\x03' => {
-                println!("ESC/Ctrl+C: stopping hint mode");
                 self.stop();
                 return None;
             }
             _ => (),
         }
 
-        // Update the visible matches first
-        self.update_matches(term);
-        println!("Current matches: {}", self.matches.len());
-        println!("Current labels: {:?}", self.labels);
-        println!("Current keys: {:?}", self.keys);
-
         let hint = self.active_hint.as_ref()?;
 
+        // Get visible labels (labels filtered by keys pressed so far)
+        let visible_labels = self.visible_labels();
+
         // Find the last label starting with the input character
-        // We need to look at the current keys + the new character
-        let mut test_keys = self.keys.clone();
-        test_keys.push(c);
-        println!("Testing with keys: {:?}", test_keys);
-        
-        // Find labels that match the test keys
-        let mut matching_indices = Vec::new();
-        for (i, label) in self.labels.iter().enumerate() {
-            if label.len() >= test_keys.len() && label[..test_keys.len()] == test_keys[..] {
-                matching_indices.push(i);
-                println!("Label {} ({:?}) matches test keys", i, label);
-            }
-        }
-        
-        println!("Matching indices: {:?}", matching_indices);
-        
-        if matching_indices.is_empty() {
-            // No labels match, ignore this character
-            println!("No matching labels found for character '{}'", c);
-            return None;
-        }
-        
-        // Take the last matching label (like Alacritty does)
-        let index = *matching_indices.last()?;
-        let label = &self.labels[index];
-        println!("Selected label {} ({:?})", index, label);
-        
-        // Check if this completes the label
-        if label.len() == test_keys.len() {
-            println!("Label completed! Executing hint action");
-            let hint_match = self.matches.get(index)?.clone();
+        let mut matching_labels = visible_labels.iter().rev();
+        let (index, remaining_label) = matching_labels
+            .find(|(_, remaining)| !remaining.is_empty() && remaining[0] == c)?;
+
+        // Check if this completes the label (only one character remaining)
+        if remaining_label.len() == 1 {
+            let hint_match = self.matches.get(*index)?.clone();
             let hint_config = hint.clone();
 
             // Exit hint mode unless it requires explicit dismissal
@@ -189,7 +157,6 @@ impl HintState {
         } else {
             // Store character to preserve the selection
             self.keys.push(c);
-            println!("Character added, keys now: {:?}", self.keys);
             None
         }
     }
@@ -197,11 +164,6 @@ impl HintState {
     /// Get current matches
     pub fn matches(&self) -> &[HintMatch] {
         &self.matches
-    }
-
-    /// Get current labels (as Vec<Vec<char>> like Alacritty)
-    pub fn labels(&self) -> &[Vec<char>] {
-        &self.labels
     }
 
     /// Get keys pressed so far
@@ -263,7 +225,6 @@ impl HintState {
             for mat in regex.find_iter(&line_text) {
                 let start_col = Column(mat.start());
                 let mut match_text = mat.as_str().to_string();
-                let original_match_end = mat.end();
 
                 // Apply post-processing if enabled
                 if hint.post_processing {
@@ -371,7 +332,7 @@ impl HintState {
     }
 }
 
-/// Generates hint labels using the specified alphabet (like Alacritty)
+/// Generates hint labels using the specified alphabet
 struct LabelGenerator {
     alphabet: Vec<char>,
     indices: Vec<usize>,
@@ -532,28 +493,28 @@ mod tests {
     #[test]
     fn test_keyboard_input_logic() {
         let mut state = HintState::new("jfkdls".to_string());
-        
+
         // Simulate having some labels
         state.labels = vec![
-            vec!['j'],      // index 0
-            vec!['f'],      // index 1  
-            vec!['k'],      // index 2
-            vec!['d'],      // index 3
-            vec!['l'],      // index 4
-            vec!['s'],      // index 5
+            vec!['j'], // index 0
+            vec!['f'], // index 1
+            vec!['k'], // index 2
+            vec!['d'], // index 3
+            vec!['l'], // index 4
+            vec!['s'], // index 5
         ];
-        
+
         // Simulate having matches (we'll use dummy matches)
         state.matches = vec![
             HintMatch {
                 text: "match0".to_string(),
                 start: rio_backend::crosswords::pos::Pos::new(
                     rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(0)
+                    rio_backend::crosswords::pos::Column(0),
                 ),
                 end: rio_backend::crosswords::pos::Pos::new(
                     rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(5)
+                    rio_backend::crosswords::pos::Column(5),
                 ),
                 hint: Rc::new(Hint {
                     regex: Some("test".to_string()),
@@ -571,11 +532,11 @@ mod tests {
                 text: "match1".to_string(),
                 start: rio_backend::crosswords::pos::Pos::new(
                     rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(10)
+                    rio_backend::crosswords::pos::Column(10),
                 ),
                 end: rio_backend::crosswords::pos::Pos::new(
                     rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(15)
+                    rio_backend::crosswords::pos::Column(15),
                 ),
                 hint: Rc::new(Hint {
                     regex: Some("test".to_string()),
@@ -609,20 +570,28 @@ mod tests {
         // Test that 'j' should match the first label
         let mut test_keys = state.keys.clone();
         test_keys.push('j');
-        
+
         let mut matching_indices = Vec::new();
         for (i, label) in state.labels.iter().enumerate() {
-            if label.len() >= test_keys.len() && label[..test_keys.len()] == test_keys[..] {
+            if label.len() >= test_keys.len() && label[..test_keys.len()] == test_keys[..]
+            {
                 matching_indices.push(i);
             }
         }
-        
-        assert!(!matching_indices.is_empty(), "Should find matching labels for 'j'");
+
+        assert!(
+            !matching_indices.is_empty(),
+            "Should find matching labels for 'j'"
+        );
         assert_eq!(matching_indices, vec![0], "Should match index 0 for 'j'");
-        
+
         // Test that the label should be completed (single character)
         let index = *matching_indices.last().unwrap();
         let label = &state.labels[index];
-        assert_eq!(label.len(), test_keys.len(), "Label should be completed with single character");
+        assert_eq!(
+            label.len(),
+            test_keys.len(),
+            "Label should be completed with single character"
+        );
     }
 }
