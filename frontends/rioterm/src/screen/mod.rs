@@ -20,7 +20,7 @@ use crate::context::grid::{ContextDimension, Delta};
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{self, process_open_url, ContextManager};
 use crate::crosswords::{
-    grid::{Dimensions, Scroll},
+    grid::{BidirectionalIterator, Dimensions, Scroll},
     pos::{Column, Pos, Side},
     square::Hyperlink,
     vi_mode::ViMotion,
@@ -1770,16 +1770,31 @@ impl Screen<'_> {
 
             // Check if the point is within this match
             if point.col >= start_col && point.col <= end_col {
-                let mut match_text = mat.as_str().to_string();
+                let original_match_text = mat.as_str().to_string();
+                let mut match_text = original_match_text.clone();
 
+                // Apply Alacritty-style grid-based post-processing
+                let (processed_start, processed_end) = if hint_config.post_processing {
+                    self.hint_post_processing(terminal, start_col, end_col, rio_backend::crosswords::pos::Line(point.row.0))
+                        .unwrap_or((start_col, end_col))
+                } else {
+                    (start_col, end_col)
+                };
+
+                // Extract the processed text
                 if hint_config.post_processing {
-                    match_text = post_process_hyperlink_uri(&match_text);
+                    let mut processed_text = String::new();
+                    for col in processed_start.0..=processed_end.0 {
+                        let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
+                        processed_text.push(cell.c);
+                    }
+                    match_text = processed_text.trim_end().to_string();
                 }
 
                 return Some(crate::hints::HintMatch {
                     text: match_text,
-                    start: rio_backend::crosswords::pos::Pos::new(point.row, start_col),
-                    end: rio_backend::crosswords::pos::Pos::new(point.row, end_col),
+                    start: rio_backend::crosswords::pos::Pos::new(point.row, processed_start),
+                    end: rio_backend::crosswords::pos::Pos::new(point.row, processed_end),
                     hint: hint_config,
                 });
             }
@@ -2771,6 +2786,97 @@ impl Screen<'_> {
             .current_mut()
             .renderable_content
             .hint_labels = hint_labels;
+    }
+
+    /// Apply Alacritty-style grid-based hint post-processing.
+    /// 
+    /// This iterates through the terminal grid character by character and adjusts
+    /// the match bounds based on bracket balance and trailing delimiters.
+    fn hint_post_processing(
+        &self,
+        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
+        start_col: rio_backend::crosswords::pos::Column,
+        end_col: rio_backend::crosswords::pos::Column,
+        row: rio_backend::crosswords::pos::Line,
+    ) -> Option<(rio_backend::crosswords::pos::Column, rio_backend::crosswords::pos::Column)> {
+        use rio_backend::crosswords::grid::BidirectionalIterator;
+        
+        let grid = &terminal.grid;
+        let start_pos = rio_backend::crosswords::pos::Pos::new(row, start_col);
+        let end_pos = rio_backend::crosswords::pos::Pos::new(row, end_col);
+        
+        let mut iter = grid.iter_from(start_pos);
+        let mut current_pos = start_pos;
+        let mut open_parents = 0;
+        let mut open_brackets = 0;
+        
+        // First pass: handle uneven brackets/parentheses
+        while current_pos <= end_pos {
+            if let Some(indexed) = iter.next() {
+                let c = indexed.square.c;
+                current_pos = indexed.pos;
+                
+                match c {
+                    '(' => open_parents += 1,
+                    '[' => open_brackets += 1,
+                    ')' => {
+                        if open_parents == 0 {
+                            // Unmatched closing parenthesis, truncate here
+                            if let Some(_) = iter.prev() {
+                                return Some((start_col, iter.pos().col));
+                            }
+                            break;
+                        } else {
+                            open_parents -= 1;
+                        }
+                    }
+                    ']' => {
+                        if open_brackets == 0 {
+                            // Unmatched closing bracket, truncate here
+                            if let Some(_) = iter.prev() {
+                                return Some((start_col, iter.pos().col));
+                            }
+                            break;
+                        } else {
+                            open_brackets -= 1;
+                        }
+                    }
+                    _ => (),
+                }
+                
+                if current_pos == end_pos {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        // Second pass: remove trailing delimiters
+        let mut final_end = end_pos;
+        let mut iter = grid.iter_from(end_pos);
+        
+        while final_end > start_pos {
+            if let Some(indexed) = iter.next() {
+                let c = indexed.square.c;
+                if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
+                    break;
+                }
+                
+                if let Some(prev_indexed) = iter.prev() {
+                    final_end = prev_indexed.pos;
+                    if let Some(_) = iter.prev() {
+                        // Move iterator back one more position for next iteration
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        
+        Some((start_col, final_end.col))
     }
 }
 
