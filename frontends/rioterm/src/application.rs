@@ -250,8 +250,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if self.config.renderer.strategy.is_event_based() {
                     let _total_windows = self.router.routes.len();
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        tracing::trace!("[PERF] TerminalDamaged event for route {}, damage: {:?}", route_id, damage);
-                        
+                        tracing::trace!(
+                            "[PERF] TerminalDamaged event for route {}, damage: {:?}",
+                            route_id,
+                            damage
+                        );
+
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
@@ -277,15 +281,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Check if this is the current route
                         if route_id == route.window.screen.ctx().current_route() {
-                            // Store damage information for efficient rendering
-                            // TODO: Store damage info in route for optimized rendering
-                            
                             // Clear the one-time render flag if it was set
                             if route.window.needs_render_after_occlusion {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
-                            // For now, just request a redraw - later we can optimize based on damage type
+                            // Request immediate redraw for responsive UI
                             route.request_redraw();
                         }
                     }
@@ -1411,19 +1412,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             // Use the new event-driven approach: check and emit damage events
             for grid_context in grid.contexts().iter() {
                 let terminal = &grid_context.context().terminal;
-                
+
                 // Get display offset from terminal
                 let display_offset = if let Some(t) = terminal.try_lock_unfair() {
                     t.display_offset()
                 } else {
                     0 // Default to 0 if we can't get the lock
                 };
-                
+
                 // Try immediate check and emit events if damage is found
-                if let Some(has_damage) = AsyncTerminalOps::try_check_and_emit_damage(
-                    terminal, 
-                    display_offset
-                ) {
+                if let Some(has_damage) =
+                    AsyncTerminalOps::try_check_and_emit_damage(terminal, display_offset)
+                {
                     if has_damage {
                         // Event already emitted by try_check_and_emit_damage
                         tracing::trace!("[PERF] Immediate damage detected and event emitted for route {}", route_id);

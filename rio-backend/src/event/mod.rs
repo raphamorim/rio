@@ -2,10 +2,10 @@ pub mod sync;
 
 use crate::clipboard::ClipboardType;
 use crate::config::colors::ColorRgb;
-use crate::crosswords::LineDamageBounds;
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
+use crate::crosswords::LineDamageBounds;
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
@@ -66,7 +66,10 @@ pub enum RioEvent {
     /// New terminal content available per route.
     RenderRoute(usize),
     /// Terminal content has changed with specific damage information.
-    TerminalDamaged { route_id: usize, damage: TerminalDamage },
+    TerminalDamaged {
+        route_id: usize,
+        damage: TerminalDamage,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -182,13 +185,19 @@ impl Debug for RioEvent {
             }
             RioEvent::Render => write!(f, "Render"),
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
-            RioEvent::TerminalDamaged { route_id, damage } => {
-                match damage {
-                    TerminalDamage::Full => write!(f, "TerminalDamaged route {route_id} (Full)"),
-                    TerminalDamage::Partial(lines) => write!(f, "TerminalDamaged route {route_id} ({} lines)", lines.len()),
-                    TerminalDamage::CursorOnly => write!(f, "TerminalDamaged route {route_id} (CursorOnly)"),
+            RioEvent::TerminalDamaged { route_id, damage } => match damage {
+                TerminalDamage::Full => {
+                    write!(f, "TerminalDamaged route {route_id} (Full)")
                 }
-            }
+                TerminalDamage::Partial(lines) => write!(
+                    f,
+                    "TerminalDamaged route {route_id} ({} lines)",
+                    lines.len()
+                ),
+                TerminalDamage::CursorOnly => {
+                    write!(f, "TerminalDamaged route {route_id} (CursorOnly)")
+                }
+            },
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
@@ -248,10 +257,10 @@ pub trait OnResize {
 pub trait TerminalEventEmitter {
     /// Emit a terminal damage event
     fn emit_damage(&self, route_id: usize, damage: TerminalDamage);
-    
+
     /// Emit a cursor change event
     fn emit_cursor_change(&self, route_id: usize);
-    
+
     /// Emit a full redraw event
     fn emit_full_redraw(&self, route_id: usize);
 }
@@ -314,14 +323,17 @@ impl TerminalEventEmitter for EventProxy {
         // For now, we'll send to the first available window
         // In a real implementation, you'd need to map route_id to window_id
         let _window_id = WindowId::from(0); // This needs proper mapping
-        self.send_event(RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }), _window_id);
+        self.send_event(
+            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }),
+            _window_id,
+        );
     }
-    
+
     fn emit_cursor_change(&self, route_id: usize) {
         let _window_id = WindowId::from(0); // This needs proper mapping
         self.emit_damage(route_id, TerminalDamage::CursorOnly);
     }
-    
+
     fn emit_full_redraw(&self, route_id: usize) {
         let _window_id = WindowId::from(0); // This needs proper mapping
         self.emit_damage(route_id, TerminalDamage::Full);
