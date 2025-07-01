@@ -358,9 +358,6 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        let render_start = std::time::Instant::now();
-
-        let compute_start = std::time::Instant::now();
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
             &mut self.rich_text_brush,
@@ -368,14 +365,9 @@ impl Sugarloaf<'_> {
             &mut self.ctx,
             &mut self.graphics,
         );
-        let compute_duration = compute_start.elapsed();
-        tracing::debug!("[PERF] Sugarloaf compute phase: {:?}", compute_duration);
 
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
-                let frame_start = std::time::Instant::now();
-
-                let encoder_start = std::time::Instant::now();
                 let mut encoder = self.ctx.device.create_command_encoder(
                     &wgpu::CommandEncoderDescriptor { label: None },
                 );
@@ -383,10 +375,6 @@ impl Sugarloaf<'_> {
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-                let encoder_duration = encoder_start.elapsed();
-                tracing::debug!("[PERF] Sugarloaf encoder setup: {:?}", encoder_duration);
-
-                let layer_prep_start = std::time::Instant::now();
                 if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
                         .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
@@ -409,14 +397,8 @@ impl Sugarloaf<'_> {
                         }
                     }
                 }
-                let layer_prep_duration = layer_prep_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Sugarloaf layer preparation: {:?}",
-                    layer_prep_duration
-                );
 
                 {
-                    let render_pass_start = std::time::Instant::now();
                     let load = if let Some(background_color) = self.background_color {
                         wgpu::LoadOp::Clear(background_color)
                     } else {
@@ -439,7 +421,6 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    let layer_render_start = std::time::Instant::now();
                     if self.graphics.bottom_layer.is_some() {
                         self.layer_brush.render(0, &mut rpass, None);
                     }
@@ -454,34 +435,9 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
-                    let layer_render_duration = layer_render_start.elapsed();
-                    tracing::debug!(
-                        "[PERF] Sugarloaf layer rendering: {:?}",
-                        layer_render_duration
-                    );
-
-                    let quad_render_start = std::time::Instant::now();
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
-                    let quad_render_duration = quad_render_start.elapsed();
-                    tracing::debug!(
-                        "[PERF] Sugarloaf quad rendering: {:?}",
-                        quad_render_duration
-                    );
-
-                    let text_render_start = std::time::Instant::now();
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-                    let text_render_duration = text_render_start.elapsed();
-                    tracing::debug!(
-                        "[PERF] Sugarloaf text rendering: {:?}",
-                        text_render_duration
-                    );
-
-                    let render_pass_duration = render_pass_start.elapsed();
-                    tracing::debug!(
-                        "[PERF] Sugarloaf render pass total: {:?}",
-                        render_pass_duration
-                    );
                 }
 
                 if self.graphics.bottom_layer.is_some()
@@ -491,7 +447,6 @@ impl Sugarloaf<'_> {
                     self.graphics.clear_top_layer();
                 }
 
-                let filters_start = std::time::Instant::now();
                 if let Some(ref mut filters_brush) = self.filters_brush {
                     filters_brush.render(
                         &self.ctx,
@@ -500,23 +455,8 @@ impl Sugarloaf<'_> {
                         &frame.texture,
                     );
                 }
-                let filters_duration = filters_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Sugarloaf filters rendering: {:?}",
-                    filters_duration
-                );
-
-                let submit_start = std::time::Instant::now();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
-                let submit_duration = submit_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Sugarloaf submit & present: {:?}",
-                    submit_duration
-                );
-
-                let frame_duration = frame_start.elapsed();
-                tracing::debug!("[PERF] Sugarloaf frame total: {:?}", frame_duration);
             }
             Err(error) => {
                 if error == wgpu::SurfaceError::OutOfMemory {
@@ -525,8 +465,5 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
-
-        let render_duration = render_start.elapsed();
-        tracing::debug!("[PERF] Sugarloaf render() total: {:?}", render_duration);
     }
 }

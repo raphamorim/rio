@@ -2123,9 +2123,7 @@ impl Screen<'_> {
     }
 
     pub fn render(&mut self) {
-        let screen_render_start = std::time::Instant::now();
-        // let start_total = std::time::Instant::now();
-        // println!("_____________________________\nrender time elapsed");
+        // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -2135,7 +2133,7 @@ impl Screen<'_> {
             }
         }
 
-        let search_hints_start = std::time::Instant::now();
+        // let search_hints_start = std::time::Instant::now();
         let mut search_hints = if is_search_active {
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
@@ -2147,22 +2145,22 @@ impl Screen<'_> {
         } else {
             None
         };
-        let search_hints_duration = search_hints_start.elapsed();
-        if self.renderer.enable_performance_logging {
-            tracing::debug!("[PERF] Screen search hints: {:?}", search_hints_duration);
-        }
+        // let search_hints_duration = search_hints_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen search hints: {:?}", search_hints_duration);
+        // }
 
-        let renderer_run_start = std::time::Instant::now();
+        // let renderer_run_start = std::time::Instant::now();
         self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &mut search_hints,
             &self.search_state.focused_match,
         );
-        let renderer_run_duration = renderer_run_start.elapsed();
-        if self.renderer.enable_performance_logging {
-            tracing::debug!("[PERF] Screen renderer.run(): {:?}", renderer_run_duration);
-        }
+        // let renderer_run_duration = renderer_run_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen renderer.run(): {:?}", renderer_run_duration);
+        // }
 
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
@@ -2179,12 +2177,10 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        let screen_render_duration = screen_render_start.elapsed();
-        if self.renderer.enable_performance_logging {
-            tracing::debug!("[PERF] Screen render() total: {:?}", screen_render_duration);
-        }
-        // let duration = start_total.elapsed();
-        // println!("Total whole render function is: {:?}\n", duration);
+        // let screen_render_duration = screen_render_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen render() total: {:?}", screen_render_duration);
+        // }
     }
 
     /// Update IME cursor position based on terminal cursor position

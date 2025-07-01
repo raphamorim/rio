@@ -59,7 +59,6 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
-    pub enable_performance_logging: bool,
 }
 
 impl Renderer {
@@ -112,7 +111,6 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
-            enable_performance_logging: config.developer.enable_performance_logging,
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -764,7 +762,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        let renderer_start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
@@ -776,7 +774,7 @@ impl Renderer {
 
         let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
 
-        let grid_start = std::time::Instant::now();
+        // let grid_start = std::time::Instant::now();
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
         let mut has_active_changed = false;
@@ -784,10 +782,6 @@ impl Renderer {
             has_active_changed = true;
 
             self.last_active = active_index;
-        }
-        let grid_duration = grid_start.elapsed();
-        if self.enable_performance_logging {
-            tracing::debug!("[PERF] Renderer grid setup: {:?}", grid_duration);
         }
 
         for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
@@ -1001,20 +995,8 @@ impl Renderer {
         context_manager.extend_with_grid_objects(&mut objects);
         sugarloaf.set_objects(objects);
 
-        let sugarloaf_render_start = std::time::Instant::now();
         sugarloaf.render();
-        let sugarloaf_render_duration = sugarloaf_render_start.elapsed();
-        if self.enable_performance_logging {
-            tracing::debug!(
-                "[PERF] Renderer sugarloaf.render(): {:?}",
-                sugarloaf_render_duration
-            );
-        }
 
-        let renderer_duration = renderer_start.elapsed();
-        if self.enable_performance_logging {
-            tracing::debug!("[PERF] Renderer run() total: {:?}", renderer_duration);
-        }
         // let duration = start.elapsed();
         // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }

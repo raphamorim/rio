@@ -78,8 +78,6 @@ pub struct Developer {
     pub log_level: String,
     #[serde(rename = "enable-log-file", default)]
     pub enable_log_file: bool,
-    #[serde(default = "bool::default", rename = "enable-performance-logging")]
-    pub enable_performance_logging: bool,
 }
 
 impl Default for Developer {
@@ -88,7 +86,6 @@ impl Default for Developer {
             log_level: default_log_level(),
             enable_log_file: false,
             enable_fps_counter: false,
-            enable_performance_logging: false,
         }
     }
 }

@@ -184,19 +184,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::RenderRoute(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
-                    let total_windows = self.router.routes.len();
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        tracing::trace!("[PERF] RenderRoute event for window {:?}, route_id: {}, focused: {}, occluded: {}, total windows: {}", 
-                            window_id, route_id, route.window.is_focused, route.window.is_occluded, total_windows);
-
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
-                            tracing::debug!(
-                                "[PERF] Skipping render for unfocused window {:?}",
-                                window_id
-                            );
                             return;
                         }
 
@@ -205,10 +197,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             && route.window.is_occluded
                             && !route.window.needs_render_after_occlusion
                         {
-                            tracing::debug!(
-                                "[PERF] Skipping render for occluded window {:?}",
-                                window_id
-                            );
                             return;
                         }
 
@@ -239,31 +227,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 }
                             } else {
                                 // We can render immediately
-                                tracing::trace!("[PERF] Immediate render for window {:?}, route_id: {}", window_id, route_id);
                                 route.request_redraw();
                             }
                         }
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+            RioEventType::Rio(RioEvent::TerminalDamaged {
+                route_id,
+                damage: _,
+            }) => {
                 if self.config.renderer.strategy.is_event_based() {
-                    let _total_windows = self.router.routes.len();
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        tracing::trace!(
-                            "[PERF] TerminalDamaged event for route {}, damage: {:?}",
-                            route_id,
-                            damage
-                        );
-
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
-                            tracing::debug!(
-                                "[PERF] Skipping render for unfocused window {:?}",
-                                window_id
-                            );
                             return;
                         }
 
@@ -272,10 +251,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             && route.window.is_occluded
                             && !route.window.needs_render_after_occlusion
                         {
-                            tracing::debug!(
-                                "[PERF] Skipping render for occluded window {:?}",
-                                window_id
-                            );
                             return;
                         }
 
@@ -737,7 +712,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             return;
         }
 
-        let total_windows = self.router.routes.len();
         let route = match self.router.routes.get_mut(&window_id) {
             Some(window) => window,
             None => return,
@@ -748,12 +722,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // MacOS doesn't exit the loop
                 if cfg!(target_os = "macos") && self.config.confirm_before_quit {
                     self.router.routes.remove(&window_id);
-                    let window_count = self.router.routes.len();
-                    tracing::info!(
-                        "[PERF] Window closed - ID: {:?}, Remaining windows: {}",
-                        window_id,
-                        window_count
-                    );
                     return;
                 }
 
@@ -763,12 +731,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 } else {
                     self.router.routes.remove(&window_id);
-                    let window_count = self.router.routes.len();
-                    tracing::info!(
-                        "[PERF] Window closed - ID: {:?}, Remaining windows: {}",
-                        window_id,
-                        window_count
-                    );
                 }
 
                 if self.router.routes.is_empty() {
@@ -1169,14 +1131,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Focused(focused) => {
-                let window_id = route.window.winit_window.id();
-                tracing::info!(
-                    "[PERF] Window {:?} focus changed: {} (total windows: {})",
-                    window_id,
-                    focused,
-                    total_windows
-                );
-
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
                 }
@@ -1185,10 +1139,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.is_focused = focused;
 
                 if has_regained_focus {
-                    tracing::debug!(
-                        "[PERF] Window {:?} regained focus, requesting redraw",
-                        window_id
-                    );
                     route.request_redraw();
                 }
 
@@ -1245,25 +1195,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                let window_render_start = std::time::Instant::now();
-                let window_id = route.window.winit_window.id();
-                let is_focused = route.window.is_focused;
-
-                tracing::debug!("[PERF] Window {:?} redraw requested (focused: {}, total windows: {})", window_id, is_focused, total_windows);
-
                 // let start = std::time::Instant::now();
                 route.window.winit_window.pre_present_notify();
 
-                let begin_render_start = std::time::Instant::now();
                 route.begin_render();
-                let begin_render_duration = begin_render_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Window {:?} begin_render: {:?}",
-                    window_id,
-                    begin_render_duration
-                );
 
-                let route_render_start = std::time::Instant::now();
                 match route.path {
                     RoutePath::Assistant => {
                         route.window.screen.render_assistant(&route.assistant);
@@ -1286,12 +1222,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         );
                     }
                 }
-                let route_render_duration = route_render_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Window {:?} route render: {:?}",
-                    window_id,
-                    route_render_duration
-                );
 
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
@@ -1299,22 +1229,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
-                } else {
-                    // In Events mode, log when render completes to track idle vs active windows
-                    tracing::trace!(
-                        "[PERF] Window {:?} render complete, waiting for next event",
-                        window_id
-                    );
                 }
 
                 event_loop.set_control_flow(ControlFlow::Wait);
-
-                let window_render_duration = window_render_start.elapsed();
-                tracing::debug!(
-                    "[PERF] Window {:?} total redraw: {:?}",
-                    window_id,
-                    window_render_duration
-                );
             }
             _ => {}
         }
@@ -1344,54 +1261,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                             *window_id,
                                         );
                                         break;
-                                    }
-                                }
-                            }
-                            UiUpdate::TerminalParseComplete {
-                                route_id,
-                                needs_redraw,
-                            } => {
-                                if needs_redraw {
-                                    for (window_id, route) in self.router.routes.iter() {
-                                        let context_manager = route.window.screen.ctx();
-                                        if context_manager.current_route() == route_id {
-                                            event_proxy.send_event(
-                                                RioEventType::Rio(RioEvent::RenderRoute(
-                                                    route_id,
-                                                )),
-                                                *window_id,
-                                            );
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            UiUpdate::DamageCheckComplete {
-                                route_id,
-                                has_damage,
-                            } => {
-                                if has_damage {
-                                    for (window_id, route) in self.router.routes.iter() {
-                                        let context_manager = route.window.screen.ctx();
-                                        if context_manager.current_route() == route_id {
-                                            // Skip rendering for unfocused windows if configured
-                                            if self
-                                                .config
-                                                .renderer
-                                                .disable_unfocused_render
-                                                && !route.window.is_focused
-                                            {
-                                                continue;
-                                            }
-
-                                            event_proxy.send_event(
-                                                RioEventType::Rio(RioEvent::RenderRoute(
-                                                    route_id,
-                                                )),
-                                                *window_id,
-                                            );
-                                            break;
-                                        }
                                     }
                                 }
                             }
@@ -1426,7 +1295,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 {
                     if has_damage {
                         // Event already emitted by try_check_and_emit_damage
-                        tracing::trace!("[PERF] Immediate damage detected and event emitted for route {}", route_id);
                     }
                 } else {
                     // If immediate check failed, spawn async check
@@ -1494,7 +1362,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     // You generally want to treat this as an “do on quit” event.
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         // Shutdown async executor first
-        let executor = std::mem::replace(&mut self.async_executor, AsyncExecutor::new());
+        let executor = std::mem::take(&mut self.async_executor);
         executor.shutdown();
 
         // Ensure that all the windows are dropped, so the destructors for
