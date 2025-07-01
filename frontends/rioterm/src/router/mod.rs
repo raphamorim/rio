@@ -8,6 +8,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -59,6 +60,95 @@ impl Route<'_> {
     #[inline]
     pub fn begin_render(&mut self) {
         self.window.render_timestamp = Instant::now();
+
+        // // Track frame count for performance monitoring
+        // use std::collections::HashMap;
+        // use std::sync::Mutex;
+
+        // static FRAME_COUNTERS: Mutex<
+        //     Option<HashMap<rio_window::window::WindowId, (u64, std::time::Instant)>>,
+        // > = Mutex::new(None);
+        // static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+        // let window_id = self.window.winit_window.id();
+
+        // {
+        //     // Use try_lock to avoid blocking other windows during performance logging
+        //     let mut counters = match FRAME_COUNTERS.try_lock() {
+        //         Ok(guard) => guard,
+        //         Err(_) => return, // Skip performance logging if another window is using it
+        //     };
+        //     if counters.is_none() {
+        //         *counters = Some(HashMap::new());
+        //     }
+
+        //     let mut last_log = match LAST_LOG.try_lock() {
+        //         Ok(guard) => guard,
+        //         Err(_) => return, // Skip performance logging if another window is using it
+        //     };
+        //     if last_log.is_none() {
+        //         *last_log = Some(std::time::Instant::now());
+        //     }
+
+        //     if let (Some(ref mut counters_map), Some(ref mut last_log_time)) =
+        //         (counters.as_mut(), last_log.as_mut())
+        //     {
+        //         let entry = counters_map
+        //             .entry(window_id)
+        //             .or_insert((0, std::time::Instant::now()));
+        //         entry.0 += 1;
+
+        //         // Log performance stats every 5 seconds
+        //         if last_log_time.elapsed().as_secs() >= 5 {
+        //             let total_windows = counters_map.len();
+        //             if total_windows > 1 {
+        //                 tracing::warn!(
+        //                     "[PERF] Multi-window performance stats ({} windows):",
+        //                     total_windows
+        //                 );
+        //                 let mut sorted_windows: Vec<_> = counters_map.iter().collect();
+        //                 sorted_windows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Sort by frame count descending
+
+        //                 for (i, (id, (frames, start_time))) in
+        //                     sorted_windows.iter().enumerate()
+        //                 {
+        //                     let fps = *frames as f64 / start_time.elapsed().as_secs_f64();
+        //                     let priority = if i == 0 { "HIGH" } else { "LOW" };
+        //                     tracing::warn!(
+        //                         "[PERF]   Window {:?}: {:.1} FPS ({} frames) [{}]",
+        //                         id,
+        //                         fps,
+        //                         frames,
+        //                         priority
+        //                     );
+        //                 }
+
+        //                 // Check for significant FPS differences
+        //                 if sorted_windows.len() >= 2 {
+        //                     let highest_fps = sorted_windows[0].1 .0 as f64
+        //                         / sorted_windows[0].1 .1.elapsed().as_secs_f64();
+        //                     let lowest_fps = sorted_windows.last().unwrap().1 .0 as f64
+        //                         / sorted_windows
+        //                             .last()
+        //                             .unwrap()
+        //                             .1
+        //                              .1
+        //                             .elapsed()
+        //                             .as_secs_f64();
+        //                     if highest_fps > lowest_fps * 2.0 {
+        //                         tracing::error!("[PERF] SIGNIFICANT FPS DIFFERENCE: {:.1} vs {:.1} FPS - window prioritization detected!", highest_fps, lowest_fps);
+        //                     }
+        //                 }
+        //             }
+        //             **last_log_time = std::time::Instant::now();
+        //             // Reset counters
+        //             for (_, (frames, start_time)) in counters_map.iter_mut() {
+        //                 *frames = 0;
+        //                 *start_time = std::time::Instant::now();
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     #[inline]
@@ -371,6 +461,7 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
+
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
 }
