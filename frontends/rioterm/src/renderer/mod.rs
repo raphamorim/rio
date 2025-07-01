@@ -765,7 +765,7 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         let renderer_start = std::time::Instant::now();
-        
+
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -1005,9 +1005,12 @@ impl Renderer {
         sugarloaf.render();
         let sugarloaf_render_duration = sugarloaf_render_start.elapsed();
         if self.enable_performance_logging {
-            tracing::debug!("[PERF] Renderer sugarloaf.render(): {:?}", sugarloaf_render_duration);
+            tracing::debug!(
+                "[PERF] Renderer sugarloaf.render(): {:?}",
+                sugarloaf_render_duration
+            );
         }
-        
+
         let renderer_duration = renderer_start.elapsed();
         if self.enable_performance_logging {
             tracing::debug!("[PERF] Renderer run() total: {:?}", renderer_duration);

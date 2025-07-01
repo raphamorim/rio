@@ -359,7 +359,7 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn render(&mut self) {
         let render_start = std::time::Instant::now();
-        
+
         let compute_start = std::time::Instant::now();
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
@@ -374,7 +374,7 @@ impl Sugarloaf<'_> {
         match self.ctx.surface.get_current_texture() {
             Ok(frame) => {
                 let frame_start = std::time::Instant::now();
-                
+
                 let encoder_start = std::time::Instant::now();
                 let mut encoder = self.ctx.device.create_command_encoder(
                     &wgpu::CommandEncoderDescriptor { label: None },
@@ -410,7 +410,10 @@ impl Sugarloaf<'_> {
                     }
                 }
                 let layer_prep_duration = layer_prep_start.elapsed();
-                tracing::debug!("[PERF] Sugarloaf layer preparation: {:?}", layer_prep_duration);
+                tracing::debug!(
+                    "[PERF] Sugarloaf layer preparation: {:?}",
+                    layer_prep_duration
+                );
 
                 {
                     let render_pass_start = std::time::Instant::now();
@@ -452,21 +455,33 @@ impl Sugarloaf<'_> {
                         }
                     }
                     let layer_render_duration = layer_render_start.elapsed();
-                    tracing::debug!("[PERF] Sugarloaf layer rendering: {:?}", layer_render_duration);
+                    tracing::debug!(
+                        "[PERF] Sugarloaf layer rendering: {:?}",
+                        layer_render_duration
+                    );
 
                     let quad_render_start = std::time::Instant::now();
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
                     let quad_render_duration = quad_render_start.elapsed();
-                    tracing::debug!("[PERF] Sugarloaf quad rendering: {:?}", quad_render_duration);
+                    tracing::debug!(
+                        "[PERF] Sugarloaf quad rendering: {:?}",
+                        quad_render_duration
+                    );
 
                     let text_render_start = std::time::Instant::now();
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
                     let text_render_duration = text_render_start.elapsed();
-                    tracing::debug!("[PERF] Sugarloaf text rendering: {:?}", text_render_duration);
-                    
+                    tracing::debug!(
+                        "[PERF] Sugarloaf text rendering: {:?}",
+                        text_render_duration
+                    );
+
                     let render_pass_duration = render_pass_start.elapsed();
-                    tracing::debug!("[PERF] Sugarloaf render pass total: {:?}", render_pass_duration);
+                    tracing::debug!(
+                        "[PERF] Sugarloaf render pass total: {:?}",
+                        render_pass_duration
+                    );
                 }
 
                 if self.graphics.bottom_layer.is_some()
@@ -486,14 +501,20 @@ impl Sugarloaf<'_> {
                     );
                 }
                 let filters_duration = filters_start.elapsed();
-                tracing::debug!("[PERF] Sugarloaf filters rendering: {:?}", filters_duration);
+                tracing::debug!(
+                    "[PERF] Sugarloaf filters rendering: {:?}",
+                    filters_duration
+                );
 
                 let submit_start = std::time::Instant::now();
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
                 let submit_duration = submit_start.elapsed();
-                tracing::debug!("[PERF] Sugarloaf submit & present: {:?}", submit_duration);
-                
+                tracing::debug!(
+                    "[PERF] Sugarloaf submit & present: {:?}",
+                    submit_duration
+                );
+
                 let frame_duration = frame_start.elapsed();
                 tracing::debug!("[PERF] Sugarloaf frame total: {:?}", frame_duration);
             }
@@ -504,7 +525,7 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
-        
+
         let render_duration = render_start.elapsed();
         tracing::debug!("[PERF] Sugarloaf render() total: {:?}", render_duration);
     }

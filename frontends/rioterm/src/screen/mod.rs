@@ -2163,7 +2163,7 @@ impl Screen<'_> {
         if self.renderer.enable_performance_logging {
             tracing::debug!("[PERF] Screen renderer.run(): {:?}", renderer_run_duration);
         }
-        
+
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
