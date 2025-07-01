@@ -1,5 +1,3 @@
-use crate::async_executor::{AsyncExecutor, UiUpdate};
-use crate::async_terminal_ops::AsyncTerminalOps;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
@@ -31,7 +29,6 @@ pub struct Application<'a> {
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
-    async_executor: AsyncExecutor,
 }
 
 impl Application<'_> {
@@ -67,7 +64,6 @@ impl Application<'_> {
             event_proxy,
             router,
             scheduler,
-            async_executor: AsyncExecutor::new(),
         }
     }
 
@@ -1238,76 +1234,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // First, process any pending UI updates from async tasks
-        let executor = &self.async_executor;
-        let event_proxy = &self.event_proxy;
-
-        // Process UI updates in a non-blocking way
-        if let Ok(mut receiver) = executor.ui_receiver.try_lock() {
-            // Process all available updates without blocking
-            while let Ok(update) = receiver.try_next() {
-                match update {
-                    Some(update) => {
-                        match update {
-                            UiUpdate::RequestRedraw(route_id) => {
-                                // Find the window for this route and request redraw
-                                for (window_id, route) in self.router.routes.iter() {
-                                    let context_manager = route.window.screen.ctx();
-                                    if context_manager.current_route() == route_id {
-                                        event_proxy.send_event(
-                                            RioEventType::Rio(RioEvent::RenderRoute(
-                                                route_id,
-                                            )),
-                                            *window_id,
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    None => break, // Channel closed
-                }
-            }
-        }
-
-        // Check for damage and automatically trigger render events
-        // Event-driven approach: emit events from terminal instead of polling
-        for (_window_id, route) in self.router.routes.iter_mut() {
-            let context_manager = route.window.screen.ctx_mut();
-            let route_id = context_manager.current_route();
-            let grid = context_manager.current_grid_mut();
-
-            // Use the new event-driven approach: check and emit damage events
-            for grid_context in grid.contexts().iter() {
-                let terminal = &grid_context.context().terminal;
-
-                // Get display offset from terminal
-                let display_offset = if let Some(t) = terminal.try_lock_unfair() {
-                    t.display_offset()
-                } else {
-                    0 // Default to 0 if we can't get the lock
-                };
-
-                // Try immediate check and emit events if damage is found
-                if let Some(has_damage) =
-                    AsyncTerminalOps::try_check_and_emit_damage(terminal, display_offset)
-                {
-                    if has_damage {
-                        // Event already emitted by try_check_and_emit_damage
-                    }
-                } else {
-                    // If immediate check failed, spawn async check
-                    AsyncTerminalOps::spawn_damage_check_and_emit(
-                        &self.async_executor,
-                        terminal.clone(),
-                        route_id,
-                        display_offset,
-                    );
-                }
-            }
-        }
-
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
             None => ControlFlow::Wait,
@@ -1361,10 +1287,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     // This is irreversible - if this event is emitted, it is guaranteed to be the last event that gets emitted.
     // You generally want to treat this as an “do on quit” event.
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        // Shutdown async executor first
-        let executor = std::mem::take(&mut self.async_executor);
-        executor.shutdown();
-
         // Ensure that all the windows are dropped, so the destructors for
         // Renderer and contexts ran.
         self.router.routes.clear();

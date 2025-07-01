@@ -830,6 +830,7 @@ impl Renderer {
                     }
                 }
 
+                // Check for partial damage to optimize rendering
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         // Pre-allocate with estimated capacity to reduce allocations

@@ -8,6 +8,7 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
+
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -460,6 +461,7 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
+
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
 }

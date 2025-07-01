@@ -5,8 +5,6 @@
 #![windows_subsystem = "windows"]
 
 mod application;
-mod async_executor;
-mod async_terminal_ops;
 mod bindings;
 mod cli;
 mod constants;
