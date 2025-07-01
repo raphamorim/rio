@@ -229,6 +229,48 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Check if this is the current route
+                    if route_id == route.window.screen.ctx().current_route() {
+                        let context_manager = route.window.screen.ctx_mut();
+                        let grid = context_manager.current_grid_mut();
+
+                        // Check for damage and trigger appropriate damage events
+                        let mut has_damage = false;
+                        for grid_context in grid.contexts().iter() {
+                            if let Some(mut terminal) =
+                                grid_context.context().terminal.try_lock_unfair()
+                            {
+                                if terminal.is_fully_damaged() {
+                                    has_damage = true;
+                                    break;
+                                } else {
+                                    // Check for partial damage
+                                    if let rio_backend::crosswords::TermDamage::Partial(
+                                        _,
+                                    ) = terminal.damage()
+                                    {
+                                        has_damage = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we found damage, emit a TerminalDamaged event
+                        if has_damage {
+                            self.event_proxy.send_event(
+                                RioEventType::Rio(RioEvent::TerminalDamaged {
+                                    route_id,
+                                    damage: rio_backend::event::TerminalDamage::Full, // Simplified for now
+                                }),
+                                window_id,
+                            );
+                        }
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::TerminalDamaged {
                 route_id,
                 damage: _,
