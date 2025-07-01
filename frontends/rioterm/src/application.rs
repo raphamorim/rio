@@ -1,5 +1,5 @@
 use crate::async_executor::{AsyncExecutor, UiUpdate};
-use crate::async_terminal_ops::AsyncTerminalExt;
+use crate::async_terminal_ops::AsyncTerminalOps;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
@@ -7,7 +7,6 @@ use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
-use futures::StreamExt;
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::ColorRgb;
@@ -243,6 +242,51 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 tracing::trace!("[PERF] Immediate render for window {:?}, route_id: {}", window_id, route_id);
                                 route.request_redraw();
                             }
+                        }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+                if self.config.renderer.strategy.is_event_based() {
+                    let _total_windows = self.router.routes.len();
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        tracing::trace!("[PERF] TerminalDamaged event for route {}, damage: {:?}", route_id, damage);
+                        
+                        // Skip rendering for unfocused windows if configured
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            tracing::debug!(
+                                "[PERF] Skipping render for unfocused window {:?}",
+                                window_id
+                            );
+                            return;
+                        }
+
+                        // Skip rendering for occluded windows if configured
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            tracing::debug!(
+                                "[PERF] Skipping render for occluded window {:?}",
+                                window_id
+                            );
+                            return;
+                        }
+
+                        // Check if this is the current route
+                        if route_id == route.window.screen.ctx().current_route() {
+                            // Store damage information for efficient rendering
+                            // TODO: Store damage info in route for optimized rendering
+                            
+                            // Clear the one-time render flag if it was set
+                            if route.window.needs_render_after_occlusion {
+                                route.window.needs_render_after_occlusion = false;
+                            }
+
+                            // For now, just request a redraw - later we can optimize based on damage type
+                            route.request_redraw();
                         }
                     }
                 }
@@ -1358,45 +1402,41 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         }
 
         // Check for damage and automatically trigger render events
-        // Phase 1: Hybrid approach - try async first, fall back to sync
-        for (window_id, route) in self.router.routes.iter_mut() {
+        // Event-driven approach: emit events from terminal instead of polling
+        for (_window_id, route) in self.router.routes.iter_mut() {
             let context_manager = route.window.screen.ctx_mut();
             let route_id = context_manager.current_route();
             let grid = context_manager.current_grid_mut();
 
-            // Spawn async damage check for each context
+            // Use the new event-driven approach: check and emit damage events
             for grid_context in grid.contexts().iter() {
                 let terminal = &grid_context.context().terminal;
-                terminal.spawn_damage_check(&self.async_executor, route_id);
-            }
-
-            // For immediate responsiveness, also do a quick sync check with try_lock
-            let mut needs_redraw = false;
-            for grid_context in grid.contexts().iter() {
-                if let Some(has_damage) =
-                    grid_context.context().terminal.try_check_damage()
-                {
+                
+                // Get display offset from terminal
+                let display_offset = if let Some(t) = terminal.try_lock_unfair() {
+                    t.display_offset()
+                } else {
+                    0 // Default to 0 if we can't get the lock
+                };
+                
+                // Try immediate check and emit events if damage is found
+                if let Some(has_damage) = AsyncTerminalOps::try_check_and_emit_damage(
+                    terminal, 
+                    display_offset
+                ) {
                     if has_damage {
-                        needs_redraw = true;
-                        break;
+                        // Event already emitted by try_check_and_emit_damage
+                        tracing::trace!("[PERF] Immediate damage detected and event emitted for route {}", route_id);
                     }
+                } else {
+                    // If immediate check failed, spawn async check
+                    AsyncTerminalOps::spawn_damage_check_and_emit(
+                        &self.async_executor,
+                        terminal.clone(),
+                        route_id,
+                        display_offset,
+                    );
                 }
-                // If try_check_damage returns None, the async version will handle it
-            }
-
-            if needs_redraw {
-                // Skip rendering for unfocused windows if configured
-                if self.config.renderer.disable_unfocused_render
-                    && !route.window.is_focused
-                {
-                    continue;
-                }
-
-                // Send route render event instead of direct request_redraw
-                self.event_proxy.send_event(
-                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
-                    *window_id,
-                );
             }
         }
 

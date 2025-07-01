@@ -16,19 +16,44 @@ impl AsyncTerminalOps {
         terminal.try_lock_unfair().map(|t| t.is_fully_damaged())
     }
 
-    /// Spawn async damage check
-    pub fn spawn_damage_check<T: EventListener + Send + 'static>(
+    /// Check if terminal has damage and emit events without blocking
+    pub fn try_check_and_emit_damage<T: EventListener>(
+        terminal: &Arc<FairMutex<Crosswords<T>>>,
+        display_offset: usize,
+    ) -> Option<bool> {
+        terminal.try_lock_unfair().map(|t| {
+            let has_damage = t.is_fully_damaged();
+            if has_damage {
+                t.emit_damage_event(display_offset);
+            }
+            has_damage
+        })
+    }
+
+    /// Spawn async damage check and event emission
+    pub fn spawn_damage_check_and_emit<T: EventListener + Send + 'static>(
         executor: &AsyncExecutor,
         terminal: Arc<FairMutex<Crosswords<T>>>,
         route_id: usize,
+        display_offset: usize,
     ) {
-        executor.spawn_damage_check(route_id, move || {
-            if let Some(terminal) = terminal.try_lock_unfair() {
-                terminal.is_fully_damaged()
-            } else {
-                // If we can't get the lock immediately, assume no damage
-                // to avoid blocking. The next check will catch it.
-                false
+        let ui_sender = executor.ui_sender();
+        executor.spawn_background(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                if let Some(terminal) = terminal.try_lock_unfair() {
+                    let has_damage = terminal.is_fully_damaged();
+                    if has_damage {
+                        terminal.emit_damage_event(display_offset);
+                    }
+                    has_damage
+                } else {
+                    false
+                }
+            })
+            .await;
+
+            if result.unwrap_or(false) {
+                let _ = ui_sender.unbounded_send(UiUpdate::RequestRedraw(route_id));
             }
         });
     }
@@ -144,6 +169,22 @@ impl<T: EventListener> AsyncTerminalExt<T> for Arc<FairMutex<Crosswords<T>>> {
     where
         T: Send + 'static,
     {
-        AsyncTerminalOps::spawn_damage_check(executor, self.clone(), route_id);
+        // Use the old method for now, we can update this later
+        let ui_sender = executor.ui_sender();
+        let terminal = self.clone();
+        executor.spawn_background(async move {
+            let result = tokio::task::spawn_blocking(move || {
+                if let Some(terminal) = terminal.try_lock_unfair() {
+                    terminal.is_fully_damaged()
+                } else {
+                    false
+                }
+            })
+            .await;
+
+            if result.unwrap_or(false) {
+                let _ = ui_sender.unbounded_send(UiUpdate::RequestRedraw(route_id));
+            }
+        });
     }
 }
