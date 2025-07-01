@@ -229,6 +229,82 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Check if this is the current route
+                    if route_id == route.window.screen.ctx().current_route() {
+                        let context_manager = route.window.screen.ctx_mut();
+                        let grid = context_manager.current_grid_mut();
+
+                        // Check for damage and trigger appropriate damage events
+                        let mut has_damage = false;
+                        for grid_context in grid.contexts().iter() {
+                            if let Some(mut terminal) =
+                                grid_context.context().terminal.try_lock_unfair()
+                            {
+                                if terminal.is_fully_damaged() {
+                                    has_damage = true;
+                                    break;
+                                } else {
+                                    // Check for partial damage
+                                    if let rio_backend::crosswords::TermDamage::Partial(
+                                        _,
+                                    ) = terminal.damage()
+                                    {
+                                        has_damage = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we found damage, emit a TerminalDamaged event
+                        if has_damage {
+                            self.event_proxy.send_event(
+                                RioEventType::Rio(RioEvent::TerminalDamaged {
+                                    route_id,
+                                    damage: rio_backend::event::TerminalDamage::Full, // Simplified for now
+                                }),
+                                window_id,
+                            );
+                        }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::TerminalDamaged {
+                route_id,
+                damage: _,
+            }) => {
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        // Skip rendering for unfocused windows if configured
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            return;
+                        }
+
+                        // Skip rendering for occluded windows if configured
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            return;
+                        }
+
+                        // Check if this is the current route
+                        if route_id == route.window.screen.ctx().current_route() {
+                            // Clear the one-time render flag if it was set
+                            if route.window.needs_render_after_occlusion {
+                                route.window.needs_render_after_occlusion = false;
+                            }
+
+                            // Request immediate redraw for responsive UI
+                            route.request_redraw();
+                        }
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
                 let timer_id = TimerId::new(Topic::UpdateConfig, 0);
                 let event = EventPayload::new(
@@ -1200,38 +1276,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // Check for damage and automatically trigger render events
-        for (window_id, route) in self.router.routes.iter_mut() {
-            let context_manager = route.window.screen.ctx_mut();
-            let grid = context_manager.current_grid_mut();
-
-            // Check if any context has damage (read-only check, but needs mut for access)
-            let mut needs_redraw = false;
-            for grid_context in grid.contexts().iter() {
-                let terminal = grid_context.context().terminal.lock();
-                if terminal.is_fully_damaged() {
-                    needs_redraw = true;
-                    break;
-                }
-            }
-
-            if needs_redraw {
-                // Skip rendering for unfocused windows if configured
-                if self.config.renderer.disable_unfocused_render
-                    && !route.window.is_focused
-                {
-                    continue;
-                }
-
-                // Send route render event instead of direct request_redraw
-                let route_id = context_manager.current_route();
-                self.event_proxy.send_event(
-                    RioEventType::Rio(RioEvent::RenderRoute(route_id)),
-                    *window_id,
-                );
-            }
-        }
-
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
             None => ControlFlow::Wait,
