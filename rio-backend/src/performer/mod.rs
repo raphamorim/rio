@@ -188,10 +188,10 @@ where
             }
         }
 
-        // Queue terminal redraw unless all processed bytes were synchronized.
+        // Queue terminal update processing unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             self.event_proxy
-                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+                .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
         }
 
         Ok(())
@@ -309,7 +309,7 @@ where
                 if events.is_empty() {
                     state.parser.stop_sync(&mut *self.terminal.lock());
                     self.event_proxy
-                        .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+                        .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
 
                     continue;
                 }

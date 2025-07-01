@@ -762,6 +762,8 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        // let start = std::time::Instant::now();
+
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -772,6 +774,7 @@ impl Renderer {
 
         let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
 
+        // let grid_start = std::time::Instant::now();
         let grid = context_manager.current_grid_mut();
         let active_index = grid.current;
         let mut has_active_changed = false;
@@ -827,6 +830,7 @@ impl Renderer {
                     }
                 }
 
+                // Check for partial damage to optimize rendering
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         // Pre-allocate with estimated capacity to reduce allocations
@@ -993,6 +997,7 @@ impl Renderer {
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
+
         // let duration = start.elapsed();
         // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }

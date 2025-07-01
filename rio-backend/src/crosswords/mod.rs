@@ -38,7 +38,7 @@ use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
 use crate::event::WindowId;
-use crate::event::{EventListener, RioEvent};
+use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
@@ -510,7 +510,19 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn mark_fully_damaged(&mut self) {
+        // Only emit event if we weren't already fully damaged
+        let was_damaged = self.damage.full;
         self.damage.full = true;
+
+        if !was_damaged {
+            self.event_proxy.send_event(
+                RioEvent::TerminalDamaged {
+                    route_id: self.route_id,
+                    damage: TerminalDamage::Full,
+                },
+                self.window_id,
+            );
+        }
     }
 
     #[inline]
@@ -571,6 +583,47 @@ impl<U: EventListener> Crosswords<U> {
         // scrolling) is handled via full damage.
         let display_offset = self.grid.display_offset();
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
+    }
+
+    /// Emit damage event based on current damage state
+    pub fn emit_damage_event(&self, display_offset: usize) {
+        let damage = if self.damage.full {
+            TerminalDamage::Full
+        } else {
+            // Collect damaged lines
+            let damaged_lines: Vec<LineDamageBounds> = self
+                .damage
+                .lines
+                .iter()
+                .filter(|line| line.is_damaged())
+                .map(|line| {
+                    LineDamageBounds::new(
+                        line.line + display_offset,
+                        line.left,
+                        line.right,
+                    )
+                })
+                .collect();
+
+            if damaged_lines.is_empty() {
+                // Check if cursor moved
+                if self.damage.last_cursor != self.grid.cursor.pos {
+                    TerminalDamage::CursorOnly
+                } else {
+                    return; // No damage to emit
+                }
+            } else {
+                TerminalDamage::Partial(damaged_lines)
+            }
+        };
+
+        self.event_proxy.send_event(
+            RioEvent::TerminalDamaged {
+                route_id: self.route_id,
+                damage,
+            },
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -855,7 +908,20 @@ impl<U: EventListener> Crosswords<U> {
             self.grid.cursor.pos.row.0 as usize,
             self.grid.cursor.pos.col,
         );
+
+        // Only emit event if cursor actually moved
+        let old_cursor = self.damage.last_cursor;
         self.damage.damage_point(point);
+
+        if old_cursor != self.grid.cursor.pos {
+            self.event_proxy.send_event(
+                RioEvent::TerminalDamaged {
+                    route_id: self.route_id,
+                    damage: TerminalDamage::CursorOnly,
+                },
+                self.window_id,
+            );
+        }
     }
 
     #[inline]
@@ -1181,8 +1247,28 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn mark_line_damaged(&mut self, line: Line) {
-        self.damage
-            .damage_line(line.0 as usize, 0, self.columns() - 1);
+        let line_idx = line.0 as usize;
+
+        // Check if this line is already damaged
+        let was_damaged = if line_idx < self.damage.lines.len() {
+            self.damage.lines[line_idx].is_damaged()
+        } else {
+            false
+        };
+
+        self.damage.damage_line(line_idx, 0, self.columns() - 1);
+
+        // Only emit event if line wasn't already damaged
+        if !was_damaged {
+            let damaged_line = LineDamageBounds::new(line_idx, 0, self.columns() - 1);
+            self.event_proxy.send_event(
+                RioEvent::TerminalDamaged {
+                    route_id: self.route_id,
+                    damage: TerminalDamage::Partial(vec![damaged_line]),
+                },
+                self.window_id,
+            );
+        }
     }
 
     pub fn selection_to_string(&self) -> Option<String> {

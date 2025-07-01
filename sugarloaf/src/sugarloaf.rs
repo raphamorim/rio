@@ -375,7 +375,6 @@ impl Sugarloaf<'_> {
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-
                 if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
                         .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
@@ -436,10 +435,8 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
-
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
-
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
@@ -458,7 +455,6 @@ impl Sugarloaf<'_> {
                         &frame.texture,
                     );
                 }
-
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
