@@ -261,7 +261,7 @@ impl Screen<'_> {
 
         // Create hint bindings from config
         let mut hint_bindings = Vec::new();
-        for hint_config in &config.hints.enabled {
+        for hint_config in &config.hints.rules {
             if let Some(binding_config) = &hint_config.binding {
                 // Parse key using the same logic as in bindings/mod.rs
                 let (key, location) = match binding_config.key.to_lowercase().as_str() {
@@ -334,7 +334,7 @@ impl Screen<'_> {
             hint_state: HintState::new(config.hints.alphabet.clone()),
             hints_config: config
                 .hints
-                .enabled
+                .rules
                 .iter()
                 .map(|h| std::rc::Rc::new(h.clone()))
                 .collect(),
@@ -773,7 +773,9 @@ impl Screen<'_> {
 
             // Handle special keys first
             match key.logical_key {
-                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Escape) => {
+                rio_window::keyboard::Key::Named(
+                    rio_window::keyboard::NamedKey::Escape,
+                ) => {
                     println!("ESC pressed, exiting hint mode");
                     self.hint_state.stop();
                     // Clear hint labels immediately
@@ -785,7 +787,9 @@ impl Screen<'_> {
                     self.render();
                     return;
                 }
-                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Backspace) => {
+                rio_window::keyboard::Key::Named(
+                    rio_window::keyboard::NamedKey::Backspace,
+                ) => {
                     println!("Backspace pressed, removing last character");
                     let terminal = self.context_manager.current().terminal.lock();
                     self.hint_state.keyboard_input(&*terminal, '\x08');
@@ -1685,11 +1689,10 @@ impl Screen<'_> {
     #[inline]
     /// Update hint highlighting based on mouse position and modifiers
     pub fn update_highlighted_hints(&mut self) -> bool {
-        // Check if we should highlight hints based on modifiers
-        #[cfg(target_os = "macos")]
-        let should_highlight = self.modifiers.state().super_key();
-        #[cfg(not(target_os = "macos"))]
-        let should_highlight = self.modifiers.state().shift_key();
+        // Check if any hint configuration has matching modifiers
+        let should_highlight = self.hints_config.iter().any(|hint_config| {
+            hint_config.mouse.enabled && self.modifiers_match(&hint_config.mouse.mods)
+        });
 
         let had_highlight = self
             .context_manager
@@ -1760,6 +1763,31 @@ impl Screen<'_> {
         }
     }
 
+    /// Check if current modifiers match the required modifiers
+    fn modifiers_match(&self, required_mods: &[String]) -> bool {
+        if required_mods.is_empty() {
+            return true;
+        }
+
+        let current_mods = self.modifiers.state();
+
+        for required_mod in required_mods {
+            let matches = match required_mod.as_str() {
+                "Shift" => current_mods.shift_key(),
+                "Control" | "Ctrl" => current_mods.control_key(),
+                "Alt" => current_mods.alt_key(),
+                "Super" | "Cmd" | "Command" => current_mods.super_key(),
+                _ => false,
+            };
+
+            if !matches {
+                return false;
+            }
+        }
+
+        true
+    }
+
     /// Find hint at the specified point
     fn find_hint_at_point(
         &self,
@@ -1774,7 +1802,10 @@ impl Screen<'_> {
                 continue;
             }
 
-            // For now, we don't check specific modifiers from hint_config.mouse.mods
+            // Check if current modifiers match the required modifiers for this hint
+            if !self.modifiers_match(&hint_config.mouse.mods) {
+                continue;
+            }
 
             // Check hyperlinks if enabled
             if hint_config.hyperlinks {
@@ -1950,11 +1981,14 @@ impl Screen<'_> {
 
     #[inline]
     pub fn trigger_hyperlink(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        let is_hyperlink_key_active = self.modifiers.state().super_key();
-
-        #[cfg(not(target_os = "macos"))]
-        let is_hyperlink_key_active = self.modifiers.state().alt_key();
+        // Check if any hyperlink hint configuration has the required modifiers active
+        let mut is_hyperlink_key_active = false;
+        for hint_config in &self.hints_config {
+            if hint_config.hyperlinks && self.modifiers_match(&hint_config.mouse.mods) {
+                is_hyperlink_key_active = true;
+                break;
+            }
+        }
 
         if !is_hyperlink_key_active
             || self

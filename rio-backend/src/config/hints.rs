@@ -13,16 +13,16 @@ pub struct Hints {
     #[serde(default = "default_hints_alphabet")]
     pub alphabet: String,
 
-    /// List of enabled hint configurations
+    /// List of hint rules
     #[serde(default = "default_hints_enabled")]
-    pub enabled: Vec<Hint>,
+    pub rules: Vec<Hint>,
 }
 
 impl Default for Hints {
     fn default() -> Self {
         Self {
             alphabet: default_hints_alphabet(),
-            enabled: default_hints_enabled(),
+            rules: default_hints_enabled(),
         }
     }
 }
@@ -111,9 +111,15 @@ pub struct HintMouse {
 
 impl Default for HintMouse {
     fn default() -> Self {
+        #[cfg(target_os = "macos")]
+        let default_mods = vec!["Super".to_string()];
+
+        #[cfg(not(target_os = "macos"))]
+        let default_mods = vec!["Alt".to_string()];
+
         Self {
             enabled: true,
-            mods: Vec::new(),
+            mods: default_mods,
         }
     }
 }
@@ -186,9 +192,9 @@ mod tests {
     fn test_hints_default() {
         let hints = Hints::default();
         assert_eq!(hints.alphabet, DEFAULT_HINTS_ALPHABET);
-        assert_eq!(hints.enabled.len(), 1);
+        assert_eq!(hints.rules.len(), 1);
 
-        let default_hint = &hints.enabled[0];
+        let default_hint = &hints.rules[0];
         assert!(default_hint.regex.is_some());
         assert!(default_hint.hyperlinks);
         assert!(default_hint.post_processing);
@@ -222,25 +228,25 @@ mod tests {
 [hints]
 alphabet = "abcdef"
 
-[[hints.enabled]]
+[[hints.rules]]
 regex = "test.*pattern"
 hyperlinks = false
 post-processing = true
 persist = false
 
-[hints.enabled.action]
+[hints.rules.action]
 action = "Copy"
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "T"
 mods = ["Control"]
 "#;
 
         let config: Config = toml::from_str(config_toml).unwrap();
         assert_eq!(config.hints.alphabet, "abcdef");
-        assert_eq!(config.hints.enabled.len(), 1);
+        assert_eq!(config.hints.rules.len(), 1);
 
-        let hint = &config.hints.enabled[0];
+        let hint = &config.hints.rules[0];
         assert_eq!(hint.regex, Some("test.*pattern".to_string()));
         assert!(!hint.hyperlinks);
         assert!(hint.post_processing);
