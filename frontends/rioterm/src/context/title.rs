@@ -59,15 +59,17 @@ pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-    #[cfg(not(unix))]
-    let path = String::default();
+    #[cfg(windows)]
+    let path = teletypewriter::foreground_process_path(context.shell_pid)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
 
     #[cfg(unix)]
     let program =
         teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
 
-    #[cfg(not(unix))]
-    let program = String::default();
+    #[cfg(windows)]
+    let program = teletypewriter::foreground_process_name(context.shell_pid);
 
     Some(ContextTitleExtra { program, path })
 }

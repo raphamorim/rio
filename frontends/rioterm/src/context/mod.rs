@@ -43,7 +43,6 @@ pub struct Context<T: EventListener> {
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
     pub main_fd: Arc<i32>,
-    #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
@@ -143,7 +142,6 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         route_id,
         #[cfg(not(target_os = "windows"))]
         main_fd: Arc::new(-1),
-        #[cfg(not(target_os = "windows"))]
         shell_pid: 1,
         messenger: Messenger::new(sender),
         renderable_content: RenderableContent::new(Cursor::default()),
@@ -254,7 +252,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let shell_pid = *pty.child.pid.clone() as u32;
 
         #[cfg(target_os = "windows")]
-        {
+        let shell_pid = {
             pty = match create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
@@ -267,8 +265,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     tracing::error!("{err:?}");
                     return Err(Box::new(err));
                 }
-            }
-        }
+            };
+            // Extract shell PID from ChildExitWatcher before passing PTY to Machine
+            pty.child_watcher().pid().unwrap_or(0)
+        };
 
         let machine = Machine::new(
             Arc::clone(&terminal),
@@ -288,7 +288,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             route_id,
             #[cfg(not(target_os = "windows"))]
             main_fd,
-            #[cfg(not(target_os = "windows"))]
             shell_pid,
             messenger,
             terminal,
@@ -837,11 +836,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
             #[cfg(target_os = "windows")]
             {
-                // if let Ok(path) = teletypewriter::foreground_process_path() {
-                //     working_dir =
-                //         Some(path.to_string_lossy().to_string());
-                // }
-                working_dir = None;
+                let current_context = self.current();
+                if let Ok(path) =
+                    teletypewriter::foreground_process_path(current_context.shell_pid)
+                {
+                    working_dir = Some(path.to_string_lossy().to_string());
+                }
             }
         }
 
@@ -952,11 +952,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
             #[cfg(target_os = "windows")]
             {
-                // if let Ok(path) = teletypewriter::foreground_process_path() {
-                //     working_dir =
-                //         Some(path.to_string_lossy().to_string());
-                // }
-                working_dir = None;
+                let current_context = self.current();
+                if let Ok(path) =
+                    teletypewriter::foreground_process_path(current_context.shell_pid)
+                {
+                    working_dir = Some(path.to_string_lossy().to_string());
+                }
             }
         }
 

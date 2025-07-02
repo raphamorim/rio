@@ -8,12 +8,18 @@ use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::process::CommandExt;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::TryRecvError;
 
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
-use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP,
+    CREATE_NO_WINDOW, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+};
 
 use conpty::Conpty as Backend;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
@@ -259,4 +265,117 @@ where
         .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
+}
+
+/// Get working directory of the foreground process.
+///
+/// On Windows, this attempts to get the working directory of the process
+/// by getting the executable path and returning its parent directory.
+/// This is a limitation compared to Unix systems where we can directly
+/// get the current working directory of a process.
+pub fn foreground_process_path(
+    shell_pid: u32,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    unsafe {
+        // Open the process with query information access
+        let process_handle = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            0, // bInheritHandle = FALSE
+            shell_pid,
+        );
+
+        if process_handle == 0 {
+            return Err(format!(
+                "Failed to open process {}: {}",
+                shell_pid,
+                io::Error::last_os_error()
+            )
+            .into());
+        }
+
+        // Ensure we close the handle when we're done
+        let _handle_guard = HandleGuard(process_handle);
+
+        // Try to get the full process image name
+        let mut buffer = [0u16; MAX_PATH as usize];
+        let mut size = MAX_PATH;
+
+        let result = QueryFullProcessImageNameW(
+            process_handle,
+            0, // PROCESS_NAME_NATIVE = 0
+            buffer.as_mut_ptr(),
+            &mut size,
+        );
+
+        if result == 0 {
+            return Err(format!(
+                "Failed to get process image name: {}",
+                io::Error::last_os_error()
+            )
+            .into());
+        }
+
+        // Convert the wide string to a PathBuf
+        let exe_path = std::ffi::OsString::from_wide(&buffer[..size as usize]);
+        let exe_path = PathBuf::from(exe_path);
+
+        // Return the parent directory of the executable
+        exe_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| "Could not determine parent directory of executable".into())
+    }
+}
+
+/// Get the name of the foreground process.
+///
+/// On Windows, this gets the process name by querying the process image filename
+/// and extracting just the filename without the path.
+pub fn foreground_process_name(shell_pid: u32) -> String {
+    unsafe {
+        // Open the process with query information access
+        let process_handle = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+            0, // bInheritHandle = FALSE
+            shell_pid,
+        );
+
+        if process_handle == 0 {
+            return String::new();
+        }
+
+        // Ensure we close the handle when we're done
+        let _handle_guard = HandleGuard(process_handle);
+
+        // Try to get the process image filename (just the filename, not full path)
+        let mut buffer = [0u16; MAX_PATH as usize];
+        let result =
+            GetProcessImageFileNameW(process_handle, buffer.as_mut_ptr(), MAX_PATH);
+
+        if result == 0 {
+            return String::new();
+        }
+
+        // Convert the wide string to a String
+        let exe_path = std::ffi::OsString::from_wide(&buffer[..result as usize]);
+        let exe_path = PathBuf::from(exe_path);
+
+        // Extract just the filename without extension
+        exe_path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("")
+            .to_string()
+    }
+}
+
+/// RAII guard for Windows HANDLE to ensure it gets closed
+struct HandleGuard(HANDLE);
+
+impl Drop for HandleGuard {
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
 }

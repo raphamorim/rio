@@ -69,6 +69,10 @@ impl ChildExitWatcher {
         &self.event_rx
     }
 
+    pub fn pid(&self) -> Option<u32> {
+        self.pid.map(|p| p.get())
+    }
+
     pub fn raw_handle(&self) -> HANDLE {
         self.child_handle
     }
