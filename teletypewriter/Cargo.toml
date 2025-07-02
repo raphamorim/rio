@@ -29,6 +29,7 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_System_IO",
     "Win32_System_ProcessStatus",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Memory",
 ]}
 ntapi = "0.4.1"

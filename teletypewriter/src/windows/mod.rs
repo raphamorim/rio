@@ -18,15 +18,16 @@ use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
-use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
-};
 use windows_sys::Win32::System::Memory::VirtualQueryEx;
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 use windows_sys::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
     PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+};
+// Try alternative import path for ToolHelp
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+    TH32CS_SNAPPROCESS,
 };
 
 // Import ntapi for process parameter structures
