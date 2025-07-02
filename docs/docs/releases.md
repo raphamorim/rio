@@ -9,6 +9,26 @@ language: 'en'
 
 - TBD.
 
+## 0.2.24
+
+- Fix game mode regression.
+- **Hint Label Damage Tracking**: Improved hint label rendering performance with proper damage tracking
+  - Hint label areas are now properly marked for re-rendering when cleared
+  - Eliminates visual artifacts when hint labels are removed
+  - Optimized rendering to only update affected screen regions
+- **Configurable Hyperlink Hover Keys**: Hyperlink hover modifier keys are now configurable
+  - Configure custom modifier keys through the hints system in `config.toml`
+  - Default behavior unchanged: Command on macOS, Alt on other platforms
+  - Supports any combination of Shift, Control, Alt, and Super/Command keys
+  - Example: `mouse = { enabled = true, mods = ["Shift"] }` to use Shift key
+
+### Breaking Changes
+
+- **Hints Configuration**: Renamed `hints.enabled` to `hints.rules` for better clarity
+  - Update your configuration: `[[hints.enabled]]` → `[[hints.rules]]`
+  - All hint configuration sections now use `hints.rules.*` instead of `hints.enabled.*`
+  - Functionality remains the same, only the configuration key names changed
+
 ## 0.2.23
 
 - Fix some rendering regressions introduced by 0.2.21.
