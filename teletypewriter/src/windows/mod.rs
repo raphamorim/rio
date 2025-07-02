@@ -6,7 +6,7 @@ mod spsc;
 use std::ffi::OsStr;
 use std::io::{self};
 use std::iter::once;
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -17,7 +17,7 @@ use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP,
+    OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP,
     CREATE_NO_WINDOW, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
 };
 
@@ -284,7 +284,7 @@ pub fn foreground_process_path(
             shell_pid,
         );
 
-        if process_handle == 0 {
+        if process_handle.is_null() {
             return Err(format!(
                 "Failed to open process {}: {}",
                 shell_pid,
@@ -340,7 +340,7 @@ pub fn foreground_process_name(shell_pid: u32) -> String {
             shell_pid,
         );
 
-        if process_handle == 0 {
+        if process_handle.is_null() {
             return String::new();
         }
 

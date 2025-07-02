@@ -252,7 +252,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let shell_pid = *pty.child.pid.clone() as u32;
 
         #[cfg(target_os = "windows")]
-        let shell_pid = {
+        let shell_pid: u32 = {
             pty = match create_pty(
                 &Cow::Borrowed(&config.shell.program),
                 config.shell.args.clone(),
@@ -267,7 +267,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 }
             };
             // Extract shell PID from ChildExitWatcher before passing PTY to Machine
-            pty.child_watcher().pid().unwrap_or(0)
+            match pty.child_watcher().pid() {
+                Some(val) => val.get(),
+                None => 0
+            }
         };
 
         let machine = Machine::new(
