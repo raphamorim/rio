@@ -749,18 +749,18 @@ For detailed information about the hints system, see the [Hints feature document
 alphabet = "jfkdls;ahgurieowpq"
 
 # URL hint example
-[[hints.enabled]]
+[[hints.rules]]
 regex = "(https://|http://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+"
 hyperlinks = true
 post-processing = true
 persist = false
 
-[hints.enabled.action]
+[hints.rules.action]
 command = "xdg-open"  # Linux/BSD
 # command = "open"    # macOS
 # command = { program = "cmd", args = ["/c", "start", ""] }  # Windows
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "O"
 mods = ["Control", "Shift"]
 ```
@@ -782,7 +782,7 @@ Built-in actions:
 
 External commands:
 ```toml
-[hints.enabled.action]
+[hints.rules.action]
 command = "xdg-open"  # Simple command
 # Or with arguments:
 command = { program = "code", args = ["--goto"] }
@@ -791,11 +791,11 @@ command = { program = "code", args = ["--goto"] }
 ### Key Bindings and Mouse Support
 
 ```toml
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "O"
 mods = ["Control", "Shift"]
 
-[hints.enabled.mouse]
+[hints.rules.mouse]
 enabled = true
 mods = ["Control"]  # Optional modifier keys
 ```

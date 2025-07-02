@@ -27,22 +27,22 @@ Hints are configured in your `rio.toml` file under the `[hints]` section:
 alphabet = "jfkdls;ahgurieowpq"
 
 # URL hint example
-[[hints.enabled]]
+[[hints.rules]]
 regex = "(https://|http://|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+"
 hyperlinks = true
 post-processing = true
 persist = false
 
-[hints.enabled.action]
+[hints.rules.action]
 command = "xdg-open"  # Linux/BSD
 # command = "open"    # macOS  
 # command = { program = "cmd", args = ["/c", "start", ""] }  # Windows
 
-[hints.enabled.mouse]
+[hints.rules.mouse]
 enabled = true
 mods = []
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "O"
 mods = ["Control", "Shift"]
 ```
@@ -76,7 +76,7 @@ You can configure different types of actions:
 
 #### Built-in Actions
 ```toml
-[hints.enabled.action]
+[hints.rules.action]
 action = "Copy"     # Copy to clipboard
 # action = "Paste"  # Paste the matched text
 # action = "Select" # Select the matched text
@@ -84,7 +84,7 @@ action = "Copy"     # Copy to clipboard
 
 #### External Commands
 ```toml
-[hints.enabled.action]
+[hints.rules.action]
 command = "xdg-open"  # Simple command
 
 # Or with arguments
@@ -94,7 +94,7 @@ command = { program = "code", args = ["--goto"] }
 ### Key Bindings
 
 ```toml
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "O"
 mods = ["Control", "Shift"]
 ```
@@ -102,7 +102,7 @@ mods = ["Control", "Shift"]
 ### Mouse Support
 
 ```toml
-[hints.enabled.mouse]
+[hints.rules.mouse]
 enabled = true
 mods = ["Control"]  # Modifier keys required for mouse activation
 ```
@@ -111,42 +111,42 @@ mods = ["Control"]  # Modifier keys required for mouse activation
 
 ### URL Opener
 ```toml
-[[hints.enabled]]
+[[hints.rules]]
 regex = "(https://|http://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+"
 hyperlinks = true
 post-processing = true
 
-[hints.enabled.action]
+[hints.rules.action]
 command = "xdg-open"
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "O"
 mods = ["Control", "Shift"]
 ```
 
 ### File Path Copier
 ```toml
-[[hints.enabled]]
+[[hints.rules]]
 regex = "/?(?:[\\w.-]+/)*[\\w.-]+"
 post-processing = true
 
-[hints.enabled.action]
+[hints.rules.action]
 action = "Copy"
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "F"
 mods = ["Control", "Shift"]
 ```
 
 ### Email Composer
 ```toml
-[[hints.enabled]]
+[[hints.rules]]
 regex = "[\\w.-]+@[\\w.-]+\\.[a-zA-Z]{2,}"
 
-[hints.enabled.action]
+[hints.rules.action]
 command = { program = "thunderbird", args = ["-compose", "to="] }
 
-[hints.enabled.binding]
+[hints.rules.binding]
 key = "E"
 mods = ["Control", "Shift"]
 ```

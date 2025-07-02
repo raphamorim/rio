@@ -62,6 +62,18 @@ language: 'en'
   - Shift+clicking now extends the current selection to the clicked cell
   - Provides standard terminal selection behavior expected by users
   - Regular clicking without Shift still clears selection and starts new one as before
+- **Configurable Hyperlink Hover Keys**: Hyperlink hover modifier keys are now configurable
+  - Configure custom modifier keys through the hints system in `config.toml`
+  - Default behavior unchanged: Command on macOS, Alt on other platforms
+  - Supports any combination of Shift, Control, Alt, and Super/Command keys
+  - Example: `mouse = { enabled = true, mods = ["Shift"] }` to use Shift key
+
+### Breaking Changes
+
+- **Hints Configuration**: Renamed `hints.enabled` to `hints.rules` for better clarity
+  - Update your configuration: `[[hints.enabled]]` → `[[hints.rules]]`
+  - All hint configuration sections now use `hints.rules.*` instead of `hints.enabled.*`
+  - Functionality remains the same, only the configuration key names changed
 
 ### Bug Fixes
 
