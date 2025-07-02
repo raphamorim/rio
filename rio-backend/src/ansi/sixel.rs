@@ -71,11 +71,7 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::TooBigImage { width, height } => {
-                write!(
-                    fmt,
-                    "The image dimensions are too big ({}, {})",
-                    width, height
-                )
+                write!(fmt, "The image dimensions are too big ({width}, {height})")
             }
 
             Error::InvalidColorComponent {
@@ -84,8 +80,7 @@ impl fmt::Display for Error {
             } => {
                 write!(
                     fmt,
-                    "Invalid color component {} for register {}",
-                    component_value, register
+                    "Invalid color component {component_value} for register {register}"
                 )
             }
 
@@ -95,8 +90,7 @@ impl fmt::Display for Error {
             } => {
                 write!(
                     fmt,
-                    "Invalid color coordinate system {} for register {}",
-                    coordinate_system, register
+                    "Invalid color coordinate system {coordinate_system} for register {register}"
                 )
             }
 
@@ -719,11 +713,7 @@ mod tests {
 
         // Reimplement abs_diff to be compatible with rustc before 1.60.
         fn abs_diff(x: u8, y: u8) -> u8 {
-            if x > y {
-                x - y
-            } else {
-                y - x
-            }
+            x.abs_diff(y)
         }
 
         macro_rules! assert_color {

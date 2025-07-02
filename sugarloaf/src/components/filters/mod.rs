@@ -63,7 +63,6 @@ impl FiltersBrush {
                             }
                         },
                         Err(e) => {
-                            println!("{:?}", e);
                             tracing::error!("Failed to build shader preset from builtin filter {}: {}", configured_filter, e)
                         },
                     }

@@ -617,8 +617,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
         0 => {
             default_shell_command(shell_program);
             Err(Error::other(format!(
-                "forkpty has reach unreachable with {}",
-                shell_program
+                "forkpty has reach unreachable with {shell_program}"
             )))
         }
         id if id > 0 => {
@@ -648,8 +647,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
             })
         }
         _ => Err(Error::other(format!(
-            "forkpty failed using {}",
-            shell_program
+            "forkpty failed using {shell_program}"
         ))),
     }
 }

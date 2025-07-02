@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "ab_glyph"
-version = "0.2.29"
+version = "0.2.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec3672c180e71eeaaac3a541fbbc5f5ad4def8b747c595ad30d674e43049f7b0"
+checksum = "1e0f4f6fbdc5ee39f2ede9f5f3ec79477271a6d6a2baff22310d51736bda6cea"
 dependencies = [
  "ab_glyph_rasterizer",
  "owned_ttf_parser",
@@ -14,9 +14,9 @@ dependencies = [
 
 [[package]]
 name = "ab_glyph_rasterizer"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71b1793ee61086797f5c80b6efa2b8ffa6d5dd703f118545808a7f2e27f7046"
+checksum = "b2187590a23ab1e3df8681afdf0987c48504d80291f002fcdb651f0ef5e25169"
 
 [[package]]
 name = "adler2"
@@ -517,7 +517,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "copa"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -543,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -2754,7 +2754,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "base64",
  "bitflags 2.9.1",
@@ -2787,7 +2787,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2795,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -2847,7 +2847,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "ahash",
  "bitflags 2.9.1",
@@ -3300,7 +3300,7 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "approx",
  "bytemuck",
@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.2.20"
+version = "0.3.0"
 dependencies = [
  "corcovado",
  "dirs",

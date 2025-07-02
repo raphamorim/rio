@@ -170,7 +170,7 @@ impl fmt::Debug for ClusterInfo {
             Boundary::Word => "w",
             _ => " ",
         };
-        write!(f, "{}{}{}", e, s, b)
+        write!(f, "{e}{s}{b}")
     }
 }
 

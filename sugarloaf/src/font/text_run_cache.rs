@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;

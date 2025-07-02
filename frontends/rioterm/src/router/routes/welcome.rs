@@ -95,7 +95,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         .add_text("To open settings menu use", FragmentStyle::default())
         .new_line()
         .add_text(
-            &format!(" {} ", shortcut),
+            &format!(" {shortcut} "),
             FragmentStyle {
                 background_color: Some(yellow),
                 color: [0., 0., 0., 1.],

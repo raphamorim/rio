@@ -2,6 +2,8 @@
 //!
 //! Run with: cargo run --release --example batch_utf8_benchmark
 
+#![allow(clippy::uninlined_format_args)]
+
 use rio_backend::{batch_utf8, simd_utf8};
 use std::time::Instant;
 

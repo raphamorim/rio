@@ -233,15 +233,15 @@ impl fmt::Display for Attributes {
             return write!(f, "regular");
         }
         if stretch != Stretch::NORMAL {
-            write!(f, "{}", stretch)?;
+            write!(f, "{stretch}")?;
             space = " ";
         }
         if style != Style::Normal {
-            write!(f, "{}{}", space, style)?;
+            write!(f, "{space}{style}")?;
             space = " ";
         }
         if weight != Weight::NORMAL {
-            write!(f, "{}{}", space, weight)?;
+            write!(f, "{space}{weight}")?;
         }
         Ok(())
     }
@@ -429,7 +429,7 @@ impl fmt::Display for Style {
                     if degrees == 14. {
                         "oblique"
                     } else {
-                        return write!(f, "oblique({}deg)", degrees);
+                        return write!(f, "oblique({degrees}deg)");
                     }
                 }
             }
@@ -486,7 +486,7 @@ impl fmt::Display for Weight {
         if s.is_empty() {
             write!(f, "{}", self.0)
         } else {
-            write!(f, "{}", s)
+            write!(f, "{s}")
         }
     }
 }

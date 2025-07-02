@@ -2,6 +2,8 @@
 //!
 //! Run with: cargo run --release --example enhanced_batched_parser_test
 
+#![allow(clippy::uninlined_format_args)]
+
 use copa::Perform;
 use rio_backend::batched_parser::BatchedParser;
 
