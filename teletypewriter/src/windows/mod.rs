@@ -289,24 +289,74 @@ where
 ///
 /// On Windows, this reads the actual working directory from the process's
 /// RTL_USER_PROCESS_PARAMETERS structure in the PEB (Process Environment Block).
-/// This implementation finds the most recent child process of the shell to get
-/// the correct working directory for tabs and subprocesses.
+/// This implementation tries to find the most appropriate process to get the
+/// working directory from - either a child process or the shell itself.
 pub fn foreground_process_path(
     shell_pid: u32,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    // First try to find the most recent child process of the shell
-    if let Some(child_pid) = find_most_recent_child_process(shell_pid) {
-        if let Ok(path) = get_process_cwd(child_pid) {
-            return Ok(path);
+    // Debug: Log what we're trying to do
+    eprintln!("DEBUG: Getting foreground path for shell PID {}", shell_pid);
+    
+    // First, try to get the working directory from the shell process itself
+    // This is important for cases where the user did "cd" in the shell
+    match get_process_cwd(shell_pid) {
+        Ok(shell_cwd) => {
+            eprintln!("DEBUG: Shell CWD: {:?}", shell_cwd);
+            
+            // If we have child processes, check if any of them have a different working directory
+            if let Some((child_pid, child_name)) = find_most_recent_child_process(shell_pid) {
+                eprintln!("DEBUG: Found child process {} ({})", child_pid, child_name);
+                
+                match get_process_cwd(child_pid) {
+                    Ok(child_cwd) => {
+                        eprintln!("DEBUG: Child CWD: {:?}", child_cwd);
+                        
+                        // If the child has a different working directory, use that
+                        // But prefer shell processes over other types
+                        if child_cwd != shell_cwd && !child_cwd.as_os_str().is_empty() {
+                            // If it's a shell process, definitely use its working directory
+                            if get_process_priority(&child_name) >= 100 {
+                                eprintln!("DEBUG: Using child shell CWD: {:?}", child_cwd);
+                                return Ok(child_cwd);
+                            }
+                            // For other processes, only use if they seem to be in a subdirectory
+                            if child_cwd.starts_with(&shell_cwd) {
+                                eprintln!("DEBUG: Using child subdirectory CWD: {:?}", child_cwd);
+                                return Ok(child_cwd);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("DEBUG: Failed to get child CWD: {}", e);
+                    }
+                }
+            } else {
+                eprintln!("DEBUG: No child processes found");
+            }
+            
+            eprintln!("DEBUG: Using shell CWD: {:?}", shell_cwd);
+            Ok(shell_cwd)
+        }
+        Err(shell_err) => {
+            eprintln!("DEBUG: Failed to get shell CWD: {}", shell_err);
+            
+            // Fallback: if we can't get the shell's working directory, try child processes
+            if let Some((child_pid, child_name)) = find_most_recent_child_process(shell_pid) {
+                eprintln!("DEBUG: Trying fallback child {} ({})", child_pid, child_name);
+                if let Ok(path) = get_process_cwd(child_pid) {
+                    eprintln!("DEBUG: Using fallback child CWD: {:?}", path);
+                    return Ok(path);
+                }
+            }
+            
+            Err(format!("Failed to get working directory: shell error: {}", shell_err).into())
         }
     }
-
-    // Fallback to the shell process itself
-    get_process_cwd(shell_pid)
 }
 
 /// Find the most recent child process of the given parent PID
-fn find_most_recent_child_process(parent_pid: u32) -> Option<u32> {
+/// Returns both the PID and the process name for better decision making
+fn find_most_recent_child_process(parent_pid: u32) -> Option<(u32, String)> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot == std::ptr::null_mut() {
@@ -329,7 +379,10 @@ fn find_most_recent_child_process(parent_pid: u32) -> Option<u32> {
             if entry.th32ParentProcessID == parent_pid
                 && entry.th32ProcessID != parent_pid
             {
-                children.push(entry.th32ProcessID);
+                // Convert the process name from wide string
+                let name_end = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                let process_name = String::from_utf16_lossy(&entry.szExeFile[..name_end]);
+                children.push((entry.th32ProcessID, process_name));
             }
 
             // Get next process
@@ -338,8 +391,35 @@ fn find_most_recent_child_process(parent_pid: u32) -> Option<u32> {
             }
         }
 
-        // Return the most recent child (highest PID is usually most recent)
-        children.into_iter().max()
+        // Prefer certain process types, otherwise return the most recent (highest PID)
+        children.sort_by(|a, b| {
+            // Prefer interactive shells over system processes
+            let a_priority = get_process_priority(&a.1);
+            let b_priority = get_process_priority(&b.1);
+            
+            match a_priority.cmp(&b_priority) {
+                std::cmp::Ordering::Equal => a.0.cmp(&b.0), // If same priority, prefer higher PID (more recent)
+                other => other.reverse(), // Higher priority first
+            }
+        });
+
+        children.last().map(|(pid, name)| (*pid, name.clone()))
+    }
+}
+
+/// Get priority for different process types (higher number = higher priority)
+fn get_process_priority(process_name: &str) -> u32 {
+    let name_lower = process_name.to_lowercase();
+    match name_lower.as_str() {
+        // Interactive shells and editors get highest priority
+        "cmd.exe" | "powershell.exe" | "pwsh.exe" | "bash.exe" | "zsh.exe" | "fish.exe" => 100,
+        "notepad.exe" | "code.exe" | "vim.exe" | "nvim.exe" | "nano.exe" => 90,
+        // Development tools
+        "git.exe" | "node.exe" | "python.exe" | "cargo.exe" | "rustc.exe" => 80,
+        // Other command line tools
+        name if name.ends_with(".exe") => 50,
+        // System processes get lowest priority
+        _ => 10,
     }
 }
 
