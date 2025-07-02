@@ -18,6 +18,10 @@ use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
 use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+    TH32CS_SNAPPROCESS,
+};
 use windows_sys::Win32::System::Memory::VirtualQueryEx;
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 use windows_sys::Win32::System::Threading::{
@@ -284,21 +288,74 @@ where
 ///
 /// On Windows, this reads the actual working directory from the process's
 /// RTL_USER_PROCESS_PARAMETERS structure in the PEB (Process Environment Block).
+/// This implementation finds the most recent child process of the shell to get
+/// the correct working directory for tabs and subprocesses.
 pub fn foreground_process_path(
     shell_pid: u32,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // First try to find the most recent child process of the shell
+    if let Some(child_pid) = find_most_recent_child_process(shell_pid) {
+        if let Ok(path) = get_process_cwd(child_pid) {
+            return Ok(path);
+        }
+    }
+
+    // Fallback to the shell process itself
+    get_process_cwd(shell_pid)
+}
+
+/// Find the most recent child process of the given parent PID
+fn find_most_recent_child_process(parent_pid: u32) -> Option<u32> {
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot == std::ptr::null_mut() {
+            return None;
+        }
+
+        let _guard = HandleGuard(snapshot);
+
+        let mut entry: PROCESSENTRY32W = std::mem::zeroed();
+        entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+
+        let mut children = Vec::new();
+
+        // Get first process
+        if Process32FirstW(snapshot, &mut entry) == 0 {
+            return None;
+        }
+
+        loop {
+            if entry.th32ParentProcessID == parent_pid
+                && entry.th32ProcessID != parent_pid
+            {
+                children.push(entry.th32ProcessID);
+            }
+
+            // Get next process
+            if Process32NextW(snapshot, &mut entry) == 0 {
+                break;
+            }
+        }
+
+        // Return the most recent child (highest PID is usually most recent)
+        children.into_iter().max()
+    }
+}
+
+/// Get the current working directory for a specific process
+fn get_process_cwd(pid: u32) -> Result<PathBuf, Box<dyn std::error::Error>> {
     unsafe {
         // Open the process with query information access
         let process_handle = OpenProcess(
             PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
             0, // bInheritHandle = FALSE
-            shell_pid,
+            pid,
         );
 
         if process_handle == std::ptr::null_mut() {
             return Err(format!(
                 "Failed to open process {}: {}",
-                shell_pid,
+                pid,
                 io::Error::last_os_error()
             )
             .into());
