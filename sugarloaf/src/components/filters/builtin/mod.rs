@@ -22,10 +22,10 @@ impl fmt::Display for LoadError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LoadError::ParseError(details) => {
-                write!(f, "Parse failed: {}", details)
+                write!(f, "Parse failed: {details}")
             }
             LoadError::IoError(details) => {
-                write!(f, "File failed: {}", details)
+                write!(f, "File failed: {details}")
             }
         }
     }

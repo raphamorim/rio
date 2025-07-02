@@ -2,6 +2,8 @@
 //!
 //! Run with: cargo run --release --example utf8_benchmark
 
+#![allow(clippy::uninlined_format_args)]
+
 use std::time::Instant;
 
 fn main() {

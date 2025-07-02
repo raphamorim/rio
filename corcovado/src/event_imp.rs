@@ -570,7 +570,7 @@ impl fmt::Debug for PollOpt {
                 if one {
                     write!(fmt, " | ")?
                 }
-                write!(fmt, "{}", msg)?;
+                write!(fmt, "{msg}")?;
 
                 one = true
             }
@@ -1037,7 +1037,7 @@ impl fmt::Debug for Ready {
                 if one {
                     write!(fmt, " | ")?
                 }
-                write!(fmt, "{}", msg)?;
+                write!(fmt, "{msg}")?;
 
                 one = true
             }
