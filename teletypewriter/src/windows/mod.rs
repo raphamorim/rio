@@ -458,9 +458,9 @@ fn find_best_working_directory(process_info: &ProcessInfo) -> Option<PathBuf> {
 }
 
 /// Recursively find the best candidate process
-fn find_best_candidate_recursive(
-    process_info: &ProcessInfo,
-    best_candidate: &mut Option<(&ProcessInfo, u64)>
+fn find_best_candidate_recursive<'a>(
+    process_info: &'a ProcessInfo,
+    best_candidate: &mut Option<(&'a ProcessInfo, u64)>
 ) {
     // Check if this process is a good candidate
     if let (Some(ref _cwd), Some(start_time)) = (&process_info.cwd, process_info.start_time) {
