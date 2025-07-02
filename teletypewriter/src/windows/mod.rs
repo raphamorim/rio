@@ -295,7 +295,7 @@ pub fn foreground_process_path(
             shell_pid,
         );
 
-        if process_handle == 0 {
+        if process_handle == std::ptr::null_mut() {
             return Err(format!(
                 "Failed to open process {}: {}",
                 shell_pid,
@@ -313,7 +313,7 @@ pub fn foreground_process_path(
             process_handle as _,
             ProcessWow64Information,
             wow64_info.as_mut_ptr() as _,
-            size_of::<*const std::ffi::c_void>(),
+            size_of::<*const std::ffi::c_void>() as u32,
             null_mut(),
         ) != 0
         {
@@ -342,7 +342,7 @@ unsafe fn get_cwd_64bit(
         process_handle as _,
         ProcessBasicInformation,
         basic_info.as_mut_ptr() as _,
-        size_of::<PROCESS_BASIC_INFORMATION>(),
+        size_of::<PROCESS_BASIC_INFORMATION>() as u32,
         null_mut(),
     ) != 0
     {
@@ -355,7 +355,7 @@ unsafe fn get_cwd_64bit(
     let mut peb = MaybeUninit::<PEB>::uninit();
     if ReadProcessMemory(
         process_handle as _,
-        basic_info.PebBaseAddress,
+        basic_info.PebBaseAddress as *const std::ffi::c_void,
         peb.as_mut_ptr() as _,
         size_of::<PEB>(),
         null_mut(),
@@ -370,7 +370,7 @@ unsafe fn get_cwd_64bit(
     let mut params = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS>::uninit();
     if ReadProcessMemory(
         process_handle as _,
-        peb.ProcessParameters,
+        peb.ProcessParameters as *const std::ffi::c_void,
         params.as_mut_ptr() as _,
         size_of::<RTL_USER_PROCESS_PARAMETERS>(),
         null_mut(),
@@ -413,7 +413,7 @@ unsafe fn get_cwd_32bit(
     let mut params = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS32>::uninit();
     if ReadProcessMemory(
         process_handle as _,
-        peb32.ProcessParameters as _,
+        peb32.ProcessParameters as *const std::ffi::c_void,
         params.as_mut_ptr() as _,
         size_of::<RTL_USER_PROCESS_PARAMETERS32>(),
         null_mut(),
@@ -511,7 +511,7 @@ struct HandleGuard(HANDLE);
 impl Drop for HandleGuard {
     fn drop(&mut self) {
         unsafe {
-            if self.0 != 0 {
+            if self.0 != std::ptr::null_mut() {
                 CloseHandle(self.0);
             }
         }
