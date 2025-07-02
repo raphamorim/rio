@@ -8,22 +8,21 @@ struct Log;
 
 impl Perform for Log {
     fn print(&mut self, c: char) {
-        println!("[print] {:?}", c);
+        println!("[print] {c:?}");
     }
 
     fn execute(&mut self, byte: u8) {
-        println!("[execute] {:02x}", byte);
+        println!("[execute] {byte:02x}");
     }
 
     fn hook(&mut self, params: &Params, intermediates: &[u8], ignore: bool, c: char) {
         println!(
-            "[hook] params={:?}, intermediates={:?}, ignore={:?}, char={:?}",
-            params, intermediates, ignore, c
+            "[hook] params={params:?}, intermediates={intermediates:?}, ignore={ignore:?}, char={c:?}"
         );
     }
 
     fn put(&mut self, byte: u8) {
-        println!("[put] {:02x}", byte);
+        println!("[put] {byte:02x}");
     }
 
     fn unhook(&mut self) {
@@ -31,10 +30,7 @@ impl Perform for Log {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        println!(
-            "[osc_dispatch] params={:?} bell_terminated={}",
-            params, bell_terminated
-        );
+        println!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
     }
 
     fn csi_dispatch(
@@ -45,15 +41,13 @@ impl Perform for Log {
         c: char,
     ) {
         println!(
-            "[csi_dispatch] params={:#?}, intermediates={:?}, ignore={:?}, char={:?}",
-            params, intermediates, ignore, c
+            "[csi_dispatch] params={params:#?}, intermediates={intermediates:?}, ignore={ignore:?}, char={c:?}"
         );
     }
 
     fn esc_dispatch(&mut self, intermediates: &[u8], ignore: bool, byte: u8) {
         println!(
-            "[esc_dispatch] intermediates={:?}, ignore={:?}, byte={:02x}",
-            intermediates, ignore, byte
+            "[esc_dispatch] intermediates={intermediates:?}, ignore={ignore:?}, byte={byte:02x}"
         );
     }
 }
@@ -74,7 +68,7 @@ fn main() {
                 statemachine.advance(&mut performer, &buf);
             }
             Err(err) => {
-                println!("err: {}", err);
+                println!("err: {err}");
                 break;
             }
         }

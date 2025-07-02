@@ -2739,9 +2739,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         fn generate_response(pi: u16, ps: u16, pv: &[usize]) -> String {
             use std::fmt::Write;
-            let mut text = format!("\x1b[?{};{}", pi, ps);
+            let mut text = format!("\x1b[?{pi};{ps}");
             for item in pv {
-                let _ = write!(&mut text, ";{}", item);
+                let _ = write!(&mut text, ";{item}");
             }
             text.push('S');
             text

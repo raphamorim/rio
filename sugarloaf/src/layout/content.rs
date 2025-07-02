@@ -3,6 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+#![allow(clippy::uninlined_format_args)]
+
 use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;

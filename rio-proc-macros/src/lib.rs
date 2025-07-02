@@ -145,7 +145,7 @@ fn optional_punct(iter: &mut Peekable<token_stream::IntoIter>, c: char) -> bool 
 fn expect_punct(iter: &mut impl Iterator<Item = TokenTree>, c: char) {
     match iter.next() {
         Some(Punct(ref punct)) if punct.as_char() == c => (),
-        token => panic!("Expected punctuation '{}', but got {:?}", c, token),
+        token => panic!("Expected punctuation '{c}', but got {token:?}"),
     }
 }
 
@@ -165,7 +165,7 @@ fn next_usize(iter: &mut impl Iterator<Item = TokenTree>) -> usize {
                 literal.parse::<usize>().unwrap()
             }
         }
-        token => panic!("Expected literal, but got {:?}", token),
+        token => panic!("Expected literal, but got {token:?}"),
     }
 }
 
@@ -177,6 +177,6 @@ fn next_usize(iter: &mut impl Iterator<Item = TokenTree>) -> usize {
 fn next_group(iter: &mut impl Iterator<Item = TokenTree>) -> TokenStream {
     match iter.next() {
         Some(Group(group)) => group.stream(),
-        token => panic!("Expected group, but got {:?}", token),
+        token => panic!("Expected group, but got {token:?}"),
     }
 }

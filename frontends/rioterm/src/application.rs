@@ -1335,10 +1335,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
         // as a safe placeholder.
-        std::mem::swap(
-            &mut self.router.clipboard,
-            &mut std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop())),
-        );
+        self.router.clipboard =
+            std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop()));
 
         std::process::exit(0);
     }

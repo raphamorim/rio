@@ -1948,7 +1948,7 @@ impl Screen<'_> {
         if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
             let chr = if is_focused { "I" } else { "O" };
 
-            let msg = format!("\x1b[{}", chr);
+            let msg = format!("\x1b[{chr}");
             self.ctx_mut()
                 .current_mut()
                 .messenger

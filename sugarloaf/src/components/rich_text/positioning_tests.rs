@@ -3,6 +3,8 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
+
+#![allow(clippy::uninlined_format_args)]
 // Positioning tests for cached vs non-cached text rendering
 
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};

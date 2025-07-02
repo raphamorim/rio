@@ -379,8 +379,7 @@ pub fn apply_kern(data: &[u8], kern: u32, buffer: &mut Buffer) -> Option<()> {
                                 } else if let Some(base) =
                                     find_base(buffer, buffer.is_rtl, i)
                                 {
-                                    let diff =
-                                        if base >= i { base - i } else { i - base };
+                                    let diff = base.abs_diff(i);
                                     if diff < 255 {
                                         let pos = &mut buffer.positions[i];
                                         if pos.base == 0 {

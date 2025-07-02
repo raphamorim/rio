@@ -207,13 +207,13 @@ impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.language())?;
         if let Some(script) = self.script() {
-            write!(f, "-{}", script)?;
+            write!(f, "-{script}")?;
         }
         if let Some(region) = self.region() {
-            write!(f, "-{}", region)?;
+            write!(f, "-{region}")?;
         }
         if let Some(name) = self.name() {
-            write!(f, " ({})", name)?;
+            write!(f, " ({name})")?;
         }
         Ok(())
     }
@@ -223,19 +223,19 @@ impl fmt::Debug for Language {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.language())?;
         if let Some(script) = self.script() {
-            write!(f, "-{}", script)?;
+            write!(f, "-{script}")?;
         }
         if let Some(region) = self.region() {
-            write!(f, "-{}", region)?;
+            write!(f, "-{region}")?;
         }
         if let Some(tag) = self.tag {
             let tag = tag.to_be_bytes();
             if let Ok(s) = core::str::from_utf8(&tag) {
-                write!(f, " ({})", s)?;
+                write!(f, " ({s})")?;
             }
         }
         if let Some(name) = self.name() {
-            write!(f, " \"{}\"", name)?;
+            write!(f, " \"{name}\"")?;
         }
         Ok(())
     }

@@ -1,7 +1,10 @@
+#![allow(clippy::uninlined_format_args)]
+
 use std::time::Instant;
 
 fn main() {
     println!("Rio Terminal - SIMD UTF-8 Performance Test");
+
     println!("==========================================");
 
     // Test cases representing common terminal content

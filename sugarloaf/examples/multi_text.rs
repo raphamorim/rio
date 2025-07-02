@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use rio_window::application::ApplicationHandler;
 use rio_window::event_loop::ControlFlow;

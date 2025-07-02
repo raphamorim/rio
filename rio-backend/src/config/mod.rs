@@ -324,7 +324,7 @@ impl Config {
 
                     Ok(decoded)
                 }
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))
@@ -336,7 +336,7 @@ impl Config {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Theme>(&content) {
                 Ok(decoded) => Ok(decoded),
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))

@@ -99,8 +99,7 @@ fn generate_test_data() -> Vec<(&'static str, Vec<u8>, usize)> {
             let mut data = Vec::new();
             for i in 0..50 {
                 data.extend_from_slice(format!(
-                    "\x1b[33mcommit abc123{}\x1b[0m\nAuthor: Dev 👨‍💻 <dev@example.com>\nDate: Mon Jan 1 12:00:00 2024\n\n    🚀 Feature {} with 中文 support\n\n",
-                    i, i
+                    "\x1b[33mcommit abc123{i}\x1b[0m\nAuthor: Dev 👨‍💻 <dev@example.com>\nDate: Mon Jan 1 12:00:00 2024\n\n    🚀 Feature {i} with 中文 support\n\n"
                 ).as_bytes());
             }
             data
@@ -109,8 +108,7 @@ fn generate_test_data() -> Vec<(&'static str, Vec<u8>, usize)> {
             let mut data = Vec::new();
             for i in 0..100 {
                 data.extend_from_slice(format!(
-                    "// Comment with UTF-8: 🦀 Rust line {}\nfn function_{}() -> Result<(), Error> {{\n    println!(\"Hello, 世界! 🌍\");\n    Ok(())\n}}\n\n",
-                    i, i
+                    "// Comment with UTF-8: 🦀 Rust line {i}\nfn function_{i}() -> Result<(), Error> {{\n    println!(\"Hello, 世界! 🌍\");\n    Ok(())\n}}\n\n"
                 ).as_bytes());
             }
             data
@@ -159,7 +157,7 @@ fn print_system_info() {
             Err(_) => "std::str (standard library)",
         };
 
-    println!("Implementation: {}", implementation);
+    println!("Implementation: {implementation}");
     println!(
         "Rust version: {}",
         std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string())
@@ -241,9 +239,9 @@ fn main() {
 
     println!();
     println!("Summary Statistics:");
-    println!("  Average throughput: {:.2} MB/s", avg_throughput);
-    println!("  Maximum throughput: {:.2} MB/s", max_throughput);
-    println!("  Minimum throughput: {:.2} MB/s", min_throughput);
+    println!("  Average throughput: {avg_throughput:.2} MB/s");
+    println!("  Maximum throughput: {max_throughput:.2} MB/s");
+    println!("  Minimum throughput: {min_throughput:.2} MB/s");
     println!("  Total test cases: {}", results.len());
 
     println!();
@@ -272,13 +270,13 @@ fn main() {
     if !utf8_tests.is_empty() {
         let utf8_avg: f64 = utf8_tests.iter().map(|r| r.throughput_mbps).sum::<f64>()
             / utf8_tests.len() as f64;
-        println!("  UTF-8 heavy workloads: {:.2} MB/s average", utf8_avg);
+        println!("  UTF-8 heavy workloads: {utf8_avg:.2} MB/s average");
     }
 
     if !ascii_tests.is_empty() {
         let ascii_avg: f64 = ascii_tests.iter().map(|r| r.throughput_mbps).sum::<f64>()
             / ascii_tests.len() as f64;
-        println!("  ASCII workloads: {:.2} MB/s average", ascii_avg);
+        println!("  ASCII workloads: {ascii_avg:.2} MB/s average");
     }
 
     if !real_world_tests.is_empty() {
@@ -287,7 +285,7 @@ fn main() {
             .map(|r| r.throughput_mbps)
             .sum::<f64>()
             / real_world_tests.len() as f64;
-        println!("  Real-world scenarios: {:.2} MB/s average", real_world_avg);
+        println!("  Real-world scenarios: {real_world_avg:.2} MB/s average");
     }
 
     println!();

@@ -69,7 +69,7 @@ pub fn screen(
     confirm_line
         .clear()
         .add_text(
-            &format!(" {} ", confirm_content),
+            &format!(" {confirm_content} "),
             FragmentStyle {
                 color: [0., 0., 0., 1.],
                 background_color: Some(yellow),
@@ -88,7 +88,7 @@ pub fn screen(
     quit_line
         .clear()
         .add_text(
-            &format!(" {} ", quit_content),
+            &format!(" {quit_content} "),
             FragmentStyle {
                 color: [0., 0., 0., 1.],
                 background_color: Some(red),

@@ -656,7 +656,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.event_proxy
                     .send_event(RioEvent::Title(content.to_owned()), self.window_id);
 
-                id.push_str(&format!("{}{};", i, content));
+                id.push_str(&format!("{i}{content};"));
 
                 if self.config.should_update_title_extra {
                     self.titles.set_key_val(

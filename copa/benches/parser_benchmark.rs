@@ -299,11 +299,8 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
         let mut data = Vec::new();
         for i in 0..100 {
             data.extend_from_slice(
-                format!(
-                    "drwxr-xr-x  2 user group  4096 Jan  1 12:00 📁folder_{}\n",
-                    i
-                )
-                .as_bytes(),
+                format!("drwxr-xr-x  2 user group  4096 Jan  1 12:00 📁folder_{i}\n")
+                    .as_bytes(),
             );
             data.extend_from_slice(
                 format!(
@@ -329,12 +326,12 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
         let mut data = Vec::new();
         for i in 0..50 {
             data.extend_from_slice(
-                format!("\x1b[33mcommit abc123{}\x1b[0m\n", i).as_bytes(),
+                format!("\x1b[33mcommit abc123{i}\x1b[0m\n").as_bytes(),
             );
             data.extend_from_slice("Author: Developer 👨‍💻 <dev@example.com>\n".as_bytes());
             data.extend_from_slice("Date: Mon Jan 1 12:00:00 2024 +0000\n\n".as_bytes());
             data.extend_from_slice(
-                format!("    🚀 Add feature {} with 中文 support\n\n", i).as_bytes(),
+                format!("    🚀 Add feature {i} with 中文 support\n\n").as_bytes(),
             );
         }
         data
@@ -353,11 +350,11 @@ fn bench_real_world_scenarios(c: &mut Criterion) {
         let mut data = Vec::new();
         for i in 0..200 {
             data.extend_from_slice(
-                format!("// This is a comment with UTF-8: 🦀 Rust code line {}\n", i)
+                format!("// This is a comment with UTF-8: 🦀 Rust code line {i}\n")
                     .as_bytes(),
             );
             data.extend_from_slice(
-                format!("fn function_{}() -> Result<(), Error> {{\n", i).as_bytes(),
+                format!("fn function_{i}() -> Result<(), Error> {{\n").as_bytes(),
             );
             data.extend_from_slice("    println!(\"Hello, 世界! 🌍\");\n".as_bytes());
             data.extend_from_slice(b"    Ok(())\n}\n\n");
