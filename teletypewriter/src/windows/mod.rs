@@ -306,6 +306,194 @@ pub fn foreground_process_path(
     get_process_cwd(shell_pid)
 }
 
+/// Get the current working directory for a process using WezTerm-like PEB reading
+fn get_process_cwd_from_peb(pid: u32) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let handle = open_process_handle(pid)?;
+    let _guard = HandleGuard(handle);
+    
+    // Try to get process parameters using WezTerm's approach
+    let cwd = get_process_params_cwd(handle)?;
+    Ok(cwd)
+}
+
+/// Get the current working directory from process parameters (WezTerm approach)
+fn get_process_params_cwd(handle: HANDLE) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    unsafe {
+        // First check if this is a 32-bit process on 64-bit Windows
+        if let Ok(cwd) = get_params_32_bit(handle) {
+            return Ok(cwd);
+        }
+        
+        // Try 64-bit process parameters
+        get_params_64_bit(handle)
+    }
+}
+
+/// Get parameters for 64-bit process
+unsafe fn get_params_64_bit(handle: HANDLE) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Get basic process information
+    let mut basic_info = MaybeUninit::<PROCESS_BASIC_INFORMATION>::uninit();
+    let status = NtQueryInformationProcess(
+        handle as _,
+        ProcessBasicInformation,
+        basic_info.as_mut_ptr() as _,
+        size_of::<PROCESS_BASIC_INFORMATION>() as u32,
+        null_mut(),
+    );
+    
+    if status != 0 {
+        return Err("Failed to get basic process information".into());
+    }
+    
+    let basic_info = basic_info.assume_init();
+    
+    // Read PEB from process memory
+    let mut peb = MaybeUninit::<PEB>::uninit();
+    let mut bytes_read = 0;
+    let result = ReadProcessMemory(
+        handle,
+        basic_info.PebBaseAddress as _,
+        peb.as_mut_ptr() as _,
+        size_of::<PEB>(),
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read PEB".into());
+    }
+    
+    let peb = peb.assume_init();
+    
+    // Read process parameters
+    let mut params = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS>::uninit();
+    let result = ReadProcessMemory(
+        handle,
+        peb.ProcessParameters as _,
+        params.as_mut_ptr() as _,
+        size_of::<RTL_USER_PROCESS_PARAMETERS>(),
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read process parameters".into());
+    }
+    
+    let params = params.assume_init();
+    
+    // Read the current directory string
+    let cwd_length = params.CurrentDirectory.DosPath.Length as usize;
+    if cwd_length == 0 || cwd_length > (MAX_PATH * 2).try_into().unwrap() {
+        return Err("Invalid CWD length".into());
+    }
+    
+    let mut cwd_buffer = vec![0u16; cwd_length / 2];
+    let result = ReadProcessMemory(
+        handle,
+        params.CurrentDirectory.DosPath.Buffer as _,
+        cwd_buffer.as_mut_ptr() as _,
+        cwd_length,
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read CWD string".into());
+    }
+    
+    // Convert to PathBuf
+    let cwd_str = std::ffi::OsString::from_wide(&cwd_buffer).into();
+    Ok(cwd_str)
+}
+
+/// Get parameters for 32-bit process on 64-bit Windows
+unsafe fn get_params_32_bit(handle: HANDLE) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Check if this is a WOW64 process
+    let mut peb32_addr = MaybeUninit::<*mut std::ffi::c_void>::uninit();
+    let status = NtQueryInformationProcess(
+        handle as _,
+        ProcessWow64Information,
+        peb32_addr.as_mut_ptr() as _,
+        size_of::<*mut std::ffi::c_void>() as u32,
+        null_mut(),
+    );
+    
+    if status != 0 {
+        return Err("Not a WOW64 process".into());
+    }
+    
+    let peb32_addr = peb32_addr.assume_init();
+    if peb32_addr.is_null() {
+        return Err("Not a 32-bit process".into());
+    }
+    
+    // Read 32-bit PEB
+    let mut peb32 = MaybeUninit::<PEB32>::uninit();
+    let mut bytes_read = 0;
+    let result = ReadProcessMemory(
+        handle,
+        peb32_addr,
+        peb32.as_mut_ptr() as _,
+        size_of::<PEB32>(),
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read 32-bit PEB".into());
+    }
+    
+    let peb32 = peb32.assume_init();
+    
+    // Read 32-bit process parameters
+    let mut params32 = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS32>::uninit();
+    let result = ReadProcessMemory(
+        handle,
+        peb32.ProcessParameters as _,
+        params32.as_mut_ptr() as _,
+        size_of::<RTL_USER_PROCESS_PARAMETERS32>(),
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read 32-bit process parameters".into());
+    }
+    
+    let params32 = params32.assume_init();
+    
+    // Read the current directory string
+    let cwd_length = params32.CurrentDirectory.DosPath.Length as usize;
+    if cwd_length == 0 || cwd_length > (MAX_PATH * 2).try_into().unwrap() {
+        return Err("Invalid CWD length".into());
+    }
+    
+    let mut cwd_buffer = vec![0u16; cwd_length / 2];
+    let result = ReadProcessMemory(
+        handle,
+        params32.CurrentDirectory.DosPath.Buffer as _,
+        cwd_buffer.as_mut_ptr() as _,
+        cwd_length,
+        &mut bytes_read,
+    );
+    
+    if result == 0 {
+        return Err("Failed to read CWD string".into());
+    }
+    
+    // Convert to PathBuf
+    let cwd_str = std::ffi::OsString::from_wide(&cwd_buffer).into();
+    Ok(cwd_str)
+}
+
+/// Convert wide string to PathBuf (similar to WezTerm's wstr_to_path)
+fn wstr_to_path(slice: &[u16]) -> PathBuf {
+    use std::ffi::OsString;
+    
+    // Find null terminator
+    let end = slice.iter().position(|&c| c == 0).unwrap_or(slice.len());
+    let trimmed = &slice[..end];
+    
+    // Convert to OsString and then PathBuf
+    OsString::from_wide(trimmed).into()
+}
+
 /// Process information similar to WezTerm's LocalProcessInfo
 #[derive(Debug)]
 struct ProcessInfo {
