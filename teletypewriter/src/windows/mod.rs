@@ -6,20 +6,33 @@ mod spsc;
 use std::ffi::OsStr;
 use std::io::{self};
 use std::iter::once;
+use std::mem::{size_of, MaybeUninit};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::ptr::null_mut;
 use std::sync::mpsc::TryRecvError;
 
 use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows_sys::Win32::System::Memory::VirtualQueryEx;
 use windows_sys::Win32::System::ProcessStatus::GetProcessImageFileNameW;
 use windows_sys::Win32::System::Threading::{
-    OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP,
-    CREATE_NO_WINDOW, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+    OpenProcess, QueryFullProcessImageNameW, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW,
+    PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
 };
+
+// Import ntapi for process parameter structures
+use ntapi::ntpebteb::PEB;
+use ntapi::ntpsapi::{
+    NtQueryInformationProcess, ProcessBasicInformation, ProcessWow64Information,
+    PROCESS_BASIC_INFORMATION,
+};
+use ntapi::ntrtl::RTL_USER_PROCESS_PARAMETERS;
+use ntapi::ntwow64::{PEB32, RTL_USER_PROCESS_PARAMETERS32};
 
 use conpty::Conpty as Backend;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
@@ -269,10 +282,8 @@ where
 
 /// Get working directory of the foreground process.
 ///
-/// On Windows, this attempts to get the working directory of the process
-/// by getting the executable path and returning its parent directory.
-/// This is a limitation compared to Unix systems where we can directly
-/// get the current working directory of a process.
+/// On Windows, this reads the actual working directory from the process's
+/// RTL_USER_PROCESS_PARAMETERS structure in the PEB (Process Environment Block).
 pub fn foreground_process_path(
     shell_pid: u32,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -284,7 +295,7 @@ pub fn foreground_process_path(
             shell_pid,
         );
 
-        if process_handle.is_null() {
+        if process_handle == 0 {
             return Err(format!(
                 "Failed to open process {}: {}",
                 shell_pid,
@@ -296,35 +307,160 @@ pub fn foreground_process_path(
         // Ensure we close the handle when we're done
         let _handle_guard = HandleGuard(process_handle);
 
-        // Try to get the full process image name
-        let mut buffer = [0u16; MAX_PATH as usize];
-        let mut size = MAX_PATH;
-
-        let result = QueryFullProcessImageNameW(
-            process_handle,
-            0, // PROCESS_NAME_NATIVE = 0
-            buffer.as_mut_ptr(),
-            &mut size,
-        );
-
-        if result == 0 {
-            return Err(format!(
-                "Failed to get process image name: {}",
-                io::Error::last_os_error()
-            )
-            .into());
+        // Check if this is a 32-bit process running under WOW64
+        let mut wow64_info = MaybeUninit::<*const std::ffi::c_void>::uninit();
+        if NtQueryInformationProcess(
+            process_handle as _,
+            ProcessWow64Information,
+            wow64_info.as_mut_ptr() as _,
+            size_of::<*const std::ffi::c_void>(),
+            null_mut(),
+        ) != 0
+        {
+            return Err("Failed to query WOW64 information".into());
         }
 
-        // Convert the wide string to a PathBuf
-        let exe_path = std::ffi::OsString::from_wide(&buffer[..size as usize]);
-        let exe_path = PathBuf::from(exe_path);
+        let wow64_info = wow64_info.assume_init();
 
-        // Return the parent directory of the executable
-        exe_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .ok_or_else(|| "Could not determine parent directory of executable".into())
+        if wow64_info.is_null() {
+            // 64-bit process
+            get_cwd_64bit(process_handle)
+        } else {
+            // 32-bit process running under WOW64
+            get_cwd_32bit(process_handle, wow64_info)
+        }
     }
+}
+
+/// Get working directory from a 64-bit process
+unsafe fn get_cwd_64bit(
+    process_handle: HANDLE,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Get basic process information
+    let mut basic_info = MaybeUninit::<PROCESS_BASIC_INFORMATION>::uninit();
+    if NtQueryInformationProcess(
+        process_handle as _,
+        ProcessBasicInformation,
+        basic_info.as_mut_ptr() as _,
+        size_of::<PROCESS_BASIC_INFORMATION>(),
+        null_mut(),
+    ) != 0
+    {
+        return Err("Failed to get basic process information".into());
+    }
+
+    let basic_info = basic_info.assume_init();
+
+    // Read the PEB
+    let mut peb = MaybeUninit::<PEB>::uninit();
+    if ReadProcessMemory(
+        process_handle as _,
+        basic_info.PebBaseAddress,
+        peb.as_mut_ptr() as _,
+        size_of::<PEB>(),
+        null_mut(),
+    ) == 0
+    {
+        return Err("Failed to read PEB".into());
+    }
+
+    let peb = peb.assume_init();
+
+    // Read the process parameters
+    let mut params = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS>::uninit();
+    if ReadProcessMemory(
+        process_handle as _,
+        peb.ProcessParameters,
+        params.as_mut_ptr() as _,
+        size_of::<RTL_USER_PROCESS_PARAMETERS>(),
+        null_mut(),
+    ) == 0
+    {
+        return Err("Failed to read process parameters".into());
+    }
+
+    let params = params.assume_init();
+
+    // Read the current directory string
+    read_unicode_string(
+        process_handle,
+        params.CurrentDirectory.DosPath.Buffer,
+        params.CurrentDirectory.DosPath.Length as usize,
+    )
+}
+
+/// Get working directory from a 32-bit process running under WOW64
+unsafe fn get_cwd_32bit(
+    process_handle: HANDLE,
+    peb32_addr: *const std::ffi::c_void,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Read the 32-bit PEB
+    let mut peb32 = MaybeUninit::<PEB32>::uninit();
+    if ReadProcessMemory(
+        process_handle as _,
+        peb32_addr,
+        peb32.as_mut_ptr() as _,
+        size_of::<PEB32>(),
+        null_mut(),
+    ) == 0
+    {
+        return Err("Failed to read PEB32".into());
+    }
+
+    let peb32 = peb32.assume_init();
+
+    // Read the 32-bit process parameters
+    let mut params = MaybeUninit::<RTL_USER_PROCESS_PARAMETERS32>::uninit();
+    if ReadProcessMemory(
+        process_handle as _,
+        peb32.ProcessParameters as _,
+        params.as_mut_ptr() as _,
+        size_of::<RTL_USER_PROCESS_PARAMETERS32>(),
+        null_mut(),
+    ) == 0
+    {
+        return Err("Failed to read 32-bit process parameters".into());
+    }
+
+    let params = params.assume_init();
+
+    // Read the current directory string
+    read_unicode_string(
+        process_handle,
+        params.CurrentDirectory.DosPath.Buffer as _,
+        params.CurrentDirectory.DosPath.Length as usize,
+    )
+}
+
+/// Read a Unicode string from another process's memory
+unsafe fn read_unicode_string(
+    process_handle: HANDLE,
+    buffer_ptr: *const u16,
+    length: usize,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if buffer_ptr.is_null() || length == 0 {
+        return Ok(PathBuf::new());
+    }
+
+    // Allocate buffer for the string (length is in bytes, we need u16 count)
+    let char_count = length / 2;
+    let mut buffer = vec![0u16; char_count];
+
+    if ReadProcessMemory(
+        process_handle as _,
+        buffer_ptr as _,
+        buffer.as_mut_ptr() as _,
+        length,
+        null_mut(),
+    ) == 0
+    {
+        return Err("Failed to read Unicode string".into());
+    }
+
+    // Convert to PathBuf, handling null termination
+    let end_pos = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    let os_string = std::ffi::OsString::from_wide(&buffer[..end_pos]);
+    Ok(PathBuf::from(os_string))
 }
 
 /// Get the name of the foreground process.
@@ -375,7 +511,9 @@ struct HandleGuard(HANDLE);
 impl Drop for HandleGuard {
     fn drop(&mut self) {
         unsafe {
-            CloseHandle(self.0);
+            if self.0 != 0 {
+                CloseHandle(self.0);
+            }
         }
     }
 }

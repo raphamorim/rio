@@ -269,7 +269,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // Extract shell PID from ChildExitWatcher before passing PTY to Machine
             match pty.child_watcher().pid() {
                 Some(val) => val.get(),
-                None => 0
+                None => 0,
             }
         };
 
