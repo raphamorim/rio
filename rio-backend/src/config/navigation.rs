@@ -2,32 +2,19 @@ use crate::config::colors::{deserialize_to_arr, ColorArray};
 use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
     #[serde(alias = "plain")]
     Plain,
     #[serde(alias = "toptab")]
     TopTab,
-    #[cfg(target_os = "macos")]
     #[serde(alias = "nativetab")]
     NativeTab,
     #[serde(alias = "bottomtab")]
+    #[default]
     BottomTab,
     #[serde(alias = "bookmark")]
     Bookmark,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for NavigationMode {
-    fn default() -> NavigationMode {
-        #[cfg(target_os = "macos")]
-        {
-            NavigationMode::NativeTab
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        NavigationMode::Bookmark
-    }
 }
 
 impl NavigationMode {
