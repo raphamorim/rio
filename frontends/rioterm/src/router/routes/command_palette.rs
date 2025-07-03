@@ -34,6 +34,7 @@ pub struct CommandPalette {
     pub items: Vec<CommandPaletteItem>,
     pub filtered_items: Vec<CommandPaletteItem>,
     pub selected_index: usize,
+    pub scroll_offset: usize, // Track scroll position for long lists
 }
 
 impl CommandPalette {
@@ -144,6 +145,7 @@ impl CommandPalette {
             items,
             filtered_items,
             selected_index: 0,
+            scroll_offset: 0,
         }
     }
 
@@ -151,24 +153,28 @@ impl CommandPalette {
         self.query = query;
         self.filter_items();
         self.selected_index = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn add_char(&mut self, ch: char) {
         self.query.push(ch);
         self.filter_items();
         self.selected_index = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn remove_char(&mut self) {
         self.query.pop();
         self.filter_items();
         self.selected_index = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn clear_query(&mut self) {
         self.query.clear();
         self.filter_items();
         self.selected_index = 0;
+        self.scroll_offset = 0;
     }
 
     pub fn move_selection_up(&mut self) {
@@ -179,6 +185,7 @@ impl CommandPalette {
                 // Wrap to the last item
                 self.selected_index = self.filtered_items.len() - 1;
             }
+            self.update_scroll_for_selection();
         }
     }
 
@@ -190,6 +197,29 @@ impl CommandPalette {
                 // Wrap to the first item
                 self.selected_index = 0;
             }
+            self.update_scroll_for_selection();
+        }
+    }
+
+    // Update scroll offset to keep selected item visible
+    fn update_scroll_for_selection(&mut self) {
+        const MAX_VISIBLE_ITEMS: usize = 7; // Show 7 items at once like Arc
+        
+        if self.filtered_items.len() <= MAX_VISIBLE_ITEMS {
+            self.scroll_offset = 0;
+            return;
+        }
+
+        // When scrollbar is visible, show one fewer item
+        let actual_visible_items = MAX_VISIBLE_ITEMS - 1;
+
+        // If selected item is above visible area, scroll up
+        if self.selected_index < self.scroll_offset {
+            self.scroll_offset = self.selected_index;
+        }
+        // If selected item is below visible area, scroll down
+        else if self.selected_index >= self.scroll_offset + actual_visible_items {
+            self.scroll_offset = self.selected_index - actual_visible_items + 1;
         }
     }
 
@@ -236,98 +266,100 @@ pub fn screen_with_objects(
     command_palette: &CommandPalette,
     existing_objects: Vec<Object>,
 ) {
-    // Raycast-inspired color palette
-    let _backdrop_color = [0.0, 0.0, 0.0, 0.4]; // Dark backdrop overlay (unused)
-    let text_primary = [0.95, 0.95, 0.95, 1.0]; // High contrast white
-    let text_secondary = [0.6, 0.6, 0.6, 1.0]; // Muted gray for descriptions
-    let query_text_color = [0.98, 0.98, 0.98, 1.0]; // Bright white for input
+    // Arc-inspired color palette (matching updated example.html)
+    let text_primary = [0.75, 0.75, 0.75, 1.0]; // #c0c0c0 - Arc's muted text color
+    let text_secondary = [0.53, 0.53, 0.53, 1.0]; // #888888 - muted gray for placeholders
+    let query_text_color = [0.88, 0.88, 0.88, 1.0]; // #e0e0e0 - Arc's input text color
     let selection_text_color = [1.0, 1.0, 1.0, 1.0]; // Pure white for selected items
+    let icon_background_color = [0.39, 0.39, 1.0, 0.2]; // rgba(100, 100, 255, 0.2) - Arc's icon background
+    let icon_text_color = [0.63, 0.63, 1.0, 1.0]; // #a0a0ff - Arc's icon color
 
     let layout = sugarloaf.window_size();
-    let panel_width = 600.0; // Raycast-like width
-    let panel_height = 400.0; // Compact height
+    let panel_width = 650.0; // Wider like Arc (max-width: 650px)
+    let panel_height = 450.0; // Taller for more content
     
     // Center the panel
     let scaled_width = layout.width / context_dimension.dimension.scale;
     let panel_x = (scaled_width - panel_width) / 2.0;
-    let panel_y = context_dimension.margin.top_y + 100.0; // Space from top
+    let panel_y = context_dimension.margin.top_y + 60.0; // Higher up like Arc
 
     let mut objects = existing_objects;
 
     // No backdrop overlay - terminal content remains fully visible
 
-    // Multi-layer shadow for the main panel (like macOS/Raycast)
+    // Arc-style shadow layers (deeper, softer shadows)
     let shadow_layers = [
-        (12.0, 0.25), // Close, strong shadow
-        (24.0, 0.15), // Medium shadow
-        (48.0, 0.08), // Far, soft shadow
-        (96.0, 0.04), // Very far, subtle shadow
+        (15.0, 0.5),  // Close, strong shadow
+        (25.0, 0.3),  // Medium shadow  
+        (40.0, 0.15), // Far shadow
     ];
 
     for (blur_radius, alpha) in shadow_layers.iter() {
         objects.push(Object::Quad(Quad::blur(
-            [panel_x + 4.0, panel_y + 8.0], // Slight offset for natural shadow
-            [panel_width, panel_height], // Same size as main panel
+            [panel_x + 2.0, panel_y + 6.0], // Slight offset for natural shadow
+            [panel_width, panel_height],
             [0.0, 0.0, 0.0, *alpha], // Black shadow with varying alpha
-            *blur_radius // Different blur amounts for layered effect
+            *blur_radius
         )));
     }
 
-    // Main panel with frosted glass effect (like example.html)
-    // Using the new blur quad with Raycast-style colors
+    // Main panel with Arc-style frosted glass effect
+    // background-color: rgba(30, 30, 40, 0.9) + backdrop-filter: blur(30px) saturate(180%)
     objects.push(Object::Quad(Quad::blur(
         [panel_x, panel_y],
         [panel_width, panel_height],
-        [0.12, 0.16, 0.21, 0.6], // Semi-transparent dark background (matches example.html)
-        20.0 // Strong frosted glass effect
+        [0.12, 0.12, 0.16, 0.9], // rgba(30, 30, 40, 0.9) from Arc style
+        30.0 // Strong frosted glass effect matching CSS backdrop-filter: blur(30px)
     ).with_border(
-        [0.4, 0.4, 0.45, 0.4], // More visible border for definition
-        [16.0; 4], // Rounded corners like Raycast (larger radius)
-        1.5 // Slightly thicker border
+        [1.0, 1.0, 1.0, 0.05], // Subtle white border like Arc (0 0 0 1px rgba(255, 255, 255, 0.05))
+        [20.0; 4], // More pronounced rounded corners (border-radius: 20px)
+        1.0
     )));
 
-    // Inner highlight for glassmorphism effect (subtle light reflection)
-    objects.push(Object::Quad(Quad::blur(
-        [panel_x + 2.0, panel_y + 2.0],
-        [panel_width - 4.0, 40.0], // Just at the top
-        [0.6, 0.6, 0.7, 0.1], // Very subtle white highlight
-        4.0 // Small blur for soft highlight
-    ).with_border(
-        [0.0; 4],
-        [14.0, 14.0, 0.0, 0.0], // Only top corners rounded
-        0.0
-    )));
+    // Remove the inner highlight - keep it clean like example.html
 
     // Create all rich text objects first
     let query_text = sugarloaf.create_temp_rich_text();
     let instructions_text = sugarloaf.create_temp_rich_text();
-    let symbol_text = sugarloaf.create_temp_rich_text();
 
-    // Create rich text objects for items
-    let max_visible_items = 8;
+    // Create rich text objects for items (show 7 items like Arc with scrolling)
+    let max_visible_items = 7; // Show fewer items to match Arc's compact design
+    let total_items = command_palette.filtered_items.len();
+    let has_scrollbar = total_items > max_visible_items;
+    
+    // When scrollbar is visible, show one fewer item to make room
+    let actual_visible_items = if has_scrollbar { max_visible_items - 1 } else { max_visible_items };
+    
+    // Calculate visible items based on scroll offset
+    let visible_items: Vec<(usize, &CommandPaletteItem)> = command_palette.filtered_items
+        .iter()
+        .enumerate()
+        .skip(command_palette.scroll_offset)
+        .take(actual_visible_items)
+        .collect();
+    
     let mut item_title_texts = Vec::new();
     let mut icon_texts = Vec::new();
     
-    for _ in 0..max_visible_items.min(command_palette.filtered_items.len()) {
+    for _ in 0..visible_items.len() {
         item_title_texts.push(sugarloaf.create_temp_rich_text());
         icon_texts.push(sugarloaf.create_temp_rich_text());
     }
 
-    // Set font sizes
-    sugarloaf.set_rich_text_font_size(&query_text, 18.0); // Input text
-    sugarloaf.set_rich_text_font_size(&instructions_text, 11.0);
-    sugarloaf.set_rich_text_font_size(&symbol_text, 20.0);
+    // Set font sizes (matching Arc's typography)
+    sugarloaf.set_rich_text_font_size(&query_text, 19.0); // font-size: 1.2rem from Arc
+    sugarloaf.set_rich_text_font_size(&instructions_text, 12.0); // Small footer text
     
-    let item_font_size = 16.0;
+    let item_font_size = 17.0; // font-size: 1.05rem from Arc
     for title_text_id in &item_title_texts {
-        sugarloaf.set_rich_text_font_size(title_text_id, item_font_size); // Item text
+        sugarloaf.set_rich_text_font_size(title_text_id, item_font_size);
     }
     
     for icon_text_id in &icon_texts {
-        sugarloaf.set_rich_text_font_size(icon_text_id, 18.0); // Icon text
+        sugarloaf.set_rich_text_font_size(icon_text_id, 18.0); // font-size: 1.1rem for icons
     }
 
-    // Get text dimensions to calculate proper spacing
+    // Get text dimensions to calculate proper spacing (keeping for compatibility)
     let sample_text_id = sugarloaf.create_temp_rich_text();
     sugarloaf.set_rich_text_font_size(&sample_text_id, item_font_size);
     let content_temp = sugarloaf.content();
@@ -336,44 +368,30 @@ pub fn screen_with_objects(
         .clear()
         .add_text("Sample", FragmentStyle::default())
         .build();
-    let text_dimensions = sugarloaf.get_rich_text_dimensions(&sample_text_id);
+    let _text_dimensions = sugarloaf.get_rich_text_dimensions(&sample_text_id);
 
     let content = sugarloaf.content();
 
-    // Input area with command symbol (like Raycast)
-    let input_y = panel_y + 20.0;
-    let input_height = 60.0;
+    // Input area styling (matching Arc's .arc-input)
+    let input_y = panel_y + 12.0; // padding: 12px from Arc container
+    let input_height = 64.0; // Larger padding for spacious feel (padding: 16px 20px)
     
-    // Input background with subtle styling and rounded corners
+    // Input background (matching Arc's rgba(40, 40, 55, 0.8))
     objects.push(Object::Quad(Quad::solid(
-        [panel_x + 16.0, input_y],
-        [panel_width - 32.0, input_height],
-        [0.08, 0.08, 0.12, 0.8], // Slightly darker background for input
+        [panel_x + 12.0, input_y],
+        [panel_width - 24.0, input_height],
+        [0.16, 0.16, 0.22, 0.8], // rgba(40, 40, 55, 0.8) from Arc style
     ).with_border(
-        [0.25, 0.25, 0.3, 0.4], // Subtle border
-        [12.0; 4], // Rounded input area
-        1.0
+        [0.0, 0.0, 0.0, 0.2], // inset shadow effect
+        [15.0; 4], // border-radius: 15px
+        0.0
     )));
 
-    // Command symbol (⌘) like in example.html
-    let symbol_line = content.sel(symbol_text);
-    symbol_line
-        .clear()
-        .add_text("⌘", FragmentStyle {
-            color: text_secondary,
-            ..FragmentStyle::default()
-        })
-        .build();
-
-    objects.push(Object::RichText(RichText {
-        id: symbol_text,
-        position: [panel_x + 32.0, input_y + 20.0],
-        lines: None,
-    }));
-
+    // Remove command symbol - Arc style doesn't use it
+    
     // Query input text
     let query_display = if command_palette.query.is_empty() {
-        "Type a command or search..."
+        "Search commands, apps, files..."
     } else {
         &command_palette.query
     };
@@ -393,44 +411,45 @@ pub fn screen_with_objects(
 
     objects.push(Object::RichText(RichText {
         id: query_text,
-        position: [panel_x + 70.0, input_y + 20.0], // After the command symbol
+        position: [panel_x + 32.0, input_y + 22.0], // Centered in larger input area
         lines: None,
     }));
 
-    // Separator line (like in example.html) - with rounded ends
-    objects.push(Object::Quad(Quad::solid(
-        [panel_x + 24.0, input_y + input_height + 8.0],
-        [panel_width - 48.0, 1.0],
-        [0.3, 0.3, 0.35, 0.6], // Slightly more visible separator
-    ).with_border(
-        [0.0; 4],
-        [0.5, 0.5, 0.5, 0.5], // Tiny rounding for smooth line
-        0.0
-    )));
+    // Command items (matching Arc's .arc-result-item styling)
+    let item_height = 54.0; // Larger items (padding: 12px 16px + margin-bottom: 6px)
+    let items_start_y = input_y + input_height + 10.0; // margin-top: 10px from Arc style
+    let items_area_width = if has_scrollbar { panel_width - 48.0 } else { panel_width - 32.0 }; // Leave space for scrollbar
 
-    // Command items (like example.html list items)
-    let item_height = text_dimensions.height + 2.0; // Text height + minimal padding
-    let items_start_y = input_y + input_height + 16.0; // More space after separator
-
-    for (index, item) in command_palette.filtered_items.iter().enumerate().take(max_visible_items) {
-        let item_y = items_start_y + (index as f32 * item_height);
+    for (display_index, (actual_index, item)) in visible_items.iter().enumerate() {
+        let item_y = items_start_y + (display_index as f32 * item_height);
         
-        // Selection highlight (like example.html selected item) with rounded corners
-        if index == command_palette.selected_index {
-            // Selection background with subtle blur for smooth appearance
-            objects.push(Object::Quad(Quad::blur(
-                [panel_x + 12.0, item_y],
-                [panel_width - 24.0, item_height],
-                [0.2, 0.4, 0.8, 0.7], // Blue selection (like example.html)
-                2.0 // Very subtle blur for smooth selection
+        // Selection highlight (matching Arc's hover state)
+        if *actual_index == command_palette.selected_index {
+            objects.push(Object::Quad(Quad::solid(
+                [panel_x + 16.0, item_y],
+                [items_area_width, item_height - 6.0], // Account for margin-bottom: 6px
+                [0.20, 0.20, 0.27, 0.7], // rgba(50, 50, 70, 0.7) from Arc hover
             ).with_border(
-                [0.3, 0.5, 0.9, 0.5], // Bright blue border
-                [10.0; 4], // Rounded selection
-                1.0
+                [0.0; 4],
+                [12.0; 4], // border-radius: 12px from Arc
+                0.0
             )));
         }
 
-        // Add emoji/icon for each command (like example.html)
+        // Icon background (matching Arc's .arc-result-item-icon)
+        let icon_x = panel_x + 28.0;
+        let icon_y = item_y + 12.0; // Centered in item
+        objects.push(Object::Quad(Quad::solid(
+            [icon_x, icon_y],
+            [30.0, 30.0], // width: 30px; height: 30px from Arc
+            icon_background_color, // rgba(100, 100, 255, 0.2)
+        ).with_border(
+            [0.0; 4],
+            [8.0; 4], // border-radius: 8px from Arc
+            0.0
+        )));
+
+        // Add emoji/icon for each command (matching Arc style)
         let icon = match item.action {
             CommandAction::ConfigEditor => "⚙️",
             CommandAction::CreateWindow => "🪟",
@@ -450,30 +469,30 @@ pub fn screen_with_objects(
             CommandAction::Quit => "🚪",
         };
 
-        // Icon
-        let icon_line = content.sel(icon_texts[index]);
+        // Icon text
+        let icon_line = content.sel(icon_texts[display_index]);
         icon_line
             .clear()
             .add_text(icon, FragmentStyle {
-                color: text_primary,
+                color: icon_text_color, // #a0a0ff from Arc
                 ..FragmentStyle::default()
             })
             .build();
 
         objects.push(Object::RichText(RichText {
-            id: icon_texts[index],
-            position: [panel_x + 24.0, item_y + 1.0], // Minimal top padding
+            id: icon_texts[display_index],
+            position: [icon_x + 8.0, icon_y + 6.0], // Centered in icon background
             lines: None,
         }));
 
         // Item title
-        let title_color = if index == command_palette.selected_index {
+        let title_color = if *actual_index == command_palette.selected_index {
             selection_text_color
         } else {
             text_primary
         };
 
-        let item_title_line = content.sel(item_title_texts[index]);
+        let item_title_line = content.sel(item_title_texts[display_index]);
         item_title_line
             .clear()
             .add_text(&item.title, FragmentStyle {
@@ -483,13 +502,48 @@ pub fn screen_with_objects(
             .build();
 
         objects.push(Object::RichText(RichText {
-            id: item_title_texts[index],
-            position: [panel_x + 60.0, item_y + 1.0], // Minimal top padding, after icon
+            id: item_title_texts[display_index],
+            position: [icon_x + 45.0, item_y + 18.0], // margin-right: 15px from Arc
             lines: None,
         }));
     }
 
-    // Instructions footer (like example.html)
+    // Add scrollbar if needed (matching Arc's scrollbar styling)
+    if has_scrollbar {
+        let scrollbar_x = panel_x + panel_width - 20.0; // 8px width + 12px margin
+        let scrollbar_y = items_start_y;
+        let scrollbar_height = actual_visible_items as f32 * item_height - 6.0; // Total visible area height
+        
+        // Scrollbar track (transparent background)
+        objects.push(Object::Quad(Quad::solid(
+            [scrollbar_x, scrollbar_y],
+            [8.0, scrollbar_height],
+            [0.0, 0.0, 0.0, 0.0], // Transparent track like Arc
+        )));
+        
+        // Calculate scrollbar thumb position and size
+        let max_scroll = total_items - actual_visible_items;
+        let scroll_ratio = if max_scroll > 0 {
+            command_palette.scroll_offset as f32 / max_scroll as f32
+        } else {
+            0.0
+        };
+        let thumb_height = (actual_visible_items as f32 / total_items as f32) * scrollbar_height;
+        let thumb_y = scrollbar_y + (scroll_ratio * (scrollbar_height - thumb_height));
+        
+        // Scrollbar thumb (matching Arc's rgba(255, 255, 255, 0.15))
+        objects.push(Object::Quad(Quad::solid(
+            [scrollbar_x, thumb_y],
+            [8.0, thumb_height],
+            [1.0, 1.0, 1.0, 0.15], // rgba(255, 255, 255, 0.15) from Arc
+        ).with_border(
+            [0.0; 4],
+            [4.0; 4], // border-radius: 10px equivalent
+            0.0
+        )));
+    }
+
+    // Instructions footer (matching example.html footer styling)
     let instructions_line = content.sel(instructions_text);
     instructions_line
         .clear()
@@ -501,7 +555,7 @@ pub fn screen_with_objects(
 
     objects.push(Object::RichText(RichText {
         id: instructions_text,
-        position: [panel_x + 24.0, panel_y + panel_height - 24.0],
+        position: [panel_x + 20.0, panel_y + panel_height - 32.0], // More space from bottom
         lines: None,
     }));
 

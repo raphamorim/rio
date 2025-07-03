@@ -86,6 +86,7 @@ pub enum RioEvent {
     CreateNativeTab(Option<String>),
     CreateConfigEditor,
     CreateCommandPalette,
+    CreateTabSwitcher,
     SelectNativeTabByIndex(usize),
     SelectNativeTabLast,
     SelectNativeTabNext,
@@ -220,6 +221,7 @@ impl Debug for RioEvent {
             RioEvent::SelectNativeTabPrev => write!(f, "SelectNativeTabPrev"),
             RioEvent::CreateConfigEditor => write!(f, "CreateConfigEditor"),
             RioEvent::CreateCommandPalette => write!(f, "CreateCommandPalette"),
+            RioEvent::CreateTabSwitcher => write!(f, "CreateTabSwitcher"),
             RioEvent::UpdateConfig => write!(f, "ReloadConfiguration"),
             RioEvent::ReportToAssistant(error_report) => {
                 write!(f, "ReportToAssistant({})", error_report.report)

@@ -875,6 +875,9 @@ impl Screen<'_> {
                     Act::CommandPalette => {
                         self.context_manager.open_command_palette();
                     }
+                    Act::TabSwitcher => {
+                        self.context_manager.open_tab_switcher();
+                    }
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();
                     }
@@ -2126,6 +2129,51 @@ impl Screen<'_> {
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
             command_palette,
+        );
+
+        // Finally render everything together
+        self.sugarloaf.render();
+    }
+
+    pub fn render_tab_switcher_overlay(
+        &mut self,
+        tab_switcher: &crate::router::routes::tab_switcher::TabSwitcher,
+    ) {
+        // First, render the terminal content to get all terminal objects
+        let is_search_active = self.search_active();
+        if is_search_active {
+            if let Some(history_index) = self.search_state.history_index {
+                self.renderer.set_active_search(
+                    self.search_state.history.get(history_index).cloned(),
+                );
+            }
+        }
+
+        let mut search_hints = if is_search_active {
+            let terminal = self.context_manager.current().terminal.lock();
+            let hints = self
+                .search_state
+                .dfas_mut()
+                .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
+            drop(terminal);
+            hints
+        } else {
+            None
+        };
+
+        // Render terminal content but don't call sugarloaf.render() yet
+        self.renderer.run(
+            &mut self.sugarloaf,
+            &mut self.context_manager,
+            &mut search_hints,
+            &self.search_state.focused_match,
+        );
+
+        // Now add tab switcher objects on top
+        crate::router::routes::tab_switcher::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+            tab_switcher,
         );
 
         // Finally render everything together

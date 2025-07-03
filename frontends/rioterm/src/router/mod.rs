@@ -16,7 +16,7 @@ use rio_window::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
 use rio_window::window::{Window, WindowId};
-use routes::{assistant, command_palette, RoutePath};
+use routes::{assistant, command_palette, tab_switcher, RoutePath};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,6 +32,7 @@ const RIO_TITLE: &str = "▲";
 pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub command_palette: command_palette::CommandPalette,
+    pub tab_switcher: tab_switcher::TabSwitcher,
     pub path: RoutePath,
     pub window: RouteWindow<'a>,
 }
@@ -42,12 +43,14 @@ impl Route<'_> {
     pub fn new(
         assistant: assistant::Assistant,
         command_palette: command_palette::CommandPalette,
+        tab_switcher: tab_switcher::TabSwitcher,
         path: RoutePath,
         window: RouteWindow,
     ) -> Route {
         Route {
             assistant,
             command_palette,
+            tab_switcher,
             path,
             window,
         }
@@ -207,6 +210,34 @@ impl Route<'_> {
     }
 
     #[inline]
+    pub fn open_tab_switcher(&mut self) {
+        // Get current tabs from context manager
+        let context_manager = &self.window.screen.context_manager;
+        let current_index = context_manager.current_index();
+        let mut tabs = Vec::new();
+        
+        for i in 0..context_manager.len() {
+            let title = context_manager.titles.titles.get(&i)
+                .map(|t| t.content.clone())
+                .unwrap_or_else(|| format!("Tab {}", i + 1));
+            
+            tabs.push(tab_switcher::TabSwitcherItem {
+                index: i,
+                title,
+                is_current: i == current_index,
+            });
+        }
+        
+        self.tab_switcher = tab_switcher::TabSwitcher::new(tabs, current_index);
+        self.path = RoutePath::TabSwitcher;
+    }
+
+    #[inline]
+    pub fn close_tab_switcher(&mut self) {
+        self.path = RoutePath::Terminal;
+    }
+
+    #[inline]
     pub fn confirm_quit(&mut self) {
         self.path = RoutePath::ConfirmQuit;
     }
@@ -263,6 +294,29 @@ impl Route<'_> {
                     }
                     self.command_palette.add_char(ch);
                 }
+                self.window.winit_window.request_redraw();
+                return true;
+            }
+            return true;
+        }
+
+        if self.path == RoutePath::TabSwitcher {
+            if is_escape {
+                self.close_tab_switcher();
+                return true;
+            } else if is_enter {
+                if let Some(tab) = self.tab_switcher.get_selected_tab() {
+                    // Switch to the selected tab
+                    self.window.screen.context_manager.set_current(tab.index);
+                }
+                self.close_tab_switcher();
+                return true;
+            } else if is_arrow_up {
+                self.tab_switcher.move_selection_up();
+                self.window.winit_window.request_redraw();
+                return true;
+            } else if is_arrow_down {
+                self.tab_switcher.move_selection_down();
                 self.window.winit_window.request_redraw();
                 return true;
             }
@@ -469,7 +523,7 @@ impl Router<'_> {
             self.clipboard.clone(),
         );
         let id = window.winit_window.id();
-        let route = Route::new(Assistant::new(), command_palette::CommandPalette::new(), RoutePath::Terminal, window);
+        let route = Route::new(Assistant::new(), command_palette::CommandPalette::new(), tab_switcher::TabSwitcher::default(), RoutePath::Terminal, window);
         self.routes.insert(id, route);
         self.config_route = Some(id);
     }
@@ -537,6 +591,7 @@ impl Router<'_> {
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
             command_palette: command_palette::CommandPalette::new(),
+            tab_switcher: tab_switcher::TabSwitcher::default(),
         };
 
         if let Some(err) = &self.propagated_report {
@@ -574,6 +629,7 @@ impl Router<'_> {
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
                 command_palette: command_palette::CommandPalette::new(),
+                tab_switcher: tab_switcher::TabSwitcher::default(),
             },
         );
     }
