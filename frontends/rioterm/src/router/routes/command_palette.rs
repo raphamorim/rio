@@ -275,8 +275,8 @@ pub fn screen_with_objects(
     let icon_text_color = [0.63, 0.63, 1.0, 1.0]; // #a0a0ff - Arc's icon color
 
     let layout = sugarloaf.window_size();
-    let panel_width = 650.0; // Wider like Arc (max-width: 650px)
-    let panel_height = 450.0; // Taller for more content
+    let panel_width = 520.0; // Smaller width
+    let panel_height = 360.0; // Smaller height
     
     // Center the panel
     let scaled_width = layout.width / context_dimension.dimension.scale;
@@ -346,17 +346,17 @@ pub fn screen_with_objects(
         icon_texts.push(sugarloaf.create_temp_rich_text());
     }
 
-    // Set font sizes (matching Arc's typography)
-    sugarloaf.set_rich_text_font_size(&query_text, 19.0); // font-size: 1.2rem from Arc
-    sugarloaf.set_rich_text_font_size(&instructions_text, 12.0); // Small footer text
+    // Set font sizes (smaller fonts)
+    sugarloaf.set_rich_text_font_size(&query_text, 16.0); // Reduced from 19.0
+    sugarloaf.set_rich_text_font_size(&instructions_text, 11.0); // Reduced from 12.0
     
-    let item_font_size = 17.0; // font-size: 1.05rem from Arc
+    let item_font_size = 14.0; // Reduced from 17.0
     for title_text_id in &item_title_texts {
         sugarloaf.set_rich_text_font_size(title_text_id, item_font_size);
     }
     
     for icon_text_id in &icon_texts {
-        sugarloaf.set_rich_text_font_size(icon_text_id, 18.0); // font-size: 1.1rem for icons
+        sugarloaf.set_rich_text_font_size(icon_text_id, 15.0); // Reduced from 18.0
     }
 
     // Get text dimensions to calculate proper spacing (keeping for compatibility)
@@ -372,18 +372,18 @@ pub fn screen_with_objects(
 
     let content = sugarloaf.content();
 
-    // Input area styling (matching Arc's .arc-input)
-    let input_y = panel_y + 12.0; // padding: 12px from Arc container
-    let input_height = 64.0; // Larger padding for spacious feel (padding: 16px 20px)
+    // Input area styling (smaller input area)
+    let input_y = panel_y + 10.0; // Reduced padding
+    let input_height = 50.0; // Smaller input height
     
-    // Input background (matching Arc's rgba(40, 40, 55, 0.8))
+    // Input background (smaller input styling)
     objects.push(Object::Quad(Quad::solid(
-        [panel_x + 12.0, input_y],
-        [panel_width - 24.0, input_height],
+        [panel_x + 10.0, input_y],
+        [panel_width - 20.0, input_height],
         [0.16, 0.16, 0.22, 0.8], // rgba(40, 40, 55, 0.8) from Arc style
     ).with_border(
         [0.0, 0.0, 0.0, 0.2], // inset shadow effect
-        [15.0; 4], // border-radius: 15px
+        [12.0; 4], // Smaller border radius
         0.0
     )));
 
@@ -411,41 +411,41 @@ pub fn screen_with_objects(
 
     objects.push(Object::RichText(RichText {
         id: query_text,
-        position: [panel_x + 32.0, input_y + 22.0], // Centered in larger input area
+        position: [panel_x + 25.0, input_y + 18.0], // Adjusted for smaller input
         lines: None,
     }));
 
-    // Command items (matching Arc's .arc-result-item styling)
-    let item_height = 54.0; // Larger items (padding: 12px 16px + margin-bottom: 6px)
-    let items_start_y = input_y + input_height + 10.0; // margin-top: 10px from Arc style
-    let items_area_width = if has_scrollbar { panel_width - 48.0 } else { panel_width - 32.0 }; // Leave space for scrollbar
+    // Command items (smaller items)
+    let item_height = 42.0; // Smaller item height
+    let items_start_y = input_y + input_height + 8.0; // Smaller margin
+    let items_area_width = if has_scrollbar { panel_width - 40.0 } else { panel_width - 26.0 }; // Adjusted for smaller panel
 
     for (display_index, (actual_index, item)) in visible_items.iter().enumerate() {
         let item_y = items_start_y + (display_index as f32 * item_height);
         
-        // Selection highlight (matching Arc's hover state)
+        // Selection highlight (smaller selection area)
         if *actual_index == command_palette.selected_index {
             objects.push(Object::Quad(Quad::solid(
-                [panel_x + 16.0, item_y],
-                [items_area_width, item_height - 6.0], // Account for margin-bottom: 6px
+                [panel_x + 13.0, item_y],
+                [items_area_width, item_height - 4.0], // Smaller margin
                 [0.20, 0.20, 0.27, 0.7], // rgba(50, 50, 70, 0.7) from Arc hover
             ).with_border(
                 [0.0; 4],
-                [12.0; 4], // border-radius: 12px from Arc
+                [10.0; 4], // Smaller border radius
                 0.0
             )));
         }
 
-        // Icon background (matching Arc's .arc-result-item-icon)
-        let icon_x = panel_x + 28.0;
-        let icon_y = item_y + 12.0; // Centered in item
+        // Icon background (smaller icon)
+        let icon_x = panel_x + 22.0;
+        let icon_y = item_y + 8.0; // Adjusted for smaller item
         objects.push(Object::Quad(Quad::solid(
             [icon_x, icon_y],
-            [30.0, 30.0], // width: 30px; height: 30px from Arc
+            [26.0, 26.0], // Smaller icon size
             icon_background_color, // rgba(100, 100, 255, 0.2)
         ).with_border(
             [0.0; 4],
-            [8.0; 4], // border-radius: 8px from Arc
+            [6.0; 4], // Smaller border radius
             0.0
         )));
 
@@ -481,7 +481,7 @@ pub fn screen_with_objects(
 
         objects.push(Object::RichText(RichText {
             id: icon_texts[display_index],
-            position: [icon_x + 8.0, icon_y + 6.0], // Centered in icon background
+            position: [icon_x + 6.0, icon_y + 5.0], // Adjusted for smaller icon
             lines: None,
         }));
 
@@ -503,21 +503,21 @@ pub fn screen_with_objects(
 
         objects.push(Object::RichText(RichText {
             id: item_title_texts[display_index],
-            position: [icon_x + 45.0, item_y + 18.0], // margin-right: 15px from Arc
+            position: [icon_x + 36.0, item_y + 14.0], // Adjusted for smaller layout
             lines: None,
         }));
     }
 
-    // Add scrollbar if needed (matching Arc's scrollbar styling)
+    // Add scrollbar if needed (smaller scrollbar)
     if has_scrollbar {
-        let scrollbar_x = panel_x + panel_width - 20.0; // 8px width + 12px margin
+        let scrollbar_x = panel_x + panel_width - 18.0; // Adjusted for smaller panel
         let scrollbar_y = items_start_y;
-        let scrollbar_height = actual_visible_items as f32 * item_height - 6.0; // Total visible area height
+        let scrollbar_height = actual_visible_items as f32 * item_height - 4.0; // Adjusted for smaller items
         
         // Scrollbar track (transparent background)
         objects.push(Object::Quad(Quad::solid(
             [scrollbar_x, scrollbar_y],
-            [8.0, scrollbar_height],
+            [6.0, scrollbar_height], // Smaller scrollbar width
             [0.0, 0.0, 0.0, 0.0], // Transparent track like Arc
         )));
         
@@ -534,11 +534,11 @@ pub fn screen_with_objects(
         // Scrollbar thumb (matching Arc's rgba(255, 255, 255, 0.15))
         objects.push(Object::Quad(Quad::solid(
             [scrollbar_x, thumb_y],
-            [8.0, thumb_height],
+            [6.0, thumb_height], // Smaller scrollbar width
             [1.0, 1.0, 1.0, 0.15], // rgba(255, 255, 255, 0.15) from Arc
         ).with_border(
             [0.0; 4],
-            [4.0; 4], // border-radius: 10px equivalent
+            [3.0; 4], // Smaller border radius
             0.0
         )));
     }
@@ -555,7 +555,7 @@ pub fn screen_with_objects(
 
     objects.push(Object::RichText(RichText {
         id: instructions_text,
-        position: [panel_x + 20.0, panel_y + panel_height - 32.0], // More space from bottom
+        position: [panel_x + 16.0, panel_y + panel_height - 26.0], // Adjusted for smaller panel
         lines: None,
     }));
 
