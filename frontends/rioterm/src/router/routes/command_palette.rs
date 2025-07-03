@@ -1,5 +1,5 @@
 use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf, vertical_gradient};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
 
 #[derive(Debug, Clone)]
 pub struct CommandPaletteItem {
@@ -226,181 +226,282 @@ pub fn screen(
     context_dimension: &ContextDimension,
     command_palette: &CommandPalette,
 ) {
-    let background_color = [0.0, 0.0, 0.0, 0.75]; // Semi-transparent black overlay
-    let border_color = [0.3, 0.3, 0.3, 0.9]; // Border color with slight opacity
-    let text_color = [1.0, 1.0, 1.0, 0.95]; // White text with slight transparency
-    let description_color = [0.7, 0.7, 0.7, 0.8]; // Gray description text with opacity
-    let query_color = [0.9, 0.9, 0.9, 0.9]; // Light gray for query with opacity
+    screen_with_objects(sugarloaf, context_dimension, command_palette, Vec::new());
+}
+
+#[inline]
+pub fn screen_with_objects(
+    sugarloaf: &mut Sugarloaf,
+    context_dimension: &ContextDimension,
+    command_palette: &CommandPalette,
+    existing_objects: Vec<Object>,
+) {
+    // Raycast-inspired color palette
+    let _backdrop_color = [0.0, 0.0, 0.0, 0.4]; // Dark backdrop overlay (unused)
+    let text_primary = [0.95, 0.95, 0.95, 1.0]; // High contrast white
+    let text_secondary = [0.6, 0.6, 0.6, 1.0]; // Muted gray for descriptions
+    let query_text_color = [0.98, 0.98, 0.98, 1.0]; // Bright white for input
+    let selection_text_color = [1.0, 1.0, 1.0, 1.0]; // Pure white for selected items
 
     let layout = sugarloaf.window_size();
-    let panel_width = 600.0;
-    let panel_height = 400.0;
+    let panel_width = 600.0; // Raycast-like width
+    let panel_height = 400.0; // Compact height
     
-    // Account for scaling factor like other dialogs do
+    // Center the panel
     let scaled_width = layout.width / context_dimension.dimension.scale;
     let panel_x = (scaled_width - panel_width) / 2.0;
-    let panel_y = context_dimension.margin.top_y + 50.0;
+    let panel_y = context_dimension.margin.top_y + 100.0; // Space from top
 
-    let mut objects = Vec::new();
+    let mut objects = existing_objects;
 
-    // Background overlay
-    objects.push(Object::Quad(Quad::solid(
-        [0.0, 0.0],
-        [scaled_width, layout.height],
-        background_color,
-    )));
+    // No backdrop overlay - terminal content remains fully visible
 
-    // Panel border (drawn first, behind the main panel)
-    objects.push(Object::Quad(Quad::solid(
-        [panel_x - 2.0, panel_y - 2.0],
-        [panel_width + 4.0, panel_height + 4.0],
-        border_color,
-    )));
+    // Multi-layer shadow for the main panel (like macOS/Raycast)
+    let shadow_layers = [
+        (12.0, 0.25), // Close, strong shadow
+        (24.0, 0.15), // Medium shadow
+        (48.0, 0.08), // Far, soft shadow
+        (96.0, 0.04), // Very far, subtle shadow
+    ];
 
-    // Main panel with gradient background
-    let gradient = vertical_gradient(
-        panel_x, panel_y, panel_width, panel_height,
-        [0.08, 0.08, 0.12, 0.95], // Darker blue-gray at top
-        [0.05, 0.05, 0.08, 0.95], // Even darker at bottom
-    );
-    
-    objects.push(Object::Quad(Quad::gradient(
-        gradient,
+    for (blur_radius, alpha) in shadow_layers.iter() {
+        objects.push(Object::Quad(Quad::blur(
+            [panel_x + 4.0, panel_y + 8.0], // Slight offset for natural shadow
+            [panel_width, panel_height], // Same size as main panel
+            [0.0, 0.0, 0.0, *alpha], // Black shadow with varying alpha
+            *blur_radius // Different blur amounts for layered effect
+        )));
+    }
+
+    // Main panel with frosted glass effect (like example.html)
+    // Using the new blur quad with Raycast-style colors
+    objects.push(Object::Quad(Quad::blur(
         [panel_x, panel_y],
         [panel_width, panel_height],
-    ).with_border(border_color, [8.0; 4], 1.0)));
+        [0.12, 0.16, 0.21, 0.6], // Semi-transparent dark background (matches example.html)
+        20.0 // Strong frosted glass effect
+    ).with_border(
+        [0.4, 0.4, 0.45, 0.4], // More visible border for definition
+        [16.0; 4], // Rounded corners like Raycast (larger radius)
+        1.5 // Slightly thicker border
+    )));
+
+    // Inner highlight for glassmorphism effect (subtle light reflection)
+    objects.push(Object::Quad(Quad::blur(
+        [panel_x + 2.0, panel_y + 2.0],
+        [panel_width - 4.0, 40.0], // Just at the top
+        [0.6, 0.6, 0.7, 0.1], // Very subtle white highlight
+        4.0 // Small blur for soft highlight
+    ).with_border(
+        [0.0; 4],
+        [14.0, 14.0, 0.0, 0.0], // Only top corners rounded
+        0.0
+    )));
 
     // Create all rich text objects first
-    let title_text = sugarloaf.create_temp_rich_text();
     let query_text = sugarloaf.create_temp_rich_text();
     let instructions_text = sugarloaf.create_temp_rich_text();
+    let symbol_text = sugarloaf.create_temp_rich_text();
 
     // Create rich text objects for items
     let max_visible_items = 8;
     let mut item_title_texts = Vec::new();
-    let mut item_desc_texts = Vec::new();
+    let mut icon_texts = Vec::new();
     
     for _ in 0..max_visible_items.min(command_palette.filtered_items.len()) {
         item_title_texts.push(sugarloaf.create_temp_rich_text());
-        item_desc_texts.push(sugarloaf.create_temp_rich_text());
+        icon_texts.push(sugarloaf.create_temp_rich_text());
     }
 
     // Set font sizes
-    sugarloaf.set_rich_text_font_size(&title_text, 20.0);
-    sugarloaf.set_rich_text_font_size(&query_text, 16.0);
+    sugarloaf.set_rich_text_font_size(&query_text, 18.0); // Input text
     sugarloaf.set_rich_text_font_size(&instructions_text, 11.0);
+    sugarloaf.set_rich_text_font_size(&symbol_text, 20.0);
     
+    let item_font_size = 16.0;
     for title_text_id in &item_title_texts {
-        sugarloaf.set_rich_text_font_size(title_text_id, 14.0);
+        sugarloaf.set_rich_text_font_size(title_text_id, item_font_size); // Item text
     }
     
-    for desc_text_id in &item_desc_texts {
-        sugarloaf.set_rich_text_font_size(desc_text_id, 12.0);
+    for icon_text_id in &icon_texts {
+        sugarloaf.set_rich_text_font_size(icon_text_id, 18.0); // Icon text
     }
 
-    // Now build the content
+    // Get text dimensions to calculate proper spacing
+    let sample_text_id = sugarloaf.create_temp_rich_text();
+    sugarloaf.set_rich_text_font_size(&sample_text_id, item_font_size);
+    let content_temp = sugarloaf.content();
+    let sample_line = content_temp.sel(sample_text_id);
+    sample_line
+        .clear()
+        .add_text("Sample", FragmentStyle::default())
+        .build();
+    let text_dimensions = sugarloaf.get_rich_text_dimensions(&sample_text_id);
+
     let content = sugarloaf.content();
 
-    // Title
-    let title_line = content.sel(title_text);
-    title_line
+    // Input area with command symbol (like Raycast)
+    let input_y = panel_y + 20.0;
+    let input_height = 60.0;
+    
+    // Input background with subtle styling and rounded corners
+    objects.push(Object::Quad(Quad::solid(
+        [panel_x + 16.0, input_y],
+        [panel_width - 32.0, input_height],
+        [0.08, 0.08, 0.12, 0.8], // Slightly darker background for input
+    ).with_border(
+        [0.25, 0.25, 0.3, 0.4], // Subtle border
+        [12.0; 4], // Rounded input area
+        1.0
+    )));
+
+    // Command symbol (⌘) like in example.html
+    let symbol_line = content.sel(symbol_text);
+    symbol_line
         .clear()
-        .add_text("Command Palette", FragmentStyle {
-            color: text_color,
+        .add_text("⌘", FragmentStyle {
+            color: text_secondary,
             ..FragmentStyle::default()
         })
         .build();
 
     objects.push(Object::RichText(RichText {
-        id: title_text,
-        position: [panel_x + 20.0, panel_y + 30.0],
+        id: symbol_text,
+        position: [panel_x + 32.0, input_y + 20.0],
         lines: None,
     }));
 
-    // Query input
+    // Query input text
+    let query_display = if command_palette.query.is_empty() {
+        "Type a command or search..."
+    } else {
+        &command_palette.query
+    };
+
     let query_line = content.sel(query_text);
     query_line
         .clear()
-        .add_text(&format!("> {}", command_palette.query), FragmentStyle {
-            color: query_color,
+        .add_text(query_display, FragmentStyle {
+            color: if command_palette.query.is_empty() { 
+                text_secondary 
+            } else { 
+                query_text_color 
+            },
             ..FragmentStyle::default()
         })
         .build();
 
     objects.push(Object::RichText(RichText {
         id: query_text,
-        position: [panel_x + 20.0, panel_y + 70.0],
+        position: [panel_x + 70.0, input_y + 20.0], // After the command symbol
         lines: None,
     }));
 
-    // Command items
-    let item_height = 35.0;
-    let items_start_y = panel_y + 110.0;
+    // Separator line (like in example.html) - with rounded ends
+    objects.push(Object::Quad(Quad::solid(
+        [panel_x + 24.0, input_y + input_height + 8.0],
+        [panel_width - 48.0, 1.0],
+        [0.3, 0.3, 0.35, 0.6], // Slightly more visible separator
+    ).with_border(
+        [0.0; 4],
+        [0.5, 0.5, 0.5, 0.5], // Tiny rounding for smooth line
+        0.0
+    )));
+
+    // Command items (like example.html list items)
+    let item_height = text_dimensions.height + 2.0; // Text height + minimal padding
+    let items_start_y = input_y + input_height + 16.0; // More space after separator
 
     for (index, item) in command_palette.filtered_items.iter().enumerate().take(max_visible_items) {
         let item_y = items_start_y + (index as f32 * item_height);
         
-        // Selection highlight with gradient
+        // Selection highlight (like example.html selected item) with rounded corners
         if index == command_palette.selected_index {
-            let selection_gradient = vertical_gradient(
-                panel_x + 10.0, item_y - 5.0, panel_width - 20.0, item_height,
-                [0.2, 0.4, 0.8, 0.5], // Brighter blue at top
-                [0.1, 0.2, 0.6, 0.3], // Darker blue at bottom
-            );
-            
-            objects.push(Object::Quad(Quad::gradient(
-                selection_gradient,
-                [panel_x + 10.0, item_y - 5.0],
-                [panel_width - 20.0, item_height],
-            ).with_border([0.3, 0.5, 0.9, 0.6], [4.0; 4], 0.0)));
+            // Selection background with subtle blur for smooth appearance
+            objects.push(Object::Quad(Quad::blur(
+                [panel_x + 12.0, item_y],
+                [panel_width - 24.0, item_height],
+                [0.2, 0.4, 0.8, 0.7], // Blue selection (like example.html)
+                2.0 // Very subtle blur for smooth selection
+            ).with_border(
+                [0.3, 0.5, 0.9, 0.5], // Bright blue border
+                [10.0; 4], // Rounded selection
+                1.0
+            )));
         }
 
+        // Add emoji/icon for each command (like example.html)
+        let icon = match item.action {
+            CommandAction::ConfigEditor => "⚙️",
+            CommandAction::CreateWindow => "🪟",
+            CommandAction::CreateTab => "📄",
+            CommandAction::CloseTab => "❌",
+            CommandAction::ToggleFullscreen => "⛶",
+            CommandAction::SearchForward => "🔍",
+            CommandAction::SearchBackward => "🔍",
+            CommandAction::ClearHistory => "🗑️",
+            CommandAction::ToggleViMode => "📝",
+            CommandAction::SplitRight => "⫸",
+            CommandAction::SplitDown => "⫷",
+            CommandAction::SelectNextTab => "→",
+            CommandAction::SelectPrevTab => "←",
+            CommandAction::Copy => "📋",
+            CommandAction::Paste => "📄",
+            CommandAction::Quit => "🚪",
+        };
+
+        // Icon
+        let icon_line = content.sel(icon_texts[index]);
+        icon_line
+            .clear()
+            .add_text(icon, FragmentStyle {
+                color: text_primary,
+                ..FragmentStyle::default()
+            })
+            .build();
+
+        objects.push(Object::RichText(RichText {
+            id: icon_texts[index],
+            position: [panel_x + 24.0, item_y + 1.0], // Minimal top padding
+            lines: None,
+        }));
+
         // Item title
+        let title_color = if index == command_palette.selected_index {
+            selection_text_color
+        } else {
+            text_primary
+        };
+
         let item_title_line = content.sel(item_title_texts[index]);
         item_title_line
             .clear()
             .add_text(&item.title, FragmentStyle {
-                color: text_color,
+                color: title_color,
                 ..FragmentStyle::default()
             })
             .build();
 
         objects.push(Object::RichText(RichText {
             id: item_title_texts[index],
-            position: [panel_x + 20.0, item_y],
-            lines: None,
-        }));
-
-        // Item description
-        let item_desc_line = content.sel(item_desc_texts[index]);
-        item_desc_line
-            .clear()
-            .add_text(&item.description, FragmentStyle {
-                color: description_color,
-                ..FragmentStyle::default()
-            })
-            .build();
-
-        objects.push(Object::RichText(RichText {
-            id: item_desc_texts[index],
-            position: [panel_x + 20.0, item_y + 18.0],
+            position: [panel_x + 60.0, item_y + 1.0], // Minimal top padding, after icon
             lines: None,
         }));
     }
 
-    // Instructions
+    // Instructions footer (like example.html)
     let instructions_line = content.sel(instructions_text);
     instructions_line
         .clear()
-        .add_text("↑↓ navigate • Enter execute • Esc close", FragmentStyle {
-            color: description_color,
+        .add_text("Press ↑↓ to navigate • ↩ to select", FragmentStyle {
+            color: text_secondary,
             ..FragmentStyle::default()
         })
         .build();
 
     objects.push(Object::RichText(RichText {
         id: instructions_text,
-        position: [panel_x + 20.0, panel_y + panel_height - 30.0],
+        position: [panel_x + 24.0, panel_y + panel_height - 24.0],
         lines: None,
     }));
 

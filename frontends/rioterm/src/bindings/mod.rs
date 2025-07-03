@@ -931,7 +931,7 @@ pub fn platform_key_bindings(
         "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
         "m", ModifiersState::SUPER; Action::Minimize;
         "q", ModifiersState::SUPER; Action::Quit;
-        "p", ModifiersState::SUPER; Action::CommandPalette;
+        "r", ModifiersState::SUPER; Action::CommandPalette;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
 

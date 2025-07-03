@@ -2117,6 +2117,21 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
+    pub fn render_command_palette_overlay(
+        &mut self,
+        command_palette: &crate::router::routes::command_palette::CommandPalette,
+    ) {
+        // Now add command palette objects on top
+        crate::router::routes::command_palette::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+            command_palette,
+        );
+
+        // Finally render everything together
+        self.sugarloaf.render();
+    }
+
     pub fn render_welcome(&mut self) {
         self.sugarloaf.clear();
         crate::router::routes::welcome::screen(

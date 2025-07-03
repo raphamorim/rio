@@ -54,6 +54,28 @@ pub enum Quad {
         /// The border width
         border_width: f32,
     },
+    /// A frosted glass quad with blur-like effect
+    /// 
+    /// This variant renders a quad with a frosted glass effect that approximates backdrop blur.
+    /// While not true backdrop blur (which requires background texture capture), this creates
+    /// a similar visual effect using procedural noise and transparency, perfect for modern UI
+    /// designs like Raycast-style interfaces.
+    Blur {
+        /// The position of the quad
+        position: [f32; 2],
+        /// The size of the quad
+        size: [f32; 2],
+        /// The background color (should typically be semi-transparent)
+        color: [f32; 4],
+        /// The border color
+        border_color: [f32; 4],
+        /// The border radius for each corner
+        border_radius: [f32; 4],
+        /// The border width
+        border_width: f32,
+        /// The frosted glass effect intensity (0.0 = no effect, 20.0+ = strong effect)
+        blur_radius: f32,
+    },
 }
 
 impl Quad {
@@ -84,6 +106,55 @@ impl Quad {
         }
     }
 
+    /// Creates a new frosted glass quad
+    /// 
+    /// # Arguments
+    /// 
+    /// * `position` - The [x, y] position of the quad in pixels
+    /// * `size` - The [width, height] size of the quad in pixels  
+    /// * `color` - The RGBA color of the quad as [r, g, b, a]. Use semi-transparent colors for best effect.
+    /// * `blur_radius` - The frosted glass effect intensity. Higher values create stronger effects.
+    /// 
+    /// # Examples
+    /// 
+    /// ```
+    /// use sugarloaf::components::quad::Quad;
+    /// 
+    /// // Create a Raycast-style frosted glass interface
+    /// let raycast_style = Quad::blur(
+    ///     [100.0, 100.0], 
+    ///     [400.0, 300.0], 
+    ///     [0.12, 0.16, 0.21, 0.6], // Semi-transparent dark background
+    ///     20.0 // Strong frosted glass effect
+    /// );
+    /// 
+    /// // Create a subtle frosted glass panel
+    /// let subtle_glass = Quad::blur([50.0, 50.0], [300.0, 200.0], [0.2, 0.2, 0.2, 0.4], 5.0)
+    ///     .with_border([0.3, 0.3, 0.3, 0.3], [12.0, 12.0, 12.0, 12.0], 1.0);
+    /// ```
+    /// 
+    /// # Implementation Details
+    /// 
+    /// This creates a frosted glass effect using:
+    /// - Procedural noise generation for texture variation
+    /// - Multiple noise layers at different scales
+    /// - Subtle brightness variations for glass-like appearance
+    /// - Proper alpha blending for transparency
+    /// 
+    /// While not true backdrop blur, this provides a similar visual effect that's
+    /// perfect for modern UI designs without the complexity of multi-pass rendering.
+    pub fn blur(position: [f32; 2], size: [f32; 2], color: [f32; 4], blur_radius: f32) -> Self {
+        Self::Blur {
+            position,
+            size,
+            color,
+            border_color: [0.0; 4],
+            border_radius: [0.0; 4],
+            border_width: 0.0,
+            blur_radius,
+        }
+    }
+
     /// Sets the border properties for the quad
     pub fn with_border(mut self, color: [f32; 4], radius: [f32; 4], width: f32) -> Self {
         match &mut self {
@@ -93,6 +164,11 @@ impl Quad {
                 *border_width = width;
             }
             Self::Gradient { border_color, border_radius, border_width, .. } => {
+                *border_color = color;
+                *border_radius = radius;
+                *border_width = width;
+            }
+            Self::Blur { border_color, border_radius, border_width, .. } => {
                 *border_color = color;
                 *border_radius = radius;
                 *border_width = width;
@@ -165,6 +241,26 @@ struct GradientQuadData {
     snap: u32,
 }
 
+/// Internal blur quad representation for GPU
+#[derive(Clone, Copy, Debug, Pod, Zeroable, PartialEq, Default)]
+#[repr(C)]
+struct BlurQuadData {
+    /// The background color data of the quad.
+    color: [f32; 4],
+    /// The position of the quad.
+    position: [f32; 2],
+    /// The size of the quad.
+    size: [f32; 2],
+    /// The border color of the quad.
+    border_color: [f32; 4],
+    /// The border radii of the quad.
+    border_radius: [f32; 4],
+    /// The border width of the quad.
+    border_width: f32,
+    /// The blur radius (standard deviation).
+    blur_radius: f32,
+}
+
 impl Default for GradientQuadData {
     fn default() -> Self {
         Self {
@@ -205,7 +301,35 @@ impl From<&Quad> for SolidQuadData {
                 shadow_offset: *shadow_offset,
                 shadow_blur_radius: *shadow_blur_radius,
             },
-            Quad::Gradient { .. } => {
+            _ => {
+                // This shouldn't happen, but provide a default
+                Self::default()
+            }
+        }
+    }
+}
+
+impl From<&Quad> for BlurQuadData {
+    fn from(quad: &Quad) -> Self {
+        match quad {
+            Quad::Blur {
+                position,
+                size,
+                color,
+                border_color,
+                border_radius,
+                border_width,
+                blur_radius,
+            } => Self {
+                color: *color,
+                position: *position,
+                size: *size,
+                border_color: *border_color,
+                border_radius: *border_radius,
+                border_width: *border_width,
+                blur_radius: *blur_radius,
+            },
+            _ => {
                 // This shouldn't happen, but provide a default
                 Self::default()
             }
@@ -243,7 +367,7 @@ impl From<&Quad> for GradientQuadData {
                     snap: 1,
                 }
             }
-            Quad::Solid { .. } => {
+            _ => {
                 // This shouldn't happen, but provide a default
                 Self::default()
             }
@@ -257,19 +381,29 @@ const INITIAL_QUANTITY: usize = 2;
 pub struct QuadBrush {
     solid_pipeline: wgpu::RenderPipeline,
     gradient_pipeline: wgpu::RenderPipeline,
+    blur_pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     constants: wgpu::BindGroup,
+    blur_bind_group_layout: wgpu::BindGroupLayout,
     transform: wgpu::Buffer,
     solid_instances: wgpu::Buffer,
     gradient_instances: wgpu::Buffer,
+    blur_instances: wgpu::Buffer,
     supported_solid_quantity: usize,
     supported_gradient_quantity: usize,
+    supported_blur_quantity: usize,
+    // Backdrop blur resources
+    background_texture: Option<wgpu::Texture>,
+    background_texture_view: Option<wgpu::TextureView>,
+    background_sampler: wgpu::Sampler,
+    blur_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl QuadBrush {
     pub fn new(context: &Context) -> QuadBrush {
         let supported_solid_quantity = INITIAL_QUANTITY;
         let supported_gradient_quantity = INITIAL_QUANTITY;
+        let supported_blur_quantity = INITIAL_QUANTITY;
         
         let solid_instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Solid Instances Buffer"),
@@ -281,6 +415,13 @@ impl QuadBrush {
         let gradient_instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Gradient Instances Buffer"),
             size: mem::size_of::<GradientQuadData>() as u64 * supported_gradient_quantity as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let blur_instances = context.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sugarloaf::quad Blur Instances Buffer"),
+            size: mem::size_of::<BlurQuadData>() as u64 * supported_blur_quantity as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -322,6 +463,42 @@ impl QuadBrush {
                 }],
             });
 
+        // Create backdrop blur resources
+        let blur_bind_group_layout = context
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("sugarloaf::quad backdrop blur layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        let background_sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sugarloaf::quad backdrop blur sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
         let layout =
             context
                 .device
@@ -329,6 +506,15 @@ impl QuadBrush {
                     label: Some("sugarloaf::quad pipeline"),
                     push_constant_ranges: &[],
                     bind_group_layouts: &[&constant_layout],
+                });
+
+        let _blur_layout =
+            context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("sugarloaf::quad backdrop blur pipeline"),
+                    push_constant_ranges: &[],
+                    bind_group_layouts: &[&constant_layout, &blur_bind_group_layout],
                 });
 
         let solid_shader_source = if context.supports_f16() {
@@ -352,6 +538,15 @@ impl QuadBrush {
                 label: Some("sugarloaf::quad gradient shader"),
                 source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(
                     include_str!("./gradient.wgsl"),
+                )),
+            });
+
+        let blur_shader = context
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("sugarloaf::quad frosted glass shader"),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(
+                    include_str!("./frosted_glass.wgsl"),
                 )),
             });
 
@@ -497,16 +692,91 @@ impl QuadBrush {
                     multiview: None,
                 });
 
+        let blur_pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: Some("sugarloaf::quad frosted glass render pipeline"),
+                    layout: Some(&layout), // Use regular layout, not blur_layout
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &blur_shader,
+                        entry_point: Some("frosted_glass_vs_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<BlurQuadData>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &wgpu::vertex_attr_array!(
+                                // Color
+                                0 => Float32x4,
+                                // Position
+                                1 => Float32x2,
+                                // Size
+                                2 => Float32x2,
+                                // Border color
+                                3 => Float32x4,
+                                // Border radius
+                                4 => Float32x4,
+                                // Border width
+                                5 => Float32,
+                                // Blur radius
+                                6 => Float32,
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &blur_shader,
+                        entry_point: Some("frosted_glass_fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: Some(wgpu::BlendState {
+                                color: wgpu::BlendComponent {
+                                    src_factor: wgpu::BlendFactor::SrcAlpha,
+                                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                    operation: wgpu::BlendOperation::Add,
+                                },
+                                alpha: wgpu::BlendComponent {
+                                    src_factor: wgpu::BlendFactor::One,
+                                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                    operation: wgpu::BlendOperation::Add,
+                                },
+                            }),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Cw,
+                        ..Default::default()
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState {
+                        count: 1,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    multiview: None,
+                });
+
         Self {
             supported_solid_quantity,
             supported_gradient_quantity,
+            supported_blur_quantity,
             solid_instances,
             gradient_instances,
+            blur_instances,
             constants,
+            blur_bind_group_layout,
             transform,
             solid_pipeline,
             gradient_pipeline,
+            blur_pipeline,
             current_transform: [0.0; 16],
+            background_texture: None,
+            background_texture_view: None,
+            background_sampler,
+            blur_bind_group: None,
         }
     }
 
@@ -521,6 +791,49 @@ impl QuadBrush {
             queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
             self.current_transform = transform;
         }
+
+        // Recreate backdrop blur texture if size changed
+        self.create_backdrop_blur_texture(ctx);
+    }
+
+    fn create_backdrop_blur_texture(&mut self, ctx: &Context) {
+        let size = wgpu::Extent3d {
+            width: ctx.size.width as u32,
+            height: ctx.size.height as u32,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = ctx.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("sugarloaf::quad backdrop blur texture"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: ctx.format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("sugarloaf::quad backdrop blur bind group"),
+            layout: &self.blur_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.background_sampler),
+                },
+            ],
+        });
+
+        self.background_texture = Some(texture);
+        self.background_texture_view = Some(texture_view);
+        self.blur_bind_group = Some(bind_group);
     }
 
     pub fn render<'a>(
@@ -532,11 +845,13 @@ impl QuadBrush {
         // Separate quads by type
         let mut solid_quads = Vec::new();
         let mut gradient_quads = Vec::new();
+        let mut blur_quads = Vec::new();
 
         for quad in &state.quads {
             match quad {
                 Quad::Solid { .. } => solid_quads.push(SolidQuadData::from(quad)),
                 Quad::Gradient { .. } => gradient_quads.push(GradientQuadData::from(quad)),
+                Quad::Blur { .. } => blur_quads.push(BlurQuadData::from(quad)),
             }
         }
 
@@ -587,5 +902,75 @@ impl QuadBrush {
             render_pass.set_vertex_buffer(0, self.gradient_instances.slice(..));
             render_pass.draw(0..6, 0..total as u32);
         }
+
+        // Render blur quads with frosted glass effect
+        if !blur_quads.is_empty() {
+            let total = blur_quads.len();
+
+            if total > self.supported_blur_quantity {
+                self.blur_instances.destroy();
+                self.supported_blur_quantity = total;
+                self.blur_instances = context.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("sugarloaf::quad blur instances"),
+                    size: mem::size_of::<BlurQuadData>() as u64 * self.supported_blur_quantity as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+            }
+
+            let instance_bytes = bytemuck::cast_slice(&blur_quads);
+            context.queue.write_buffer(&self.blur_instances, 0, instance_bytes);
+
+            render_pass.set_pipeline(&self.blur_pipeline);
+            render_pass.set_bind_group(0, &self.constants, &[]);
+            render_pass.set_vertex_buffer(0, self.blur_instances.slice(..));
+            render_pass.draw(0..6, 0..total as u32);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Quad, BlurQuadData};
+
+    #[test]
+    fn test_blur_quad_creation() {
+        let blur_quad = Quad::blur([10.0, 20.0], [100.0, 50.0], [1.0, 0.0, 0.0, 1.0], 5.0);
+        
+        match blur_quad {
+            Quad::Blur { position, size, color, blur_radius, .. } => {
+                assert_eq!(position, [10.0, 20.0]);
+                assert_eq!(size, [100.0, 50.0]);
+                assert_eq!(color, [1.0, 0.0, 0.0, 1.0]);
+                assert_eq!(blur_radius, 5.0);
+            }
+            _ => panic!("Expected Blur quad"),
+        }
+    }
+
+    #[test]
+    fn test_blur_quad_with_border() {
+        let blur_quad = Quad::blur([0.0, 0.0], [50.0, 50.0], [0.0, 1.0, 0.0, 1.0], 3.0)
+            .with_border([1.0, 1.0, 1.0, 1.0], [5.0, 5.0, 5.0, 5.0], 2.0);
+        
+        match blur_quad {
+            Quad::Blur { border_color, border_radius, border_width, .. } => {
+                assert_eq!(border_color, [1.0, 1.0, 1.0, 1.0]);
+                assert_eq!(border_radius, [5.0, 5.0, 5.0, 5.0]);
+                assert_eq!(border_width, 2.0);
+            }
+            _ => panic!("Expected Blur quad"),
+        }
+    }
+
+    #[test]
+    fn test_blur_quad_data_conversion() {
+        let blur_quad = Quad::blur([15.0, 25.0], [80.0, 60.0], [0.5, 0.5, 0.5, 0.8], 7.5);
+        let blur_data = BlurQuadData::from(&blur_quad);
+        
+        assert_eq!(blur_data.position, [15.0, 25.0]);
+        assert_eq!(blur_data.size, [80.0, 60.0]);
+        assert_eq!(blur_data.color, [0.5, 0.5, 0.5, 0.8]);
+        assert_eq!(blur_data.blur_radius, 7.5);
     }
 }

@@ -1249,7 +1249,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.render_assistant(&route.assistant);
                     }
                     RoutePath::CommandPalette => {
-                        route.window.screen.render_command_palette(&route.command_palette);
+                        route.window.screen.render_command_palette_overlay(&route.command_palette);
                     }
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
