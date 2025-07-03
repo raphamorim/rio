@@ -872,6 +872,9 @@ impl Screen<'_> {
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
+                    Act::CommandPalette => {
+                        self.context_manager.open_command_palette();
+                    }
                     Act::WindowCreateNew => {
                         self.context_manager.create_new_window();
                     }
@@ -2097,6 +2100,19 @@ impl Screen<'_> {
             &mut self.sugarloaf,
             &self.context_manager.current().dimension,
             assistant,
+        );
+        self.sugarloaf.render();
+    }
+
+    pub fn render_command_palette(
+        &mut self,
+        command_palette: &crate::router::routes::command_palette::CommandPalette,
+    ) {
+        self.sugarloaf.clear();
+        crate::router::routes::command_palette::screen(
+            &mut self.sugarloaf,
+            &self.context_manager.current().dimension,
+            command_palette,
         );
         self.sugarloaf.render();
     }

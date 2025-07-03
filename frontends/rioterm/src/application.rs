@@ -634,6 +634,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
+            RioEventType::Rio(RioEvent::CreateCommandPalette) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.open_command_palette();
+                    route.request_redraw();
+                }
+            }
             #[cfg(target_os = "macos")]
             RioEventType::Rio(RioEvent::CloseWindow) => {
                 self.router.routes.remove(&window_id);
@@ -1241,6 +1247,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 match route.path {
                     RoutePath::Assistant => {
                         route.window.screen.render_assistant(&route.assistant);
+                    }
+                    RoutePath::CommandPalette => {
+                        route.window.screen.render_command_palette(&route.command_palette);
                     }
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();

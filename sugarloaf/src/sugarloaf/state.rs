@@ -234,8 +234,8 @@ impl SugarState {
         // It means that's either the first render or objects were erased on compute_diff() step
         for object in &self.objects {
             match object {
-                Object::Quad(composed_quad) => {
-                    self.quads.push(*composed_quad);
+                Object::Quad(quad) => {
+                    self.quads.push(*quad);
                 }
                 Object::RichText(_rich_text) => {
                     // self.rich_texts.push(*rich_text);

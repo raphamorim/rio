@@ -133,12 +133,11 @@ impl ScreenNavigation {
                 }
             }
 
-            let renderable = Quad {
-                position: [initial_position, 0.0],
+            let renderable = Quad::solid(
+                [initial_position, 0.0],
+                [15.0, size],
                 color,
-                size: [15.0, size],
-                ..Quad::default()
-            };
+            );
             initial_position -= position_modifier;
             objects.push(Object::Quad(renderable));
         }
@@ -166,12 +165,11 @@ impl ScreenNavigation {
 
         let mut initial_position_x = 0.;
 
-        let renderable = Quad {
-            position: [initial_position_x, position_y],
-            color: colors.bar,
-            size: [width, PADDING_Y_BOTTOM_TABS],
-            ..Quad::default()
-        };
+        let renderable = Quad::solid(
+            [initial_position_x, position_y],
+            [width, PADDING_Y_BOTTOM_TABS],
+            colors.bar,
+        );
 
         objects.push(Object::Quad(renderable));
 
@@ -217,12 +215,11 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            objects.push(Object::Quad(Quad {
-                position: [initial_position_x, position_y],
-                color: background_color,
-                size: [125., PADDING_Y_BOTTOM_TABS],
-                ..Quad::default()
-            }));
+            objects.push(Object::Quad(Quad::solid(
+                [initial_position_x, position_y],
+                [125., PADDING_Y_BOTTOM_TABS],
+                background_color,
+            )));
 
             if is_current {
                 // TopBar case should render on bottom
@@ -232,12 +229,11 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                objects.push(Object::Quad(Quad {
-                    position: [initial_position_x, position],
-                    color: colors.tabs_active_highlight,
-                    size: [125., PADDING_Y_BOTTOM_TABS / 10.],
-                    ..Quad::default()
-                }));
+                objects.push(Object::Quad(Quad::solid(
+                    [initial_position_x, position],
+                    [125., PADDING_Y_BOTTOM_TABS / 10.],
+                    colors.tabs_active_highlight,
+                )));
             }
 
             let text = if is_current {

@@ -48,33 +48,29 @@ pub fn screen(
 
     let mut objects = Vec::with_capacity(7);
 
-    objects.push(Object::Quad(Quad {
-        position: [0., 0.0],
-        color: black,
-        size: [
+    objects.push(Object::Quad(Quad::solid(
+        [0., 0.0],
+        [
             layout.width / context_dimension.dimension.scale,
             layout.height,
         ],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [0., 30.0],
-        color: blue,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
+        black,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [0., 30.0],
+        [15., layout.height],
+        blue,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [15., context_dimension.margin.top_y + 60.],
+        [15., layout.height],
+        yellow,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [30., context_dimension.margin.top_y + 120.],
+        [15., layout.height],
+        red,
+    )));
 
     let heading = sugarloaf.create_temp_rich_text();
     let paragraph_action = sugarloaf.create_temp_rich_text();

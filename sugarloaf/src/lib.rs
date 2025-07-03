@@ -20,6 +20,7 @@ pub use crate::sugarloaf::{
     SugarloafWindowSize, SugarloafWithErrors,
 };
 pub use components::filters::Filter;
+pub use components::gradient::{ColorStop, LinearGradient, PackedGradient, linear_gradient, vertical_gradient, horizontal_gradient};
 pub use components::quad::Quad;
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
