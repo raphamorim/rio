@@ -882,8 +882,11 @@ impl Renderer {
 
                     if should_blink {
                         let now = std::time::Instant::now();
-                        let should_toggle = if let Some(last_blink) = context.renderable_content.last_blink_toggle {
-                            now.duration_since(last_blink).as_millis() >= self.config_blinking_interval as u128
+                        let should_toggle = if let Some(last_blink) =
+                            context.renderable_content.last_blink_toggle
+                        {
+                            now.duration_since(last_blink).as_millis()
+                                >= self.config_blinking_interval as u128
                         } else {
                             // First time: start with cursor visible and set initial timing
                             context.renderable_content.is_blinking_cursor_visible = true;
@@ -895,7 +898,7 @@ impl Renderer {
                             context.renderable_content.is_blinking_cursor_visible =
                                 !context.renderable_content.is_blinking_cursor_visible;
                             context.renderable_content.last_blink_toggle = Some(now);
-                            
+
                             if let Some(ref mut lines) = specific_lines {
                                 lines.insert(
                                     context.renderable_content.cursor.state.pos.row.0
