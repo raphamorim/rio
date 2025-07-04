@@ -456,7 +456,6 @@ pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
     pub needs_render_after_occlusion: bool,
-    has_fps_target: bool,
     pub render_timestamp: Instant,
     pub vblank_interval: Duration,
     pub winit_window: Window,
@@ -519,19 +518,18 @@ impl<'a> RouteWindow<'a> {
     // }
 
     pub fn update_vblank_interval(&mut self) {
-        if !self.has_fps_target {
-            // Get the display refresh rate, default to 60Hz if unavailable
-            let refresh_rate_hz = self
-                .winit_window
-                .current_monitor()
-                .and_then(|monitor| monitor.refresh_rate_millihertz())
-                .unwrap_or(60_000) as f64
-                / 1000.0; // Convert millihertz to Hz
+        // Always update vblank interval based on monitor refresh rate
+        // Get the display refresh rate, default to 60Hz if unavailable
+        let refresh_rate_hz = self
+            .winit_window
+            .current_monitor()
+            .and_then(|monitor| monitor.refresh_rate_millihertz())
+            .unwrap_or(60_000) as f64
+            / 1000.0; // Convert millihertz to Hz
 
-            // Calculate frame time in microseconds (1,000,000 µs / refresh_rate)
-            let frame_time_us = (1_000_000.0 / refresh_rate_hz) as u64;
-            self.vblank_interval = Duration::from_micros(frame_time_us);
-        }
+        // Calculate frame time in microseconds (1,000,000 µs / refresh_rate)
+        let frame_time_us = (1_000_000.0 / refresh_rate_hz) as u64;
+        self.vblank_interval = Duration::from_micros(frame_time_us);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -586,27 +584,18 @@ impl<'a> RouteWindow<'a> {
             winit_window.set_cloaked(false);
         }
 
-        // Get the display vblank interval.
-        let monitor_vblank_interval = 1_000_000.
-            / winit_window
-                .current_monitor()
-                .and_then(|monitor| monitor.refresh_rate_millihertz())
-                .unwrap_or(60_000) as f64;
+        // Get the display refresh rate and convert to frame interval
+        let monitor_refresh_rate_hz = winit_window
+            .current_monitor()
+            .and_then(|monitor| monitor.refresh_rate_millihertz())
+            .unwrap_or(60_000) as f64 / 1000.0;
 
-        // Now convert it to micro seconds.
-        let mut monitor_vblank_interval =
-            Duration::from_micros((1000. * monitor_vblank_interval) as u64);
-        let mut has_fps_target = false;
-
-        if let Some(target_fps) = config.renderer.target_fps {
-            monitor_vblank_interval =
-                Duration::from_millis(1000 / target_fps.clamp(1, 1000));
-            has_fps_target = true;
-        }
+        // Convert to microseconds for precise frame timing
+        let frame_time_us = (1_000_000.0 / monitor_refresh_rate_hz) as u64;
+        let monitor_vblank_interval = Duration::from_micros(frame_time_us);
 
         Self {
             vblank_interval: monitor_vblank_interval,
-            has_fps_target,
             render_timestamp: Instant::now(),
             is_focused: true,
             is_occluded: false,
