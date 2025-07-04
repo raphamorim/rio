@@ -1,11 +1,11 @@
 pub mod graphics;
 pub mod primitives;
 pub mod state;
+pub mod tree;
 
 use crate::components::core::{image::Handle, shapes::Rectangle};
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::components::layer::{self, LayerBrush};
-use crate::components::quad::QuadBrush;
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
@@ -13,7 +13,7 @@ use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
 use crate::SugarDimensions;
-use crate::{context::Context, Object};
+use crate::{context::Context, RichText};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -23,7 +23,6 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    quad_brush: QuadBrush,
     rich_text_brush: RichTextBrush,
     layer_brush: LayerBrush,
     state: state::SugarState,
@@ -146,14 +145,12 @@ impl Sugarloaf<'_> {
         let ctx = Context::new(window, renderer);
 
         let layer_brush = LayerBrush::new(&ctx);
-        let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
             layer_brush,
-            quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
@@ -293,9 +290,66 @@ impl Sugarloaf<'_> {
         self.state.content()
     }
 
+    /// Add a rich text object to the render tree
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn add_rich_text(&mut self, rich_text: RichText) -> crate::sugarloaf::tree::ObjectHandle {
+        self.state.add_rich_text(rich_text)
+    }
+
+    /// Add a quad object to the render tree
+    #[inline]
+    pub fn add_quad(&mut self, x: f32, y: f32, width: f32, height: f32, depth: f32, color: [f32; 4]) -> crate::sugarloaf::tree::ObjectHandle {
+        self.state.add_quad(x, y, width, height, depth, color)
+    }
+
+    /// Add a quad object to the render tree using QuadItem
+    #[inline]
+    pub fn add_quad_item(&mut self, quad: crate::sugarloaf::primitives::QuadItem) -> crate::sugarloaf::tree::ObjectHandle {
+        self.state.add_quad_item(quad)
+    }
+
+    /// Remove an object from the render tree
+    #[inline]
+    pub fn remove_object(&mut self, handle: crate::sugarloaf::tree::ObjectHandle) -> bool {
+        self.state.remove_object(handle)
+    }
+
+    /// Get access to the render tree
+    #[inline]
+    pub fn render_tree(&self) -> &crate::sugarloaf::tree::RenderTree {
+        self.state.render_tree()
+    }
+
+    /// Get mutable access to the render tree
+    #[inline]
+    pub fn render_tree_mut(&mut self) -> &mut crate::sugarloaf::tree::RenderTree {
+        self.state.render_tree_mut()
+    }
+
+    /// Clear all objects from the render tree
+    #[inline]
+    pub fn clear_objects(&mut self) {
+        self.state.clean_screen();
+    }
+
+    /// Legacy method for backward compatibility
+    /// Clears existing objects and adds new ones to the render tree
+    #[inline]
+    pub fn set_objects(&mut self, objects: Vec<crate::Object>) {
+        // Clear existing objects
+        self.state.clean_screen();
+        
+        // Add new objects to the render tree
+        for object in objects {
+            match object {
+                crate::Object::RichText(rich_text) => {
+                    self.state.add_rich_text(rich_text);
+                }
+                crate::Object::Quad(quad) => {
+                    self.state.add_quad_item(quad);
+                }
+            }
+        }
     }
 
     #[inline]
@@ -361,7 +415,6 @@ impl Sugarloaf<'_> {
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
             &mut self.rich_text_brush,
-            &mut self.quad_brush,
             &mut self.ctx,
             &mut self.graphics,
         );
@@ -435,8 +488,6 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
-                    self.quad_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
                 }
 

@@ -5,20 +5,19 @@
 
 use crate::font::FontLibrary;
 use crate::layout::RootStyle;
-use crate::sugarloaf::QuadBrush;
 use crate::sugarloaf::{RichTextBrush, RichTextLayout};
+use crate::sugarloaf::tree::{RenderTree, ObjectHandle};
 use crate::Graphics;
-use crate::{Content, Object, Quad, RichText, SugarDimensions};
+use crate::{Content, Object, RichText, SugarDimensions};
 use std::collections::HashSet;
 
 pub struct SugarState {
-    objects: Vec<Object>,
+    render_tree: RenderTree,
     pub rich_texts: Vec<RichText>,
     rich_text_repaint: HashSet<usize>,
     rich_text_to_be_removed: Vec<usize>,
     pub style: RootStyle,
     pub content: Content,
-    pub quads: Vec<Quad>,
 }
 
 impl SugarState {
@@ -33,9 +32,8 @@ impl SugarState {
 
         SugarState {
             content: Content::new(font_library),
-            quads: vec![],
+            render_tree: RenderTree::new(),
             style,
-            objects: vec![],
             rich_texts: vec![],
             rich_text_to_be_removed: vec![],
             rich_text_repaint: HashSet::default(),
@@ -166,26 +164,50 @@ impl SugarState {
 
     #[inline]
     pub fn clean_screen(&mut self) {
-        // self.content.clear();
-        self.objects.clear();
+        self.render_tree.clear();
     }
 
+    /// Add a rich text object to the render tree
     #[inline]
-    pub fn compute_objects(&mut self, new_objects: Vec<Object>) {
-        // Block are used only with elementary renderer
-        let mut rich_texts: Vec<RichText> = vec![];
-        for obj in &new_objects {
-            if let Object::RichText(rich_text) = obj {
-                rich_texts.push(*rich_text);
-            }
-        }
-        self.objects = new_objects;
-        self.rich_texts = rich_texts
+    pub fn add_rich_text(&mut self, rich_text: RichText) -> ObjectHandle {
+        // Only add to the render tree - rich_texts vector will be rebuilt in compute_updates
+        self.render_tree.add_rich_text(rich_text)
+    }
+
+    /// Add a quad object to the render tree
+    #[inline]
+    pub fn add_quad(&mut self, x: f32, y: f32, width: f32, height: f32, depth: f32, color: [f32; 4]) -> ObjectHandle {
+        self.render_tree.add_quad_with_params(x, y, width, height, depth, color)
+    }
+
+    /// Add a quad object to the render tree using QuadItem
+    #[inline]
+    pub fn add_quad_item(&mut self, quad: crate::sugarloaf::primitives::QuadItem) -> ObjectHandle {
+        self.render_tree.add_quad(quad)
+    }
+
+    /// Remove an object from the render tree
+    #[inline]
+    pub fn remove_object(&mut self, handle: ObjectHandle) -> bool {
+        // Remove from render tree - rich_texts vector will be rebuilt in compute_updates
+        handle.remove(&mut self.render_tree);
+        true
+    }
+
+    /// Get access to the render tree
+    #[inline]
+    pub fn render_tree(&self) -> &RenderTree {
+        &self.render_tree
+    }
+
+    /// Get mutable access to the render tree
+    #[inline]
+    pub fn render_tree_mut(&mut self) -> &mut RenderTree {
+        &mut self.render_tree
     }
 
     #[inline]
     pub fn reset(&mut self) {
-        self.quads.clear();
         for rte_id in &self.rich_text_to_be_removed {
             self.content.remove_state(rte_id);
         }
@@ -222,26 +244,37 @@ impl SugarState {
     pub fn compute_updates(
         &mut self,
         advance_brush: &mut RichTextBrush,
-        quad_brush: &mut QuadBrush,
         context: &mut super::Context,
         graphics: &mut Graphics,
     ) {
-        advance_brush.prepare(context, self, graphics);
-        quad_brush.resize(context);
-
-        // Elementary renderer is used for everything else in sugarloaf
-        // like objects rendering (created by .text() or .append_rects())
-        // It means that's either the first render or objects were erased on compute_diff() step
-        for object in &self.objects {
-            match object {
-                Object::Quad(composed_quad) => {
-                    self.quads.push(*composed_quad);
-                }
-                Object::RichText(_rich_text) => {
-                    // self.rich_texts.push(*rich_text);
-                }
+        // Rebuild rich_texts vector from render tree
+        self.rich_texts.clear();
+        for (_, object) in self.render_tree.iter() {
+            if let Object::RichText(rich_text) = object {
+                self.rich_texts.push(*rich_text);
             }
         }
+
+        advance_brush.prepare(context, self, graphics);
+
+        // Process quad objects from the render tree and add them to the rich text brush
+        for (_, object) in self.render_tree.iter() {
+            if let Object::Quad(quad_item) = object {
+                // Add quads directly to the rich_text_brush using the new API
+                // Use the x, y, width, height fields for positioning
+                advance_brush.add_quad(
+                    quad_item.x,
+                    quad_item.y,
+                    quad_item.width,
+                    quad_item.height,
+                    quad_item.depth,
+                    &quad_item.color,
+                );
+            }
+        }
+
+        // Mark the render tree as clean after processing
+        self.render_tree.mark_clean();
     }
 
     #[inline]

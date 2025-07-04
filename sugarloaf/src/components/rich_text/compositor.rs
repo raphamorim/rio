@@ -10,6 +10,7 @@ pub use crate::components::rich_text::batch::{Rect, Vertex};
 use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
 use crate::components::rich_text::text::*;
 use crate::layout::{FragmentStyleDecoration, UnderlineShape};
+use crate::sugarloaf::primitives::SugarCursor;
 
 pub struct Compositor {
     pub batches: BatchManager,
@@ -28,6 +29,18 @@ impl Compositor {
 
     pub fn finish(&mut self, vertices: &mut Vec<Vertex>) {
         self.batches.build_display_list(vertices);
+    }
+
+    /// Add a simple quad with position, size, and background color
+    #[inline]
+    pub fn add_quad(&mut self, x: f32, y: f32, width: f32, height: f32, depth: f32, color: &[f32; 4]) {
+        self.batches.add_quad(x, y, width, height, depth, color);
+    }
+
+    /// Add a rectangle
+    #[inline]
+    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
+        self.batches.add_rect(rect, depth, color);
     }
 
     /// Standard draw_run method (for compatibility)
@@ -87,7 +100,7 @@ impl Compositor {
 
             if let Some(cursor) = style.cursor {
                 match cursor {
-                    crate::SugarCursor::Block(cursor_color) => {
+                    SugarCursor::Block(cursor_color) => {
                         let cursor_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -96,7 +109,7 @@ impl Compositor {
                         );
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
-                    crate::SugarCursor::HollowBlock(cursor_color) => {
+                    SugarCursor::HollowBlock(cursor_color) => {
                         let outer_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -115,7 +128,7 @@ impl Compositor {
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
-                    crate::SugarCursor::Caret(cursor_color) => {
+                    SugarCursor::Caret(cursor_color) => {
                         let outer_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -134,7 +147,7 @@ impl Compositor {
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
-                    crate::SugarCursor::Underline(cursor_color) => {
+                    SugarCursor::Underline(cursor_color) => {
                         let caret_rect =
                             Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);
@@ -204,7 +217,7 @@ impl Compositor {
 
             if let Some(cursor) = style.cursor {
                 match cursor {
-                    crate::SugarCursor::Block(cursor_color) => {
+                    SugarCursor::Block(cursor_color) => {
                         let cursor_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -213,7 +226,7 @@ impl Compositor {
                         );
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
-                    crate::SugarCursor::HollowBlock(cursor_color) => {
+                    SugarCursor::HollowBlock(cursor_color) => {
                         let outer_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -232,7 +245,7 @@ impl Compositor {
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
-                    crate::SugarCursor::Caret(cursor_color) => {
+                    SugarCursor::Caret(cursor_color) => {
                         let outer_rect = Rect::new(
                             rect.x,
                             style.topline,
@@ -251,7 +264,7 @@ impl Compositor {
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
-                    crate::SugarCursor::Underline(cursor_color) => {
+                    SugarCursor::Underline(cursor_color) => {
                         let caret_rect =
                             Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);

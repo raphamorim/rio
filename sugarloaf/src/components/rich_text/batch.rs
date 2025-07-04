@@ -9,8 +9,7 @@
 // Eventually the file had updates to support other features like background-color,
 // text color, underline color and etc.
 
-use crate::contains_braille_dot;
-use crate::DrawableChar;
+use crate::sugarloaf::primitives::{contains_braille_dot, DrawableChar};
 use crate::UnderlineShape;
 use bytemuck::{Pod, Zeroable};
 
@@ -798,6 +797,19 @@ impl BatchManager {
         }
         self.alloc_batch(transparent)
             .add_rect(rect, depth, color, None, None, None, false);
+    }
+
+    /// Add a simple quad with position, size, and background color
+    /// This provides the same API as the old quad component
+    #[inline]
+    pub fn add_quad(&mut self, x: f32, y: f32, width: f32, height: f32, depth: f32, color: &[f32; 4]) {
+        let rect = Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        self.add_rect(&rect, depth, color);
     }
 
     #[inline]
