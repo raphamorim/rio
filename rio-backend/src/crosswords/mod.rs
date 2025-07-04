@@ -903,17 +903,23 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn damage_cursor(&mut self) {
-        // The normal cursor coordinates are always in viewport.
-        let point = Pos::new(
-            self.grid.cursor.pos.row.0 as usize,
-            self.grid.cursor.pos.col,
-        );
-
-        // Only emit event if cursor actually moved
+        // Only damage cursor if it actually moved or if we need to show/hide it
         let old_cursor = self.damage.last_cursor;
-        self.damage.damage_point(point);
+        let current_cursor = self.grid.cursor.pos;
 
-        if old_cursor != self.grid.cursor.pos {
+        // Check if cursor position actually changed
+        if old_cursor != current_cursor {
+            // The normal cursor coordinates are always in viewport.
+            let point = Pos::new(current_cursor.row.0 as usize, current_cursor.col);
+
+            self.damage.damage_point(point);
+
+            // Also damage the old cursor position to clear it
+            if old_cursor.row.0 >= 0 {
+                let old_point = Pos::new(old_cursor.row.0 as usize, old_cursor.col);
+                self.damage.damage_point(old_point);
+            }
+
             self.event_proxy.send_event(
                 RioEvent::TerminalDamaged {
                     route_id: self.route_id,
@@ -922,6 +928,44 @@ impl<U: EventListener> Crosswords<U> {
                 self.window_id,
             );
         }
+    }
+
+    #[inline]
+    pub fn damage_cursor_blink(&mut self) {
+        // Only damage cursor for blink if cursor is visible and blinking is enabled
+        let cursor_state = self.cursor();
+        if cursor_state.is_visible() {
+            let point = Pos::new(
+                self.grid.cursor.pos.row.0 as usize,
+                self.grid.cursor.pos.col,
+            );
+            self.damage.damage_point(point);
+
+            self.event_proxy.send_event(
+                RioEvent::TerminalDamaged {
+                    route_id: self.route_id,
+                    damage: TerminalDamage::CursorOnly,
+                },
+                self.window_id,
+            );
+        }
+    }
+
+    /// Check if any rendering is actually needed
+    #[inline]
+    pub fn needs_render(&self) -> bool {
+        // Always render if fully damaged
+        if self.is_fully_damaged() {
+            return true;
+        }
+
+        // Check if there's any partial damage
+        if !self.damage.lines.is_empty() {
+            return true;
+        }
+
+        // No rendering needed if no damage
+        false
     }
 
     #[inline]

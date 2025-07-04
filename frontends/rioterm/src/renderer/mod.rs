@@ -822,6 +822,12 @@ impl Renderer {
 
                 context.renderable_content.cursor.state = terminal.cursor();
 
+                // Early exit if no rendering is needed
+                if !force_full_damage && !terminal.needs_render() {
+                    terminal.reset_damage();
+                    return;
+                }
+
                 if let Some(queues_to_add) = terminal.graphics_take_queues() {
                     if let Some(ref mut queues) = graphic_queues {
                         queues.push(queues_to_add);
