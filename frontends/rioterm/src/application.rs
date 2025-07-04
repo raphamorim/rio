@@ -271,10 +271,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::TerminalDamaged {
-                route_id,
-                damage: _,
-            }) => {
+            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         // Skip rendering for unfocused windows if configured
@@ -294,6 +291,32 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Check if this is the current route
                         if route_id == route.window.screen.ctx().current_route() {
+                            // Check if rendering is actually needed
+                            let terminal = route
+                                .window
+                                .screen
+                                .ctx_mut()
+                                .current_mut()
+                                .terminal
+                                .lock();
+                            if !terminal.needs_render() {
+                                // Skip rendering if no actual damage
+                                return;
+                            }
+
+                            // For cursor-only damage, we can be more selective
+                            if matches!(
+                                damage,
+                                rio_backend::event::TerminalDamage::CursorOnly
+                            ) {
+                                // Only render cursor changes if cursor is visible or blinking
+                                let cursor_state = terminal.cursor();
+                                if !cursor_state.is_visible() {
+                                    return;
+                                }
+                            }
+                            drop(terminal); // Release lock before requesting redraw
+
                             // Clear the one-time render flag if it was set
                             if route.window.needs_render_after_occlusion {
                                 route.window.needs_render_after_occlusion = false;
@@ -413,7 +436,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
-                        route.request_redraw();
+                        // Use the new damage_cursor_blink method for more efficient cursor blinking
+                        let mut terminal =
+                            route.window.screen.ctx_mut().current_mut().terminal.lock();
+                        terminal.damage_cursor_blink();
+
+                        // Only request redraw if there's actual damage
+                        let needs_render = terminal.needs_render();
+                        drop(terminal); // Release lock before requesting redraw
+
+                        if needs_render {
+                            route.request_redraw();
+                        }
                     }
                 }
             }
