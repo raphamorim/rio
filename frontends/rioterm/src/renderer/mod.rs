@@ -881,17 +881,38 @@ impl Renderer {
                     }
 
                     if should_blink {
-                        context.renderable_content.is_blinking_cursor_visible =
-                            !context.renderable_content.is_blinking_cursor_visible;
-                        if let Some(ref mut lines) = specific_lines {
-                            lines.insert(
-                                context.renderable_content.cursor.state.pos.row.0
-                                    as usize,
-                            );
+                        let now = std::time::Instant::now();
+                        let should_toggle = if let Some(last_blink) = context.renderable_content.last_blink_toggle {
+                            now.duration_since(last_blink).as_millis() >= self.config_blinking_interval as u128
+                        } else {
+                            // First time: start with cursor visible and set initial timing
+                            context.renderable_content.is_blinking_cursor_visible = true;
+                            context.renderable_content.last_blink_toggle = Some(now);
+                            false // Don't toggle on first frame
+                        };
+
+                        if should_toggle {
+                            context.renderable_content.is_blinking_cursor_visible =
+                                !context.renderable_content.is_blinking_cursor_visible;
+                            context.renderable_content.last_blink_toggle = Some(now);
+                            
+                            if let Some(ref mut lines) = specific_lines {
+                                lines.insert(
+                                    context.renderable_content.cursor.state.pos.row.0
+                                        as usize,
+                                );
+                            }
                         }
                     } else {
+                        // When not blinking (e.g., during typing), ensure cursor is visible
                         context.renderable_content.is_blinking_cursor_visible = true;
+                        // Reset blink timing when not blinking so it starts fresh when blinking resumes
+                        context.renderable_content.last_blink_toggle = None;
                     }
+                } else {
+                    // When there's a selection, keep cursor visible and reset blink timing
+                    context.renderable_content.is_blinking_cursor_visible = true;
+                    context.renderable_content.last_blink_toggle = None;
                 }
 
                 is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;

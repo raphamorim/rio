@@ -20,6 +20,7 @@ pub struct RenderableContent {
     pub selection_range: Option<SelectionRange>,
     pub hyperlink_range: Option<SelectionRange>,
     pub last_typing: Option<Instant>,
+    pub last_blink_toggle: Option<Instant>,
     pub has_pending_updates: bool,
 }
 
@@ -31,6 +32,7 @@ impl RenderableContent {
             selection_range: None,
             hyperlink_range: None,
             last_typing: None,
+            last_blink_toggle: None,
             has_pending_updates: false,
             is_blinking_cursor_visible: false,
         }
