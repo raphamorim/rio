@@ -2,48 +2,27 @@ use crate::config::colors::{deserialize_to_arr, ColorArray};
 use crate::config::default_bool_true;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
 pub enum NavigationMode {
+    #[serde(alias = "rio")]
+    #[default]
+    Rio,
     #[serde(alias = "plain")]
     Plain,
-    #[serde(alias = "toptab")]
-    TopTab,
-    #[cfg(target_os = "macos")]
     #[serde(alias = "nativetab")]
     NativeTab,
-    #[serde(alias = "bottomtab")]
-    BottomTab,
-    #[serde(alias = "bookmark")]
-    Bookmark,
-}
-
-#[allow(clippy::derivable_impls)]
-impl Default for NavigationMode {
-    fn default() -> NavigationMode {
-        #[cfg(target_os = "macos")]
-        {
-            NavigationMode::NativeTab
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        NavigationMode::Bookmark
-    }
 }
 
 impl NavigationMode {
+    const RIO_STR: &'static str = "Rio";
     const PLAIN_STR: &'static str = "Plain";
-    const COLLAPSED_TAB_STR: &'static str = "Bookmark";
-    const TOP_TAB_STR: &'static str = "TopTab";
-    const BOTTOM_TAB_STR: &'static str = "BottomTab";
     #[cfg(target_os = "macos")]
     const NATIVE_TAB_STR: &'static str = "NativeTab";
 
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Rio => Self::RIO_STR,
             Self::Plain => Self::PLAIN_STR,
-            Self::Bookmark => Self::COLLAPSED_TAB_STR,
-            Self::TopTab => Self::TOP_TAB_STR,
-            Self::BottomTab => Self::BOTTOM_TAB_STR,
             #[cfg(target_os = "macos")]
             Self::NativeTab => Self::NATIVE_TAB_STR,
         }
@@ -53,10 +32,8 @@ impl NavigationMode {
 #[inline]
 pub fn modes_as_vec_string() -> Vec<String> {
     [
+        NavigationMode::Rio,
         NavigationMode::Plain,
-        NavigationMode::Bookmark,
-        NavigationMode::TopTab,
-        NavigationMode::BottomTab,
         #[cfg(target_os = "macos")]
         NavigationMode::NativeTab,
     ]
@@ -79,9 +56,7 @@ impl std::str::FromStr for NavigationMode {
 
     fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
         match s {
-            Self::COLLAPSED_TAB_STR => Ok(NavigationMode::Bookmark),
-            Self::TOP_TAB_STR => Ok(NavigationMode::TopTab),
-            Self::BOTTOM_TAB_STR => Ok(NavigationMode::BottomTab),
+            Self::RIO_STR => Ok(NavigationMode::Rio),
             #[cfg(target_os = "macos")]
             Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
             Self::PLAIN_STR => Ok(NavigationMode::Plain),
@@ -155,16 +130,6 @@ impl Default for Navigation {
 
 impl Navigation {
     #[inline]
-    pub fn is_collapsed_mode(&self) -> bool {
-        self.mode == NavigationMode::Bookmark
-    }
-
-    #[inline]
-    pub fn is_placed_on_bottom(&self) -> bool {
-        self.mode == NavigationMode::BottomTab
-    }
-
-    #[inline]
     pub fn is_native(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -181,11 +146,6 @@ impl Navigation {
     pub fn has_navigation_key_bindings(&self) -> bool {
         self.mode != NavigationMode::Plain
     }
-
-    #[inline]
-    pub fn is_placed_on_top(&self) -> bool {
-        self.mode == NavigationMode::TopTab
-    }
 }
 
 #[cfg(test)]
@@ -201,41 +161,28 @@ mod tests {
     }
 
     #[test]
-    fn test_collapsed_tab() {
+    fn test_rio_tab() {
         let content = r#"
             [navigation]
-            mode = 'Bookmark'
+            mode = 'Rio'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
-        assert!(!decoded.navigation.clickable);
-        assert!(decoded.navigation.color_automation.is_empty());
-    }
-
-    #[test]
-    fn test_top_tab() {
-        let content = r#"
-            [navigation]
-            mode = 'TopTab'
-        "#;
-
-        let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::TopTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Rio);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
     #[test]
-    fn test_bottom_tab() {
+    fn test_plain_tab() {
         let content = r#"
             [navigation]
-            mode = 'BottomTab'
+            mode = 'Plain'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Plain);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(decoded.navigation.color_automation.is_empty());
@@ -245,14 +192,14 @@ mod tests {
     fn test_color_automation() {
         let content = r#"
             [navigation]
-            mode = 'Bookmark'
+            mode = 'Rio'
             color-automation = [
                 { program = 'vim', color = '#333333' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Rio);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());
@@ -271,7 +218,7 @@ mod tests {
     fn test_color_automation_arr() {
         let content = r#"
             [navigation]
-            mode = 'BottomTab'
+            mode = 'Rio'
             color-automation = [
                 { program = 'ssh', color = '#F1F1F1' },
                 { program = 'tmux', color = '#333333' },
@@ -281,7 +228,7 @@ mod tests {
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Rio);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.use_current_path);
         assert!(!decoded.navigation.color_automation.is_empty());

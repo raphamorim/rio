@@ -18,30 +18,26 @@ pub fn screen(
 
     let mut objects = Vec::with_capacity(7);
 
-    objects.push(Object::Quad(Quad {
-        position: [0., 0.0],
-        color: black,
-        size: [layout.width, layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [0., 30.0],
-        color: blue,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
+    objects.push(Object::Quad(Quad::solid(
+        [0., 0.0],
+        [layout.width, layout.height],
+        black,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [0., 30.0],
+        [30., layout.height],
+        blue,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [15., context_dimension.margin.top_y + 60.],
+        [30., layout.height],
+        yellow,
+    )));
+    objects.push(Object::Quad(Quad::solid(
+        [30., context_dimension.margin.top_y + 120.],
+        [30., layout.height],
+        red,
+    )));
 
     let heading = sugarloaf.create_temp_rich_text();
     let confirm = sugarloaf.create_temp_rich_text();
