@@ -129,6 +129,7 @@ pub(crate) struct State {
 
     // Display link for VSync timing
     display_link: RefCell<Option<super::display_link::DisplayLink>>,
+    // Track when rendering is needed (dirty state)
     needs_redraw: Cell<bool>,
 }
 
@@ -932,7 +933,10 @@ impl WindowDelegate {
     }
 
     pub fn request_redraw(&self) {
-        self.ivars().app_delegate.queue_redraw(self.window().id());
+        // Mark window as needing redraw instead of immediately queuing
+        // The display link will handle the actual redraw on next VSync
+        self.ivars().needs_redraw.set(true);
+        tracing::trace!("Window {:?} marked as needing redraw", self.id());
     }
 
     pub fn initialize_display_link(&self) {
@@ -2032,11 +2036,15 @@ impl DisplayLinkSupport for WindowDelegate {
 
         // Get the display ID for the current monitor
         let display_id = match self.current_monitor_inner() {
-            Some(_monitor) => {
-                // TODO: Get the actual display ID from the monitor
-                // For now, use the main display
-                use core_graphics::display::CGDisplay;
-                CGDisplay::main().id
+            Some(monitor) => {
+                // Get the actual display ID from the monitor
+                let display_id = monitor.native_identifier();
+                tracing::info!(
+                    "Using display ID {} from current monitor for window {:?}",
+                    display_id,
+                    self.id()
+                );
+                display_id
             }
             None => {
                 tracing::warn!("Could not get current monitor, using main display");
@@ -2044,8 +2052,6 @@ impl DisplayLinkSupport for WindowDelegate {
                 CGDisplay::main().id
             }
         };
-
-        tracing::info!("Using display ID {} for window {:?}", display_id, self.id());
 
         // Get window ID
         let window_id = self.id();
@@ -2059,32 +2065,43 @@ impl DisplayLinkSupport for WindowDelegate {
             unsafe {
                 let user_data =
                     &*(context as *const super::display_link::DisplayLinkUserData);
-                tracing::trace!(
-                    "VSync callback on main thread for window {:?}",
-                    user_data.window_id
-                );
-
-                // Trigger VSync-timed redraw through the app delegate
-                // Since we're on the main thread, we can safely access the app delegate
-                use objc2_foundation::MainThreadMarker;
-                if let Some(mtm) = MainThreadMarker::new() {
-                    let app_delegate = super::app_delegate::ApplicationDelegate::get(mtm);
-                    app_delegate.queue_redraw(user_data.window_id);
-                    tracing::trace!(
-                        "VSync redraw queued for window {:?}",
-                        user_data.window_id
-                    );
+                
+                // Get the view directly from the user data
+                let view = user_data.view_ptr;
+                
+                // Get window delegate from the view (similar to Zed's approach)
+                use super::view::get_window_delegate;
+                if let Some(window_delegate) = get_window_delegate(view) {
+                    // Check if window needs redraw (dirty state)
+                    if window_delegate.ivars().needs_redraw.get() {
+                        // Clear dirty flag and trigger redraw
+                        window_delegate.ivars().needs_redraw.set(false);
+                        window_delegate.ivars().app_delegate.queue_redraw(user_data.window_id);
+                        tracing::trace!(
+                            "VSync redraw triggered for dirty window {:?}",
+                            user_data.window_id
+                        );
+                    } else {
+                        tracing::trace!(
+                            "VSync callback skipped - window {:?} not dirty",
+                            user_data.window_id
+                        );
+                    }
                 } else {
-                    tracing::error!(
-                        "VSync callback not on main thread for window {:?}",
+                    tracing::warn!(
+                        "VSync callback could not get window delegate from view for window {:?}",
                         user_data.window_id
                     );
                 }
             }
         }
 
+        // Get the view pointer for direct access
+        let view = self.view();
+        let view_ptr = Retained::as_ptr(&view) as *mut std::ffi::c_void;
+
         // Create the display link with GCD-based communication
-        let display_link = DisplayLink::new(display_id, window_id, vsync_callback)?;
+        let display_link = DisplayLink::new(display_id, window_id, view_ptr, vsync_callback)?;
 
         // Store the display link
         *self.ivars().display_link.borrow_mut() = Some(display_link);

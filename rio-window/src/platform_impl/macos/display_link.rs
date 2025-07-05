@@ -102,6 +102,7 @@ extern "C" {
 pub struct DisplayLinkUserData {
     pub window_id: WindowId,
     pub dispatch_source: dispatch_source_t,
+    pub view_ptr: *mut std::ffi::c_void, // Pointer to the view for direct access
 }
 
 /// DisplayLink wrapper using GCD-based approach
@@ -124,6 +125,7 @@ impl DisplayLink {
     pub fn new(
         display_id: CGDirectDisplayID,
         window_id: WindowId,
+        view_ptr: *mut c_void,
         callback: unsafe extern "C" fn(*mut c_void),
     ) -> Result<Self, &'static str> {
         unsafe {
@@ -143,6 +145,7 @@ impl DisplayLink {
             let user_data = Box::new(DisplayLinkUserData {
                 window_id,
                 dispatch_source,
+                view_ptr,
             });
 
             // Set up GCD event handler

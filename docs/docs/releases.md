@@ -9,13 +9,14 @@ language: 'en'
 
 ### Performance Optimizations
 
-- **Major**: Implemented CVDisplayLink-based VSync synchronization for macOS
+- **Major**: Implemented efficient CVDisplayLink-based VSync synchronization for macOS
   - Perfect frame timing aligned with display hardware refresh cycles
   - Eliminates screen tearing and stuttering through hardware VSync synchronization
   - Adaptive refresh rate support: automatically handles 60Hz, 120Hz, ProMotion displays
   - Multi-display support: adapts when windows move between displays with different refresh rates
   - Grand Central Dispatch (GCD) integration for thread-safe cross-thread communication
-  - Power efficient: only fires when display actually refreshes, reducing unnecessary CPU usage
+  - **Smart rendering**: Only renders when content actually changes using dirty flag system
+  - Power efficient: skips unnecessary redraws when content is static, reducing CPU usage
   - Professional rendering quality with smooth, tear-free visual updates
   - CVDisplayLink runs on dedicated background thread, never blocking UI operations
 - **Major**: Implemented a new text run caching system replacing line-based caching

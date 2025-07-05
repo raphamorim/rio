@@ -23,6 +23,7 @@ use super::event::{
     ralt_pressed, scancode_to_physicalkey,
 };
 use super::window::WinitWindow;
+use super::window_delegate::WindowDelegate;
 use super::DEVICE_ID;
 use crate::dpi::{LogicalPosition, LogicalSize};
 use crate::event::{
@@ -1198,5 +1199,34 @@ fn replace_event(event: &NSEvent, option_as_alt: OptionAsAlt) -> Retained<NSEven
         }
     } else {
         event.copy()
+    }
+}
+
+/// Get the window delegate from a view pointer
+/// This is used by the CVDisplayLink callback to access window state
+pub(crate) unsafe fn get_window_delegate(view_ptr: *mut std::ffi::c_void) -> Option<Retained<WindowDelegate>> {
+    if view_ptr.is_null() {
+        return None;
+    }
+    
+    unsafe {
+        // Cast the view pointer back to WinitView
+        let view = view_ptr as *const WinitView;
+        let view = &*view;
+        
+        // Get the window from the view
+        if let Some(window) = view.ivars()._ns_window.load() {
+            // Get the delegate from the window
+            if let Some(delegate) = window.delegate() {
+                // Cast the delegate back to WindowDelegate
+                // SAFETY: We know this is a WindowDelegate because we set it
+                let delegate_ptr = Retained::as_ptr(&delegate) as *mut WindowDelegate;
+                Retained::retain(delegate_ptr)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }
