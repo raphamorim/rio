@@ -179,7 +179,7 @@ impl Screen<'_> {
         let renderer = Renderer::new(config, font_library);
 
         let bindings = crate::bindings::default_key_bindings(
-            config.bindings.keys.to_owned(),
+            config.bindings.to_owned(),
             config.navigation.has_navigation_key_bindings(),
             config.navigation.use_split,
             config.keyboard,
