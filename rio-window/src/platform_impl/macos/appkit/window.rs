@@ -239,6 +239,9 @@ extern_methods!(
         #[method(setDelegate:)]
         pub(crate) fn setDelegate(&self, delegate: Option<&NSObject>);
 
+        #[method_id(delegate)]
+        pub(crate) fn delegate(&self) -> Option<Retained<NSObject>>;
+
         #[method(sendEvent:)]
         pub(crate) unsafe fn sendEvent(&self, event: &NSEvent);
 

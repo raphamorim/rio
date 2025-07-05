@@ -19,6 +19,8 @@
   </p>
 </p>
 
+> **⚠️ Development Notice**: We are currently in the process of releasing Rio 0.3.0, which includes major performance improvements and architectural changes. The main branch is under active development and may be unstable. For stable usage, please use the [latest release](https://github.com/raphamorim/rio/releases).
+
 ## About
 
 Documentation: https://rioterm.com

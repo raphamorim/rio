@@ -4,6 +4,8 @@ mod util;
 mod app;
 mod app_delegate;
 mod cursor;
+mod dispatcher;
+mod display_link;
 mod event;
 mod event_handler;
 mod event_loop;
