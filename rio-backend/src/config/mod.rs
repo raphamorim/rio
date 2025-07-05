@@ -1,6 +1,7 @@
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
+pub mod hints;
 pub mod keyboard;
 pub mod navigation;
 pub mod renderer;
@@ -11,6 +12,7 @@ pub mod window;
 use crate::ansi::CursorShape;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
+use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
@@ -159,6 +161,8 @@ pub struct Config {
     pub renderer: Renderer,
     #[serde(default = "bool::default", rename = "draw-bold-text-with-light-colors")]
     pub draw_bold_text_with_light_colors: bool,
+    #[serde(default = "Hints::default")]
+    pub hints: Hints,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -528,6 +532,7 @@ impl Default for Config {
             confirm_before_quit: true,
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
+            hints: Hints::default(),
         }
     }
 }
