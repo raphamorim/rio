@@ -31,6 +31,9 @@ use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
 
+/// Draw the underline this amount of pixels below the text
+pub const UNDERLINE_OFFSET: f32 = -6.0;
+
 #[derive(Default)]
 pub struct Search {
     rich_text_id: Option<usize>,
@@ -192,7 +195,7 @@ impl Renderer {
 
         if square.flags.contains(Flags::UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
+                offset: UNDERLINE_OFFSET,
                 size: 1.0,
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
@@ -201,28 +204,28 @@ impl Renderer {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
+                offset: UNDERLINE_OFFSET,
                 size: 1.0,
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
+                offset: UNDERLINE_OFFSET,
                 size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
+                offset: UNDERLINE_OFFSET,
                 size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
+                offset: UNDERLINE_OFFSET,
                 size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
@@ -282,15 +285,13 @@ impl Renderer {
                     self.create_style(square, term_colors)
                 };
 
-            if hyperlink_range.is_some()
-                && square.hyperlink().is_some()
+            if square.hyperlink().is_some()
                 && hyperlink_range
-                    .unwrap()
-                    .contains(Pos::new(line, Column(column)))
+                    .is_some_and(|range| range.contains(Pos::new(line, Column(column))))
             {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
+                        offset: UNDERLINE_OFFSET,
                         size: -1.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
