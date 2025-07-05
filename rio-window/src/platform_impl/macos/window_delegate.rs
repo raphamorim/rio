@@ -359,10 +359,8 @@ declare_class!(
                 if let Err(e) = self.start_display_link() {
                     tracing::warn!("Failed to start display link when window became visible: {}", e);
                 }
-            } else {
-                if let Err(e) = self.stop_display_link() {
-                    tracing::warn!("Failed to stop display link when window became occluded: {}", e);
-                }
+            } else if let Err(e) = self.stop_display_link() {
+                tracing::warn!("Failed to stop display link when window became occluded: {}", e);
             }
 
             self.queue_event(WindowEvent::Occluded(!visible));
@@ -2065,10 +2063,10 @@ impl DisplayLinkSupport for WindowDelegate {
             unsafe {
                 let user_data =
                     &*(context as *const super::display_link::DisplayLinkUserData);
-                
+
                 // Get the view directly from the user data
                 let view = user_data.view_ptr;
-                
+
                 // Get window delegate from the view (similar to Zed's approach)
                 use super::view::get_window_delegate;
                 if let Some(window_delegate) = get_window_delegate(view) {
@@ -2076,7 +2074,10 @@ impl DisplayLinkSupport for WindowDelegate {
                     if window_delegate.ivars().needs_redraw.get() {
                         // Clear dirty flag and trigger redraw
                         window_delegate.ivars().needs_redraw.set(false);
-                        window_delegate.ivars().app_delegate.queue_redraw(user_data.window_id);
+                        window_delegate
+                            .ivars()
+                            .app_delegate
+                            .queue_redraw(user_data.window_id);
                         tracing::trace!(
                             "VSync redraw triggered for dirty window {:?}",
                             user_data.window_id
@@ -2101,7 +2102,8 @@ impl DisplayLinkSupport for WindowDelegate {
         let view_ptr = Retained::as_ptr(&view) as *mut std::ffi::c_void;
 
         // Create the display link with GCD-based communication
-        let display_link = DisplayLink::new(display_id, window_id, view_ptr, vsync_callback)?;
+        let display_link =
+            DisplayLink::new(display_id, window_id, view_ptr, vsync_callback)?;
 
         // Store the display link
         *self.ivars().display_link.borrow_mut() = Some(display_link);

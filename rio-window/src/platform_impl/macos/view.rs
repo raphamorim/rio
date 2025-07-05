@@ -1204,16 +1204,18 @@ fn replace_event(event: &NSEvent, option_as_alt: OptionAsAlt) -> Retained<NSEven
 
 /// Get the window delegate from a view pointer
 /// This is used by the CVDisplayLink callback to access window state
-pub(crate) unsafe fn get_window_delegate(view_ptr: *mut std::ffi::c_void) -> Option<Retained<WindowDelegate>> {
+pub(crate) unsafe fn get_window_delegate(
+    view_ptr: *mut std::ffi::c_void,
+) -> Option<Retained<WindowDelegate>> {
     if view_ptr.is_null() {
         return None;
     }
-    
+
     unsafe {
         // Cast the view pointer back to WinitView
         let view = view_ptr as *const WinitView;
         let view = &*view;
-        
+
         // Get the window from the view
         if let Some(window) = view.ivars()._ns_window.load() {
             // Get the delegate from the window
