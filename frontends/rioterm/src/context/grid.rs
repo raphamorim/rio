@@ -36,17 +36,17 @@ fn compute(
 
 #[inline]
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
-    Object::Quad(Quad {
+    Object::Quad(Quad::from_legacy(
         color,
         position,
-        shadow_blur_radius: 0.0,
-        shadow_offset: [0.0, 0.0],
-        shadow_color: [0.0, 0.0, 0.0, 0.0],
-        border_color: [0.0, 0.0, 0.0, 0.0],
-        border_width: 0.0,
-        border_radius: [0.0, 0.0, 0.0, 0.0],
         size,
-    })
+        [0.0, 0.0, 0.0, 0.0], // border_color
+        [0.0, 0.0, 0.0, 0.0], // border_radius
+        0.0,                  // border_width
+        [0.0, 0.0, 0.0, 0.0], // shadow_color
+        [0.0, 0.0],           // shadow_offset
+        0.0,                  // shadow_blur_radius
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

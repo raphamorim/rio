@@ -3,7 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::Quad;
+use crate::components::rich_text::Rect;
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -41,9 +41,107 @@ pub struct RichText {
     pub lines: Option<RichTextLinesRange>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct QuadItem {
+    /// The background color data of the quad.
+    pub color: [f32; 4],
+
+    /// The position of the [`Quad`].
+    pub position: [f32; 2],
+
+    /// The size of the [`Quad`].
+    pub size: [f32; 2],
+
+    /// The border color of the [`Quad`], in __linear RGB__.
+    pub border_color: [f32; 4],
+
+    /// The border radii of the [`Quad`].
+    pub border_radius: [f32; 4],
+
+    /// The border width of the [`Quad`].
+    pub border_width: f32,
+
+    /// The shadow color of the [`Quad`].
+    pub shadow_color: [f32; 4],
+
+    /// The shadow offset of the [`Quad`].
+    pub shadow_offset: [f32; 2],
+
+    /// The shadow blur radius of the [`Quad`].
+    pub shadow_blur_radius: f32,
+
+    // New fields for render tree compatibility
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub depth: f32,
+}
+
+impl QuadItem {
+    pub fn new(x: f32, y: f32, width: f32, height: f32, depth: f32, color: [f32; 4]) -> Self {
+        Self { 
+            x, 
+            y, 
+            width, 
+            height, 
+            depth, 
+            color,
+            position: [x, y],
+            size: [width, height],
+            border_color: [0.0, 0.0, 0.0, 0.0],
+            border_radius: [0.0, 0.0, 0.0, 0.0],
+            border_width: 0.0,
+            shadow_color: [0.0, 0.0, 0.0, 0.0],
+            shadow_offset: [0.0, 0.0],
+            shadow_blur_radius: 0.0,
+        }
+    }
+
+    /// Create a QuadItem from the old Quad-style parameters
+    pub fn from_legacy(
+        color: [f32; 4],
+        position: [f32; 2],
+        size: [f32; 2],
+        border_color: [f32; 4],
+        border_radius: [f32; 4],
+        border_width: f32,
+        shadow_color: [f32; 4],
+        shadow_offset: [f32; 2],
+        shadow_blur_radius: f32,
+    ) -> Self {
+        Self {
+            color,
+            position,
+            size,
+            border_color,
+            border_radius,
+            border_width,
+            shadow_color,
+            shadow_offset,
+            shadow_blur_radius,
+            x: position[0],
+            y: position[1],
+            width: size[0],
+            height: size[1],
+            depth: 0.0, // Default depth for legacy quads
+        }
+    }
+    
+    pub fn rect(&self) -> Rect {
+        Rect { x: self.x, y: self.y, width: self.width, height: self.height }
+    }
+}
+
+impl Default for QuadItem {
+    fn default() -> Self {
+        Self::new(0.0, 0.0, 0.0, 0.0, 0.0, [0.0, 0.0, 0.0, 0.0])
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
-    Quad(Quad),
+    Quad(QuadItem),
     RichText(RichText),
 }
 

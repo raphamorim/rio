@@ -15,12 +15,15 @@ pub use crate::sugarloaf::{
         ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeCommand,
         ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
-    primitives::*,
+    primitives::{RichText, RichTextLinesRange, SugarCursor, DrawableChar, contains_braille_dot, Object, QuadItem, ImageProperties, drawable_character},
+    tree::{RenderTree, ObjectHandle, NodeId},
     Colorspace, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
     SugarloafWindowSize, SugarloafWithErrors,
 };
+// For backward compatibility
+pub use crate::sugarloaf::primitives::QuadItem as Quad;
 pub use components::filters::Filter;
-pub use components::quad::Quad;
+pub use components::rich_text::{BatchManager, Rect};
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
     UnderlineShape,
