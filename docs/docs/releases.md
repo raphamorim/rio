@@ -7,6 +7,23 @@ language: 'en'
 
 ## 0.2.21 (unreleased)
 
+### Breaking Changes
+
+- **Default Configuration Change**: `navigation.use-current-path` is now `true` by default
+  - New tabs will now inherit the current working directory from the active tab on all platforms
+  - This provides a more intuitive user experience when creating new tabs
+  - To restore the previous behavior, set `navigation.use-current-path = false` in your configuration
+  - Note: This feature requires `use-fork = false` to function properly
+  - **Windows support**: This feature is now supported on Windows using the executable's parent directory as the working directory
+
+### New Features
+
+- **Windows Process Information Support**: Added support for retrieving process names and working directories on Windows
+  - Implemented `foreground_process_name()` and `foreground_process_path()` functions for Windows
+  - Window titles now display the current process name on Windows (e.g., "powershell", "cmd", "git")
+  - Working directory inheritance now works on Windows for new tabs and splits
+  - Uses Windows Process API (`OpenProcess`, `QueryFullProcessImageNameW`, `GetProcessImageFileNameW`) for process information retrieval
+
 ### Performance Optimizations
 
 - **Major**: Implemented a new text run caching system replacing line-based caching
