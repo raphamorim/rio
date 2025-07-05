@@ -588,7 +588,8 @@ impl<'a> RouteWindow<'a> {
         let monitor_refresh_rate_hz = winit_window
             .current_monitor()
             .and_then(|monitor| monitor.refresh_rate_millihertz())
-            .unwrap_or(60_000) as f64 / 1000.0;
+            .unwrap_or(60_000) as f64
+            / 1000.0;
 
         // Convert to microseconds for precise frame timing
         let frame_time_us = (1_000_000.0 / monitor_refresh_rate_hz) as u64;
