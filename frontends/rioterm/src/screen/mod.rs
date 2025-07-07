@@ -869,6 +869,18 @@ impl Screen<'_> {
                     Act::SplitDown => {
                         self.split_down();
                     }
+                    Act::MoveDividerUp => {
+                        self.move_divider_up();
+                    }
+                    Act::MoveDividerDown => {
+                        self.move_divider_down();
+                    }
+                    Act::MoveDividerLeft => {
+                        self.move_divider_left();
+                    }
+                    Act::MoveDividerRight => {
+                        self.move_divider_right();
+                    }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
@@ -1091,6 +1103,34 @@ impl Screen<'_> {
         self.context_manager.split(rich_text_id, true);
 
         self.render();
+    }
+
+    pub fn move_divider_up(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_up(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_down(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_down(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_left(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_left(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_right(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_right(amount) {
+            self.render();
+        }
     }
 
     pub fn create_tab(&mut self) {

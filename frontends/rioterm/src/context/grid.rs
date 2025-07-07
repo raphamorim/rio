@@ -994,6 +994,242 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         self.request_resize(new_current);
     }
+
+    /// Move divider up - decreases height of current split and increases height of split above
+    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+        if self.inner.len() <= 1 {
+            return false;
+        }
+
+        let current_index = self.current;
+        if current_index >= self.inner.len() {
+            tracing::error!("Current index {} is out of bounds", current_index);
+            return false;
+        }
+
+        // Strategy: Find any vertically adjacent split and adjust the divider between them
+        // Case 1: Current split has a parent above (current is a down child)
+        for (index, context) in self.inner.iter().enumerate() {
+            if let Some(down_val) = context.down {
+                if down_val == current_index {
+                    let current_height = self.inner[current_index].val.dimension.height;
+                    let parent_height = self.inner[index].val.dimension.height;
+                    
+                    let min_height = 50.0;
+                    if current_height - amount < min_height || parent_height + amount < min_height {
+                        return false;
+                    }
+
+                    // Shrink current, expand parent (above)
+                    self.inner[current_index].val.dimension.update_height(current_height - amount);
+                    self.inner[index].val.dimension.update_height(parent_height + amount);
+
+                    self.request_resize(current_index);
+                    self.request_resize(index);
+                    return true;
+                }
+            }
+        }
+
+        // Case 2: Current split has a down child - move the divider between current and down child
+        if let Some(down_child_index) = self.inner[current_index].down {
+            if down_child_index < self.inner.len() {
+                let current_height = self.inner[current_index].val.dimension.height;
+                let down_height = self.inner[down_child_index].val.dimension.height;
+                
+                let min_height = 50.0;
+                if current_height - amount < min_height || down_height + amount < min_height {
+                    return false;
+                }
+
+                // Shrink current, expand down child
+                self.inner[current_index].val.dimension.update_height(current_height - amount);
+                self.inner[down_child_index].val.dimension.update_height(down_height + amount);
+
+                self.request_resize(current_index);
+                self.request_resize(down_child_index);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Move divider down - increases height of current split and decreases height of split above
+    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+        if self.inner.len() <= 1 {
+            return false;
+        }
+
+        let current_index = self.current;
+        if current_index >= self.inner.len() {
+            tracing::error!("Current index {} is out of bounds", current_index);
+            return false;
+        }
+
+        // Strategy: Find any vertically adjacent split and adjust the divider between them
+        // Case 1: Current split has a parent above (current is a down child)
+        for (index, context) in self.inner.iter().enumerate() {
+            if let Some(down_val) = context.down {
+                if down_val == current_index {
+                    let current_height = self.inner[current_index].val.dimension.height;
+                    let parent_height = self.inner[index].val.dimension.height;
+                    
+                    let min_height = 50.0;
+                    if current_height + amount < min_height || parent_height - amount < min_height {
+                        return false;
+                    }
+
+                    // Expand current, shrink parent (above)
+                    self.inner[current_index].val.dimension.update_height(current_height + amount);
+                    self.inner[index].val.dimension.update_height(parent_height - amount);
+
+                    self.request_resize(current_index);
+                    self.request_resize(index);
+                    return true;
+                }
+            }
+        }
+
+        // Case 2: Current split has a down child - move the divider between current and down child
+        if let Some(down_child_index) = self.inner[current_index].down {
+            if down_child_index < self.inner.len() {
+                let current_height = self.inner[current_index].val.dimension.height;
+                let down_height = self.inner[down_child_index].val.dimension.height;
+                
+                let min_height = 50.0;
+                if current_height + amount < min_height || down_height - amount < min_height {
+                    return false;
+                }
+
+                // Expand current, shrink down child
+                self.inner[current_index].val.dimension.update_height(current_height + amount);
+                self.inner[down_child_index].val.dimension.update_height(down_height - amount);
+
+                self.request_resize(current_index);
+                self.request_resize(down_child_index);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Move divider left - shrinks current split and expands the split to the left
+    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+        if self.inner.len() <= 1 {
+            return false;
+        }
+
+        let current_index = self.current;
+        if current_index >= self.inner.len() {
+            tracing::error!("Current index {} is out of bounds", current_index);
+            return false;
+        }
+
+        // Find horizontally adjacent splits
+        let mut left_split = None;
+        let mut right_split = None;
+
+        // Case 1: Current split is a right child - its parent is to the left
+        for (index, context) in self.inner.iter().enumerate() {
+            if let Some(right_val) = context.right {
+                if right_val == current_index {
+                    left_split = Some(index);
+                    right_split = Some(current_index);
+                    break;
+                }
+            }
+        }
+
+        // Case 2: Current split has a right child - current is left, child is right
+        if left_split.is_none() {
+            if let Some(right_child_index) = self.inner[current_index].right {
+                if right_child_index < self.inner.len() {
+                    left_split = Some(current_index);
+                    right_split = Some(right_child_index);
+                }
+            }
+        }
+
+        if let (Some(left_idx), Some(right_idx)) = (left_split, right_split) {
+            let left_width = self.inner[left_idx].val.dimension.width;
+            let right_width = self.inner[right_idx].val.dimension.width;
+            
+            let min_width = 100.0;
+            if left_width - amount < min_width || right_width + amount < min_width {
+                return false;
+            }
+
+            // Move divider left: shrink left split, expand right split
+            self.inner[left_idx].val.dimension.update_width(left_width - amount);
+            self.inner[right_idx].val.dimension.update_width(right_width + amount);
+
+            self.request_resize(left_idx);
+            self.request_resize(right_idx);
+            return true;
+        }
+
+        false
+    }
+
+    /// Move divider right - expands current split and shrinks the split to the right
+    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+        if self.inner.len() <= 1 {
+            return false;
+        }
+
+        let current_index = self.current;
+        if current_index >= self.inner.len() {
+            tracing::error!("Current index {} is out of bounds", current_index);
+            return false;
+        }
+
+        // Find horizontally adjacent splits
+        let mut left_split = None;
+        let mut right_split = None;
+
+        // Case 1: Current split is a right child - its parent is to the left
+        for (index, context) in self.inner.iter().enumerate() {
+            if let Some(right_val) = context.right {
+                if right_val == current_index {
+                    left_split = Some(index);
+                    right_split = Some(current_index);
+                    break;
+                }
+            }
+        }
+
+        // Case 2: Current split has a right child - current is left, child is right
+        if left_split.is_none() {
+            if let Some(right_child_index) = self.inner[current_index].right {
+                if right_child_index < self.inner.len() {
+                    left_split = Some(current_index);
+                    right_split = Some(right_child_index);
+                }
+            }
+        }
+
+        if let (Some(left_idx), Some(right_idx)) = (left_split, right_split) {
+            let left_width = self.inner[left_idx].val.dimension.width;
+            let right_width = self.inner[right_idx].val.dimension.width;
+            
+            let min_width = 100.0;
+            if left_width + amount < min_width || right_width - amount < min_width {
+                return false;
+            }
+
+            // Move divider right: expand left split, shrink right split
+            self.inner[left_idx].val.dimension.update_width(left_width + amount);
+            self.inner[right_idx].val.dimension.update_width(right_width - amount);
+
+            self.request_resize(left_idx);
+            self.request_resize(right_idx);
+            return true;
+        }
+
+        false
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -4397,5 +4633,618 @@ pub mod test {
             assert!(grid.len() >= 1);
             assert!(grid.current < grid.len());
         }
+    }
+
+    #[test]
+    fn test_move_divider_up_basic() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Single split - should return false
+        assert!(!grid.move_divider_up(20.0));
+
+        // Add a split down
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_down(second_context);
+
+        // Now we should be able to move divider up
+        let original_current_height = grid.inner[grid.current].val.dimension.height;
+        let original_parent_height = grid.inner[0].val.dimension.height;
+
+        assert!(grid.move_divider_up(20.0));
+
+        // Current split should be smaller, parent should be larger
+        assert!(grid.inner[grid.current].val.dimension.height < original_current_height);
+        assert!(grid.inner[0].val.dimension.height > original_parent_height);
+    }
+
+    #[test]
+    fn test_move_divider_down_basic() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Add a split down
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_down(second_context);
+
+        let original_current_height = grid.inner[grid.current].val.dimension.height;
+        let original_parent_height = grid.inner[0].val.dimension.height;
+
+        assert!(grid.move_divider_down(20.0));
+
+        // Current split should be larger, parent should be smaller
+        assert!(grid.inner[grid.current].val.dimension.height > original_current_height);
+        assert!(grid.inner[0].val.dimension.height < original_parent_height);
+    }
+
+    #[test]
+    fn test_move_divider_left_basic() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Single split - should return false
+        assert!(!grid.move_divider_left(40.0));
+
+        // Add a split right
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        // Test from the right split (index 1) - moving left should shrink left panel, expand right panel
+        let original_left_width = grid.inner[0].val.dimension.width;
+        let original_right_width = grid.inner[1].val.dimension.width;
+
+        assert!(grid.move_divider_left(40.0));
+
+        // Left split should be smaller, right split should be larger
+        assert!(grid.inner[0].val.dimension.width < original_left_width);
+        assert!(grid.inner[1].val.dimension.width > original_right_width);
+
+        // Test from the left split (index 0) - should have same effect
+        grid.current = 0;
+        let original_left_width2 = grid.inner[0].val.dimension.width;
+        let original_right_width2 = grid.inner[1].val.dimension.width;
+
+        assert!(grid.move_divider_left(20.0));
+
+        // Left split should be smaller, right split should be larger
+        assert!(grid.inner[0].val.dimension.width < original_left_width2);
+        assert!(grid.inner[1].val.dimension.width > original_right_width2);
+    }
+
+    #[test]
+    fn test_move_divider_right_basic() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Add a split right
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        // Test from the right split (index 1) - moving right should expand left panel, shrink right panel
+        let original_left_width = grid.inner[0].val.dimension.width;
+        let original_right_width = grid.inner[1].val.dimension.width;
+
+        assert!(grid.move_divider_right(40.0));
+
+        // Left split should be larger, right split should be smaller
+        assert!(grid.inner[0].val.dimension.width > original_left_width);
+        assert!(grid.inner[1].val.dimension.width < original_right_width);
+
+        // Test from the left split (index 0) - should have same effect
+        grid.current = 0;
+        let original_left_width2 = grid.inner[0].val.dimension.width;
+        let original_right_width2 = grid.inner[1].val.dimension.width;
+
+        assert!(grid.move_divider_right(20.0));
+
+        // Left split should be larger, right split should be smaller
+        assert!(grid.inner[0].val.dimension.width > original_left_width2);
+        assert!(grid.inner[1].val.dimension.width < original_right_width2);
+    }
+
+    #[test]
+    fn test_move_divider_minimum_size_constraints() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            200.0, // Small total width
+            150.0, // Small total height
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Add splits
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        let third_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            2,
+            2,
+            context_dimension,
+        );
+        grid.split_down(third_context);
+
+        // Try to move dividers beyond minimum constraints
+        // Should fail when trying to make splits too small
+        let large_amount = 1000.0;
+        
+        // These should fail due to minimum size constraints
+        assert!(!grid.move_divider_left(large_amount));
+        assert!(!grid.move_divider_right(large_amount));
+        assert!(!grid.move_divider_up(large_amount));
+        assert!(!grid.move_divider_down(large_amount));
+    }
+
+    #[test]
+    fn test_move_divider_complex_layout() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Create a complex layout: split right, then split down on the right side
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        let third_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            2,
+            2,
+            context_dimension,
+        );
+        grid.split_down(third_context);
+
+        // Test moving dividers in different splits
+        assert!(grid.move_divider_up(30.0));
+        assert!(grid.move_divider_down(15.0));
+
+        // Switch to first split (index 0) and test horizontal movement
+        grid.current = 0;
+        assert!(grid.move_divider_right(50.0));
+        assert!(grid.move_divider_left(25.0));
+
+        // Verify grid is still in valid state
+        assert!(grid.len() == 3);
+        assert!(grid.current < grid.len());
+    }
+
+    #[test]
+    fn test_move_divider_edge_cases() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Test with zero amount
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        let original_width = grid.inner[grid.current].val.dimension.width;
+        assert!(grid.move_divider_left(0.0));
+        // Width should remain the same with zero movement
+        assert_eq!(grid.inner[grid.current].val.dimension.width, original_width);
+
+        // Test with negative amount (should still work as it's just direction)
+        assert!(grid.move_divider_right(-10.0));
+    }
+
+    #[test]
+    fn test_move_divider_no_adjacent_splits() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // With only one split, no divider movement should work
+        assert!(!grid.move_divider_up(20.0));
+        assert!(!grid.move_divider_down(20.0));
+        assert!(!grid.move_divider_left(40.0));
+        assert!(!grid.move_divider_right(40.0));
+
+        // Add only a vertical split (down)
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_down(second_context);
+
+        // Select the top split (index 0) - should not be able to move horizontal dividers
+        // but should be able to move vertical dividers (since it has a down child)
+        grid.current = 0;
+        assert!(!grid.move_divider_left(40.0));
+        assert!(!grid.move_divider_right(40.0));
+        assert!(grid.move_divider_up(20.0)); // Can move up by shrinking itself and expanding down child
+        assert!(grid.move_divider_down(20.0)); // Can move down by expanding itself and shrinking down child
+        
+        // The bottom split (index 1) should be able to move up (has parent above)
+        grid.current = 1;
+        assert!(grid.move_divider_up(20.0));
+        assert!(grid.move_divider_down(20.0));
+    }
+
+    #[test]
+    fn test_move_divider_stress_test() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            1600.0,
+            1200.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Create multiple splits
+        for i in 1..6 {
+            let context = create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                i,
+                i,
+                context_dimension,
+            );
+            if i % 2 == 0 {
+                grid.split_right(context);
+            } else {
+                grid.split_down(context);
+            }
+        }
+
+        // Perform many divider movements
+        for _ in 0..20 {
+            grid.select_next_split();
+            
+            // Try all movement directions
+            grid.move_divider_up(10.0);
+            grid.move_divider_down(5.0);
+            grid.move_divider_left(15.0);
+            grid.move_divider_right(8.0);
+            
+            // Verify grid state remains valid
+            assert!(grid.len() >= 1);
+            assert!(grid.current < grid.len());
+            
+            // Verify all dimensions are positive
+            for item in &grid.inner {
+                assert!(item.val.dimension.width > 0.0);
+                assert!(item.val.dimension.height > 0.0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_move_divider_with_invalid_current_index() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Manually set invalid current index
+        grid.current = 999;
+
+        // All divider movements should fail gracefully
+        assert!(!grid.move_divider_up(20.0));
+        assert!(!grid.move_divider_down(20.0));
+        assert!(!grid.move_divider_left(40.0));
+        assert!(!grid.move_divider_right(40.0));
+    }
+
+    #[test]
+    fn test_move_divider_preserves_total_space() {
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(
+            create_mock_context(
+                VoidListener {},
+                WindowId::from(0),
+                0,
+                0,
+                context_dimension,
+            ),
+            margin,
+            [0., 0., 0., 0.],
+        );
+
+        // Add a horizontal split
+        let second_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+        grid.split_right(second_context);
+
+        let original_total_width = grid.inner[0].val.dimension.width + grid.inner[1].val.dimension.width;
+
+        // Move divider and check total space is preserved (approximately)
+        assert!(grid.move_divider_left(50.0));
+        
+        let new_total_width = grid.inner[0].val.dimension.width + grid.inner[1].val.dimension.width;
+        
+        // Total width should be approximately the same (allowing for small floating point differences)
+        let difference = (original_total_width - new_total_width).abs();
+        assert!(difference < 1.0, "Total width changed by more than 1.0: {} vs {}", original_total_width, new_total_width);
+
+        // Test with vertical split
+        let third_context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            2,
+            2,
+            context_dimension,
+        );
+        grid.split_down(third_context);
+
+        let parent_index = grid.inner.iter().position(|item| {
+            item.down.is_some() && item.down.unwrap() == grid.current
+        }).unwrap();
+
+        let original_total_height = grid.inner[parent_index].val.dimension.height + grid.inner[grid.current].val.dimension.height;
+
+        assert!(grid.move_divider_up(30.0));
+        
+        let new_total_height = grid.inner[parent_index].val.dimension.height + grid.inner[grid.current].val.dimension.height;
+        
+        let height_difference = (original_total_height - new_total_height).abs();
+        assert!(height_difference < 1.0, "Total height changed by more than 1.0: {} vs {}", original_total_height, new_total_height);
     }
 }
