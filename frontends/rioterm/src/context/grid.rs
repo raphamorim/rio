@@ -1402,6 +1402,38 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
+        // Case 3: Current split is a down child - check if its parent has horizontal relationships
+        if left_split.is_none() {
+            // Find parent of current split
+            for (parent_key, context) in &self.inner {
+                if let Some(down_val) = context.down {
+                    if down_val == current_key {
+                        // Current is a down child, check if parent has horizontal relationships
+                        // Look for parent's horizontal relationships
+                        for (grandparent_key, grandparent_context) in &self.inner {
+                            if let Some(right_val) = grandparent_context.right {
+                                if right_val == parent_key {
+                                    // Parent is a right child, so grandparent is to the left
+                                    left_split = Some(grandparent_key);
+                                    right_split = Some(parent_key);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Also check if parent has a right child
+                        if left_split.is_none() {
+                            if let Some(parent_right) = context.right {
+                                left_split = Some(parent_key);
+                                right_split = Some(parent_right);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
         if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
             let (left_width, right_width) = {
                 let left_item = self.inner.get(left_key).unwrap();
@@ -1467,6 +1499,38 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 if self.inner.contains_key(right_child_key) {
                     left_split = Some(current_key);
                     right_split = Some(right_child_key);
+                }
+            }
+        }
+
+        // Case 3: Current split is a down child - check if its parent has horizontal relationships
+        if left_split.is_none() {
+            // Find parent of current split
+            for (parent_key, context) in &self.inner {
+                if let Some(down_val) = context.down {
+                    if down_val == current_key {
+                        // Current is a down child, check if parent has horizontal relationships
+                        // Look for parent's horizontal relationships
+                        for (grandparent_key, grandparent_context) in &self.inner {
+                            if let Some(right_val) = grandparent_context.right {
+                                if right_val == parent_key {
+                                    // Parent is a right child, so grandparent is to the left
+                                    left_split = Some(grandparent_key);
+                                    right_split = Some(parent_key);
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Also check if parent has a right child
+                        if left_split.is_none() {
+                            if let Some(parent_right) = context.right {
+                                left_split = Some(parent_key);
+                                right_split = Some(parent_right);
+                            }
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -5986,5 +6050,379 @@ pub mod test {
         // for the expanded top split.
         assert!(new_second_pos[1] > initial_second_pos[1]); // Bottom split moves down
         assert_eq!(new_second_pos[0], initial_second_pos[0]); // X should remain same
+    }
+
+    #[test]
+    fn test_divider_movement_in_complex_layout() {
+        // Test the |1|2/3| layout where panel 3 should be able to move horizontal dividers
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create contexts
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 = create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 = create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        // Build layout: |1|2/3|
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+        
+        // Split right to get |1|2|
+        grid.split_right(context2);
+        
+        // Split down on panel 2 to get |1|2/3|
+        grid.split_down(context3);
+
+        // Now we should have 3 panels: 1 (left), 2 (top-right), 3 (bottom-right)
+        assert_eq!(grid.len(), 3);
+
+        // Get the keys for each panel
+        let ordered_keys = grid.get_ordered_keys();
+        assert_eq!(ordered_keys.len(), 3);
+        
+        let panel1_key = ordered_keys[0]; // Left panel
+        let panel2_key = ordered_keys[1]; // Top-right panel  
+        let panel3_key = ordered_keys[2]; // Bottom-right panel
+
+        // Select panel 3 (bottom-right)
+        grid.current = panel3_key;
+
+        // Record initial widths
+        let initial_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let initial_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let initial_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Panel 2 and 3 should have the same width (they're in the same vertical stack)
+        assert_eq!(initial_panel2_width, initial_panel3_width);
+
+        // Move divider left from panel 3 - this should affect the vertical divider between 1 and 2/3
+        let move_amount = 50.0;
+        assert!(grid.move_divider_left(move_amount), "Should be able to move divider left from panel 3");
+
+        // Check that the widths changed correctly
+        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Panel 1 should shrink, panels 2 and 3 should expand
+        assert!(new_panel1_width < initial_panel1_width, "Panel 1 should shrink");
+        assert!(new_panel2_width > initial_panel2_width, "Panel 2 should expand");
+        assert!(new_panel3_width > initial_panel3_width, "Panel 3 should expand");
+        
+        // Panels 2 and 3 should still have the same width
+        assert_eq!(new_panel2_width, new_panel3_width);
+
+        // The change should be approximately the move amount
+        assert!((initial_panel1_width - new_panel1_width - move_amount).abs() < 1.0);
+        assert!((new_panel2_width - initial_panel2_width - move_amount).abs() < 1.0);
+
+        // Now test moving divider right
+        assert!(grid.move_divider_right(move_amount), "Should be able to move divider right from panel 3");
+
+        // Should be back to approximately original widths
+        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        assert!((final_panel1_width - initial_panel1_width).abs() < 1.0);
+        assert!((final_panel2_width - initial_panel2_width).abs() < 1.0);
+        assert!((final_panel3_width - initial_panel3_width).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_divider_movement_from_panel2_in_complex_layout() {
+        // Test the |1|2/3| layout where panel 2 should also be able to move horizontal dividers
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create contexts
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 = create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 = create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        // Build layout: |1|2/3|
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+        grid.split_right(context2);
+        grid.split_down(context3);
+
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0];
+        let panel2_key = ordered_keys[1];
+        let panel3_key = ordered_keys[2];
+
+        // Select panel 2 (top-right)
+        grid.current = panel2_key;
+
+        // Record initial widths
+        let initial_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let initial_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+
+        // Move divider left from panel 2
+        let move_amount = 30.0;
+        assert!(grid.move_divider_left(move_amount), "Should be able to move divider left from panel 2");
+
+        // Check that the widths changed correctly
+        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Panel 1 should shrink, panels 2 and 3 should expand
+        assert!(new_panel1_width < initial_panel1_width);
+        assert!(new_panel2_width > initial_panel2_width);
+        
+        // Panels 2 and 3 should have the same width
+        assert_eq!(new_panel2_width, new_panel3_width);
+    }
+
+    #[test]
+    fn test_divider_movement_limits() {
+        // Test that divider movement respects minimum width limits
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            300.0, // Small width to test limits
+            400.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 = create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+        grid.split_right(context2);
+
+        // Try to move divider by a large amount that would violate minimum width
+        let large_amount = 200.0; // This should be rejected due to min_width = 100.0
+        assert!(!grid.move_divider_left(large_amount), "Should reject movement that violates minimum width");
+        assert!(!grid.move_divider_right(large_amount), "Should reject movement that violates minimum width");
+
+        // Small movement should work
+        let small_amount = 10.0;
+        assert!(grid.move_divider_left(small_amount), "Should accept small movement");
+        assert!(grid.move_divider_right(small_amount), "Should accept movement back");
+    }
+
+    #[test]
+    fn test_divider_movement_single_panel() {
+        // Test that divider movement fails gracefully with only one panel
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Should not be able to move dividers with only one panel
+        assert!(!grid.move_divider_left(50.0));
+        assert!(!grid.move_divider_right(50.0));
+        assert!(!grid.move_divider_up(50.0));
+        assert!(!grid.move_divider_down(50.0));
+    }
+
+    #[test]
+    fn test_vertical_divider_movement() {
+        // Test vertical divider movement in a simple horizontal split
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 = create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+        grid.split_down(context2);
+
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0];
+        let panel2_key = ordered_keys[1];
+
+        // Select bottom panel
+        grid.current = panel2_key;
+
+        // Record initial heights
+        let initial_panel1_height = grid.inner.get(panel1_key).unwrap().val.dimension.height;
+        let initial_panel2_height = grid.inner.get(panel2_key).unwrap().val.dimension.height;
+
+        // Move divider up (shrink bottom panel, expand top panel)
+        let move_amount = 40.0;
+        assert!(grid.move_divider_up(move_amount), "Should be able to move divider up");
+
+        let new_panel1_height = grid.inner.get(panel1_key).unwrap().val.dimension.height;
+        let new_panel2_height = grid.inner.get(panel2_key).unwrap().val.dimension.height;
+
+        // Top panel should expand, bottom panel should shrink
+        assert!(new_panel1_height > initial_panel1_height);
+        assert!(new_panel2_height < initial_panel2_height);
+
+        // Move divider down (expand bottom panel, shrink top panel)
+        assert!(grid.move_divider_down(move_amount), "Should be able to move divider down");
+
+        let final_panel1_height = grid.inner.get(panel1_key).unwrap().val.dimension.height;
+        let final_panel2_height = grid.inner.get(panel2_key).unwrap().val.dimension.height;
+
+        // Should be back to approximately original heights
+        assert!((final_panel1_height - initial_panel1_height).abs() < 1.0);
+        assert!((final_panel2_height - initial_panel2_height).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_divider_movement_fix_for_complex_layout() {
+        // This test specifically addresses the issue where panel 3 in |1|2/3| layout
+        // couldn't move horizontal dividers. This was the main bug we fixed.
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create the |1|2/3| layout step by step
+        let context1 = create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 = create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 = create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        let mut grid = ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+        
+        // Step 1: Split right to create |1|2|
+        grid.split_right(context2);
+        assert_eq!(grid.len(), 2, "Should have 2 panels after right split");
+        
+        // Step 2: Split down on panel 2 to create |1|2/3|
+        grid.split_down(context3);
+        assert_eq!(grid.len(), 3, "Should have 3 panels after down split");
+
+        // Get panel keys in order
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0]; // Left panel
+        let panel2_key = ordered_keys[1]; // Top-right panel
+        let panel3_key = ordered_keys[2]; // Bottom-right panel
+
+        // Verify the layout structure
+        assert!(grid.inner.get(panel1_key).unwrap().right == Some(panel2_key), "Panel 1 should point right to panel 2");
+        assert!(grid.inner.get(panel2_key).unwrap().down == Some(panel3_key), "Panel 2 should point down to panel 3");
+        assert!(grid.inner.get(panel3_key).unwrap().right.is_none(), "Panel 3 should have no right child");
+        assert!(grid.inner.get(panel3_key).unwrap().down.is_none(), "Panel 3 should have no down child");
+
+        // Select panel 3 (this was the problematic case)
+        grid.current = panel3_key;
+
+        // Record initial widths
+        let initial_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let initial_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let initial_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        println!("Initial widths - Panel 1: {}, Panel 2: {}, Panel 3: {}", 
+                 initial_panel1_width, initial_panel2_width, initial_panel3_width);
+
+        // Panels 2 and 3 should have the same width (they're in the same vertical column)
+        assert_eq!(initial_panel2_width, initial_panel3_width, "Panels 2 and 3 should have same initial width");
+
+        // THE FIX TEST: Move divider left from panel 3
+        // Before the fix, this would return false because panel 3 couldn't find horizontal relationships
+        let move_amount = 50.0;
+        let result = grid.move_divider_left(move_amount);
+        
+        // This should now work with our fix
+        assert!(result, "Panel 3 should be able to move horizontal divider left (this was the bug we fixed)");
+
+        // Verify the changes
+        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        println!("New widths - Panel 1: {}, Panel 2: {}, Panel 3: {}", 
+                 new_panel1_width, new_panel2_width, new_panel3_width);
+
+        // Panel 1 should shrink
+        assert!(new_panel1_width < initial_panel1_width, 
+                "Panel 1 should shrink when moving divider left");
+        
+        // Panels 2 and 3 should expand by the same amount
+        assert!(new_panel2_width > initial_panel2_width, 
+                "Panel 2 should expand when moving divider left");
+        assert!(new_panel3_width > initial_panel3_width, 
+                "Panel 3 should expand when moving divider left");
+        
+        // Panels 2 and 3 should still have the same width
+        assert_eq!(new_panel2_width, new_panel3_width, 
+                   "Panels 2 and 3 should maintain same width after divider movement");
+
+        // The width changes should be approximately the move amount
+        let panel1_shrink = initial_panel1_width - new_panel1_width;
+        let panel2_expand = new_panel2_width - initial_panel2_width;
+        let panel3_expand = new_panel3_width - initial_panel3_width;
+
+        assert!((panel1_shrink - move_amount).abs() < 1.0, 
+                "Panel 1 should shrink by approximately the move amount");
+        assert!((panel2_expand - move_amount).abs() < 1.0, 
+                "Panel 2 should expand by approximately the move amount");
+        assert!((panel3_expand - move_amount).abs() < 1.0, 
+                "Panel 3 should expand by approximately the move amount");
+
+        // Test moving divider right (should work too)
+        let right_result = grid.move_divider_right(move_amount);
+        assert!(right_result, "Panel 3 should also be able to move horizontal divider right");
+
+        // Should be back to approximately original widths
+        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        assert!((final_panel1_width - initial_panel1_width).abs() < 1.0, 
+                "Panel 1 should return to approximately original width");
+        assert!((final_panel2_width - initial_panel2_width).abs() < 1.0, 
+                "Panel 2 should return to approximately original width");
+        assert!((final_panel3_width - initial_panel3_width).abs() < 1.0, 
+                "Panel 3 should return to approximately original width");
+
+        println!("✅ Divider movement fix verified for |1|2/3| layout!");
     }
 }
