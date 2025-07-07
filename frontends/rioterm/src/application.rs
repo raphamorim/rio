@@ -238,7 +238,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Check for damage and trigger appropriate damage events
                         let mut has_damage = false;
-                        for grid_context in grid.contexts().iter() {
+                        for (_key, grid_context) in grid.contexts().iter() {
                             if let Some(mut terminal) =
                                 grid_context.context().terminal.try_lock_unfair()
                             {

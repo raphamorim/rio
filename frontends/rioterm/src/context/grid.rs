@@ -5,6 +5,7 @@ use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
     layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
 };
+use slotmap::{DefaultKey, SlotMap};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -79,17 +80,18 @@ pub struct Delta<T: Default> {
 pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
-    pub current: usize,
+    pub current: DefaultKey,
     pub margin: Delta<f32>,
     border_color: [f32; 4],
     scaled_padding: f32,
-    inner: Vec<ContextGridItem<T>>,
+    inner: SlotMap<DefaultKey, ContextGridItem<T>>,
+    pub root: Option<DefaultKey>,
 }
 
 pub struct ContextGridItem<T: EventListener> {
     val: Context<T>,
-    right: Option<usize>,
-    down: Option<usize>,
+    right: Option<DefaultKey>,
+    down: Option<DefaultKey>,
     rich_text_object: Object,
 }
 
@@ -145,17 +147,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let height = context.dimension.height;
         let scale = context.dimension.dimension.scale;
         let scaled_padding = PADDING * scale;
-        let inner = vec![ContextGridItem::new(context)];
+        let mut inner = SlotMap::new();
+        let root_key = inner.insert(ContextGridItem::new(context));
         let mut grid = Self {
             inner,
-            current: 0,
+            current: root_key,
             margin,
             width,
             height,
             border_color,
             scaled_padding,
+            root: Some(root_key),
         };
-        grid.calculate_positions_for_affected_nodes(&[0]);
+        grid.calculate_positions_for_affected_nodes(&[root_key]);
         grid
     }
 
@@ -165,24 +169,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn scale(&self) -> f32 {
         self.scaled_padding / PADDING
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn scaled_padding(&self) -> f32 {
         self.scaled_padding
     }
 
     #[inline]
-    pub fn contexts_mut(&mut self) -> &mut Vec<ContextGridItem<T>> {
+    pub fn contexts_mut(&mut self) -> &mut SlotMap<DefaultKey, ContextGridItem<T>> {
         &mut self.inner
     }
 
     #[inline]
     #[allow(unused)]
-    pub fn contexts(&mut self) -> &Vec<ContextGridItem<T>> {
+    pub fn contexts(&mut self) -> &SlotMap<DefaultKey, ContextGridItem<T>> {
         &self.inner
+    }
+
+    /// Get all keys in the order they appear in the grid (depth-first traversal)
+    pub fn get_ordered_keys(&self) -> Vec<DefaultKey> {
+        let mut keys = Vec::new();
+        if let Some(root) = self.root {
+            self.collect_keys_recursive(root, &mut keys);
+        }
+        keys
+    }
+
+    fn collect_keys_recursive(&self, key: DefaultKey, keys: &mut Vec<DefaultKey>) {
+        if let Some(item) = self.inner.get(key) {
+            keys.push(key);
+            if let Some(right_key) = item.right {
+                self.collect_keys_recursive(right_key, keys);
+            }
+            if let Some(down_key) = item.down {
+                self.collect_keys_recursive(down_key, keys);
+            }
+        }
     }
 
     #[inline]
@@ -191,10 +218,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        if self.current >= self.inner.len() - 1 {
-            self.current = 0;
-        } else {
-            self.current += 1;
+        let keys = self.get_ordered_keys();
+        if let Some(current_pos) = keys.iter().position(|&k| k == self.current) {
+            if current_pos >= keys.len() - 1 {
+                self.current = keys[0];
+            } else {
+                self.current = keys[current_pos + 1];
+            }
         }
     }
 
@@ -204,13 +234,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        if self.current >= self.inner.len() - 1 {
-            return false;
-        } else {
-            self.current += 1;
+        let keys = self.get_ordered_keys();
+        if let Some(current_pos) = keys.iter().position(|&k| k == self.current) {
+            if current_pos >= keys.len() - 1 {
+                return false;
+            } else {
+                self.current = keys[current_pos + 1];
+                return true;
+            }
         }
-
-        true
+        false
     }
 
     #[inline]
@@ -219,10 +252,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        if self.current == 0 {
-            self.current = self.inner.len() - 1;
-        } else {
-            self.current -= 1;
+        let keys = self.get_ordered_keys();
+        if let Some(current_pos) = keys.iter().position(|&k| k == self.current) {
+            if current_pos == 0 {
+                self.current = keys[keys.len() - 1];
+            } else {
+                self.current = keys[current_pos - 1];
+            }
         }
     }
 
@@ -232,46 +268,65 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        if self.current == 0 {
-            return false;
-        } else {
-            self.current -= 1;
+        let keys = self.get_ordered_keys();
+        if let Some(current_pos) = keys.iter().position(|&k| k == self.current) {
+            if current_pos == 0 {
+                return false;
+            } else {
+                self.current = keys[current_pos - 1];
+                return true;
+            }
         }
-        true
+        false
     }
 
     #[inline]
     #[allow(unused)]
-    pub fn current_index(&self) -> usize {
+    pub fn current_key(&self) -> DefaultKey {
         self.current
     }
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        if self.current >= self.inner.len() {
+        if let Some(item) = self.inner.get(self.current) {
+            &item.val
+        } else {
             // This should never happen, but if it does, return the first context
-            tracing::error!(
-                "Current index {} is out of bounds (len: {})",
-                self.current,
-                self.inner.len()
-            );
-            return &self.inner[0].val;
+            tracing::error!("Current key {:?} not found in grid", self.current);
+            if let Some(root) = self.root {
+                if let Some(item) = self.inner.get(root) {
+                    return &item.val;
+                }
+            }
+            // If even root is not found, panic as this indicates a serious bug
+            panic!("Grid is in an invalid state - no contexts available");
         }
-        &self.inner[self.current].val
     }
 
     #[inline]
     pub fn current_mut(&mut self) -> &mut Context<T> {
-        if self.current >= self.inner.len() {
-            // This should never happen, but if it does, return the first context
-            tracing::error!(
-                "Current index {} is out of bounds (len: {})",
-                self.current,
-                self.inner.len()
-            );
-            self.current = 0;
+        let current_key = self.current;
+        
+        // Check if current key exists, if not try to fix it
+        if !self.inner.contains_key(current_key) {
+            tracing::error!("Current key {:?} not found in grid", current_key);
+            if let Some(root) = self.root {
+                self.current = root;
+            } else if let Some(first_key) = self.inner.keys().next() {
+                self.current = first_key;
+                self.root = Some(first_key);
+            } else {
+                panic!("Grid is in an invalid state - no contexts available");
+            }
         }
-        &mut self.inner[self.current].val
+        
+        // Now get the mutable reference
+        let current_key = self.current;
+        if let Some(item) = self.inner.get_mut(current_key) {
+            &mut item.val
+        } else {
+            panic!("Grid is in an invalid state - current key not found after fix attempt");
+        }
     }
 
     #[inline]
@@ -286,8 +341,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // In case there's only 1 context then ignore quad
         if len == 1 {
-            if let Some(item) = self.inner.first() {
-                target.push(item.rich_text_object.clone());
+            if let Some(root) = self.root {
+                if let Some(item) = self.inner.get(root) {
+                    target.push(item.rich_text_object.clone());
+                }
             }
         } else {
             self.plot_objects(target);
@@ -305,8 +362,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // In case there's only 1 context then ignore quad
         if len == 1 {
-            if let Some(item) = self.inner.first() {
-                objects.push(item.rich_text_object.clone());
+            if let Some(root) = self.root {
+                if let Some(item) = self.inner.get(root) {
+                    objects.push(item.rich_text_object.clone());
+                }
             }
         } else {
             self.plot_objects(&mut objects);
@@ -317,41 +376,41 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
         let len = self.inner.len();
         if len <= 1 {
-            if self.current >= len {
-                tracing::error!(
-                    "Current index {} is out of bounds (len: {})",
-                    self.current,
-                    len
-                );
-                return (&self.inner[0].val, self.margin);
-            }
-            return (&self.inner[self.current].val, self.margin);
-        }
-
-        if self.current >= len {
-            tracing::error!(
-                "Current index {} is out of bounds (len: {})",
-                self.current,
-                len
-            );
-            return (&self.inner[0].val, self.margin);
-        }
-
-        let objects = self.objects();
-        let rich_text_id = self.inner[self.current].val.rich_text_id;
-
-        let mut margin = self.margin;
-        for obj in objects {
-            if let Object::RichText(rich_text_obj) = obj {
-                if rich_text_obj.id == rich_text_id {
-                    margin.x = rich_text_obj.position[0] + self.scaled_padding;
-                    margin.top_y = rich_text_obj.position[1] + self.scaled_padding;
-                    break;
+            if let Some(item) = self.inner.get(self.current) {
+                return (&item.val, self.margin);
+            } else if let Some(root) = self.root {
+                if let Some(item) = self.inner.get(root) {
+                    return (&item.val, self.margin);
                 }
             }
+            panic!("Grid is in an invalid state - no contexts available");
         }
 
-        (&self.inner[self.current].val, margin)
+        if let Some(current_item) = self.inner.get(self.current) {
+            let objects = self.objects();
+            let rich_text_id = current_item.val.rich_text_id;
+
+            let mut margin = self.margin;
+            for obj in objects {
+                if let Object::RichText(rich_text_obj) = obj {
+                    if rich_text_obj.id == rich_text_id {
+                        margin.x = rich_text_obj.position[0] + self.scaled_padding;
+                        margin.top_y = rich_text_obj.position[1] + self.scaled_padding;
+                        break;
+                    }
+                }
+            }
+
+            (&current_item.val, margin)
+        } else {
+            tracing::error!("Current key {:?} not found in grid", self.current);
+            if let Some(root) = self.root {
+                if let Some(item) = self.inner.get(root) {
+                    return (&item.val, self.margin);
+                }
+            }
+            panic!("Grid is in an invalid state - no contexts available");
+        }
     }
 
     #[inline]
@@ -365,25 +424,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut select_new_current = None;
         for obj in objects {
             if let Object::RichText(rich_text_obj) = obj {
-                if let Some(position) = self.find_by_rich_text_id(rich_text_obj.id) {
-                    let scaled_position_x = rich_text_obj.position[0] * (self.scaled_padding / PADDING);
-                    let scaled_position_y = rich_text_obj.position[1] * (self.scaled_padding / PADDING);
-                    if mouse.x >= scaled_position_x as usize
-                        && mouse.y >= scaled_position_y as usize
-                    {
-                        // println!("{:?} {:?} {:?}", mouse.x <= (scaled_position_x + self.inner[position].val.dimension.width) as usize, mouse.x, scaled_position_x + self.inner[position].val.dimension.width);
-                        // println!("{:?} {:?} {:?}", mouse.y <= (scaled_position_y + self.inner[position].val.dimension.height) as usize, mouse.y, scaled_position_y + self.inner[position].val.dimension.height);
-                        if mouse.x
-                            <= (scaled_position_x
-                                + self.inner[position].val.dimension.width)
-                                as usize
-                            && mouse.y
-                                <= (scaled_position_y
-                                    + self.inner[position].val.dimension.height)
-                                    as usize
+                if let Some(key) = self.find_by_rich_text_id(rich_text_obj.id) {
+                    if let Some(item) = self.inner.get(key) {
+                        let scaled_position_x = rich_text_obj.position[0] * (self.scaled_padding / PADDING);
+                        let scaled_position_y = rich_text_obj.position[1] * (self.scaled_padding / PADDING);
+                        if mouse.x >= scaled_position_x as usize
+                            && mouse.y >= scaled_position_y as usize
                         {
-                            select_new_current = Some(position);
-                            break;
+                            if mouse.x
+                                <= (scaled_position_x + item.val.dimension.width) as usize
+                                && mouse.y
+                                    <= (scaled_position_y + item.val.dimension.height) as usize
+                            {
+                                select_new_current = Some(key);
+                                break;
+                            }
                         }
                     }
                 }
@@ -398,42 +453,43 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
-    pub fn find_by_rich_text_id(&self, searched_rich_text_id: usize) -> Option<usize> {
-        self.inner
-            .iter()
-            .position(|context| context.val.rich_text_id == searched_rich_text_id)
+    pub fn find_by_rich_text_id(&self, searched_rich_text_id: usize) -> Option<DefaultKey> {
+        for (key, item) in &self.inner {
+            if item.val.rich_text_id == searched_rich_text_id {
+                return Some(key);
+            }
+        }
+        None
     }
 
     #[inline]
     pub fn grid_dimension(&self) -> ContextDimension {
-        if self.current >= self.inner.len() {
-            tracing::error!(
-                "Current index {} is out of bounds (len: {})",
-                self.current,
-                self.inner.len()
-            );
-            return ContextDimension::default();
+        if let Some(current_item) = self.inner.get(self.current) {
+            let current_context_dimension = current_item.val.dimension;
+            ContextDimension::build(
+                self.width,
+                self.height,
+                current_context_dimension.dimension,
+                current_context_dimension.line_height,
+                self.margin,
+            )
+        } else {
+            tracing::error!("Current key {:?} not found in grid", self.current);
+            ContextDimension::default()
         }
-
-        let current_context_dimension = self.inner[self.current].val.dimension;
-        ContextDimension::build(
-            self.width,
-            self.height,
-            current_context_dimension.dimension,
-            current_context_dimension.line_height,
-            self.margin,
-        )
     }
 
     pub fn plot_objects(&self, objects: &mut Vec<Object>) {
         if self.inner.is_empty() {
             return;
         }
-        self.plot_objects_recursive(objects, 0);
+        if let Some(root) = self.root {
+            self.plot_objects_recursive(objects, root);
+        }
     }
 
-    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, index: usize) {
-        if let Some(item) = self.inner.get(index) {
+    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, key: DefaultKey) {
+        if let Some(item) = self.inner.get(key) {
             // Add pre-computed rich text object
             objects.push(item.rich_text_object.clone());
 
@@ -450,8 +506,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ));
 
             // Recurse down if child exists
-            if let Some(down_item) = item.down {
-                self.plot_objects_recursive(objects, down_item);
+            if let Some(down_key) = item.down {
+                self.plot_objects_recursive(objects, down_key);
             }
 
             // Always create vertical border
@@ -465,8 +521,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ));
 
             // Recurse right if child exists
-            if let Some(right_item) = item.right {
-                self.plot_objects_recursive(objects, right_item);
+            if let Some(right_key) = item.right {
+                self.plot_objects_recursive(objects, right_key);
             }
         }
     }
@@ -477,25 +533,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             top_y: padding.1,
             bottom_y: padding.2,
         };
-        for context in &mut self.inner {
+        for (_, context) in &mut self.inner {
             context.val.dimension.update_margin(self.margin);
         }
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
-        for context in &mut self.inner {
+        for (_, context) in &mut self.inner {
             context.val.dimension.update_line_height(line_height);
         }
     }
 
     pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
-        for context in &mut self.inner {
+        for (_, context) in &mut self.inner {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
         }
         // Update scaled_padding from the first context (they should all have the same scale)
-        if let Some(first_context) = self.inner.first() {
-            self.scaled_padding = PADDING * first_context.val.dimension.dimension.scale;
+        if let Some(root) = self.root {
+            if let Some(first_context) = self.inner.get(root) {
+                self.scaled_padding = PADDING * first_context.val.dimension.dimension.scale;
+            }
         }
         self.calculate_positions();
     }
@@ -506,75 +564,82 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.width = new_width;
         self.height = new_height;
 
-        let mut vector = vec![(0., 0.); self.inner.len()];
-        self.resize_context(&mut vector, 0, width_difference, height_difference);
-
-        for (index, val) in vector.into_iter().enumerate() {
-            let context = &mut self.inner[index];
-            let current_width = context.val.dimension.width;
-            context.val.dimension.update_width(current_width + val.0);
-
-            let current_height = context.val.dimension.height;
-            context.val.dimension.update_height(current_height + val.1);
-
-            let mut terminal = context.val.terminal.lock();
-            terminal.resize::<ContextDimension>(context.val.dimension);
-            drop(terminal);
-            let winsize =
-                crate::renderer::utils::terminal_dimensions(&context.val.dimension);
-            let _ = context.val.messenger.send_resize(winsize);
+        // Create a map to store resize deltas for each key
+        let mut resize_deltas: std::collections::HashMap<DefaultKey, (f32, f32)> = std::collections::HashMap::new();
+        
+        if let Some(root) = self.root {
+            self.resize_context_slotmap(&mut resize_deltas, root, width_difference, height_difference);
         }
+
+        // Apply the resize deltas
+        for (key, (width_delta, height_delta)) in resize_deltas {
+            if let Some(context) = self.inner.get_mut(key) {
+                let current_width = context.val.dimension.width;
+                context.val.dimension.update_width(current_width + width_delta);
+
+                let current_height = context.val.dimension.height;
+                context.val.dimension.update_height(current_height + height_delta);
+
+                let mut terminal = context.val.terminal.lock();
+                terminal.resize::<ContextDimension>(context.val.dimension);
+                drop(terminal);
+                let winsize = crate::renderer::utils::terminal_dimensions(&context.val.dimension);
+                let _ = context.val.messenger.send_resize(winsize);
+            }
+        }
+        
         // All nodes are affected by resize
-        let all_indices: Vec<usize> = (0..self.inner.len()).collect();
-        self.calculate_positions_for_affected_nodes(&all_indices);
+        let all_keys: Vec<DefaultKey> = self.inner.keys().collect();
+        self.calculate_positions_for_affected_nodes(&all_keys);
     }
 
-    // TODO: It works partially, if the panels have different dimensions it gets a bit funky
-    fn resize_context(
+    // Updated resize_context to work with slotmap
+    fn resize_context_slotmap(
         &self,
-        vector: &mut Vec<(f32, f32)>,
-        index: usize,
+        resize_deltas: &mut std::collections::HashMap<DefaultKey, (f32, f32)>,
+        key: DefaultKey,
         available_width: f32,
         available_height: f32,
     ) -> (f32, f32) {
-        if let Some(item) = self.inner.get(index) {
+        if let Some(item) = self.inner.get(key) {
             let mut current_available_width = available_width;
-            let mut current_available_heigth = available_height;
-            if let Some(right_item) = item.right {
-                let (new_available_width, _) = self.resize_context(
-                    vector,
-                    right_item,
+            let mut current_available_height = available_height;
+            
+            if let Some(right_key) = item.right {
+                let (new_available_width, _) = self.resize_context_slotmap(
+                    resize_deltas,
+                    right_key,
                     available_width / 2.,
                     available_height,
                 );
                 current_available_width = new_available_width;
             }
 
-            if let Some(down_item) = item.down {
-                let (_, new_available_heigth) = self.resize_context(
-                    vector,
-                    down_item,
+            if let Some(down_key) = item.down {
+                let (_, new_available_height) = self.resize_context_slotmap(
+                    resize_deltas,
+                    down_key,
                     available_width,
                     available_height / 2.,
                 );
-                current_available_heigth = new_available_heigth;
+                current_available_height = new_available_height;
             }
 
-            vector[index] = (current_available_width, current_available_heigth);
-
-            return (current_available_width, current_available_heigth);
+            resize_deltas.insert(key, (current_available_width, current_available_height));
+            return (current_available_width, current_available_height);
         }
 
         (available_width, available_height)
     }
 
-    fn request_resize(&mut self, index: usize) {
-        let mut terminal = self.inner[index].val.terminal.lock();
-        terminal.resize::<ContextDimension>(self.inner[index].val.dimension);
-        drop(terminal);
-        let winsize =
-            crate::renderer::utils::terminal_dimensions(&self.inner[index].val.dimension);
-        let _ = self.inner[index].val.messenger.send_resize(winsize);
+    fn request_resize(&mut self, key: DefaultKey) {
+        if let Some(item) = self.inner.get_mut(key) {
+            let mut terminal = item.val.terminal.lock();
+            terminal.resize::<ContextDimension>(item.val.dimension);
+            drop(terminal);
+            let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+            let _ = item.val.messenger.send_resize(winsize);
+        }
     }
 
     /// Calculate and update positions for all grid items
@@ -582,36 +647,38 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if self.inner.is_empty() {
             return;
         }
-        self.calculate_positions_recursive(0, self.margin);
+        if let Some(root) = self.root {
+            self.calculate_positions_recursive(root, self.margin);
+        }
     }
 
     /// Calculate positions only for affected nodes and their children
-    pub fn calculate_positions_for_affected_nodes(&mut self, affected_indices: &[usize]) {
+    pub fn calculate_positions_for_affected_nodes(&mut self, affected_keys: &[DefaultKey]) {
         if self.inner.is_empty() {
             return;
         }
         
         // For each affected node, we need to recalculate its position and all its children
-        for &index in affected_indices {
-            if index < self.inner.len() {
+        for &key in affected_keys {
+            if self.inner.contains_key(key) {
                 // Find the position this node should have based on its parent
-                let margin = self.find_node_margin(index);
-                self.calculate_positions_recursive(index, margin);
+                let margin = self.find_node_margin(key);
+                self.calculate_positions_recursive(key, margin);
             }
         }
     }
 
     /// Find the margin/position a node should have based on its parent
-    fn find_node_margin(&self, index: usize) -> Delta<f32> {
-        // If it's the root node (index 0), use the grid margin
-        if index == 0 {
+    fn find_node_margin(&self, key: DefaultKey) -> Delta<f32> {
+        // If it's the root node, use the grid margin
+        if Some(key) == self.root {
             return self.margin;
         }
 
         // Find the parent of this node
-        for (_parent_index, parent) in self.inner.iter().enumerate() {
+        for (_, parent) in &self.inner {
             if let Some(right_child) = parent.right {
-                if right_child == index {
+                if right_child == key {
                     // This is a right child
                     let parent_pos = parent.position();
                     return Delta {
@@ -623,7 +690,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
             }
             if let Some(down_child) = parent.down {
-                if down_child == index {
+                if down_child == key {
                     // This is a down child
                     let parent_pos = parent.position();
                     return Delta {
@@ -641,8 +708,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Recursively calculate positions for grid items
-    fn calculate_positions_recursive(&mut self, index: usize, margin: Delta<f32>) {
-        if let Some(item) = self.inner.get_mut(index) {
+    fn calculate_positions_recursive(&mut self, key: DefaultKey, margin: Delta<f32>) {
+        if let Some(item) = self.inner.get_mut(key) {
             // Set position for current item in the rich text object
             item.set_position([margin.x, margin.top_y]);
 
@@ -662,17 +729,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 bottom_y: margin.bottom_y,
             };
 
-            // Store the down and right indices to avoid borrowing issues
-            let down_item = item.down;
-            let right_item = item.right;
+            // Store the down and right keys to avoid borrowing issues
+            let down_key = item.down;
+            let right_key = item.right;
 
             // Recursively calculate positions for child items
-            if let Some(down_index) = down_item {
-                self.calculate_positions_recursive(down_index, down_margin);
+            if let Some(down_key) = down_key {
+                self.calculate_positions_recursive(down_key, down_margin);
             }
 
-            if let Some(right_index) = right_item {
-                self.calculate_positions_recursive(right_index, right_margin);
+            if let Some(right_key) = right_key {
+                self.calculate_positions_recursive(right_key, right_margin);
             }
         }
     }
@@ -683,17 +750,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        if self.current >= self.inner.len() {
-            tracing::error!(
-                "Current index {} is out of bounds (len: {})",
-                self.current,
-                self.inner.len()
-            );
-            self.current = if self.inner.is_empty() {
-                0
-            } else {
-                self.inner.len() - 1
-            };
+        if !self.inner.contains_key(self.current) {
+            tracing::error!("Current key {:?} not found in grid", self.current);
+            if let Some(root) = self.root {
+                self.current = root;
+            }
             return;
         }
 
@@ -704,24 +765,31 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let to_be_removed = self.current;
-        let to_be_removed_width =
-            self.inner[to_be_removed].val.dimension.width + self.margin.x;
-        let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
+        let (to_be_removed_width, to_be_removed_height) = {
+            if let Some(item) = self.inner.get(to_be_removed) {
+                (
+                    item.val.dimension.width + self.margin.x,
+                    item.val.dimension.height,
+                )
+            } else {
+                return;
+            }
+        };
 
         // Find parent context if it exists
         let mut parent_context = None;
-        if to_be_removed > 0 {
-            for (index, context) in self.inner.iter().enumerate() {
+        if Some(to_be_removed) != self.root {
+            for (parent_key, context) in &self.inner {
                 if let Some(right_val) = context.right {
                     if right_val == self.current {
-                        parent_context = Some((true, index));
+                        parent_context = Some((true, parent_key));
                         break;
                     }
                 }
 
                 if let Some(down_val) = context.down {
                     if down_val == self.current {
-                        parent_context = Some((false, index));
+                        parent_context = Some((false, parent_key));
                         break;
                     }
                 }
@@ -729,73 +797,69 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Handle removal with parent context
-        if let Some((is_right, parent_index)) = parent_context {
+        if let Some((is_right, parent_key)) = parent_context {
             self.handle_removal_with_parent(
                 to_be_removed,
-                parent_index,
+                parent_key,
                 is_right,
                 to_be_removed_width,
                 to_be_removed_height,
                 self.scaled_padding,
             );
-            self.calculate_positions_for_affected_nodes(&[parent_index]);
+            self.calculate_positions_for_affected_nodes(&[parent_key]);
             return;
         }
 
         // Handle removal without parent (root context)
         self.handle_root_removal(to_be_removed, to_be_removed_height, self.scaled_padding);
-        self.calculate_positions_for_affected_nodes(&[0]);
+        if let Some(root) = self.root {
+            self.calculate_positions_for_affected_nodes(&[root]);
+        }
     }
 
     fn handle_removal_with_parent(
         &mut self,
-        to_be_removed: usize,
-        parent_index: usize,
+        to_be_removed: DefaultKey,
+        parent_key: DefaultKey,
         is_right: bool,
         to_be_removed_width: f32,
         to_be_removed_height: f32,
         scaled_padding: f32,
     ) {
-        if parent_index >= self.inner.len() {
-            tracing::error!("Parent index {} is out of bounds", parent_index);
+        if !self.inner.contains_key(parent_key) {
+            tracing::error!("Parent key {:?} not found in grid", parent_key);
             return;
         }
 
-        let mut next_current = parent_index;
+        let mut next_current = parent_key;
 
         if is_right {
             // Handle right child removal
-            if let Some(current_down) = self.inner[to_be_removed].down {
-                if current_down < self.inner.len() {
-                    self.inner[current_down]
-                        .val
-                        .dimension
-                        .increase_height(to_be_removed_height + scaled_padding);
-
-                    let to_be_remove_right = self.inner[to_be_removed].right;
-                    self.request_resize(current_down);
-                    self.remove_index(to_be_removed);
-
-                    if current_down > 0 {
-                        next_current = current_down - 1;
-                    } else {
-                        next_current = 0;
+            let current_down = self.inner.get(to_be_removed).and_then(|item| item.down);
+            if let Some(current_down) = current_down {
+                if self.inner.contains_key(current_down) {
+                    if let Some(item) = self.inner.get_mut(current_down) {
+                        item.val.dimension.increase_height(to_be_removed_height + scaled_padding);
                     }
+
+                    let to_be_remove_right = self.inner.get(to_be_removed).and_then(|item| item.right);
+                    self.request_resize(current_down);
+                    self.remove_key(to_be_removed);
+
+                    next_current = current_down;
 
                     // Handle right inheritance
                     if let Some(right_val) = to_be_remove_right {
-                        if right_val > 0 {
-                            self.inherit_right_children(
-                                next_current,
-                                right_val - 1,
-                                to_be_removed_height,
-                                scaled_padding,
-                            );
-                        }
+                        self.inherit_right_children(
+                            next_current,
+                            right_val,
+                            to_be_removed_height,
+                            scaled_padding,
+                        );
                     }
 
-                    if parent_index < self.inner.len() {
-                        self.inner[parent_index].right = Some(next_current);
+                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                        parent.right = Some(next_current);
                     }
                     self.current = next_current;
                     return;
@@ -803,316 +867,339 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             // No down children, expand parent
-            if parent_index < self.inner.len() {
-                let parent_width = self.inner[parent_index].val.dimension.width;
-                self.inner[parent_index]
-                    .val
-                    .dimension
-                    .update_width(parent_width + to_be_removed_width + scaled_padding);
-                self.inner[parent_index].right = self.inner[to_be_removed].right;
-                self.request_resize(parent_index);
+            let to_be_removed_right = self.inner.get(to_be_removed).and_then(|item| item.right);
+            if let Some(parent) = self.inner.get_mut(parent_key) {
+                let parent_width = parent.val.dimension.width;
+                parent.val.dimension.update_width(parent_width + to_be_removed_width + scaled_padding);
+                parent.right = to_be_removed_right;
             }
+            self.request_resize(parent_key);
         } else {
             // Handle down child removal
-            if let Some(current_right) = self.inner[to_be_removed].right {
-                if current_right < self.inner.len() {
-                    self.inner[current_right]
-                        .val
-                        .dimension
-                        .increase_width(to_be_removed_width + scaled_padding);
-
-                    self.request_resize(current_right);
-
-                    if current_right > 0 {
-                        next_current = current_right - 1;
-                    } else {
-                        next_current = 0;
+            let current_right = self.inner.get(to_be_removed).and_then(|item| item.right);
+            if let Some(current_right) = current_right {
+                if self.inner.contains_key(current_right) {
+                    if let Some(item) = self.inner.get_mut(current_right) {
+                        item.val.dimension.increase_width(to_be_removed_width + scaled_padding);
                     }
 
-                    if parent_index < self.inner.len() {
-                        self.inner[parent_index].down = Some(next_current);
+                    self.request_resize(current_right);
+                    next_current = current_right;
+
+                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                        parent.down = Some(next_current);
                     }
                 } else {
                     // Invalid right reference, just expand parent
-                    if parent_index < self.inner.len() {
-                        let parent_height = self.inner[parent_index].val.dimension.height;
-                        self.inner[parent_index].val.dimension.update_height(
+                    let to_be_removed_down = self.inner.get(to_be_removed).and_then(|item| item.down);
+                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                        let parent_height = parent.val.dimension.height;
+                        parent.val.dimension.update_height(
                             parent_height + to_be_removed_height + scaled_padding,
                         );
-                        self.inner[parent_index].down = self.inner[to_be_removed].down;
-                        self.request_resize(parent_index);
+                        parent.down = to_be_removed_down;
                     }
+                    self.request_resize(parent_key);
                 }
             } else {
                 // No right children, expand parent
-                if parent_index < self.inner.len() {
-                    let parent_height = self.inner[parent_index].val.dimension.height;
-                    self.inner[parent_index].val.dimension.update_height(
+                let to_be_removed_down = self.inner.get(to_be_removed).and_then(|item| item.down);
+                if let Some(parent) = self.inner.get_mut(parent_key) {
+                    let parent_height = parent.val.dimension.height;
+                    parent.val.dimension.update_height(
                         parent_height + to_be_removed_height + scaled_padding,
                     );
-                    self.inner[parent_index].down = self.inner[to_be_removed].down;
-                    self.request_resize(parent_index);
+                    parent.down = to_be_removed_down;
                 }
+                self.request_resize(parent_key);
             }
         }
 
-        self.remove_index(to_be_removed);
-        self.current = next_current.min(self.inner.len().saturating_sub(1));
+        self.remove_key(to_be_removed);
+        self.current = next_current;
     }
 
     fn handle_root_removal(
         &mut self,
-        to_be_removed: usize,
+        to_be_removed: DefaultKey,
         to_be_removed_height: f32,
         scaled_padding: f32,
     ) {
         // Priority: down items first, then right items
-        if let Some(down_val) = self.inner[to_be_removed].down {
-            if down_val < self.inner.len() {
-                let down_height = self.inner[down_val].val.dimension.height;
-                self.inner[down_val]
-                    .val
-                    .dimension
-                    .update_height(down_height + to_be_removed_height + scaled_padding);
-
-                let to_be_removed_right_item = self.inner[to_be_removed].right;
-
-                // Move down item to root position
-                self.inner.swap(to_be_removed, down_val);
-                self.request_resize(to_be_removed);
-                self.remove_index(down_val);
-
-                // Handle right inheritance
-                if let Some(right_val) = to_be_removed_right_item {
-                    self.inherit_right_children(
-                        to_be_removed,
-                        right_val,
-                        to_be_removed_height,
-                        scaled_padding,
-                    );
+        let down_val = self.inner.get(to_be_removed).and_then(|item| item.down);
+        if let Some(down_val) = down_val {
+            if self.inner.contains_key(down_val) {
+                if let Some(down_item) = self.inner.get_mut(down_val) {
+                    let down_height = down_item.val.dimension.height;
+                    down_item.val.dimension.update_height(down_height + to_be_removed_height + scaled_padding);
                 }
 
-                self.current = to_be_removed;
+                let to_be_removed_right_item = self.inner.get(to_be_removed).and_then(|item| item.right);
+
+                // Move down item to root position by swapping the data
+                if let (Some(_to_be_removed_item), Some(down_item)) = 
+                    (self.inner.remove(to_be_removed), self.inner.remove(down_val)) {
+                    
+                    // Insert the down item as the new root
+                    let new_root = self.inner.insert(down_item);
+                    self.root = Some(new_root);
+                    self.current = new_root;
+                    
+                    self.request_resize(new_root);
+
+                    // Handle right inheritance
+                    if let Some(right_val) = to_be_removed_right_item {
+                        self.inherit_right_children(
+                            new_root,
+                            right_val,
+                            to_be_removed_height,
+                            scaled_padding,
+                        );
+                    }
+                }
                 return;
             }
         }
 
-        if let Some(right_val) = self.inner[to_be_removed].right {
-            if right_val < self.inner.len() {
-                let right_width = self.inner[right_val].val.dimension.width;
-                let to_be_removed_width =
-                    self.inner[to_be_removed].val.dimension.width + self.margin.x;
+        let right_val = self.inner.get(to_be_removed).and_then(|item| item.right);
+        if let Some(right_val) = right_val {
+            if self.inner.contains_key(right_val) {
+                let (right_width, to_be_removed_width) = {
+                    let right_item = self.inner.get(right_val).unwrap();
+                    let to_be_removed_item = self.inner.get(to_be_removed).unwrap();
+                    (
+                        right_item.val.dimension.width,
+                        to_be_removed_item.val.dimension.width + self.margin.x,
+                    )
+                };
 
-                self.inner[right_val]
-                    .val
-                    .dimension
-                    .update_width(right_width + to_be_removed_width + scaled_padding);
+                if let Some(right_item) = self.inner.get_mut(right_val) {
+                    right_item.val.dimension.update_width(right_width + to_be_removed_width + scaled_padding);
+                }
 
                 // Move right item to root position
-                self.inner.swap(to_be_removed, right_val);
-                self.request_resize(to_be_removed);
-                self.remove_index(right_val);
-
-                self.current = to_be_removed;
+                if let (Some(_to_be_removed_item), Some(right_item)) = 
+                    (self.inner.remove(to_be_removed), self.inner.remove(right_val)) {
+                    
+                    let new_root = self.inner.insert(right_item);
+                    self.root = Some(new_root);
+                    self.current = new_root;
+                    
+                    self.request_resize(new_root);
+                }
                 return;
             }
         }
 
         // Fallback: just remove the item
-        self.remove_index(to_be_removed);
-        if self.current >= self.inner.len() && !self.inner.is_empty() {
-            self.current = self.inner.len() - 1;
+        self.inner.remove(to_be_removed);
+        if let Some(first_key) = self.inner.keys().next() {
+            self.current = first_key;
+            self.root = Some(first_key);
         }
     }
 
     fn inherit_right_children(
         &mut self,
-        base_index: usize,
-        right_val: usize,
+        base_key: DefaultKey,
+        right_val: DefaultKey,
         height_increase: f32,
         scaled_padding: f32,
     ) {
-        if base_index >= self.inner.len() || right_val >= self.inner.len() {
+        if !self.inner.contains_key(base_key) || !self.inner.contains_key(right_val) {
             return;
         }
 
         let mut last_right = None;
-        let mut right_ptr = self.inner[base_index].right;
+        let mut right_ptr = self.inner.get(base_key).and_then(|item| item.right);
 
         // Find the last right item and resize all
-        while let Some(right_index) = right_ptr {
-            if right_index >= self.inner.len() {
+        while let Some(right_key) = right_ptr {
+            if !self.inner.contains_key(right_key) {
                 break;
             }
 
-            last_right = Some(right_index);
-            let last_right_height = self.inner[right_index].val.dimension.height;
-            self.inner[right_index]
-                .val
-                .dimension
-                .update_height(last_right_height + height_increase + scaled_padding);
-            self.request_resize(right_index);
-            right_ptr = self.inner[right_index].right;
+            last_right = Some(right_key);
+            if let Some(item) = self.inner.get_mut(right_key) {
+                let last_right_height = item.val.dimension.height;
+                item.val.dimension.update_height(last_right_height + height_increase + scaled_padding);
+            }
+            self.request_resize(right_key);
+            right_ptr = self.inner.get(right_key).and_then(|item| item.right);
         }
 
         // Attach the inherited right chain
         if let Some(last_right_val) = last_right {
-            if last_right_val < self.inner.len() {
-                self.inner[last_right_val].right = Some(right_val);
+            if let Some(item) = self.inner.get_mut(last_right_val) {
+                item.right = Some(right_val);
             }
-        } else if base_index < self.inner.len() {
-            self.inner[base_index].right = Some(right_val);
+        } else if let Some(item) = self.inner.get_mut(base_key) {
+            item.right = Some(right_val);
         }
     }
 
-    fn remove_index(&mut self, index: usize) {
-        if index >= self.inner.len() {
-            tracing::error!(
-                "Attempted to remove index {} which is out of bounds (len: {})",
-                index,
-                self.inner.len()
-            );
+    fn remove_key(&mut self, key: DefaultKey) {
+        if !self.inner.contains_key(key) {
+            tracing::error!("Attempted to remove key {:?} which doesn't exist", key);
             return;
         }
 
-        // Update all references to indices that will be shifted
-        for context in &mut self.inner {
-            if let Some(right_val) = context.right {
-                if right_val > index {
-                    context.right = Some(right_val.saturating_sub(1));
-                } else if right_val == index {
-                    // The referenced context is being removed
-                    context.right = None;
-                }
+        // Update all references to this key
+        let keys_to_update: Vec<DefaultKey> = self.inner.keys().collect();
+        for update_key in keys_to_update {
+            if update_key == key {
+                continue;
             }
+            
+            if let Some(context) = self.inner.get_mut(update_key) {
+                if let Some(right_val) = context.right {
+                    if right_val == key {
+                        // The referenced context is being removed
+                        context.right = None;
+                    }
+                }
 
-            if let Some(down_val) = context.down {
-                if down_val > index {
-                    context.down = Some(down_val.saturating_sub(1));
-                } else if down_val == index {
-                    // The referenced context is being removed
-                    context.down = None;
+                if let Some(down_val) = context.down {
+                    if down_val == key {
+                        // The referenced context is being removed
+                        context.down = None;
+                    }
                 }
             }
         }
 
-        self.inner.remove(index);
+        self.inner.remove(key);
 
-        // Ensure current index is still valid
-        if self.current >= self.inner.len() && !self.inner.is_empty() {
-            self.current = self.inner.len() - 1;
+        // Update root if necessary
+        if Some(key) == self.root {
+            self.root = self.inner.keys().next();
+        }
+
+        // Ensure current key is still valid
+        if self.current == key {
+            if let Some(new_current) = self.root {
+                self.current = new_current;
+            } else if let Some(first_key) = self.inner.keys().next() {
+                self.current = first_key;
+            }
         }
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
-        let old_right = self.inner[self.current].right;
-        // let margin_x = self.margin.x;
+        let current_item = if let Some(item) = self.inner.get(self.current) {
+            item
+        } else {
+            return;
+        };
 
-        let old_grid_item_height = self.inner[self.current].val.dimension.height;
-        let old_grid_item_width =
-            self.inner[self.current].val.dimension.width - self.margin.x;
+        let old_right = current_item.right;
+        let old_grid_item_height = current_item.val.dimension.height;
+        let old_grid_item_width = current_item.val.dimension.width - self.margin.x;
         let new_grid_item_width = old_grid_item_width / 2.0;
 
-        self.inner[self.current]
-            .val
-            .dimension
-            .update_width(new_grid_item_width - self.scaled_padding);
+        // Update current item width
+        if let Some(current_item) = self.inner.get_mut(self.current) {
+            current_item.val.dimension.update_width(new_grid_item_width - self.scaled_padding);
 
-        // The current dimension margin should reset
-        // otherwise will add a space before the rect
-        let mut new_margin = self.inner[self.current].val.dimension.margin;
-        new_margin.x = 0.0;
-        self.inner[self.current]
-            .val
-            .dimension
-            .update_margin(new_margin);
+            // The current dimension margin should reset
+            // otherwise will add a space before the rect
+            let mut new_margin = current_item.val.dimension.margin;
+            new_margin.x = 0.0;
+            current_item.val.dimension.update_margin(new_margin);
+        }
 
         self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
-
         new_context.val.dimension.update_width(new_grid_item_width);
-        new_context
-            .val
-            .dimension
-            .update_height(old_grid_item_height);
+        new_context.val.dimension.update_height(old_grid_item_height);
 
-        self.inner.push(new_context);
-        let new_current = self.inner.len() - 1;
+        let new_key = self.inner.insert(new_context);
 
-        self.inner[new_current].right = old_right;
-        self.inner[self.current].right = Some(new_current);
-        self.current = new_current;
+        // Update relationships
+        if let Some(new_item) = self.inner.get_mut(new_key) {
+            new_item.right = old_right;
+        }
+        if let Some(current_item) = self.inner.get_mut(self.current) {
+            current_item.right = Some(new_key);
+        }
+        
+        self.current = new_key;
 
         // In case the new context does not have right
         // it means it's the last one, for this case
         // whenever a margin exists then we need to add
         // half of margin to respect margin.x border on
         // the right side.
-        if self.inner[self.current].right.is_none() {
-            new_margin.x = self.margin.x / 2.0;
-            self.inner[self.current]
-                .val
-                .dimension
-                .update_margin(new_margin);
+        if let Some(new_item) = self.inner.get_mut(new_key) {
+            if new_item.right.is_none() {
+                let mut new_margin = new_item.val.dimension.margin;
+                new_margin.x = self.margin.x / 2.0;
+                new_item.val.dimension.update_margin(new_margin);
+            }
         }
 
-        self.request_resize(new_current);
-        self.calculate_positions_for_affected_nodes(&[self.current, new_current]);
+        self.request_resize(new_key);
+        self.calculate_positions_for_affected_nodes(&[self.current, new_key]);
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
-        let old_down = self.inner[self.current].down;
+        let current_item = if let Some(item) = self.inner.get(self.current) {
+            item
+        } else {
+            return;
+        };
 
-        let old_grid_item_height = self.inner[self.current].val.dimension.height;
-        let old_grid_item_width = self.inner[self.current].val.dimension.width;
+        let old_down = current_item.down;
+        let old_grid_item_height = current_item.val.dimension.height;
+        let old_grid_item_width = current_item.val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
-        self.inner[self.current]
-            .val
-            .dimension
-            .update_height(new_grid_item_height - self.scaled_padding);
 
-        // The current dimension margin should reset
-        // otherwise will add a space before the rect
-        let mut new_margin = self.inner[self.current].val.dimension.margin;
-        new_margin.bottom_y = 0.0;
-        self.inner[self.current]
-            .val
-            .dimension
-            .update_margin(new_margin);
+        // Update current item
+        if let Some(current_item) = self.inner.get_mut(self.current) {
+            current_item.val.dimension.update_height(new_grid_item_height - self.scaled_padding);
+
+            // The current dimension margin should reset
+            // otherwise will add a space before the rect
+            let mut new_margin = current_item.val.dimension.margin;
+            new_margin.bottom_y = 0.0;
+            current_item.val.dimension.update_margin(new_margin);
+        }
 
         self.request_resize(self.current);
 
         let mut new_context = ContextGridItem::new(context);
-        new_context
-            .val
-            .dimension
-            .update_height(new_grid_item_height);
+        new_context.val.dimension.update_height(new_grid_item_height);
         new_context.val.dimension.update_width(old_grid_item_width);
 
-        self.inner.push(new_context);
-        let new_current = self.inner.len() - 1;
+        let new_key = self.inner.insert(new_context);
 
-        self.inner[new_current].down = old_down;
-        self.inner[self.current].down = Some(new_current);
-        self.current = new_current;
+        // Update relationships
+        if let Some(new_item) = self.inner.get_mut(new_key) {
+            new_item.down = old_down;
+        }
+        if let Some(current_item) = self.inner.get_mut(self.current) {
+            current_item.down = Some(new_key);
+        }
+        
+        self.current = new_key;
 
         // TODO: Needs to validate this
-        // In case the new context does not have right
+        // In case the new context does not have down
         // it means it's the last one, for this case
         // whenever a margin exists then we need to add
-        // half of margin to respect margin.top_y and margin.bottom_y
+        // margin to respect margin.top_y and margin.bottom_y
         // borders on the bottom side.
-        if self.inner[self.current].down.is_none() {
-            new_margin.bottom_y = self.margin.bottom_y;
-            self.inner[self.current]
-                .val
-                .dimension
-                .update_margin(new_margin);
+        if let Some(new_item) = self.inner.get_mut(new_key) {
+            if new_item.down.is_none() {
+                let mut new_margin = new_item.val.dimension.margin;
+                new_margin.bottom_y = self.margin.bottom_y;
+                new_item.val.dimension.update_margin(new_margin);
+            }
         }
 
-        self.request_resize(new_current);
-        self.calculate_positions_for_affected_nodes(&[self.current, new_current]);
+        self.request_resize(new_key);
+        self.calculate_positions_for_affected_nodes(&[self.current, new_key]);
     }
 
     /// Move divider up - decreases height of current split and increases height of split above
@@ -1121,19 +1208,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        let current_index = self.current;
-        if current_index >= self.inner.len() {
-            tracing::error!("Current index {} is out of bounds", current_index);
+        let current_key = self.current;
+        if !self.inner.contains_key(current_key) {
+            tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
         // Strategy: Find any vertically adjacent split and adjust the divider between them
         // Case 1: Current split has a parent above (current is a down child)
-        for (index, context) in self.inner.iter().enumerate() {
+        for (parent_key, context) in &self.inner {
             if let Some(down_val) = context.down {
-                if down_val == current_index {
-                    let current_height = self.inner[current_index].val.dimension.height;
-                    let parent_height = self.inner[index].val.dimension.height;
+                if down_val == current_key {
+                    let (current_height, parent_height) = {
+                        let current_item = self.inner.get(current_key).unwrap();
+                        let parent_item = self.inner.get(parent_key).unwrap();
+                        (current_item.val.dimension.height, parent_item.val.dimension.height)
+                    };
                     
                     let min_height = 50.0;
                     if current_height - amount < min_height || parent_height + amount < min_height {
@@ -1141,24 +1231,32 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     }
 
                     // Shrink current, expand parent (above)
-                    self.inner[current_index].val.dimension.update_height(current_height - amount);
-                    self.inner[index].val.dimension.update_height(parent_height + amount);
+                    if let Some(current_item) = self.inner.get_mut(current_key) {
+                        current_item.val.dimension.update_height(current_height - amount);
+                    }
+                    if let Some(parent_item) = self.inner.get_mut(parent_key) {
+                        parent_item.val.dimension.update_height(parent_height + amount);
+                    }
 
-                    self.request_resize(current_index);
-                    self.request_resize(index);
+                    self.request_resize(current_key);
+                    self.request_resize(parent_key);
                     
                     // Update positions for affected nodes
-                    self.calculate_positions_for_affected_nodes(&[current_index, index]);
+                    self.calculate_positions_for_affected_nodes(&[current_key, parent_key]);
                     return true;
                 }
             }
         }
 
         // Case 2: Current split has a down child - move the divider between current and down child
-        if let Some(down_child_index) = self.inner[current_index].down {
-            if down_child_index < self.inner.len() {
-                let current_height = self.inner[current_index].val.dimension.height;
-                let down_height = self.inner[down_child_index].val.dimension.height;
+        let down_child_key = self.inner.get(current_key).and_then(|item| item.down);
+        if let Some(down_child_key) = down_child_key {
+            if self.inner.contains_key(down_child_key) {
+                let (current_height, down_height) = {
+                    let current_item = self.inner.get(current_key).unwrap();
+                    let down_item = self.inner.get(down_child_key).unwrap();
+                    (current_item.val.dimension.height, down_item.val.dimension.height)
+                };
                 
                 let min_height = 50.0;
                 if current_height - amount < min_height || down_height + amount < min_height {
@@ -1166,14 +1264,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
 
                 // Shrink current, expand down child
-                self.inner[current_index].val.dimension.update_height(current_height - amount);
-                self.inner[down_child_index].val.dimension.update_height(down_height + amount);
+                if let Some(current_item) = self.inner.get_mut(current_key) {
+                    current_item.val.dimension.update_height(current_height - amount);
+                }
+                if let Some(down_item) = self.inner.get_mut(down_child_key) {
+                    down_item.val.dimension.update_height(down_height + amount);
+                }
 
-                self.request_resize(current_index);
-                self.request_resize(down_child_index);
+                self.request_resize(current_key);
+                self.request_resize(down_child_key);
                 
                 // Update positions for affected nodes
-                self.calculate_positions_for_affected_nodes(&[current_index, down_child_index]);
+                self.calculate_positions_for_affected_nodes(&[current_key, down_child_key]);
                 return true;
             }
         }
@@ -1187,19 +1289,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        let current_index = self.current;
-        if current_index >= self.inner.len() {
-            tracing::error!("Current index {} is out of bounds", current_index);
+        let current_key = self.current;
+        if !self.inner.contains_key(current_key) {
+            tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
         // Strategy: Find any vertically adjacent split and adjust the divider between them
         // Case 1: Current split has a parent above (current is a down child)
-        for (index, context) in self.inner.iter().enumerate() {
+        for (parent_key, context) in &self.inner {
             if let Some(down_val) = context.down {
-                if down_val == current_index {
-                    let current_height = self.inner[current_index].val.dimension.height;
-                    let parent_height = self.inner[index].val.dimension.height;
+                if down_val == current_key {
+                    let (current_height, parent_height) = {
+                        let current_item = self.inner.get(current_key).unwrap();
+                        let parent_item = self.inner.get(parent_key).unwrap();
+                        (current_item.val.dimension.height, parent_item.val.dimension.height)
+                    };
                     
                     let min_height = 50.0;
                     if current_height + amount < min_height || parent_height - amount < min_height {
@@ -1207,24 +1312,32 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     }
 
                     // Expand current, shrink parent (above) - divider moves down
-                    self.inner[current_index].val.dimension.update_height(current_height + amount);
-                    self.inner[index].val.dimension.update_height(parent_height - amount);
+                    if let Some(current_item) = self.inner.get_mut(current_key) {
+                        current_item.val.dimension.update_height(current_height + amount);
+                    }
+                    if let Some(parent_item) = self.inner.get_mut(parent_key) {
+                        parent_item.val.dimension.update_height(parent_height - amount);
+                    }
 
-                    self.request_resize(current_index);
-                    self.request_resize(index);
+                    self.request_resize(current_key);
+                    self.request_resize(parent_key);
                     
                     // Update positions for affected nodes
-                    self.calculate_positions_for_affected_nodes(&[current_index, index]);
+                    self.calculate_positions_for_affected_nodes(&[current_key, parent_key]);
                     return true;
                 }
             }
         }
 
         // Case 2: Current split has a down child - move the divider between current and down child
-        if let Some(down_child_index) = self.inner[current_index].down {
-            if down_child_index < self.inner.len() {
-                let current_height = self.inner[current_index].val.dimension.height;
-                let down_height = self.inner[down_child_index].val.dimension.height;
+        let down_child_key = self.inner.get(current_key).and_then(|item| item.down);
+        if let Some(down_child_key) = down_child_key {
+            if self.inner.contains_key(down_child_key) {
+                let (current_height, down_height) = {
+                    let current_item = self.inner.get(current_key).unwrap();
+                    let down_item = self.inner.get(down_child_key).unwrap();
+                    (current_item.val.dimension.height, down_item.val.dimension.height)
+                };
                 
                 let min_height = 50.0;
                 if current_height + amount < min_height || down_height - amount < min_height {
@@ -1232,14 +1345,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
 
                 // Expand current, shrink down child - divider moves down
-                self.inner[current_index].val.dimension.update_height(current_height + amount);
-                self.inner[down_child_index].val.dimension.update_height(down_height - amount);
+                if let Some(current_item) = self.inner.get_mut(current_key) {
+                    current_item.val.dimension.update_height(current_height + amount);
+                }
+                if let Some(down_item) = self.inner.get_mut(down_child_key) {
+                    down_item.val.dimension.update_height(down_height - amount);
+                }
 
-                self.request_resize(current_index);
-                self.request_resize(down_child_index);
+                self.request_resize(current_key);
+                self.request_resize(down_child_key);
                 
                 // Update positions for affected nodes
-                self.calculate_positions_for_affected_nodes(&[current_index, down_child_index]);
+                self.calculate_positions_for_affected_nodes(&[current_key, down_child_key]);
                 return true;
             }
         }
@@ -1253,9 +1370,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        let current_index = self.current;
-        if current_index >= self.inner.len() {
-            tracing::error!("Current index {} is out of bounds", current_index);
+        let current_key = self.current;
+        if !self.inner.contains_key(current_key) {
+            tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
@@ -1264,11 +1381,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut right_split = None;
 
         // Case 1: Current split is a right child - its parent is to the left
-        for (index, context) in self.inner.iter().enumerate() {
+        for (parent_key, context) in &self.inner {
             if let Some(right_val) = context.right {
-                if right_val == current_index {
-                    left_split = Some(index);
-                    right_split = Some(current_index);
+                if right_val == current_key {
+                    left_split = Some(parent_key);
+                    right_split = Some(current_key);
                     break;
                 }
             }
@@ -1276,17 +1393,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 2: Current split has a right child - current is left, child is right
         if left_split.is_none() {
-            if let Some(right_child_index) = self.inner[current_index].right {
-                if right_child_index < self.inner.len() {
-                    left_split = Some(current_index);
-                    right_split = Some(right_child_index);
+            let right_child_key = self.inner.get(current_key).and_then(|item| item.right);
+            if let Some(right_child_key) = right_child_key {
+                if self.inner.contains_key(right_child_key) {
+                    left_split = Some(current_key);
+                    right_split = Some(right_child_key);
                 }
             }
         }
 
-        if let (Some(left_idx), Some(right_idx)) = (left_split, right_split) {
-            let left_width = self.inner[left_idx].val.dimension.width;
-            let right_width = self.inner[right_idx].val.dimension.width;
+        if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
+            let (left_width, right_width) = {
+                let left_item = self.inner.get(left_key).unwrap();
+                let right_item = self.inner.get(right_key).unwrap();
+                (left_item.val.dimension.width, right_item.val.dimension.width)
+            };
             
             let min_width = 100.0;
             if left_width - amount < min_width || right_width + amount < min_width {
@@ -1294,14 +1415,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             // Move divider left: shrink left split, expand right split
-            self.inner[left_idx].val.dimension.update_width(left_width - amount);
-            self.inner[right_idx].val.dimension.update_width(right_width + amount);
+            if let Some(left_item) = self.inner.get_mut(left_key) {
+                left_item.val.dimension.update_width(left_width - amount);
+            }
+            if let Some(right_item) = self.inner.get_mut(right_key) {
+                right_item.val.dimension.update_width(right_width + amount);
+            }
 
-            self.request_resize(left_idx);
-            self.request_resize(right_idx);
+            self.request_resize(left_key);
+            self.request_resize(right_key);
             
             // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&[left_idx, right_idx]);
+            self.calculate_positions_for_affected_nodes(&[left_key, right_key]);
             return true;
         }
 
@@ -1314,9 +1439,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        let current_index = self.current;
-        if current_index >= self.inner.len() {
-            tracing::error!("Current index {} is out of bounds", current_index);
+        let current_key = self.current;
+        if !self.inner.contains_key(current_key) {
+            tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
@@ -1325,11 +1450,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut right_split = None;
 
         // Case 1: Current split is a right child - its parent is to the left
-        for (index, context) in self.inner.iter().enumerate() {
+        for (parent_key, context) in &self.inner {
             if let Some(right_val) = context.right {
-                if right_val == current_index {
-                    left_split = Some(index);
-                    right_split = Some(current_index);
+                if right_val == current_key {
+                    left_split = Some(parent_key);
+                    right_split = Some(current_key);
                     break;
                 }
             }
@@ -1337,17 +1462,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 2: Current split has a right child - current is left, child is right
         if left_split.is_none() {
-            if let Some(right_child_index) = self.inner[current_index].right {
-                if right_child_index < self.inner.len() {
-                    left_split = Some(current_index);
-                    right_split = Some(right_child_index);
+            let right_child_key = self.inner.get(current_key).and_then(|item| item.right);
+            if let Some(right_child_key) = right_child_key {
+                if self.inner.contains_key(right_child_key) {
+                    left_split = Some(current_key);
+                    right_split = Some(right_child_key);
                 }
             }
         }
 
-        if let (Some(left_idx), Some(right_idx)) = (left_split, right_split) {
-            let left_width = self.inner[left_idx].val.dimension.width;
-            let right_width = self.inner[right_idx].val.dimension.width;
+        if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
+            let (left_width, right_width) = {
+                let left_item = self.inner.get(left_key).unwrap();
+                let right_item = self.inner.get(right_key).unwrap();
+                (left_item.val.dimension.width, right_item.val.dimension.width)
+            };
             
             let min_width = 100.0;
             if left_width + amount < min_width || right_width - amount < min_width {
@@ -1355,14 +1484,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             // Move divider right: expand left split, shrink right split
-            self.inner[left_idx].val.dimension.update_width(left_width + amount);
-            self.inner[right_idx].val.dimension.update_width(right_width - amount);
+            if let Some(left_item) = self.inner.get_mut(left_key) {
+                left_item.val.dimension.update_width(left_width + amount);
+            }
+            if let Some(right_item) = self.inner.get_mut(right_key) {
+                right_item.val.dimension.update_width(right_width - amount);
+            }
 
-            self.request_resize(left_idx);
-            self.request_resize(right_idx);
+            self.request_resize(left_key);
+            self.request_resize(right_key);
             
             // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&[left_idx, right_idx]);
+            self.calculate_positions_for_affected_nodes(&[left_key, right_key]);
             return true;
         }
 

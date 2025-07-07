@@ -386,7 +386,7 @@ impl Screen<'_> {
 
             context_grid.update_dimensions(&self.sugarloaf);
 
-            for current_context in context_grid.contexts_mut() {
+            for (_key, current_context) in context_grid.contexts_mut() {
                 let current_context = current_context.context_mut();
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
@@ -497,7 +497,7 @@ impl Screen<'_> {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         for context_grid in self.context_manager.contexts_mut() {
-            for context in context_grid.contexts_mut() {
+            for (_key, context) in context_grid.contexts_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);

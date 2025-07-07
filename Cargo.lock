@@ -2869,6 +2869,7 @@ dependencies = [
  "rio-window",
  "rustc-hash 2.1.1",
  "serde",
+ "slotmap",
  "teletypewriter",
  "tinyvec",
  "tracing",

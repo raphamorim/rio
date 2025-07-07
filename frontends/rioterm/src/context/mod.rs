@@ -549,9 +549,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
         self.switch_to_next();
-        // Make sure first split is selected
+        // Make sure first split is selected - get the root key
         let current_tab = &mut self.contexts[self.current_index];
-        current_tab.current = 0;
+        if let Some(root) = current_tab.root {
+            current_tab.current = root;
+        }
         self.current_route = self.current().route_id;
     }
 
@@ -562,9 +564,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
         self.switch_to_prev();
-        // Make sure last split is selected
+        // Make sure last split is selected - get the last key in order
         let current_tab = &mut self.contexts[self.current_index];
-        current_tab.current = current_tab.len() - 1;
+        let ordered_keys = current_tab.get_ordered_keys();
+        if let Some(&last_key) = ordered_keys.last() {
+            current_tab.current = last_key;
+        }
         self.current_route = self.current().route_id;
     }
 
