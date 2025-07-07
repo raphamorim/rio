@@ -82,6 +82,7 @@ pub struct ContextGrid<T: EventListener> {
     pub current: usize,
     pub margin: Delta<f32>,
     border_color: [f32; 4],
+    scaled_padding: f32,
     inner: Vec<ContextGridItem<T>>,
 }
 
@@ -89,14 +90,22 @@ pub struct ContextGridItem<T: EventListener> {
     val: Context<T>,
     right: Option<usize>,
     down: Option<usize>,
+    rich_text_object: Object,
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
+        let rich_text_object = Object::RichText(RichText {
+            id: context.rich_text_id,
+            position: [0.0, 0.0],
+            lines: None,
+        });
+        
         Self {
             val: context,
             right: None,
             down: None,
+            rich_text_object,
         }
     }
 }
@@ -112,26 +121,57 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn context_mut(&mut self) -> &mut Context<T> {
         &mut self.val
     }
+
+    #[inline]
+    pub fn position(&self) -> [f32; 2] {
+        if let Object::RichText(ref rich_text) = self.rich_text_object {
+            rich_text.position
+        } else {
+            [0.0, 0.0]
+        }
+    }
+
+    /// Update the position in the rich text object
+    fn set_position(&mut self, position: [f32; 2]) {
+        if let Object::RichText(ref mut rich_text) = self.rich_text_object {
+            rich_text.position = position;
+        }
+    }
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(context: Context<T>, margin: Delta<f32>, border_color: [f32; 4]) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
+        let scale = context.dimension.dimension.scale;
+        let scaled_padding = PADDING * scale;
         let inner = vec![ContextGridItem::new(context)];
-        Self {
+        let mut grid = Self {
             inner,
             current: 0,
             margin,
             width,
             height,
             border_color,
-        }
+            scaled_padding,
+        };
+        grid.calculate_positions_for_affected_nodes(&[0]);
+        grid
     }
 
     #[inline]
     pub fn len(&self) -> usize {
         self.inner.len()
+    }
+
+    #[inline]
+    pub fn scale(&self) -> f32 {
+        self.scaled_padding / PADDING
+    }
+
+    #[inline]
+    pub fn scaled_padding(&self) -> f32 {
+        self.scaled_padding
     }
 
     #[inline]
@@ -247,14 +287,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // In case there's only 1 context then ignore quad
         if len == 1 {
             if let Some(item) = self.inner.first() {
-                target.push(Object::RichText(RichText {
-                    id: item.val.rich_text_id,
-                    position: [self.margin.x, self.margin.top_y],
-                    lines: None,
-                }));
+                target.push(item.rich_text_object.clone());
             }
         } else {
-            self.plot_objects(target, 0, self.margin);
+            self.plot_objects(target);
         }
     }
 
@@ -270,14 +306,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // In case there's only 1 context then ignore quad
         if len == 1 {
             if let Some(item) = self.inner.first() {
-                objects.push(Object::RichText(RichText {
-                    id: item.val.rich_text_id,
-                    position: [self.margin.x, self.margin.top_y],
-                    lines: None,
-                }));
+                objects.push(item.rich_text_object.clone());
             }
         } else {
-            self.plot_objects(&mut objects, 0, self.margin);
+            self.plot_objects(&mut objects);
         }
         objects
     }
@@ -307,15 +339,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let objects = self.objects();
         let rich_text_id = self.inner[self.current].val.rich_text_id;
-        let scale = self.inner[self.current].val.dimension.dimension.scale;
-        let scaled_padding = PADDING * scale;
 
         let mut margin = self.margin;
         for obj in objects {
             if let Object::RichText(rich_text_obj) = obj {
                 if rich_text_obj.id == rich_text_id {
-                    margin.x = rich_text_obj.position[0] + scaled_padding;
-                    margin.top_y = rich_text_obj.position[1] + scaled_padding;
+                    margin.x = rich_text_obj.position[0] + self.scaled_padding;
+                    margin.top_y = rich_text_obj.position[1] + self.scaled_padding;
                     break;
                 }
             }
@@ -336,10 +366,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         for obj in objects {
             if let Object::RichText(rich_text_obj) = obj {
                 if let Some(position) = self.find_by_rich_text_id(rich_text_obj.id) {
-                    let scaled_position_x = rich_text_obj.position[0]
-                        * self.inner[position].val.dimension.dimension.scale;
-                    let scaled_position_y = rich_text_obj.position[1]
-                        * self.inner[position].val.dimension.dimension.scale;
+                    let scaled_position_x = rich_text_obj.position[0] * (self.scaled_padding / PADDING);
+                    let scaled_position_y = rich_text_obj.position[1] * (self.scaled_padding / PADDING);
                     if mouse.x >= scaled_position_x as usize
                         && mouse.y >= scaled_position_y as usize
                     {
@@ -397,62 +425,48 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         )
     }
 
-    pub fn plot_objects(
-        &self,
-        objects: &mut Vec<Object>,
-        index: usize,
-        margin: Delta<f32>,
-    ) {
+    pub fn plot_objects(&self, objects: &mut Vec<Object>) {
+        if self.inner.is_empty() {
+            return;
+        }
+        self.plot_objects_recursive(objects, 0);
+    }
+
+    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, index: usize) {
         if let Some(item) = self.inner.get(index) {
-            objects.push(Object::RichText(RichText {
-                id: item.val.rich_text_id,
-                position: [margin.x, margin.top_y],
-                lines: None,
-            }));
+            // Add pre-computed rich text object
+            objects.push(item.rich_text_object.clone());
 
-            let scale = self.inner[self.current].val.dimension.dimension.scale;
-            let scaled_padding = PADDING * scale;
+            let item_pos = item.position();
 
-            let new_margin = Delta {
-                x: margin.x,
-                top_y: margin.top_y
-                    + scaled_padding
-                    + (item.val.dimension.height / item.val.dimension.dimension.scale),
-                bottom_y: margin.bottom_y,
-            };
-
+            // Always create horizontal border
             objects.push(create_border(
                 self.border_color,
-                [new_margin.x, new_margin.top_y - scaled_padding],
+                [item_pos[0], item_pos[1] + (item.val.dimension.height / item.val.dimension.dimension.scale)],
                 [
                     item.val.dimension.width / item.val.dimension.dimension.scale,
                     1.,
                 ],
             ));
 
+            // Recurse down if child exists
             if let Some(down_item) = item.down {
-                self.plot_objects(objects, down_item, new_margin);
+                self.plot_objects_recursive(objects, down_item);
             }
 
-            let new_margin = Delta {
-                x: margin.x
-                    + scaled_padding
-                    + (item.val.dimension.width / item.val.dimension.dimension.scale),
-                top_y: margin.top_y,
-                bottom_y: margin.bottom_y,
-            };
-
+            // Always create vertical border
             objects.push(create_border(
                 self.border_color,
-                [new_margin.x - scaled_padding, new_margin.top_y],
+                [item_pos[0] + (item.val.dimension.width / item.val.dimension.dimension.scale), item_pos[1]],
                 [
                     1.,
                     item.val.dimension.height / item.val.dimension.dimension.scale,
                 ],
             ));
 
+            // Recurse right if child exists
             if let Some(right_item) = item.right {
-                self.plot_objects(objects, right_item, new_margin);
+                self.plot_objects_recursive(objects, right_item);
             }
         }
     }
@@ -479,6 +493,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
         }
+        // Update scaled_padding from the first context (they should all have the same scale)
+        if let Some(first_context) = self.inner.first() {
+            self.scaled_padding = PADDING * first_context.val.dimension.dimension.scale;
+        }
+        self.calculate_positions();
     }
 
     pub fn resize(&mut self, new_width: f32, new_height: f32) {
@@ -505,6 +524,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 crate::renderer::utils::terminal_dimensions(&context.val.dimension);
             let _ = context.val.messenger.send_resize(winsize);
         }
+        // All nodes are affected by resize
+        let all_indices: Vec<usize> = (0..self.inner.len()).collect();
+        self.calculate_positions_for_affected_nodes(&all_indices);
     }
 
     // TODO: It works partially, if the panels have different dimensions it gets a bit funky
@@ -555,6 +577,106 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.inner[index].val.messenger.send_resize(winsize);
     }
 
+    /// Calculate and update positions for all grid items
+    pub fn calculate_positions(&mut self) {
+        if self.inner.is_empty() {
+            return;
+        }
+        self.calculate_positions_recursive(0, self.margin);
+    }
+
+    /// Calculate positions only for affected nodes and their children
+    pub fn calculate_positions_for_affected_nodes(&mut self, affected_indices: &[usize]) {
+        if self.inner.is_empty() {
+            return;
+        }
+        
+        // For each affected node, we need to recalculate its position and all its children
+        for &index in affected_indices {
+            if index < self.inner.len() {
+                // Find the position this node should have based on its parent
+                let margin = self.find_node_margin(index);
+                self.calculate_positions_recursive(index, margin);
+            }
+        }
+    }
+
+    /// Find the margin/position a node should have based on its parent
+    fn find_node_margin(&self, index: usize) -> Delta<f32> {
+        // If it's the root node (index 0), use the grid margin
+        if index == 0 {
+            return self.margin;
+        }
+
+        // Find the parent of this node
+        for (_parent_index, parent) in self.inner.iter().enumerate() {
+            if let Some(right_child) = parent.right {
+                if right_child == index {
+                    // This is a right child
+                    let parent_pos = parent.position();
+                    return Delta {
+                        x: parent_pos[0] + self.scaled_padding
+                            + (parent.val.dimension.width / parent.val.dimension.dimension.scale),
+                        top_y: parent_pos[1],
+                        bottom_y: self.margin.bottom_y,
+                    };
+                }
+            }
+            if let Some(down_child) = parent.down {
+                if down_child == index {
+                    // This is a down child
+                    let parent_pos = parent.position();
+                    return Delta {
+                        x: parent_pos[0],
+                        top_y: parent_pos[1] + self.scaled_padding
+                            + (parent.val.dimension.height / parent.val.dimension.dimension.scale),
+                        bottom_y: self.margin.bottom_y,
+                    };
+                }
+            }
+        }
+
+        // Fallback to grid margin if parent not found
+        self.margin
+    }
+
+    /// Recursively calculate positions for grid items
+    fn calculate_positions_recursive(&mut self, index: usize, margin: Delta<f32>) {
+        if let Some(item) = self.inner.get_mut(index) {
+            // Set position for current item in the rich text object
+            item.set_position([margin.x, margin.top_y]);
+
+            // Calculate margin for down item
+            let down_margin = Delta {
+                x: margin.x,
+                top_y: margin.top_y + self.scaled_padding
+                    + (item.val.dimension.height / item.val.dimension.dimension.scale),
+                bottom_y: margin.bottom_y,
+            };
+
+            // Calculate margin for right item
+            let right_margin = Delta {
+                x: margin.x + self.scaled_padding
+                    + (item.val.dimension.width / item.val.dimension.dimension.scale),
+                top_y: margin.top_y,
+                bottom_y: margin.bottom_y,
+            };
+
+            // Store the down and right indices to avoid borrowing issues
+            let down_item = item.down;
+            let right_item = item.right;
+
+            // Recursively calculate positions for child items
+            if let Some(down_index) = down_item {
+                self.calculate_positions_recursive(down_index, down_margin);
+            }
+
+            if let Some(right_index) = right_item {
+                self.calculate_positions_recursive(right_index, right_margin);
+            }
+        }
+    }
+
     pub fn remove_current(&mut self) {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
@@ -585,8 +707,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let to_be_removed_width =
             self.inner[to_be_removed].val.dimension.width + self.margin.x;
         let to_be_removed_height = self.inner[to_be_removed].val.dimension.height;
-        let scaled_padding =
-            PADDING * self.inner[to_be_removed].val.dimension.dimension.scale;
 
         // Find parent context if it exists
         let mut parent_context = None;
@@ -616,13 +736,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 is_right,
                 to_be_removed_width,
                 to_be_removed_height,
-                scaled_padding,
+                self.scaled_padding,
             );
+            self.calculate_positions_for_affected_nodes(&[parent_index]);
             return;
         }
 
         // Handle removal without parent (root context)
-        self.handle_root_removal(to_be_removed, to_be_removed_height, scaled_padding);
+        self.handle_root_removal(to_be_removed, to_be_removed_height, self.scaled_padding);
+        self.calculate_positions_for_affected_nodes(&[0]);
     }
 
     fn handle_removal_with_parent(
@@ -890,13 +1012,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_width =
             self.inner[self.current].val.dimension.width - self.margin.x;
         let new_grid_item_width = old_grid_item_width / 2.0;
-        let scale = self.inner[self.current].val.dimension.dimension.scale;
-        let scaled_padding = PADDING * scale;
 
         self.inner[self.current]
             .val
             .dimension
-            .update_width(new_grid_item_width - scaled_padding);
+            .update_width(new_grid_item_width - self.scaled_padding);
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
@@ -938,6 +1058,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         self.request_resize(new_current);
+        self.calculate_positions_for_affected_nodes(&[self.current, new_current]);
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
@@ -946,12 +1067,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_height = self.inner[self.current].val.dimension.height;
         let old_grid_item_width = self.inner[self.current].val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
-        let scale = self.inner[self.current].val.dimension.dimension.scale;
-        let scaled_padding = PADDING * scale;
         self.inner[self.current]
             .val
             .dimension
-            .update_height(new_grid_item_height - scaled_padding);
+            .update_height(new_grid_item_height - self.scaled_padding);
 
         // The current dimension margin should reset
         // otherwise will add a space before the rect
@@ -993,6 +1112,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         self.request_resize(new_current);
+        self.calculate_positions_for_affected_nodes(&[self.current, new_current]);
     }
 
     /// Move divider up - decreases height of current split and increases height of split above
@@ -1026,6 +1146,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
                     self.request_resize(current_index);
                     self.request_resize(index);
+                    
+                    // Update positions for affected nodes
+                    self.calculate_positions_for_affected_nodes(&[current_index, index]);
                     return true;
                 }
             }
@@ -1048,6 +1171,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
                 self.request_resize(current_index);
                 self.request_resize(down_child_index);
+                
+                // Update positions for affected nodes
+                self.calculate_positions_for_affected_nodes(&[current_index, down_child_index]);
                 return true;
             }
         }
@@ -1080,12 +1206,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         return false;
                     }
 
-                    // Expand current, shrink parent (above)
+                    // Expand current, shrink parent (above) - divider moves down
                     self.inner[current_index].val.dimension.update_height(current_height + amount);
                     self.inner[index].val.dimension.update_height(parent_height - amount);
 
                     self.request_resize(current_index);
                     self.request_resize(index);
+                    
+                    // Update positions for affected nodes
+                    self.calculate_positions_for_affected_nodes(&[current_index, index]);
                     return true;
                 }
             }
@@ -1102,12 +1231,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     return false;
                 }
 
-                // Expand current, shrink down child
+                // Expand current, shrink down child - divider moves down
                 self.inner[current_index].val.dimension.update_height(current_height + amount);
                 self.inner[down_child_index].val.dimension.update_height(down_height - amount);
 
                 self.request_resize(current_index);
                 self.request_resize(down_child_index);
+                
+                // Update positions for affected nodes
+                self.calculate_positions_for_affected_nodes(&[current_index, down_child_index]);
                 return true;
             }
         }
@@ -1167,6 +1299,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             self.request_resize(left_idx);
             self.request_resize(right_idx);
+            
+            // Update positions for affected nodes
+            self.calculate_positions_for_affected_nodes(&[left_idx, right_idx]);
             return true;
         }
 
@@ -1225,6 +1360,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             self.request_resize(left_idx);
             self.request_resize(right_idx);
+            
+            // Update positions for affected nodes
+            self.calculate_positions_for_affected_nodes(&[left_idx, right_idx]);
             return true;
         }
 
@@ -2242,9 +2380,8 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, third_context_id);
         assert_eq!(grid.current_index(), 2);
 
+        let scaled_padding = grid.scaled_padding();
         let contexts = grid.contexts();
-
-        let scaled_padding = PADDING * contexts[0].val.dimension.dimension.scale;
 
         // Check their respective width
         assert_eq!(
@@ -2825,7 +2962,7 @@ pub mod test {
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let scaled_padding = grid.scaled_padding();
         let old_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.width, old_expected_width);
         assert_eq!(grid.current_index(), 0);
@@ -2917,7 +3054,7 @@ pub mod test {
 
         grid.select_prev_split();
 
-        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let scaled_padding = grid.scaled_padding();
         let old_context_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.width, old_context_expected_width);
         assert_eq!(grid.current_index(), 0);
@@ -3127,7 +3264,7 @@ pub mod test {
         assert_eq!(grid.current_index(), 1);
 
         grid.select_prev_split();
-        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let scaled_padding = grid.scaled_padding();
         let old_expected_width = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.height, old_expected_width);
         assert_eq!(grid.current_index(), 0);
@@ -3219,7 +3356,7 @@ pub mod test {
 
         grid.select_prev_split();
 
-        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let scaled_padding = grid.scaled_padding();
         let old_context_expected_height = (600. / 2.) - scaled_padding;
         assert_eq!(grid.current().dimension.height, old_context_expected_height);
         assert_eq!(grid.current_index(), 0);
@@ -4050,7 +4187,7 @@ pub mod test {
         assert_eq!(grid.current_index(), 0);
         assert_eq!(grid.current().rich_text_id, 0);
 
-        let scaled_padding = PADDING * grid.current().dimension.dimension.scale;
+        let scaled_padding = grid.scaled_padding();
         mouse.y = (new_context_expected_height + scaled_padding) as usize;
         grid.select_current_based_on_mouse(&mouse);
 
@@ -5246,5 +5383,475 @@ pub mod test {
         
         let height_difference = (original_total_height - new_total_height).abs();
         assert!(height_difference < 1.0, "Total height changed by more than 1.0: {} vs {}", original_total_height, new_total_height);
+    }
+
+    #[test]
+    fn test_position_calculation_single_context() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 2.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+
+        let margin = Delta {
+            x: 10.0,
+            top_y: 20.0,
+            bottom_y: 30.0,
+        };
+
+        let grid = ContextGrid::<VoidListener>::new(context, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Single context should be positioned at margin
+        assert_eq!(grid.inner[0].position(), [10.0, 20.0]);
+        assert_eq!(grid.scaled_padding(), PADDING * 2.0);
+    }
+
+    #[test]
+    fn test_position_calculation_after_split_right() {
+        let first_context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let second_context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            first_context_dimension,
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            second_context_dimension,
+        );
+
+        let margin = Delta {
+            x: 0.0,
+            top_y: 0.0,
+            bottom_y: 0.0,
+        };
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, margin, [1.0, 1.0, 1.0, 1.0]);
+        grid.split_right(second_context);
+
+        // First context should remain at origin
+        assert_eq!(grid.inner[0].position(), [0.0, 0.0]);
+        
+        // Second context should be positioned to the right of first + padding
+        let expected_x = 0.0 + PADDING + (grid.inner[0].val.dimension.width / grid.inner[0].val.dimension.dimension.scale);
+        assert_eq!(grid.inner[1].position(), [expected_x, 0.0]);
+    }
+
+    #[test]
+    fn test_position_calculation_after_split_down() {
+        let first_context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let second_context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            first_context_dimension,
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            second_context_dimension,
+        );
+
+        let margin = Delta {
+            x: 0.0,
+            top_y: 0.0,
+            bottom_y: 0.0,
+        };
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, margin, [1.0, 1.0, 1.0, 1.0]);
+        grid.split_down(second_context);
+
+        // First context should remain at origin
+        assert_eq!(grid.inner[0].position(), [0.0, 0.0]);
+        
+        // Second context should be positioned below first + padding
+        let expected_y = 0.0 + PADDING + (grid.inner[0].val.dimension.height / grid.inner[0].val.dimension.dimension.scale);
+        assert_eq!(grid.inner[1].position(), [0.0, expected_y]);
+    }
+
+    #[test]
+    fn test_position_calculation_complex_layout() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 100.0,
+                height: 100.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create separate contexts instead of trying to clone
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension.clone(),
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            context_dimension.clone(),
+        );
+
+        let third_context = create_mock_context(
+            VoidListener,
+            WindowId::from(2),
+            3,
+            3,
+            context_dimension.clone(),
+        );
+
+        let fourth_context = create_mock_context(
+            VoidListener,
+            WindowId::from(3),
+            4,
+            4,
+            context_dimension,
+        );
+
+        let margin = Delta {
+            x: 0.0,
+            top_y: 0.0,
+            bottom_y: 0.0,
+        };
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, margin, [1.0, 1.0, 1.0, 1.0]);
+        
+        // Create layout: 
+        // [0] [1]
+        // [2] [3]
+        grid.split_right(second_context);
+        grid.current = 0;
+        grid.split_down(third_context);
+        grid.current = 1;
+        grid.split_down(fourth_context);
+
+        // Verify positions
+        assert_eq!(grid.inner[0].position(), [0.0, 0.0]); // Top-left
+        
+        let right_x = PADDING + (grid.inner[0].val.dimension.width / grid.inner[0].val.dimension.dimension.scale);
+        assert_eq!(grid.inner[1].position(), [right_x, 0.0]); // Top-right
+        
+        let down_y = PADDING + (grid.inner[0].val.dimension.height / grid.inner[0].val.dimension.dimension.scale);
+        assert_eq!(grid.inner[2].position(), [0.0, down_y]); // Bottom-left
+        
+        assert_eq!(grid.inner[3].position(), [right_x, down_y]); // Bottom-right
+    }
+
+    #[test]
+    fn test_scaled_padding_consistency() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 2.5,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension,
+        );
+
+        let grid = ContextGrid::<VoidListener>::new(context, Delta::default(), [1.0, 1.0, 1.0, 1.0]);
+
+        // Verify scaled_padding is correctly calculated and stored
+        assert_eq!(grid.scaled_padding(), PADDING * 2.5);
+        assert_eq!(grid.scale(), 2.5);
+    }
+
+    #[test]
+    fn test_move_divider_right_updates_positions() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension.clone(),
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            context_dimension,
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, Delta::default(), [1.0, 1.0, 1.0, 1.0]);
+        grid.split_right(second_context);
+
+        // Record initial positions
+        let initial_first_pos = grid.inner[0].position();
+        let initial_second_pos = grid.inner[1].position();
+
+        // Move divider right by 50 pixels
+        assert!(grid.move_divider_right(50.0));
+
+        // Verify positions are updated
+        let new_first_pos = grid.inner[0].position();
+        let new_second_pos = grid.inner[1].position();
+
+        // First split position should remain the same (it's at origin)
+        assert_eq!(new_first_pos, initial_first_pos);
+
+        // Second split should move right because first split expanded
+        assert!(new_second_pos[0] > initial_second_pos[0]);
+        assert_eq!(new_second_pos[1], initial_second_pos[1]); // Y should remain same
+    }
+
+    #[test]
+    fn test_move_divider_down_updates_positions() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension.clone(),
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            context_dimension,
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, Delta::default(), [1.0, 1.0, 1.0, 1.0]);
+        grid.split_down(second_context);
+
+        // Record initial positions
+        let initial_first_pos = grid.inner[0].position();
+        let initial_second_pos = grid.inner[1].position();
+
+        // Move divider down by 30 pixels
+        assert!(grid.move_divider_down(30.0));
+
+        // Verify positions are updated
+        let new_first_pos = grid.inner[0].position();
+        let new_second_pos = grid.inner[1].position();
+
+        // First split position should remain the same (it's at origin)
+        assert_eq!(new_first_pos, initial_first_pos);
+
+        // When we move divider down from the bottom split (current), it expands the bottom split
+        // and shrinks the top split. This means the bottom split moves UP to fill the space
+        // left by the shrinking top split.
+        assert!(new_second_pos[1] < initial_second_pos[1]); // Bottom split moves up
+        assert_eq!(new_second_pos[0], initial_second_pos[0]); // X should remain same
+    }
+
+    #[test]
+    fn test_move_divider_left_updates_positions() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension.clone(),
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            context_dimension,
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, Delta::default(), [1.0, 1.0, 1.0, 1.0]);
+        grid.split_right(second_context);
+
+        // Record initial positions
+        let initial_first_pos = grid.inner[0].position();
+        let initial_second_pos = grid.inner[1].position();
+
+        // Move divider left by 40 pixels
+        assert!(grid.move_divider_left(40.0));
+
+        // Verify positions are updated
+        let new_first_pos = grid.inner[0].position();
+        let new_second_pos = grid.inner[1].position();
+
+        // First split position should remain the same (it's at origin)
+        assert_eq!(new_first_pos, initial_first_pos);
+
+        // Second split should move left because first split shrank
+        assert!(new_second_pos[0] < initial_second_pos[0]);
+        assert_eq!(new_second_pos[1], initial_second_pos[1]); // Y should remain same
+    }
+
+    #[test]
+    fn test_move_divider_up_updates_positions() {
+        let context_dimension = ContextDimension::build(
+            600.,
+            400.,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let first_context = create_mock_context(
+            VoidListener,
+            WindowId::from(0),
+            1,
+            1,
+            context_dimension.clone(),
+        );
+
+        let second_context = create_mock_context(
+            VoidListener,
+            WindowId::from(1),
+            2,
+            2,
+            context_dimension,
+        );
+
+        let mut grid = ContextGrid::<VoidListener>::new(first_context, Delta::default(), [1.0, 1.0, 1.0, 1.0]);
+        grid.split_down(second_context);
+
+        // Record initial positions
+        let initial_first_pos = grid.inner[0].position();
+        let initial_second_pos = grid.inner[1].position();
+
+        // Move divider up by 25 pixels
+        assert!(grid.move_divider_up(25.0));
+
+        // Verify positions are updated
+        let new_first_pos = grid.inner[0].position();
+        let new_second_pos = grid.inner[1].position();
+
+        // First split position should remain the same (it's at origin)
+        assert_eq!(new_first_pos, initial_first_pos);
+
+        // When we move divider up from the bottom split (current), it shrinks the bottom split
+        // and expands the top split. This means the bottom split moves DOWN to make room
+        // for the expanded top split.
+        assert!(new_second_pos[1] > initial_second_pos[1]); // Bottom split moves down
+        assert_eq!(new_second_pos[0], initial_second_pos[0]); // X should remain same
     }
 }

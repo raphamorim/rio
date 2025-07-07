@@ -870,10 +870,12 @@ impl Screen<'_> {
                         self.split_down();
                     }
                     Act::MoveDividerUp => {
-                        self.move_divider_up();
+                        // User wants divider to move up visually, which means expanding the bottom split
+                        self.move_divider_down();
                     }
                     Act::MoveDividerDown => {
-                        self.move_divider_down();
+                        // User wants divider to move down visually, which means expanding the top split
+                        self.move_divider_up();
                     }
                     Act::MoveDividerLeft => {
                         self.move_divider_left();
