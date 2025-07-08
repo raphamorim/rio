@@ -33,6 +33,9 @@ wayland-csd-adwaita-notitle = ["sctk-adwaita"]
 [build-dependencies]
 cfg_aliases = "0.2.0"
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+bindgen = "0.70.1"
+
 [dependencies]
 bitflags = { workspace = true }
 cursor-icon = "1.1.0"
