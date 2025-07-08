@@ -6,19 +6,15 @@
 //! ## Why CVDisplayLink vs NSTimer/Event-Driven Rendering?
 //!
 //! ### Traditional Approach (Rio's previous method):
-//! ```
-//! // Event-driven rendering - fires whenever something changes
-//! self.request_redraw(); // Irregular timing, not VSync aligned
+//! - Event-driven rendering - fires whenever something changes
+//! - request_redraw() calls have irregular timing, not VSync aligned
 //!
-//! // Or NSTimer-based rendering
-//! Timer::new(16.67ms, || self.request_redraw()); // Close but not precise
-//! ```
+//! - Or NSTimer-based rendering with approximate 16.67ms timing
+//! - Timer callbacks are close but not precise to display refresh
 //!
 //! ### CVDisplayLink Approach (Rio's new method):
-//! ```
-//! // VSync-synchronized rendering - fires exactly when display is ready
-//! CVDisplayLink -> GCD dispatch -> main thread callback -> request_frame()
-//! ```
+//! - VSync-synchronized rendering - fires exactly when display is ready
+//! - CVDisplayLink -> GCD dispatch -> main thread callback -> request_frame()
 //!
 //! ## Key Benefits:
 //!
