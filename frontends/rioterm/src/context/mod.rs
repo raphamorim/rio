@@ -1285,42 +1285,42 @@ pub mod test {
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]
@@ -1348,42 +1348,42 @@ pub mod test {
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]
@@ -1409,43 +1409,43 @@ pub mod test {
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         // Prev
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]
