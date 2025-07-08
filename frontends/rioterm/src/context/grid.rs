@@ -1654,11 +1654,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 right_item.val.dimension.update_width(right_width + amount);
             }
 
+            // Update all children in the vertical stacks to match their parent's width
+            self.update_children_width(left_key, left_width - amount);
+            self.update_children_width(right_key, right_width + amount);
+
             self.request_resize(left_key);
             self.request_resize(right_key);
 
+            // Collect all affected nodes (parents and their children)
+            let mut affected_nodes = vec![left_key, right_key];
+            self.collect_all_children(left_key, &mut affected_nodes);
+            self.collect_all_children(right_key, &mut affected_nodes);
+
             // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&[left_key, right_key]);
+            self.calculate_positions_for_affected_nodes(&affected_nodes);
             return true;
         }
 
@@ -1758,15 +1767,73 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 right_item.val.dimension.update_width(right_width - amount);
             }
 
+            // Update all children in the vertical stacks to match their parent's width
+            self.update_children_width(left_key, left_width + amount);
+            self.update_children_width(right_key, right_width - amount);
+
             self.request_resize(left_key);
             self.request_resize(right_key);
 
+            // Collect all affected nodes (parents and their children)
+            let mut affected_nodes = vec![left_key, right_key];
+            self.collect_all_children(left_key, &mut affected_nodes);
+            self.collect_all_children(right_key, &mut affected_nodes);
+
             // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&[left_key, right_key]);
+            self.calculate_positions_for_affected_nodes(&affected_nodes);
             return true;
         }
 
         false
+    }
+
+    /// Update the width of all children in a vertical stack to match the parent's width
+    fn update_children_width(&mut self, parent_key: DefaultKey, new_width: f32) {
+        // Find all down children and update their width
+        if let Some(parent) = self.inner.get(parent_key) {
+            if let Some(down_key) = parent.down {
+                self.update_children_width_recursive(down_key, new_width);
+            }
+        }
+    }
+
+    /// Recursively update width for all nodes in a vertical chain
+    fn update_children_width_recursive(&mut self, key: DefaultKey, new_width: f32) {
+        let down_key = if let Some(item) = self.inner.get_mut(key) {
+            item.val.dimension.update_width(new_width);
+            item.down
+        } else {
+            return;
+        };
+
+        self.request_resize(key);
+
+        // Continue down the chain
+        if let Some(down_key) = down_key {
+            self.update_children_width_recursive(down_key, new_width);
+        }
+    }
+
+    /// Collect all children (down and right) of a given node
+    fn collect_all_children(
+        &self,
+        parent_key: DefaultKey,
+        affected_nodes: &mut Vec<DefaultKey>,
+    ) {
+        if let Some(parent) = self.inner.get(parent_key) {
+            if let Some(right_key) = parent.right {
+                if !affected_nodes.contains(&right_key) {
+                    affected_nodes.push(right_key);
+                    self.collect_all_children(right_key, affected_nodes);
+                }
+            }
+            if let Some(down_key) = parent.down {
+                if !affected_nodes.contains(&down_key) {
+                    affected_nodes.push(down_key);
+                    self.collect_all_children(down_key, affected_nodes);
+                }
+            }
+        }
     }
 }
 
@@ -6486,14 +6553,13 @@ pub mod test {
             new_panel2_width > initial_panel2_width,
             "Panel 2 should expand"
         );
-        // Panel 3 width should remain the same in this implementation
-        assert_eq!(
-            new_panel3_width, initial_panel3_width,
-            "Panel 3 width should remain the same"
+        assert!(
+            new_panel3_width > initial_panel3_width,
+            "Panel 3 should expand"
         );
 
-        // Panel 2 should have expanded, Panel 3 should remain the same
-        assert_ne!(new_panel2_width, new_panel3_width);
+        // Panel 2 and 3 should have the same width (both expanded)
+        assert_eq!(new_panel2_width, new_panel3_width);
 
         // The change should be approximately the move amount
         assert!((initial_panel1_width - new_panel1_width - move_amount).abs() < 1.0);
@@ -6558,6 +6624,8 @@ pub mod test {
             grid.inner.get(panel1_key).unwrap().val.dimension.width;
         let initial_panel2_width =
             grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let initial_panel3_width =
+            grid.inner.get(panel3_key).unwrap().val.dimension.width;
 
         // Move divider left from panel 2
         let move_amount = 30.0;
@@ -6571,12 +6639,13 @@ pub mod test {
         let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
         let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
 
-        // Panel 1 should shrink, panel 2 should expand, panel 3 should remain the same
+        // Panel 1 should shrink, panel 2 and 3 should expand equally
         assert!(new_panel1_width < initial_panel1_width);
         assert!(new_panel2_width > initial_panel2_width);
+        assert!(new_panel3_width > initial_panel3_width);
 
-        // Panel 2 should have expanded, Panel 3 should remain the same
-        assert_ne!(new_panel2_width, new_panel3_width);
+        // Panel 2 and 3 should now have the same width (both expanded)
+        assert_eq!(new_panel2_width, new_panel3_width);
     }
 
     #[test]
@@ -6829,20 +6898,20 @@ pub mod test {
             "Panel 1 should shrink when moving divider left"
         );
 
-        // Panel 2 should expand, Panel 3 should remain the same
+        // Panel 2 and 3 should both expand
         assert!(
             new_panel2_width > initial_panel2_width,
             "Panel 2 should expand when moving divider left"
         );
-        assert_eq!(
-            new_panel3_width, initial_panel3_width,
-            "Panel 3 should remain the same when moving divider left"
+        assert!(
+            new_panel3_width > initial_panel3_width,
+            "Panel 3 should expand when moving divider left"
         );
 
-        // Panel 2 should have expanded, Panel 3 should remain the same
-        assert_ne!(
+        // Panel 2 and 3 should have the same width (both expanded)
+        assert_eq!(
             new_panel2_width, new_panel3_width,
-            "Panels 2 and 3 should have different widths after divider movement"
+            "Panels 2 and 3 should have the same width after divider movement"
         );
 
         // The width changes should be approximately the move amount
@@ -6858,7 +6927,10 @@ pub mod test {
             (panel2_expand - move_amount).abs() < 1.0,
             "Panel 2 should expand by approximately the move amount"
         );
-        assert!(panel3_expand.abs() < 1.0, "Panel 3 should not expand");
+        assert!(
+            (panel3_expand - move_amount).abs() < 1.0,
+            "Panel 3 should expand by approximately the move amount"
+        );
 
         // Test moving divider right (should work too)
         let right_result = grid.move_divider_right(move_amount);
@@ -7266,5 +7338,421 @@ pub mod test {
         }
         println!("  current_index: {}", grid.current_index());
         println!("  current rich_text_id: {}", grid.current().rich_text_id);
+    }
+
+    #[test]
+    fn test_divider_movement_vertical_stack_width_propagation() {
+        // Test that moving horizontal dividers correctly updates width for all panels in vertical stacks
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create contexts for |1|2/3| layout
+        let context1 =
+            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 =
+            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 =
+            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Build layout: |1|2/3|
+        grid.split_right(context2);
+        grid.split_down(context3);
+
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0];
+        let panel2_key = ordered_keys[1];
+        let panel3_key = ordered_keys[2];
+
+        // Record initial widths
+        let initial_panel1_width =
+            grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let initial_panel2_width =
+            grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let initial_panel3_width =
+            grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Panels 2 and 3 should start with the same width (they're in the same vertical stack)
+        assert_eq!(initial_panel2_width, initial_panel3_width);
+
+        // Test 1: Move divider left from panel 3 (bottom-right)
+        grid.current = panel3_key;
+        let move_amount = 50.0;
+        assert!(
+            grid.move_divider_left(move_amount),
+            "Should be able to move divider left from panel 3"
+        );
+
+        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Panel 1 should shrink
+        assert!(
+            new_panel1_width < initial_panel1_width,
+            "Panel 1 should shrink"
+        );
+
+        // Panels 2 and 3 should both expand by the same amount
+        assert!(
+            new_panel2_width > initial_panel2_width,
+            "Panel 2 should expand"
+        );
+        assert!(
+            new_panel3_width > initial_panel3_width,
+            "Panel 3 should expand"
+        );
+        assert_eq!(
+            new_panel2_width, new_panel3_width,
+            "Panels 2 and 3 should have same width"
+        );
+
+        // The width changes should be approximately the move amount
+        assert!((initial_panel1_width - new_panel1_width - move_amount).abs() < 1.0);
+        assert!((new_panel2_width - initial_panel2_width - move_amount).abs() < 1.0);
+        assert!((new_panel3_width - initial_panel3_width - move_amount).abs() < 1.0);
+
+        // Test 2: Move divider right to restore original widths
+        assert!(
+            grid.move_divider_right(move_amount),
+            "Should be able to move divider right from panel 3"
+        );
+
+        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        // Should be back to approximately original widths
+        assert!((final_panel1_width - initial_panel1_width).abs() < 1.0);
+        assert!((final_panel2_width - initial_panel2_width).abs() < 1.0);
+        assert!((final_panel3_width - initial_panel3_width).abs() < 1.0);
+        assert_eq!(final_panel2_width, final_panel3_width);
+
+        println!("✅ Vertical stack width propagation test passed!");
+    }
+
+    #[test]
+    fn test_divider_movement_from_different_panels_in_stack() {
+        // Test that divider movement works the same regardless of which panel in the stack is selected
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create contexts for |1|2/3| layout
+        let context1 =
+            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 =
+            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 =
+            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Build layout: |1|2/3|
+        grid.split_right(context2);
+        grid.split_down(context3);
+
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0];
+        let panel2_key = ordered_keys[1];
+        let panel3_key = ordered_keys[2];
+
+        let move_amount = 30.0;
+
+        // Test moving from panel 2 (top-right)
+        grid.current = panel2_key;
+        let initial_widths_2 = (
+            grid.inner.get(panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+        );
+
+        assert!(grid.move_divider_left(move_amount));
+
+        let after_panel2_widths = (
+            grid.inner.get(panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+        );
+
+        // Reset to original state
+        assert!(grid.move_divider_right(move_amount));
+
+        // Test moving from panel 3 (bottom-right)
+        grid.current = panel3_key;
+        let initial_widths_3 = (
+            grid.inner.get(panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+        );
+
+        assert!(grid.move_divider_left(move_amount));
+
+        let after_panel3_widths = (
+            grid.inner.get(panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+        );
+
+        // Both operations should produce the same result
+        assert_eq!(
+            initial_widths_2, initial_widths_3,
+            "Initial widths should be the same"
+        );
+        assert_eq!(
+            after_panel2_widths, after_panel3_widths,
+            "Results should be the same regardless of which panel is selected"
+        );
+
+        // Both panels 2 and 3 should have expanded equally
+        assert_eq!(
+            after_panel3_widths.1, after_panel3_widths.2,
+            "Panels 2 and 3 should have same width"
+        );
+
+        println!("✅ Divider movement from different panels test passed!");
+    }
+
+    #[test]
+    fn test_divider_movement_complex_vertical_stack() {
+        // Test with a more complex vertical stack: |1|2/3| where we add another panel to the right
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            1200.0, // Wider to accommodate 3 horizontal panels
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context1 =
+            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 =
+            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 =
+            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+        let context4 =
+            create_mock_context(VoidListener, WindowId::from(3), 4, 4, context_dimension);
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Build layout: |1|2/3|4|
+        grid.split_right(context2); // |1|2|
+        grid.split_down(context3); // |1|2/3|
+        grid.current = grid.get_ordered_keys()[0]; // Select panel 1
+        grid.split_right(context4); // |1|4|2/3| -> but this creates |1|2/3|4| due to ordering
+
+        let ordered_keys = grid.get_ordered_keys();
+
+        // Debug: print the actual layout
+        println!("Debug actual layout:");
+        for (i, &key) in ordered_keys.iter().enumerate() {
+            let item = &grid.inner[key];
+            println!("  Panel {}: rich_text_id={}, width={}, parent={:?}, right={:?}, down={:?}",
+                     i+1, item.val.rich_text_id, item.val.dimension.width,
+                     item.parent, item.right, item.down);
+        }
+
+        // Find panels by their rich_text_id for clarity
+        let mut panel_keys = std::collections::HashMap::new();
+        for &key in &ordered_keys {
+            let item = &grid.inner[key];
+            panel_keys.insert(item.val.rich_text_id, key);
+        }
+
+        let panel1_key = panel_keys[&1];
+        let panel2_key = panel_keys[&2];
+        let panel3_key = panel_keys[&3];
+        let panel4_key = panel_keys[&4];
+
+        // Record initial widths
+        let _initial_widths = (
+            grid.inner.get(panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(panel4_key).unwrap().val.dimension.width,
+        );
+
+        // Try moving divider from panel 2 (which should work)
+        grid.current = panel2_key;
+        let move_amount = 40.0;
+        let move_result = grid.move_divider_left(move_amount);
+
+        if move_result {
+            let new_widths = (
+                grid.inner.get(panel1_key).unwrap().val.dimension.width,
+                grid.inner.get(panel2_key).unwrap().val.dimension.width,
+                grid.inner.get(panel3_key).unwrap().val.dimension.width,
+                grid.inner.get(panel4_key).unwrap().val.dimension.width,
+            );
+
+            // Panels 2 and 3 should have the same width (they're in the same vertical stack)
+            assert_eq!(
+                new_widths.1, new_widths.2,
+                "Panels 2 and 3 should have same width"
+            );
+
+            println!("✅ Complex layout divider movement test passed!");
+        } else {
+            println!("ℹ️  Divider movement not supported for this specific layout - test skipped");
+        }
+    }
+
+    #[test]
+    fn test_divider_movement_preserves_total_width() {
+        // Test that divider movement preserves the total width of the grid
+        let margin = Delta::default();
+        let total_width = 800.0;
+        let context_dimension = ContextDimension::build(
+            total_width,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        let context1 =
+            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 =
+            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 =
+            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Build layout: |1|2/3|
+        grid.split_right(context2);
+        grid.split_down(context3);
+
+        let ordered_keys = grid.get_ordered_keys();
+        let panel1_key = ordered_keys[0];
+        let panel2_key = ordered_keys[1];
+        let panel3_key = ordered_keys[2];
+
+        // Calculate initial total width
+        let initial_total = grid.inner.get(panel1_key).unwrap().val.dimension.width
+            + grid.inner.get(panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
+
+        // Move divider and check total width is preserved
+        grid.current = panel3_key;
+        assert!(grid.move_divider_left(50.0));
+
+        let new_total = grid.inner.get(panel1_key).unwrap().val.dimension.width
+            + grid.inner.get(panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
+
+        assert!(
+            (initial_total - new_total).abs() < 1.0,
+            "Total width should be preserved"
+        );
+
+        println!("✅ Total width preservation test passed!");
+    }
+
+    #[test]
+    fn test_issue_panel3_width_changes_when_moving_divider() {
+        // Regression test for the specific issue:
+        // "if i have two vertical tabs and in the second i have two horizontals.
+        // If i am focused on the 3 |1|2/3| , if i try to move the divider left,
+        // it does work but the width of the 3 doesn't change"
+
+        let margin = Delta::default();
+        let context_dimension = ContextDimension::build(
+            800.0,
+            600.0,
+            SugarDimensions {
+                scale: 1.0,
+                width: 20.0,
+                height: 40.0,
+            },
+            1.0,
+            Delta::default(),
+        );
+
+        // Create the exact layout described: |1|2/3|
+        let context1 =
+            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+        let context2 =
+            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+        let context3 =
+            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+
+        let mut grid =
+            ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
+
+        // Build layout: |1|2/3|
+        grid.split_right(context2); // |1|2|
+        grid.split_down(context3); // |1|2/3|
+
+        let ordered_keys = grid.get_ordered_keys();
+        let _panel1_key = ordered_keys[0];
+        let _panel2_key = ordered_keys[1];
+        let panel3_key = ordered_keys[2];
+
+        // Focus on panel 3 (as described in the issue)
+        grid.current = panel3_key;
+
+        // Record initial width of panel 3
+        let initial_panel3_width =
+            grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        println!("Before moving divider:");
+        println!("  Panel 3 width: {}", initial_panel3_width);
+
+        // Move divider left (this should now work and change panel 3's width)
+        let move_amount = 50.0;
+        let move_result = grid.move_divider_left(move_amount);
+        assert!(move_result, "Moving divider left should work");
+
+        // Check that panel 3's width actually changed
+        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+
+        println!("After moving divider left by {}:", move_amount);
+        println!("  Panel 3 width: {}", new_panel3_width);
+
+        // This is the key assertion - panel 3's width should have changed!
+        assert!(
+            new_panel3_width > initial_panel3_width,
+            "Panel 3's width should increase when moving divider left (was {}, now {})",
+            initial_panel3_width,
+            new_panel3_width
+        );
+
+        // The change should be approximately the move amount
+        assert!(
+            (new_panel3_width - initial_panel3_width - move_amount).abs() < 1.0,
+            "Panel 3 should expand by approximately the move amount"
+        );
     }
 }
