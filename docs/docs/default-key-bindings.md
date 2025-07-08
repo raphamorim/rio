@@ -38,6 +38,10 @@ language: 'en'
 | Split down    		 | `Command + Shift + d`  |
 | Select next split      | `Command + ]`          |
 | Select prev split      | `Command + [`          |
+| Move divider up        | `Control + Command + ArrowUp`    |
+| Move divider down      | `Control + Command + ArrowDown`  |
+| Move divider left      | `Control + Command + ArrowLeft`  |
+| Move divider right     | `Control + Command + ArrowRight` |
 
 ### Windows
 
@@ -70,6 +74,10 @@ language: 'en'
 | Split down    		 | `Control + Shift + d`  |
 | Select next split      | `Control + Shift + ]`  |
 | Select prev split      | `Control + Shift + [`  |
+| Move divider up        | `Control + Shift + Alt + ArrowUp`    |
+| Move divider down      | `Control + Shift + Alt + ArrowDown`  |
+| Move divider left      | `Control + Shift + Alt + ArrowLeft`  |
+| Move divider right     | `Control + Shift + Alt + ArrowRight` |
 
 ### Linux and BSD
 
@@ -102,6 +110,10 @@ language: 'en'
 | Split down    		 | `Control + Shift + d`  |
 | Select next split      | `Control + Shift + ]`  |
 | Select prev split      | `Control + Shift + [`  |
+| Move divider up        | `Control + Shift + Alt + ArrowUp`    |
+| Move divider down      | `Control + Shift + Alt + ArrowDown`  |
+| Move divider left      | `Control + Shift + Alt + ArrowLeft`  |
+| Move divider right     | `Control + Shift + Alt + ArrowRight` |
 
 ### Search
 

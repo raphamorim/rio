@@ -386,7 +386,7 @@ impl Screen<'_> {
 
             context_grid.update_dimensions(&self.sugarloaf);
 
-            for current_context in context_grid.contexts_mut() {
+            for (_key, current_context) in context_grid.contexts_mut() {
                 let current_context = current_context.context_mut();
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
@@ -497,7 +497,7 @@ impl Screen<'_> {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         for context_grid in self.context_manager.contexts_mut() {
-            for context in context_grid.contexts_mut() {
+            for (_key, context) in context_grid.contexts_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
@@ -869,6 +869,20 @@ impl Screen<'_> {
                     Act::SplitDown => {
                         self.split_down();
                     }
+                    Act::MoveDividerUp => {
+                        // User wants divider to move up visually, which means expanding the bottom split
+                        self.move_divider_down();
+                    }
+                    Act::MoveDividerDown => {
+                        // User wants divider to move down visually, which means expanding the top split
+                        self.move_divider_up();
+                    }
+                    Act::MoveDividerLeft => {
+                        self.move_divider_left();
+                    }
+                    Act::MoveDividerRight => {
+                        self.move_divider_right();
+                    }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
@@ -1091,6 +1105,34 @@ impl Screen<'_> {
         self.context_manager.split(rich_text_id, true);
 
         self.render();
+    }
+
+    pub fn move_divider_up(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_up(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_down(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_down(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_left(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_left(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_right(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_right(amount) {
+            self.render();
+        }
     }
 
     pub fn create_tab(&mut self) {

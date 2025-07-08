@@ -45,7 +45,7 @@ pub struct Renderer {
     pub colors: List,
     pub navigation: ScreenNavigation,
     unfocused_split_opacity: f32,
-    last_active: usize,
+    last_active: Option<slotmap::DefaultKey>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -91,7 +91,7 @@ impl Renderer {
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
-            last_active: 0,
+            last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -776,16 +776,16 @@ impl Renderer {
 
         // let grid_start = std::time::Instant::now();
         let grid = context_manager.current_grid_mut();
-        let active_index = grid.current;
+        let active_key = grid.current;
         let mut has_active_changed = false;
-        if self.last_active != active_index {
+        if self.last_active != Some(active_key) {
             has_active_changed = true;
 
-            self.last_active = active_index;
+            self.last_active = Some(active_key);
         }
 
-        for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
-            let is_active = active_index == index;
+        for (key, grid_context) in grid.contexts_mut().iter_mut() {
+            let is_active = active_key == key;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
