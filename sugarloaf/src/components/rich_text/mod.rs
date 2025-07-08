@@ -7,6 +7,8 @@ pub mod text;
 mod text_run_manager;
 mod vertex_pool;
 
+pub use batch::{BatchManager, Rect};
+
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
@@ -18,7 +20,7 @@ use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use crate::RichTextLinesRange;
-use compositor::{Compositor, Rect, Vertex};
+use compositor::{Compositor, Vertex};
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
@@ -784,6 +786,16 @@ impl RichTextBrush {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         tracing::info!("RichTextBrush atlas, glyph cache, and text run cache cleared");
+    }
+
+    #[inline]
+    pub fn add_quad(&mut self, x: f32, y: f32, width: f32, height: f32, depth: f32, color: &[f32; 4]) {
+        self.comp.add_quad(x, y, width, height, depth, color);
+    }
+
+    #[inline]
+    pub fn add_rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
+        self.comp.add_rect(rect, depth, color);
     }
 
     #[inline]
