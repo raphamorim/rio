@@ -336,25 +336,40 @@ impl RichTextBrush {
         self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
+    /// Extract font metrics using per-font calculation.
+    /// Each font calculates its own metrics using consistent approach.
     #[inline]
-    fn extract_font_metrics(
+    fn extract_normalized_metrics(
+        &self,
         lines: &[crate::layout::BuilderLine],
+        font_library: &FontLibrary,
     ) -> Option<(f32, f32, f32, usize, f32)> {
-        // Extract the first run from a line that has at least one run
-        lines
+        // Get the first run to determine font_id and size
+        let first_run = lines
             .iter()
             .filter(|line| !line.render_data.runs.is_empty())
             .map(|line| &line.render_data.runs[0])
-            .next()
-            .map(|run| {
-                (
-                    run.ascent.round(),
-                    run.descent.round(),
-                    (run.leading).round() * 2.0,
-                    run.span.font_id,
-                    run.size,
-                )
-            })
+            .next()?;
+
+        let font_id = first_run.span.font_id;
+        let font_size = first_run.size;
+
+        // Get metrics from the specific font using consistent calculation
+        let mut font_library_data = font_library.inner.write();
+        if let Some((ascent, descent, leading)) =
+            font_library_data.get_font_metrics(&font_id, font_size)
+        {
+            Some((ascent, descent, leading, font_id, font_size))
+        } else {
+            // Fallback to run metrics if font metrics calculation fails
+            Some((
+                first_run.ascent,
+                first_run.descent,
+                first_run.leading,
+                font_id,
+                font_size,
+            ))
+        }
     }
 
     #[inline]
@@ -373,13 +388,6 @@ impl RichTextBrush {
             return None;
         }
 
-        // let start = std::time::Instant::now();
-        let comp = &mut self.comp;
-        let caches = (&mut self.images, &mut self.glyphs);
-        let (image_cache, glyphs_cache) = caches;
-        let font_coords: &[i16] = &[0, 0, 0, 0];
-        let depth = 0.0;
-
         // Determine if we're calculating dimensions only or drawing layout
         let is_dimensions_only = pos.is_none() || rte_layout.is_none();
 
@@ -390,6 +398,17 @@ impl RichTextBrush {
             lines.as_slice()
         };
 
+        // Extract font metrics before borrowing self.comp
+        let font_metrics =
+            self.extract_normalized_metrics(lines_to_process, font_library);
+
+        // let start = std::time::Instant::now();
+        let comp = &mut self.comp;
+        let caches = (&mut self.images, &mut self.glyphs);
+        let (image_cache, glyphs_cache) = caches;
+        let font_coords: &[i16] = &[0, 0, 0, 0];
+        let depth = 0.0;
+
         // Get initial position
         let (x, y) = pos.unwrap_or((0.0, 0.0));
 
@@ -398,8 +417,6 @@ impl RichTextBrush {
         let mut last_rendered_graphic = HashSet::new();
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
-
-        let font_metrics = Self::extract_font_metrics(lines_to_process);
         if let Some((
             ascent,
             descent,
