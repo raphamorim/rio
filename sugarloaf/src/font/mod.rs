@@ -3,12 +3,17 @@ mod fallbacks;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
+pub mod metrics;
 pub mod text_run_cache;
+
+#[cfg(test)]
+mod cjk_metrics_tests;
 
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
 use crate::font::fonts::{parse_unicode, SugarloafFontStyle, SugarloafFontWidth};
+use crate::font::metrics::{FaceMetrics, Metrics};
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -132,6 +137,8 @@ pub struct FontLibraryData {
     pub inner: FxHashMap<usize, FontData>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
     pub hinting: bool,
+    // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
+    primary_metrics_cache: FxHashMap<u32, Metrics>,
 }
 
 impl Default for FontLibraryData {
@@ -140,6 +147,7 @@ impl Default for FontLibraryData {
             inner: FxHashMap::default(),
             hinting: true,
             symbol_maps: None,
+            primary_metrics_cache: FxHashMap::default(),
         }
     }
 }
@@ -230,6 +238,37 @@ impl FontLibraryData {
     #[inline]
     pub fn get_mut(&mut self, font_id: &usize) -> Option<&mut FontData> {
         self.inner.get_mut(font_id)
+    }
+
+    /// Get font metrics for rich text rendering (consistent metrics approach)
+    /// Primary font determines cell dimensions for all fonts
+    pub fn get_font_metrics(
+        &mut self,
+        font_id: &usize,
+        font_size: f32,
+    ) -> Option<(f32, f32, f32)> {
+        let size_key = (font_size * 100.0) as u32;
+
+        // First, ensure we have primary font metrics
+        let primary_metrics =
+            if let Some(cached) = self.primary_metrics_cache.get(&size_key) {
+                *cached
+            } else {
+                // Calculate primary font metrics and cache them
+                let primary_font = self.inner.get_mut(&FONT_ID_REGULAR)?;
+                let primary_metrics = primary_font.get_metrics(font_size, None)?;
+                self.primary_metrics_cache.insert(size_key, primary_metrics);
+                primary_metrics
+            };
+
+        if *font_id == FONT_ID_REGULAR {
+            // Primary font uses its own metrics
+            Some(primary_metrics.for_rich_text())
+        } else {
+            // Secondary fonts use primary font's cell dimensions
+            let font = self.inner.get_mut(font_id)?;
+            font.get_rich_text_metrics(font_size, Some(&primary_metrics))
+        }
     }
 
     #[inline]
@@ -443,8 +482,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
+        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
 
         vec![]
     }
@@ -495,6 +533,8 @@ pub struct FontData {
     pub should_embolden: bool,
     pub should_italicize: bool,
     pub is_emoji: bool,
+    // Cached metrics per font size (per-font caching)
+    metrics_cache: FxHashMap<u32, Metrics>,
 }
 
 impl PartialEq for FontData {
@@ -506,6 +546,70 @@ impl PartialEq for FontData {
 }
 
 impl FontData {
+    /// Get font data reference
+    pub fn data(&self) -> &Option<SharedData> {
+        &self.data
+    }
+
+    /// Get font offset
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    /// Get or calculate metrics for a given font size (consistent metrics approach)
+    /// For primary font: calculate natural metrics
+    /// For secondary fonts: use primary font's cell dimensions
+    pub fn get_metrics(
+        &mut self,
+        font_size: f32,
+        primary_metrics: Option<&Metrics>,
+    ) -> Option<Metrics> {
+        let size_key = (font_size * 100.0) as u32; // Use scaled int as key
+
+        if let Some(cached) = self.metrics_cache.get(&size_key) {
+            return Some(*cached);
+        }
+
+        // Calculate metrics if not cached
+        if let Some(ref data) = self.data {
+            let font_ref = crate::font_introspector::FontRef {
+                data: data.as_ref(),
+                offset: self.offset,
+                key: self.key,
+            };
+
+            let font_metrics =
+                crate::font_introspector::Metrics::from_font(&font_ref, &[]);
+            let scaled_metrics = font_metrics.scale(font_size);
+            let face_metrics = FaceMetrics::from(&scaled_metrics);
+
+            // Calculate metrics using consistent approach
+            let metrics = if let Some(primary) = primary_metrics {
+                // Secondary font: use primary font's cell dimensions
+                Metrics::calc_with_primary_cell_dimensions(face_metrics, primary)
+            } else {
+                // Primary font: calculate natural metrics
+                Metrics::calc(face_metrics)
+            };
+
+            // Cache the result
+            self.metrics_cache.insert(size_key, metrics);
+            Some(metrics)
+        } else {
+            None
+        }
+    }
+
+    /// Get metrics for rich text rendering
+    pub fn get_rich_text_metrics(
+        &mut self,
+        font_size: f32,
+        primary_metrics: Option<&Metrics>,
+    ) -> Option<(f32, f32, f32)> {
+        self.get_metrics(font_size, primary_metrics)
+            .map(|m| m.for_rich_text())
+    }
+
     #[inline]
     pub fn from_data(
         data: Vec<u8>,
@@ -549,6 +653,7 @@ impl FontData {
             stretch,
             path: Some(path),
             is_emoji,
+            metrics_cache: FxHashMap::default(),
         })
     }
 
@@ -579,6 +684,7 @@ impl FontData {
             stretch,
             path: None,
             is_emoji,
+            metrics_cache: FxHashMap::default(),
         })
     }
 }
