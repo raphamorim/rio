@@ -1,9 +1,11 @@
 mod font_cache;
+mod char_cache;
 pub mod navigation;
 mod search;
 pub mod utils;
 
 use font_cache::FontCache;
+use char_cache::CharCache;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -59,6 +61,7 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    char_cache: CharCache,
 }
 
 impl Renderer {
@@ -111,6 +114,7 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
+            char_cache: CharCache::new(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -743,7 +747,7 @@ impl Renderer {
                         line.add_text_on_line(
                             // Add on first line
                             1,
-                            &character.to_string(),
+                            self.char_cache.get_str(character),
                             char_style,
                         );
                     }
