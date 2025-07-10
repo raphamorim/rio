@@ -76,6 +76,7 @@ objc = { package = "objc-rs", version = "0.2.8" }
 memmap2 = "0.9.5"
 url = "2.5.4"
 slotmap = "1.0.7"
+criterion = { version = "0.6.0", features = ["html_reports"] }
 
 [profile.release]
 strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
