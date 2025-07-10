@@ -24,7 +24,7 @@ rio-backend = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = { workspace = true }

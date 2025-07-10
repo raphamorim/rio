@@ -86,7 +86,7 @@ fontconfig-parser = { version = "0.5.8", default-features = false }
 rio-window = { workspace = true }
 png = "0.17.16"
 deflate = "1.0.0"
-criterion = "0.5.1"
+criterion = { workspace = true }
 
 [features]
 default = ["scale", "render"]

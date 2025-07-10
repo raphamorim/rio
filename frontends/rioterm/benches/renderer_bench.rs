@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::collections::HashMap;
 
 // Mock types for benchmarking
@@ -150,23 +150,29 @@ fn bench_char_to_string_implementations(c: &mut Criterion) {
     let mut group = c.benchmark_group("char_to_string_hot_path");
 
     group.bench_function("current_implementation", |b| {
-        b.iter(|| current_char_to_string_hot_path(black_box(&test_data)))
+        b.iter(|| current_char_to_string_hot_path(std::hint::black_box(&test_data)))
     });
 
     group.bench_function("with_string_interning", |b| {
-        b.iter(|| optimized_char_to_string_with_interning(black_box(&test_data)))
+        b.iter(|| {
+            optimized_char_to_string_with_interning(std::hint::black_box(&test_data))
+        })
     });
 
     group.bench_function("with_ascii_cache", |b| {
-        b.iter(|| optimized_char_to_string_with_ascii_cache(black_box(&test_data)))
+        b.iter(|| {
+            optimized_char_to_string_with_ascii_cache(std::hint::black_box(&test_data))
+        })
     });
 
     group.bench_function("with_str_refs", |b| {
-        b.iter(|| optimized_char_to_str_refs(black_box(&test_data)))
+        b.iter(|| optimized_char_to_str_refs(std::hint::black_box(&test_data)))
     });
 
     group.bench_function("with_capacity_and_cache", |b| {
-        b.iter(|| optimized_with_capacity_and_ascii_cache(black_box(&test_data)))
+        b.iter(|| {
+            optimized_with_capacity_and_ascii_cache(std::hint::black_box(&test_data))
+        })
     });
 
     group.finish();
