@@ -457,6 +457,7 @@ pub struct RouteWindow<'a> {
     pub is_occluded: bool,
     pub needs_render_after_occlusion: bool,
     pub render_timestamp: Instant,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
@@ -476,25 +477,35 @@ impl<'a> RouteWindow<'a> {
             return None;
         }
 
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.render_timestamp);
-        let vblank = self.vblank_interval;
-
-        // Calculate how many complete frames have elapsed
-        let frames_elapsed = elapsed.as_nanos() / vblank.as_nanos();
-
-        // Calculate when the next frame should occur
-        let next_frame_time = self.render_timestamp
-            + Duration::from_nanos(
-                (frames_elapsed + 1) as u64 * vblank.as_nanos() as u64,
-            );
-
-        if next_frame_time > now {
-            // Return the time to wait until the next ideal frame time
-            Some(next_frame_time.duration_since(now))
-        } else {
-            // We've missed the target frame time, render immediately
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need software-based frame timing calculations
+        #[cfg(target_os = "macos")]
+        {
             None
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let now = Instant::now();
+            let elapsed = now.duration_since(self.render_timestamp);
+            let vblank = self.vblank_interval;
+
+            // Calculate how many complete frames have elapsed
+            let frames_elapsed = elapsed.as_nanos() / vblank.as_nanos();
+
+            // Calculate when the next frame should occur
+            let next_frame_time = self.render_timestamp
+                + Duration::from_nanos(
+                    (frames_elapsed + 1) as u64 * vblank.as_nanos() as u64,
+                );
+
+            if next_frame_time > now {
+                // Return the time to wait until the next ideal frame time
+                Some(next_frame_time.duration_since(now))
+            } else {
+                // We've missed the target frame time, render immediately
+                None
+            }
         }
     }
 
@@ -517,19 +528,25 @@ impl<'a> RouteWindow<'a> {
     //     }
     // }
 
+    #[inline]
     pub fn update_vblank_interval(&mut self) {
-        // Always update vblank interval based on monitor refresh rate
-        // Get the display refresh rate, default to 60Hz if unavailable
-        let refresh_rate_hz = self
-            .winit_window
-            .current_monitor()
-            .and_then(|monitor| monitor.refresh_rate_millihertz())
-            .unwrap_or(60_000) as f64
-            / 1000.0; // Convert millihertz to Hz
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need to calculate vblank intervals
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Always update vblank interval based on monitor refresh rate
+            // Get the display refresh rate, default to 60Hz if unavailable
+            let refresh_rate_hz = self
+                .winit_window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+                .unwrap_or(60_000) as f64
+                / 1000.0; // Convert millihertz to Hz
 
-        // Calculate frame time in microseconds (1,000,000 µs / refresh_rate)
-        let frame_time_us = (1_000_000.0 / refresh_rate_hz) as u64;
-        self.vblank_interval = Duration::from_micros(frame_time_us);
+            // Calculate frame time in microseconds (1,000,000 µs / refresh_rate)
+            let frame_time_us = (1_000_000.0 / refresh_rate_hz) as u64;
+            self.vblank_interval = Duration::from_micros(frame_time_us);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -585,15 +602,23 @@ impl<'a> RouteWindow<'a> {
         }
 
         // Get the display refresh rate and convert to frame interval
-        let monitor_refresh_rate_hz = winit_window
-            .current_monitor()
-            .and_then(|monitor| monitor.refresh_rate_millihertz())
-            .unwrap_or(60_000) as f64
-            / 1000.0;
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need to calculate vblank intervals
+        #[cfg(target_os = "macos")]
+        let monitor_vblank_interval = Duration::from_micros(16667); // Placeholder value, not used
 
-        // Convert to microseconds for precise frame timing
-        let frame_time_us = (1_000_000.0 / monitor_refresh_rate_hz) as u64;
-        let monitor_vblank_interval = Duration::from_micros(frame_time_us);
+        #[cfg(not(target_os = "macos"))]
+        let monitor_vblank_interval = {
+            let monitor_refresh_rate_hz = winit_window
+                .current_monitor()
+                .and_then(|monitor| monitor.refresh_rate_millihertz())
+                .unwrap_or(60_000) as f64
+                / 1000.0;
+
+            // Convert to microseconds for precise frame timing
+            let frame_time_us = (1_000_000.0 / monitor_refresh_rate_hz) as u64;
+            Duration::from_micros(frame_time_us)
+        };
 
         Self {
             vblank_interval: monitor_vblank_interval,
