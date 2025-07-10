@@ -19,6 +19,11 @@ language: 'en'
   - Power efficient: skips unnecessary redraws when content is static, reducing CPU usage
   - Professional rendering quality with smooth, tear-free visual updates
   - CVDisplayLink runs on dedicated background thread, never blocking UI operations
+- **macOS VSync Optimization**: Disabled redundant software-based vsync calculations on macOS
+  - CVDisplayLink already provides hardware-synchronized VSync timing
+  - Eliminates unnecessary frame timing calculations and monitor refresh rate queries
+  - Reduces CPU overhead and improves rendering performance
+  - Software vsync logic remains active on other platforms for compatibility
 - **Major**: Implemented a new text run caching system replacing line-based caching
   - Up to 96% reduction in text shaping overhead for repeated content
   - Individual text runs (words, operators, keywords) cached and reused across frames
