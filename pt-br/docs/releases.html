@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pt-br/assets/css/styles.390fc736.css">
-<script src="/pt-br/assets/js/runtime~main.bcab8843.js" defer="defer"></script>
+<script src="/pt-br/assets/js/runtime~main.9e0e3649.js" defer="defer"></script>
 <script src="/pt-br/assets/js/main.d7e21329.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -36,6 +36,14 @@
 <li>Power efficient: skips unnecessary redraws when content is static, reducing CPU usage</li>
 <li>Professional rendering quality with smooth, tear-free visual updates</li>
 <li>CVDisplayLink runs on dedicated background thread, never blocking UI operations</li>
+</ul>
+</li>
+<li><strong>macOS VSync Optimization</strong>: Disabled redundant software-based vsync calculations on macOS<!-- -->
+<ul>
+<li>CVDisplayLink already provides hardware-synchronized VSync timing</li>
+<li>Eliminates unnecessary frame timing calculations and monitor refresh rate queries</li>
+<li>Reduces CPU overhead and improves rendering performance</li>
+<li>Software vsync logic remains active on other platforms for compatibility</li>
 </ul>
 </li>
 <li><strong>Major</strong>: Implemented a new text run caching system replacing line-based caching<!-- -->

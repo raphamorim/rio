@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hans/assets/css/styles.390fc736.css">
-<script src="/zh-hans/assets/js/runtime~main.b3e3845b.js" defer="defer"></script>
+<script src="/zh-hans/assets/js/runtime~main.4cf9084f.js" defer="defer"></script>
 <script src="/zh-hans/assets/js/main.34095e7c.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -36,6 +36,14 @@
 <li>Power efficient: skips unnecessary redraws when content is static, reducing CPU usage</li>
 <li>Professional rendering quality with smooth, tear-free visual updates</li>
 <li>CVDisplayLink runs on dedicated background thread, never blocking UI operations</li>
+</ul>
+</li>
+<li><strong>macOS VSync Optimization</strong>: Disabled redundant software-based vsync calculations on macOS<!-- -->
+<ul>
+<li>CVDisplayLink already provides hardware-synchronized VSync timing</li>
+<li>Eliminates unnecessary frame timing calculations and monitor refresh rate queries</li>
+<li>Reduces CPU overhead and improves rendering performance</li>
+<li>Software vsync logic remains active on other platforms for compatibility</li>
 </ul>
 </li>
 <li><strong>Major</strong>: Implemented a new text run caching system replacing line-based caching<!-- -->
@@ -174,7 +182,7 @@
 <li>Long-running sessions where cache warming provides sustained performance benefits</li>
 <li>Systems with limited memory where reduced allocation overhead improves overall responsiveness</li>
 </ul>
-<h3 class="anchor anchorWithStickyNavbar_LWe7" id="bug-fixes-1">Bug Fixes<a href="#bug-fixes-1" class="hash-link" aria-label="Bug Fixes的直接链接" title="Bug Fixes的直接链接">​</a></h3>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="bug-fixes-1">Bug Fixes<a href="#bug-fixes-1" class="hash-link" aria-label="Bug Fixes的直接链接" title="Bug Fixes 的直接链接">​</a></h3>
 <ul>
 <li><strong>Backspace Key Compatibility</strong>: Fixed backspace key not working properly in vim when <code>TERM=xterm-256color</code>
 <ul>
@@ -299,7 +307,7 @@
 <li>Add Switch to Next/Prev Split or Tab command by <a href="https://github.com/vlabo" target="_blank" rel="noopener noreferrer">@vlabo</a>.</li>
 <li>Fix issue whenever the first main font cannot be found.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="028">0.2.8<a href="#028" class="hash-link" aria-label="0.2.8的直接链接" title="0.2.8的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="028">0.2.8<a href="#028" class="hash-link" aria-label="0.2.8的  直接链接" title="0.2.8的直接链接">​</a></h2>
 <ul>
 <li>Support to <code>.rpm</code> files! (thanks <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">@vedantmgoyal9</a> and <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">@caarlos0</a>)</li>
 <li>OSC 7 Escape sequences to advise the terminal of the working directory.</li>

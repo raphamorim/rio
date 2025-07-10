@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/ko/assets/css/styles.390fc736.css">
-<script src="/ko/assets/js/runtime~main.93bcb224.js" defer="defer"></script>
+<script src="/ko/assets/js/runtime~main.a22c538e.js" defer="defer"></script>
 <script src="/ko/assets/js/main.0589a3b9.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -36,6 +36,14 @@
 <li>Power efficient: skips unnecessary redraws when content is static, reducing CPU usage</li>
 <li>Professional rendering quality with smooth, tear-free visual updates</li>
 <li>CVDisplayLink runs on dedicated background thread, never blocking UI operations</li>
+</ul>
+</li>
+<li><strong>macOS VSync Optimization</strong>: Disabled redundant software-based vsync calculations on macOS<!-- -->
+<ul>
+<li>CVDisplayLink already provides hardware-synchronized VSync timing</li>
+<li>Eliminates unnecessary frame timing calculations and monitor refresh rate queries</li>
+<li>Reduces CPU overhead and improves rendering performance</li>
+<li>Software vsync logic remains active on other platforms for compatibility</li>
 </ul>
 </li>
 <li><strong>Major</strong>: Implemented a new text run caching system replacing line-based caching<!-- -->
@@ -448,7 +456,7 @@
 <li>Fix: Window output lost when rio loses focus <a href="https://github.com/raphamorim/rio/issues/706" target="_blank" rel="noopener noreferrer">#706</a>.</li>
 <li>Updated wgpu to <code>23.0.0</code>.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0117">0.1.17<a href="#0117" class="hash-link" aria-label="0.1.17에 대한 직접  링크" title="0.1.17에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0117">0.1.17<a href="#0117" class="hash-link" aria-label="0.1.17에 대한 직접 링크" title="0.1.17에 대한 직접 링크">​</a></h2>
 <ul>
 <li>Fix flash of white during startup on Microsoft Windows <a href="https://github.com/raphamorim/rio/issues/640" target="_blank" rel="noopener noreferrer">#640</a>.</li>
 <li>Add DWMWA_CLOAK support on Microsoft Windows.</li>
@@ -620,7 +628,7 @@
 <li>Changed default font family to Cascadia Code.</li>
 <li>Changed default width to 800 and default height to 500.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="014">0.1.4<a href="#014" class="hash-link" aria-label="0.1.4에 대한 직접 링크" title="0.1.4에 대한 직접 링크">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="014">0.1.4<a href="#014" class="hash-link" aria-label="0.1.4에 대한 직접 링크" title="0.1.4에 대  한 직접 링크">​</a></h2>
 <ul>
 <li>Fix Bug Text Rendering Bug <a href="https://github.com/raphamorim/rio/issues/543" target="_blank" rel="noopener noreferrer">#543</a>.</li>
 <li>Fix Abnormal font display and incomplete Navigation content display <a href="https://github.com/raphamorim/rio/issues/554" target="_blank" rel="noopener noreferrer">#554</a>.</li>
@@ -1084,7 +1092,7 @@
 <ul>
 <li>Support to <strong>spawn and fork processes</strong>, spawn has became default. Spawn increases Rio compatibility in a broad range, like old MacOS versions (older or equal to Big Sur). However, If you want to use Rio terminal to fork processes instead of spawning processes, enable <code>use-fork</code> in the configuration file:</li>
 </ul>
-<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">use-fork</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
+<div class="language-toml codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#F8F8F2;--prism-background-color:#282A36"><div class="codeBlockContent_biex"><pre tabindex="0" class="prism-code language-toml codeBlock_bY9V thin-scrollbar" style="color:#F8F8F2;background-color:#282A36"><code class="codeBlockLines_e6Vv"><span class="token-line" style="color:#F8F8F2"><span class="token key property">use-fork</span><span class="token plain"> </span><span class="token punctuation" style="color:rgb(248, 248, 242)">=</span><span class="token plain"> </span><span class="token boolean">true</span><br></span></code></pre><div class="buttonGroup__atx"><button type="button" aria-label="클립보드 에 코드 복사" title="복사" class="clean-btn"><span class="copyButtonIcons_eSgA" aria-hidden="true"><svg viewBox="0 0 24 24" class="copyButtonIcon_y97N"><path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z"></path></svg><svg viewBox="0 0 24 24" class="copyButtonSuccessIcon_LjdS"><path fill="currentColor" d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"></path></svg></span></button></div></div></div>
 <ul>
 <li>Introduced <code>RIO_LOG_LEVEL</code> variable usage. (<code>e.g: RIO_LOG_LEVEL=debug rio -e &quot;echo 1&quot;</code>)</li>
 <li>Increased max tabs from 6 to 9.</li>
