@@ -1,11 +1,11 @@
-mod font_cache;
 mod char_cache;
+mod font_cache;
 pub mod navigation;
 mod search;
 pub mod utils;
 
-use font_cache::FontCache;
 use char_cache::CharCache;
+use font_cache::FontCache;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};

@@ -2921,6 +2921,7 @@ dependencies = [
  "clap",
  "copa",
  "corcovado",
+ "criterion",
  "dirs",
  "futures",
  "image",
