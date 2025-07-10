@@ -2,7 +2,6 @@
 /// 
 /// This module provides optimized character-to-string conversion for the hot path
 /// in terminal rendering, avoiding repeated allocations for common ASCII characters.
-
 use std::collections::HashMap;
 
 /// Pre-computed ASCII character strings for fast lookup
@@ -60,11 +59,13 @@ impl CharCache {
     /// Clear the Unicode cache to free memory
     /// 
     /// ASCII cache is static and doesn't need clearing.
+    #[allow(dead_code)]
     pub fn clear_unicode_cache(&mut self) {
         self.unicode_cache.clear();
     }
 
     /// Get cache statistics for monitoring
+    #[allow(dead_code)]
     pub fn stats(&self) -> CacheStats {
         CacheStats {
             unicode_entries: self.unicode_cache.len(),
@@ -80,6 +81,7 @@ impl Default for CharCache {
 
 /// Statistics about the character cache
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct CacheStats {
     pub unicode_entries: usize,
 }
