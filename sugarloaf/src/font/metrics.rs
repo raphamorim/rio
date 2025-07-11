@@ -53,6 +53,12 @@ pub struct FaceMetrics {
     pub cap_height: Option<f64>,
     /// X-height
     pub ex_height: Option<f64>,
+    /// The width of the character "水" (CJK water ideograph, U+6C34),
+    /// if present. This is used for font size adjustment, to normalize
+    /// the width of CJK fonts mixed with latin fonts.
+    ///
+    /// NOTE: IC = Ideograph Character
+    pub ic_width: Option<f64>,
 }
 
 impl FaceMetrics {
@@ -64,8 +70,16 @@ impl FaceMetrics {
     }
 }
 
-impl From<&FontIntrospectorMetrics> for FaceMetrics {
-    fn from(metrics: &FontIntrospectorMetrics) -> Self {
+impl FaceMetrics {
+    /// Create FaceMetrics from font reference and metrics with CJK character measurement
+    ///
+    /// This is the standard method for creating FaceMetrics that includes measuring
+    /// the CJK water ideograph "水" (U+6C34) for proper font size normalization
+    /// when mixing CJK and Latin fonts.
+    pub fn from_font(
+        font_ref: &crate::font_introspector::FontRef,
+        metrics: &FontIntrospectorMetrics,
+    ) -> Self {
         Self {
             cell_width: metrics.max_width as f64,
             ascent: metrics.ascent as f64,
@@ -77,6 +91,41 @@ impl From<&FontIntrospectorMetrics> for FaceMetrics {
             strikethrough_thickness: Some(metrics.stroke_size as f64),
             cap_height: Some(metrics.cap_height as f64),
             ex_height: Some(metrics.x_height as f64),
+            // Measure actual CJK character width from the font
+            ic_width: Self::measure_cjk_character_width(font_ref),
+        }
+    }
+
+    /// Measure the width of the CJK water ideograph character "水" (U+6C34)
+    ///
+    /// This measurement is used for font size adjustment to normalize
+    /// CJK fonts mixed with Latin fonts in the `calculate_cjk_font_size_adjustment` function.
+    fn measure_cjk_character_width(
+        font_ref: &crate::font_introspector::FontRef,
+    ) -> Option<f64> {
+        const CJK_WATER_IDEOGRAPH: u32 = 0x6C34; // "水"
+
+        // Get character map
+        let charmap = font_ref.charmap();
+
+        // Get glyph ID for the CJK water ideograph
+        let glyph_id = charmap.map(CJK_WATER_IDEOGRAPH);
+        if glyph_id == 0 {
+            // Character not found in font
+            return None;
+        }
+
+        // Get glyph metrics
+        let glyph_metrics =
+            crate::font_introspector::GlyphMetrics::from_font(font_ref, &[]);
+
+        // Get advance width for the glyph
+        let advance_width = glyph_metrics.advance_width(glyph_id);
+
+        if advance_width > 0.0 {
+            Some(advance_width as f64)
+        } else {
+            None
         }
     }
 }
@@ -92,6 +141,7 @@ impl Metrics {
         let half_line_gap = face.line_gap; // Using full line_gap since we doubled it in line_height
 
         // Calculate baseline position from bottom of cell (adjusted for Rio's positive descent)
+        // Rio uses positive descent format, baseline = half_line_gap + descent
         let cell_baseline = (half_line_gap + face.descent).round();
 
         // Calculate top-to-baseline for other calculations
@@ -158,6 +208,7 @@ impl Metrics {
 
     /// Create metrics for non-primary font using primary font's cell dimensions
     /// This is the key insight: consistent cell dimensions, font-specific positioning
+    /// Includes font size adjustment for CJK fonts
     pub fn calc_with_primary_cell_dimensions(
         face: FaceMetrics,
         primary_metrics: &Metrics,
@@ -175,6 +226,81 @@ impl Metrics {
         // This allows each font to have proper positioning within consistent cells
 
         metrics
+    }
+
+    /// Calculate font size adjustment for CJK fonts
+    /// This normalizes CJK font sizes when mixed with Latin fonts
+    pub fn calculate_cjk_font_size_adjustment(
+        primary_face: &FaceMetrics,
+        fallback_face: &FaceMetrics,
+    ) -> Option<f64> {
+        // Get primary font metrics for comparison
+        let primary_ex = primary_face.ex_height.unwrap_or(
+            primary_face
+                .cap_height
+                .unwrap_or(primary_face.ascent * 0.75)
+                * 0.75,
+        );
+
+        let primary_ic = primary_face
+            .ic_width
+            .unwrap_or(primary_face.cell_width * 2.0);
+
+        // Get fallback font metrics
+        let fallback_ex = fallback_face.ex_height.unwrap_or(
+            fallback_face
+                .cap_height
+                .unwrap_or(fallback_face.ascent * 0.75)
+                * 0.75,
+        );
+
+        let fallback_ic = fallback_face
+            .ic_width
+            .unwrap_or(fallback_face.cell_width * 2.0);
+
+        // If the fallback font has an ic_width, prefer that for normalization
+        // of CJK font sizes when mixed with Latin fonts
+        if fallback_face.ic_width.is_some() && fallback_ic > 0.0 && primary_ic > 0.0 {
+            // Use ic_width ratio for CJK fonts
+            Some(primary_ic / fallback_ic)
+        } else if primary_ex > 0.0 && fallback_ex > 0.0 {
+            // Fall back to ex_height ratio for general font size matching
+            Some(primary_ex / fallback_ex)
+        } else {
+            None
+        }
+    }
+
+    /// Apply baseline adjustment when cell height changes
+    /// This ensures text remains vertically centered in the cell
+    pub fn apply_cell_height_adjustment(&mut self, new_height: u32) {
+        if new_height == self.cell_height {
+            return;
+        }
+
+        let original_height = self.cell_height;
+
+        // Split the difference in half to center the baseline in the cell
+        if new_height > original_height {
+            let diff = (new_height - original_height) / 2;
+            self.cell_baseline = self.cell_baseline.saturating_add(diff);
+            self.underline_position = self.underline_position.saturating_add(diff);
+            self.strikethrough_position =
+                self.strikethrough_position.saturating_add(diff);
+        } else {
+            let diff = (original_height - new_height) / 2;
+            self.cell_baseline = self.cell_baseline.saturating_sub(diff);
+            self.underline_position = self.underline_position.saturating_sub(diff);
+            self.strikethrough_position =
+                self.strikethrough_position.saturating_sub(diff);
+        }
+
+        self.cell_height = new_height;
+    }
+
+    /// Get baseline adjustment value (distance from bottom of cell to baseline)
+    pub fn get_baseline_adjustment(&self) -> f32 {
+        self.cell_baseline as f32
     }
 
     /// Get ascent/descent/leading for rich text rendering
@@ -203,6 +329,7 @@ mod tests {
             strikethrough_thickness: Some(1.0),
             cap_height: Some(9.0),
             ex_height: Some(6.0),
+            ic_width: None,
         };
 
         let primary_metrics = Metrics::calc(primary_face);
@@ -223,6 +350,7 @@ mod tests {
             strikethrough_thickness: Some(1.0),
             cap_height: Some(9.0),
             ex_height: Some(6.0),
+            ic_width: None,
         };
 
         let cjk_face = FaceMetrics {
@@ -236,6 +364,7 @@ mod tests {
             strikethrough_thickness: Some(1.5),
             cap_height: Some(11.0),
             ex_height: Some(8.0),
+            ic_width: None,
         };
 
         let primary_metrics = Metrics::calc(primary_face);
@@ -265,6 +394,7 @@ mod tests {
             strikethrough_thickness: Some(1.0),
             cap_height: Some(7.5),
             ex_height: Some(5.0),
+            ic_width: None,
         };
 
         let cjk_face = FaceMetrics {
@@ -278,6 +408,7 @@ mod tests {
             strikethrough_thickness: Some(1.2),
             cap_height: Some(10.0),
             ex_height: Some(7.0),
+            ic_width: None,
         };
 
         let latin_metrics = Metrics::calc(latin_face);
@@ -311,6 +442,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face);
@@ -341,6 +473,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: Some(9.0),
             ex_height: Some(6.0),
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face);
@@ -371,6 +504,7 @@ mod tests {
             strikethrough_thickness: Some(1.2),
             cap_height: Some(9.0),
             ex_height: Some(6.0),
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face);
@@ -396,6 +530,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face);
@@ -424,6 +559,7 @@ mod tests {
             strikethrough_thickness: Some(1.0),
             cap_height: Some(8.7),
             ex_height: Some(5.8),
+            ic_width: None,
         };
 
         let noto_cjk_face = FaceMetrics {
@@ -437,6 +573,7 @@ mod tests {
             strikethrough_thickness: Some(1.1),
             cap_height: Some(10.4),
             ex_height: Some(6.9),
+            ic_width: None,
         };
 
         let primary_metrics = Metrics::calc(cascadia_face);
@@ -469,6 +606,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face_no_gap);
@@ -487,6 +625,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None,
         };
 
         let metrics_large = Metrics::calc(face_large_gap);
@@ -495,10 +634,85 @@ mod tests {
     }
 
     #[test]
-    fn test_cell_width_ceiling() {
-        // Test that cell width is properly ceiled
+    fn test_cjk_font_size_adjustment() {
+        // Test CJK font size adjustment calculation
+        let latin_face = FaceMetrics {
+            cell_width: 8.0,
+            ascent: 10.0,
+            descent: 2.0,
+            line_gap: 0.5,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(5.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(7.5),
+            ex_height: Some(5.0),
+            ic_width: Some(16.0), // Latin font with measured CJK width
+        };
+
+        let cjk_face = FaceMetrics {
+            cell_width: 16.0,
+            ascent: 14.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.5),
+            underline_thickness: Some(1.2),
+            strikethrough_position: Some(7.0),
+            strikethrough_thickness: Some(1.2),
+            cap_height: Some(10.0),
+            ex_height: Some(7.0),
+            ic_width: Some(32.0), // CJK font with measured CJK width
+        };
+
+        let adjustment =
+            Metrics::calculate_cjk_font_size_adjustment(&latin_face, &cjk_face);
+
+        // Should use ic_width ratio: 16.0 / 32.0 = 0.5
+        assert!(adjustment.is_some());
+        let ratio = adjustment.unwrap();
+        assert!((ratio - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_baseline_adjustment() {
         let face = FaceMetrics {
-            cell_width: 9.3, // Should be ceiled to 10
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(6.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(9.0),
+            ex_height: Some(6.0),
+            ic_width: None,
+        };
+
+        let mut metrics = Metrics::calc(face);
+        let original_baseline = metrics.cell_baseline;
+        let original_underline = metrics.underline_position;
+        let original_strikethrough = metrics.strikethrough_position;
+
+        // Test increasing cell height
+        let new_height = metrics.cell_height + 10;
+        metrics.apply_cell_height_adjustment(new_height);
+
+        assert_eq!(metrics.cell_height, new_height);
+        assert_eq!(metrics.cell_baseline, original_baseline + 5); // Half the difference
+        assert_eq!(metrics.underline_position, original_underline + 5);
+        assert_eq!(metrics.strikethrough_position, original_strikethrough + 5);
+
+        // Test get_baseline_adjustment
+        let baseline_adj = metrics.get_baseline_adjustment();
+        assert_eq!(baseline_adj, metrics.cell_baseline as f32);
+    }
+
+    #[test]
+    fn test_cjk_character_width_estimation() {
+        // Test that ic_width is properly estimated when not provided
+        let face_without_ic = FaceMetrics {
+            cell_width: 10.0,
             ascent: 12.0,
             descent: 3.0,
             line_gap: 1.0,
@@ -508,9 +722,62 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None, // Not provided
+        };
+
+        let face_with_ic = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: None,
+            underline_thickness: None,
+            strikethrough_position: None,
+            strikethrough_thickness: None,
+            cap_height: None,
+            ex_height: None,
+            ic_width: Some(20.0), // Provided
+        };
+
+        // Test font size adjustment with estimated vs provided ic_width
+        let adjustment_estimated =
+            Metrics::calculate_cjk_font_size_adjustment(&face_without_ic, &face_with_ic);
+        assert!(adjustment_estimated.is_some());
+
+        // Should use estimated ic_width (cell_width * 2) vs provided ic_width
+        // (10.0 * 2.0) / 20.0 = 1.0
+        let ratio = adjustment_estimated.unwrap();
+        assert!((ratio - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_rio_style_baseline_calculation() {
+        // Test that baseline calculation matches Rio's approach
+        // Rio: cell_baseline = half_line_gap + descent (with positive descent)
+
+        let face = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 4.0, // Positive in Rio (would be -4.0 in typical typography)
+            line_gap: 2.0,
+            underline_position: None,
+            underline_thickness: None,
+            strikethrough_position: None,
+            strikethrough_thickness: None,
+            cap_height: None,
+            ex_height: None,
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(face);
-        assert_eq!(metrics.cell_width, 10); // 9.3 ceiled to 10
+
+        // Line height: 12 + 4 + (2 * 2) = 20
+        assert_eq!(metrics.cell_height, 20);
+
+        // Baseline: half_line_gap + descent = 2 + 4 = 6
+        assert_eq!(metrics.cell_baseline, 6);
+
+        // Verify baseline adjustment function
+        assert_eq!(metrics.get_baseline_adjustment(), 6.0);
     }
 }
