@@ -557,8 +557,8 @@ impl FontData {
     }
 
     /// Get or calculate metrics for a given font size (consistent metrics approach)
-    /// For primary font: calculate natural metrics
-    /// For secondary fonts: use primary font's cell dimensions
+    /// For primary font: calculate natural metrics with CJK measurement
+    /// For secondary fonts: use primary font's cell dimensions with CJK measurement
     pub fn get_metrics(
         &mut self,
         font_size: f32,
@@ -581,7 +581,9 @@ impl FontData {
             let font_metrics =
                 crate::font_introspector::Metrics::from_font(&font_ref, &[]);
             let scaled_metrics = font_metrics.scale(font_size);
-            let face_metrics = FaceMetrics::from(&scaled_metrics);
+
+            // Use the unified method that always includes CJK measurement
+            let face_metrics = FaceMetrics::from_font(&font_ref, &scaled_metrics);
 
             // Calculate metrics using consistent approach
             let metrics = if let Some(primary) = primary_metrics {
