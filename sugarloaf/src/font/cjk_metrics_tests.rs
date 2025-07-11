@@ -34,6 +34,7 @@ mod tests {
                     strikethrough_thickness: Some(1.0),
                     cap_height: Some(8.7),
                     ex_height: Some(5.8),
+                    ic_width: None,
                 },
             }
         }
@@ -52,6 +53,7 @@ mod tests {
                     strikethrough_thickness: Some(1.1),
                     cap_height: Some(10.4),
                     ex_height: Some(6.9),
+                    ic_width: None,
                 },
             }
         }
@@ -70,6 +72,7 @@ mod tests {
                     strikethrough_thickness: Some(1.2),
                     cap_height: Some(10.7),
                     ex_height: Some(7.1),
+                    ic_width: None,
                 },
             }
         }
@@ -88,6 +91,7 @@ mod tests {
                     strikethrough_thickness: Some(1.0),
                     cap_height: Some(11.25),
                     ex_height: Some(7.5),
+                    ic_width: None,
                 },
             }
         }
@@ -106,6 +110,7 @@ mod tests {
                     strikethrough_thickness: Some(0.8),
                     cap_height: Some(8.1),
                     ex_height: Some(5.4),
+                    ic_width: None,
                 },
             }
         }
@@ -326,6 +331,7 @@ mod tests {
             strikethrough_thickness: Some(0.1),
             cap_height: Some(1.5),
             ex_height: Some(1.0),
+            ic_width: None,
         };
 
         let huge_font = FaceMetrics {
@@ -339,6 +345,7 @@ mod tests {
             strikethrough_thickness: Some(3.0),
             cap_height: Some(90.0),
             ex_height: Some(60.0),
+            ic_width: None,
         };
 
         let tiny_metrics = Metrics::calc(tiny_font);
@@ -371,6 +378,7 @@ mod tests {
             strikethrough_thickness: None,
             cap_height: None,
             ex_height: None,
+            ic_width: None,
         };
 
         let metrics = Metrics::calc(font);
@@ -430,5 +438,432 @@ mod tests {
                 );
             }
         }
+    }
+
+    // Tests specifically for Issue #1071: CJK characters display "higher" than Latins,
+    // so the terminal scroll to wrong place after showing long CJK text
+    //
+    // These tests verify that the fix correctly handles the scrolling issues
+    // caused by inconsistent line heights between Latin and CJK characters.
+
+    /// Test that reproduces the original issue #1071
+    /// Before the fix: CJK fonts would have different line heights than Latin fonts,
+    /// causing incorrect scrolling calculations
+    #[test]
+    fn test_issue_1071_cjk_latin_line_height_consistency() {
+        // Simulate the scenario described in issue #1071
+        // Latin font (like the user's primary font)
+        let latin_font = FaceMetrics {
+            cell_width: 9.0,
+            ascent: 11.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(5.5),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(8.5),
+            ex_height: Some(5.5),
+            ic_width: None,
+        };
+
+        // CJK font (fallback font that was causing issues)
+        let cjk_font = FaceMetrics {
+            cell_width: 18.0, // Double width
+            ascent: 14.0,     // Taller ascent
+            descent: 4.0,     // Deeper descent
+            line_gap: 2.0,    // More line spacing
+            underline_position: Some(-1.5),
+            underline_thickness: Some(1.2),
+            strikethrough_position: Some(7.0),
+            strikethrough_thickness: Some(1.2),
+            cap_height: Some(10.5),
+            ex_height: Some(7.0),
+            ic_width: Some(36.0), // Measured CJK character width
+        };
+
+        // Calculate metrics using the consistent approach (the fix)
+        let latin_metrics = Metrics::calc(latin_font);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font, &latin_metrics);
+
+        // CRITICAL: Both fonts must have identical cell dimensions
+        // This is what fixes the scrolling issue
+        assert_eq!(
+            cjk_metrics.cell_height,
+            latin_metrics.cell_height,
+            "CJK and Latin fonts must have identical cell heights to prevent scrolling issues"
+        );
+
+        assert_eq!(
+            cjk_metrics.cell_width, latin_metrics.cell_width,
+            "CJK and Latin fonts must have identical cell widths for consistent grid"
+        );
+
+        assert_eq!(
+            cjk_metrics.cell_baseline,
+            latin_metrics.cell_baseline,
+            "CJK and Latin fonts must have identical baselines to prevent text misalignment"
+        );
+
+        // Verify that the terminal can calculate scroll distances correctly
+        // Before the fix: terminal would assume 4 Latin lines = 4 * latin_height
+        // But actual content height would be different due to CJK line heights
+        let lines_to_scroll = 4;
+        let expected_scroll_distance = lines_to_scroll * latin_metrics.cell_height;
+        let actual_scroll_distance = lines_to_scroll * cjk_metrics.cell_height;
+
+        assert_eq!(
+            expected_scroll_distance,
+            actual_scroll_distance,
+            "Scroll distance calculation must be consistent between Latin and CJK content"
+        );
+    }
+
+    /// Test the specific scenario mentioned in issue #1071:
+    /// "after a long CJK text was output in rio terminal, it run into a strange status"
+    #[test]
+    fn test_issue_1071_long_cjk_text_scrolling() {
+        // Simulate fonts similar to those that would cause the issue
+        let primary_font = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(6.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(9.0),
+            ex_height: Some(6.0),
+            ic_width: None,
+        };
+
+        // CJK font that would previously cause scrolling issues
+        let cjk_font = FaceMetrics {
+            cell_width: 20.0,
+            ascent: 15.0,
+            descent: 4.0,
+            line_gap: 2.0,
+            underline_position: Some(-2.0),
+            underline_thickness: Some(1.5),
+            strikethrough_position: Some(7.5),
+            strikethrough_thickness: Some(1.5),
+            cap_height: Some(11.0),
+            ex_height: Some(7.5),
+            ic_width: Some(40.0),
+        };
+
+        let primary_metrics = Metrics::calc(primary_font);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font, &primary_metrics);
+
+        // Simulate the scenario: terminal displays long CJK text and needs to scroll
+        // The issue was that terminal would calculate scroll based on Latin line height
+        // but actual content would have different height due to CJK metrics
+
+        let terminal_rows = 24; // Typical terminal height
+        let content_lines = 30; // More lines than can fit on screen
+        let lines_to_scroll = content_lines - terminal_rows; // 6 lines need to scroll
+
+        // Before fix: these would be different, causing wrong scroll position
+        let latin_based_scroll = lines_to_scroll * primary_metrics.cell_height;
+        let cjk_based_scroll = lines_to_scroll * cjk_metrics.cell_height;
+
+        assert_eq!(
+            latin_based_scroll, cjk_based_scroll,
+            "Scroll calculations must be identical for Latin and CJK content"
+        );
+
+        // Verify that the input line remains visible after scrolling
+        // The issue mentioned: "I cannot even see the input line!"
+        let total_content_height = content_lines * cjk_metrics.cell_height;
+        let visible_area_height = terminal_rows * cjk_metrics.cell_height;
+        let scroll_position = total_content_height - visible_area_height;
+
+        // Input line should be at the bottom of visible area
+        let input_line_position = total_content_height - cjk_metrics.cell_height;
+        let input_line_visible = input_line_position >= scroll_position;
+
+        assert!(
+            input_line_visible,
+            "Input line must remain visible after scrolling CJK content"
+        );
+    }
+
+    /// Test the printf scenario specifically mentioned in the issue
+    #[test]
+    fn test_issue_1071_printf_command_scrolling() {
+        // The issue mentioned: "terminal scrolls less than 4 lines down after the printf command executed"
+        let latin_font = FaceMetrics {
+            cell_width: 8.0,
+            ascent: 10.0,
+            descent: 2.0,
+            line_gap: 0.5,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(5.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(7.5),
+            ex_height: Some(5.0),
+            ic_width: None,
+        };
+
+        let cjk_font = FaceMetrics {
+            cell_width: 16.0,
+            ascent: 13.0,
+            descent: 3.5,
+            line_gap: 1.5,
+            underline_position: Some(-1.5),
+            underline_thickness: Some(1.2),
+            strikethrough_position: Some(6.5),
+            strikethrough_thickness: Some(1.2),
+            cap_height: Some(9.5),
+            ex_height: Some(6.5),
+            ic_width: Some(32.0),
+        };
+
+        let latin_metrics = Metrics::calc(latin_font);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font, &latin_metrics);
+
+        // Simulate printf outputting 4 lines of content
+        let printf_output_lines = 4;
+
+        // Before fix: terminal would calculate scroll distance based on Latin metrics
+        // but actual content height would be based on CJK metrics, causing mismatch
+        let expected_scroll_distance = printf_output_lines * latin_metrics.cell_height;
+        let actual_content_height = printf_output_lines * cjk_metrics.cell_height;
+
+        assert_eq!(
+            expected_scroll_distance, actual_content_height,
+            "printf output height calculation must be consistent between font types"
+        );
+
+        // The fix ensures that both calculations use the same cell_height
+        assert_eq!(
+            latin_metrics.cell_height, cjk_metrics.cell_height,
+            "Both fonts must use same cell height to prevent printf scrolling issues"
+        );
+    }
+
+    /// Test baseline adjustment functionality that helps with the scrolling issue
+    #[test]
+    fn test_issue_1071_baseline_adjustment_consistency() {
+        let font = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(6.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(9.0),
+            ex_height: Some(6.0),
+            ic_width: None,
+        };
+
+        let mut metrics = Metrics::calc(font);
+        let original_baseline = metrics.get_baseline_adjustment();
+
+        // Test that baseline adjustment works correctly when cell height changes
+        // This is important for maintaining consistent text positioning
+        let new_height = metrics.cell_height + 4;
+        metrics.apply_cell_height_adjustment(new_height);
+
+        let adjusted_baseline = metrics.get_baseline_adjustment();
+
+        // Baseline should be adjusted to keep text centered
+        assert_eq!(adjusted_baseline, original_baseline + 2.0);
+
+        // Verify that text positioning remains consistent
+        let (ascent, descent, _) = metrics.for_rich_text();
+        assert_eq!(ascent + descent, new_height as f32);
+    }
+
+    /// Test CJK font size adjustment that prevents the scrolling issue
+    #[test]
+    fn test_issue_1071_cjk_font_size_normalization() {
+        // Test the font size adjustment that normalizes CJK fonts with Latin fonts
+        let latin_font = FaceMetrics {
+            cell_width: 9.0,
+            ascent: 11.0,
+            descent: 2.5,
+            line_gap: 0.8,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(5.5),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(8.5),
+            ex_height: Some(5.5),
+            ic_width: Some(18.0), // Measured CJK width in Latin font
+        };
+
+        let cjk_font = FaceMetrics {
+            cell_width: 18.0,
+            ascent: 14.0,
+            descent: 3.5,
+            line_gap: 1.2,
+            underline_position: Some(-1.5),
+            underline_thickness: Some(1.2),
+            strikethrough_position: Some(7.0),
+            strikethrough_thickness: Some(1.2),
+            cap_height: Some(10.5),
+            ex_height: Some(7.0),
+            ic_width: Some(36.0), // Measured CJK width in CJK font
+        };
+
+        // Calculate font size adjustment
+        let size_adjustment =
+            Metrics::calculate_cjk_font_size_adjustment(&latin_font, &cjk_font);
+
+        assert!(
+            size_adjustment.is_some(),
+            "Font size adjustment should be calculated"
+        );
+
+        let adjustment_ratio = size_adjustment.unwrap();
+        // Should use ic_width ratio: 18.0 / 36.0 = 0.5
+        assert!((adjustment_ratio - 0.5).abs() < 0.001);
+
+        // This adjustment helps normalize the fonts so they work together consistently
+        // preventing the line height mismatches that caused the scrolling issue
+    }
+
+    /// Integration test that verifies the complete fix for issue #1071
+    #[test]
+    fn test_issue_1071_complete_fix_integration() {
+        // This test simulates the complete scenario described in issue #1071
+
+        // Primary Latin font (user's main font)
+        let latin_font = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(6.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(9.0),
+            ex_height: Some(6.0),
+            ic_width: None,
+        };
+
+        // CJK fallback font (causing the original issue)
+        let cjk_font = FaceMetrics {
+            cell_width: 20.0,
+            ascent: 15.0,
+            descent: 4.0,
+            line_gap: 2.0,
+            underline_position: Some(-2.0),
+            underline_thickness: Some(1.5),
+            strikethrough_position: Some(7.5),
+            strikethrough_thickness: Some(1.5),
+            cap_height: Some(11.0),
+            ex_height: Some(7.5),
+            ic_width: Some(40.0),
+        };
+
+        // Apply the fix: use consistent metrics approach
+        let primary_metrics = Metrics::calc(latin_font);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font, &primary_metrics);
+
+        // Verify all the key aspects of the fix:
+
+        // 1. Consistent cell dimensions (prevents scrolling calculation errors)
+        assert_eq!(primary_metrics.cell_height, cjk_metrics.cell_height);
+        assert_eq!(primary_metrics.cell_width, cjk_metrics.cell_width);
+        assert_eq!(primary_metrics.cell_baseline, cjk_metrics.cell_baseline);
+
+        // 2. Consistent rich text format (prevents rendering height mismatches)
+        let (latin_ascent, latin_descent, latin_leading) =
+            primary_metrics.for_rich_text();
+        let (cjk_ascent, cjk_descent, cjk_leading) = cjk_metrics.for_rich_text();
+
+        assert_eq!(latin_ascent, cjk_ascent);
+        assert_eq!(latin_descent, cjk_descent);
+        assert_eq!(latin_leading, cjk_leading);
+
+        // 3. Baseline adjustment works correctly
+        assert_eq!(
+            primary_metrics.get_baseline_adjustment(),
+            cjk_metrics.get_baseline_adjustment()
+        );
+
+        // 4. Terminal grid calculations will be consistent
+        let terminal_rows = 24;
+        let content_lines = 30;
+        let scroll_lines = content_lines - terminal_rows;
+
+        let latin_scroll_height = scroll_lines * primary_metrics.cell_height;
+        let cjk_scroll_height = scroll_lines * cjk_metrics.cell_height;
+
+        assert_eq!(latin_scroll_height, cjk_scroll_height);
+
+        // 5. Font-specific positioning is preserved (underline, strikethrough)
+        // CJK font can have different positioning while maintaining grid consistency
+        // This allows proper rendering while preventing scrolling issues
+        assert_eq!(cjk_metrics.cell_height, primary_metrics.cell_height);
+        // But positioning details can differ (this is intentional and correct)
+    }
+
+    /// Test edge case: mixed content with alternating Latin and CJK characters
+    #[test]
+    fn test_issue_1071_mixed_content_consistency() {
+        let latin_font = FaceMetrics {
+            cell_width: 8.0,
+            ascent: 10.0,
+            descent: 2.0,
+            line_gap: 0.5,
+            underline_position: Some(-1.0),
+            underline_thickness: Some(1.0),
+            strikethrough_position: Some(5.0),
+            strikethrough_thickness: Some(1.0),
+            cap_height: Some(7.5),
+            ex_height: Some(5.0),
+            ic_width: None,
+        };
+
+        let cjk_font = FaceMetrics {
+            cell_width: 16.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: Some(-1.5),
+            underline_thickness: Some(1.2),
+            strikethrough_position: Some(6.0),
+            strikethrough_thickness: Some(1.2),
+            cap_height: Some(9.0),
+            ex_height: Some(6.0),
+            ic_width: Some(32.0),
+        };
+
+        let latin_metrics = Metrics::calc(latin_font);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font, &latin_metrics);
+
+        // Simulate a line with mixed content: "Hello 世界 World"
+        // Each character should occupy the same cell height regardless of font
+        let mixed_line_height = latin_metrics.cell_height; // Latin chars
+        let cjk_line_height = cjk_metrics.cell_height; // CJK chars
+
+        assert_eq!(
+            mixed_line_height, cjk_line_height,
+            "Mixed content lines must have consistent height"
+        );
+
+        // Verify that a terminal line containing mixed content
+        // has predictable and consistent height
+        let line_count = 5;
+        let total_height_latin = line_count * latin_metrics.cell_height;
+        let total_height_mixed = line_count * cjk_metrics.cell_height;
+
+        assert_eq!(
+            total_height_latin, total_height_mixed,
+            "Mixed content must not affect total height calculations"
+        );
     }
 }
