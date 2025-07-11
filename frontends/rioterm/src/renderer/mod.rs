@@ -937,6 +937,7 @@ impl Renderer {
 
             context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
+
             match specific_lines {
                 None => {
                     // let start = std::time::Instant::now();
