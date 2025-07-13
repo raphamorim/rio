@@ -327,8 +327,8 @@ pub enum Action {
     /// Scroll
     Scroll(i32),
 
-    // Regex keyboard hints.
-    // Hint(Hint),
+    /// Activate hint mode with the given hint index
+    Hint(std::rc::Rc<rio_backend::config::hints::Hint>),
 
     // Move vi mode cursor.
     ViMotion(ViMotion),
@@ -1135,6 +1135,8 @@ pub fn platform_key_bindings(
             Key::Named(ArrowRight), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerRight;
         ));
     }
+
+    // Note: Hint bindings are added separately in Screen::new() based on config
 
     key_bindings
 }
