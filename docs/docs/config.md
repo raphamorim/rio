@@ -970,6 +970,20 @@ hide-if-single = true
 
 Use same path whenever a new tab is created (Note: requires use-fork to be set to false).
 
+**Platform Support:**
+- **macOS**: Fully supported
+- **Linux/BSD**: Fully supported
+- **Windows**: Supported (uses executable directory as working directory)
+
+Default is `true`.
+
+```toml
+[navigation]
+use-current-path = true
+```
+
+**Note:** On Windows, this feature uses the executable's parent directory as the working directory for new tabs, which may not always reflect the actual current working directory of the shell process. This is a limitation of the Windows API compared to Unix systems where the actual current working directory can be retrieved directly.
+
 ## option-as-alt
 
 This config only works on MacOS.
