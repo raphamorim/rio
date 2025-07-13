@@ -1344,7 +1344,12 @@ impl Screen<'_> {
     pub fn clear_selection(&mut self) {
         // Clear the selection on the terminal.
         let mut terminal = self.context_manager.current_mut().terminal.lock();
-        terminal.selection.take();
+        let old_selection = terminal
+            .selection
+            .take()
+            .and_then(|s| s.to_range(&terminal));
+        let display_offset = terminal.display_offset();
+        terminal.update_selection_damage(old_selection, display_offset);
         drop(terminal);
         self.context_manager.current_mut().set_selection(None);
     }
