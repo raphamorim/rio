@@ -179,7 +179,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
-            config.working_dir = Some(working_dir_cli);
+            let wd_canonical = match std::fs::canonicalize(&working_dir_cli)?.
+                into_os_string().
+                into_string() {
+                Ok(x) => Some(x),
+                Err(_) => {
+                    eprintln!("There was a problem when canonicalizing the input path {}. Opening at the default path instead.", working_dir_cli);
+                    None
+                }
+            };
+            println!("{:?}", wd_canonical);
+            config.working_dir = wd_canonical;
         }
 
         config.title.placeholder = args.window_options.terminal_options.title_placeholder;
