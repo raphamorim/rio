@@ -195,7 +195,7 @@ impl Screen<'_> {
         );
 
         let context_manager_config = context::ContextManagerConfig {
-            use_current_path: config.navigation.use_current_path,
+            cwd: config.navigation.current_working_directory,
             shell,
             working_dir,
             spawn_performer: true,
