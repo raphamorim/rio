@@ -101,7 +101,7 @@ pub struct ContextManagerConfig {
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
-    pub use_current_path: bool,
+    pub cwd: bool,
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
@@ -175,7 +175,7 @@ pub fn create_mock_context<
         spawn_performer: false,
         is_native: false,
         should_update_title_extra: false,
-        use_current_path: false,
+        cwd: false,
         ..ContextManagerConfig::default()
     };
     ContextManager::create_context(
@@ -396,7 +396,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             spawn_performer: false,
             is_native: false,
             should_update_title_extra: false,
-            use_current_path: false,
+            cwd: false,
             ..ContextManagerConfig::default()
         };
         let initial_context = ContextManager::create_context(
@@ -848,7 +848,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = self.config.working_dir.clone();
-        if self.config.use_current_path {
+        if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
@@ -917,7 +917,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         );
 
         let context_manager_config = ContextManagerConfig {
-            use_current_path: config.navigation.use_current_path,
+            cwd: config.navigation.current_working_directory,
             shell,
             working_dir,
             spawn_performer: true,
@@ -963,7 +963,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
         let mut working_dir = self.config.working_dir.clone();
-        if self.config.use_current_path {
+        if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();

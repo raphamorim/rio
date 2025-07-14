@@ -120,8 +120,8 @@ pub struct Navigation {
     pub color_automation: Vec<ColorAutomation>,
     #[serde(default = "bool::default", skip_serializing)]
     pub clickable: bool,
-    #[serde(default = "bool::default", rename = "use-current-path")]
-    pub use_current_path: bool,
+    #[serde(default = "default_bool_true", rename = "current-working-directory", alias = "cwd")]
+    pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
     #[serde(default = "default_bool_true", rename = "hide-if-single")]
@@ -143,7 +143,7 @@ impl Default for Navigation {
             mode: NavigationMode::default(),
             color_automation: Vec::default(),
             clickable: false,
-            use_current_path: false,
+            current_working_directory: true,
             use_terminal_title: false,
             hide_if_single: true,
             use_split: true,
@@ -223,7 +223,7 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::TopTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.use_current_path);
+        assert!(!decoded.navigation.current_working_directory);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
@@ -237,7 +237,7 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.use_current_path);
+        assert!(!decoded.navigation.current_working_directory);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
@@ -254,7 +254,7 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.use_current_path);
+        assert!(!decoded.navigation.current_working_directory);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
             decoded.navigation.color_automation[0].program,
@@ -283,7 +283,7 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.use_current_path);
+        assert!(!decoded.navigation.current_working_directory);
         assert!(!decoded.navigation.color_automation.is_empty());
 
         assert_eq!(
