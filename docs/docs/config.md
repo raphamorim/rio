@@ -966,7 +966,7 @@ Default is `true`.
 hide-if-single = true
 ```
 
-## navigation.use-current-path
+## navigation.current-working-directory
 
 Use same path whenever a new tab is created (Note: requires use-fork to be set to false).
 
