@@ -179,13 +179,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
-            let wd_canonical = match std::fs::canonicalize(&working_dir_cli)?
-                .into_os_string()
-                .into_string()
-            {
-                Ok(x) => Some(x),
-                Err(_) => {
-                    eprintln!("There was a problem when canonicalizing the input path {}. Opening at the default path instead.", working_dir_cli);
+            let wd_canonical = match std::fs::canonicalize(&working_dir_cli).and_then(
+                |path| {
+                    if path.is_dir() {
+                        path.into_os_string().into_string().map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid UTF-8 in path",
+                            )
+                        })
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::NotADirectory,
+                            "Path is not a directory",
+                        ))
+                    }
+                },
+            ) {
+                Ok(canonical_path) => Some(canonical_path),
+                Err(e) => {
+                    tracing::warn!("Failed to set working directory '{}': {}. Using default instead.", working_dir_cli, e);
                     None
                 }
             };
