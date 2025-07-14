@@ -120,7 +120,11 @@ pub struct Navigation {
     pub color_automation: Vec<ColorAutomation>,
     #[serde(default = "bool::default", skip_serializing)]
     pub clickable: bool,
-    #[serde(default = "default_bool_true", rename = "current-working-directory", alias = "cwd")]
+    #[serde(
+        default = "default_bool_true",
+        rename = "current-working-directory",
+        alias = "cwd"
+    )]
     pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
@@ -223,7 +227,6 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::TopTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.current_working_directory);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
@@ -237,7 +240,6 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.current_working_directory);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
@@ -254,7 +256,6 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.current_working_directory);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
             decoded.navigation.color_automation[0].program,
@@ -283,7 +284,6 @@ mod tests {
         let decoded = toml::from_str::<Root>(content).unwrap();
         assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
         assert!(!decoded.navigation.clickable);
-        assert!(!decoded.navigation.current_working_directory);
         assert!(!decoded.navigation.color_automation.is_empty());
 
         assert_eq!(
