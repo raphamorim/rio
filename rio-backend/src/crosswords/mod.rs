@@ -266,7 +266,7 @@ struct TermDamageState {
 }
 
 impl TermDamageState {
-    fn new(_num_cols: usize, num_lines: usize) -> Self {
+    fn new(num_lines: usize) -> Self {
         let lines = (0..num_lines).map(LineDamage::undamaged).collect();
 
         Self {
@@ -279,7 +279,7 @@ impl TermDamageState {
     }
 
     #[inline]
-    fn resize(&mut self, _num_cols: usize, num_lines: usize) {
+    fn resize(&mut self, num_lines: usize) {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
@@ -306,12 +306,7 @@ impl TermDamageState {
         self.lines[line].mark_damaged();
     }
 
-    fn damage_selection(
-        &mut self,
-        selection: SelectionRange,
-        display_offset: usize,
-        _num_cols: usize,
-    ) {
+    fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
         let display_offset = display_offset as i32;
         let last_visible_line = self.lines.len() as i32 - 1;
 
@@ -330,7 +325,7 @@ impl TermDamageState {
     }
 
     /// Reset information about terminal damage.
-    fn reset(&mut self, _num_cols: usize) {
+    fn reset(&mut self) {
         self.full = false;
         self.lines.iter_mut().for_each(|line| line.reset());
     }
@@ -485,7 +480,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
-            damage: TermDamageState::new(cols, rows),
+            damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             default_cursor_shape: cursor_shape,
             cursor_shape,
@@ -526,18 +521,15 @@ impl<U: EventListener> Crosswords<U> {
         &mut self,
         new_selection: Option<SelectionRange>,
         display_offset: usize,
-        num_cols: usize,
     ) {
         // Damage old selection lines if they exist
         if let Some(old_selection) = self.damage.last_selection {
-            self.damage
-                .damage_selection(old_selection, display_offset, num_cols);
+            self.damage.damage_selection(old_selection, display_offset);
         }
 
         // Damage new selection lines if they exist
         if let Some(new_selection) = new_selection {
-            self.damage
-                .damage_selection(new_selection, display_offset, num_cols);
+            self.damage.damage_selection(new_selection, display_offset);
         }
 
         // Update the stored selection
@@ -612,7 +604,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn reset_damage(&mut self) {
-        self.damage.reset(self.grid.columns());
+        self.damage.reset();
     }
 
     #[inline]
@@ -720,7 +712,7 @@ impl<U: EventListener> Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
 
         // Resize damage information.
-        self.damage.resize(num_cols, num_lines);
+        self.damage.resize(num_lines);
 
         // Update size information for graphics.
         self.graphics.resize(&size);
