@@ -17,7 +17,7 @@ use crate::performer::Machine;
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
-use rio_backend::crosswords::grid::Dimensions;
+
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -65,8 +65,7 @@ impl<T: EventListener> Context<T> {
         if has_updated {
             let mut terminal = self.terminal.lock();
             let display_offset = terminal.display_offset();
-            let columns = terminal.columns();
-            terminal.update_selection_damage(selection_range, display_offset, columns);
+            terminal.update_selection_damage(selection_range, display_offset);
         }
 
         self.renderable_content.selection_range = selection_range;
