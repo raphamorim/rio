@@ -299,13 +299,6 @@ impl TermDamageState {
         self.lines[line].mark_damaged();
     }
 
-    /// Damage a line with specific column range (for backward compatibility)
-    #[inline]
-    fn damage_line_range(&mut self, line: usize, _left: usize, _right: usize) {
-        // For now, just damage the entire line since we're moving to line-based damage
-        self.lines[line].mark_damaged();
-    }
-
     fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
         let display_offset = display_offset as i32;
         let last_visible_line = self.lines.len() as i32 - 1;
@@ -1768,11 +1761,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::cmp::min(self.grid.cursor.pos.col + cols, self.grid.last_column());
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage.damage_line_range(
-            cursor_line,
-            self.grid.cursor.pos.col.0,
-            last_column.0,
-        );
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = last_column;
         self.grid.cursor.should_wrap = false;
@@ -1783,8 +1772,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let column = self.grid.cursor.pos.col.saturating_sub(cols.0);
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line_range(cursor_line, column, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = Column(column);
         self.grid.cursor.should_wrap = false;
@@ -1794,7 +1782,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_backward_tabs(&mut self, count: u16) {
         trace!("Moving backward {} tabs", count);
 
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -1812,8 +1799,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line_range(line, self.grid.cursor.pos.col.0, old_col);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -1910,8 +1896,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Cleared cells have current background color set.
         let bg = self.grid.cursor.template.bg;
         let line = cursor.pos.row;
-        self.damage
-            .damage_line_range(line.0 as usize, start.0, end.0);
+        self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
             *cell = bg.into();
@@ -2371,10 +2356,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn backspace(&mut self) {
         if self.grid.cursor.pos.col > Column(0) {
             let line = self.grid.cursor.pos.row.0 as usize;
-            let column = self.grid.cursor.pos.col.0;
             self.grid.cursor.pos.col -= 1;
             self.grid.cursor.should_wrap = false;
-            self.damage.damage_line_range(line, column - 1, column);
+            self.damage.damage_line(line);
         }
     }
 
@@ -2581,8 +2565,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Carriage return");
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line_range(row, new_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(row);
         self.grid.cursor.pos.col = Column(new_col);
         self.grid.cursor.should_wrap = false;
     }
@@ -2591,7 +2574,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_forward_tabs(&mut self, count: u16) {
         trace!("Moving forward {} tabs", count);
         let num_cols = self.columns();
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -2610,8 +2592,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line_range(line, old_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -2641,8 +2622,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             LineClearMode::All => (Column(0), Column(self.grid.columns())),
         };
 
-        self.damage
-            .damage_line_range(point.row.0 as usize, left.0, right.0 - 1);
+        self.damage.damage_line(point.row.0 as usize);
 
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
