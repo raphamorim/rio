@@ -5,7 +5,7 @@ language: 'en'
 
 # Releases
 
-## 0.2.21 (unreleased)
+## 0.3.0 (unreleased)
 
 - Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
 
