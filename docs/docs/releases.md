@@ -75,6 +75,7 @@ language: 'en'
   - Shift+clicking now extends the current selection to the clicked cell
   - Provides standard terminal selection behavior expected by users
   - Regular clicking without Shift still clears selection and starts new one as before
+- **CLI accepts relative paths for working directory CLI argument**: When invoking rio from other terminals using `rio --working-dir=<path>`, a relative path is now correctly processed 
 
 ### Bug Fixes
 
