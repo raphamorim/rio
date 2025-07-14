@@ -596,6 +596,8 @@ impl RichTextBrush {
                                         .sum(),
                                     decoration: run.span.decoration,
                                     decoration_color: run.span.decoration_color,
+                                    underline_offset: run.underline_offset,
+                                    strikeout_offset: run.strikeout_offset,
                                 };
 
                                 // Update font session if needed
@@ -692,6 +694,8 @@ impl RichTextBrush {
                                     advance: px - run_x,
                                     decoration: run.span.decoration,
                                     decoration_color: run.span.decoration_color,
+                                    underline_offset: run.underline_offset,
+                                    strikeout_offset: run.strikeout_offset,
                                 };
 
                                 // Update font session if needed

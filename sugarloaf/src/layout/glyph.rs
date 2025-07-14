@@ -60,6 +60,7 @@ pub struct RunData {
     pub ascent: f32,
     pub descent: f32,
     pub leading: f32,
+    pub underline_offset: f32,
     pub strikeout_offset: f32,
     pub strikeout_size: f32,
     pub advance: f32,
