@@ -183,12 +183,12 @@ pub enum TermDamage<'a> {
 /// Iterator over the terminal's viewport damaged lines.
 #[derive(Clone, Debug)]
 pub struct TermDamageIterator<'a> {
-    line_damage: std::slice::Iter<'a, LineDamageBounds>,
+    line_damage: std::slice::Iter<'a, LineDamage>,
     display_offset: usize,
 }
 
 impl<'a> TermDamageIterator<'a> {
-    pub fn new(line_damage: &'a [LineDamageBounds], display_offset: usize) -> Self {
+    pub fn new(line_damage: &'a [LineDamage], display_offset: usize) -> Self {
         let num_lines = line_damage.len();
         // Filter out invisible damage.
         let line_damage = &line_damage[..num_lines.saturating_sub(display_offset)];
@@ -200,60 +200,51 @@ impl<'a> TermDamageIterator<'a> {
 }
 
 impl Iterator for TermDamageIterator<'_> {
-    type Item = LineDamageBounds;
+    type Item = LineDamage;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.line_damage.find_map(|line| {
-            line.is_damaged().then_some(LineDamageBounds::new(
-                line.line + self.display_offset,
-                line.left,
-                line.right,
-            ))
+            line.is_damaged()
+                .then_some(LineDamage::new(line.line + self.display_offset, true))
         })
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LineDamageBounds {
-    /// Damaged line number.
+pub struct LineDamage {
+    /// Line number.
     pub line: usize,
-
-    /// Leftmost damaged column.
-    pub left: usize,
-
-    /// Rightmost damaged column.
-    pub right: usize,
+    /// Whether this line is damaged.
+    pub damaged: bool,
 }
 
-impl LineDamageBounds {
+impl LineDamage {
     #[inline]
-    pub fn new(line: usize, left: usize, right: usize) -> Self {
-        Self { line, left, right }
+    pub fn new(line: usize, damaged: bool) -> Self {
+        Self { line, damaged }
     }
 
     #[inline]
-    pub fn undamaged(num_cols: usize, line: usize) -> Self {
+    pub fn undamaged(line: usize) -> Self {
         Self {
             line,
-            left: num_cols,
-            right: 0,
+            damaged: false,
         }
     }
 
     #[inline]
-    pub fn reset(&mut self, num_cols: usize) {
-        *self = Self::undamaged(num_cols, self.line);
-    }
-
-    #[inline]
-    pub fn expand(&mut self, left: usize, right: usize) {
-        self.left = std::cmp::min(self.left, left);
-        self.right = std::cmp::max(self.right, right);
+    pub fn reset(&mut self) {
+        self.damaged = false;
     }
 
     #[inline]
     pub fn is_damaged(&self) -> bool {
-        self.left <= self.right
+        self.damaged
+    }
+
+    #[inline]
+    pub fn mark_damaged(&mut self) {
+        self.damaged = true;
     }
 }
 
@@ -263,7 +254,7 @@ struct TermDamageState {
     full: bool,
 
     /// Information about damage on terminal lines.
-    lines: Vec<LineDamageBounds>,
+    lines: Vec<LineDamage>,
 
     /// Old terminal cursor point.
     last_cursor: Pos,
@@ -275,10 +266,8 @@ struct TermDamageState {
 }
 
 impl TermDamageState {
-    fn new(num_cols: usize, num_lines: usize) -> Self {
-        let lines = (0..num_lines)
-            .map(|line| LineDamageBounds::undamaged(num_cols, line))
-            .collect();
+    fn new(num_lines: usize) -> Self {
+        let lines = (0..num_lines).map(LineDamage::undamaged).collect();
 
         Self {
             full: true,
@@ -290,7 +279,7 @@ impl TermDamageState {
     }
 
     #[inline]
-    fn resize(&mut self, num_cols: usize, num_lines: usize) {
+    fn resize(&mut self, num_lines: usize) {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
@@ -300,28 +289,17 @@ impl TermDamageState {
         self.lines.clear();
         self.lines.reserve(num_lines);
         for line in 0..num_lines {
-            self.lines.push(LineDamageBounds::undamaged(num_cols, line));
+            self.lines.push(LineDamage::undamaged(line));
         }
     }
 
-    /// Damage point inside of the viewport.
+    /// Damage a line
     #[inline]
-    fn damage_point(&mut self, point: Pos<usize>) {
-        self.damage_line(point.row, point.col.0, point.col.0);
+    fn damage_line(&mut self, line: usize) {
+        self.lines[line].mark_damaged();
     }
 
-    /// Expand `line`'s damage to span at least `left` to `right` column.
-    #[inline]
-    fn damage_line(&mut self, line: usize, left: usize, right: usize) {
-        self.lines[line].expand(left, right);
-    }
-
-    fn damage_selection(
-        &mut self,
-        selection: SelectionRange,
-        display_offset: usize,
-        num_cols: usize,
-    ) {
+    fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
         let display_offset = display_offset as i32;
         let last_visible_line = self.lines.len() as i32 - 1;
 
@@ -335,14 +313,14 @@ impl TermDamageState {
         let start = std::cmp::max(selection.start.row.0 + display_offset, 0);
         let end = (selection.end.row.0 + display_offset).clamp(0, last_visible_line);
         for line in start as usize..=end as usize {
-            self.damage_line(line, 0, num_cols - 1);
+            self.damage_line(line);
         }
     }
 
     /// Reset information about terminal damage.
-    fn reset(&mut self, num_cols: usize) {
+    fn reset(&mut self) {
         self.full = false;
-        self.lines.iter_mut().for_each(|line| line.reset(num_cols));
+        self.lines.iter_mut().for_each(|line| line.reset());
     }
 }
 
@@ -495,7 +473,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
-            damage: TermDamageState::new(cols, rows),
+            damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             default_cursor_shape: cursor_shape,
             cursor_shape,
@@ -536,18 +514,15 @@ impl<U: EventListener> Crosswords<U> {
         &mut self,
         new_selection: Option<SelectionRange>,
         display_offset: usize,
-        num_cols: usize,
     ) {
         // Damage old selection lines if they exist
         if let Some(old_selection) = self.damage.last_selection {
-            self.damage
-                .damage_selection(old_selection, display_offset, num_cols);
+            self.damage.damage_selection(old_selection, display_offset);
         }
 
         // Damage new selection lines if they exist
         if let Some(new_selection) = new_selection {
-            self.damage
-                .damage_selection(new_selection, display_offset, num_cols);
+            self.damage.damage_selection(new_selection, display_offset);
         }
 
         // Update the stored selection
@@ -571,9 +546,9 @@ impl<U: EventListener> Crosswords<U> {
         // Add information about old cursor position and new one if they are not the same, so we
         // cover everything that was produced by `Term::input`.
         if self.damage.last_cursor != previous_cursor {
-            // Cursor coordinates are always inside viewport even if you have `display_offset`.
-            let point = Pos::new(previous_cursor.row.0 as usize, previous_cursor.col);
-            self.damage.damage_point(point);
+            // Damage the entire line where the previous cursor was
+            let previous_line = previous_cursor.row.0 as usize;
+            self.damage.damage_line(previous_line);
         }
 
         // Always damage current cursor.
@@ -591,18 +566,12 @@ impl<U: EventListener> Crosswords<U> {
             TerminalDamage::Full
         } else {
             // Collect damaged lines
-            let damaged_lines: Vec<LineDamageBounds> = self
+            let damaged_lines: Vec<LineDamage> = self
                 .damage
                 .lines
                 .iter()
                 .filter(|line| line.is_damaged())
-                .map(|line| {
-                    LineDamageBounds::new(
-                        line.line + display_offset,
-                        line.left,
-                        line.right,
-                    )
-                })
+                .map(|line| LineDamage::new(line.line + display_offset, true))
                 .collect();
 
             if damaged_lines.is_empty() {
@@ -628,7 +597,7 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn reset_damage(&mut self) {
-        self.damage.reset(self.grid.columns());
+        self.damage.reset();
     }
 
     #[inline]
@@ -736,7 +705,7 @@ impl<U: EventListener> Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
 
         // Resize damage information.
-        self.damage.resize(num_cols, num_lines);
+        self.damage.resize(num_lines);
 
         // Update size information for graphics.
         self.graphics.resize(&size);
@@ -901,14 +870,23 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
+    /// Damage the entire line at the cursor position
+    #[inline]
+    pub fn damage_cursor_line(&mut self) {
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage_line(cursor_line);
+    }
+
+    /// Damage an entire line
+    #[inline]
+    pub fn damage_line(&mut self, line: usize) {
+        self.damage.damage_line(line);
+    }
+
     #[inline]
     pub fn damage_cursor(&mut self) {
-        // The normal cursor coordinates are always in viewport.
-        let point = Pos::new(
-            self.grid.cursor.pos.row.0 as usize,
-            self.grid.cursor.pos.col,
-        );
-        self.damage.damage_point(point);
+        // Use line-based damage approach for better reliability
+        self.damage_cursor_line();
     }
 
     #[inline]
@@ -916,11 +894,8 @@ impl<U: EventListener> Crosswords<U> {
         // Only damage cursor for blink if cursor is visible and blinking is enabled
         let cursor_state = self.cursor();
         if cursor_state.is_visible() {
-            let point = Pos::new(
-                self.grid.cursor.pos.row.0 as usize,
-                self.grid.cursor.pos.col,
-            );
-            self.damage.damage_point(point);
+            // Use line-based damage for cursor blinking
+            self.damage_cursor_line();
 
             self.event_proxy.send_event(
                 RioEvent::TerminalDamaged {
@@ -1281,11 +1256,11 @@ impl<U: EventListener> Crosswords<U> {
             false
         };
 
-        self.damage.damage_line(line_idx, 0, self.columns() - 1);
+        self.damage.damage_line(line_idx);
 
         // Only emit event if line wasn't already damaged
         if !was_damaged {
-            let damaged_line = LineDamageBounds::new(line_idx, 0, self.columns() - 1);
+            let damaged_line = LineDamage::new(line_idx, true);
             self.event_proxy.send_event(
                 RioEvent::TerminalDamaged {
                     route_id: self.route_id,
@@ -1786,8 +1761,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::cmp::min(self.grid.cursor.pos.col + cols, self.grid.last_column());
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(cursor_line, self.grid.cursor.pos.col.0, last_column.0);
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = last_column;
         self.grid.cursor.should_wrap = false;
@@ -1798,8 +1772,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let column = self.grid.cursor.pos.col.saturating_sub(cols.0);
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(cursor_line, column, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = Column(column);
         self.grid.cursor.should_wrap = false;
@@ -1809,7 +1782,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_backward_tabs(&mut self, count: u16) {
         trace!("Moving backward {} tabs", count);
 
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -1827,8 +1799,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(line, self.grid.cursor.pos.col.0, old_col);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -1925,7 +1896,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Cleared cells have current background color set.
         let bg = self.grid.cursor.template.bg;
         let line = cursor.pos.row;
-        self.damage.damage_line(line.0 as usize, start.0, end.0);
+        self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
             *cell = bg.into();
@@ -1946,8 +1917,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let num_cells = columns - end;
 
         let line = cursor.pos.row;
-        self.damage
-            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+        self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line][..];
 
         for offset in 0..num_cells {
@@ -1989,8 +1959,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let num_cells = self.grid.columns() - destination;
 
         let line = cursor.pos.row;
-        self.damage
-            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+        self.damage.damage_line(line.0 as usize);
 
         let row = &mut self.grid[line][..];
 
@@ -2387,10 +2356,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn backspace(&mut self) {
         if self.grid.cursor.pos.col > Column(0) {
             let line = self.grid.cursor.pos.row.0 as usize;
-            let column = self.grid.cursor.pos.col.0;
             self.grid.cursor.pos.col -= 1;
             self.grid.cursor.should_wrap = false;
-            self.damage.damage_line(line, column - 1, column);
+            self.damage.damage_line(line);
         }
     }
 
@@ -2597,8 +2565,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Carriage return");
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(row, new_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(row);
         self.grid.cursor.pos.col = Column(new_col);
         self.grid.cursor.should_wrap = false;
     }
@@ -2607,7 +2574,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_forward_tabs(&mut self, count: u16) {
         trace!("Moving forward {} tabs", count);
         let num_cols = self.columns();
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -2626,8 +2592,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(line, old_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -2657,8 +2622,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             LineClearMode::All => (Column(0), Column(self.grid.columns())),
         };
 
-        self.damage
-            .damage_line(point.row.0 as usize, left.0, right.0 - 1);
+        self.damage.damage_line(point.row.0 as usize);
 
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
@@ -3739,5 +3703,140 @@ mod tests {
         assert_eq!(version_number("0.1.2-nightly"), 1_02);
         assert_eq!(version_number("1.2.3-nightly"), 1_02_03);
         assert_eq!(version_number("999.99.99"), 9_99_99_99);
+    }
+
+    #[test]
+    fn test_cursor_damage_after_clear() {
+        use crate::ansi::CursorShape;
+        use crate::crosswords::CrosswordsSize;
+        use crate::event::{VoidListener, WindowId};
+        use crate::performer::handler::Handler;
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Move cursor to position (1, 5) and type some text
+        term.goto(Line(1), Column(5));
+        for c in "hello".chars() {
+            term.input(c);
+        }
+
+        // Get initial damage and reset
+        {
+            let _initial_damage = term.damage();
+        }
+        term.reset_damage();
+
+        // Simulate `clear` command: clear screen and move cursor to home
+        term.clear_screen(ClearMode::All);
+        term.goto(Line(0), Column(0));
+
+        // Verify cursor is at origin
+        assert_eq!(term.grid.cursor.pos.row, Line(0));
+        assert_eq!(term.grid.cursor.pos.col, Column(0));
+
+        // Reset damage after clear
+        {
+            let _clear_damage = term.damage();
+        }
+        term.reset_damage();
+
+        // Now type "aa" - both characters should trigger line damage
+        term.input('a');
+
+        // Check damage after first 'a' - should damage entire line 0
+        let has_damage_first = {
+            let damage_after_first_a = term.damage();
+            match damage_after_first_a {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    !damaged_lines.is_empty()
+                        && damaged_lines.iter().any(|line| line.line == 0)
+                }
+                TermDamage::Full => true,
+            }
+        };
+        assert!(has_damage_first, "First 'a' should cause line damage");
+        term.reset_damage();
+
+        term.input('a');
+
+        // Check damage after second 'a' - should also damage entire line 0
+        let has_damage_second = {
+            let damage_after_second_a = term.damage();
+            match damage_after_second_a {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    !damaged_lines.is_empty()
+                        && damaged_lines.iter().any(|line| line.line == 0)
+                }
+                TermDamage::Full => true,
+            }
+        };
+        assert!(has_damage_second, "Second 'a' should cause line damage");
+        term.reset_damage();
+
+        // Verify final cursor position
+        assert_eq!(term.grid.cursor.pos.row, Line(0));
+        assert_eq!(term.grid.cursor.pos.col, Column(2)); // After typing "aa"
+    }
+
+    #[test]
+    fn test_line_damage_approach() {
+        use crate::ansi::CursorShape;
+        use crate::crosswords::CrosswordsSize;
+        use crate::event::{VoidListener, WindowId};
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Reset damage to start clean
+        term.reset_damage();
+
+        // Move cursor to line 2 and damage that line
+        term.goto(Line(2), Column(3));
+        term.damage_cursor_line();
+
+        let damage_result = {
+            let damage = term.damage();
+            match damage {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    damaged_lines
+                        .iter()
+                        .find(|line| line.line == 2)
+                        .map(|line| line.damaged)
+                }
+                TermDamage::Full => Some(true), // Full damage
+            }
+        };
+
+        // Should damage line 2
+        assert_eq!(damage_result, Some(true), "Should damage line 2");
+        term.reset_damage();
+
+        // Test the general damage_line method
+        term.damage_line(5);
+
+        let damage_result_2 = {
+            let damage = term.damage();
+            match damage {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    damaged_lines
+                        .iter()
+                        .find(|line| line.line == 5)
+                        .map(|line| line.damaged)
+                }
+                TermDamage::Full => Some(true),
+            }
+        };
+
+        // Should damage line 5
+        assert_eq!(damage_result_2, Some(true), "Should damage line 5");
     }
 }
