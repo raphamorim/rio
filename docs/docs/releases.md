@@ -7,6 +7,8 @@ language: 'en'
 
 ## 0.2.21 (unreleased)
 
+- Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
+
 ### Performance Optimizations
 
 - **Major**: Implemented efficient CVDisplayLink-based VSync synchronization for macOS
