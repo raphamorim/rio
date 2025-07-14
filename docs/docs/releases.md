@@ -78,6 +78,11 @@ language: 'en'
 
 ### Bug Fixes
 
+- **Cursor Damage Tracking**: Fixed cursor rendering issues after `clear` command and during rapid typing
+  - Replaced complex point-based damage tracking with simplified line-based approach
+  - Eliminates edge cases where cursor updates were missed during fast typing sequences
+  - Improved reliability by always damaging entire lines instead of tracking column ranges
+  - Aligns with modern terminal design principles for more robust damage calculation
 - **Selection Rendering**: Fixed selection highlight not appearing on first render
   - Selection changes now properly trigger damage tracking and rendering
   - Optimized selection damage to only redraw affected lines for better performance
