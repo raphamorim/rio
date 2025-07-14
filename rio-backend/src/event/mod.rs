@@ -5,7 +5,7 @@ use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
-use crate::crosswords::LineDamageBounds;
+use crate::crosswords::LineDamage;
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
@@ -51,7 +51,7 @@ pub enum TerminalDamage {
     /// The entire terminal needs to be redrawn
     Full,
     /// Only specific lines need to be redrawn
-    Partial(Vec<LineDamageBounds>),
+    Partial(Vec<LineDamage>),
     /// Only the cursor position has changed
     CursorOnly,
 }
