@@ -599,6 +599,7 @@ impl RichTextBrush {
                                     underline_offset: run.underline_offset,
                                     strikeout_offset: run.strikeout_offset,
                                     underline_thickness: run.strikeout_size,
+                                    descent: run.descent,
                                 };
 
                                 // Update font session if needed
@@ -698,6 +699,7 @@ impl RichTextBrush {
                                     underline_offset: run.underline_offset,
                                     strikeout_offset: run.strikeout_offset,
                                     underline_thickness: run.strikeout_size,
+                                    descent: run.descent,
                                 };
 
                                 // Update font session if needed

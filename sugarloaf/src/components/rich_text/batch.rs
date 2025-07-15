@@ -3854,35 +3854,36 @@ impl BatchManager {
                         }
                     }
                     UnderlineShape::Curly => {
-                        let style_line_height = (line_height / 10.).clamp(2.0, 16.0);
-                        let size = (style_line_height / 1.5).clamp(1.0, 4.0);
-                        let offset = style_line_height * 1.6;
-
-                        let mut curly_width = ux;
-                        let mut rect_width = 1.0f32.min(end - curly_width);
-
-                        while curly_width < end {
-                            rect_width = rect_width.min(end - curly_width);
-
-                            let dot_bottom_offset = match curly_width as u32 % 8 {
-                                3..=5 => offset + style_line_height,
-                                2 | 6 => offset + 2.0 * style_line_height / 3.0,
-                                1 | 7 => offset + 1.0 * style_line_height / 3.0,
-                                _ => offset,
-                            };
-
-                            self.add_rect(
-                                &Rect::new(
-                                    curly_width,
-                                    uy - (dot_bottom_offset - offset),
-                                    rect_width,
-                                    size,
-                                ),
+                        // Create smooth curly underlines using small circles/arcs for rounded appearance
+                        let wave_amplitude = (line_height / 10.).clamp(1.0, 2.0);
+                        let wave_frequency = 8.0; // pixels per complete wave cycle
+                        let circle_radius = (line_height / 24.).clamp(0.3, 0.8);
+                        let stroke_width = 0.5; // Very thin stroke
+                        
+                        let mut x = ux;
+                        let step_size: f32 = circle_radius * 0.6; // More overlap for smoothness
+                        
+                        while x < end {
+                            let progress = (x - ux) / wave_frequency;
+                            let wave_phase = progress * std::f32::consts::PI * 2.0;
+                            
+                            // Create smooth wave using sine for Y position
+                            let y_offset = wave_phase.sin() * wave_amplitude;
+                            let y_center = uy + y_offset;
+                            
+                            // Use small circles to create smooth rounded wave
+                            self.add_arc(
+                                x,
+                                y_center,
+                                circle_radius,
+                                0.0, // start angle
+                                360.0, // end angle (full circle in degrees)
+                                stroke_width,
                                 depth,
                                 &underline.color,
                             );
-
-                            curly_width += rect_width;
+                            
+                            x += step_size;
                         }
                     }
                 }

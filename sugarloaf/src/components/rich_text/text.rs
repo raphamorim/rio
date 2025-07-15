@@ -47,6 +47,8 @@ pub struct TextRunStyle<'a> {
     pub underline_offset: f32,
     pub strikeout_offset: f32,
     pub underline_thickness: f32,
+    /// Font descent for Zed-style underline positioning
+    pub descent: f32,
 }
 
 /// Positioned glyph in a text run.
