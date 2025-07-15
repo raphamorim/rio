@@ -87,13 +87,10 @@ impl Compositor {
                 let underline_thickness = if style.underline_thickness > 0.0 {
                     style.underline_thickness
                 } else {
-                    // Fallback thickness based on underline shape
-                    match info.shape {
-                        UnderlineShape::Regular => 1.0,
-                        UnderlineShape::Dotted
-                        | UnderlineShape::Dashed
-                        | UnderlineShape::Curly => 2.0,
-                    }
+                    // Fallback thickness based on font size
+                    // Use approximately 8% of font size for all underline types
+                    let base_thickness = style.font_size * 0.08;
+                    base_thickness.max(1.0)
                 };
 
                 // Use real font metrics for proper underline positioning

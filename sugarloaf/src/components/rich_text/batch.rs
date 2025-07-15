@@ -3817,12 +3817,12 @@ impl BatchManager {
                             &underline.color,
                         );
                         if underline.is_doubled {
-                            // Position the second underline below the first one with proper spacing
-                            // Add a small gap (underline.size) between the two lines
+                            // Position the second underline with a gap equal to thickness
+                            // First line is at uy, gap of underline.size, then second line
                             self.add_rect(
                                 &Rect::new(
                                     ux,
-                                    uy + underline.size + (underline.size * 0.5),
+                                    uy + (underline.size * 2.0),
                                     end - ux,
                                     underline.size,
                                 ),
