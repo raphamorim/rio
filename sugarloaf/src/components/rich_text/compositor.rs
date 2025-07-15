@@ -44,7 +44,7 @@ impl Compositor {
         };
 
         // Ensure adequate clearance below text to avoid clipping descenders
-        let min_clearance = (font_size * 0.2) + (font_size * 0.15); // descent + 15% clearance
+        let min_clearance = (font_size * 0.2) + (font_size * 0.20); // descent + 20% clearance
         golden_ratio_offset.max(min_clearance)
     }
 
