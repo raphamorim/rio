@@ -26,26 +26,23 @@ impl Compositor {
     fn calculate_underline_offset(
         &self,
         style: &TextRunStyle,
-        underline_thickness: f32,
+        _underline_thickness: f32,
     ) -> f32 {
-        // Use font metrics directly - they're already scaled for the font size
-        // The underline_offset from font metrics is typically negative (below baseline)
-        let font_underline_offset = style.underline_offset;
-        
         // The rendering system uses: uy = baseline - offset
-        // So we need to negate the font metrics offset to get correct positioning
-        // Font metrics: negative value (below baseline)
-        // Rendering expects: positive value (will be subtracted from baseline)
-        let rendering_offset = -font_underline_offset;
+        // For terminal underlines, we want them positioned near the bottom of the line
+        // but above the next line's text
         
-        // Only apply fallback for fonts with missing or zero metrics
-        if font_underline_offset.abs() < 0.1 {
-            // Fallback: position underline below baseline
-            underline_thickness.max(1.0)
-        } else {
-            // Use the negated font metrics for correct rendering
-            rendering_offset
-        }
+        // Calculate a reasonable position based on line height and font size
+        // Position underline in the lower portion of the line
+        let line_height = style.line_height;
+        let font_size = style.font_size;
+        
+        // Position underline about 80% down the line height from the baseline
+        // This should place it below descenders but not too close to the next line
+        let offset_from_baseline = line_height * 0.2; // 20% of line height below baseline
+        
+        // Ensure minimum distance for visibility
+        offset_from_baseline.max(font_size * 0.1).max(2.0)
     }
 
     /// Calculate proper strikethrough offset using real font metrics
