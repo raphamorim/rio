@@ -598,6 +598,7 @@ impl RichTextBrush {
                                     decoration_color: run.span.decoration_color,
                                     underline_offset: run.underline_offset,
                                     strikeout_offset: run.strikeout_offset,
+                                    underline_thickness: run.strikeout_size,
                                 };
 
                                 // Update font session if needed
@@ -696,6 +697,7 @@ impl RichTextBrush {
                                     decoration_color: run.span.decoration_color,
                                     underline_offset: run.underline_offset,
                                     strikeout_offset: run.strikeout_offset,
+                                    underline_thickness: run.strikeout_size,
                                 };
 
                                 // Update font session if needed

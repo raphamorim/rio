@@ -195,44 +195,29 @@ impl Renderer {
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            let underline_thickness = 1.0;
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: 0.0, // Sugarloaf will calculate the proper offset
-                size: underline_thickness,
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
-            let underline_thickness = 1.0;
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: 0.0, // Sugarloaf will calculate the proper offset
-                size: underline_thickness,
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
-            let underline_thickness = 2.0;
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: 0.0, // Sugarloaf will calculate the proper offset
-                size: underline_thickness,
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
-            let underline_thickness = 2.0;
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: 0.0, // Sugarloaf will calculate the proper offset
-                size: underline_thickness,
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
-            let underline_thickness = 2.0;
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: 0.0, // Sugarloaf will calculate the proper offset
-                size: underline_thickness,
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
@@ -299,8 +284,6 @@ impl Renderer {
             {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: 0.0,
-                        size: -1.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
@@ -646,8 +629,6 @@ impl Renderer {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: 0.0,
-                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));

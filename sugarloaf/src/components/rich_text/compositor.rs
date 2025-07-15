@@ -23,13 +23,22 @@ impl Compositor {
     }
 
     /// Calculate proper underline offset using real font metrics
-    fn calculate_underline_offset(&self, style: &TextRunStyle, underline_thickness: f32) -> f32 {
-        // Use real font metrics instead of percentage-based fallback
+    fn calculate_underline_offset(
+        &self,
+        style: &TextRunStyle,
+        underline_thickness: f32,
+    ) -> f32 {
+        // Use font metrics directly - they're already scaled for the font size
         // The underline_offset from font metrics is typically negative (below baseline)
         let font_underline_offset = style.underline_offset;
-        
-        // Ensure minimum offset for visibility
-        font_underline_offset.min(-underline_thickness).min(-1.0)
+
+        // For very thin underlines or fonts with unusual metrics, ensure minimum visibility
+        // but generally trust the font metrics
+        if font_underline_offset.abs() < 0.5 {
+            -underline_thickness.max(1.0)
+        } else {
+            font_underline_offset
+        }
     }
 
     /// Calculate proper strikethrough offset using real font metrics
@@ -74,31 +83,52 @@ impl Compositor {
         let rect = rect.into();
         let underline = match style.decoration {
             Some(FragmentStyleDecoration::Underline(info)) => {
+                // Use font metrics for thickness when available, otherwise fall back to shape-based defaults
+                let underline_thickness = if style.underline_thickness > 0.0 {
+                    style.underline_thickness
+                } else {
+                    // Fallback thickness based on underline shape
+                    match info.shape {
+                        UnderlineShape::Regular => 1.0,
+                        UnderlineShape::Dotted
+                        | UnderlineShape::Dashed
+                        | UnderlineShape::Curly => 2.0,
+                    }
+                };
+
                 // Use real font metrics for proper underline positioning
-                let underline_offset = self.calculate_underline_offset(style, info.size);
-                
+                let underline_offset =
+                    self.calculate_underline_offset(style, underline_thickness);
+
                 Some(RunUnderline {
                     enabled: true,
                     offset: underline_offset.round() as i32,
-                    size: info.size,
+                    size: underline_thickness,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: info.is_doubled,
                     shape: info.shape,
                 })
-            },
+            }
             Some(FragmentStyleDecoration::Strikethrough) => {
                 // Use real font metrics for proper strikethrough positioning
                 let strikethrough_offset = self.calculate_strikethrough_offset(style);
-                
+
+                // Use font metrics for thickness when available
+                let strikethrough_thickness = if style.underline_thickness > 0.0 {
+                    style.underline_thickness
+                } else {
+                    2.0 // Fallback thickness
+                };
+
                 Some(RunUnderline {
                     enabled: true,
                     offset: strikethrough_offset.round() as i32,
-                    size: 2.0,
+                    size: strikethrough_thickness,
                     color: style.decoration_color.unwrap_or(style.color),
                     is_doubled: false,
                     shape: UnderlineShape::Regular,
                 })
-            },
+            }
             _ => None,
         };
 

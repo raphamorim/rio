@@ -25,3 +25,6 @@ misc/72/
 
 # goreleaser
 dist/
+
+# crush directory
+.crush/

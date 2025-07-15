@@ -46,6 +46,7 @@ pub struct TextRunStyle<'a> {
     /// Font metrics for proper underline/strikethrough positioning
     pub underline_offset: f32,
     pub strikeout_offset: f32,
+    pub underline_thickness: f32,
 }
 
 /// Positioned glyph in a text run.
