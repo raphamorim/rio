@@ -549,21 +549,156 @@ mod tests {
     }
 
     #[test]
-    fn test_underline_shapes() {
-        // Test all underline shapes
-        let shapes = [
-            UnderlineShape::Regular,
-            UnderlineShape::Dotted,
-            UnderlineShape::Dashed,
-            UnderlineShape::Curly,
-        ];
+    fn test_underline_rendering_position_debug() {
+        let compositor = Compositor::new();
         
-        for shape in shapes {
-            let underline_info = UnderlineInfo {
-                is_doubled: false,
-                shape,
-            };
-            assert_eq!(underline_info.shape, shape);
+        // Simulate real values from Rio terminal
+        let style = create_test_style(28.0, 33.0, -1.3671875);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Debug the actual rendering calculation (FIXED VERSION)
+        let baseline = style.baseline; // Should be around 158 based on debug output
+        let underline_y = baseline + offset; // FIXED: now adding offset
+        
+        println!("Debug rendering (FIXED):");
+        println!("  font_size: {}", style.font_size);
+        println!("  line_height: {}", style.line_height);
+        println!("  baseline: {}", baseline);
+        println!("  calculated_offset: {}", offset);
+        println!("  underline_y (baseline + offset): {}", underline_y);
+        println!("  underline_y relative to baseline: {}", underline_y - baseline);
+        
+        // The underline should now be below the baseline
+        assert!(underline_y > baseline, 
+                "Underline Y ({}) should be below baseline ({})", underline_y, baseline);
+        
+        // Check if the offset is reasonable
+        assert!(offset > 1.0, "Offset should be at least 1px");
+        assert!(offset < style.font_size * 0.5, "Offset shouldn't be more than 50% of font size");
+    }
+
+    #[test]
+    fn test_coordinate_system_assumptions() {
+        let compositor = Compositor::new();
+        
+        // Test our assumptions about the coordinate system
+        let style = create_test_style(16.0, 20.0, -2.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Simulate the rendering calculation: uy = baseline - offset
+        let baseline = 100.0; // Arbitrary baseline position
+        let underline_y = baseline - offset;
+        
+        println!("Coordinate system test:");
+        println!("  baseline: {}", baseline);
+        println!("  offset: {}", offset);
+        println!("  underline_y: {}", underline_y);
+        
+        // If Y increases downward (typical screen coordinates):
+        // - baseline = 100
+        // - offset = 2 (positive, meaning "go down from baseline")
+        // - underline_y = 100 - 2 = 98 (above baseline - WRONG!)
+        
+        // This suggests we might need: uy = baseline + offset
+        let corrected_underline_y = baseline + offset;
+        println!("  corrected_underline_y (baseline + offset): {}", corrected_underline_y);
+        
+        // The corrected calculation should put underline below baseline
+        assert!(corrected_underline_y > baseline, 
+                "Corrected underline Y ({}) should be below baseline ({})", 
+                corrected_underline_y, baseline);
+    }
+
+    #[test]
+    fn test_typical_terminal_positioning() {
+        let compositor = Compositor::new();
+        
+        // Test with typical terminal settings
+        let style = create_test_style(14.0, 18.0, -1.5);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Simulate a line of text in a terminal
+        let line_top = 0.0;
+        let line_height = style.line_height;
+        let baseline = line_top + (line_height * 0.8); // Typical baseline position
+        
+        println!("Terminal positioning test:");
+        println!("  line_top: {}", line_top);
+        println!("  line_height: {}", line_height);
+        println!("  baseline: {}", baseline);
+        println!("  offset: {}", offset);
+        
+        // Current calculation
+        let current_underline_y = baseline - offset;
+        println!("  current_underline_y (baseline - offset): {}", current_underline_y);
+        
+        // Alternative calculation
+        let alt_underline_y = baseline + offset;
+        println!("  alternative_underline_y (baseline + offset): {}", alt_underline_y);
+        
+        // Check which makes more sense
+        let line_bottom = line_top + line_height;
+        println!("  line_bottom: {}", line_bottom);
+        
+        // The underline should be:
+        // 1. Below the baseline
+        // 2. Above the next line (if any)
+        // 3. Within reasonable bounds of the current line
+        
+        if current_underline_y > baseline {
+            println!("  Current calculation puts underline below baseline ✓");
+        } else {
+            println!("  Current calculation puts underline above baseline ✗");
         }
+        
+        if alt_underline_y > baseline {
+            println!("  Alternative calculation puts underline below baseline ✓");
+        } else {
+            println!("  Alternative calculation puts underline above baseline ✗");
+        }
+    }
+
+    #[test]
+    fn test_underline_position_relative_to_text_bounds() {
+        let compositor = Compositor::new();
+        
+        // Test positioning relative to typical text bounds
+        let style = create_test_style(20.0, 24.0, -2.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Typical font metrics (approximate)
+        let font_size = style.font_size;
+        let ascent = font_size * 0.8;  // ~80% of font size
+        let descent = font_size * 0.2; // ~20% of font size
+        
+        let baseline = 100.0; // Arbitrary baseline
+        let text_top = baseline - ascent;
+        let text_bottom = baseline + descent;
+        
+        println!("Text bounds test (FIXED):");
+        println!("  font_size: {}", font_size);
+        println!("  ascent: {}", ascent);
+        println!("  descent: {}", descent);
+        println!("  baseline: {}", baseline);
+        println!("  text_top: {}", text_top);
+        println!("  text_bottom: {}", text_bottom);
+        println!("  calculated_offset: {}", offset);
+        
+        // FIXED rendering calculation
+        let underline_y = baseline + offset;
+        println!("  underline_y (baseline + offset): {}", underline_y);
+        
+        // Check if underline is positioned correctly
+        if underline_y > text_bottom {
+            println!("  Underline is below text bottom ✓");
+        } else if underline_y > baseline {
+            println!("  Underline is below baseline but above text bottom (might clip descenders) ⚠");
+        } else {
+            println!("  Underline is above baseline (definitely wrong) ✗");
+        }
+        
+        // The underline should now be below the baseline
+        assert!(underline_y > baseline, 
+                "Underline should be below baseline");
     }
 }

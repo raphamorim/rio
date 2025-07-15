@@ -3803,7 +3803,10 @@ impl BatchManager {
     ) {
         if underline.enabled {
             let ux = x;
-            let uy = baseline - underline.offset as f32;
+            // FIX: Add offset to baseline instead of subtracting
+            // This positions the underline below the baseline as intended
+            let uy = baseline + underline.offset as f32;
+            
             let end = x + advance;
             if ux < end {
                 match underline.shape {
