@@ -3803,10 +3803,10 @@ impl BatchManager {
     ) {
         if underline.enabled {
             let ux = x;
-            // FIX: Add offset to baseline instead of subtracting
-            // This positions the underline below the baseline as intended
+            // Position underline below baseline by adding the calculated offset
+            // This ensures proper underline placement in the descent area
             let uy = baseline + underline.offset as f32;
-            
+
             let end = x + advance;
             if ux < end {
                 match underline.shape {
@@ -3817,10 +3817,12 @@ impl BatchManager {
                             &underline.color,
                         );
                         if underline.is_doubled {
+                            // Position the second underline below the first one with proper spacing
+                            // Add a small gap (underline.size) between the two lines
                             self.add_rect(
                                 &Rect::new(
                                     ux,
-                                    uy - (underline.size * 2.),
+                                    uy + underline.size + (underline.size * 0.5),
                                     end - ux,
                                     underline.size,
                                 ),
@@ -3858,42 +3860,48 @@ impl BatchManager {
                         let wave_amplitude = (line_height / 12.).clamp(0.9, 1.8); // Slightly reduced amplitude
                         let wave_frequency = 8.0; // pixels per complete wave cycle
                         let thickness = (line_height / 16.).clamp(1.0, 2.0);
-                        
+
                         let mut x = ux;
                         let step_size: f32 = 0.8; // Larger steps for triangle segments
-                        
+
                         while x < end - step_size {
                             let progress1 = (x - ux) / wave_frequency;
                             let progress2 = ((x + step_size) - ux) / wave_frequency;
-                            
+
                             let wave_phase1 = progress1 * std::f32::consts::PI * 2.0;
                             let wave_phase2 = progress2 * std::f32::consts::PI * 2.0;
-                            
+
                             // Calculate Y positions for current and next points
                             let y1 = uy + wave_phase1.sin() * wave_amplitude;
                             let y2 = uy + wave_phase2.sin() * wave_amplitude;
-                            
+
                             // Create thick line segment using two triangles (quad)
                             let half_thickness = thickness * 0.5;
-                            
+
                             // Top triangle of the quad
                             self.add_triangle(
-                                x, y1 - half_thickness,                    // top-left
-                                x + step_size, y2 - half_thickness,       // top-right
-                                x, y1 + half_thickness,                   // bottom-left
+                                x,
+                                y1 - half_thickness, // top-left
+                                x + step_size,
+                                y2 - half_thickness, // top-right
+                                x,
+                                y1 + half_thickness, // bottom-left
                                 depth,
                                 underline.color,
                             );
-                            
+
                             // Bottom triangle of the quad
                             self.add_triangle(
-                                x + step_size, y2 - half_thickness,       // top-right
-                                x + step_size, y2 + half_thickness,       // bottom-right
-                                x, y1 + half_thickness,                   // bottom-left
+                                x + step_size,
+                                y2 - half_thickness, // top-right
+                                x + step_size,
+                                y2 + half_thickness, // bottom-right
+                                x,
+                                y1 + half_thickness, // bottom-left
                                 depth,
                                 underline.color,
                             );
-                            
+
                             x += step_size;
                         }
                     }

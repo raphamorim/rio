@@ -47,7 +47,7 @@ pub struct TextRunStyle<'a> {
     pub underline_offset: f32,
     pub strikeout_offset: f32,
     pub underline_thickness: f32,
-    /// Font descent for Zed-style underline positioning
+    /// Font descent for underline positioning
     pub descent: f32,
 }
 
