@@ -28,7 +28,7 @@ impl Compositor {
         style: &TextRunStyle,
         _underline_thickness: f32,
     ) -> f32 {
-        // The rendering system uses: uy = baseline - offset
+        // The rendering system uses: uy = baseline + offset (FIXED)
         // For terminal underlines, we want them positioned well below the text
         // to clear descenders like 'g', 'j', 'p', 'q', 'y'
         
@@ -43,20 +43,21 @@ impl Compositor {
             // Font metrics are available, but scale them appropriately for terminal use
             let font_based_offset = -font_underline_offset;
             
-            // If the font metrics seem too small (less than 5% of font size), 
+            // If the font metrics seem too small (less than 8% of font size), 
             // use a more reasonable default
-            if font_based_offset < font_size * 0.05 {
-                font_size * 0.1 // 10% of font size below baseline
+            if font_based_offset < font_size * 0.08 {
+                font_size * 0.15 // 15% of font size below baseline (increased from 10%)
             } else {
                 font_based_offset
             }
         } else {
             // No font metrics available, use reasonable default
-            font_size * 0.1 // 10% of font size below baseline
+            font_size * 0.15 // 15% of font size below baseline (increased from 10%)
         };
         
         // Ensure minimum clearance for descenders and visibility
-        let min_offset = (font_size * 0.08).max(2.0); // At least 8% of font size or 2px
+        // Increased minimum spacing for better visual separation
+        let min_offset = (font_size * 0.12).max(3.0); // At least 12% of font size or 3px (increased)
         reasonable_offset.max(min_offset)
     }
 
@@ -391,10 +392,10 @@ mod tests {
         let style = create_test_style(16.0, 20.0, -2.0);
         let offset = compositor.calculate_underline_offset(&style, 1.0);
         
-        // Font metrics: -(-2.0) = 2.0, which is > 16.0 * 0.05 = 0.8, so use font metrics
-        // min_offset = max(16.0 * 0.08, 2.0) = max(1.28, 2.0) = 2.0
-        // final = max(2.0, 2.0) = 2.0
-        assert_eq!(offset, 2.0);
+        // Font metrics: -(-2.0) = 2.0, which is > 16.0 * 0.08 = 1.28, so use font metrics
+        // min_offset = max(16.0 * 0.12, 3.0) = max(1.92, 3.0) = 3.0
+        // final = max(2.0, 3.0) = 3.0
+        assert_eq!(offset, 3.0);
     }
 
     #[test]
