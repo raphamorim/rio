@@ -3854,33 +3854,44 @@ impl BatchManager {
                         }
                     }
                     UnderlineShape::Curly => {
-                        // Create smooth curly underlines using small circles/arcs for rounded appearance
-                        let wave_amplitude = (line_height / 10.).clamp(1.0, 2.0);
+                        // Create smooth curly underlines using triangles to form thick curved segments
+                        let wave_amplitude = (line_height / 12.).clamp(0.9, 1.8); // Slightly reduced amplitude
                         let wave_frequency = 8.0; // pixels per complete wave cycle
-                        let circle_radius = (line_height / 24.).clamp(0.3, 0.8);
-                        let stroke_width = 0.5; // Very thin stroke
+                        let thickness = (line_height / 16.).clamp(1.0, 2.0);
                         
                         let mut x = ux;
-                        let step_size: f32 = circle_radius * 0.6; // More overlap for smoothness
+                        let step_size: f32 = 0.8; // Larger steps for triangle segments
                         
-                        while x < end {
-                            let progress = (x - ux) / wave_frequency;
-                            let wave_phase = progress * std::f32::consts::PI * 2.0;
+                        while x < end - step_size {
+                            let progress1 = (x - ux) / wave_frequency;
+                            let progress2 = ((x + step_size) - ux) / wave_frequency;
                             
-                            // Create smooth wave using sine for Y position
-                            let y_offset = wave_phase.sin() * wave_amplitude;
-                            let y_center = uy + y_offset;
+                            let wave_phase1 = progress1 * std::f32::consts::PI * 2.0;
+                            let wave_phase2 = progress2 * std::f32::consts::PI * 2.0;
                             
-                            // Use small circles to create smooth rounded wave
-                            self.add_arc(
-                                x,
-                                y_center,
-                                circle_radius,
-                                0.0, // start angle
-                                360.0, // end angle (full circle in degrees)
-                                stroke_width,
+                            // Calculate Y positions for current and next points
+                            let y1 = uy + wave_phase1.sin() * wave_amplitude;
+                            let y2 = uy + wave_phase2.sin() * wave_amplitude;
+                            
+                            // Create thick line segment using two triangles (quad)
+                            let half_thickness = thickness * 0.5;
+                            
+                            // Top triangle of the quad
+                            self.add_triangle(
+                                x, y1 - half_thickness,                    // top-left
+                                x + step_size, y2 - half_thickness,       // top-right
+                                x, y1 + half_thickness,                   // bottom-left
                                 depth,
-                                &underline.color,
+                                underline.color,
+                            );
+                            
+                            // Bottom triangle of the quad
+                            self.add_triangle(
+                                x + step_size, y2 - half_thickness,       // top-right
+                                x + step_size, y2 + half_thickness,       // bottom-right
+                                x, y1 + half_thickness,                   // bottom-left
+                                depth,
+                                underline.color,
                             );
                             
                             x += step_size;
