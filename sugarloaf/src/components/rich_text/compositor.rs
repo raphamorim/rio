@@ -29,20 +29,33 @@ impl Compositor {
         _underline_thickness: f32,
     ) -> f32 {
         // The rendering system uses: uy = baseline - offset
-        // For terminal underlines, we want them positioned near the bottom of the line
-        // but above the next line's text
+        // For terminal underlines, we want them positioned well below the text
+        // to clear descenders like 'g', 'j', 'p', 'q', 'y'
         
-        // Calculate a reasonable position based on line height and font size
-        // Position underline in the lower portion of the line
         let line_height = style.line_height;
         let font_size = style.font_size;
         
-        // Position underline about 80% down the line height from the baseline
-        // This should place it below descenders but not too close to the next line
-        let offset_from_baseline = line_height * 0.2; // 20% of line height below baseline
+        // Use font metrics if available and reasonable
+        let font_underline_offset = style.underline_offset;
         
-        // Ensure minimum distance for visibility
-        offset_from_baseline.max(font_size * 0.1).max(2.0)
+        if font_underline_offset.abs() > 0.1 {
+            // Font metrics are available - use them but ensure proper positioning
+            // Font metrics are typically negative (below baseline)
+            // We need positive value for rendering system
+            let font_based_offset = -font_underline_offset;
+            
+            // Ensure the offset clears descenders (typically ~20% of font size)
+            let descender_clearance = font_size * 0.25; // Be conservative
+            let min_offset = descender_clearance.max(3.0); // Absolute minimum
+            
+            font_based_offset.max(min_offset)
+        } else {
+            // Fallback: position underline well below baseline
+            // Use a combination of font size and line height for proper positioning
+            let descender_clearance = font_size * 0.25;
+            let offset_from_baseline = (font_size * 0.2).max(line_height * 0.15);
+            offset_from_baseline.max(descender_clearance).max(3.0)
+        }
     }
 
     /// Calculate proper strikethrough offset using real font metrics
@@ -337,5 +350,212 @@ impl Compositor {
 impl Default for Compositor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::{UnderlineInfo, UnderlineShape};
+    use crate::components::rich_text::text::TextRunStyle;
+
+    fn create_test_style(font_size: f32, line_height: f32, underline_offset: f32) -> TextRunStyle<'static> {
+        TextRunStyle {
+            font_coords: &[],
+            font_size,
+            color: [1.0, 1.0, 1.0, 1.0],
+            background_color: None,
+            baseline: line_height * 0.8, // Typical baseline position
+            topline: 0.0,
+            line_height,
+            padding_y: 0.0,
+            line_height_without_mod: line_height,
+            advance: 10.0,
+            decoration: None,
+            decoration_color: None,
+            cursor: None,
+            drawable_char: None,
+            underline_offset,
+            strikeout_offset: 0.0,
+            underline_thickness: 1.0,
+        }
+    }
+
+    #[test]
+    fn test_underline_offset_calculation_basic() {
+        let compositor = Compositor::new();
+        
+        // Test with typical terminal font settings and font metrics
+        let style = create_test_style(16.0, 20.0, -2.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Should use font metrics: -(-2.0) = 2.0, but ensure descender clearance
+        // descender_clearance = 16.0 * 0.25 = 4.0, min = max(4.0, 3.0) = 4.0
+        // So max(2.0, 4.0) = 4.0
+        assert_eq!(offset, 4.0);
+    }
+
+    #[test]
+    fn test_underline_offset_calculation_large_font() {
+        let compositor = Compositor::new();
+        
+        // Test with larger font and font metrics
+        let style = create_test_style(24.0, 30.0, -6.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.5);
+        
+        // Should use font metrics: -(-6.0) = 6.0
+        // descender_clearance = 24.0 * 0.25 = 6.0, min = max(6.0, 3.0) = 6.0
+        // So max(6.0, 6.0) = 6.0
+        assert_eq!(offset, 6.0);
+    }
+
+    #[test]
+    fn test_underline_offset_minimum_distance() {
+        let compositor = Compositor::new();
+        
+        // Test with very small line height and small font metrics
+        let style = create_test_style(8.0, 5.0, -0.5);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Font metrics: -(-0.5) = 0.5
+        // descender_clearance = 8.0 * 0.25 = 2.0, min = max(2.0, 3.0) = 3.0
+        // So max(0.5, 3.0) = 3.0
+        assert_eq!(offset, 3.0);
+    }
+
+    #[test]
+    fn test_underline_offset_font_size_minimum() {
+        let compositor = Compositor::new();
+        
+        // Test where descender clearance is significant
+        let style = create_test_style(30.0, 10.0, -1.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Font metrics: -(-1.0) = 1.0
+        // descender_clearance = 30.0 * 0.25 = 7.5, min = max(7.5, 3.0) = 7.5
+        // So max(1.0, 7.5) = 7.5
+        assert_eq!(offset, 7.5);
+    }
+
+    #[test]
+    fn test_underline_offset_fallback_no_font_metrics() {
+        let compositor = Compositor::new();
+        
+        // Test fallback when font metrics are not available
+        let style = create_test_style(16.0, 20.0, 0.0); // No font metrics
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Should use fallback:
+        // descender_clearance = 16.0 * 0.25 = 4.0
+        // offset_from_baseline = max(16.0 * 0.2, 20.0 * 0.15) = max(3.2, 3.0) = 3.2
+        // final = max(3.2, 4.0, 3.0) = 4.0
+        assert_eq!(offset, 4.0);
+    }
+
+    #[test]
+    fn test_underline_positioning_relative_to_baseline() {
+        let compositor = Compositor::new();
+        
+        // Test that underline is positioned below baseline
+        let style = create_test_style(16.0, 24.0, -3.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Font metrics: -(-3.0) = 3.0
+        // descender_clearance = 16.0 * 0.25 = 4.0, min = max(4.0, 3.0) = 4.0
+        // So max(3.0, 4.0) = 4.0
+        assert_eq!(offset, 4.0);
+        
+        let baseline = style.baseline;
+        let underline_y = baseline - offset;
+        assert!(underline_y < baseline, "Underline should be positioned below baseline");
+    }
+
+    #[test]
+    fn test_underline_clears_descenders() {
+        let compositor = Compositor::new();
+        
+        // Test with typical settings where descenders exist
+        let style = create_test_style(16.0, 20.0, -2.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // For a 16px font with 20px line height:
+        // - Baseline is typically at 80% = 16px from top
+        // - Descenders extend about 20% of font size = ~3.2px below baseline
+        // - Underline offset should be > descender depth
+        let typical_descender_depth = style.font_size * 0.2;
+        assert!(offset > typical_descender_depth, 
+                "Underline offset ({}) should be greater than typical descender depth ({})", 
+                offset, typical_descender_depth);
+    }
+
+    #[test]
+    fn test_underline_stays_within_reasonable_bounds() {
+        let compositor = Compositor::new();
+        
+        // Test that underline doesn't go too far down
+        let style = create_test_style(16.0, 20.0, -2.0);
+        let offset = compositor.calculate_underline_offset(&style, 1.0);
+        
+        // Should be reasonable for terminal use - not too far from baseline
+        // With 16px font, offset should be reasonable (not more than ~25% of font size)
+        assert!(offset <= style.font_size * 0.25, 
+                "Underline offset ({}) should be reasonable relative to font size ({})", 
+                offset, style.font_size);
+        
+        // But also not too close to baseline
+        assert!(offset >= 2.0, "Underline should have minimum distance from baseline");
+    }
+
+    #[test]
+    fn test_strikethrough_offset_uses_font_metrics() {
+        let compositor = Compositor::new();
+        
+        let style = create_test_style(16.0, 20.0, -2.0);
+        let offset = compositor.calculate_strikethrough_offset(&style);
+        
+        // Should use the strikeout_offset from font metrics
+        assert_eq!(offset, style.strikeout_offset);
+    }
+
+    #[test]
+    fn test_underline_info_creation() {
+        // Test that UnderlineInfo struct works correctly without size/offset fields
+        let underline_info = UnderlineInfo {
+            is_doubled: false,
+            shape: UnderlineShape::Regular,
+        };
+        
+        assert!(!underline_info.is_doubled);
+        assert_eq!(underline_info.shape, UnderlineShape::Regular);
+    }
+
+    #[test]
+    fn test_underline_info_doubled() {
+        let underline_info = UnderlineInfo {
+            is_doubled: true,
+            shape: UnderlineShape::Dashed,
+        };
+        
+        assert!(underline_info.is_doubled);
+        assert_eq!(underline_info.shape, UnderlineShape::Dashed);
+    }
+
+    #[test]
+    fn test_underline_shapes() {
+        // Test all underline shapes
+        let shapes = [
+            UnderlineShape::Regular,
+            UnderlineShape::Dotted,
+            UnderlineShape::Dashed,
+            UnderlineShape::Curly,
+        ];
+        
+        for shape in shapes {
+            let underline_info = UnderlineInfo {
+                is_doubled: false,
+                shape,
+            };
+            assert_eq!(underline_info.shape, shape);
+        }
     }
 }
