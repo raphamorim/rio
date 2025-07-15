@@ -29,14 +29,16 @@ impl Compositor {
         underline_thickness: f32,
     ) -> f32 {
         // Use font metrics directly - they're already scaled for the font size
-        // The underline_offset from font metrics is typically negative (below baseline)
+        // The underline_offset from font metrics should be negative (below baseline)
         let font_underline_offset = style.underline_offset;
-
-        // For very thin underlines or fonts with unusual metrics, ensure minimum visibility
-        // but generally trust the font metrics
-        if font_underline_offset.abs() < 0.5 {
+        
+        // The font metrics should already be correct, so use them directly
+        // Only apply fallback for fonts with missing or zero metrics
+        if font_underline_offset.abs() < 0.1 {
+            // Fallback: position underline below baseline
             -underline_thickness.max(1.0)
         } else {
+            // Trust the font metrics - they should already be properly positioned
             font_underline_offset
         }
     }
