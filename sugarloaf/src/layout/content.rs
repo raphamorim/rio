@@ -25,7 +25,7 @@ use tracing::debug;
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
-use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
+use crate::{sugarloaf::primitives::{SugarCursor, DrawableChar}, Graphic};
 
 /// Cached content that can be either normal clusters or optimized whitespace
 #[derive(Clone, Debug)]
