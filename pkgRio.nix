@@ -84,7 +84,7 @@ in
   
       # Install terminfo files
       install -dm 755 "$out/share/terminfo/r/"
-      tic -xe rio,rio-direct -o "$out/share/terminfo" misc/rio.terminfo
+      tic -xe xterm-rio,rio,rio-direct -o "$out/share/terminfo" misc/rio.terminfo
     '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
       mkdir $out/Applications/
       mv misc/osx/Rio.app/ $out/Applications/

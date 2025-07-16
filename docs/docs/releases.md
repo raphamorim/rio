@@ -109,6 +109,12 @@ language: 'en'
   - `man 5 rio` - Complete configuration file format documentation
   - `man 5 rio-bindings` - Key bindings reference and customization guide
   - Available in `extra/man/` directory with build instructions
+- **Terminfo Compatibility**: Improved terminal compatibility by adding `xterm-rio` terminfo entry
+  - Added `xterm-rio` as primary terminfo entry with `rio` as alias for better application compatibility
+  - Applications that look for "xterm-" prefixed terminals (like termwiz-based apps) now work correctly
+  - Maintains `TERM=rio` environment variable for consistency with terminal identity
+  - Fixes crashes with applications like `gitu` and other termwiz-based terminal programs
+  - Follows same pattern as other modern terminals (Alacritty, Ghostty) for maximum compatibility
 
 ### Technical Details
 

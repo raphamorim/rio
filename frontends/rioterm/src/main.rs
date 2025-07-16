@@ -41,7 +41,7 @@ const LOG_LEVEL_ENV: &str = "RIO_LOG_LEVEL";
 
 pub fn setup_environment_variables(config: &rio_backend::config::Config) {
     #[cfg(unix)]
-    let terminfo = if teletypewriter::terminfo_exists("rio") {
+    let terminfo = if teletypewriter::terminfo_exists("rio") || teletypewriter::terminfo_exists("xterm-rio") {
         "rio"
     } else {
         "xterm-256color"
