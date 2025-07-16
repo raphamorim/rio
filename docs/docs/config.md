@@ -744,11 +744,18 @@ ignore-selection-foreground-color = false
 - `disable-ctlseqs-alt` - Disable ctlseqs with ALT keys
   - Useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
 
+- `ime-cursor-positioning` - Enable IME cursor positioning (default: `true`)
+  - When enabled, IME input popups (like emoji picker, character viewer, or CJK input methods) will appear precisely at the cursor position
+  - Improves input experience for languages that require IME (Chinese, Japanese, Korean, etc.)
+  - Automatically updates position when cursor moves via keyboard, mouse, or any other method
+  - Set to `false` to use system default IME positioning behavior
+
 Example:
 
 ```toml
 [keyboard]
 disable-ctlseqs-alt = false
+ime-cursor-positioning = true
 ```
 
 ## line-height
@@ -959,7 +966,7 @@ Default is `true`.
 hide-if-single = true
 ```
 
-## navigation.use-current-path
+## navigation.current-working-directory
 
 Use same path whenever a new tab is created (Note: requires use-fork to be set to false).
 
@@ -1049,6 +1056,19 @@ Default is false.
 ```toml
 [renderer]
 disable-unfocused-render = false
+```
+
+## renderer.disable-occluded-render
+
+This property disables renderer processes while Rio windows/tabs are occluded (completely hidden from view). This is different from unfocused rendering as it depends on whether the window is minimized, set invisible, or fully occluded by another window.
+
+When a window becomes visible again after being occluded, Rio will automatically render one frame to update the display.
+
+Default is true.
+
+```toml
+[renderer]
+disable-occluded-render = true
 ```
 
 ## renderer.target-fps

@@ -5,6 +5,7 @@ use super::at::FeatureStore;
 use super::engine::EngineMetadata;
 use super::internal::var::Fvar;
 use crate::font_introspector::{charmap::CharmapProxy, metrics::MetricsProxy, FontRef};
+use tracing::debug;
 
 pub type Epoch = u64;
 
@@ -70,6 +71,8 @@ impl FeatureCache {
                 FeatureCacheEntry::Present(&mut entry.store)
             }
             (false, index) => {
+                // Log cache miss for debugging
+                debug!("FeatureCache miss for font_id={:?} tags={:?}", id, tags);
                 self.epoch += 1;
                 let entry = &mut self.entries[index];
                 entry.epoch = self.epoch;

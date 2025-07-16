@@ -48,21 +48,22 @@ lru = "0.14.0"
 skrifa = "0.31.3"
 halfbrown = "0.3.0"
 half = "2.6.0"
+string_cache = "0.8.7"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.3", optional = true }
 futures = { workspace = true }
 
-librashader-common = "0.7.1"
-librashader-presets = "0.7.1"
-librashader-preprocess = "0.7.1"
-librashader-pack = "0.7.1"
-librashader-reflect = { version = "0.7.1", features = [
+librashader-common = "0.8.1"
+librashader-presets = "0.8.1"
+librashader-preprocess = "0.8.1"
+librashader-pack = "0.8.1"
+librashader-reflect = { version = "0.8.1", features = [
     "stable",
     "wgsl",
 ], default-features = false }
-librashader-runtime = "0.7.1"
-librashader-cache = "0.7.1"
+librashader-runtime = "0.8.1"
+librashader-cache = "0.8.1"
 thiserror = "2.0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -85,7 +86,7 @@ fontconfig-parser = { version = "0.5.8", default-features = false }
 rio-window = { workspace = true }
 png = "0.17.16"
 deflate = "1.0.0"
-criterion = "0.5.1"
+criterion = { workspace = true }
 
 [features]
 default = ["scale", "render"]

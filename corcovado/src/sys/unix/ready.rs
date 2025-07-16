@@ -512,7 +512,7 @@ impl fmt::Debug for UnixReady {
                 if one {
                     write!(fmt, " | ")?
                 }
-                write!(fmt, "{}", msg)?;
+                write!(fmt, "{msg}")?;
 
                 one = true
             }

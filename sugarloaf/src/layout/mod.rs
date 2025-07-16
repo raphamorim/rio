@@ -16,7 +16,7 @@ pub use render_data::RenderData;
 
 pub use content::{
     BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentStyle,
-    FragmentStyleDecoration, UnderlineInfo, UnderlineShape,
+    FragmentStyleDecoration, UnderlineInfo, UnderlineShape, WordCache,
 };
 pub use render_data::Run;
 

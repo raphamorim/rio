@@ -1,11 +1,17 @@
-/// Shelf style dynamic atlas allocator.
+/// Improved shelf-based atlas allocator for better space utilization
 pub struct AtlasAllocator {
     width: u16,
     height: u16,
-    y: u16,
-    lines: Vec<Line>,
-    slots: Vec<Slot>,
-    free_slot: u32,
+    shelves: Vec<Shelf>,
+    waste_limit: f32, // Maximum acceptable waste ratio per shelf
+}
+
+#[derive(Debug, Clone)]
+struct Shelf {
+    x: u16,      // Current x position on this shelf
+    y: u16,      // Y position of this shelf
+    width: u16,  // Remaining width on this shelf
+    height: u16, // Height of this shelf
 }
 
 impl AtlasAllocator {
@@ -14,318 +20,275 @@ impl AtlasAllocator {
         Self {
             width,
             height,
-            y: 0,
-            lines: Vec::new(),
-            slots: Vec::new(),
-            free_slot: !0,
+            shelves: Vec::new(),
+            waste_limit: 0.1, // Allow 10% waste per shelf
         }
     }
 
     /// Allocates a rectangle in the atlas if possible. Returns the x and y
     /// coordinates of the allocated slot.
     pub fn allocate(&mut self, width: u16, height: u16) -> Option<(u16, u16)> {
-        // Width is a hard constraint; make sure it fits.
-        if width > self.width {
+        // Add padding to prevent bleeding
+        let padded_width = width.saturating_add(1);
+        let padded_height = height.saturating_add(1);
+
+        // Width is a hard constraint
+        if padded_width > self.width {
             return None;
         }
-        // Find a current line that supports the image height with some slop.
-        let padded_height = height.checked_add(1)?;
-        let padded_width = width.checked_add(1)?;
-        let mut best_line = None;
-        for (i, line) in self.lines.iter().enumerate() {
-            if line.height >= padded_height {
-                if let Some((_, _, best_height)) = best_line {
-                    if line.height < best_height {
-                        if let Some(x) = self.check_width(line, padded_width) {
-                            best_line = Some((i, x, line.height));
-                        }
-                    }
-                } else if let Some(x) = self.check_width(line, padded_width) {
-                    best_line = Some((i, x, line.height));
-                }
-            }
+
+        // Try to find an existing shelf that can fit this rectangle
+        if let Some((shelf_idx, x, y)) = self.find_best_shelf(padded_width, padded_height)
+        {
+            // Allocate on existing shelf
+            let shelf = &mut self.shelves[shelf_idx];
+            shelf.x += padded_width;
+            shelf.width = shelf.width.saturating_sub(padded_width);
+            return Some((x, y));
         }
-        let (line_index, slot) = match best_line {
-            Some((line_index, slot, line_height)) => {
-                if line_height > (padded_height + padded_height / 2) {
-                    if let Some(line_index) = self.allocate_line(padded_height) {
-                        (line_index, FreeSlot::Direct(0))
-                    } else {
-                        (line_index, slot)
-                    }
+
+        // No existing shelf can fit, try to create a new shelf
+        self.create_new_shelf(padded_width, padded_height)
+    }
+
+    /// Find the best existing shelf for the given dimensions
+    fn find_best_shelf(&mut self, width: u16, height: u16) -> Option<(usize, u16, u16)> {
+        let mut best_shelf = None;
+        let mut best_waste = f32::INFINITY;
+
+        for (i, shelf) in self.shelves.iter().enumerate() {
+            // Check if this shelf can fit the rectangle
+            if shelf.width >= width && shelf.height >= height {
+                // Calculate waste ratio for this allocation
+                let waste_ratio = self.calculate_waste_ratio(shelf, width, height);
+
+                // Prefer shelves with less waste, but also prefer exact height matches
+                let score = if shelf.height == height {
+                    waste_ratio - 1.0 // Bonus for exact height match
                 } else {
-                    (line_index, slot)
+                    waste_ratio
+                };
+
+                if score < best_waste && waste_ratio <= self.waste_limit {
+                    best_waste = score;
+                    best_shelf = Some((i, shelf.x, shelf.y));
                 }
-            }
-            None => {
-                let line_index = self.allocate_line(padded_height)?;
-                (line_index, FreeSlot::Direct(0))
-            }
-        };
-        let line = self.lines.get_mut(line_index)?;
-        let y = if line.y == 0 { 0 } else { line.y + 1 };
-        match slot {
-            FreeSlot::Direct(x) => {
-                line.state = (x as u32 + padded_width as u32).min(self.width as u32);
-                Some((x, y))
-            }
-            FreeSlot::Node(prev_index, slot_index) => {
-                let slot = self.slots.get_mut(slot_index as usize)?;
-                let x = slot.x;
-                let end = (x as u32 + padded_width as u32).min(self.width as u32);
-                let slot_end = slot.end();
-                if end != slot_end {
-                    slot.x = end as u16;
-                    slot.width = (slot_end - end) as u16;
-                } else {
-                    let slot = *slot;
-                    if let Some(prev) = prev_index {
-                        self.slots[prev as usize].next = slot.next;
-                    } else if slot.next == !0 {
-                        // We're filling the last slot with no previous
-                        // slot. Revert to the offset state.
-                        self.lines[line_index].state = slot_end;
-                    } else {
-                        self.lines[line_index].state = FRAGMENTED_BIT | slot.next;
-                    }
-                    self.free_slot(slot_index);
-                }
-                Some((x, y))
             }
         }
+
+        best_shelf
     }
 
-    /// Deallocates the slot with the specified coordinates and width.
-    #[allow(unused)]
-    pub fn deallocate(&mut self, x: u16, y: u16, width: u16) -> bool {
-        let res = self.deallocate_impl(x, y, width).is_some();
-        while self.lines.last().map(|l| l.state) == Some(0) {
-            let line = self.lines.pop().unwrap();
-            self.y = line.y;
+    /// Calculate waste ratio for allocating on a shelf
+    fn calculate_waste_ratio(&self, shelf: &Shelf, _width: u16, height: u16) -> f32 {
+        if shelf.height == 0 {
+            return f32::INFINITY;
         }
-        res
+
+        let wasted_height = shelf.height.saturating_sub(height) as f32;
+        let total_height = shelf.height as f32;
+        wasted_height / total_height
     }
 
-    #[allow(unused)]
-    fn deallocate_impl(&mut self, x: u16, y: u16, width: u16) -> Option<()> {
-        let (line_index, &line) = if y == 0 {
-            self.lines
-                .iter()
-                .enumerate()
-                .find(|(_, line)| line.y == y)?
-        } else {
-            let y = y - 1;
-            self.lines
-                .iter()
-                .enumerate()
-                .find(|(_, line)| line.y == y)?
-        };
-        let end = (x as u32 + width as u32 + 1).min(self.width as u32);
-        let actual_width = (end - x as u32) as u16;
-        if line.state & FRAGMENTED_BIT == 0 {
-            let offset = line.state & LOW_BITS;
-            // If it was the last allocation, just fold it in.
-            if offset == end {
-                self.lines[line_index].state = x as u32;
-                return Some(());
-            }
-            // Otherwise, add a new free slot for the evicted rect and an
-            // additional slot for the remaining space if any.
-            let slot_index = self.allocate_slot(x, actual_width)?;
-            let remaining = self.width - offset as u16;
-            if remaining != 0 {
-                let remaining_slot_index =
-                    self.allocate_slot(offset as u16, remaining)?;
-                self.slots[slot_index as usize].next = remaining_slot_index;
-            }
-            self.lines[line_index].state = FRAGMENTED_BIT | slot_index;
-            return Some(());
-        } else {
-            let mut first_index = line.state & LOW_BITS;
-            let mut next_index = first_index;
-            // Insert the slot into the sorted list
-            let mut prev_index = None;
-            while next_index != !0 {
-                let slot = self.slots.get(next_index as usize)?;
-                if slot.x > x {
-                    break;
-                }
-                prev_index = Some(next_index);
-                next_index = slot.next;
-            }
-            match prev_index {
-                Some(prev_index) => {
-                    let merge_prev = self.slots[prev_index as usize].end() == x as u32;
-                    let merge_next = next_index != !0
-                        && self.slots[next_index as usize].x == end as u16;
-                    match (merge_prev, merge_next) {
-                        (true, true) => {
-                            let next = self.slots[next_index as usize];
-                            let prev = &mut self.slots[prev_index as usize];
-                            prev.width = next.end() as u16 - prev.x;
-                            prev.next = next.next;
-                            self.free_slot(next_index);
-                        }
-                        (true, false) => {
-                            let prev = &mut self.slots[prev_index as usize];
-                            prev.width += actual_width;
-                        }
-                        (false, true) => {
-                            let next = &mut self.slots[next_index as usize];
-                            next.width = (next.end() - x as u32) as u16;
-                            next.x = x;
-                        }
-                        (false, false) => {
-                            let slot_index = self.allocate_slot(x, end as u16 - x)?;
-                            self.slots[slot_index as usize].next = next_index;
-                            self.slots[prev_index as usize].next = slot_index;
-                        }
-                    }
-                }
-                None => {
-                    let next = &mut self.slots[first_index as usize];
-                    if next.x == end as u16 {
-                        next.width = (next.end() - x as u32) as u16;
-                        next.x = x;
-                    } else {
-                        let slot_index = self.allocate_slot(x, end as u16 - x)?;
-                        self.slots[slot_index as usize].next = first_index;
-                        self.lines[line_index].state = FRAGMENTED_BIT | slot_index;
-                        first_index = slot_index;
-                    }
-                }
-            }
-            let first = self.slots[first_index as usize];
-            if first.next == !0 && first.end() == self.width as u32 {
-                self.free_slot(first_index);
-                self.lines[line_index].state = first.x as u32;
-            }
-        }
-        Some(())
-    }
+    /// Create a new shelf for the given dimensions
+    fn create_new_shelf(&mut self, width: u16, height: u16) -> Option<(u16, u16)> {
+        // Find the lowest available Y position
+        let y = self.find_next_y_position();
 
-    fn allocate_line(&mut self, padded_height: u16) -> Option<usize> {
-        let bottom = self.y.checked_add(padded_height)?;
-        if bottom > self.height {
+        // Check if we have enough vertical space
+        if y.saturating_add(height) > self.height {
             return None;
         }
-        let line_index = self.lines.len();
-        self.lines.push(Line {
-            y: self.y,
-            height: padded_height,
-            state: 0,
-        });
-        self.y = bottom;
-        Some(line_index)
+
+        // Create new shelf
+        let shelf = Shelf {
+            x: width,
+            y,
+            width: self.width.saturating_sub(width),
+            height,
+        };
+
+        self.shelves.push(shelf);
+        Some((0, y))
     }
 
-    #[allow(unused)]
-    fn allocate_slot(&mut self, x: u16, width: u16) -> Option<u32> {
-        let slot = Slot { x, width, next: !0 };
-        if self.free_slot != !0 {
-            let index = self.free_slot as usize;
-            self.free_slot = self.slots[index].next;
-            self.slots[index] = slot;
-            Some(index as u32)
-        } else {
-            let index = u32::try_from(self.slots.len()).ok()?;
-            self.slots.push(slot);
-            Some(index)
+    /// Find the next available Y position for a new shelf
+    fn find_next_y_position(&self) -> u16 {
+        if self.shelves.is_empty() {
+            return 0;
+        }
+
+        // Find the maximum Y + height among all shelves
+        self.shelves
+            .iter()
+            .map(|shelf| shelf.y.saturating_add(shelf.height))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Clear all allocations and reset the atlas
+    #[allow(dead_code)]
+    pub fn clear(&mut self) {
+        self.shelves.clear();
+    }
+
+    /// Check if the atlas is empty
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.shelves.is_empty()
+    }
+
+    /// Get the atlas dimensions
+    #[allow(dead_code)]
+    pub fn dimensions(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
+
+    /// Deallocates a rectangle (simplified - in practice this is complex)
+    pub fn deallocate(&mut self, _x: u16, _y: u16, _width: u16) {
+        // For now, we don't implement deallocation as it's complex
+        // In a full implementation, you'd need to track allocated rectangles
+        // and merge adjacent free spaces when deallocating
+
+        // This is acceptable for a terminal where glyphs are rarely deallocated
+        // and the atlas is cleared periodically
+    }
+
+    /// Get atlas utilization statistics
+    #[allow(dead_code)]
+    pub fn utilization(&self) -> AtlasStats {
+        let total_area = (self.width as u32) * (self.height as u32);
+        let used_area = self.calculate_used_area();
+
+        AtlasStats {
+            total_area,
+            used_area,
+            utilization_ratio: used_area as f32 / total_area as f32,
+            num_shelves: self.shelves.len(),
         }
     }
 
-    fn free_slot(&mut self, index: u32) {
-        self.slots[index as usize].next = self.free_slot;
-        self.free_slot = index;
+    #[allow(dead_code)]
+    fn calculate_used_area(&self) -> u32 {
+        let next_y = self.find_next_y_position();
+        (self.width as u32) * (next_y as u32)
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct AtlasStats {
+    pub total_area: u32,
+    pub used_area: u32,
+    pub utilization_ratio: f32,
+    pub num_shelves: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_allocation() {
+        let mut atlas = AtlasAllocator::new(100, 100);
+
+        // First allocation should succeed
+        let pos1 = atlas.allocate(10, 10);
+        assert_eq!(pos1, Some((0, 0)));
+
+        // Second allocation on same shelf
+        let pos2 = atlas.allocate(10, 10);
+        assert_eq!(pos2, Some((11, 0))); // +1 for padding
+
+        // Third allocation should fit on same shelf
+        let pos3 = atlas.allocate(10, 10);
+        assert_eq!(pos3, Some((22, 0)));
     }
 
-    fn check_width(&self, line: &Line, width: u16) -> Option<FreeSlot> {
-        if line.state & FRAGMENTED_BIT == 0 {
-            let x = (line.state & LOW_BITS) as u16;
-            let end = x.checked_add(width - 1)?;
-            if end <= self.width {
-                return Some(FreeSlot::Direct(x));
-            }
-        } else {
-            let mut cur_slot_index = line.state & LOW_BITS;
-            let mut prev_slot_index = None;
-            let mut best_slot = None;
-            while cur_slot_index != !0 {
-                let slot = self.slots.get(cur_slot_index as usize)?;
-                if slot.width >= width
-                    || (slot.end() == self.width as u32 && slot.width >= (width - 1))
-                {
-                    match best_slot {
-                        Some((_, _, best_width)) => {
-                            if slot.width < best_width {
-                                best_slot =
-                                    Some((prev_slot_index, cur_slot_index, slot.width));
-                            }
-                        }
-                        None => {
-                            best_slot =
-                                Some((prev_slot_index, cur_slot_index, slot.width));
-                        }
-                    }
-                }
-                prev_slot_index = Some(cur_slot_index);
-                cur_slot_index = slot.next;
-            }
-            let (prev, index, _) = best_slot?;
-            return Some(FreeSlot::Node(prev, index));
-        }
-        None
+    #[test]
+    fn test_new_shelf_creation() {
+        let mut atlas = AtlasAllocator::new(100, 100);
+
+        // Fill first shelf
+        let pos1 = atlas.allocate(50, 10);
+        assert_eq!(pos1, Some((0, 0)));
+
+        let pos2 = atlas.allocate(49, 10); // Should fit on same shelf (50 + 49 + 2 padding = 101 > 100)
+        assert_eq!(pos2, Some((0, 11))); // New shelf
     }
 
-    // pub fn dump_lines(&self) {
-    //     for (i, line) in self.lines.iter().enumerate() {
-    //         print!("[{}]", i);
-    //         let low_bits = line.state & LOW_BITS;
-    //         if line.state & FRAGMENTED_BIT == 0 {
-    //             println!(" offset {}", low_bits);
-    //         } else {
-    //             let mut itr = low_bits;
-    //             while itr != !0 {
-    //                 let slot = self.slots[itr as usize];
-    //                 print!(" ({}..={})", slot.x, slot.x + slot.width);
-    //                 itr = slot.next;
-    //             }
-    //             println!("");
-    //         }
-    //     }
-    // }
-}
+    #[test]
+    fn test_height_matching() {
+        let mut atlas = AtlasAllocator::new(100, 100);
 
-const FRAGMENTED_BIT: u32 = 0x80000000;
-const LOW_BITS: u32 = !FRAGMENTED_BIT;
+        // Create a shelf with height 20
+        let pos1 = atlas.allocate(30, 20);
+        assert_eq!(pos1, Some((0, 0)));
 
-#[derive(Copy, Clone, Default, Debug)]
-struct Line {
-    y: u16,
-    height: u16,
-    /// This field encodes the current state of the line. If there
-    /// have been no evictions, then the high bit will be clear and
-    /// the remaining bits will contain the x-offset of the next
-    /// available region (bump pointer allocation). If the high bit
-    /// is set, then the low bits are an index into the free node
-    /// list.    
-    state: u32,
-}
+        // This should prefer the existing shelf (exact height match)
+        let pos2 = atlas.allocate(30, 20);
+        assert_eq!(pos2, Some((31, 0)));
 
-enum FreeSlot {
-    Direct(u16),
-    Node(Option<u32>, u32),
-}
+        // Different height should create new shelf
+        let pos3 = atlas.allocate(30, 10);
+        assert_eq!(pos3, Some((0, 21)));
+    }
 
-#[derive(Copy, Clone, Default)]
-struct Slot {
-    x: u16,
-    width: u16,
-    next: u32,
-}
+    #[test]
+    fn test_oversized_allocation() {
+        let mut atlas = AtlasAllocator::new(100, 100);
 
-impl Slot {
-    fn end(self) -> u32 {
-        self.x as u32 + self.width as u32
+        // Too wide should fail
+        let pos = atlas.allocate(101, 10);
+        assert_eq!(pos, None);
+
+        // Too tall should fail
+        let pos = atlas.allocate(10, 101);
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_atlas_full() {
+        let mut atlas = AtlasAllocator::new(20, 20);
+
+        // Fill the atlas
+        let pos1 = atlas.allocate(19, 19); // +1 padding = 20x20
+        assert_eq!(pos1, Some((0, 0)));
+
+        // Should fail - no space left
+        let pos2 = atlas.allocate(1, 1);
+        assert_eq!(pos2, None);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut atlas = AtlasAllocator::new(100, 100);
+
+        atlas.allocate(10, 10);
+        assert!(!atlas.is_empty());
+
+        atlas.clear();
+        assert!(atlas.is_empty());
+
+        // Should be able to allocate again after clear
+        let pos = atlas.allocate(10, 10);
+        assert_eq!(pos, Some((0, 0)));
+    }
+
+    #[test]
+    fn test_utilization_stats() {
+        let mut atlas = AtlasAllocator::new(100, 100);
+
+        let stats = atlas.utilization();
+        assert_eq!(stats.total_area, 10000);
+        assert_eq!(stats.used_area, 0);
+        assert_eq!(stats.utilization_ratio, 0.0);
+        assert_eq!(stats.num_shelves, 0);
+
+        atlas.allocate(50, 20);
+        let stats = atlas.utilization();
+        assert_eq!(stats.used_area, 2100); // 100 * 21 (20 + 1 padding)
+        assert_eq!(stats.utilization_ratio, 0.21);
+        assert_eq!(stats.num_shelves, 1);
     }
 }

@@ -31,3 +31,23 @@ Canary versions for MacOS are not notarized, so if you want to install a canary 
 - Next to the message explaining the app "was blocked from use because it is not from an identified developer," click "Open Anyway".
 - Close System Preferences and run the app.
 - A notice will reiterate the warning about an inability to check if it is malicious, click Open.
+
+## Manual Pages
+
+After installing Rio, you can optionally install manual pages for offline documentation:
+
+```bash
+# Install scdoc (required to build man pages)
+brew install scdoc
+
+# Build and install man pages from source
+git clone https://github.com/raphamorim/rio.git
+cd rio/extra/man
+make
+sudo make install
+
+# Access documentation
+man rio                # Main Rio manual
+man 5 rio             # Configuration file format
+man 5 rio-bindings    # Key bindings reference
+```

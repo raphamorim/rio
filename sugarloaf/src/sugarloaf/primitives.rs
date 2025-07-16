@@ -2025,8 +2025,9 @@ pub fn contains_braille_dot(braille_dots: &Braille, dot_number: u8) -> bool {
 // ├───┼───┤
 // │ 4 │ 5 │
 // ╰───┴───╯
-const SEXTANT_PATTERNS: [u8; 60] = [
-    0b000001, // [🬀] BLOCK SEXTANT-1
+const SEXTANT_PATTERNS: [u8; 64] = [
+    0b000000, // [🬀] BLOCK SEXTANT (empty)
+    0b000001, // [🬁] BLOCK SEXTANT-1
     0b000010, // [🬁] BLOCK SEXTANT-2
     0b000011, // [🬂] BLOCK SEXTANT-12
     0b000100, // [🬃] BLOCK SEXTANT-3
@@ -2046,7 +2047,8 @@ const SEXTANT_PATTERNS: [u8; 60] = [
     0b010010, // [🬑] BLOCK SEXTANT-25
     0b010011, // [🬒] BLOCK SEXTANT-125
     0b010100, // [🬓] BLOCK SEXTANT-35
-    0b010110, // [🬔] BLOCK SEXTANT-235
+    0b010101, // [🬔] BLOCK SEXTANT-135
+    0b010110, // [🬕] BLOCK SEXTANT-235
     0b010111, // [🬕] BLOCK SEXTANT-1235
     0b011000, // [🬖] BLOCK SEXTANT-45
     0b011001, // [🬗] BLOCK SEXTANT-145
@@ -2066,7 +2068,8 @@ const SEXTANT_PATTERNS: [u8; 60] = [
     0b100111, // [🬥] BLOCK SEXTANT-1236
     0b101000, // [🬦] BLOCK SEXTANT-46
     0b101001, // [🬧] BLOCK SEXTANT-146
-    0b101011, // [🬨] BLOCK SEXTANT-1246
+    0b101010, // [🬨] BLOCK SEXTANT-246
+    0b101011, // [🬩] BLOCK SEXTANT-1246
     0b101100, // [🬩] BLOCK SEXTANT-346
     0b101101, // [🬪] BLOCK SEXTANT-1346
     0b101110, // [🬫] BLOCK SEXTANT-2346
@@ -2086,6 +2089,7 @@ const SEXTANT_PATTERNS: [u8; 60] = [
     0b111100, // [🬹] BLOCK SEXTANT-3456
     0b111101, // [🬺] BLOCK SEXTANT-13456
     0b111110, // [🬻] BLOCK SEXTANT-23456
+    0b111111, // [🬼] BLOCK SEXTANT-123456 (full)
 ];
 
 // Retired from https://github.com/wezterm/wezterm/blob/d4b50f6cc34aa0d8729f0914e1926ee6c6e19369/wezterm-gui/src/customglyph.rs#L329

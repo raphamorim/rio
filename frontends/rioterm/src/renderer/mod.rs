@@ -1,8 +1,10 @@
+mod char_cache;
 mod font_cache;
 pub mod navigation;
 mod search;
 pub mod utils;
 
+use char_cache::CharCache;
 use font_cache::FontCache;
 
 use crate::ansi::CursorShape;
@@ -45,7 +47,7 @@ pub struct Renderer {
     pub colors: List,
     pub navigation: ScreenNavigation,
     unfocused_split_opacity: f32,
-    last_active: usize,
+    last_active: Option<slotmap::DefaultKey>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -59,6 +61,7 @@ pub struct Renderer {
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    char_cache: CharCache,
 }
 
 impl Renderer {
@@ -91,7 +94,7 @@ impl Renderer {
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
-            last_active: 0,
+            last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -111,6 +114,7 @@ impl Renderer {
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
+            char_cache: CharCache::new(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -743,7 +747,7 @@ impl Renderer {
                         line.add_text_on_line(
                             // Add on first line
                             1,
-                            &character.to_string(),
+                            self.char_cache.get_str(character),
                             char_style,
                         );
                     }
@@ -762,6 +766,8 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        // let start = std::time::Instant::now();
+
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -772,17 +778,18 @@ impl Renderer {
 
         let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
 
+        // let grid_start = std::time::Instant::now();
         let grid = context_manager.current_grid_mut();
-        let active_index = grid.current;
+        let active_key = grid.current;
         let mut has_active_changed = false;
-        if self.last_active != active_index {
+        if self.last_active != Some(active_key) {
             has_active_changed = true;
 
-            self.last_active = active_index;
+            self.last_active = Some(active_key);
         }
 
-        for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
-            let is_active = active_index == index;
+        for (key, grid_context) in grid.contexts_mut().iter_mut() {
+            let is_active = active_key == key;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
@@ -805,9 +812,7 @@ impl Renderer {
             // let renderable_content = context.renderable_content();
             let force_full_damage = has_active_changed
                 || context.renderable_content.has_pending_updates
-                || is_active
-                    && (context.renderable_content.selection_range.is_some()
-                        || hints.is_some());
+                || is_active && hints.is_some();
 
             let mut specific_lines = None;
             let (colors, display_offset, blinking_cursor, visible_rows) = {
@@ -821,6 +826,12 @@ impl Renderer {
 
                 context.renderable_content.cursor.state = terminal.cursor();
 
+                // Early exit if no rendering is needed
+                if !force_full_damage && !terminal.needs_render() {
+                    terminal.reset_damage();
+                    return;
+                }
+
                 if let Some(queues_to_add) = terminal.graphics_take_queues() {
                     if let Some(ref mut queues) = graphic_queues {
                         queues.push(queues_to_add);
@@ -829,6 +840,7 @@ impl Renderer {
                     }
                 }
 
+                // Check for partial damage to optimize rendering
                 if !force_full_damage && !terminal.is_fully_damaged() {
                     if let TermDamage::Partial(lines) = terminal.damage() {
                         // Pre-allocate with estimated capacity to reduce allocations
@@ -839,7 +851,10 @@ impl Renderer {
                         for line in lines {
                             own_lines.insert(line.line);
                         }
-                        specific_lines = Some(own_lines);
+                        // Only set specific_lines if there are actually damaged lines
+                        if !own_lines.is_empty() {
+                            specific_lines = Some(own_lines);
+                        }
                     };
                 }
                 terminal.reset_damage();
@@ -876,17 +891,41 @@ impl Renderer {
                     }
 
                     if should_blink {
-                        context.renderable_content.is_blinking_cursor_visible =
-                            !context.renderable_content.is_blinking_cursor_visible;
-                        if let Some(ref mut lines) = specific_lines {
-                            lines.insert(
-                                context.renderable_content.cursor.state.pos.row.0
-                                    as usize,
-                            );
+                        let now = std::time::Instant::now();
+                        let should_toggle = if let Some(last_blink) =
+                            context.renderable_content.last_blink_toggle
+                        {
+                            now.duration_since(last_blink).as_millis()
+                                >= self.config_blinking_interval as u128
+                        } else {
+                            // First time: start with cursor visible and set initial timing
+                            context.renderable_content.is_blinking_cursor_visible = true;
+                            context.renderable_content.last_blink_toggle = Some(now);
+                            false // Don't toggle on first frame
+                        };
+
+                        if should_toggle {
+                            context.renderable_content.is_blinking_cursor_visible =
+                                !context.renderable_content.is_blinking_cursor_visible;
+                            context.renderable_content.last_blink_toggle = Some(now);
+
+                            if let Some(ref mut lines) = specific_lines {
+                                lines.insert(
+                                    context.renderable_content.cursor.state.pos.row.0
+                                        as usize,
+                                );
+                            }
                         }
                     } else {
+                        // When not blinking (e.g., during typing), ensure cursor is visible
                         context.renderable_content.is_blinking_cursor_visible = true;
+                        // Reset blink timing when not blinking so it starts fresh when blinking resumes
+                        context.renderable_content.last_blink_toggle = None;
                     }
+                } else {
+                    // When there's a selection, keep cursor visible and reset blink timing
+                    context.renderable_content.is_blinking_cursor_visible = true;
+                    context.renderable_content.last_blink_toggle = None;
                 }
 
                 is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
@@ -898,6 +937,7 @@ impl Renderer {
 
             context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
+
             match specific_lines {
                 None => {
                     // let start = std::time::Instant::now();
@@ -992,6 +1032,7 @@ impl Renderer {
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
+
         // let duration = start.elapsed();
         // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }

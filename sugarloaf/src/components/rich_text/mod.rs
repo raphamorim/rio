@@ -1,13 +1,19 @@
 mod batch;
 mod compositor;
 mod image_cache;
+#[cfg(test)]
+mod positioning_tests;
 pub mod text;
+mod text_run_manager;
+mod vertex_pool;
 
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::compositor::{BatchOperation, LineCache};
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
+use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
+use crate::components::rich_text::vertex_pool::VertexPool;
 use crate::context::Context;
 use crate::font::FontLibrary;
+use crate::font_introspector::GlyphId;
 use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
@@ -45,7 +51,8 @@ pub struct RichTextBrush {
     textures_version: usize,
     images: ImageCache,
     glyphs: GlyphCache,
-    line_cache: LineCache,
+    text_run_manager: TextRunManager,
+    vertex_pool: VertexPool,
 }
 
 impl RichTextBrush {
@@ -95,16 +102,32 @@ impl RichTextBrush {
         let layout_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: None,
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: context.get_optimal_texture_sample_type(),
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                entries: &[
+                    // Color texture (binding 0)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: context.get_optimal_texture_sample_type(),
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    // Mask texture (binding 1)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float {
+                                filterable: true,
+                            },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                ],
             });
 
         let pipeline_layout =
@@ -152,10 +175,20 @@ impl RichTextBrush {
 
         let layout_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &layout_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&images.texture_view),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &images.color_texture_view,
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(
+                        &images.mask_texture_view,
+                    ),
+                },
+            ],
             label: Some("rich_text::layout_bind_group"),
         });
 
@@ -222,7 +255,7 @@ impl RichTextBrush {
         });
 
         RichTextBrush {
-            line_cache: LineCache::new(),
+            text_run_manager: TextRunManager::new(),
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
@@ -236,7 +269,33 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
+            vertex_pool: VertexPool::new(),
         }
+    }
+
+    /// Warm the text run cache with common terminal patterns
+    /// This should be called during initialization to improve cache hit rates
+    pub fn warm_cache(&mut self, _font_library: &FontLibrary) {
+        // Use the default font ID (0) which is always available
+        let font_id = 0; // FONT_ID_REGULAR
+        let font_size = 14.0; // Default terminal font size
+        let default_color = [1.0, 1.0, 1.0, 1.0]; // White text
+
+        self.text_run_manager.warm_cache(
+            font_id,
+            font_size,
+            400, // Normal weight
+            0,   // Normal style
+            5,   // Normal stretch
+            default_color,
+        );
+    }
+
+    /// Get vertex pool statistics for performance monitoring
+    pub fn vertex_pool_stats(
+        &self,
+    ) -> Option<crate::components::rich_text::vertex_pool::VertexPoolStats> {
+        self.vertex_pool.stats()
     }
 
     #[inline]
@@ -259,12 +318,12 @@ impl RichTextBrush {
                 // Check if this specific rich text needs cache invalidation
                 match &rt.last_update {
                     BuilderStateUpdate::Full => {
-                        self.line_cache.clear_text_cache(rich_text.id);
+                        // For full updates, we don't need to clear text run cache
+                        // as it's shared across all text and font-specific
                     }
-                    BuilderStateUpdate::Partial(lines) => {
-                        for line in lines {
-                            self.line_cache.clear_cache(rich_text.id, line);
-                        }
+                    BuilderStateUpdate::Partial(_lines) => {
+                        // For partial updates, we also don't need to clear text run cache
+                        // as individual text runs are still valid
                     }
                     BuilderStateUpdate::Noop => {
                         // Do nothing
@@ -291,6 +350,10 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
+
+        // Performance monitoring
+        self.text_run_manager.maintenance();
+        self.vertex_pool.maybe_log_stats();
     }
 
     #[inline]
@@ -300,8 +363,10 @@ impl RichTextBrush {
         render_data: &crate::layout::BuilderLine,
         graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
-        // Every dimension request will lead to clear lines cache
-        self.line_cache.clear_all();
+        // Every dimension request will lead to clear text run cache if needed
+        if self.text_run_manager.needs_cleanup() {
+            self.text_run_manager.maintenance();
+        }
         self.comp.begin();
 
         let lines = vec![render_data.clone()];
@@ -332,7 +397,7 @@ impl RichTextBrush {
     #[allow(clippy::too_many_arguments)]
     fn draw_layout(
         &mut self,
-        rich_text_id: usize,
+        _rich_text_id: usize,
         lines: &Vec<crate::layout::BuilderLine>,
         selected_lines: &Option<RichTextLinesRange>,
         pos: Option<(f32, f32)>,
@@ -400,25 +465,13 @@ impl RichTextBrush {
             let take_count = selected_lines
                 .map_or(lines_to_process.len(), |range| range.end - range.start);
 
-            for (line_idx, line) in lines_to_process
+            for (_line_idx, line) in lines_to_process
                 .iter()
                 .enumerate()
                 .skip(skip_count)
                 .take(take_count)
             {
                 if line.render_data.runs.is_empty() {
-                    continue;
-                }
-
-                // Check if we can use the cache for this line
-                if !is_dimensions_only
-                    && self.line_cache.has_cache(rich_text_id, line_idx)
-                    && self
-                        .line_cache
-                        .apply_cache(rich_text_id, line_idx, comp, graphics)
-                {
-                    // Cache was applied successfully, skip to next line
-                    line_y += line_height;
                     continue;
                 }
 
@@ -442,68 +495,240 @@ impl RichTextBrush {
                 };
 
                 let py = line_y;
-                let mut line_operations = Vec::new();
 
                 for run in &line.render_data.runs {
-                    glyphs.clear();
                     let font = run.span.font_id;
                     let char_width = run.span.width;
-
                     let run_x = px;
-                    for glyph in &run.glyphs {
-                        let x = px;
-                        let y = py + padding_y;
 
-                        // Different advance calculation based on mode
-                        if is_dimensions_only {
-                            px += glyph.simple_data().1 * char_width;
-                        } else {
-                            px += rte_layout.unwrap().dimensions.width * char_width;
-                        }
+                    // Extract text from the run for caching
+                    let run_text = run
+                        .glyphs
+                        .iter()
+                        .filter_map(|g| char::from_u32(g.simple_data().0 as u32))
+                        .collect::<String>();
 
-                        glyphs.push(Glyph {
-                            id: glyph.simple_data().0,
-                            x,
-                            y,
-                        });
-                    }
-
-                    // Create style with appropriate defaults
-                    let style = TextRunStyle {
-                        font_coords,
-                        font_size: run.size,
-                        color: run.span.color,
-                        cursor: run.span.cursor,
-                        drawable_char: run.span.drawable_char,
-                        background_color: run.span.background_color,
-                        baseline: py,
-                        topline: py - ascent,
-                        padding_y,
-                        line_height,
-                        line_height_without_mod,
-                        advance: px - run_x,
-                        decoration: run.span.decoration,
-                        decoration_color: run.span.decoration_color,
+                    // Try to get cached data for this text run
+                    let cached_result = if !is_dimensions_only && !run_text.is_empty() {
+                        self.text_run_manager.get_cached_data(
+                            &run_text,
+                            font,
+                            run.size,
+                            400, // font_weight - would need to be extracted from font
+                            0,   // font_style - would need to be extracted from font
+                            5,   // font_stretch - would need to be extracted from font
+                            Some(run.span.color),
+                        )
+                    } else {
+                        CacheResult::Miss
                     };
 
-                    // Update dimensions if in dimensions mode
-                    if is_dimensions_only && style.advance > 0.0 && line_height > 0.0 {
-                        dimensions.width = style.advance.round();
-                        dimensions.height = line_height.round();
+                    match cached_result {
+                        CacheResult::FullRender {
+                            glyphs: cached_glyphs,
+                            vertices,
+                            base_position,
+                            ..
+                        } => {
+                            // Use cached render data - apply vertices directly
+                            let mut vertex_output = Vec::new();
+                            TextRunManager::apply_cached_vertices(
+                                &vertices,
+                                base_position,
+                                (run_x, py + padding_y),
+                                &mut vertex_output,
+                            );
+
+                            // Update position based on cached advance
+                            let cached_advance =
+                                cached_glyphs.iter().map(|g| g.x_advance).sum::<f32>();
+                            if is_dimensions_only {
+                                px += cached_advance * char_width;
+                            } else {
+                                px += rte_layout.unwrap().dimensions.width * char_width;
+                            }
+                        }
+                        CacheResult::ShapingOnly {
+                            glyphs: cached_glyphs,
+                            ..
+                        }
+                        | CacheResult::GlyphsOnly {
+                            glyphs: cached_glyphs,
+                            ..
+                        } => {
+                            // Use cached glyph data but need to render
+                            glyphs.clear();
+                            for shaped_glyph in cached_glyphs.iter() {
+                                let x = px;
+                                let y = py + padding_y;
+
+                                if is_dimensions_only {
+                                    px += shaped_glyph.x_advance * char_width;
+                                } else {
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
+                                }
+
+                                glyphs.push(Glyph {
+                                    id: shaped_glyph.glyph_id as GlyphId,
+                                    x,
+                                    y,
+                                });
+                            }
+
+                            // Render using cached glyph data
+                            if !is_dimensions_only {
+                                let style = TextRunStyle {
+                                    font_coords,
+                                    font_size: run.size,
+                                    color: run.span.color,
+                                    cursor: run.span.cursor,
+                                    drawable_char: run.span.drawable_char,
+                                    background_color: run.span.background_color,
+                                    baseline,
+                                    topline: py - ascent, // Use py for cursor positioning, not baseline
+                                    line_height,
+                                    padding_y,
+                                    line_height_without_mod,
+                                    advance: cached_glyphs
+                                        .iter()
+                                        .map(|g| g.x_advance)
+                                        .sum(),
+                                    decoration: run.span.decoration,
+                                    decoration_color: run.span.decoration_color,
+                                };
+
+                                // Update font session if needed
+                                if font != current_font
+                                    || style.font_size != current_font_size
+                                {
+                                    current_font = font;
+                                    current_font_size = style.font_size;
+
+                                    session = glyphs_cache.session(
+                                        image_cache,
+                                        current_font,
+                                        font_library,
+                                        font_coords,
+                                        style.font_size,
+                                    );
+                                }
+
+                                comp.draw_run(
+                                    &mut session,
+                                    Rect::new(run_x, py, px - run_x, 1.),
+                                    depth,
+                                    &style,
+                                    &glyphs,
+                                    None,
+                                );
+                            }
+                        }
+                        CacheResult::Miss => {
+                            // No cached data - need to shape and render from scratch
+                            glyphs.clear();
+                            let mut shaped_glyphs = Vec::new();
+
+                            for glyph in &run.glyphs {
+                                let x = px;
+                                let y = py + padding_y;
+                                let advance = glyph.simple_data().1;
+
+                                // Different advance calculation based on mode
+                                if is_dimensions_only {
+                                    px += advance * char_width;
+                                } else {
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
+                                }
+
+                                let glyph_id = glyph.simple_data().0;
+                                glyphs.push(Glyph { id: glyph_id, x, y });
+
+                                // Store for caching
+                                shaped_glyphs.push(
+                                    crate::font::text_run_cache::ShapedGlyph {
+                                        glyph_id: glyph_id as u32,
+                                        x_advance: advance,
+                                        y_advance: 0.0,
+                                        x_offset: 0.0,
+                                        y_offset: 0.0,
+                                        cluster: 0,
+                                        atlas_coords: None,
+                                        atlas_layer: None,
+                                    },
+                                );
+                            }
+
+                            // Cache the shaped glyphs for future use
+                            if !is_dimensions_only && !run_text.is_empty() {
+                                self.text_run_manager.cache_shaping_data(
+                                    &run_text,
+                                    font,
+                                    run.size,
+                                    400, // font_weight
+                                    0,   // font_style
+                                    5,   // font_stretch
+                                    shaped_glyphs,
+                                    false, // has_emoji - would need to be detected
+                                    None, // shaping_features - would need actual shaping data
+                                );
+                            }
+
+                            // Create style for rendering
+                            if !is_dimensions_only {
+                                let style = TextRunStyle {
+                                    font_coords,
+                                    font_size: run.size,
+                                    color: run.span.color,
+                                    cursor: run.span.cursor,
+                                    drawable_char: run.span.drawable_char,
+                                    background_color: run.span.background_color,
+                                    baseline,
+                                    topline: py - ascent, // Use py for cursor positioning, not baseline
+                                    line_height,
+                                    padding_y,
+                                    line_height_without_mod,
+                                    advance: px - run_x,
+                                    decoration: run.span.decoration,
+                                    decoration_color: run.span.decoration_color,
+                                };
+
+                                // Update font session if needed
+                                if font != current_font
+                                    || style.font_size != current_font_size
+                                {
+                                    current_font = font;
+                                    current_font_size = style.font_size;
+
+                                    session = glyphs_cache.session(
+                                        image_cache,
+                                        current_font,
+                                        font_library,
+                                        font_coords,
+                                        style.font_size,
+                                    );
+                                }
+
+                                comp.draw_run(
+                                    &mut session,
+                                    Rect::new(run_x, py, px - run_x, 1.),
+                                    depth,
+                                    &style,
+                                    &glyphs,
+                                    None,
+                                );
+                            }
+                        }
                     }
 
-                    // Update font session if needed
-                    if font != current_font || style.font_size != current_font_size {
-                        current_font = font;
-                        current_font_size = style.font_size;
-
-                        session = glyphs_cache.session(
-                            image_cache,
-                            current_font,
-                            font_library,
-                            font_coords,
-                            style.font_size,
-                        );
+                    // Update dimensions if in dimensions mode
+                    if is_dimensions_only {
+                        let advance = px - run_x;
+                        if advance > 0.0 && line_height > 0.0 {
+                            dimensions.width = advance.round();
+                            dimensions.height = line_height.round();
+                        }
                     }
 
                     // Handle graphics if in layout mode
@@ -516,49 +741,16 @@ impl RichTextBrush {
                                 let graphic_render_request = GraphicRenderRequest {
                                     id: graphic.id,
                                     pos_x: run_x - offset_x,
-                                    pos_y: style.topline - offset_y,
+                                    pos_y: py - ascent - offset_y,
                                     width: None,
                                     height: None,
                                 };
 
                                 graphics.top_layer.push(graphic_render_request);
-                                line_operations.push(BatchOperation::GraphicRequest(
-                                    graphic_render_request,
-                                ));
-
                                 last_rendered_graphic.insert(graphic.id);
                             }
                         }
                     }
-
-                    // Use a Vec to collect operations if caching
-                    let mut run_operations = Vec::new();
-                    let cache_ops = if !is_dimensions_only {
-                        Some(&mut run_operations)
-                    } else {
-                        None
-                    };
-
-                    // Draw the run with caching if needed
-                    comp.draw_run(
-                        &mut session,
-                        Rect::new(run_x, py, style.advance, 1.),
-                        depth,
-                        &style,
-                        &glyphs,
-                        cache_ops,
-                    );
-
-                    // Add run operations to line operations
-                    if !is_dimensions_only {
-                        line_operations.extend(run_operations);
-                    }
-                }
-
-                // Store line in cache if we're not in dimensions mode
-                if !is_dimensions_only {
-                    self.line_cache
-                        .store(rich_text_id, line_idx, line_operations);
                 }
 
                 // Update line_y for line height modifier
@@ -583,13 +775,15 @@ impl RichTextBrush {
     #[inline]
     pub fn reset(&mut self) {
         self.glyphs = GlyphCache::new();
+        self.text_run_manager.clear_all();
     }
 
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
         self.glyphs = GlyphCache::new();
-        tracing::info!("RichTextBrush atlas and glyph cache cleared");
+        self.text_run_manager.clear_all();
+        tracing::info!("RichTextBrush atlas, glyph cache, and text run cache cleared");
     }
 
     #[inline]
@@ -637,12 +831,20 @@ impl RichTextBrush {
             self.layout_bind_group =
                 ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     layout: &self.layout_bind_group_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            &self.images.texture_view,
-                        ),
-                    }],
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.images.color_texture_view,
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                &self.images.mask_texture_view,
+                            ),
+                        },
+                    ],
                     label: Some("rich_text::Pipeline uniforms"),
                 });
         }

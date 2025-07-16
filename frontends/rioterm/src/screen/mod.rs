@@ -84,6 +84,7 @@ pub struct Screen<'screen> {
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
     pub clipboard: Rc<RefCell<Clipboard>>,
+    last_ime_cursor_pos: Option<(f32, f32)>,
 }
 
 pub struct ScreenWindowProperties {
@@ -157,6 +158,7 @@ impl Screen<'_> {
             power_preference,
             backend,
             font_features: config.fonts.features.clone(),
+            colorspace: config.window.colorspace.to_sugarloaf_colorspace(),
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
@@ -193,7 +195,7 @@ impl Screen<'_> {
         );
 
         let context_manager_config = context::ContextManagerConfig {
-            use_current_path: config.navigation.use_current_path,
+            cwd: config.navigation.current_working_directory,
             shell,
             working_dir,
             spawn_performer: true,
@@ -205,6 +207,7 @@ impl Screen<'_> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title.clone(),
+            keyboard: config.keyboard,
         };
 
         let rich_text_id = sugarloaf.create_rich_text();
@@ -264,6 +267,7 @@ impl Screen<'_> {
             renderer,
             bindings,
             clipboard,
+            last_ime_cursor_pos: None,
         })
     }
 
@@ -382,7 +386,7 @@ impl Screen<'_> {
 
             context_grid.update_dimensions(&self.sugarloaf);
 
-            for current_context in context_grid.contexts_mut() {
+            for (_key, current_context) in context_grid.contexts_mut() {
                 let current_context = current_context.context_mut();
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
@@ -402,6 +406,9 @@ impl Screen<'_> {
 
         self.mouse
             .set_multiplier_and_divider(config.scroll.multiplier, config.scroll.divider);
+
+        // Update keyboard config in context manager
+        self.context_manager.config.keyboard = config.keyboard;
 
         if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
@@ -490,7 +497,7 @@ impl Screen<'_> {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         for context_grid in self.context_manager.contexts_mut() {
-            for context in context_grid.contexts_mut() {
+            for (_key, context) in context_grid.contexts_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
@@ -862,6 +869,20 @@ impl Screen<'_> {
                     Act::SplitDown => {
                         self.split_down();
                     }
+                    Act::MoveDividerUp => {
+                        // User wants divider to move up visually, which means expanding the bottom split
+                        self.move_divider_down();
+                    }
+                    Act::MoveDividerDown => {
+                        // User wants divider to move down visually, which means expanding the top split
+                        self.move_divider_up();
+                    }
+                    Act::MoveDividerLeft => {
+                        self.move_divider_left();
+                    }
+                    Act::MoveDividerRight => {
+                        self.move_divider_right();
+                    }
                     Act::ConfigEditor => {
                         self.context_manager.switch_to_settings();
                     }
@@ -1086,6 +1107,34 @@ impl Screen<'_> {
         self.render();
     }
 
+    pub fn move_divider_up(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_up(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_down(&mut self) {
+        let amount = 20.0; // Default movement amount
+        if self.context_manager.move_divider_down(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_left(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_left(amount) {
+            self.render();
+        }
+    }
+
+    pub fn move_divider_right(&mut self) {
+        let amount = 40.0; // Default movement amount
+        if self.context_manager.move_divider_right(amount) {
+            self.render();
+        }
+    }
+
     pub fn create_tab(&mut self) {
         let redirect = true;
 
@@ -1306,9 +1355,15 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
-        current.renderable_content.selection_range = selection.to_range(&terminal);
+        let selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
+
+        // Use set_selection to trigger render
+        current.set_selection(selection_range);
+
+        // Request render to ensure it shows immediately
+        self.context_manager.request_render();
     }
 
     #[inline]
@@ -1369,9 +1424,15 @@ impl Screen<'_> {
             selection.include_all();
         }
 
-        current.renderable_content.selection_range = selection.to_range(&terminal);
+        let selection_range = selection.to_range(&terminal);
         terminal.selection = Some(selection);
         drop(terminal);
+
+        // Use set_selection to trigger render
+        current.set_selection(selection_range);
+
+        // Request render to ensure it shows immediately
+        self.context_manager.request_render();
     }
 
     #[inline]
@@ -1553,13 +1614,18 @@ impl Screen<'_> {
 
         match self.mouse.click_state {
             ClickState::Click => {
-                self.clear_selection();
-
-                // Start new empty selection.
-                if self.modifiers.state().control_key() {
-                    self.start_selection(SelectionType::Block, point, side);
+                // If Shift is pressed and there's an existing selection, expand it
+                if self.modifiers.state().shift_key() && !self.selection_is_empty() {
+                    self.update_selection(point, side);
                 } else {
-                    self.start_selection(SelectionType::Simple, point, side);
+                    self.clear_selection();
+
+                    // Start new empty selection.
+                    if self.modifiers.state().control_key() {
+                        self.start_selection(SelectionType::Block, point, side);
+                    } else {
+                        self.start_selection(SelectionType::Simple, point, side);
+                    }
                 }
             }
             ClickState::DoubleClick => {
@@ -1924,7 +1990,7 @@ impl Screen<'_> {
         if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
             let chr = if is_focused { "I" } else { "O" };
 
-            let msg = format!("\x1b[{}", chr);
+            let msg = format!("\x1b[{chr}");
             self.ctx_mut()
                 .current_mut()
                 .messenger
@@ -2030,6 +2096,9 @@ impl Screen<'_> {
                 self.search_input(c);
             }
         } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
@@ -2051,6 +2120,9 @@ impl Screen<'_> {
                 .messenger
                 .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
@@ -2093,8 +2165,7 @@ impl Screen<'_> {
     }
 
     pub fn render(&mut self) {
-        // let start_total = std::time::Instant::now();
-        // println!("_____________________________\nrender time elapsed");
+        // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
             if let Some(history_index) = self.search_state.history_index {
@@ -2104,6 +2175,7 @@ impl Screen<'_> {
             }
         }
 
+        // let search_hints_start = std::time::Instant::now();
         let mut search_hints = if is_search_active {
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
@@ -2115,13 +2187,23 @@ impl Screen<'_> {
         } else {
             None
         };
+        // let search_hints_duration = search_hints_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen search hints: {:?}", search_hints_duration);
+        // }
 
+        // let renderer_run_start = std::time::Instant::now();
         self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &mut search_hints,
             &self.search_state.focused_match,
         );
+        // let renderer_run_duration = renderer_run_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen renderer.run(): {:?}", renderer_run_duration);
+        // }
+
         // In this case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
@@ -2137,7 +2219,71 @@ impl Screen<'_> {
                 .blink_cursor(self.renderer.config_blinking_interval);
         }
 
-        // let duration = start_total.elapsed();
-        // println!("Total whole render function is: {:?}\n", duration);
+        // let screen_render_duration = screen_render_start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // tracing::debug!("[PERF] Screen render() total: {:?}", screen_render_duration);
+        // }
+    }
+
+    /// Update IME cursor position based on terminal cursor position
+    /// This should be called after rendering to ensure cursor position is current
+    pub fn update_ime_cursor_position_if_needed(
+        &mut self,
+        window: &rio_window::window::Window,
+    ) {
+        // Check if IME cursor positioning is enabled in config
+        if !self.context_manager.config.keyboard.ime_cursor_positioning {
+            return;
+        }
+
+        let current_context = self.context_manager.current();
+        let terminal = current_context.terminal.lock();
+        let cursor_pos = terminal.grid.cursor.pos;
+        let layout = current_context.dimension;
+        drop(terminal);
+
+        // Calculate pixel position of cursor
+        let cell_width = layout.dimension.width;
+        let cell_height = layout.dimension.height;
+        let margin_x = layout.margin.x * layout.dimension.scale;
+        let margin_y = layout.margin.top_y * layout.dimension.scale;
+
+        // Validate dimensions before calculation
+        if cell_width <= 0.0 || cell_height <= 0.0 {
+            tracing::warn!(
+                "Invalid cell dimensions for IME cursor positioning: {}x{}",
+                cell_width,
+                cell_height
+            );
+            return;
+        }
+
+        // Convert grid position to pixel position, centering horizontally in the cell
+        let pixel_x =
+            margin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y =
+            margin_y + (cursor_pos.row.0 as f32 * cell_height * layout.line_height);
+
+        // Validate final coordinates
+        if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {
+            tracing::warn!("Invalid IME cursor coordinates: ({}, {})", pixel_x, pixel_y);
+            return;
+        }
+
+        // Check if position has changed significantly to avoid unnecessary updates
+        if let Some((last_x, last_y)) = self.last_ime_cursor_pos {
+            if (pixel_x - last_x).abs() < 1.0 && (pixel_y - last_y).abs() < 1.0 {
+                return; // Position hasn't changed significantly
+            }
+        }
+
+        // Update last position
+        self.last_ime_cursor_pos = Some((pixel_x, pixel_y));
+
+        // Set IME cursor area
+        window.set_ime_cursor_area(
+            rio_window::dpi::PhysicalPosition::new(pixel_x as f64, pixel_y as f64),
+            rio_window::dpi::PhysicalSize::new(cell_width as f64, cell_height as f64),
+        );
     }
 }

@@ -1,6 +1,7 @@
 use crate::components::core::shapes::Size;
 use crate::components::layer::atlas::{self, Atlas};
 use crate::components::layer::image::{Data, Handle};
+use tracing::debug;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -86,6 +87,9 @@ impl Cache {
         if self.contains(handle) {
             return self.get(handle).unwrap();
         }
+
+        // Log cache miss for debugging
+        debug!("RasterCache miss for image handle_id={}", handle.id());
 
         let memory = match load_image(handle) {
             Ok(image) => Memory::Host(image.to_rgba8()),

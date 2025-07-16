@@ -24,6 +24,7 @@ use objc2_foundation::{
 
 use super::app_delegate::ApplicationDelegate;
 use super::cursor::cursor_from_icon;
+use super::display_link::{DisplayLink, DisplayLinkSupport};
 use super::monitor::{self, flip_window_screen_coordinates, get_display_id};
 use super::view::WinitView;
 use super::window::WinitWindow;
@@ -54,6 +55,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub tabbing_identifier: Option<String>,
     pub option_as_alt: OptionAsAlt,
     pub unified_titlebar: bool,
+    pub colorspace: Option<crate::platform::macos::Colorspace>,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -72,6 +74,7 @@ impl Default for PlatformSpecificWindowAttributes {
             tabbing_identifier: None,
             option_as_alt: Default::default(),
             unified_titlebar: false,
+            colorspace: None,
         }
     }
 }
@@ -123,6 +126,11 @@ pub(crate) struct State {
     is_simple_fullscreen: Cell<bool>,
     saved_style: Cell<Option<NSWindowStyleMask>>,
     background_color: RefCell<Retained<NSColor>>,
+
+    // Display link for VSync timing
+    display_link: RefCell<Option<super::display_link::DisplayLink>>,
+    // Track when rendering is needed (dirty state)
+    needs_redraw: Cell<bool>,
 }
 
 declare_class!(
@@ -151,6 +159,12 @@ declare_class!(
         #[method(windowWillClose:)]
         fn window_will_close(&self, _: Option<&AnyObject>) {
             trace_scope!("windowWillClose:");
+
+            // Stop the display link before closing
+            if let Err(e) = self.stop_display_link() {
+                tracing::warn!("Failed to stop display link: {}", e);
+            }
+
             // `setDelegate:` retains the previous value and then autoreleases it
             autoreleasepool(|_| {
                 // Since El Capitan, we need to be careful that delegate methods can't
@@ -339,6 +353,16 @@ declare_class!(
         fn window_did_change_occlusion_state(&self, _: Option<&AnyObject>) {
             trace_scope!("windowDidChangeOcclusionState:");
             let visible = self.window().occlusionState().contains(NSWindowOcclusionState::Visible);
+
+            // Manage display link based on window visibility for power efficiency
+            if visible {
+                if let Err(e) = self.start_display_link() {
+                    tracing::warn!("Failed to start display link when window became visible: {}", e);
+                }
+            } else if let Err(e) = self.stop_display_link() {
+                tracing::warn!("Failed to stop display link when window became occluded: {}", e);
+            }
+
             self.queue_event(WindowEvent::Occluded(!visible));
         }
 
@@ -350,6 +374,22 @@ declare_class!(
                 if let Some(screen) = self.window().screen() {
                     self.window().setFrame_display(screen.frame(), true);
                 }
+            }
+
+            // Reinitialize display link for the new screen to ensure proper VSync timing
+            // This is crucial for multi-display setups with different refresh rates
+            tracing::info!("Window moved to different screen, reinitializing display link");
+            if let Err(e) = self.stop_display_link() {
+                tracing::warn!("Failed to stop display link before screen change: {}", e);
+            }
+
+            // Reinitialize with new display
+            if let Err(e) = self.setup_display_link() {
+                tracing::warn!("Failed to setup display link for new screen: {}", e);
+            } else if let Err(e) = self.start_display_link() {
+                tracing::warn!("Failed to start display link for new screen: {}", e);
+            } else {
+                tracing::info!("Display link reinitialized for new screen");
             }
         }
     }
@@ -627,6 +667,11 @@ fn new_window(
         }
         .copy()]));
 
+        // Configure colorspace if specified
+        if let Some(colorspace) = attrs.platform_specific.colorspace {
+            configure_window_colorspace(&window, colorspace);
+        }
+
         Some(window)
     })
 }
@@ -703,6 +748,8 @@ impl WindowDelegate {
             is_simple_fullscreen: Cell::new(false),
             saved_style: Cell::new(None),
             background_color: unsafe { NSColor::blackColor().into() },
+            display_link: RefCell::new(None),
+            needs_redraw: Cell::new(false),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -761,6 +808,9 @@ impl WindowDelegate {
         if attrs.maximized {
             delegate.set_maximized(attrs.maximized);
         }
+
+        // Initialize display link for VSync timing
+        delegate.initialize_display_link();
 
         Ok(delegate)
     }
@@ -881,7 +931,23 @@ impl WindowDelegate {
     }
 
     pub fn request_redraw(&self) {
-        self.ivars().app_delegate.queue_redraw(self.window().id());
+        // Mark window as needing redraw instead of immediately queuing
+        // The display link will handle the actual redraw on next VSync
+        self.ivars().needs_redraw.set(true);
+        tracing::trace!("Window {:?} marked as needing redraw", self.id());
+    }
+
+    pub fn initialize_display_link(&self) {
+        if let Err(e) = self.setup_display_link() {
+            tracing::warn!("Failed to setup display link: {}", e);
+        } else if let Err(e) = self.start_display_link() {
+            tracing::warn!("Failed to start display link: {}", e);
+        } else {
+            tracing::info!(
+                "Display link initialized successfully for window {:?}",
+                self.id()
+            );
+        }
     }
 
     #[inline]
@@ -1864,6 +1930,11 @@ impl WindowExtMacOS for WindowDelegate {
         }
     }
 
+    fn set_colorspace(&self, colorspace: crate::platform::macos::Colorspace) {
+        let window = self.window();
+        configure_window_colorspace(window, colorspace);
+    }
+
     fn unified_titlebar(&self) -> bool {
         let window = self.window();
         unsafe {
@@ -1932,5 +2003,127 @@ pub fn appearance_to_theme(appearance: &NSAppearance) -> Theme {
         );
         // Default to light in this case
         Theme::Light
+    }
+}
+
+fn configure_window_colorspace(
+    window: &WinitWindow,
+    colorspace: crate::platform::macos::Colorspace,
+) {
+    // Configure the window's content view for colorspace support
+    if let Some(content_view) = window.contentView() {
+        // Enable layer backing which is required for colorspace configuration
+        content_view.setWantsLayer(true);
+
+        // The colorspace will be applied at the Metal rendering level in sugarloaf
+        // Here we ensure the window is properly configured for wide color support
+
+        tracing::info!(
+            "Configured window {:?} for colorspace: {:?} (layer-backed view enabled)",
+            unsafe { window.windowNumber() },
+            colorspace
+        );
+    } else {
+        tracing::warn!("Window has no content view for colorspace configuration");
+    }
+}
+
+impl DisplayLinkSupport for WindowDelegate {
+    fn setup_display_link(&self) -> Result<(), &'static str> {
+        tracing::info!("Setting up display link for window {:?}", self.id());
+
+        // Get the display ID for the current monitor
+        let display_id = match self.current_monitor_inner() {
+            Some(monitor) => {
+                // Get the actual display ID from the monitor
+                let display_id = monitor.native_identifier();
+                tracing::info!(
+                    "Using display ID {} from current monitor for window {:?}",
+                    display_id,
+                    self.id()
+                );
+                display_id
+            }
+            None => {
+                tracing::warn!("Could not get current monitor, using main display");
+                use core_graphics::display::CGDisplay;
+                CGDisplay::main().id
+            }
+        };
+
+        // Get window ID
+        let window_id = self.id();
+
+        // Create GCD callback for VSync-timed redraws
+        unsafe extern "C" fn vsync_callback(context: *mut std::ffi::c_void) {
+            if context.is_null() {
+                return;
+            }
+
+            unsafe {
+                let user_data =
+                    &*(context as *const super::display_link::DisplayLinkUserData);
+
+                // Get the view directly from the user data
+                let view = user_data.view_ptr;
+
+                // Get window delegate from the view (similar to Zed's approach)
+                use super::view::get_window_delegate;
+                if let Some(window_delegate) = get_window_delegate(view) {
+                    // Check if window needs redraw (dirty state)
+                    if window_delegate.ivars().needs_redraw.get() {
+                        // Clear dirty flag and trigger redraw
+                        window_delegate.ivars().needs_redraw.set(false);
+                        window_delegate
+                            .ivars()
+                            .app_delegate
+                            .queue_redraw(user_data.window_id);
+                        tracing::trace!(
+                            "VSync redraw triggered for dirty window {:?}",
+                            user_data.window_id
+                        );
+                    } else {
+                        tracing::trace!(
+                            "VSync callback skipped - window {:?} not dirty",
+                            user_data.window_id
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "VSync callback could not get window delegate from view for window {:?}",
+                        user_data.window_id
+                    );
+                }
+            }
+        }
+
+        // Get the view pointer for direct access
+        let view = self.view();
+        let view_ptr = Retained::as_ptr(&view) as *mut std::ffi::c_void;
+
+        // Create the display link with GCD-based communication
+        let display_link =
+            DisplayLink::new(display_id, window_id, view_ptr, vsync_callback)?;
+
+        // Store the display link
+        *self.ivars().display_link.borrow_mut() = Some(display_link);
+
+        Ok(())
+    }
+
+    fn start_display_link(&self) -> Result<(), &'static str> {
+        if let Some(display_link) = self.ivars().display_link.borrow().as_ref() {
+            display_link.start()
+        } else {
+            Err("Display link not initialized")
+        }
+    }
+
+    fn stop_display_link(&self) -> Result<(), &'static str> {
+        if let Some(display_link) = self.ivars().display_link.borrow().as_ref() {
+            display_link.stop()
+        } else {
+            Err("Display link not initialized")
+        }
     }
 }

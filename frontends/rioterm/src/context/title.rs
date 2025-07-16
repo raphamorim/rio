@@ -24,7 +24,7 @@ impl ContextManagerTitles {
         content: String,
         extra: Option<ContextTitleExtra>,
     ) -> ContextManagerTitles {
-        let key = format!("{}{};", idx, content);
+        let key = format!("{idx}{content};");
         let mut map = FxHashMap::default();
         map.insert(idx, ContextTitle { content, extra });
         ContextManagerTitles {

@@ -5,6 +5,7 @@
 
 use librashader_common::map::FastHashMap;
 use std::borrow::Cow;
+use tracing::debug;
 
 pub struct MipmapGen {
     shader: wgpu::ShaderModule,
@@ -65,10 +66,10 @@ impl MipmapGen {
         miplevels: u32,
     ) {
         let format = texture.format();
-        let pipeline = &*self
-            .pipeline_cache
-            .entry(format)
-            .or_insert_with(|| Self::create_pipeline(device, &self.shader, format));
+        let pipeline = &*self.pipeline_cache.entry(format).or_insert_with(|| {
+            debug!("PipelineCache miss for texture format={:?}", format);
+            Self::create_pipeline(device, &self.shader, format)
+        });
 
         let views = (0..miplevels)
             .map(|mip| {

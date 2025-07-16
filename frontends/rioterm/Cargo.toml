@@ -24,6 +24,7 @@ rio-backend = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+criterion = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = { workspace = true }
@@ -45,6 +46,7 @@ copa = { workspace = true }
 url = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.13.0"
+slotmap = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
@@ -97,3 +99,7 @@ assets = [
 extended-description = """\
 Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers.
 The supported platforms currently consist of BSD, Linux, MacOS and Windows."""
+
+[[bench]]
+name = "renderer_bench"
+harness = false

@@ -324,7 +324,7 @@ impl Config {
 
                     Ok(decoded)
                 }
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))
@@ -336,7 +336,7 @@ impl Config {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Theme>(&content) {
                 Ok(decoded) => Ok(decoded),
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))
@@ -679,6 +679,27 @@ mod tests {
 
         assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.renderer.backend, renderer::Backend::Vulkan);
+        assert_eq!(result.fonts, SugarloafFonts::default());
+        assert_eq!(result.theme, String::default());
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_change_config_renderer_occlusion() {
+        let result = create_temporary_config(
+            "change-renderer-occlusion",
+            r#"
+            [renderer]
+            disable-occluded-render = false
+        "#,
+        );
+
+        assert!(!result.renderer.disable_occluded_render);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
         // Colors
@@ -1093,5 +1114,35 @@ mod tests {
 
         assert_eq!(parse_unicode(&symbol_map[1].start), Some('\u{E0C0}'));
         assert_eq!(parse_unicode(&symbol_map[1].end), Some('\u{E0C7}'));
+    }
+
+    #[test]
+    fn test_window_colorspace() {
+        let result = create_temporary_config(
+            "window-colorspace",
+            r#"
+            [window]
+            colorspace = "display-p3"
+        "#,
+        );
+
+        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    #[test]
+    fn test_window_colorspace_default() {
+        let result = create_temporary_config(
+            "window-colorspace-default",
+            r#"
+            [window]
+            width = 800
+            height = 600
+        "#,
+        );
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
     }
 }

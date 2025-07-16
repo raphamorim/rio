@@ -241,9 +241,9 @@ impl ScreenNavigation {
             }
 
             let text = if is_current {
-                format!("▲ {}", name)
+                format!("▲ {name}")
             } else {
-                format!("{}.{}", i + 1, name)
+                format!("{}.{name}", i + 1)
             };
 
             let tab = sugarloaf.create_temp_rich_text();

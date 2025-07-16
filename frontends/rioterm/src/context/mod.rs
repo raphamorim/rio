@@ -17,6 +17,7 @@ use crate::performer::Machine;
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
+
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -59,15 +60,15 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
-        let has_updated = (self.renderable_content.selection_range.is_none()
-            && selection_range.is_some())
-            || (self.renderable_content.selection_range.is_some()
-                && selection_range.is_none());
-        self.renderable_content.selection_range = selection_range;
+        let has_updated = self.renderable_content.selection_range != selection_range;
 
         if has_updated {
-            self.renderable_content.has_pending_updates = true;
+            let mut terminal = self.terminal.lock();
+            let display_offset = terminal.display_offset();
+            terminal.update_selection_damage(selection_range, display_offset);
         }
+
+        self.renderable_content.selection_range = selection_range;
     }
 
     #[inline]
@@ -99,11 +100,12 @@ pub struct ContextManagerConfig {
     pub use_fork: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
-    pub use_current_path: bool,
+    pub cwd: bool,
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
     pub title: rio_backend::config::title::Title,
+    pub keyboard: rio_backend::config::keyboard::Keyboard,
 }
 
 pub struct ContextManager<T: EventListener> {
@@ -172,7 +174,7 @@ pub fn create_mock_context<
         spawn_performer: false,
         is_native: false,
         should_update_title_extra: false,
-        use_current_path: false,
+        cwd: false,
         ..ContextManagerConfig::default()
     };
     ContextManager::create_context(
@@ -393,7 +395,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             spawn_performer: false,
             is_native: false,
             should_update_title_extra: false,
-            use_current_path: false,
+            cwd: false,
             ..ContextManagerConfig::default()
         };
         let initial_context = ContextManager::create_context(
@@ -546,9 +548,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
         self.switch_to_next();
-        // Make sure first split is selected
+        // Make sure first split is selected - get the root key
         let current_tab = &mut self.contexts[self.current_index];
-        current_tab.current = 0;
+        if let Some(root) = current_tab.root {
+            current_tab.current = root;
+        }
         self.current_route = self.current().route_id;
     }
 
@@ -559,10 +563,33 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
         self.switch_to_prev();
-        // Make sure last split is selected
+        // Make sure last split is selected - get the last key in order
         let current_tab = &mut self.contexts[self.current_index];
-        current_tab.current = current_tab.len() - 1;
+        let ordered_keys = current_tab.get_ordered_keys();
+        if let Some(&last_key) = ordered_keys.last() {
+            current_tab.current = last_key;
+        }
         self.current_route = self.current().route_id;
+    }
+
+    #[inline]
+    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_up(amount)
+    }
+
+    #[inline]
+    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_down(amount)
+    }
+
+    #[inline]
+    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_left(amount)
+    }
+
+    #[inline]
+    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_right(amount)
     }
 
     #[inline]
@@ -653,7 +680,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 self.event_proxy
                     .send_event(RioEvent::Title(content.to_owned()), self.window_id);
 
-                id.push_str(&format!("{}{};", i, content));
+                id.push_str(&format!("{i}{content};"));
 
                 if self.config.should_update_title_extra {
                     self.titles.set_key_val(
@@ -820,7 +847,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = self.config.working_dir.clone();
-        if self.config.use_current_path {
+        if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
@@ -889,7 +916,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         );
 
         let context_manager_config = ContextManagerConfig {
-            use_current_path: config.navigation.use_current_path,
+            cwd: config.navigation.current_working_directory,
             shell,
             working_dir,
             spawn_performer: true,
@@ -901,6 +928,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             title: config.title,
+            keyboard: config.keyboard,
         };
 
         self.acc_current_route += 1;
@@ -934,7 +962,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
         let mut working_dir = self.config.working_dir.clone();
-        if self.config.use_current_path {
+        if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
             {
                 let current_context = self.current();
@@ -1256,42 +1284,42 @@ pub mod test {
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]
@@ -1319,42 +1347,42 @@ pub mod test {
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 4);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 3);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]
@@ -1380,43 +1408,43 @@ pub mod test {
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_next_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 2);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         // Prev
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 2);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 2);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 1);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 1);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 1);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
 
         context_manager.switch_to_prev_split_or_tab();
         current_index = context_manager.current_index;
         assert_eq!(current_index, 0);
-        assert_eq!(context_manager.contexts[current_index].current, 0);
+        assert_eq!(context_manager.contexts[current_index].current_index(), 0);
     }
 
     #[test]

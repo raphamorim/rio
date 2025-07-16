@@ -134,6 +134,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
         );
 
+        // Schedule title updates every 1s
+        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
+        if !self.scheduler.scheduled(timer_id) {
+            self.scheduler.schedule(
+                EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
+                    rio_window::window::WindowId::dummy()
+                }),
+                Duration::from_secs(1),
+                true,
+                timer_id,
+            );
+        }
+
         tracing::info!("Initialisation complete");
     }
 
@@ -142,10 +155,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event.payload {
             RioEventType::Rio(RioEvent::Render) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Skip rendering for unfocused windows if configured
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
                     {
                         return;
+                    }
+
+                    // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                    if self.config.renderer.disable_occluded_render
+                        && route.window.is_occluded
+                        && !route.window.needs_render_after_occlusion
+                    {
+                        return;
+                    }
+
+                    // Clear the one-time render flag if it was set
+                    if route.window.needs_render_after_occlusion {
+                        route.window.needs_render_after_occlusion = false;
                     }
 
                     route.request_redraw();
@@ -161,8 +188,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            return;
+                        }
+
                         // Check if this is the current route
                         if route_id == route.window.screen.ctx().current_route() {
+                            // Clear the one-time render flag if it was set
+                            if route.window.needs_render_after_occlusion {
+                                route.window.needs_render_after_occlusion = false;
+                            }
+
                             // Check if we need to throttle based on timing
                             if let Some(wait_duration) = route.window.wait_until() {
                                 // We need to wait before rendering again
@@ -185,6 +225,105 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 // We can render immediately
                                 route.request_redraw();
                             }
+                        }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Check if this is the current route
+                    if route_id == route.window.screen.ctx().current_route() {
+                        let context_manager = route.window.screen.ctx_mut();
+                        let grid = context_manager.current_grid_mut();
+
+                        // Check for damage and trigger appropriate damage events
+                        let mut has_damage = false;
+                        for (_key, grid_context) in grid.contexts().iter() {
+                            if let Some(mut terminal) =
+                                grid_context.context().terminal.try_lock_unfair()
+                            {
+                                if terminal.is_fully_damaged() {
+                                    has_damage = true;
+                                    break;
+                                } else {
+                                    // Check for partial damage
+                                    if let rio_backend::crosswords::TermDamage::Partial(
+                                        _,
+                                    ) = terminal.damage()
+                                    {
+                                        has_damage = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If we found damage, emit a TerminalDamaged event
+                        if has_damage {
+                            self.event_proxy.send_event(
+                                RioEventType::Rio(RioEvent::TerminalDamaged {
+                                    route_id,
+                                    damage: rio_backend::event::TerminalDamage::Full, // Simplified for now
+                                }),
+                                window_id,
+                            );
+                        }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        // Skip rendering for unfocused windows if configured
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            return;
+                        }
+
+                        // Skip rendering for occluded windows if configured
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            return;
+                        }
+
+                        // Check if this is the current route
+                        if route_id == route.window.screen.ctx().current_route() {
+                            // Check if rendering is actually needed
+                            let terminal = route
+                                .window
+                                .screen
+                                .ctx_mut()
+                                .current_mut()
+                                .terminal
+                                .lock();
+                            if !terminal.needs_render() {
+                                // Skip rendering if no actual damage
+                                return;
+                            }
+
+                            // For cursor-only damage, we can be more selective
+                            if matches!(
+                                damage,
+                                rio_backend::event::TerminalDamage::CursorOnly
+                            ) {
+                                // Only render cursor changes if cursor is visible or blinking
+                                let cursor_state = terminal.cursor();
+                                if !cursor_state.is_visible() {
+                                    return;
+                                }
+                            }
+                            drop(terminal); // Release lock before requesting redraw
+
+                            // Clear the one-time render flag if it was set
+                            if route.window.needs_render_after_occlusion {
+                                route.window.needs_render_after_occlusion = false;
+                            }
+
+                            // Request immediate redraw for responsive UI
+                            route.request_redraw();
                         }
                     }
                 }
@@ -297,7 +436,18 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
-                        route.request_redraw();
+                        // Use the new damage_cursor_blink method for more efficient cursor blinking
+                        let mut terminal =
+                            route.window.screen.ctx_mut().current_mut().terminal.lock();
+                        terminal.damage_cursor_blink();
+
+                        // Only request redraw if there's actual damage
+                        let needs_render = terminal.needs_render();
+                        drop(terminal); // Release lock before requesting redraw
+
+                        if needs_render {
+                            route.request_redraw();
+                        }
                     }
                 }
             }
@@ -362,6 +512,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.set_window_title(&title);
                     route.set_window_subtitle(&subtitle);
                 }
+            }
+            RioEventType::Rio(RioEvent::UpdateTitles) => {
+                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -1065,7 +1218,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Occluded(occluded) => {
+                let was_occluded = route.window.is_occluded;
                 route.window.is_occluded = occluded;
+
+                // If window was occluded and is now visible, mark for one-time render
+                if was_occluded && !occluded {
+                    route.window.needs_render_after_occlusion = true;
+                }
             }
 
             WindowEvent::ThemeChanged(new_theme) => {
@@ -1122,6 +1281,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::Terminal => {
                         route.window.screen.render();
+                        // Update IME cursor position after rendering to ensure it's current
+                        route.window.screen.update_ime_cursor_position_if_needed(
+                            &route.window.winit_window,
+                        );
                     }
                     RoutePath::ConfirmQuit => {
                         route.window.screen.render_dialog(
@@ -1149,10 +1312,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
-            None => {
-                self.router.update_titles();
-                ControlFlow::Wait
-            }
+            None => ControlFlow::Wait,
         };
         event_loop.set_control_flow(control_flow);
     }
@@ -1209,10 +1369,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
         // as a safe placeholder.
-        std::mem::swap(
-            &mut self.router.clipboard,
-            &mut std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop())),
-        );
+        self.router.clipboard =
+            std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop()));
 
         std::process::exit(0);
     }
