@@ -7,6 +7,10 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
+- TBD.
+
+## 0.2.21
+
 - Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
 
 ### Performance Optimizations
