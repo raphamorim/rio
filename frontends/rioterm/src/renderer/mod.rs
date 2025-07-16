@@ -196,8 +196,6 @@ impl Renderer {
 
         if square.flags.contains(Flags::UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 1.0,
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
@@ -205,29 +203,21 @@ impl Renderer {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 1.0,
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
@@ -294,8 +284,6 @@ impl Renderer {
             {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
@@ -641,8 +629,6 @@ impl Renderer {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: 0.0,
-                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));

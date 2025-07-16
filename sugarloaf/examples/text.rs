@@ -154,8 +154,6 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
                                     is_doubled: false,
                                     shape: UnderlineShape::Regular,
                                 },
@@ -179,8 +177,6 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
                                     is_doubled: false,
                                     shape: UnderlineShape::Regular,
                                 },
@@ -204,8 +200,6 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
                                     is_doubled: false,
                                     shape: UnderlineShape::Curly,
                                 },
@@ -221,8 +215,6 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
                                     is_doubled: false,
                                     shape: UnderlineShape::Dashed,
                                 },
@@ -246,8 +238,6 @@ impl ApplicationHandler for Application {
                         FragmentStyle {
                             decoration: Some(FragmentStyleDecoration::Underline(
                                 UnderlineInfo {
-                                    offset: -2.0,
-                                    size: 1.0,
                                     is_doubled: false,
                                     shape: UnderlineShape::Dotted,
                                 },

@@ -129,8 +129,10 @@ impl RenderData {
             descent: metrics.descent,
             // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
             advance,
         };
         self.runs.push(run_data);
@@ -191,8 +193,10 @@ impl RenderData {
             descent: metrics.descent,
             // leading: metrics.leading * span_data.line_spacing,
             leading: metrics.leading,
+            underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
             advance,
         };
         self.runs.push(run_data);

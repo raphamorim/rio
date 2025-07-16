@@ -284,8 +284,6 @@ pub enum UnderlineShape {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct UnderlineInfo {
-    pub offset: f32,
-    pub size: f32,
     pub is_doubled: bool,
     pub shape: UnderlineShape,
 }

@@ -43,6 +43,14 @@ pub struct TextRunStyle<'a> {
     /// Cursor style.
     pub cursor: Option<SugarCursor>,
     pub drawable_char: Option<DrawableChar>,
+    /// Font metrics for proper underline/strikethrough positioning
+    pub underline_offset: f32,
+    pub strikeout_offset: f32,
+    pub underline_thickness: f32,
+    pub x_height: f32,
+    /// Font ascent and descent for cursor positioning
+    pub ascent: f32,
+    pub descent: f32,
 }
 
 /// Positioned glyph in a text run.
