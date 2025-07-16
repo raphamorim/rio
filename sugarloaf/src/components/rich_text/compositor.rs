@@ -94,7 +94,7 @@ impl Compositor {
         underline_thickness: f32,
     ) -> f32 {
         // Use font's built-in underline position when available
-        let offset = if style.underline_offset != 0.0 {
+        if style.underline_offset != 0.0 {
             // Font provides underline_offset as distance from baseline to underline top
             // Negative values mean below baseline, which is what we want
             // But Rio's renderer expects positive offset for below baseline
@@ -102,9 +102,7 @@ impl Compositor {
         } else {
             // Fallback: place underline 1 thickness below baseline
             underline_thickness
-        };
-        
-        offset
+        }
     }
 
     pub fn begin(&mut self) {
@@ -156,24 +154,16 @@ impl Compositor {
                 // Calculate cursor dimensions based on font metrics, not line height
                 let font_height = style.ascent + style.descent;
                 let cursor_top = style.baseline - style.ascent;
-                
+
                 match cursor {
                     crate::SugarCursor::Block(cursor_color) => {
-                        let cursor_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let cursor_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::HollowBlock(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {
@@ -187,12 +177,8 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {
@@ -277,24 +263,16 @@ impl Compositor {
                 // Calculate cursor dimensions based on font metrics, not line height
                 let font_height = style.ascent + style.descent;
                 let cursor_top = style.baseline - style.ascent;
-                
+
                 match cursor {
                     crate::SugarCursor::Block(cursor_color) => {
-                        let cursor_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let cursor_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::HollowBlock(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {
@@ -308,12 +286,8 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            cursor_top,
-                            rect.width,
-                            font_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {

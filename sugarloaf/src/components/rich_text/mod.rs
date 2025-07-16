@@ -495,11 +495,7 @@ impl RichTextBrush {
                     0.0
                 };
 
-                let py = if is_dimensions_only {
-                    y
-                } else {
-                    line_y
-                };
+                let py = if is_dimensions_only { y } else { line_y };
 
                 for run in &line.render_data.runs {
                     let font = run.span.font_id;
@@ -881,10 +877,13 @@ impl RichTextBrush {
 mod rect_positioning_tests {
     #[derive(Debug)]
     struct GlyphRect {
+        #[allow(unused)]
         pub x: f32,
         pub y: f32,
+        #[allow(unused)]
         pub width: f32,
         pub height: f32,
+        #[allow(unused)]
         pub baseline_y: f32,
         pub glyph_center_x: f32,
         pub glyph_center_y: f32,
@@ -892,8 +891,10 @@ mod rect_positioning_tests {
 
     #[derive(Debug)]
     struct LineRect {
+        #[allow(unused)]
         pub x: f32,
         pub y: f32,
+        #[allow(unused)]
         pub width: f32,
         pub height: f32,
         pub baseline_y: f32,
@@ -907,11 +908,11 @@ mod rect_positioning_tests {
         let ascent = 12.0;
         let descent = 4.0;
         let _leading = 0.0;
-        
+
         // Expected calculations (matching our current implementation)
         let padding_top = (line_height - ascent - descent) / 2.0; // (20 - 12 - 4) / 2 = 2.0
         let expected_baseline_y = 0.0 + padding_top + ascent; // 0 + 2 + 12 = 14.0
-        
+
         // Create line rect
         let line_rect = LineRect {
             x: 0.0,
@@ -920,7 +921,7 @@ mod rect_positioning_tests {
             height: line_height,
             baseline_y: expected_baseline_y,
         };
-        
+
         // Expected glyph rect (should be centered within line rect)
         let expected_glyph_rect = GlyphRect {
             x: 0.0,
@@ -928,33 +929,56 @@ mod rect_positioning_tests {
             width: char_width,
             height: line_height,
             baseline_y: expected_baseline_y,
-            glyph_center_x: char_width / 2.0, // 4.0
+            glyph_center_x: char_width / 2.0,  // 4.0
             glyph_center_y: line_height / 2.0, // 10.0
         };
-        
-        println!("=== RECT POSITIONING TEST ===");
-        println!("Line height: {}", line_height);
-        println!("Ascent: {}, Descent: {}, Leading: {}", ascent, descent, _leading);
-        println!("Padding top: {}", padding_top);
-        println!("Expected baseline Y: {}", expected_baseline_y);
-        println!("Expected glyph center: ({}, {})", expected_glyph_rect.glyph_center_x, expected_glyph_rect.glyph_center_y);
-        
+
+        // println!("Line height: {}", line_height);
+        // println!(
+        //     "Ascent: {}, Descent: {}, Leading: {}",
+        //     ascent, descent, _leading
+        // );
+        // println!("Padding top: {}", padding_top);
+        // println!("Expected baseline Y: {}", expected_baseline_y);
+        // println!(
+        //     "Expected glyph center: ({}, {})",
+        //     expected_glyph_rect.glyph_center_x, expected_glyph_rect.glyph_center_y
+        // );
+
         // Verify baseline is positioned correctly within the line rect
-        assert!(expected_baseline_y > line_rect.y, "Baseline should be below line top");
-        assert!(expected_baseline_y < line_rect.y + line_rect.height, "Baseline should be above line bottom");
-        
+        assert!(
+            expected_baseline_y > line_rect.y,
+            "Baseline should be below line top"
+        );
+        assert!(
+            expected_baseline_y < line_rect.y + line_rect.height,
+            "Baseline should be above line bottom"
+        );
+
         // Verify glyph center is in the middle of the rect
-        assert_eq!(expected_glyph_rect.glyph_center_x, char_width / 2.0, "Glyph should be horizontally centered");
-        assert_eq!(expected_glyph_rect.glyph_center_y, line_height / 2.0, "Glyph should be vertically centered");
-        
+        assert_eq!(
+            expected_glyph_rect.glyph_center_x,
+            char_width / 2.0,
+            "Glyph should be horizontally centered"
+        );
+        assert_eq!(
+            expected_glyph_rect.glyph_center_y,
+            line_height / 2.0,
+            "Glyph should be vertically centered"
+        );
+
         // Verify baseline relationship to glyph center
-        let baseline_offset_from_center = expected_baseline_y - expected_glyph_rect.glyph_center_y;
-        println!("Baseline offset from glyph center: {}", baseline_offset_from_center);
-        
+        let baseline_offset_from_center =
+            expected_baseline_y - expected_glyph_rect.glyph_center_y;
+        // println!("Baseline offset from glyph center: {baseline_offset_from_center}");
+
         // The baseline should be slightly above center for typical fonts
         // With ascent=12, descent=4, the baseline should be at 14.0, center at 10.0
         // So baseline is 4.0 units above center, which makes sense
-        assert_eq!(baseline_offset_from_center, 4.0, "Baseline should be 4.0 units above glyph center");
+        assert_eq!(
+            baseline_offset_from_center, 4.0,
+            "Baseline should be 4.0 units above glyph center"
+        );
     }
 
     #[test]
@@ -963,11 +987,11 @@ mod rect_positioning_tests {
         let ascent = 12.0;
         let descent = 4.0;
         let _leading = 0.0;
-        
+
         let padding_top = (line_height - ascent - descent) / 2.0;
-        
+
         // Test 3 lines
-        let line_rects = vec![
+        let line_rects = [
             LineRect {
                 x: 0.0,
                 y: 0.0,
@@ -990,25 +1014,38 @@ mod rect_positioning_tests {
                 baseline_y: (line_height * 2.0) + padding_top + ascent,
             },
         ];
-        
-        println!("=== MULTIPLE LINE SPACING TEST ===");
+
         for (i, rect) in line_rects.iter().enumerate() {
-            println!("Line {}: y={}, baseline_y={}", i, rect.y, rect.baseline_y);
-            
+            // println!("Line {}: y={}, baseline_y={}", i, rect.y, rect.baseline_y);
+
             // Verify each line's baseline is positioned correctly within its rect
-            assert!(rect.baseline_y > rect.y, "Line {} baseline should be below line top", i);
-            assert!(rect.baseline_y < rect.y + rect.height, "Line {} baseline should be above line bottom", i);
-            
+            assert!(
+                rect.baseline_y > rect.y,
+                "Line {i} baseline should be below line top",
+            );
+            assert!(
+                rect.baseline_y < rect.y + rect.height,
+                "Line {i} baseline should be above line bottom",
+            );
+
             // Verify consistent baseline positioning within each line
             let baseline_offset_from_top = rect.baseline_y - rect.y;
-            assert_eq!(baseline_offset_from_top, padding_top + ascent, "Line {} baseline offset should be consistent", i);
+            assert_eq!(
+                baseline_offset_from_top,
+                padding_top + ascent,
+                "Line {i} baseline offset should be consistent",
+            );
         }
-        
+
         // Verify lines don't overlap
         for i in 1..line_rects.len() {
             let prev_line = &line_rects[i - 1];
             let curr_line = &line_rects[i];
-            assert_eq!(curr_line.y, prev_line.y + prev_line.height, "Lines should be adjacent without gaps or overlaps");
+            assert_eq!(
+                curr_line.y,
+                prev_line.y + prev_line.height,
+                "Lines should be adjacent without gaps or overlaps"
+            );
         }
     }
 
@@ -1018,34 +1055,40 @@ mod rect_positioning_tests {
         let descent = 4.0;
         let leading = 0.0;
         let base_line_height = ascent + descent + leading; // 16.0
-        
+
         let test_cases = vec![
             ("Normal line height", base_line_height),
             ("1.5x line height", base_line_height * 1.5),
             ("2x line height", base_line_height * 2.0),
         ];
-        
-        println!("=== BASELINE CORRECTNESS TEST ===");
-        
+
         for (name, line_height) in test_cases {
             let padding_top = (line_height - ascent - descent) / 2.0;
             let baseline_y = 0.0 + padding_top + ascent;
-            
-            println!("{}: line_height={}, padding_top={}, baseline_y={}", name, line_height, padding_top, baseline_y);
-            
+
+            // println!(
+            //     "{}: line_height={}, padding_top={}, baseline_y={}",
+            //     name, line_height, padding_top, baseline_y
+            // );
+
             // Verify baseline is always positioned at ascent distance from the visual center
             let line_center: f32 = line_height / 2.0;
             let expected_baseline_from_center: f32 = (ascent - descent) / 2.0; // Should be 4.0 for our test values
             let actual_baseline_from_center: f32 = baseline_y - line_center;
-            
-            let diff = (actual_baseline_from_center - expected_baseline_from_center).abs();
-            assert!(diff < 0.001,
-                   "{}: Baseline should be {} units above center, got {}", 
-                   name, expected_baseline_from_center, actual_baseline_from_center);
-            
+
+            let diff =
+                (actual_baseline_from_center - expected_baseline_from_center).abs();
+            assert!(
+                diff < 0.001,
+                "{name}: Baseline should be {expected_baseline_from_center} units above center, got {actual_baseline_from_center}",
+            );
+
             // Verify glyph would be centered in the line
             let glyph_center_y = line_height / 2.0;
-            assert_eq!(glyph_center_y, line_center, "{}: Glyph center should match line center", name);
+            assert_eq!(
+                glyph_center_y, line_center,
+                "{name}: Glyph center should match line center",
+            );
         }
     }
 
@@ -1055,14 +1098,14 @@ mod rect_positioning_tests {
         let ascent = 12.0;
         let descent = 4.0;
         let char_width = 8.0;
-        
+
         let padding_top = (line_height - ascent - descent) / 2.0;
         let baseline_y = 0.0 + padding_top + ascent;
-        
+
         // In font rendering, glyphs are positioned relative to baseline
         // The glyph's y coordinate should be the baseline position
         let glyph_y = baseline_y;
-        
+
         // The glyph rect encompasses the entire line height for background/selection
         let glyph_rect = GlyphRect {
             x: 0.0,
@@ -1073,29 +1116,44 @@ mod rect_positioning_tests {
             glyph_center_x: char_width / 2.0,
             glyph_center_y: line_height / 2.0,
         };
-        
-        println!("=== GLYPH POSITIONING RELATIVE TO BASELINE TEST ===");
-        println!("Baseline Y: {}", baseline_y);
-        println!("Glyph Y (for font rendering): {}", glyph_y);
-        println!("Glyph rect Y (for backgrounds): {}", glyph_rect.y);
-        println!("Glyph center: ({}, {})", glyph_rect.glyph_center_x, glyph_rect.glyph_center_y);
-        
+
+        // println!("=== GLYPH POSITIONING RELATIVE TO BASELINE TEST ===");
+        // println!("Baseline Y: {}", baseline_y);
+        // println!("Glyph Y (for font rendering): {}", glyph_y);
+        // println!("Glyph rect Y (for backgrounds): {}", glyph_rect.y);
+        // println!(
+        //     "Glyph center: ({}, {})",
+        //     glyph_rect.glyph_center_x, glyph_rect.glyph_center_y
+        // );
+
         // Key assertions:
         // 1. Glyph for font rendering is positioned at baseline
-        assert_eq!(glyph_y, baseline_y, "Glyph Y for font rendering should be at baseline");
-        
+        assert_eq!(
+            glyph_y, baseline_y,
+            "Glyph Y for font rendering should be at baseline"
+        );
+
         // 2. Glyph rect for backgrounds spans the full line height
         assert_eq!(glyph_rect.y, 0.0, "Glyph rect should start at line top");
-        assert_eq!(glyph_rect.height, line_height, "Glyph rect should span full line height");
-        
+        assert_eq!(
+            glyph_rect.height, line_height,
+            "Glyph rect should span full line height"
+        );
+
         // 3. Glyph is visually centered within the line
-        assert_eq!(glyph_rect.glyph_center_y, line_height / 2.0, "Glyph should be visually centered");
-        
+        assert_eq!(
+            glyph_rect.glyph_center_y,
+            line_height / 2.0,
+            "Glyph should be visually centered"
+        );
+
         // 4. Baseline is positioned correctly relative to glyph center
         let baseline_offset_from_center = baseline_y - glyph_rect.glyph_center_y;
         let expected_offset = (ascent - descent) / 2.0; // (12 - 4) / 2 = 4.0
-        assert_eq!(baseline_offset_from_center, expected_offset, 
-                  "Baseline should be {} units above glyph center", expected_offset);
+        assert_eq!(
+            baseline_offset_from_center, expected_offset,
+            "Baseline should be {expected_offset} units above glyph center",
+        );
     }
 
     #[test]
@@ -1105,205 +1163,47 @@ mod rect_positioning_tests {
         let ascent = 12.0;
         let descent = 4.0;
         let _leading = 0.0;
-        
+
         // Simulate the calculations from both paths
         let line_y = 0.0; // Top of first line
         let padding_top = (line_height - ascent - descent) / 2.0; // 2.0
         let baseline = line_y + padding_top + ascent; // 0 + 2 + 12 = 14.0
         let py = line_y; // 0.0
-        
+
         // Both paths should use the same topline calculation
         let topline = py - ascent; // 0 - 12 = -12.0
-        
-        println!("=== CURSOR POSITIONING CONSISTENCY TEST ===");
-        println!("Line Y: {}", line_y);
-        println!("Baseline: {}", baseline);
-        println!("PY: {}", py);
-        println!("Topline: {}", topline);
-        
+
+        // println!("=== CURSOR POSITIONING CONSISTENCY TEST ===");
+        // println!("Line Y: {}", line_y);
+        // println!("Baseline: {}", baseline);
+        // println!("PY: {}", py);
+        // println!("Topline: {}", topline);
+
         // Key assertions for cursor positioning:
         // 1. Topline should be above the line (negative relative to line top)
-        assert!(topline < line_y, "Topline should be above line top for cursor positioning");
-        
+        assert!(
+            topline < line_y,
+            "Topline should be above line top for cursor positioning"
+        );
+
         // 2. Baseline should be within the line bounds
         assert!(baseline > line_y, "Baseline should be below line top");
-        assert!(baseline < line_y + line_height, "Baseline should be above line bottom");
-        
+        assert!(
+            baseline < line_y + line_height,
+            "Baseline should be above line bottom"
+        );
+
         // 3. The relationship between topline and baseline should be consistent
         let topline_to_baseline_distance = baseline - topline; // 14 - (-12) = 26
-        assert_eq!(topline_to_baseline_distance, ascent + padding_top + ascent, 
-                  "Distance from topline to baseline should be consistent");
-        
-        println!("✓ Topline to baseline distance: {}", topline_to_baseline_distance);
-    }
+        assert_eq!(
+            topline_to_baseline_distance,
+            ascent + padding_top + ascent,
+            "Distance from topline to baseline should be consistent"
+        );
 
-    #[test]
-    fn test_cursor_rect_rendering_position() {
-        // This test simulates actual line rendering and verifies cursor rect positioning
-        let line_height = 20.0;
-        let ascent = 12.0;
-        let descent = 4.0;
-        let char_width = 8.0;
-        
-        // Simulate line positioning calculations
-        let line_y = 0.0; // Top of first line
-        let padding_top = (line_height - ascent - descent) / 2.0; // 2.0
-        let baseline = line_y + padding_top + ascent; // 0 + 2 + 12 = 14.0
-        let py = line_y; // 0.0
-        
-        // Cursor positioning calculations (from TextRunStyle)
-        let topline = py; // Use py (line top) for cursor positioning
-        
-        println!("=== CURSOR RECT RENDERING POSITION TEST ===");
-        println!("Line bounds: y={}, height={}", line_y, line_height);
-        println!("Text baseline: {}", baseline);
-        println!("Cursor topline: {}", topline);
-        
-        // Test different cursor types and their expected positions
-        let cursor_tests = vec![
-            ("Block cursor", "SugarCursor::Block", topline, font_height),
-            ("Underline cursor", "SugarCursor::Underline", baseline + 1.0, 2.0),
-            ("Beam cursor", "SugarCursor::Beam", topline, font_height),
-        ];
-        
-        for (name, cursor_type, expected_y, expected_height) in cursor_tests {
-            println!("\n--- {} ({}) ---", name, cursor_type);
-            println!("Expected cursor rect: y={}, height={}", expected_y, expected_height);
-            
-            // Verify cursor rect is positioned correctly relative to line
-            match name {
-                "Block cursor" | "Beam cursor" => {
-                    // Block and beam cursors should span the full character height
-                    assert_eq!(expected_y, topline, "{}: Should start at topline", name);
-                    assert_eq!(expected_height, line_height, "{}: Should span full line height", name);
-                    
-                    // Verify the cursor rect encompasses the text area
-                    let cursor_bottom = expected_y + expected_height;
-                    let text_bottom = baseline + descent;
-                    assert!(cursor_bottom >= text_bottom, 
-                           "{}: Cursor bottom ({}) should be at or below text bottom ({})", 
-                           name, cursor_bottom, text_bottom);
-                    
-                    let text_top = baseline - ascent;
-                    assert!(expected_y <= text_top, 
-                           "{}: Cursor top ({}) should be at or above text top ({})", 
-                           name, expected_y, text_top);
-                }
-                "Underline cursor" => {
-                    // Underline cursor should be positioned just below the baseline
-                    assert!(expected_y > baseline, "{}: Should be below baseline", name);
-                    assert!(expected_y < baseline + descent, "{}: Should be within descent area", name);
-                    assert_eq!(expected_height, 2.0, "{}: Should have standard underline thickness", name);
-                }
-                _ => {}
-            }
-        }
-        
-        // Test multi-line cursor positioning
-        println!("\n=== MULTI-LINE CURSOR POSITIONING ===");
-        let lines = vec![
-            ("Line 0", 0.0),
-            ("Line 1", line_height),
-            ("Line 2", line_height * 2.0),
-        ];
-        
-        for (line_name, line_y) in lines {
-            let baseline = line_y + padding_top + ascent;
-            let py = line_y;
-            let topline = py; // Use py (line top) for cursor positioning
-            
-            // Block cursor positioning for this line
-            let cursor_y = topline;
-            let cursor_height = line_height;
-            
-            println!("{}: line_y={}, cursor_y={}, cursor_height={}", 
-                    line_name, line_y, cursor_y, cursor_height);
-            
-            // Verify cursor is positioned correctly for this line
-            assert!(cursor_y <= line_y, "{}: Cursor should start at or above line top", line_name);
-            assert!(cursor_y + cursor_height >= line_y + line_height, 
-                   "{}: Cursor should extend to or below line bottom", line_name);
-            
-            // Verify cursor encompasses the text baseline
-            assert!(cursor_y <= baseline, "{}: Cursor should start at or above baseline", line_name);
-            assert!(cursor_y + cursor_height >= baseline, "{}: Cursor should extend to or below baseline", line_name);
-        }
-    }
-
-    #[test]
-    fn test_actual_cursor_rect_calculation() {
-        // This test replicates the actual cursor rect calculation from the compositor
-        let line_height = 20.0;
-        let ascent = 12.0;
-        let descent = 4.0;
-        let char_width = 8.0;
-        
-        // Simulate the actual calculations from mod.rs
-        let line_y = 0.0;
-        let padding_top = (line_height - ascent - descent) / 2.0;
-        let baseline = line_y + padding_top + ascent;
-        let py = line_y;
-        
-        // TextRunStyle values that would be passed to compositor
-        let style_baseline = baseline;
-        let style_topline = py; // Use py (line top) for cursor positioning
-        let style_line_height = line_height;
-        
-        println!("=== ACTUAL CURSOR RECT CALCULATION TEST ===");
-        println!("Style values passed to compositor:");
-        println!("  baseline: {}", style_baseline);
-        println!("  topline: {}", style_topline);
-        println!("  line_height: {}", style_line_height);
-        
-        // Simulate cursor rect calculations (from compositor.rs)
-        let cursor_rects = vec![
-            ("Block", style_topline, style_line_height - 2.0), // Block cursor
-            ("Underline", style_baseline + 1.0, 2.0),          // Underline cursor
-        ];
-        
-        for (cursor_type, rect_y, rect_height) in cursor_rects {
-            println!("\n{} cursor rect: y={}, height={}", cursor_type, rect_y, rect_height);
-            
-            // Verify the cursor rect makes sense
-            match cursor_type {
-                "Block" => {
-                    // Block cursor should start at topline and span most of line height
-                    assert_eq!(rect_y, style_topline, "Block cursor should start at topline");
-                    assert_eq!(rect_height, style_line_height - 2.0, "Block cursor should span line height minus padding");
-                    
-                    // Verify it encompasses the text
-                    let text_top = style_baseline - ascent;
-                    let text_bottom = style_baseline + descent;
-                    assert!(rect_y <= text_top, "Block cursor should start at or above text top");
-                    assert!(rect_y + rect_height >= text_bottom, "Block cursor should extend to or below text bottom");
-                }
-                "Underline" => {
-                    // Underline cursor should be just below baseline
-                    assert_eq!(rect_y, style_baseline + 1.0, "Underline cursor should be 1px below baseline");
-                    assert_eq!(rect_height, 2.0, "Underline cursor should be 2px thick");
-                    
-                    // Verify it's positioned in the descent area
-                    assert!(rect_y > style_baseline, "Underline should be below baseline");
-                    assert!(rect_y + rect_height <= style_baseline + descent, "Underline should be within descent area");
-                }
-                _ => {}
-            }
-        }
-        
-        // Test the relationship between line bounds and cursor positioning
-        let line_top = line_y;
-        let line_bottom = line_y + line_height;
-        let block_cursor_y = cursor_top;
-        let block_cursor_bottom = block_cursor_y + font_height;
-        
-        // Key assertion: The cursor should be positioned relative to the text, not the line bounds
-        // The cursor should encompass the text area from ascent to descent
-        if block_cursor_y < line_top {
-            assert!(block_cursor_y < line_top, "Cursor should extend above line bounds for proper text coverage");
-        }
-        
-        // The cursor should encompass the baseline
-        assert!(block_cursor_y <= style_baseline, "Cursor should start at or above baseline");
-        assert!(block_cursor_bottom >= style_baseline, "Cursor should extend to or below baseline");
+        // println!(
+        //     "✓ Topline to baseline distance: {}",
+        //     topline_to_baseline_distance
+        // );
     }
 }

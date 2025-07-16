@@ -135,7 +135,7 @@ impl PositioningTestHelper {
         }
 
         PositioningData {
-            baseline, // Use the calculated baseline position
+            baseline,    // Use the calculated baseline position
             topline: py, // Use py (line top) for cursor positioning
             py,
             padding_y,
@@ -284,8 +284,8 @@ mod tests {
             );
         }
 
-        println!("Non-cached positioning: {:?}", non_cached);
-        println!("Cached positioning: {:?}", cached);
+        // println!("Non-cached positioning: {:?}", non_cached);
+        // println!("Cached positioning: {:?}", cached);
     }
 
     #[test]
@@ -348,14 +348,14 @@ mod tests {
                 cursor_type
             );
 
-            println!(
-                "Cursor {:?} - Non-cached: baseline={}, topline={}",
-                cursor_type, non_cached.baseline, non_cached.topline
-            );
-            println!(
-                "Cursor {:?} - Cached: baseline={}, topline={}",
-                cursor_type, cached.baseline, cached.topline
-            );
+            // println!(
+            //     "Cursor {:?} - Non-cached: baseline={}, topline={}",
+            //     cursor_type, non_cached.baseline, non_cached.topline
+            // );
+            // println!(
+            //     "Cursor {:?} - Cached: baseline={}, topline={}",
+            //     cursor_type, cached.baseline, cached.topline
+            // );
         }
     }
 
@@ -451,14 +451,14 @@ mod tests {
                 true,
             );
 
-            println!(
-                "Line height {}: padding_y={}, baseline={}, topline={}, py={}",
-                line_height,
-                non_cached.padding_y,
-                non_cached.baseline,
-                non_cached.topline,
-                non_cached.py
-            );
+            // println!(
+            //     "Line height {}: padding_y={}, baseline={}, topline={}, py={}",
+            //     line_height,
+            //     non_cached.padding_y,
+            //     non_cached.baseline,
+            //     non_cached.topline,
+            //     non_cached.py
+            // );
 
             assert_eq!(
                 non_cached.padding_y, cached.padding_y,
@@ -509,16 +509,16 @@ mod tests {
         // - Cursor block uses topline = baseline - ascent
         // - Cursor underline uses baseline + 1.0
 
-        if let Some((glyph_x, glyph_y)) = with_cursor.glyph_positions.first() {
-            println!("Glyph position: ({}, {})", glyph_x, glyph_y);
-            println!(
-                "Expected glyph y: py + padding_y = {} + {} = {}",
-                with_cursor.py,
-                with_cursor.padding_y,
-                with_cursor.py + with_cursor.padding_y
-            );
-            println!("Cursor topline (block): {}", with_cursor.topline);
-            println!("Cursor baseline (underline): {}", with_cursor.baseline);
+        if let Some((_glyph_x, glyph_y)) = with_cursor.glyph_positions.first() {
+            // println!("Glyph position: ({}, {})", glyph_x, glyph_y);
+            // println!(
+            //     "Expected glyph y: py + padding_y = {} + {} = {}",
+            //     with_cursor.py,
+            //     with_cursor.padding_y,
+            //     with_cursor.py + with_cursor.padding_y
+            // );
+            // println!("Cursor topline (block): {}", with_cursor.topline);
+            // println!("Cursor baseline (underline): {}", with_cursor.baseline);
 
             // Verify the glyph y calculation
             assert_eq!(
@@ -534,14 +534,14 @@ mod tests {
             let expected_glyph_baseline = glyph_y - with_cursor.padding_y; // This should be py
             let cursor_baseline_in_line_coords = with_cursor.baseline; // This should be py - descent
 
-            println!(
-                "Expected glyph baseline (line coords): {}",
-                expected_glyph_baseline
-            );
-            println!(
-                "Cursor baseline (line coords): {}",
-                cursor_baseline_in_line_coords
-            );
+            // println!(
+            //     "Expected glyph baseline (line coords): {}",
+            //     expected_glyph_baseline
+            // );
+            // println!(
+            //     "Cursor baseline (line coords): {}",
+            //     cursor_baseline_in_line_coords
+            // );
 
             // With the new coordinate system: cursor_baseline = glyph_baseline + padding_top + ascent
             let padding_top = (line_height - ascent - descent) / 2.0;
@@ -577,13 +577,11 @@ mod tests {
         let padding_top = (line_height - ascent - descent) / 2.0;
         let expected_baseline = result.py + padding_top + ascent;
         assert_eq!(
-            result.baseline,
-            expected_baseline,
+            result.baseline, expected_baseline,
             "baseline should equal py + padding_top + ascent"
         );
         assert_eq!(
-            result.topline,
-            result.py,
+            result.topline, result.py,
             "topline should be py (line top) for cursor positioning"
         );
 
@@ -636,8 +634,7 @@ mod tests {
                 cursor_type
             );
             assert_eq!(
-                result.topline,
-                result.py,
+                result.topline, result.py,
                 "topline should be py (line top) for cursor {:?}",
                 cursor_type
             );
@@ -837,8 +834,7 @@ mod tests {
             );
 
             assert_eq!(
-                result.topline,
-                result.py,
+                result.topline, result.py,
                 "INVARIANT: topline must equal py (line top) (line_height={})",
                 line_height
             );
@@ -884,7 +880,7 @@ mod tests {
         use crate::components::rich_text::text::TextRunStyle;
         use crate::components::rich_text::Rect;
         use crate::layout::FragmentStyleDecoration;
-        
+
         let compositor = Compositor::new();
         let font_size = 16.0;
         let line_height = 20.0;
@@ -892,7 +888,7 @@ mod tests {
         let strikeout_offset = 4.0; // Font-provided strikeout offset
         let ascent = 12.0;
         let descent = 4.0;
-        
+
         // Test with font-provided strikeout offset
         let style_with_offset = TextRunStyle {
             font_coords: &[],
@@ -916,42 +912,45 @@ mod tests {
             ascent,
             descent,
         };
-        
+
         let rect = Rect::new(0.0, 0.0, 100.0, line_height);
-        let underline = compositor.create_underline_from_decoration(&style_with_offset, &rect);
-        
+        let underline =
+            compositor.create_underline_from_decoration(&style_with_offset, &rect);
+
         if let Some(underline) = underline {
             // Should use font's strikeout offset (negated)
             assert_eq!(underline.offset, -strikeout_offset);
         } else {
             panic!("Expected strikethrough underline");
         }
-        
+
         // Test with x-height fallback (no font strikeout offset)
         let style_with_x_height = TextRunStyle {
             strikeout_offset: 0.0, // No font-provided offset
             x_height,
             ..style_with_offset
         };
-        
-        let underline = compositor.create_underline_from_decoration(&style_with_x_height, &rect);
-        
+
+        let underline =
+            compositor.create_underline_from_decoration(&style_with_x_height, &rect);
+
         if let Some(underline) = underline {
             // Should use half of x-height above baseline
             assert_eq!(underline.offset, -(x_height / 2.0));
         } else {
             panic!("Expected strikethrough underline");
         }
-        
+
         // Test with final fallback (no font offset or x-height)
         let style_fallback = TextRunStyle {
             strikeout_offset: 0.0,
             x_height: 0.0,
             ..style_with_offset
         };
-        
-        let underline = compositor.create_underline_from_decoration(&style_fallback, &rect);
-        
+
+        let underline =
+            compositor.create_underline_from_decoration(&style_fallback, &rect);
+
         if let Some(underline) = underline {
             // Should use approximate position
             assert_eq!(underline.offset, -(rect.height * 0.3));
@@ -963,22 +962,30 @@ mod tests {
     #[test]
     fn test_cursor_font_based_sizing() {
         // Test that cursor size is based on font metrics, not line height
-        let font_size = 16.0;
+        let _font_size = 16.0;
         let ascent = 12.0;
         let descent = 4.0;
         let font_height = ascent + descent; // 16.0
-        
+
         // Test with different line heights to ensure cursor size is independent
         let line_heights = [16.0, 20.0, 24.0, 32.0];
-        
+
         for line_height in line_heights {
             let baseline = 16.0;
             let cursor_top = baseline - ascent; // 16 - 12 = 4.0
-            
+
             // Verify cursor dimensions are based on font metrics
-            assert_eq!(font_height, ascent + descent, "Font height should equal ascent + descent");
-            assert_eq!(cursor_top, baseline - ascent, "Cursor top should be baseline - ascent");
-            
+            assert_eq!(
+                font_height,
+                ascent + descent,
+                "Font height should equal ascent + descent"
+            );
+            assert_eq!(
+                cursor_top,
+                baseline - ascent,
+                "Cursor top should be baseline - ascent"
+            );
+
             // Cursor should be smaller than line height for increased line spacing
             if line_height > font_height {
                 assert!(font_height < line_height, "Cursor should be smaller than line height when line spacing is increased");
@@ -988,53 +995,78 @@ mod tests {
 
     #[test]
     fn test_cursor_positioning_with_different_font_metrics() {
-        let font_size = 16.0;
-        let line_height = 24.0; // Larger than font size
+        let _font_size = 16.0;
+        let _line_height = 24.0; // Larger than font size
         let baseline = 20.0;
-        
+
         // Test different font metric combinations
         let font_metrics = [
-            ("Normal font", 12.0, 4.0),      // ascent=12, descent=4, total=16
-            ("Tall font", 14.0, 6.0),        // ascent=14, descent=6, total=20
-            ("Short font", 10.0, 2.0),       // ascent=10, descent=2, total=12
-            ("Deep descenders", 11.0, 8.0),  // ascent=11, descent=8, total=19
+            ("Normal font", 12.0, 4.0),     // ascent=12, descent=4, total=16
+            ("Tall font", 14.0, 6.0),       // ascent=14, descent=6, total=20
+            ("Short font", 10.0, 2.0),      // ascent=10, descent=2, total=12
+            ("Deep descenders", 11.0, 8.0), // ascent=11, descent=8, total=19
         ];
-        
+
         for (font_name, ascent, descent) in font_metrics {
             let font_height = ascent + descent;
             let cursor_top = baseline - ascent;
-            
+
             // Verify cursor positioning
-            assert_eq!(font_height, ascent + descent, "{}: Font height should equal ascent + descent", font_name);
-            assert_eq!(cursor_top, baseline - ascent, "{}: Cursor top should be baseline - ascent", font_name);
-            
+            assert_eq!(
+                font_height,
+                ascent + descent,
+                "{}: Font height should equal ascent + descent",
+                font_name
+            );
+            assert_eq!(
+                cursor_top,
+                baseline - ascent,
+                "{}: Cursor top should be baseline - ascent",
+                font_name
+            );
+
             // Cursor should start above baseline for fonts with ascent
             if ascent > 0.0 {
-                assert!(cursor_top < baseline, "{}: Cursor should start above baseline", font_name);
+                assert!(
+                    cursor_top < baseline,
+                    "{}: Cursor should start above baseline",
+                    font_name
+                );
             }
-            
+
             // Cursor should end below baseline for fonts with descent
             if descent > 0.0 {
-                assert!(cursor_top + font_height > baseline, "{}: Cursor should extend below baseline", font_name);
+                assert!(
+                    cursor_top + font_height > baseline,
+                    "{}: Cursor should extend below baseline",
+                    font_name
+                );
             }
         }
     }
 
     #[test]
     fn test_underline_cursor_positioning() {
-        let font_size = 16.0;
-        let line_height = 24.0;
+        let _font_size = 16.0;
+        let _line_height = 24.0;
         let baseline = 20.0;
-        let ascent = 12.0;
-        let descent = 4.0;
-        
+        let _ascent = 12.0;
+        let _descent = 4.0;
+
         // Underline cursor should be positioned at baseline + 1.0 with height 2.0
         let expected_underline_y = baseline + 1.0;
         let expected_underline_height = 2.0;
-        
+
         // Underline cursor positioning should be independent of font metrics
         // It should always be just below the baseline
-        assert_eq!(expected_underline_y, baseline + 1.0, "Underline cursor should be 1px below baseline");
-        assert_eq!(expected_underline_height, 2.0, "Underline cursor should be 2px tall");
+        assert_eq!(
+            expected_underline_y,
+            baseline + 1.0,
+            "Underline cursor should be 1px below baseline"
+        );
+        assert_eq!(
+            expected_underline_height, 2.0,
+            "Underline cursor should be 2px tall"
+        );
     }
 }
