@@ -1,7 +1,6 @@
 #![allow(clippy::uninlined_format_args)]
 
-use rustc_hash::FxHasher;
-use std::hash::{Hash, Hasher};
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 use tracing::debug;
 
@@ -85,15 +84,14 @@ pub enum TextDirection {
     RightToLeft,
 }
 
-/// High-performance unified text run cache using hash table with bucket chaining
+/// High-performance unified text run cache using FxHashMap
 /// Combines shaping cache, glyph cache, and vertex cache into a single efficient structure
 /// This replaces the previous separate line cache and shaping cache approach
 pub struct TextRunCache {
-    /// Hash table with bucket chaining (256 buckets, 8 items per bucket)
-    /// Each entry stores both hashes to avoid recomputation during fallback lookup
-    buckets: Vec<Vec<(u64, u64, TextRunKey, CachedTextRun)>>, // (hash_with_color, hash_without_color, key, run)
-    /// Total number of cached items
-    item_count: usize,
+    /// Primary cache with color information for vertex caching
+    cache_with_color: FxHashMap<TextRunKey, CachedTextRun>,
+    /// Secondary cache without color for shaping-only lookups
+    cache_without_color: FxHashMap<TextRunKey, CachedTextRun>,
     /// Cache hit/miss statistics
     hits: u64,
     misses: u64,
@@ -111,8 +109,14 @@ impl TextRunCache {
     /// Create a new unified text run cache
     pub fn new() -> Self {
         Self {
-            buckets: (0..256).map(|_| Vec::with_capacity(8)).collect::<Vec<_>>(),
-            item_count: 0,
+            cache_with_color: FxHashMap::with_capacity_and_hasher(
+                512,
+                Default::default(),
+            ),
+            cache_without_color: FxHashMap::with_capacity_and_hasher(
+                256,
+                Default::default(),
+            ),
             hits: 0,
             misses: 0,
             vertex_hits: 0,
@@ -126,61 +130,34 @@ impl TextRunCache {
     /// Get a cached text run with optional vertex data matching
     /// Returns different cache hit types based on what data is available
     pub fn get(&mut self, key: &TextRunKey) -> Option<CacheHitType> {
-        let hash_with_color = self.hash_key(key);
-        let bucket_index = (hash_with_color as usize) % 256;
-        let bucket = &self.buckets[bucket_index];
-
         // First try exact match (including color for vertex cache)
-        for (
-            stored_hash_with_color,
-            _stored_hash_without_color,
-            stored_key,
-            cached_run,
-        ) in bucket
-        {
-            if *stored_hash_with_color == hash_with_color && stored_key == key {
-                self.hits += 1;
+        if let Some(cached_run) = self.cache_with_color.get(key) {
+            self.hits += 1;
 
-                // Check what type of cache hit this is
-                if cached_run.vertices.is_some()
-                    && cached_run.cached_color.is_some()
-                    && key.color.is_some()
-                {
-                    self.vertex_hits += 1;
-                    return Some(CacheHitType::FullRender(cached_run));
-                } else if cached_run.shaping_features.is_some() {
-                    self.shaping_hits += 1;
-                    return Some(CacheHitType::ShapingOnly(cached_run));
-                } else {
-                    return Some(CacheHitType::GlyphsOnly(cached_run));
-                }
+            // Check what type of cache hit this is
+            if cached_run.vertices.is_some()
+                && cached_run.cached_color.is_some()
+                && key.color.is_some()
+            {
+                self.vertex_hits += 1;
+                return Some(CacheHitType::FullRender(cached_run));
+            } else if cached_run.shaping_features.is_some() {
+                self.shaping_hits += 1;
+                return Some(CacheHitType::ShapingOnly(cached_run));
+            } else {
+                return Some(CacheHitType::GlyphsOnly(cached_run));
             }
         }
 
         // Try partial match without color (for shaping cache hit)
         if key.color.is_some() {
-            let key_without_color = TextRunKey {
-                color: None,
-                ..key.clone()
-            };
-            let hash_without_color = self.hash_key(&key_without_color);
-            let bucket_index_without_color = (hash_without_color as usize) % 256;
-            let bucket_without_color = &self.buckets[bucket_index_without_color];
+            let mut key_without_color = key.clone();
+            key_without_color.color = None;
 
-            for (
-                _stored_hash_with_color,
-                stored_hash_without_color,
-                stored_key,
-                cached_run,
-            ) in bucket_without_color
-            {
-                if *stored_hash_without_color == hash_without_color
-                    && stored_key == &key_without_color
-                {
-                    self.hits += 1;
-                    self.shaping_hits += 1;
-                    return Some(CacheHitType::ShapingOnly(cached_run));
-                }
+            if let Some(cached_run) = self.cache_without_color.get(&key_without_color) {
+                self.hits += 1;
+                self.shaping_hits += 1;
+                return Some(CacheHitType::ShapingOnly(cached_run));
             }
         }
 
@@ -194,49 +171,25 @@ impl TextRunCache {
         let mut run_with_timestamp = run;
         run_with_timestamp.created_at = self.current_timestamp;
 
-        let hash_with_color = self.hash_key(&key);
+        // Insert into primary cache
+        self.cache_with_color
+            .insert(key.clone(), run_with_timestamp.clone());
 
-        // Pre-compute hash without color for faster fallback lookups
-        let key_without_color = TextRunKey {
-            color: None,
-            ..key.clone()
-        };
-        let hash_without_color = self.hash_key(&key_without_color);
-
-        let bucket_index = (hash_with_color as usize) % 256;
-        let bucket = &mut self.buckets[bucket_index];
-
-        // Check if key already exists and update
-        for (stored_hash_with_color, stored_hash_without_color, stored_key, cached_run) in
-            bucket.iter_mut()
-        {
-            if *stored_hash_with_color == hash_with_color && stored_key == &key {
-                *cached_run = run_with_timestamp;
-                // Update the hash_without_color in case it changed
-                *stored_hash_without_color = hash_without_color;
-                return;
-            }
+        // Also insert into secondary cache without color for shaping-only lookups
+        if key.color.is_some() {
+            let mut key_without_color = key;
+            key_without_color.color = None;
+            self.cache_without_color
+                .insert(key_without_color, run_with_timestamp);
         }
 
-        // Add new entry if bucket has space
-        if bucket.len() < 8 {
-            bucket.push((hash_with_color, hash_without_color, key, run_with_timestamp));
-            self.item_count += 1;
-        } else {
-            // Replace oldest entry (LRU eviction)
-            let oldest_index = bucket
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, (_, _, _, run))| run.created_at)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-
-            bucket[oldest_index] =
-                (hash_with_color, hash_without_color, key, run_with_timestamp);
+        // Perform cleanup if caches are getting too large
+        if self.cache_with_color.len() > MAX_TEXT_RUN_CACHE_SIZE * 2 {
+            self.cleanup();
         }
 
         // Log cache statistics periodically
-        if self.item_count % 100 == 0 {
+        if self.cache_with_color.len() % 100 == 0 {
             let hit_rate = if self.hits + self.misses > 0 {
                 (self.hits as f64) / ((self.hits + self.misses) as f64) * 100.0
             } else {
@@ -244,7 +197,7 @@ impl TextRunCache {
             };
             debug!(
                 "UnifiedTextRunCache: {} items, {:.1}% hit rate ({} hits, {} misses), vertex: {}/{}, shaping: {}/{}",
-                self.item_count, hit_rate, self.hits, self.misses,
+                self.cache_with_color.len(), hit_rate, self.hits, self.misses,
                 self.vertex_hits, self.vertex_misses, self.shaping_hits, self.shaping_misses
             );
         }
@@ -258,35 +211,21 @@ impl TextRunCache {
         base_position: (f32, f32),
         color: [f32; 4],
     ) -> bool {
-        let hash_with_color = self.hash_key(key);
-        let bucket_index = (hash_with_color as usize) % 256;
-        let bucket = &mut self.buckets[bucket_index];
-
-        for (
-            stored_hash_with_color,
-            _stored_hash_without_color,
-            stored_key,
-            cached_run,
-        ) in bucket.iter_mut()
-        {
-            if *stored_hash_with_color == hash_with_color && stored_key == key {
-                cached_run.vertices = Some(Arc::new(vertices));
-                cached_run.base_position = Some(base_position);
-                cached_run.cached_color = Some(color);
-                cached_run.created_at = self.current_timestamp;
-                self.current_timestamp += 1;
-                return true;
-            }
+        if let Some(cached_run) = self.cache_with_color.get_mut(key) {
+            cached_run.vertices = Some(Arc::new(vertices));
+            cached_run.base_position = Some(base_position);
+            cached_run.cached_color = Some(color);
+            cached_run.created_at = self.current_timestamp;
+            self.current_timestamp += 1;
+            return true;
         }
         false
     }
 
     /// Clear the cache (called when fonts change)
     pub fn clear(&mut self) {
-        for bucket in &mut self.buckets {
-            bucket.clear();
-        }
-        self.item_count = 0;
+        self.cache_with_color.clear();
+        self.cache_without_color.clear();
         self.current_timestamp = 0;
         debug!("UnifiedTextRunCache cleared due to font change");
     }
@@ -299,7 +238,7 @@ impl TextRunCache {
             0.0
         };
         (
-            self.item_count,
+            self.cache_with_color.len(),
             self.hits,
             self.misses,
             hit_rate,
@@ -310,16 +249,9 @@ impl TextRunCache {
         )
     }
 
-    /// Hash a text run key efficiently using FxHasher
-    fn hash_key(&self, key: &TextRunKey) -> u64 {
-        let mut hasher = FxHasher::default();
-        key.hash(&mut hasher);
-        hasher.finish()
-    }
-
     /// Check if cache is getting full and needs cleanup
     pub fn needs_cleanup(&self) -> bool {
-        self.item_count > MAX_TEXT_RUN_CACHE_SIZE * 2
+        self.cache_with_color.len() > MAX_TEXT_RUN_CACHE_SIZE * 2
     }
 
     /// Perform cache cleanup by removing least recently used entries
@@ -328,18 +260,43 @@ impl TextRunCache {
             return;
         }
 
+        // Collect entries sorted by timestamp (oldest first)
+        let mut entries_with_color: Vec<_> = self
+            .cache_with_color
+            .iter()
+            .map(|(key, run)| (key.clone(), run.created_at))
+            .collect();
+        entries_with_color.sort_by_key(|(_, timestamp)| *timestamp);
+
+        let mut entries_without_color: Vec<_> = self
+            .cache_without_color
+            .iter()
+            .map(|(key, run)| (key.clone(), run.created_at))
+            .collect();
+        entries_without_color.sort_by_key(|(_, timestamp)| *timestamp);
+
+        // Remove oldest entries from both caches
+        let target_size = MAX_TEXT_RUN_CACHE_SIZE;
         let mut removed = 0;
-        for bucket in &mut self.buckets {
-            if bucket.len() > 4 {
-                // Sort by timestamp and keep only the 4 most recent entries
-                bucket.sort_by_key(|(_, _, _, run)| std::cmp::Reverse(run.created_at));
-                let old_len = bucket.len();
-                bucket.truncate(4);
-                removed += old_len - 4;
-            }
+
+        // Remove oldest entries from cache_with_color
+        for (key, _) in entries_with_color
+            .iter()
+            .take(entries_with_color.len().saturating_sub(target_size))
+        {
+            self.cache_with_color.remove(key);
+            removed += 1;
         }
 
-        self.item_count -= removed;
+        // Remove oldest entries from cache_without_color
+        for (key, _) in entries_without_color
+            .iter()
+            .take(entries_without_color.len().saturating_sub(target_size / 2))
+        {
+            self.cache_without_color.remove(key);
+            removed += 1;
+        }
+
         debug!("UnifiedTextRunCache cleanup: removed {} entries", removed);
     }
 }
