@@ -539,6 +539,10 @@ impl<U: EventListener> Crosswords<U> {
         let previous_cursor =
             mem::replace(&mut self.damage.last_cursor, self.grid.cursor.pos);
 
+        let previous_vim_cursor = mem::replace(
+            &mut self.damage.last_vi_cursor_point,
+            Some(self.vi_mode_cursor.pos),
+        );
         if self.damage.full {
             return TermDamage::Full;
         }
@@ -549,6 +553,13 @@ impl<U: EventListener> Crosswords<U> {
             // Damage the entire line where the previous cursor was
             let previous_line = previous_cursor.row.0 as usize;
             self.damage.damage_line(previous_line);
+        }
+        if let (Some(prev_cursor), Some(curr_cursor)) =
+            (previous_vim_cursor, self.damage.last_vi_cursor_point)
+        {
+            if prev_cursor != curr_cursor {
+                self.damage.damage_line(prev_cursor.row.0 as usize);
+            }
         }
 
         // Always damage current cursor.
@@ -877,6 +888,12 @@ impl<U: EventListener> Crosswords<U> {
         self.damage_line(cursor_line);
     }
 
+    #[inline]
+    pub fn damage_vi_cursor_line(&mut self) {
+        let vi_cursor_line = self.vi_mode_cursor.pos.row.0 as usize;
+        self.damage.damage_line(vi_cursor_line);
+    }
+
     /// Damage an entire line
     #[inline]
     pub fn damage_line(&mut self, line: usize) {
@@ -887,6 +904,7 @@ impl<U: EventListener> Crosswords<U> {
     pub fn damage_cursor(&mut self) {
         // Use line-based damage approach for better reliability
         self.damage_cursor_line();
+        self.damage_vi_cursor_line();
     }
 
     #[inline]
