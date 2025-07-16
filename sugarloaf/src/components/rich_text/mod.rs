@@ -375,8 +375,15 @@ impl RichTextBrush {
 
     fn extract_font_metrics(
         lines: &[crate::layout::BuilderLine],
+        font_library: &FontLibrary,
+        primary_font_size: f32,
     ) -> Option<(f32, f32, f32, usize, f32)> {
-        // Extract the first run from a line that has at least one run
+        // Try to get metrics from primary font first
+        if let Some(primary_metrics) = Self::get_primary_font_metrics(font_library, primary_font_size) {
+            return Some(primary_metrics);
+        }
+
+        // Fallback to original logic if primary font is not available
         lines
             .iter()
             .filter(|line| !line.render_data.runs.is_empty())
@@ -391,6 +398,94 @@ impl RichTextBrush {
                     run.size,
                 )
             })
+    }
+
+    fn get_primary_font_metrics(
+        font_library: &FontLibrary,
+        font_size: f32,
+    ) -> Option<(f32, f32, f32, usize, f32)> {
+        use crate::font::FONT_ID_REGULAR;
+
+        let font_library_data = font_library.inner.read();
+        if let Some((shared_data, offset, key)) = font_library_data.get_data(&FONT_ID_REGULAR) {
+            let font_ref = crate::font_introspector::FontRef {
+                data: shared_data.as_ref(),
+                offset,
+                key,
+            };
+
+            // Get metrics using font introspector (only takes coords parameter)
+            let metrics = font_ref.metrics(&[]);
+            // Scale metrics by font size
+            let scale = font_size / metrics.units_per_em as f32;
+            Some((
+                (metrics.ascent * scale).round(),
+                (metrics.descent * scale).round(),
+                (metrics.leading * scale * 2.0).round(),
+                FONT_ID_REGULAR,
+                font_size,
+            ))
+        } else {
+            None
+        }
+    }
+
+    fn get_baseline_adjustment(
+        font_library: &FontLibrary,
+        font_id: usize,
+        font_size: f32,
+        primary_ascent: f32,
+        primary_descent: f32,
+        _primary_font_size: f32,
+    ) -> f32 {
+        use crate::font::FONT_ID_REGULAR;
+
+        // No adjustment needed for primary font
+        if font_id == FONT_ID_REGULAR {
+            return 0.0;
+        }
+
+        let font_library_data = font_library.inner.read();
+        if let Some((shared_data, offset, key)) = font_library_data.get_data(&font_id) {
+            let font_ref = crate::font_introspector::FontRef {
+                data: shared_data.as_ref(),
+                offset,
+                key,
+            };
+
+            // Get metrics for the current font
+            let metrics = font_ref.metrics(&[]);
+            let scale = font_size / metrics.units_per_em as f32;
+            let current_ascent = (metrics.ascent * scale).round();
+            let current_descent = (metrics.descent * scale).round();
+
+            // Calculate scaling ratios
+            let ascent_ratio = if primary_ascent != 0.0 {
+                current_ascent / primary_ascent
+            } else {
+                1.0
+            };
+            let descent_ratio = if primary_descent != 0.0 {
+                current_descent / primary_descent
+            } else {
+                1.0
+            };
+
+            // Use the larger ratio for scaling to ensure the font fits within primary font bounds
+            let scaling_factor = ascent_ratio.max(descent_ratio);
+
+            // Scale down the current font metrics if they exceed primary font metrics
+            let scaled_ascent = if scaling_factor > 1.0 {
+                current_ascent / scaling_factor
+            } else {
+                current_ascent
+            };
+
+            // Calculate adjustment to align baselines with scaled metrics
+            primary_ascent - scaled_ascent
+        } else {
+            0.0
+        }
     }
 
     #[inline]
@@ -435,7 +530,15 @@ impl RichTextBrush {
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
 
-        let font_metrics = Self::extract_font_metrics(lines_to_process);
+        // Determine primary font size from available runs or use default
+        let primary_font_size = lines_to_process
+            .iter()
+            .filter(|line| !line.render_data.runs.is_empty())
+            .map(|line| line.render_data.runs[0].size)
+            .next()
+            .unwrap_or(16.0); // Default font size if no runs available
+
+        let font_metrics = Self::extract_font_metrics(lines_to_process, font_library, primary_font_size);
         if let Some((
             ascent,
             descent,
@@ -501,6 +604,16 @@ impl RichTextBrush {
                     let char_width = run.span.width;
                     let run_x = px;
 
+                    // Calculate baseline adjustment for non-primary fonts
+                    let baseline_adjustment = Self::get_baseline_adjustment(
+                        font_library,
+                        font,
+                        run.size,
+                        ascent,
+                        descent,
+                        primary_font_size,
+                    );
+
                     // Extract text from the run for caching
                     let run_text = run
                         .glyphs
@@ -535,7 +648,7 @@ impl RichTextBrush {
                             TextRunManager::apply_cached_vertices(
                                 &vertices,
                                 base_position,
-                                (run_x, py + padding_y),
+                                (run_x, py + padding_y + baseline_adjustment),
                                 &mut vertex_output,
                             );
 
@@ -560,7 +673,7 @@ impl RichTextBrush {
                             glyphs.clear();
                             for shaped_glyph in cached_glyphs.iter() {
                                 let x = px;
-                                let y = py + padding_y;
+                                let y = py + padding_y + baseline_adjustment;
 
                                 if is_dimensions_only {
                                     px += shaped_glyph.x_advance * char_width;
@@ -631,7 +744,7 @@ impl RichTextBrush {
 
                             for glyph in &run.glyphs {
                                 let x = px;
-                                let y = py + padding_y;
+                                let y = py + padding_y + baseline_adjustment;
                                 let advance = glyph.simple_data().1;
 
                                 // Different advance calculation based on mode
