@@ -132,6 +132,7 @@ impl RenderData {
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
             advance,
         };
         self.runs.push(run_data);
@@ -195,6 +196,7 @@ impl RenderData {
             underline_offset: metrics.underline_offset,
             strikeout_offset: metrics.strikeout_offset,
             strikeout_size: metrics.stroke_size,
+            x_height: metrics.x_height,
             advance,
         };
         self.runs.push(run_data);

@@ -17,7 +17,7 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Default, Clone, Copy)]
 pub struct RunUnderline {
     pub enabled: bool,
-    pub offset: i32,
+    pub offset: f32,
     pub size: f32,
     pub color: [f32; 4],
     pub is_doubled: bool,
@@ -3805,7 +3805,7 @@ impl BatchManager {
             let ux = x;
             // Position underline below baseline by adding the calculated offset
             // This ensures proper underline placement in the descent area
-            let uy = baseline + underline.offset as f32;
+            let uy = baseline + underline.offset;
 
             let end = x + advance;
             if ux < end {

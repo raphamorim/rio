@@ -47,7 +47,9 @@ pub struct TextRunStyle<'a> {
     pub underline_offset: f32,
     pub strikeout_offset: f32,
     pub underline_thickness: f32,
-    /// Font descent for underline positioning
+    pub x_height: f32,
+    /// Font ascent and descent for cursor positioning
+    pub ascent: f32,
     pub descent: f32,
 }
 
