@@ -80,6 +80,24 @@ For a less declarative installation:
 nix profile install github:raphamorim/rio/main
 ```
 
+## Terminfo
+
+To ensure Rio works correctly, the "rio" terminfo must be installed. Most package managers will install this automatically, but you can verify it's present:
+
+```bash
+infocmp rio
+```
+
+If the command returns an error, install the terminfo manually:
+
+```bash
+curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
+sudo tic -xe rio rio.terminfo
+rm rio.terminfo
+```
+
+For more details, see the [Terminfo documentation](/docs/install/terminfo).
+
 ## Manual Pages
 
 After installing Rio, you can optionally install manual pages for offline documentation:
