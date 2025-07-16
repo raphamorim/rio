@@ -29,8 +29,6 @@ pub struct CachedTextRun {
     pub cached_color: Option<[f32; 4]>,
     /// Font size used for this cache entry
     pub font_size: f32,
-    /// Creation timestamp for LRU eviction
-    pub created_at: u64,
 }
 
 /// A shaped glyph with comprehensive positioning and rendering information
