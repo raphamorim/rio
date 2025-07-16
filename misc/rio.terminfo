@@ -1,5 +1,8 @@
-rio,
+xterm-rio,
     use=rio+base,
+
+rio,
+    use=xterm-rio,
     rs1=\Ec\E]104\007,
     ccc,
     colors#0x100, pairs#0x7FFF,
