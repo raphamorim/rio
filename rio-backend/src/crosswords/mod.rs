@@ -552,7 +552,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Always damage current cursor.
-        self.damage_cursor();
+        // self.damage_cursor();
 
         // NOTE: damage which changes all the content when the display offset is non-zero (e.g.
         // scrolling) is handled via full damage.
