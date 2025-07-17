@@ -236,12 +236,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let context_manager = route.window.screen.ctx_mut();
                         let grid = context_manager.current_grid_mut();
 
+                        let mut request_pending_redraw = false;
+
                         for (_key, grid_context) in grid.contexts().iter() {
-                            if let Some(terminal) =
+                            let ctx = grid_context.context();
+
+                            // In this case we know we have to render something that's pending.
+                            if ctx.renderable_content.has_pending_updates {
+                                request_pending_redraw = true;
+                                break;
+                            } else if let Some(terminal) =
                                 grid_context.context().terminal.try_lock_unfair()
                             {
                                 terminal.emit_damage_event();
                             }
+                        }
+
+                        if request_pending_redraw {
+                            route.request_redraw();
                         }
                     }
                 }
@@ -297,7 +309,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
-                            // Request immediate redraw for responsive UI
+                            route.window.screen.ctx_mut().current_mut().renderable_content.has_pending_updates = true;
                             route.request_redraw();
                         }
                     }
