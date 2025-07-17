@@ -57,7 +57,7 @@ pub struct TextRunKey {
     /// The text content
     pub text: String,
     /// Font family/style attributes
-    pub font_attrs: FontAttributes,
+    pub font_id: usize,
     /// Font size (as integer to avoid float precision issues)
     pub font_size_scaled: u32,
     /// Color (for vertex caching) - optional to allow shaping-only cache hits
@@ -254,19 +254,13 @@ impl Default for TextRunCache {
 #[allow(clippy::too_many_arguments)]
 pub fn create_text_run_key(
     text: &str,
-    font_weight: u16,
-    font_style: u8,
-    font_stretch: u8,
+    font_id: usize,
     font_size: f32,
     color: Option<[f32; 4]>,
 ) -> TextRunKey {
     TextRunKey {
         text: text.to_string(),
-        font_attrs: FontAttributes {
-            weight: font_weight,
-            style: font_style,
-            stretch: font_stretch,
-        },
+        font_id,
         // Scale font size to avoid float precision issues
         font_size_scaled: (font_size * 100.0) as u32,
         // Scale color to avoid float precision issues
@@ -284,16 +278,12 @@ pub fn create_text_run_key(
 /// Helper function to create a shaping-only key (without color)
 pub fn create_shaping_key(
     text: &str,
-    font_weight: u16,
-    font_style: u8,
-    font_stretch: u8,
+    font_id: usize,
     font_size: f32,
 ) -> TextRunKey {
     create_text_run_key(
         text,
-        font_weight,
-        font_style,
-        font_stretch,
+        font_id,
         font_size,
         None,
     )
@@ -336,9 +326,7 @@ mod tests {
 
         let key = create_text_run_key(
             "hello world",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
@@ -368,7 +356,7 @@ mod tests {
         let mut cache = TextRunCache::new();
 
         // Insert with shaping data only (no color)
-        let shaping_key = create_shaping_key("hello", 400, 0, 5, 12.0);
+        let shaping_key = create_shaping_key("hello", 400, 12.0);
 
         let run = create_cached_text_run(
             vec![],
@@ -386,9 +374,7 @@ mod tests {
         // Try to get with color - should hit shaping cache
         let render_key = create_text_run_key(
             "hello",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 0.0, 0.0, 1.0]),
         );
@@ -414,9 +400,7 @@ mod tests {
 
         let key = create_text_run_key(
             "test",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
@@ -454,9 +438,7 @@ mod tests {
         for i in 0..capacity + 1 {
             let key = create_text_run_key(
                 &format!("text{i}"),
-                400,
                 0,
-                5,
                 12.0,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
@@ -471,9 +453,7 @@ mod tests {
         // The first item should have been evicted
         let first_key = create_text_run_key(
             "text0",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
@@ -482,9 +462,7 @@ mod tests {
         // The last item should still be there
         let last_key = create_text_run_key(
             &format!("text{capacity}"),
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
@@ -499,9 +477,7 @@ mod tests {
         for i in 0..10 {
             let key = create_text_run_key(
                 &format!("text{i}"),
-                400,
                 0,
-                5,
                 12.0,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
@@ -524,9 +500,7 @@ mod tests {
 
         let key = create_text_run_key(
             "peek_test",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
@@ -551,9 +525,7 @@ mod tests {
         for i in 0..5 {
             let key = create_text_run_key(
                 &format!("util_test{i}"),
-                400,
                 0,
-                5,
                 12.0,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
@@ -575,9 +547,7 @@ mod tests {
 
         let key = create_text_run_key(
             "test",
-            400,
             0,
-            5,
             12.0,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
