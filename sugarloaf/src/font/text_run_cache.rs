@@ -105,10 +105,10 @@ impl TextRunCache {
     pub fn new() -> Self {
         Self {
             cache_with_color: LruCache::new(
-                NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE * 2).unwrap()
+                NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE * 2).unwrap(),
             ),
             cache_without_color: LruCache::new(
-                NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap()
+                NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap(),
             ),
             hits: 0,
             misses: 0,
@@ -526,7 +526,7 @@ mod tests {
         // Fill cache to capacity + 1 to trigger eviction
         for i in 0..capacity + 1 {
             let key = create_text_run_key(
-                &format!("text{}", i),
+                &format!("text{i}"),
                 400,
                 0,
                 5,
@@ -536,7 +536,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -558,7 +559,7 @@ mod tests {
 
         // The last item should still be there
         let last_key = create_text_run_key(
-            &format!("text{}", capacity),
+            &format!("text{capacity}"),
             400,
             0,
             5,
@@ -578,7 +579,7 @@ mod tests {
         // Fill cache
         for i in 0..10 {
             let key = create_text_run_key(
-                &format!("text{}", i),
+                &format!("text{i}"),
                 400,
                 0,
                 5,
@@ -588,7 +589,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -639,7 +641,7 @@ mod tests {
         // Add some items
         for i in 0..5 {
             let key = create_text_run_key(
-                &format!("util_test{}", i),
+                &format!("util_test{i}"),
                 400,
                 0,
                 5,
@@ -649,7 +651,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
