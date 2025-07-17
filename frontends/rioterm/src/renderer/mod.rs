@@ -4,8 +4,8 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
+use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
-use font_cache::FontCache;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
