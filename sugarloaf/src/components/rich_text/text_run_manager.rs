@@ -391,10 +391,6 @@ impl TextRunManager {
 
     /// Perform maintenance on the cache
     pub fn maintenance(&mut self) {
-        if self.unified_cache.needs_cleanup() {
-            self.unified_cache.cleanup();
-        }
-
         // Log statistics periodically
         if self.total_requests % 1000 == 0 && self.total_requests > 0 {
             let stats = self.stats();
@@ -408,7 +404,7 @@ impl TextRunManager {
 
     /// Check if cache needs cleanup
     pub fn needs_cleanup(&self) -> bool {
-        self.unified_cache.needs_cleanup()
+        false
     }
 }
 
