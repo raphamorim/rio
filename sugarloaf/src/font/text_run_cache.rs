@@ -85,15 +85,6 @@ pub struct TextRunCache {
     cache_with_color: LruCache<TextRunKey, CachedTextRun>,
     /// Secondary cache without color for shaping-only lookups
     cache_without_color: LruCache<TextRunKey, CachedTextRun>,
-    /// Cache hit/miss statistics
-    hits: u64,
-    misses: u64,
-    /// Vertex cache specific statistics
-    vertex_hits: u64,
-    vertex_misses: u64,
-    /// Shaping cache specific statistics
-    shaping_hits: u64,
-    shaping_misses: u64,
 }
 
 impl TextRunCache {
@@ -106,12 +97,6 @@ impl TextRunCache {
             cache_without_color: LruCache::new(
                 NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap(),
             ),
-            hits: 0,
-            misses: 0,
-            vertex_hits: 0,
-            vertex_misses: 0,
-            shaping_hits: 0,
-            shaping_misses: 0,
         }
     }
 
@@ -120,17 +105,13 @@ impl TextRunCache {
     pub fn get(&mut self, key: &TextRunKey) -> Option<CacheHitType> {
         // First try exact match (including color for vertex cache)
         if let Some(cached_run) = self.cache_with_color.get(key) {
-            self.hits += 1;
-
             // Check what type of cache hit this is
             if cached_run.vertices.is_some()
                 && cached_run.cached_color.is_some()
                 && key.color.is_some()
             {
-                self.vertex_hits += 1;
                 return Some(CacheHitType::FullRender(cached_run));
             } else if cached_run.shaping_features.is_some() {
-                self.shaping_hits += 1;
                 return Some(CacheHitType::ShapingOnly(cached_run));
             } else {
                 return Some(CacheHitType::GlyphsOnly(cached_run));
@@ -143,13 +124,10 @@ impl TextRunCache {
             key_without_color.color = None;
 
             if let Some(cached_run) = self.cache_without_color.get(&key_without_color) {
-                self.hits += 1;
-                self.shaping_hits += 1;
                 return Some(CacheHitType::ShapingOnly(cached_run));
             }
         }
 
-        self.misses += 1;
         None
     }
 
@@ -164,20 +142,6 @@ impl TextRunCache {
         let mut key_without_color = key;
         key_without_color.color = None;
         self.cache_without_color.put(key_without_color, run);
-
-        // Log cache statistics periodically
-        // if self.cache_with_color.len() % 100 == 0 {
-        //     let hit_rate = if self.hits + self.misses > 0 {
-        //         (self.hits as f64) / ((self.hits + self.misses) as f64) * 100.0
-        //     } else {
-        //         0.0
-        //     };
-        //     debug!(
-        //         "UnifiedTextRunCache: {} items, {:.1}% hit rate ({} hits, {} misses), vertex: {}/{}, shaping: {}/{}",
-        //         self.cache_with_color.len(), hit_rate, self.hits, self.misses,
-        //         self.vertex_hits, self.vertex_misses, self.shaping_hits, self.shaping_misses
-        //     );
-        // }
     }
 
     /// Insert or update vertex data for an existing text run
@@ -204,25 +168,6 @@ impl TextRunCache {
         debug!("UnifiedTextRunCache cleared due to font change");
     }
 
-    /// Get cache statistics
-    pub fn stats(&self) -> (usize, u64, u64, f64, u64, u64, u64, u64) {
-        let hit_rate = if self.hits + self.misses > 0 {
-            (self.hits as f64) / ((self.hits + self.misses) as f64) * 100.0
-        } else {
-            0.0
-        };
-        (
-            self.cache_with_color.len(),
-            self.hits,
-            self.misses,
-            hit_rate,
-            self.vertex_hits,
-            self.vertex_misses,
-            self.shaping_hits,
-            self.shaping_misses,
-        )
-    }
-
     /// Check if cache capacity is reached
     pub fn is_full(&self) -> bool {
         self.cache_with_color.len() >= self.cache_with_color.cap().get()
@@ -245,6 +190,16 @@ impl TextRunCache {
     /// Get the current capacity of the primary cache
     pub fn capacity(&self) -> usize {
         self.cache_with_color.cap().get()
+    }
+
+    /// Get the current length of the primary cache
+    pub fn len(&self) -> usize {
+        self.cache_with_color.len()
+    }
+
+    /// Check if the cache is empty
+    pub fn is_empty(&self) -> bool {
+        self.cache_with_color.is_empty()
     }
 
     /// Peek at an entry without updating LRU order
@@ -405,11 +360,7 @@ mod tests {
         // Test insert and hit
         cache.insert(key.clone(), run.clone());
         assert!(cache.get(&key).is_some());
-
-        let (items, hits, misses, _, _, _, _, _) = cache.stats();
-        assert_eq!(items, 1);
-        assert_eq!(hits, 1);
-        assert_eq!(misses, 1);
+        assert_eq!(cache.len(), 1);
     }
 
     #[test]
@@ -417,8 +368,7 @@ mod tests {
         let mut cache = TextRunCache::new();
 
         // Insert with shaping data only (no color)
-        let shaping_key =
-            create_shaping_key("hello", 400, 0, 5, 12.0);
+        let shaping_key = create_shaping_key("hello", 400, 0, 5, 12.0);
 
         let run = create_cached_text_run(
             vec![],
@@ -456,11 +406,6 @@ mod tests {
         } else {
             panic!("Expected cache hit");
         }
-
-        let (_, hits, misses, _, _, _, shaping_hits, _) = cache.stats();
-        assert_eq!(hits, 1);
-        assert_eq!(misses, 0); // No misses - insert doesn't count as miss
-        assert_eq!(shaping_hits, 1);
     }
 
     #[test]
@@ -516,13 +461,12 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
         // Cache should be at capacity (LRU evicted the oldest)
-        assert_eq!(cache.cache_with_color.len(), capacity);
+        assert_eq!(cache.len(), capacity);
 
         // The first item should have been evicted
         let first_key = create_text_run_key(
@@ -550,7 +494,6 @@ mod tests {
     #[test]
     fn test_cache_resize() {
         let mut cache = TextRunCache::new();
-        let _initial_capacity = cache.capacity();
 
         // Fill cache
         for i in 0..10 {
@@ -563,8 +506,7 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -573,7 +515,7 @@ mod tests {
         cache.resize(new_capacity);
 
         assert_eq!(cache.capacity(), new_capacity);
-        assert!(cache.cache_with_color.len() <= new_capacity);
+        assert!(cache.len() <= new_capacity);
     }
 
     #[test]
@@ -592,16 +534,11 @@ mod tests {
         let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
         cache.insert(key.clone(), run);
 
-        // Peek shouldn't affect statistics
-        let initial_stats = cache.stats();
+        // Test that peek works
         assert!(cache.peek(&key).is_some());
-        let after_peek_stats = cache.stats();
-        assert_eq!(initial_stats, after_peek_stats);
 
-        // But get should affect statistics
+        // Test that get also works
         assert!(cache.get(&key).is_some());
-        let after_get_stats = cache.stats();
-        assert_ne!(initial_stats, after_get_stats);
     }
 
     #[test]
@@ -621,13 +558,38 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
         let utilization = cache.utilization();
         assert!(utilization > 0.0);
         assert!(utilization <= 1.0);
+    }
+
+    #[test]
+    fn test_cache_empty_and_clear() {
+        let mut cache = TextRunCache::new();
+
+        assert!(cache.is_empty());
+
+        let key = create_text_run_key(
+            "test",
+            400,
+            0,
+            5,
+            12.0,
+            Some([1.0, 1.0, 1.0, 1.0]),
+        );
+
+        let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+        cache.insert(key, run);
+
+        assert!(!cache.is_empty());
+        assert_eq!(cache.len(), 1);
+
+        cache.clear();
+        assert!(cache.is_empty());
+        assert_eq!(cache.len(), 0);
     }
 }
