@@ -34,44 +34,31 @@ impl TextRunManager {
         font_size: f32,
         color: Option<[f32; 4]>,
     ) -> CacheResult {
-        let key = create_text_run_key(
-            text,
-            font_id,
-            font_size,
-            color,
-        );
+        let key = create_text_run_key(text, font_id, font_size, color);
 
         match self.unified_cache.get(&key) {
-            Some(CacheHitType::FullRender(cached_run)) => {
-                CacheResult::FullRender {
-                    glyphs: cached_run.glyphs.clone(),
-                    vertices: cached_run.vertices.clone().unwrap(),
-                    base_position: cached_run.base_position.unwrap(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            Some(CacheHitType::ShapingOnly(cached_run)) => {
-                CacheResult::ShapingOnly {
-                    glyphs: cached_run.glyphs.clone(),
-                    shaping_features: cached_run.shaping_features.clone(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            Some(CacheHitType::GlyphsOnly(cached_run)) => {
-                CacheResult::GlyphsOnly {
-                    glyphs: cached_run.glyphs.clone(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            None => {
-                CacheResult::Miss
-            }
+            Some(CacheHitType::FullRender(cached_run)) => CacheResult::FullRender {
+                glyphs: cached_run.glyphs.clone(),
+                vertices: cached_run.vertices.clone().unwrap(),
+                base_position: cached_run.base_position.unwrap(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            Some(CacheHitType::ShapingOnly(cached_run)) => CacheResult::ShapingOnly {
+                glyphs: cached_run.glyphs.clone(),
+                shaping_features: cached_run.shaping_features.clone(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            Some(CacheHitType::GlyphsOnly(cached_run)) => CacheResult::GlyphsOnly {
+                glyphs: cached_run.glyphs.clone(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            None => CacheResult::Miss,
         }
     }
 
@@ -86,11 +73,7 @@ impl TextRunManager {
         has_emoji: bool,
         shaping_features: Option<Vec<u8>>,
     ) {
-        let key = create_shaping_key(
-            text,
-            font_id,
-            font_size,
-        );
+        let key = create_shaping_key(text, font_id, font_size);
 
         let cached_run = create_cached_text_run(
             glyphs,
@@ -220,7 +203,7 @@ mod tests {
         // Position: (10.0, 20.0, 0.0)
         vertices.extend_from_slice(&10.0f32.to_le_bytes()); // x
         vertices.extend_from_slice(&20.0f32.to_le_bytes()); // y
-        vertices.extend_from_slice(&0.0f32.to_le_bytes());  // z
+        vertices.extend_from_slice(&0.0f32.to_le_bytes()); // z
 
         // Color: (1.0, 0.5, 0.0, 1.0)
         vertices.extend_from_slice(&1.0f32.to_le_bytes());
@@ -250,18 +233,48 @@ mod tests {
         assert_eq!(output_vertices.len(), 44);
 
         // Check adjusted position
-        let x = f32::from_le_bytes([output_vertices[0], output_vertices[1], output_vertices[2], output_vertices[3]]);
-        let y = f32::from_le_bytes([output_vertices[4], output_vertices[5], output_vertices[6], output_vertices[7]]);
-        let z = f32::from_le_bytes([output_vertices[8], output_vertices[9], output_vertices[10], output_vertices[11]]);
+        let x = f32::from_le_bytes([
+            output_vertices[0],
+            output_vertices[1],
+            output_vertices[2],
+            output_vertices[3],
+        ]);
+        let y = f32::from_le_bytes([
+            output_vertices[4],
+            output_vertices[5],
+            output_vertices[6],
+            output_vertices[7],
+        ]);
+        let z = f32::from_le_bytes([
+            output_vertices[8],
+            output_vertices[9],
+            output_vertices[10],
+            output_vertices[11],
+        ]);
 
         assert_eq!(x, 60.0);
         assert_eq!(y, 70.0);
         assert_eq!(z, 0.0);
 
         // Check that color, uv, and layers are unchanged
-        let color_r = f32::from_le_bytes([output_vertices[12], output_vertices[13], output_vertices[14], output_vertices[15]]);
-        let uv_u = f32::from_le_bytes([output_vertices[28], output_vertices[29], output_vertices[30], output_vertices[31]]);
-        let layer_0 = i32::from_le_bytes([output_vertices[36], output_vertices[37], output_vertices[38], output_vertices[39]]);
+        let color_r = f32::from_le_bytes([
+            output_vertices[12],
+            output_vertices[13],
+            output_vertices[14],
+            output_vertices[15],
+        ]);
+        let uv_u = f32::from_le_bytes([
+            output_vertices[28],
+            output_vertices[29],
+            output_vertices[30],
+            output_vertices[31],
+        ]);
+        let layer_0 = i32::from_le_bytes([
+            output_vertices[36],
+            output_vertices[37],
+            output_vertices[38],
+            output_vertices[39],
+        ]);
 
         assert_eq!(color_r, 1.0);
         assert_eq!(uv_u, 0.5);
