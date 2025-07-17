@@ -9,6 +9,10 @@ language: 'en'
 
 - TBD.
 
+## 0.2.22
+
+- Fix some regressions introduced by 0.2.21.
+
 ## 0.2.21
 
 - Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
