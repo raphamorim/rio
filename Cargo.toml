@@ -91,3 +91,4 @@ panic = "abort"             # reduces binary size by ~50% in combination with -Z
 split-debuginfo = "unpacked"
 lto = false
 incremental = true
+opt-level = 0
