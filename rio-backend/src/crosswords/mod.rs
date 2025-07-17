@@ -885,8 +885,15 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn damage_cursor(&mut self) {
-        // Use line-based damage approach for better reliability
         self.damage_cursor_line();
+
+        self.event_proxy.send_event(
+            RioEvent::TerminalDamaged {
+                route_id: self.route_id,
+                damage: TerminalDamage::CursorOnly,
+            },
+            self.window_id,
+        );
     }
 
     #[inline]
