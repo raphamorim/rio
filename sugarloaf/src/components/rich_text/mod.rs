@@ -321,9 +321,6 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
-
-        // Performance monitoring
-        self.text_run_manager.maintenance();
     }
 
     #[inline]
@@ -333,10 +330,6 @@ impl RichTextBrush {
         render_data: &crate::layout::BuilderLine,
         graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
-        // Every dimension request will lead to clear text run cache if needed
-        if self.text_run_manager.needs_cleanup() {
-            self.text_run_manager.maintenance();
-        }
         self.comp.begin();
 
         let lines = vec![render_data.clone()];

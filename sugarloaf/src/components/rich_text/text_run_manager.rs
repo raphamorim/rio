@@ -7,33 +7,21 @@
 
 use crate::font::text_run_cache::{
     create_cached_text_run, create_shaping_key, create_text_run_key, CacheHitType,
-    ShapedGlyph, TextDirection, TextRunCache,
+    ShapedGlyph, TextRunCache,
 };
 use std::sync::Arc;
 use tracing::debug;
 
 /// Unified text run manager that handles shaping, glyph, and vertex caching
-/// This replaces the previous separate TextRunManager and line cache approach
 pub struct TextRunManager {
     /// Unified cache for text runs (shaping + glyphs + vertices)
     unified_cache: TextRunCache,
-    /// Statistics
-    total_requests: u64,
-    full_render_hits: u64,
-    shaping_hits: u64,
-    glyph_hits: u64,
-    cache_misses: u64,
 }
 
 impl TextRunManager {
     pub fn new() -> Self {
         Self {
             unified_cache: TextRunCache::new(),
-            total_requests: 0,
-            full_render_hits: 0,
-            shaping_hits: 0,
-            glyph_hits: 0,
-            cache_misses: 0,
         }
     }
 
@@ -49,22 +37,17 @@ impl TextRunManager {
         font_stretch: u8,
         color: Option<[f32; 4]>,
     ) -> CacheResult {
-        self.total_requests += 1;
-
         let key = create_text_run_key(
             text,
             font_weight,
             font_style,
             font_stretch,
             font_size,
-            0, // script
-            TextDirection::LeftToRight,
             color,
         );
 
         match self.unified_cache.get(&key) {
             Some(CacheHitType::FullRender(cached_run)) => {
-                self.full_render_hits += 1;
                 CacheResult::FullRender {
                     glyphs: cached_run.glyphs.clone(),
                     vertices: cached_run.vertices.clone().unwrap(),
@@ -75,7 +58,6 @@ impl TextRunManager {
                 }
             }
             Some(CacheHitType::ShapingOnly(cached_run)) => {
-                self.shaping_hits += 1;
                 CacheResult::ShapingOnly {
                     glyphs: cached_run.glyphs.clone(),
                     shaping_features: cached_run.shaping_features.clone(),
@@ -85,7 +67,6 @@ impl TextRunManager {
                 }
             }
             Some(CacheHitType::GlyphsOnly(cached_run)) => {
-                self.glyph_hits += 1;
                 CacheResult::GlyphsOnly {
                     glyphs: cached_run.glyphs.clone(),
                     advance_width: cached_run.advance_width,
@@ -94,7 +75,6 @@ impl TextRunManager {
                 }
             }
             None => {
-                self.cache_misses += 1;
                 CacheResult::Miss
             }
         }
@@ -120,8 +100,6 @@ impl TextRunManager {
             font_style,
             font_stretch,
             font_size,
-            0, // script
-            TextDirection::LeftToRight,
         );
 
         let cached_run = create_cached_text_run(
@@ -163,59 +141,11 @@ impl TextRunManager {
         self.unified_cache.clear();
         debug!("TextRunManager: Cleared unified cache due to font change");
     }
-
-    /// Get comprehensive cache statistics
-    pub fn stats(&self) -> TextRunManagerStats {
-        let (
-            items,
-            total_hits,
-            total_misses,
-            hit_rate,
-            vertex_hits,
-            vertex_misses,
-            shaping_hits,
-            shaping_misses,
-        ) = self.unified_cache.stats();
-
-        TextRunManagerStats {
-            total_requests: self.total_requests,
-            cache_items: items,
-            total_hits,
-            total_misses,
-            overall_hit_rate: hit_rate,
-            full_render_hits: self.full_render_hits,
-            shaping_hits: self.shaping_hits,
-            glyph_hits: self.glyph_hits,
-            cache_misses: self.cache_misses,
-            vertex_cache_hits: vertex_hits,
-            vertex_cache_misses: vertex_misses,
-            shaping_cache_hits: shaping_hits,
-            shaping_cache_misses: shaping_misses,
-        }
-    }
-
-    /// Perform maintenance on the cache
-    pub fn maintenance(&mut self) {
-        // Log statistics periodically
-        if self.total_requests % 1000 == 0 && self.total_requests > 0 {
-            let stats = self.stats();
-            debug!(
-                "UnifiedTextRunManager stats: {:.1}% hit rate ({} requests), Full: {}, Shaping: {}, Glyphs: {}, Miss: {}, {} items",
-                stats.overall_hit_rate, stats.total_requests, stats.full_render_hits,
-                stats.shaping_hits, stats.glyph_hits, stats.cache_misses, stats.cache_items
-            );
-        }
-    }
-
-    /// Check if cache needs cleanup
-    pub fn needs_cleanup(&self) -> bool {
-        false
-    }
 }
 
 /// Result of a cache lookup - indicates what level of cached data is available
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(unused)]
 pub enum CacheResult {
     /// Full render data available (glyphs + vertices + shaping)
     FullRender {

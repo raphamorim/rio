@@ -60,10 +60,6 @@ pub struct TextRunKey {
     pub font_attrs: FontAttributes,
     /// Font size (as integer to avoid float precision issues)
     pub font_size_scaled: u32,
-    /// Script/language for shaping
-    pub script: u32,
-    /// Text direction
-    pub direction: TextDirection,
     /// Color (for vertex caching) - optional to allow shaping-only cache hits
     pub color: Option<[u32; 4]>, // Scaled to avoid float precision issues
 }
@@ -307,8 +303,6 @@ pub fn create_text_run_key(
     font_style: u8,
     font_stretch: u8,
     font_size: f32,
-    script: u32,
-    direction: TextDirection,
     color: Option<[f32; 4]>,
 ) -> TextRunKey {
     TextRunKey {
@@ -320,8 +314,6 @@ pub fn create_text_run_key(
         },
         // Scale font size to avoid float precision issues
         font_size_scaled: (font_size * 100.0) as u32,
-        script,
-        direction,
         // Scale color to avoid float precision issues
         color: color.map(|c| {
             [
@@ -341,8 +333,6 @@ pub fn create_shaping_key(
     font_style: u8,
     font_stretch: u8,
     font_size: f32,
-    script: u32,
-    direction: TextDirection,
 ) -> TextRunKey {
     create_text_run_key(
         text,
@@ -350,8 +340,6 @@ pub fn create_shaping_key(
         font_style,
         font_stretch,
         font_size,
-        script,
-        direction,
         None,
     )
 }
@@ -397,8 +385,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
 
@@ -432,7 +418,7 @@ mod tests {
 
         // Insert with shaping data only (no color)
         let shaping_key =
-            create_shaping_key("hello", 400, 0, 5, 12.0, 0, TextDirection::LeftToRight);
+            create_shaping_key("hello", 400, 0, 5, 12.0);
 
         let run = create_cached_text_run(
             vec![],
@@ -454,8 +440,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 0.0, 0.0, 1.0]),
         );
 
@@ -489,8 +473,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
 
@@ -531,8 +513,6 @@ mod tests {
                 0,
                 5,
                 12.0,
-                0,
-                TextDirection::LeftToRight,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
@@ -551,8 +531,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
         assert!(cache.get(&first_key).is_none());
@@ -564,8 +542,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
         assert!(cache.get(&last_key).is_some());
@@ -584,8 +560,6 @@ mod tests {
                 0,
                 5,
                 12.0,
-                0,
-                TextDirection::LeftToRight,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
@@ -612,8 +586,6 @@ mod tests {
             0,
             5,
             12.0,
-            0,
-            TextDirection::LeftToRight,
             Some([1.0, 1.0, 1.0, 1.0]),
         );
 
@@ -646,8 +618,6 @@ mod tests {
                 0,
                 5,
                 12.0,
-                0,
-                TextDirection::LeftToRight,
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
