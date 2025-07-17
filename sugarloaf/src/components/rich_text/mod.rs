@@ -336,6 +336,7 @@ impl RichTextBrush {
         self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
+    #[inline]
     fn extract_font_metrics(
         lines: &[crate::layout::BuilderLine],
     ) -> Option<(f32, f32, f32, usize, f32)> {

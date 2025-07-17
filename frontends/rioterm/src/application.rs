@@ -236,37 +236,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let context_manager = route.window.screen.ctx_mut();
                         let grid = context_manager.current_grid_mut();
 
-                        // Check for damage and trigger appropriate damage events
-                        let mut has_damage = false;
                         for (_key, grid_context) in grid.contexts().iter() {
-                            if let Some(mut terminal) =
+                            if let Some(terminal) =
                                 grid_context.context().terminal.try_lock_unfair()
                             {
-                                if terminal.is_fully_damaged() {
-                                    has_damage = true;
-                                    break;
-                                } else {
-                                    // Check for partial damage
-                                    if let rio_backend::crosswords::TermDamage::Partial(
-                                        _,
-                                    ) = terminal.damage()
-                                    {
-                                        has_damage = true;
-                                        break;
-                                    }
-                                }
+                                terminal.emit_damage_event();
                             }
-                        }
-
-                        // If we found damage, emit a TerminalDamaged event
-                        if has_damage {
-                            self.event_proxy.send_event(
-                                RioEventType::Rio(RioEvent::TerminalDamaged {
-                                    route_id,
-                                    damage: rio_backend::event::TerminalDamage::Full, // Simplified for now
-                                }),
-                                window_id,
-                            );
                         }
                     }
                 }

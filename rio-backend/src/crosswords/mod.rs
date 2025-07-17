@@ -561,7 +561,8 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Emit damage event based on current damage state
-    pub fn emit_damage_event(&self, display_offset: usize) {
+    pub fn emit_damage_event(&self) {
+        let display_offset = self.grid.display_offset();
         let damage = if self.damage.full {
             TerminalDamage::Full
         } else {
