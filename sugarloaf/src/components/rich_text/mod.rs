@@ -5,12 +5,10 @@ mod image_cache;
 mod positioning_tests;
 pub mod text;
 mod text_run_manager;
-mod vertex_pool;
 
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
-use crate::components::rich_text::vertex_pool::VertexPool;
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -52,7 +50,6 @@ pub struct RichTextBrush {
     images: ImageCache,
     glyphs: GlyphCache,
     text_run_manager: TextRunManager,
-    vertex_pool: VertexPool,
 }
 
 impl RichTextBrush {
@@ -269,7 +266,6 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
-            vertex_pool: VertexPool::new(),
         }
     }
 
@@ -289,13 +285,6 @@ impl RichTextBrush {
             5,   // Normal stretch
             default_color,
         );
-    }
-
-    /// Get vertex pool statistics for performance monitoring
-    pub fn vertex_pool_stats(
-        &self,
-    ) -> Option<crate::components::rich_text::vertex_pool::VertexPoolStats> {
-        self.vertex_pool.stats()
     }
 
     #[inline]
@@ -353,7 +342,6 @@ impl RichTextBrush {
 
         // Performance monitoring
         self.text_run_manager.maintenance();
-        self.vertex_pool.maybe_log_stats();
     }
 
     #[inline]
