@@ -269,24 +269,6 @@ impl RichTextBrush {
         }
     }
 
-    /// Warm the text run cache with common terminal patterns
-    /// This should be called during initialization to improve cache hit rates
-    pub fn warm_cache(&mut self, _font_library: &FontLibrary) {
-        // Use the default font ID (0) which is always available
-        let font_id = 0; // FONT_ID_REGULAR
-        let font_size = 14.0; // Default terminal font size
-        let default_color = [1.0, 1.0, 1.0, 1.0]; // White text
-
-        self.text_run_manager.warm_cache(
-            font_id,
-            font_size,
-            400, // Normal weight
-            0,   // Normal style
-            5,   // Normal stretch
-            default_color,
-        );
-    }
-
     #[inline]
     pub fn prepare(
         &mut self,
