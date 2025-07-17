@@ -309,7 +309,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
-                            route.window.screen.ctx_mut().current_mut().renderable_content.has_pending_updates = true;
+                            route
+                                .window
+                                .screen
+                                .ctx_mut()
+                                .current_mut()
+                                .renderable_content
+                                .has_pending_updates = true;
                             route.request_redraw();
                         }
                     }

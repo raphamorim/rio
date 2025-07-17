@@ -276,17 +276,8 @@ pub fn create_text_run_key(
 }
 
 /// Helper function to create a shaping-only key (without color)
-pub fn create_shaping_key(
-    text: &str,
-    font_id: usize,
-    font_size: f32,
-) -> TextRunKey {
-    create_text_run_key(
-        text,
-        font_id,
-        font_size,
-        None,
-    )
+pub fn create_shaping_key(text: &str, font_id: usize, font_size: f32) -> TextRunKey {
+    create_text_run_key(text, font_id, font_size, None)
 }
 
 /// Helper function to create a cached text run with comprehensive data
@@ -324,12 +315,7 @@ mod tests {
     fn test_unified_text_run_cache_basic() {
         let mut cache = TextRunCache::new();
 
-        let key = create_text_run_key(
-            "hello world",
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let key = create_text_run_key("hello world", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
 
         let run = create_cached_text_run(
             vec![],
@@ -372,12 +358,8 @@ mod tests {
         cache.insert(shaping_key, run);
 
         // Try to get with color - should hit shaping cache
-        let render_key = create_text_run_key(
-            "hello",
-            0,
-            12.0,
-            Some([1.0, 0.0, 0.0, 1.0]),
-        );
+        let render_key =
+            create_text_run_key("hello", 0, 12.0, Some([1.0, 0.0, 0.0, 1.0]));
 
         if let Some(hit_type) = cache.get(&render_key) {
             match hit_type {
@@ -398,12 +380,7 @@ mod tests {
     fn test_vertex_cache_update() {
         let mut cache = TextRunCache::new();
 
-        let key = create_text_run_key(
-            "test",
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let key = create_text_run_key("test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
 
         let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
 
@@ -443,7 +420,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -451,12 +429,7 @@ mod tests {
         assert_eq!(cache.len(), capacity);
 
         // The first item should have been evicted
-        let first_key = create_text_run_key(
-            "text0",
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let first_key = create_text_run_key("text0", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
         assert!(cache.get(&first_key).is_none());
 
         // The last item should still be there
@@ -482,7 +455,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -498,12 +472,7 @@ mod tests {
     fn test_peek_functionality() {
         let mut cache = TextRunCache::new();
 
-        let key = create_text_run_key(
-            "peek_test",
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let key = create_text_run_key("peek_test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
 
         let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
         cache.insert(key.clone(), run);
@@ -530,7 +499,8 @@ mod tests {
                 Some([1.0, 1.0, 1.0, 1.0]),
             );
 
-            let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let run =
+                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
             cache.insert(key, run);
         }
 
@@ -545,12 +515,7 @@ mod tests {
 
         assert!(cache.is_empty());
 
-        let key = create_text_run_key(
-            "test",
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let key = create_text_run_key("test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
 
         let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
         cache.insert(key, run);
