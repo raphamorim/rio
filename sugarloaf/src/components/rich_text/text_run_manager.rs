@@ -151,7 +151,6 @@ impl TextRunManager {
         debug!("Applied cached vertices with offset ({}, {})", dx, dy);
     }
 
-
     /// Clear all caches (called when fonts change)
     pub fn clear_all(&mut self) {
         self.unified_cache.clear();
