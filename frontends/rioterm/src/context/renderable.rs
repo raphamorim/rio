@@ -1,3 +1,4 @@
+use rio_backend::event::TerminalDamage;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::selection::SelectionRange;
@@ -21,7 +22,7 @@ pub struct RenderableContent {
     pub hyperlink_range: Option<SelectionRange>,
     pub last_typing: Option<Instant>,
     pub last_blink_toggle: Option<Instant>,
-    pub has_pending_updates: bool,
+    pub has_pending_updates: Option<TerminalDamage>,
 }
 
 impl RenderableContent {
@@ -33,7 +34,7 @@ impl RenderableContent {
             hyperlink_range: None,
             last_typing: None,
             last_blink_toggle: None,
-            has_pending_updates: false,
+            has_pending_updates: None,
             is_blinking_cursor_visible: false,
         }
     }
