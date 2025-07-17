@@ -752,7 +752,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        // let start = std::time::Instant::now();
+        let start = std::time::Instant::now();
 
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
@@ -797,10 +797,11 @@ impl Renderer {
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
             let force_full_damage = has_active_changed
-                || context.renderable_content.has_pending_updates
                 || is_active && hints.is_some();
 
             let mut specific_lines = None;
+            let duration = start.elapsed();
+            println!("Time elapsed in before lock is: {:?}", duration);
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let result = (
@@ -833,7 +834,7 @@ impl Renderer {
                         let capacity =
                             lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
                         let mut own_lines =
-                            std::collections::HashSet::with_capacity(capacity);
+                            std::collections::HashSet::with_capacity(capacity + 1);
                         for line in lines {
                             own_lines.insert(line.line);
                         }
@@ -846,19 +847,21 @@ impl Renderer {
                 terminal.reset_damage();
                 result
             };
+            let duration = start.elapsed();
+            println!("Time elapsed in after lock is: {:?}", duration);
 
             // If the last line is bigger than the actual visible rows, then some resize
             // has happened. In this case, request full draw.
-            if let Some(ref lines) = specific_lines {
-                if let Some(max_value) = lines.iter().max() {
-                    if max_value > &(visible_rows.len() - 1) {
-                        specific_lines = None;
-                    }
-                }
-            }
+            // if let Some(ref lines) = specific_lines {
+            //     if let Some(max_value) = lines.iter().max() {
+            //         if max_value > &(visible_rows.len() - 1) {
+            //             specific_lines = None;
+            //         }
+            //     }
+            // }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes-antes is: {:?}", duration);
+            let duration = start.elapsed();
+            println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible =
@@ -921,9 +924,7 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
-
             match specific_lines {
                 None => {
                     // let start = std::time::Instant::now();
@@ -946,8 +947,11 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    let duration = start.elapsed();
+                    println!(
+                        "Time elapsed in -renderer.TermDamage::Full is: {:?}",
+                        duration
+                    );
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -961,7 +965,7 @@ impl Renderer {
                                 visible_row,
                                 has_cursor,
                                 Some(line),
-                                Line(line as i32),
+                                Line((line as i32) - display_offset as i32),
                                 &context.renderable_content,
                                 hints,
                                 focused_match,
@@ -970,7 +974,13 @@ impl Renderer {
                             );
                         }
                     }
-                }
+
+                    let duration = start.elapsed();
+                    println!(
+                        "Time elapsed in -renderer.TermDamage::Lines is: {:?}",
+                        duration
+                    );
+                },
             };
         }
 
@@ -1014,12 +1024,22 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed before extend_with_grid_objects is: {:?}",
+            duration
+        );
         context_manager.extend_with_grid_objects(&mut objects);
+        let duration = start.elapsed();
+        println!(
+            "Time elapsed after extend_with_grid_objects is: {:?}",
+            duration
+        );
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
-        // let duration = start.elapsed();
-        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
+        let duration = start.elapsed();
+        println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
 }

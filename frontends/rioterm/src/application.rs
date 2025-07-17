@@ -242,7 +242,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             let ctx = grid_context.context();
 
                             // In this case we know we have to render something that's pending.
-                            if ctx.renderable_content.has_pending_updates {
+                            if ctx.renderable_content.has_pending_updates.is_some() {
                                 request_pending_redraw = true;
                                 break;
                             } else if let Some(terminal) =
@@ -315,7 +315,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .ctx_mut()
                                 .current_mut()
                                 .renderable_content
-                                .has_pending_updates = true;
+                                .has_pending_updates = Some(damage);
                             route.request_redraw();
                         }
                     }
