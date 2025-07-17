@@ -51,9 +51,6 @@ impl PositioningTestHelper {
         drawable_char: Option<DrawableChar>,
         use_cache: bool,
     ) -> PositioningData {
-        let font_weight = 400u16;
-        let font_style = 0u8;
-        let font_stretch = 5u8;
         let char_width = 1.0f32;
 
         // Simulate the line positioning calculations from mod.rs
@@ -81,9 +78,6 @@ impl PositioningTestHelper {
                 text,
                 font_id,
                 font_size,
-                font_weight,
-                font_style,
-                font_stretch,
                 Some([1.0, 1.0, 1.0, 1.0]), // white color
             );
 
@@ -186,9 +180,6 @@ impl PositioningTestHelper {
             text,
             0,    // font_id
             12.0, // font_size
-            400,  // font_weight
-            0,    // font_style
-            5,    // font_stretch
             shaped_glyphs,
             false, // has_emoji
             None,  // shaping_features
