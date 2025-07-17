@@ -356,7 +356,7 @@ mod tests {
         let mut cache = TextRunCache::new();
 
         // Insert with shaping data only (no color)
-        let shaping_key = create_shaping_key("hello", 400, 12.0);
+        let shaping_key = create_shaping_key("hello", 0, 12.0);
 
         let run = create_cached_text_run(
             vec![],
