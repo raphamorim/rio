@@ -478,9 +478,6 @@ impl RichTextBrush {
                             &run_text,
                             font,
                             run.size,
-                            400, // font_weight - would need to be extracted from font
-                            0,   // font_style - would need to be extracted from font
-                            5,   // font_stretch - would need to be extracted from font
                             Some(run.span.color),
                         )
                     } else {
@@ -636,9 +633,6 @@ impl RichTextBrush {
                                     &run_text,
                                     font,
                                     run.size,
-                                    400, // font_weight
-                                    0,   // font_style
-                                    5,   // font_stretch
                                     shaped_glyphs,
                                     false, // has_emoji - would need to be detected
                                     None, // shaping_features - would need actual shaping data

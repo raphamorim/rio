@@ -30,18 +30,13 @@ impl TextRunManager {
     pub fn get_cached_data(
         &mut self,
         text: &str,
-        _font_id: usize,
+        font_id: usize,
         font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
         color: Option<[f32; 4]>,
     ) -> CacheResult {
         let key = create_text_run_key(
             text,
-            font_weight,
-            font_style,
-            font_stretch,
+            font_id,
             font_size,
             color,
         );
@@ -87,18 +82,13 @@ impl TextRunManager {
         text: &str,
         font_id: usize,
         font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
         glyphs: Vec<ShapedGlyph>,
         has_emoji: bool,
         shaping_features: Option<Vec<u8>>,
     ) {
         let key = create_shaping_key(
             text,
-            font_weight,
-            font_style,
-            font_stretch,
+            font_id,
             font_size,
         );
 
@@ -216,31 +206,6 @@ pub enum CacheResult {
     },
     /// No cached data available
     Miss,
-}
-
-/// Comprehensive statistics for the unified text run manager
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct TextRunManagerStats {
-    pub total_requests: u64,
-    pub cache_items: usize,
-    pub total_hits: u64,
-    pub total_misses: u64,
-    pub overall_hit_rate: f64,
-    pub full_render_hits: u64,
-    pub shaping_hits: u64,
-    pub glyph_hits: u64,
-    pub cache_misses: u64,
-    pub vertex_cache_hits: u64,
-    pub vertex_cache_misses: u64,
-    pub shaping_cache_hits: u64,
-    pub shaping_cache_misses: u64,
-}
-
-impl Default for TextRunManager {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 #[cfg(test)]
