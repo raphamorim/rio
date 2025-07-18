@@ -2221,7 +2221,10 @@ impl Screen<'_> {
 
         // let screen_render_duration = screen_render_start.elapsed();
         // if self.renderer.enable_performance_logging {
-        // tracing::debug!("[PERF] Screen render() total: {:?}", screen_render_duration);
+        // println!(
+        //     "[PERF] Screen render() total: {:?}\n",
+        //     screen_render_duration
+        // );
         // }
     }
 
