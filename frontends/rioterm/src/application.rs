@@ -134,14 +134,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
         );
 
-        // Schedule title updates every 1s
+        // Schedule title updates every 2s
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
         if !self.scheduler.scheduled(timer_id) {
             self.scheduler.schedule(
                 EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
                     rio_window::window::WindowId::dummy()
                 }),
-                Duration::from_secs(1),
+                Duration::from_secs(2),
                 true,
                 timer_id,
             );
