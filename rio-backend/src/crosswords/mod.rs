@@ -596,6 +596,34 @@ impl<U: EventListener> Crosswords<U> {
         );
     }
 
+    /// Peek damage event based on current damage state
+    pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
+        let display_offset = self.grid.display_offset();
+        if self.damage.full {
+            Some(TerminalDamage::Full)
+        } else {
+            // Collect damaged lines
+            let damaged_lines: Vec<LineDamage> = self
+                .damage
+                .lines
+                .iter()
+                .filter(|line| line.is_damaged())
+                .map(|line| LineDamage::new(line.line + display_offset, true))
+                .collect();
+
+            if damaged_lines.is_empty() {
+                // Check if cursor moved
+                if self.damage.last_cursor != self.grid.cursor.pos {
+                    Some(TerminalDamage::CursorOnly)
+                } else {
+                    None // No damage to emit
+                }
+            } else {
+                Some(TerminalDamage::Partial(damaged_lines))
+            }
+        }
+    }
+
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();

@@ -47,6 +47,7 @@ url = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.13.0"
 slotmap = { workspace = true }
+smallvec = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }

@@ -74,8 +74,7 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
         self.renderable_content.hyperlink_range = hyperlink_range;
-        self.renderable_content.has_pending_updates =
-            Some(rio_backend::event::TerminalDamage::Full);
+        self.renderable_content.pending_updates.push_full_snapshot(&self.terminal);
     }
 
     #[inline]

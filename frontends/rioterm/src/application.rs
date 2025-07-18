@@ -1,3 +1,4 @@
+use crate::context::renderable::create_snapshot;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
@@ -242,10 +243,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             let ctx = grid_context.context();
 
                             // In this case we know we have to render something that's pending.
-                            if ctx.renderable_content.has_pending_updates.is_some() {
+                            if ctx.renderable_content.pending_updates.has() {
                                 request_pending_redraw = true;
-                                break;
-                            } else if let Some(terminal) =
+                            }
+
+                            if let Some(terminal) =
                                 grid_context.context().terminal.try_lock_unfair()
                             {
                                 terminal.emit_damage_event();
@@ -253,7 +255,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if request_pending_redraw {
+                            #[cfg(target_os = "macos")]
                             route.request_redraw();
+
+                            // TODO: Windows and Linux should use the frame scheduler
+                            // On MacOS is differently because it will only mark the window
+                            // as should render on next frame.
                         }
                     }
                 }
@@ -309,13 +316,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
+                            let snapshot = create_snapshot(&route.window.screen.ctx().current().terminal, damage);
                             route
                                 .window
                                 .screen
                                 .ctx_mut()
                                 .current_mut()
                                 .renderable_content
-                                .has_pending_updates = Some(damage);
+                                .pending_updates.push_snapshot(snapshot);
                             route.request_redraw();
                         }
                     }
@@ -1291,6 +1299,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // let duration = start.elapsed();
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
+
+                if route.window.screen.ctx().current().renderable_content.pending_updates.has() {
+                    route.request_redraw();
+                }
 
                 if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
