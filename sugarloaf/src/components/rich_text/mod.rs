@@ -731,6 +731,10 @@ impl RichTextBrush {
             }
         }
 
+        // let screen_render_duration = start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
+
         // Return dimensions if in dimensions mode
         if is_dimensions_only {
             if dimensions.height > 0.0 && dimensions.width > 0.0 {
@@ -763,6 +767,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
+        // let start = std::time::Instant::now();
         // There's nothing to render
         if self.vertices.is_empty() {
             return;
@@ -825,9 +830,10 @@ impl RichTextBrush {
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        // Use draw instead of draw_indexed
         let vertex_count = self.vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in rich_text::render is: {:?}", duration);
     }
 }
 
