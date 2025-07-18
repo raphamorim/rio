@@ -12,7 +12,7 @@ This page documents the default key bindings for Rio terminal emulator. Key bind
 
 Key bindings use the following syntax in the configuration file:
 
-```toml
+```
 [[bindings.keys]]
 key = "<key>"
 with = "<modifiers>"
@@ -102,8 +102,6 @@ Multiple modifiers can be combined with "|", for example: "ctrl|shift".
 
 *Ctrl+Shift+Space*
 	Toggle Vi mode for keyboard navigation.
-
-### Vi Mode Navigation
 
 *h*, *j*, *k*, *l*
 	Move cursor left, down, up, right.
@@ -199,7 +197,7 @@ Multiple modifiers can be combined with "|", for example: "ctrl|shift".
 
 Key bindings can be customized by adding entries to the *[bindings]* section in the configuration file:
 
-```toml
+```
 [[bindings.keys]]
 key = "q"
 with = "super"
