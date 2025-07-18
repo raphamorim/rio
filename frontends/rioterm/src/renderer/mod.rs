@@ -796,11 +796,11 @@ impl Renderer {
             // let duration = start.elapsed();
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
-            let force_full_damage = has_active_changed
-                || context.renderable_content.has_pending_updates
-                || is_active && hints.is_some();
+            let force_full_damage = has_active_changed || is_active && hints.is_some();
 
             let mut specific_lines = None;
+            // let duration = start.elapsed();
+            // println!("Time elapsed in before lock is: {:?}", duration);
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let result = (
@@ -833,7 +833,7 @@ impl Renderer {
                         let capacity =
                             lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
                         let mut own_lines =
-                            std::collections::HashSet::with_capacity(capacity);
+                            std::collections::HashSet::with_capacity(capacity + 1);
                         for line in lines {
                             own_lines.insert(line.line);
                         }
@@ -857,8 +857,6 @@ impl Renderer {
                 }
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible =
@@ -921,9 +919,7 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
-
             match specific_lines {
                 None => {
                     // let start = std::time::Instant::now();
@@ -947,7 +943,10 @@ impl Renderer {
                     }
                     content.build();
                     // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    // println!(
+                    //     "Time elapsed in -renderer.TermDamage::Full is: {:?}",
+                    //     duration
+                    // );
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -961,7 +960,7 @@ impl Renderer {
                                 visible_row,
                                 has_cursor,
                                 Some(line),
-                                Line(line as i32),
+                                Line((line as i32) - display_offset as i32),
                                 &context.renderable_content,
                                 hints,
                                 focused_match,
@@ -970,6 +969,12 @@ impl Renderer {
                             );
                         }
                     }
+
+                    // let duration = start.elapsed();
+                    // println!(
+                    //     "Time elapsed in -renderer.TermDamage::Lines is: {:?}",
+                    //     duration
+                    // );
                 }
             };
         }
@@ -1014,7 +1019,17 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed before extend_with_grid_objects is: {:?}",
+        //     duration
+        // );
         context_manager.extend_with_grid_objects(&mut objects);
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed after extend_with_grid_objects is: {:?}",
+        //     duration
+        // );
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
