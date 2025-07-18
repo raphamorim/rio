@@ -1,6 +1,6 @@
-use rio_backend::event::TerminalDamage;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::pos::CursorState;
+use rio_backend::event::TerminalDamage;
 use rio_backend::selection::SelectionRange;
 use std::time::Instant;
 
