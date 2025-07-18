@@ -177,8 +177,7 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let caret_rect =
-                            Rect::new(rect.x, cursor_top, 2.0, font_height);
+                        let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::Underline(cursor_color) => {
@@ -276,8 +275,7 @@ impl Compositor {
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let caret_rect =
-                            Rect::new(rect.x, cursor_top, 2.0, font_height);
+                        let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
                         self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::Underline(cursor_color) => {

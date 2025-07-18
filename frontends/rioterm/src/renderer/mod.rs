@@ -752,7 +752,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
@@ -796,12 +796,11 @@ impl Renderer {
             // let duration = start.elapsed();
             // println!("Time elapsed in antes is: {:?}", duration);
             // let renderable_content = context.renderable_content();
-            let force_full_damage = has_active_changed
-                || is_active && hints.is_some();
+            let force_full_damage = has_active_changed || is_active && hints.is_some();
 
             let mut specific_lines = None;
-            let duration = start.elapsed();
-            println!("Time elapsed in before lock is: {:?}", duration);
+            // let duration = start.elapsed();
+            // println!("Time elapsed in before lock is: {:?}", duration);
             let (colors, display_offset, blinking_cursor, visible_rows) = {
                 let mut terminal = context.terminal.lock();
                 let result = (
@@ -847,21 +846,17 @@ impl Renderer {
                 terminal.reset_damage();
                 result
             };
-            let duration = start.elapsed();
-            println!("Time elapsed in after lock is: {:?}", duration);
 
             // If the last line is bigger than the actual visible rows, then some resize
             // has happened. In this case, request full draw.
-            // if let Some(ref lines) = specific_lines {
-            //     if let Some(max_value) = lines.iter().max() {
-            //         if max_value > &(visible_rows.len() - 1) {
-            //             specific_lines = None;
-            //         }
-            //     }
-            // }
+            if let Some(ref lines) = specific_lines {
+                if let Some(max_value) = lines.iter().max() {
+                    if max_value > &(visible_rows.len() - 1) {
+                        specific_lines = None;
+                    }
+                }
+            }
 
-            let duration = start.elapsed();
-            println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible =
@@ -947,11 +942,11 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    let duration = start.elapsed();
-                    println!(
-                        "Time elapsed in -renderer.TermDamage::Full is: {:?}",
-                        duration
-                    );
+                    // let duration = start.elapsed();
+                    // println!(
+                    //     "Time elapsed in -renderer.TermDamage::Full is: {:?}",
+                    //     duration
+                    // );
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -975,12 +970,12 @@ impl Renderer {
                         }
                     }
 
-                    let duration = start.elapsed();
-                    println!(
-                        "Time elapsed in -renderer.TermDamage::Lines is: {:?}",
-                        duration
-                    );
-                },
+                    // let duration = start.elapsed();
+                    // println!(
+                    //     "Time elapsed in -renderer.TermDamage::Lines is: {:?}",
+                    //     duration
+                    // );
+                }
             };
         }
 
@@ -1024,22 +1019,22 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed before extend_with_grid_objects is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed before extend_with_grid_objects is: {:?}",
+        //     duration
+        // );
         context_manager.extend_with_grid_objects(&mut objects);
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed after extend_with_grid_objects is: {:?}",
-            duration
-        );
+        // let duration = start.elapsed();
+        // println!(
+        //     "Time elapsed after extend_with_grid_objects is: {:?}",
+        //     duration
+        // );
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
-        let duration = start.elapsed();
-        println!("Time elapsed in -renderer.update() is: {:?}", duration);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
     }
 }
