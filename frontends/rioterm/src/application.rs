@@ -297,19 +297,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 // Skip rendering if no actual damage
                                 return;
                             }
-
-                            // For cursor-only damage, we can be more selective
-                            if matches!(
-                                damage,
-                                rio_backend::event::TerminalDamage::CursorOnly
-                            ) {
-                                // Only render cursor changes if cursor is visible or blinking
-                                let cursor_state = terminal.cursor();
-                                if !cursor_state.is_visible() {
-                                    return;
-                                }
-                            }
-                            drop(terminal); // Release lock before requesting redraw
+                            drop(terminal);
 
                             // Clear the one-time render flag if it was set
                             if route.window.needs_render_after_occlusion {

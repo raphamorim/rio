@@ -916,13 +916,13 @@ impl<U: EventListener> Crosswords<U> {
     pub fn damage_cursor(&mut self) {
         self.damage_cursor_line();
 
-        self.event_proxy.send_event(
-            RioEvent::TerminalDamaged {
-                route_id: self.route_id,
-                damage: TerminalDamage::CursorOnly,
-            },
-            self.window_id,
-        );
+        // self.event_proxy.send_event(
+        //     RioEvent::TerminalDamaged {
+        //         route_id: self.route_id,
+        //         damage: TerminalDamage::CursorOnly(self.grid.cursor.pos.line, None),
+        //     },
+        //     self.window_id,
+        // );
     }
 
     #[inline]
@@ -933,13 +933,13 @@ impl<U: EventListener> Crosswords<U> {
             // Use line-based damage for cursor blinking
             self.damage_cursor_line();
 
-            self.event_proxy.send_event(
-                RioEvent::TerminalDamaged {
-                    route_id: self.route_id,
-                    damage: TerminalDamage::CursorOnly,
-                },
-                self.window_id,
-            );
+            // self.event_proxy.send_event(
+            //     RioEvent::TerminalDamaged {
+            //         route_id: self.route_id,
+            //         damage: TerminalDamage::CursorOnly,
+            //     },
+            //     self.window_id,
+            // );
         }
     }
 

@@ -77,6 +77,7 @@ pub struct TerminalSnapshot {
 
 pub fn create_snapshot<U: rio_backend::event::EventListener>(terminal: &FairMutex<Crosswords<U>>, damage: TerminalDamage) -> TerminalSnapshot {
     let mut terminal = terminal.lock();
+    println!("create_snapshot {:?}", damage);
     let result = TerminalSnapshot {
         colors: terminal.colors,
         display_offset: terminal.display_offset(),

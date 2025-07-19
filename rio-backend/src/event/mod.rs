@@ -259,16 +259,16 @@ pub trait OnResize {
 }
 
 /// Event emitter trait for terminal components
-pub trait TerminalEventEmitter {
-    /// Emit a terminal damage event
-    fn emit_damage(&self, route_id: usize, damage: TerminalDamage);
+// pub trait TerminalEventEmitter {
+//     /// Emit a terminal damage event
+//     fn emit_damage(&self, route_id: usize, damage: TerminalDamage);
 
-    /// Emit a cursor change event
-    fn emit_cursor_change(&self, route_id: usize);
+//     /// Emit a cursor change event
+//     fn emit_cursor_change(&self, route_id: usize);
 
-    /// Emit a full redraw event
-    fn emit_full_redraw(&self, route_id: usize);
-}
+//     /// Emit a full redraw event
+//     fn emit_full_redraw(&self, route_id: usize);
+// }
 
 /// Event Loop for notifying the renderer about terminal events.
 pub trait EventListener {
@@ -323,27 +323,27 @@ impl EventListener for EventProxy {
     }
 }
 
-impl TerminalEventEmitter for EventProxy {
-    fn emit_damage(&self, route_id: usize, damage: TerminalDamage) {
-        // For now, we'll send to the first available window
-        // In a real implementation, you'd need to map route_id to window_id
-        let _window_id = WindowId::from(0); // This needs proper mapping
-        self.send_event(
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }),
-            _window_id,
-        );
-    }
+// impl TerminalEventEmitter for EventProxy {
+//     fn emit_damage(&self, route_id: usize, damage: TerminalDamage) {
+//         // For now, we'll send to the first available window
+//         // In a real implementation, you'd need to map route_id to window_id
+//         let _window_id = WindowId::from(0); // This needs proper mapping
+//         self.send_event(
+//             RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }),
+//             _window_id,
+//         );
+//     }
 
-    fn emit_cursor_change(&self, route_id: usize) {
-        let _window_id = WindowId::from(0); // This needs proper mapping
-        self.emit_damage(route_id, TerminalDamage::CursorOnly);
-    }
+//     fn emit_cursor_change(&self, route_id: usize) {
+//         let _window_id = WindowId::from(0); // This needs proper mapping
+//         self.emit_damage(route_id, TerminalDamage::CursorOnly);
+//     }
 
-    fn emit_full_redraw(&self, route_id: usize) {
-        let _window_id = WindowId::from(0); // This needs proper mapping
-        self.emit_damage(route_id, TerminalDamage::Full);
-    }
-}
+//     fn emit_full_redraw(&self, route_id: usize) {
+//         let _window_id = WindowId::from(0); // This needs proper mapping
+//         self.emit_damage(route_id, TerminalDamage::Full);
+//     }
+// }
 
 /// Regex search state.
 pub struct SearchState {
