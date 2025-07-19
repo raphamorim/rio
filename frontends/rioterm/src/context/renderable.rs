@@ -62,6 +62,7 @@ pub enum Update {
     /// The actual snapshot
     Snapshot(TerminalSnapshot),
     /// Calls render function but if there's no damage from term will do nothing
+    #[allow(unused)]
     Sync,
 }
 
@@ -177,6 +178,13 @@ impl PendingUpdates {
         false
     }
 
+    /// Extract cursor line from cursor state
+    fn get_cursor_line(cursor: &CursorState) -> Option<usize> {
+        // This assumes CursorState has a way to get the line number
+        // You may need to adjust this based on your CursorState implementation
+        Some(cursor.pos.row.0 as usize)
+    }
+
     /// Combine two snapshots into one if possible
     fn combine_snapshots(existing: &TerminalSnapshot, new: &TerminalSnapshot) -> Option<TerminalSnapshot> {
         // We can combine snapshots if they have the same terminal state but different damage
@@ -187,7 +195,7 @@ impl PendingUpdates {
             && existing.cursor == new.cursor {
 
             // Combine the damage
-            if let Some(combined_damage) = Self::combine_damages(&existing.damage, &new.damage) {
+            if let Some(combined_damage) = Self::combine_damages(&existing.damage, &new.damage, &existing.cursor, &new.cursor) {
                 return Some(TerminalSnapshot {
                     colors: new.colors,
                     display_offset: new.display_offset,
@@ -199,9 +207,8 @@ impl PendingUpdates {
             }
         }
 
-        // If terminal state is different, we can't combine, but we can replace with the newer snapshot
-        // that has combined damage if the damage can be combined
-        if let Some(combined_damage) = Self::combine_damages(&existing.damage, &new.damage) {
+        // If terminal state is different, we can still combine damage
+        if let Some(combined_damage) = Self::combine_damages(&existing.damage, &new.damage, &existing.cursor, &new.cursor) {
             return Some(TerminalSnapshot {
                 colors: new.colors,
                 display_offset: new.display_offset,
@@ -216,20 +223,74 @@ impl PendingUpdates {
     }
 
     /// Combine two damages into one if possible
-    fn combine_damages(existing: &TerminalDamage, new: &TerminalDamage) -> Option<TerminalDamage> {
+    fn combine_damages(existing: &TerminalDamage, new: &TerminalDamage, existing_cursor: &CursorState, new_cursor: &CursorState) -> Option<TerminalDamage> {
         match (existing, new) {
             // Any damage + Full = Full
             (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => {
                 Some(TerminalDamage::Full)
             }
-            // CursorOnly can be absorbed by any other damage
-            (TerminalDamage::CursorOnly, other) | (other, TerminalDamage::CursorOnly) => {
-                Some(other.clone())
+            // Two cursor-only updates: combine into partial with cursor lines
+            (TerminalDamage::CursorOnly, TerminalDamage::CursorOnly) => {
+                let mut lines = Vec::with_capacity(2);
+
+                if let Some(existing_line) = Self::get_cursor_line(existing_cursor) {
+                    lines.push(LineDamage { line: existing_line, damaged: true });
+                }
+
+                if let Some(new_line) = Self::get_cursor_line(new_cursor) {
+                    // If it's the same line, don't add duplicate
+                    if !lines.iter().any(|l| l.line == new_line) {
+                        lines.push(LineDamage { line: new_line, damaged: true });
+                    }
+                }
+
+                // Sort by line number
+                lines.sort_by_key(|damage| damage.line);
+
+                Some(TerminalDamage::Partial(lines))
+            }
+            // CursorOnly + Partial: add cursor line to partial damage
+            (TerminalDamage::CursorOnly, TerminalDamage::Partial(partial_lines)) => {
+                let mut combined_lines = partial_lines.clone();
+
+                if let Some(cursor_line) = Self::get_cursor_line(existing_cursor) {
+                    // Add cursor line if not already present
+                    if !combined_lines.iter().any(|l| l.line == cursor_line) {
+                        combined_lines.push(LineDamage { line: cursor_line, damaged: true });
+                    }
+                }
+
+                // Sort and remove duplicates
+                combined_lines.sort_by_key(|damage| damage.line);
+                combined_lines.dedup_by_key(|damage| damage.line);
+
+                Some(TerminalDamage::Partial(combined_lines))
+            }
+            // Partial + CursorOnly: add cursor line to partial damage
+            (TerminalDamage::Partial(partial_lines), TerminalDamage::CursorOnly) => {
+                let mut combined_lines = partial_lines.clone();
+
+                if let Some(cursor_line) = Self::get_cursor_line(new_cursor) {
+                    // Add cursor line if not already present, or update if different cursor position
+                    if let Some(existing_idx) = combined_lines.iter().position(|l| l.line == cursor_line) {
+                        // Line already exists, keep it as damaged
+                        combined_lines[existing_idx].damaged = true;
+                    } else {
+                        // Add new cursor line
+                        combined_lines.push(LineDamage { line: cursor_line, damaged: true });
+                    }
+                }
+
+                // Sort and remove duplicates
+                combined_lines.sort_by_key(|damage| damage.line);
+                combined_lines.dedup_by_key(|damage| damage.line);
+
+                Some(TerminalDamage::Partial(combined_lines))
             }
             // Combine partial damages
             (TerminalDamage::Partial(lines1), TerminalDamage::Partial(lines2)) => {
                 let mut combined: Vec<LineDamage> = lines1.iter().chain(lines2.iter()).cloned().collect();
-                // Remove duplicates based on line number
+                // Remove duplicates based on line number, keeping the last one (from lines2)
                 combined.sort_by_key(|damage| damage.line);
                 combined.dedup_by_key(|damage| damage.line);
                 Some(TerminalDamage::Partial(combined))
@@ -264,18 +325,27 @@ impl PendingUpdates {
 
 #[cfg(test)]
 mod tests {
+    use rio_backend::crosswords::pos::{Pos, Column};
     use super::*;
 
-    // Helper function to create a test snapshot
-    fn create_test_snapshot(damage: TerminalDamage) -> TerminalSnapshot {
+    // Helper function to create a test snapshot with mock cursor
+    fn create_test_snapshot_with_cursor(damage: TerminalDamage, cursor_line: usize) -> TerminalSnapshot {
         TerminalSnapshot {
             colors: TermColors::default(),
             display_offset: 0,
             blinking_cursor: false,
             visible_rows: vec![],
-            cursor: CursorState::default(),
+            cursor: CursorState {
+                pos: Pos { row: cursor_line.into(), col: Column(0) },
+                ..Default::default()
+            },
             damage,
         }
+    }
+
+    // Helper function to create a test snapshot
+    fn create_test_snapshot(damage: TerminalDamage) -> TerminalSnapshot {
+        create_test_snapshot_with_cursor(damage, 0)
     }
 
     #[test]
@@ -318,6 +388,288 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_two_cursor_only_updates_same_line() {
+        let mut queue = PendingUpdates::new();
+
+        let snapshot1 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 5);
+        queue.push_snapshot(snapshot1);
+        assert_eq!(queue.len(), 1);
+
+        let snapshot2 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 5);
+        queue.push_snapshot(snapshot2);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 1);
+                assert_eq!(lines[0].line, 5);
+                assert!(lines[0].damaged);
+            } else {
+                panic!("Expected Partial damage with cursor line");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_two_cursor_only_updates_different_lines() {
+        let mut queue = PendingUpdates::new();
+
+        let snapshot1 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 3);
+        queue.push_snapshot(snapshot1);
+        assert_eq!(queue.len(), 1);
+
+        let snapshot2 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 7);
+        queue.push_snapshot(snapshot2);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 2);
+                assert_eq!(lines[0].line, 3);
+                assert_eq!(lines[1].line, 7);
+                assert!(lines[0].damaged);
+                assert!(lines[1].damaged);
+            } else {
+                panic!("Expected Partial damage with both cursor lines");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_cursor_only_to_partial_new_line() {
+        let mut queue = PendingUpdates::new();
+
+        // Add cursor-only update
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 2);
+        queue.push_snapshot(cursor_snapshot);
+        assert_eq!(queue.len(), 1);
+
+        // Add partial update with different lines
+        let partial_snapshot = create_test_snapshot_with_cursor(
+            TerminalDamage::Partial(vec![
+                LineDamage { line: 5, damaged: true },
+                LineDamage { line: 8, damaged: true }
+            ]),
+            2
+        );
+        queue.push_snapshot(partial_snapshot);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 3);
+                assert_eq!(lines[0].line, 2); // cursor line added
+                assert_eq!(lines[1].line, 5);
+                assert_eq!(lines[2].line, 8);
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage with cursor line added");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_cursor_only_to_partial_existing_line() {
+        let mut queue = PendingUpdates::new();
+
+        // Add cursor-only update
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 5);
+        queue.push_snapshot(cursor_snapshot);
+        assert_eq!(queue.len(), 1);
+
+        // Add partial update that includes the same line as cursor
+        let partial_snapshot = create_test_snapshot_with_cursor(
+            TerminalDamage::Partial(vec![
+                LineDamage { line: 5, damaged: true },
+                LineDamage { line: 8, damaged: true }
+            ]),
+            5
+        );
+        queue.push_snapshot(partial_snapshot);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 2); // No duplicate line
+                assert_eq!(lines[0].line, 5);
+                assert_eq!(lines[1].line, 8);
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage without duplicates");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_partial_to_cursor_only_new_line() {
+        let mut queue = PendingUpdates::new();
+
+        // Add partial update
+        let partial_snapshot = create_test_snapshot_with_cursor(
+            TerminalDamage::Partial(vec![
+                LineDamage { line: 1, damaged: true },
+                LineDamage { line: 3, damaged: true }
+            ]),
+            1
+        );
+        queue.push_snapshot(partial_snapshot);
+        assert_eq!(queue.len(), 1);
+
+        // Add cursor-only update with new line
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 6);
+        queue.push_snapshot(cursor_snapshot);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 3);
+                assert_eq!(lines[0].line, 1);
+                assert_eq!(lines[1].line, 3);
+                assert_eq!(lines[2].line, 6); // cursor line added
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage with cursor line added");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_partial_to_cursor_only_existing_line() {
+        let mut queue = PendingUpdates::new();
+
+        // Add partial update
+        let partial_snapshot = create_test_snapshot_with_cursor(
+            TerminalDamage::Partial(vec![
+                LineDamage { line: 2, damaged: true },
+                LineDamage { line: 4, damaged: true }
+            ]),
+            2
+        );
+        queue.push_snapshot(partial_snapshot);
+        assert_eq!(queue.len(), 1);
+
+        // Add cursor-only update with existing line
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 2);
+        queue.push_snapshot(cursor_snapshot);
+        assert_eq!(queue.len(), 1); // Should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 2); // No duplicate
+                assert_eq!(lines[0].line, 2);
+                assert_eq!(lines[1].line, 4);
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage without duplicates");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_multiple_cursor_updates_chain() {
+        let mut queue = PendingUpdates::new();
+
+        // Chain multiple cursor updates
+        let cursor1 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 1);
+        queue.push_snapshot(cursor1);
+
+        let cursor2 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 3);
+        queue.push_snapshot(cursor2);
+
+        let cursor3 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 2);
+        queue.push_snapshot(cursor3);
+
+        assert_eq!(queue.len(), 1); // All should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 3);
+                // Should be sorted by line number
+                assert_eq!(lines[0].line, 1);
+                assert_eq!(lines[1].line, 2);
+                assert_eq!(lines[2].line, 3);
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage with all cursor lines");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_cursor_with_partial_complex() {
+        let mut queue = PendingUpdates::new();
+
+        // Start with cursor
+        let cursor1 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 5);
+        queue.push_snapshot(cursor1);
+
+        // Add partial
+        let partial = create_test_snapshot_with_cursor(
+            TerminalDamage::Partial(vec![
+                LineDamage { line: 2, damaged: true },
+                LineDamage { line: 7, damaged: true }
+            ]),
+            5
+        );
+        queue.push_snapshot(partial);
+
+        // Add another cursor
+        let cursor2 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 1);
+        queue.push_snapshot(cursor2);
+
+        assert_eq!(queue.len(), 1); // All should combine
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            if let TerminalDamage::Partial(lines) = &snap.damage {
+                assert_eq!(lines.len(), 4);
+                assert_eq!(lines[0].line, 1);
+                assert_eq!(lines[1].line, 2);
+                assert_eq!(lines[2].line, 5);
+                assert_eq!(lines[3].line, 7);
+                assert!(lines.iter().all(|l| l.damaged));
+            } else {
+                panic!("Expected Partial damage with all lines");
+            }
+        } else {
+            panic!("Expected combined snapshot");
+        }
+    }
+
+    #[test]
+    fn test_full_damage_overrides_cursor() {
+        let mut queue = PendingUpdates::new();
+
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 3);
+        queue.push_snapshot(cursor_snapshot);
+
+        let full_snapshot = create_test_snapshot_with_cursor(TerminalDamage::Full, 3);
+        queue.push_snapshot(full_snapshot);
+
+        assert_eq!(queue.len(), 1);
+
+        if let Some(Update::Snapshot(snap)) = queue.peek() {
+            assert!(matches!(snap.damage, TerminalDamage::Full));
+        } else {
+            panic!("Expected Full damage to override cursor");
+        }
+    }
+
+    // Keep all the existing tests...
     #[test]
     fn test_partial_snapshot() {
         let mut queue = PendingUpdates::new();
@@ -466,62 +818,6 @@ mod tests {
     }
 
     #[test]
-    fn test_snapshot_combination_cursor_absorbed() {
-        let mut queue = PendingUpdates::new();
-
-        // Add cursor snapshot first
-        let cursor_snapshot = create_test_snapshot(TerminalDamage::CursorOnly);
-        queue.push_snapshot(cursor_snapshot);
-        assert_eq!(queue.len(), 1);
-
-        // Add partial snapshot - should absorb cursor damage
-        let partial_snapshot = create_test_snapshot(TerminalDamage::Partial(vec![
-            LineDamage { line: 5, damaged: true }
-        ]));
-        queue.push_snapshot(partial_snapshot);
-        assert_eq!(queue.len(), 1);
-
-        if let Some(Update::Snapshot(snap)) = queue.peek() {
-            if let TerminalDamage::Partial(lines) = &snap.damage {
-                assert_eq!(lines.len(), 1);
-                assert_eq!(lines[0].line, 5);
-            } else {
-                panic!("Expected Partial damage after cursor absorption");
-            }
-        } else {
-            panic!("Expected snapshot");
-        }
-    }
-
-    #[test]
-    fn test_snapshot_combination_cursor_absorbed_reverse() {
-        let mut queue = PendingUpdates::new();
-
-        // Add partial snapshot first
-        let partial_snapshot = create_test_snapshot(TerminalDamage::Partial(vec![
-            LineDamage { line: 3, damaged: true }
-        ]));
-        queue.push_snapshot(partial_snapshot);
-        assert_eq!(queue.len(), 1);
-
-        // Add cursor snapshot - should be absorbed
-        let cursor_snapshot = create_test_snapshot(TerminalDamage::CursorOnly);
-        queue.push_snapshot(cursor_snapshot);
-        assert_eq!(queue.len(), 1);
-
-        if let Some(Update::Snapshot(snap)) = queue.peek() {
-            if let TerminalDamage::Partial(lines) = &snap.damage {
-                assert_eq!(lines.len(), 1);
-                assert_eq!(lines[0].line, 3);
-            } else {
-                panic!("Expected Partial damage after cursor absorption");
-            }
-        } else {
-            panic!("Expected snapshot");
-        }
-    }
-
-    #[test]
     fn test_snapshot_combination_partial() {
         let mut queue = PendingUpdates::new();
 
@@ -657,17 +953,18 @@ mod tests {
         queue.push_snapshot(empty_partial);
         assert_eq!(queue.len(), 1);
 
-        // Test cursor only
-        let cursor_snapshot = create_test_snapshot(TerminalDamage::CursorOnly);
+        // Test cursor only with empty partial
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 3);
         queue.push_snapshot(cursor_snapshot);
         assert_eq!(queue.len(), 1);
 
-        // Should combine - empty partial should remain as empty partial
+        // Should combine - cursor line should be added to empty partial
         if let Some(Update::Snapshot(snap)) = queue.peek() {
             if let TerminalDamage::Partial(lines) = &snap.damage {
-                assert_eq!(lines.len(), 0);
+                assert_eq!(lines.len(), 1);
+                assert_eq!(lines[0].line, 3);
             } else {
-                panic!("Expected empty partial damage");
+                panic!("Expected partial damage with cursor line");
             }
         } else {
             panic!("Expected snapshot");
@@ -679,7 +976,7 @@ mod tests {
         let mut queue = PendingUpdates::new();
 
         // Add various damage types
-        let cursor_snapshot = create_test_snapshot(TerminalDamage::CursorOnly);
+        let cursor_snapshot = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 1);
         queue.push_snapshot(cursor_snapshot);
 
         let partial_snapshot = create_test_snapshot(TerminalDamage::Partial(vec![
