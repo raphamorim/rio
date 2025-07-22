@@ -677,7 +677,8 @@ impl<U: EventListener> Crosswords<U> {
         self.graphics.take_queues()
     }
 
-    pub fn check_graphics_updates(&mut self) {
+    #[inline]
+    pub fn send_graphics_updates(&mut self) {
         if self.graphics.has_pending_updates() {
             if let Some(queues) = self.graphics.take_queues() {
                 self.event_proxy.send_event(
@@ -3138,7 +3139,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         });
 
         // Send graphics update event
-        self.check_graphics_updates();
+        self.send_graphics_updates();
     }
 
     #[inline]
