@@ -51,7 +51,7 @@ use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -210,7 +210,7 @@ impl Iterator for TermDamageIterator<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LineDamage {
     /// Line number.
     pub line: usize,
@@ -567,7 +567,7 @@ impl<U: EventListener> Crosswords<U> {
             TerminalDamage::Full
         } else {
             // Collect damaged lines
-            let damaged_lines: Vec<LineDamage> = self
+            let damaged_lines: BTreeSet<LineDamage> = self
                 .damage
                 .lines
                 .iter()
@@ -603,7 +603,7 @@ impl<U: EventListener> Crosswords<U> {
             Some(TerminalDamage::Full)
         } else {
             // Collect damaged lines
-            let damaged_lines: Vec<LineDamage> = self
+            let damaged_lines: BTreeSet<LineDamage> = self
                 .damage
                 .lines
                 .iter()
@@ -1364,7 +1364,7 @@ impl<U: EventListener> Crosswords<U> {
             self.event_proxy.send_event(
                 RioEvent::TerminalDamaged {
                     route_id: self.route_id,
-                    damage: TerminalDamage::Partial(vec![damaged_line]),
+                    damage: TerminalDamage::Partial([damaged_line].into_iter().collect()),
                 },
                 self.window_id,
             );

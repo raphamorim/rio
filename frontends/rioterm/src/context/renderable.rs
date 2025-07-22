@@ -4,7 +4,6 @@ use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
 use rio_backend::crosswords::Crosswords;
-use rio_backend::crosswords::LineDamage;
 use rio_backend::event::sync::FairMutex;
 use rio_backend::event::TerminalDamage;
 use rio_backend::selection::SelectionRange;
@@ -118,28 +117,22 @@ impl PendingUpdate {
     /// Merge two damages into one - this is critical for correctness
     fn merge_damages(existing: &TerminalDamage, new: &TerminalDamage) -> TerminalDamage {
         use std::collections::BTreeSet;
-        
+
         match (existing, new) {
             // Any damage + Full = Full
             (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => TerminalDamage::Full,
             // Partial damages: merge the line lists efficiently using BTreeSet
             (TerminalDamage::Partial(lines1), TerminalDamage::Partial(lines2)) => {
-                let mut line_set: BTreeSet<usize> = BTreeSet::new();
-                
+                let mut line_set = BTreeSet::new();
+
                 // Add all damaged lines from both sets
                 for damage in lines1.iter().chain(lines2.iter()) {
                     if damage.damaged {
-                        line_set.insert(damage.line);
+                        line_set.insert(*damage);
                     }
                 }
-                
-                // BTreeSet iterator yields items in sorted order
-                let merged: Vec<LineDamage> = line_set
-                    .into_iter()
-                    .map(|line| LineDamage { line, damaged: true })
-                    .collect();
-                
-                TerminalDamage::Partial(merged)
+
+                TerminalDamage::Partial(line_set)
             }
             // CursorOnly damages need special handling
             (TerminalDamage::CursorOnly, TerminalDamage::Partial(lines)) => {

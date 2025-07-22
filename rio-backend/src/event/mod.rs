@@ -9,7 +9,7 @@ use crate::crosswords::LineDamage;
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ pub enum TerminalDamage {
     /// The entire terminal needs to be redrawn
     Full,
     /// Only specific lines need to be redrawn
-    Partial(Vec<LineDamage>),
+    Partial(BTreeSet<LineDamage>),
     /// Only the cursor position has changed
     CursorOnly,
 }

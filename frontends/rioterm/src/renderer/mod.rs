@@ -30,7 +30,7 @@ use rio_backend::sugarloaf::{
     drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -846,12 +846,7 @@ impl Renderer {
                                     TerminalDamage::Partial(lines2),
                                 ) => {
                                     let mut merged = lines1.clone();
-                                    for line in lines2 {
-                                        if !merged.iter().any(|l| l.line == line.line) {
-                                            merged.push(*line);
-                                        }
-                                    }
-                                    merged.sort_by_key(|damage| damage.line);
+                                    merged.extend(lines2.iter());
                                     TerminalDamage::Partial(merged)
                                 }
                                 (TerminalDamage::CursorOnly, other)
@@ -892,7 +887,7 @@ impl Renderer {
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor;
 
-            let mut specific_lines = None;
+            let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
             // Check for partial damage to optimize rendering
             if !force_full_damage {
@@ -906,11 +901,15 @@ impl Renderer {
                         }
                     }
                     TerminalDamage::CursorOnly => {
-                        specific_lines = Some(vec![LineDamage {
-                            line: *context.renderable_content.cursor.state.pos.row
-                                as usize,
-                            damaged: true,
-                        }]);
+                        specific_lines = Some(
+                            [LineDamage {
+                                line: *context.renderable_content.cursor.state.pos.row
+                                    as usize,
+                                damaged: true,
+                            }]
+                            .into_iter()
+                            .collect(),
+                        );
                     }
                 }
             }
