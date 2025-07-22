@@ -9,6 +9,12 @@ language: 'en'
 
 - TBD.
 
+## 0.2.23
+
+- Fix some rendering regressions introduced by 0.2.21.
+- Improve performance by stopping locking on rendering run steps.
+- Fix: [X11: WM_CLASS has an empty string property](https://github.com/raphamorim/rio/issues/1155).
+
 ## 0.2.22
 
 - Fix some regressions introduced by 0.2.21.
