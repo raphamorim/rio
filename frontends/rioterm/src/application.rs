@@ -1,4 +1,3 @@
-use crate::context::renderable::create_snapshot;
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
 use crate::renderer::utils::update_colors_based_on_theme;
@@ -243,7 +242,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             let ctx = grid_context.context();
 
                             // In this case we know we have to render something that's pending.
-                            if ctx.renderable_content.pending_updates.has() {
+                            if ctx.renderable_content.pending_update.has() {
                                 request_pending_redraw = true;
                             }
 
@@ -304,14 +303,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
-                            let snapshot = create_snapshot(&route.window.screen.ctx().current().terminal, damage);
                             route
                                 .window
                                 .screen
                                 .ctx_mut()
                                 .current_mut()
                                 .renderable_content
-                                .pending_updates.push_snapshot(snapshot);
+                                .pending_update
+                                .invalidate(damage);
                             route.request_redraw();
                         }
                     }
@@ -1288,7 +1287,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if route.window.screen.ctx().current().renderable_content.pending_updates.has() {
+                if route
+                    .window
+                    .screen
+                    .ctx()
+                    .current()
+                    .renderable_content
+                    .pending_update
+                    .has()
+                {
                     route.request_redraw();
                 }
 

@@ -4,12 +4,11 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
-use rio_backend::crosswords::LineDamage;
-use rio_backend::event::TerminalDamage;
 use crate::context::renderable::TerminalSnapshot;
-use crate::context::renderable::Update;
 use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
+use rio_backend::crosswords::LineDamage;
+use rio_backend::event::TerminalDamage;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -796,195 +795,243 @@ impl Renderer {
 
             let force_full_damage = has_active_changed || is_active && hints.is_some();
 
-            // Check if we have a pending update first
-            let terminal_snapshot = if let Some(update) = context.renderable_content.pending_updates.queue.pop() {
-                match update {
-                    Update::Snapshot(snapshot) => {
-                        // Use the pre-computed snapshot, no locks needed
-                        println!("Using pending snapshot, no lock needed");
-                        Some(snapshot)
-                    },
-                    Update::Sync => {
-                        // Sync update - check if we need to render by taking a lock
-                        let mut terminal = context.terminal.lock();
+            // Check if we need to render
+            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
+            {
+                // No updates pending, skip rendering
+                continue;
+            }
 
-                        // Early exit if no rendering is needed
-                        if !force_full_damage && !terminal.needs_render() {
+            // Take the pending accumulated damage
+            let pending_damage = context.renderable_content.pending_update.take_damage();
+
+            // Create snapshot from terminal
+            let terminal_snapshot = {
+                let mut terminal = context.terminal.lock();
+
+                // Get the terminal's current damage
+                let terminal_damage = terminal.peek_damage_event();
+
+                // If no damage anywhere and not forcing, skip
+                if pending_damage.is_none()
+                    && terminal_damage.is_none()
+                    && !force_full_damage
+                {
+                    terminal.reset_damage();
+                    drop(terminal);
+                    continue;
+                }
+
+                // Merge all damage sources
+                let damage = if force_full_damage {
+                    TerminalDamage::Full
+                } else {
+                    match (pending_damage, terminal_damage) {
+                        (None, None) => {
+                            // This shouldn't happen but handle it gracefully
                             terminal.reset_damage();
                             drop(terminal);
                             continue;
                         }
-
-                        // Create snapshot from current terminal state
-                        let damage = terminal.peek_damage_event();
-                        if damage.is_none() {
-                            println!("No pending updates, returning early");
-                            return;
-                        }
-
-                        let snapshot = TerminalSnapshot {
-                            colors: terminal.colors,
-                            display_offset: terminal.display_offset(),
-                            blinking_cursor: terminal.blinking_cursor,
-                            visible_rows: terminal.visible_rows(),
-                            cursor: terminal.cursor(),
-                            damage: damage.unwrap(),
-                        };
-
-                        // Handle graphics queues while we have the lock
-                        if let Some(queues_to_add) = terminal.graphics_take_queues() {
-                            if let Some(ref mut queues) = graphic_queues {
-                                queues.push(queues_to_add);
-                            } else {
-                                graphic_queues = Some(vec![queues_to_add]);
+                        (Some(pending), None) => pending,
+                        (None, Some(term)) => term,
+                        (Some(pending), Some(term)) => {
+                            // Merge both damages
+                            match (&pending, &term) {
+                                (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => {
+                                    TerminalDamage::Full
+                                }
+                                (
+                                    TerminalDamage::Partial(lines1),
+                                    TerminalDamage::Partial(lines2),
+                                ) => {
+                                    let mut merged = lines1.clone();
+                                    for line in lines2 {
+                                        if !merged.iter().any(|l| l.line == line.line) {
+                                            merged.push(line.clone());
+                                        }
+                                    }
+                                    merged.sort_by_key(|damage| damage.line);
+                                    TerminalDamage::Partial(merged)
+                                }
+                                (TerminalDamage::CursorOnly, other)
+                                | (other, TerminalDamage::CursorOnly) => other.clone(),
                             }
                         }
+                    }
+                };
 
-                        terminal.reset_damage();
-                        drop(terminal);
-                        Some(snapshot)
+                let snapshot = TerminalSnapshot {
+                    colors: terminal.colors,
+                    display_offset: terminal.display_offset(),
+                    blinking_cursor: terminal.blinking_cursor,
+                    visible_rows: terminal.visible_rows(),
+                    cursor: terminal.cursor(),
+                    damage,
+                };
+
+                // Handle graphics queues while we have the lock
+                if let Some(queues_to_add) = terminal.graphics_take_queues() {
+                    if let Some(ref mut queues) = graphic_queues {
+                        queues.push(queues_to_add);
+                    } else {
+                        graphic_queues = Some(vec![queues_to_add]);
                     }
                 }
-            } else {
-                // No pending updates, return early
-                println!("No pending updates, returning early");
-                return;
+
+                terminal.reset_damage();
+                drop(terminal);
+                snapshot
             };
 
-            // Process the snapshot if we have one
-            if let Some(snapshot) = terminal_snapshot {
-                let duration = start.elapsed();
-                println!("Time elapsed processing snapshot: {:?}", duration);
+            // Process the snapshot
+            let duration = start.elapsed();
+            println!("Time elapsed processing snapshot: {:?}", duration);
 
-                // Update cursor state from snapshot
-                context.renderable_content.cursor.state = snapshot.cursor;
+            // Update cursor state from snapshot
+            context.renderable_content.cursor.state = terminal_snapshot.cursor;
 
-                let mut specific_lines = None;
+            let mut specific_lines = None;
 
-                // Check for partial damage to optimize rendering
-                if !force_full_damage {
-                    match snapshot.damage {
-                        TerminalDamage::Full => {
-                            // Full damage, render everything
-                        },
-                        TerminalDamage::Partial(lines) => {
-                            if !lines.is_empty() {
-                                specific_lines = Some(lines.clone());
-                            }
-                        },
-                        TerminalDamage::CursorOnly => {
-                            specific_lines = Some(vec![LineDamage { line: *context.renderable_content.cursor.state.pos.row as usize, damaged: true }]);
-                        },
+            // Check for partial damage to optimize rendering
+            if !force_full_damage {
+                match terminal_snapshot.damage {
+                    TerminalDamage::Full => {
+                        // Full damage, render everything
+                    }
+                    TerminalDamage::Partial(lines) => {
+                        if !lines.is_empty() {
+                            specific_lines = Some(lines.clone());
+                        }
+                    }
+                    TerminalDamage::CursorOnly => {
+                        specific_lines = Some(vec![LineDamage {
+                            line: *context.renderable_content.cursor.state.pos.row
+                                as usize,
+                            damaged: true,
+                        }]);
                     }
                 }
+            }
 
-                let rich_text_id = context.rich_text_id;
+            let rich_text_id = context.rich_text_id;
 
-                let mut is_cursor_visible = context.renderable_content.cursor.state.is_visible();
-                context.renderable_content.has_blinking_enabled = snapshot.blinking_cursor;
+            let mut is_cursor_visible =
+                context.renderable_content.cursor.state.is_visible();
+            context.renderable_content.has_blinking_enabled =
+                terminal_snapshot.blinking_cursor;
 
-                if snapshot.blinking_cursor {
-                    let has_selection = context.renderable_content.selection_range.is_some();
-                    if !has_selection {
-                        let mut should_blink = true;
-                        if let Some(last_typing_time) = context.renderable_content.last_typing {
-                            if last_typing_time.elapsed() < std::time::Duration::from_secs(1) {
-                                should_blink = false;
-                            }
+            if terminal_snapshot.blinking_cursor {
+                let has_selection = context.renderable_content.selection_range.is_some();
+                if !has_selection {
+                    let mut should_blink = true;
+                    if let Some(last_typing_time) = context.renderable_content.last_typing
+                    {
+                        if last_typing_time.elapsed() < std::time::Duration::from_secs(1)
+                        {
+                            should_blink = false;
                         }
+                    }
 
-                        if should_blink {
-                            let now = std::time::Instant::now();
-                            let should_toggle = if let Some(last_blink) = context.renderable_content.last_blink_toggle {
-                                now.duration_since(last_blink).as_millis() >= self.config_blinking_interval as u128
-                            } else {
-                                // First time: start with cursor visible and set initial timing
-                                context.renderable_content.is_blinking_cursor_visible = true;
-                                context.renderable_content.last_blink_toggle = Some(now);
-                                false // Don't toggle on first frame
-                            };
-
-                            if should_toggle {
-                                context.renderable_content.is_blinking_cursor_visible =
-                                    !context.renderable_content.is_blinking_cursor_visible;
-                                context.renderable_content.last_blink_toggle = Some(now);
-
-                                if let Some(ref mut lines) = specific_lines {
-                                    // lines.insert(
-                                    //     context.renderable_content.cursor.state.pos.row.0 as usize,
-                                    // );
-                                }
-                            }
+                    if should_blink {
+                        let now = std::time::Instant::now();
+                        let should_toggle = if let Some(last_blink) =
+                            context.renderable_content.last_blink_toggle
+                        {
+                            now.duration_since(last_blink).as_millis()
+                                >= self.config_blinking_interval as u128
                         } else {
-                            // When not blinking (e.g., during typing), ensure cursor is visible
+                            // First time: start with cursor visible and set initial timing
                             context.renderable_content.is_blinking_cursor_visible = true;
-                            // Reset blink timing when not blinking so it starts fresh when blinking resumes
-                            context.renderable_content.last_blink_toggle = None;
+                            context.renderable_content.last_blink_toggle = Some(now);
+                            false // Don't toggle on first frame
+                        };
+
+                        if should_toggle {
+                            context.renderable_content.is_blinking_cursor_visible =
+                                !context.renderable_content.is_blinking_cursor_visible;
+                            context.renderable_content.last_blink_toggle = Some(now);
+
+                            if let Some(ref mut _lines) = specific_lines {
+                                // lines.insert(
+                                //     context.renderable_content.cursor.state.pos.row.0 as usize,
+                                // );
+                            }
                         }
                     } else {
-                        // When there's a selection, keep cursor visible and reset blink timing
+                        // When not blinking (e.g., during typing), ensure cursor is visible
                         context.renderable_content.is_blinking_cursor_visible = true;
+                        // Reset blink timing when not blinking so it starts fresh when blinking resumes
                         context.renderable_content.last_blink_toggle = None;
                     }
-
-                    is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
+                } else {
+                    // When there's a selection, keep cursor visible and reset blink timing
+                    context.renderable_content.is_blinking_cursor_visible = true;
+                    context.renderable_content.last_blink_toggle = None;
                 }
 
-                if !is_active && context.renderable_content.cursor.state.is_visible() {
-                    is_cursor_visible = true;
-                }
+                is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
+            }
 
-                let content = sugarloaf.content();
-                match specific_lines {
-                    None => {
-                        content.sel(rich_text_id);
-                        content.clear();
-                        for (i, row) in snapshot.visible_rows.iter().enumerate() {
-                            let has_cursor = is_cursor_visible
-                                && context.renderable_content.cursor.state.pos.row == i;
+            if !is_active && context.renderable_content.cursor.state.is_visible() {
+                is_cursor_visible = true;
+            }
+
+            let content = sugarloaf.content();
+            match specific_lines {
+                None => {
+                    content.sel(rich_text_id);
+                    content.clear();
+                    for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
+                        let has_cursor = is_cursor_visible
+                            && context.renderable_content.cursor.state.pos.row == i;
+                        self.create_line(
+                            content,
+                            row,
+                            has_cursor,
+                            None,
+                            Line((i as i32) - terminal_snapshot.display_offset as i32),
+                            &context.renderable_content,
+                            hints,
+                            focused_match,
+                            &terminal_snapshot.colors,
+                            is_active,
+                        );
+                    }
+                    content.build();
+                    let duration = start.elapsed();
+                    println!("Time elapsed in Full damage rendering: {:?}", duration);
+                }
+                Some(lines) => {
+                    content.sel(rich_text_id);
+                    for line in lines {
+                        let line = line.line;
+                        let has_cursor = is_cursor_visible
+                            && context.renderable_content.cursor.state.pos.row == line;
+                        content.clear_line(line);
+                        if let Some(visible_row) =
+                            terminal_snapshot.visible_rows.get(line)
+                        {
                             self.create_line(
                                 content,
-                                row,
+                                visible_row,
                                 has_cursor,
-                                None,
-                                Line((i as i32) - snapshot.display_offset as i32),
+                                Some(line),
+                                Line(
+                                    (line as i32)
+                                        - terminal_snapshot.display_offset as i32,
+                                ),
                                 &context.renderable_content,
                                 hints,
                                 focused_match,
-                                &snapshot.colors,
+                                &terminal_snapshot.colors,
                                 is_active,
                             );
                         }
-                        content.build();
-                        let duration = start.elapsed();
-                        println!("Time elapsed in Full damage rendering: {:?}", duration);
                     }
-                    Some(lines) => {
-                        content.sel(rich_text_id);
-                        for line in lines {
-                            let line = line.line;
-                            let has_cursor = is_cursor_visible
-                                && context.renderable_content.cursor.state.pos.row == line;
-                            content.clear_line(line);
-                            if let Some(visible_row) = snapshot.visible_rows.get(line) {
-                                self.create_line(
-                                    content,
-                                    visible_row,
-                                    has_cursor,
-                                    Some(line),
-                                    Line((line as i32) - snapshot.display_offset as i32),
-                                    &context.renderable_content,
-                                    hints,
-                                    focused_match,
-                                    &snapshot.colors,
-                                    is_active,
-                                );
-                            }
-                        }
 
-                        let duration = start.elapsed();
-                        println!("Time elapsed in Partial damage rendering: {:?}", duration);
-                    }
+                    let duration = start.elapsed();
+                    println!("Time elapsed in Partial damage rendering: {:?}", duration);
                 }
             }
         }
@@ -1030,10 +1077,16 @@ impl Renderer {
         }
 
         let duration = start.elapsed();
-        println!("Time elapsed before extend_with_grid_objects is: {:?}", duration);
+        println!(
+            "Time elapsed before extend_with_grid_objects is: {:?}",
+            duration
+        );
         context_manager.extend_with_grid_objects(&mut objects);
         let duration = start.elapsed();
-        println!("Time elapsed after extend_with_grid_objects is: {:?}", duration);
+        println!(
+            "Time elapsed after extend_with_grid_objects is: {:?}",
+            duration
+        );
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
