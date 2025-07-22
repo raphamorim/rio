@@ -64,25 +64,9 @@ pub struct TerminalSnapshot {
     pub visible_rows: Vec<Row<Square>>,
     pub cursor: CursorState,
     pub damage: TerminalDamage,
-}
-
-pub fn create_snapshot<U: rio_backend::event::EventListener>(
-    terminal: &FairMutex<Crosswords<U>>,
-    damage: TerminalDamage,
-) -> TerminalSnapshot {
-    let mut terminal = terminal.lock();
-    println!("create_snapshot {:?}", damage);
-    let result = TerminalSnapshot {
-        colors: terminal.colors,
-        display_offset: terminal.display_offset(),
-        blinking_cursor: terminal.blinking_cursor,
-        visible_rows: terminal.visible_rows(),
-        cursor: terminal.cursor(),
-        damage,
-    };
-    terminal.reset_damage();
-    drop(terminal);
-    return result;
+    // Cache terminal dimensions to avoid repeated calls
+    pub columns: usize,
+    pub screen_lines: usize,
 }
 
 #[derive(Debug, Default)]
@@ -131,26 +115,30 @@ impl PendingUpdate {
         self.accumulated_damage.take()
     }
 
-    /// Clear without taking damage
-    pub fn clear(&mut self) {
-        self.dirty = false;
-        self.accumulated_damage = None;
-    }
-
     /// Merge two damages into one - this is critical for correctness
     fn merge_damages(existing: &TerminalDamage, new: &TerminalDamage) -> TerminalDamage {
+        use std::collections::BTreeSet;
+        
         match (existing, new) {
             // Any damage + Full = Full
             (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => TerminalDamage::Full,
-            // Partial damages: merge the line lists
+            // Partial damages: merge the line lists efficiently using BTreeSet
             (TerminalDamage::Partial(lines1), TerminalDamage::Partial(lines2)) => {
-                let mut merged = lines1.clone();
-                for line in lines2 {
-                    if !merged.iter().any(|l| l.line == line.line) {
-                        merged.push(line.clone());
+                let mut line_set: BTreeSet<usize> = BTreeSet::new();
+                
+                // Add all damaged lines from both sets
+                for damage in lines1.iter().chain(lines2.iter()) {
+                    if damage.damaged {
+                        line_set.insert(damage.line);
                     }
                 }
-                merged.sort_by_key(|damage| damage.line);
+                
+                // BTreeSet iterator yields items in sorted order
+                let merged: Vec<LineDamage> = line_set
+                    .into_iter()
+                    .map(|line| LineDamage { line, damaged: true })
+                    .collect();
+                
                 TerminalDamage::Partial(merged)
             }
             // CursorOnly damages need special handling
@@ -173,201 +161,10 @@ impl PendingUpdate {
         self.is_dirty()
     }
 
-    pub fn push_snapshot(&mut self, snapshot: TerminalSnapshot) {
-        self.invalidate(snapshot.damage);
-    }
-
     pub fn push_full_snapshot<U: rio_backend::event::EventListener>(
         &mut self,
         terminal: &FairMutex<Crosswords<U>>,
     ) {
         self.invalidate_full(terminal);
-    }
-
-    pub fn push_sync(&mut self) {
-        // Sync just marks as dirty without specific damage
-        self.dirty = true;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rio_backend::crosswords::pos::{Column, Pos};
-
-    // Helper function to create a test snapshot with mock cursor
-    fn create_test_snapshot_with_cursor(
-        damage: TerminalDamage,
-        cursor_line: usize,
-    ) -> TerminalSnapshot {
-        TerminalSnapshot {
-            colors: TermColors::default(),
-            display_offset: 0,
-            blinking_cursor: false,
-            visible_rows: vec![],
-            cursor: CursorState {
-                pos: Pos {
-                    row: cursor_line.into(),
-                    col: Column(0),
-                },
-                ..Default::default()
-            },
-            damage,
-        }
-    }
-
-    // Helper function to create a test snapshot
-    fn create_test_snapshot(damage: TerminalDamage) -> TerminalSnapshot {
-        create_test_snapshot_with_cursor(damage, 0)
-    }
-
-    #[test]
-    fn test_new_queue() {
-        let queue = PendingUpdates::new();
-        assert!(!queue.has());
-    }
-
-    #[test]
-    fn test_push_snapshot() {
-        let mut queue = PendingUpdates::new();
-
-        let snapshot = create_test_snapshot(TerminalDamage::Full);
-        queue.push_snapshot(snapshot);
-        assert!(queue.has());
-
-        if let Some(Update::Snapshot(snap)) = &queue.pending {
-            assert!(matches!(snap.damage, TerminalDamage::Full));
-        } else {
-            panic!("Expected Full snapshot");
-        }
-    }
-
-    #[test]
-    fn test_replace_snapshot() {
-        let mut queue = PendingUpdates::new();
-
-        // Push first snapshot
-        let snapshot1 = create_test_snapshot(TerminalDamage::CursorOnly);
-        queue.push_snapshot(snapshot1);
-
-        // Push second snapshot - should replace
-        let snapshot2 = create_test_snapshot(TerminalDamage::Full);
-        queue.push_snapshot(snapshot2);
-
-        // Should only have one update
-        assert!(queue.has());
-        if let Some(Update::Snapshot(snap)) = &queue.pending {
-            assert!(matches!(snap.damage, TerminalDamage::Full));
-        }
-    }
-
-    #[test]
-    fn test_merge_partial_damages() {
-        let mut queue = PendingUpdates::new();
-
-        // First partial damage
-        let damage1 = TerminalDamage::Partial(vec![
-            LineDamage {
-                line: 1,
-                damaged: true,
-            },
-            LineDamage {
-                line: 3,
-                damaged: true,
-            },
-        ]);
-        queue.push_snapshot(create_test_snapshot(damage1));
-
-        // Second partial damage - should merge
-        let damage2 = TerminalDamage::Partial(vec![
-            LineDamage {
-                line: 2,
-                damaged: true,
-            },
-            LineDamage {
-                line: 4,
-                damaged: true,
-            },
-        ]);
-        queue.push_snapshot(create_test_snapshot(damage2));
-
-        // Check merged result
-        if let Some(Update::Snapshot(snap)) = &queue.pending {
-            if let TerminalDamage::Partial(lines) = &snap.damage {
-                assert_eq!(lines.len(), 4);
-                assert_eq!(lines[0].line, 1);
-                assert_eq!(lines[1].line, 2);
-                assert_eq!(lines[2].line, 3);
-                assert_eq!(lines[3].line, 4);
-            } else {
-                panic!("Expected Partial damage");
-            }
-        }
-    }
-
-    #[test]
-    fn test_cursor_movement_damage() {
-        let mut queue = PendingUpdates::new();
-
-        // Cursor on line 5
-        let snapshot1 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 5);
-        queue.push_snapshot(snapshot1);
-
-        // Cursor moves to line 10 - should preserve damage from line 5
-        let snapshot2 = create_test_snapshot_with_cursor(TerminalDamage::CursorOnly, 10);
-        queue.push_snapshot(snapshot2);
-
-        // Both cursor positions should be preserved as damage
-        if let Some(Update::Snapshot(snap)) = &queue.pending {
-            // CursorOnly damages are merged as-is in our current implementation
-            // The actual cursor position tracking would need to be handled by the terminal
-            assert!(matches!(snap.damage, TerminalDamage::CursorOnly));
-        }
-    }
-
-    #[test]
-    fn test_sync_update() {
-        let mut queue = PendingUpdates::new();
-
-        queue.push_sync();
-        assert!(queue.has());
-        assert!(matches!(queue.pending, Some(Update::Sync)));
-    }
-
-    #[test]
-    fn test_snapshot_replaces_sync() {
-        let mut queue = PendingUpdates::new();
-
-        queue.push_sync();
-        let snapshot = create_test_snapshot(TerminalDamage::Full);
-        queue.push_snapshot(snapshot);
-
-        // Snapshot should replace Sync
-        assert!(matches!(queue.pending, Some(Update::Snapshot(_))));
-    }
-
-    #[test]
-    fn test_sync_does_not_replace_snapshot() {
-        let mut queue = PendingUpdates::new();
-
-        let snapshot = create_test_snapshot(TerminalDamage::Full);
-        queue.push_snapshot(snapshot);
-        queue.push_sync();
-
-        // Snapshot should still be there
-        assert!(matches!(queue.pending, Some(Update::Snapshot(_))));
-    }
-
-    #[test]
-    fn test_take() {
-        let mut queue = PendingUpdates::new();
-
-        let snapshot = create_test_snapshot(TerminalDamage::Full);
-        queue.push_snapshot(snapshot);
-
-        assert!(queue.has());
-        let taken = queue.take();
-        assert!(taken.is_some());
-        assert!(!queue.has());
     }
 }

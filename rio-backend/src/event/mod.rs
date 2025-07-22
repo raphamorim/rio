@@ -258,7 +258,7 @@ pub trait OnResize {
     fn on_resize(&mut self, window_size: WinsizeBuilder);
 }
 
-/// Event emitter trait for terminal components
+// /// Event emitter trait for terminal components
 // pub trait TerminalEventEmitter {
 //     /// Emit a terminal damage event
 //     fn emit_damage(&self, route_id: usize, damage: TerminalDamage);

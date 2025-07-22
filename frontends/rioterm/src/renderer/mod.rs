@@ -848,7 +848,7 @@ impl Renderer {
                                     let mut merged = lines1.clone();
                                     for line in lines2 {
                                         if !merged.iter().any(|l| l.line == line.line) {
-                                            merged.push(line.clone());
+                                            merged.push(*line);
                                         }
                                     }
                                     merged.sort_by_key(|damage| damage.line);
@@ -868,6 +868,8 @@ impl Renderer {
                     visible_rows: terminal.visible_rows(),
                     cursor: terminal.cursor(),
                     damage,
+                    columns: terminal.columns(),
+                    screen_lines: terminal.screen_lines(),
                 };
 
                 // Handle graphics queues while we have the lock
@@ -885,8 +887,7 @@ impl Renderer {
             };
 
             // Process the snapshot
-            let duration = start.elapsed();
-            println!("Time elapsed processing snapshot: {:?}", duration);
+            let _duration = start.elapsed();
 
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor;
@@ -999,8 +1000,7 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    let duration = start.elapsed();
-                    println!("Time elapsed in Full damage rendering: {:?}", duration);
+                    let _duration = start.elapsed();
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -1030,8 +1030,7 @@ impl Renderer {
                         }
                     }
 
-                    let duration = start.elapsed();
-                    println!("Time elapsed in Partial damage rendering: {:?}", duration);
+                    let _duration = start.elapsed();
                 }
             }
         }
@@ -1076,22 +1075,13 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed before extend_with_grid_objects is: {:?}",
-            duration
-        );
+        let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
-        let duration = start.elapsed();
-        println!(
-            "Time elapsed after extend_with_grid_objects is: {:?}",
-            duration
-        );
+        let _duration = start.elapsed();
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
-        let duration = start.elapsed();
-        println!("Time elapsed in -renderer.update() is: {:?}", duration);
+        let _duration = start.elapsed();
     }
 }
