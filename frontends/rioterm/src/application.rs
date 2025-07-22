@@ -254,12 +254,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if request_pending_redraw {
-                            #[cfg(target_os = "macos")]
-                            route.request_redraw();
-
-                            // TODO: Windows and Linux should use the frame scheduler
-                            // On MacOS is differently because it will only mark the window
-                            // as should render on next frame.
+                            route.schedule_redraw(
+                                &mut self.scheduler,
+                                &self.event_proxy,
+                                route.window.screen.ctx().current_route(),
+                            );
                         }
                     }
                 }
@@ -311,7 +310,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .renderable_content
                                 .pending_update
                                 .invalidate(damage);
-                            route.request_redraw();
+                            route.schedule_redraw(
+                                &mut self.scheduler,
+                                &self.event_proxy,
+                                route_id,
+                            );
                         }
                     }
                 }
@@ -332,7 +335,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         // Request a redraw to display the updated graphics
-                        route.request_redraw();
+                        route.schedule_redraw(
+                            &mut self.scheduler,
+                            &self.event_proxy,
+                            route_id,
+                        );
                     }
                 }
             }
