@@ -302,14 +302,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route.window.needs_render_after_occlusion = false;
                             }
 
-                            route
-                                .window
-                                .screen
-                                .ctx_mut()
-                                .current_mut()
-                                .renderable_content
+                            let ctx = route.window.screen.ctx_mut().current_mut();
+                            ctx.renderable_content
                                 .pending_update
-                                .invalidate(damage);
+                                .invalidate(damage, &ctx.terminal);
                             route.schedule_redraw(
                                 &mut self.scheduler,
                                 &self.event_proxy,

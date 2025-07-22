@@ -799,75 +799,32 @@ impl Renderer {
                 continue;
             }
 
-            // Take the pending accumulated damage
-            let pending_damage = context.renderable_content.pending_update.take_damage();
-
-            // Create snapshot from terminal
-            let terminal_snapshot = {
-                let mut terminal = context.terminal.lock();
-
-                // Get the terminal's current damage
-                let terminal_damage = terminal.peek_damage_event();
-
-                // If no damage anywhere and not forcing, skip
-                if pending_damage.is_none()
-                    && terminal_damage.is_none()
-                    && !force_full_damage
-                {
-                    terminal.reset_damage();
-                    drop(terminal);
-                    continue;
-                }
-
-                // Merge all damage sources
-                let damage = if force_full_damage {
-                    TerminalDamage::Full
-                } else {
-                    match (pending_damage, terminal_damage) {
-                        (None, None) => {
-                            // This shouldn't happen but handle it gracefully
-                            terminal.reset_damage();
-                            drop(terminal);
-                            continue;
-                        }
-                        (Some(pending), None) => pending,
-                        (None, Some(term)) => term,
-                        (Some(pending), Some(term)) => {
-                            // Merge both damages
-                            match (&pending, &term) {
-                                (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => {
-                                    TerminalDamage::Full
-                                }
-                                (
-                                    TerminalDamage::Partial(lines1),
-                                    TerminalDamage::Partial(lines2),
-                                ) => {
-                                    let mut merged = lines1.clone();
-                                    merged.extend(lines2.iter());
-                                    TerminalDamage::Partial(merged)
-                                }
-                                (TerminalDamage::CursorOnly, other)
-                                | (other, TerminalDamage::CursorOnly) => other.clone(),
-                            }
-                        }
+            // Take the pending snapshot
+            let terminal_snapshot =
+                match context.renderable_content.pending_update.take_snapshot() {
+                    Some(snapshot) => snapshot,
+                    None if force_full_damage => {
+                        // Force full damage case - create a fresh snapshot
+                        let mut terminal = context.terminal.lock();
+                        let snapshot = TerminalSnapshot {
+                            colors: terminal.colors,
+                            display_offset: terminal.display_offset(),
+                            blinking_cursor: terminal.blinking_cursor,
+                            visible_rows: terminal.visible_rows(),
+                            cursor: terminal.cursor(),
+                            damage: TerminalDamage::Full,
+                            columns: terminal.columns(),
+                            screen_lines: terminal.screen_lines(),
+                        };
+                        terminal.reset_damage();
+                        drop(terminal);
+                        snapshot
+                    }
+                    None => {
+                        // No pending update and not forcing
+                        continue;
                     }
                 };
-
-                let snapshot = TerminalSnapshot {
-                    colors: terminal.colors,
-                    display_offset: terminal.display_offset(),
-                    blinking_cursor: terminal.blinking_cursor,
-                    visible_rows: terminal.visible_rows(),
-                    cursor: terminal.cursor(),
-                    damage,
-                    columns: terminal.columns(),
-                    screen_lines: terminal.screen_lines(),
-                };
-
-                terminal.reset_damage();
-                drop(terminal);
-                snapshot
-            };
 
             // Process the snapshot
             // let _duration = start.elapsed();

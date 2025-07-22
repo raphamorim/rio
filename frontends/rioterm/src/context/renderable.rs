@@ -72,8 +72,8 @@ pub struct TerminalSnapshot {
 pub struct PendingUpdate {
     /// Whether there's any pending update that needs rendering
     dirty: bool,
-    /// Accumulated damage since last render - tracks ALL changes
-    accumulated_damage: Option<TerminalDamage>,
+    /// The terminal snapshot with accumulated damage
+    snapshot: Option<TerminalSnapshot>,
 }
 
 impl PendingUpdate {
@@ -84,34 +84,68 @@ impl PendingUpdate {
     }
 
     /// Mark as needing update with the given damage
-    pub fn invalidate(&mut self, damage: TerminalDamage) {
+    pub fn invalidate<U: rio_backend::event::EventListener>(
+        &mut self,
+        damage: TerminalDamage,
+        terminal: &FairMutex<Crosswords<U>>,
+    ) {
         self.dirty = true;
 
-        // Always accumulate damage
-        match &mut self.accumulated_damage {
+        let mut terminal = terminal.lock();
+
+        // Get the terminal's current damage and merge with incoming damage
+        let terminal_damage = terminal.peek_damage_event();
+        let merged_damage = match (terminal_damage, &damage) {
+            (None, damage) => damage.clone(),
+            (Some(term_damage), damage) => Self::merge_damages(&term_damage, damage),
+        };
+
+        // Create or update the snapshot
+        match &mut self.snapshot {
             None => {
-                self.accumulated_damage = Some(damage);
+                // Create new snapshot
+                self.snapshot = Some(TerminalSnapshot {
+                    colors: terminal.colors,
+                    display_offset: terminal.display_offset(),
+                    blinking_cursor: terminal.blinking_cursor,
+                    visible_rows: terminal.visible_rows(),
+                    cursor: terminal.cursor(),
+                    damage: merged_damage,
+                    columns: terminal.columns(),
+                    screen_lines: terminal.screen_lines(),
+                });
             }
-            Some(existing) => {
-                *existing = Self::merge_damages(existing, &damage);
+            Some(existing_snapshot) => {
+                // Update existing snapshot with fresh terminal state but merge damage
+                existing_snapshot.colors = terminal.colors;
+                existing_snapshot.display_offset = terminal.display_offset();
+                existing_snapshot.blinking_cursor = terminal.blinking_cursor;
+                existing_snapshot.visible_rows = terminal.visible_rows();
+                existing_snapshot.cursor = terminal.cursor();
+                existing_snapshot.damage =
+                    Self::merge_damages(&existing_snapshot.damage, &merged_damage);
+                existing_snapshot.columns = terminal.columns();
+                existing_snapshot.screen_lines = terminal.screen_lines();
             }
         }
+
+        // Reset terminal damage since we've captured it in the snapshot
+        terminal.reset_damage();
     }
 
     /// Mark as needing full update
     pub fn invalidate_full<U: rio_backend::event::EventListener>(
         &mut self,
-        _terminal: &FairMutex<Crosswords<U>>,
+        terminal: &FairMutex<Crosswords<U>>,
     ) {
-        self.dirty = true;
-        self.accumulated_damage = Some(TerminalDamage::Full);
+        self.invalidate(TerminalDamage::Full, terminal);
     }
 
-    /// Take the accumulated damage and reset dirty flag
+    /// Take the snapshot and reset dirty flag
     /// This should only be called when actually rendering!
-    pub fn take_damage(&mut self) -> Option<TerminalDamage> {
+    pub fn take_snapshot(&mut self) -> Option<TerminalSnapshot> {
         self.dirty = false;
-        self.accumulated_damage.take()
+        self.snapshot.take()
     }
 
     /// Merge two damages into one - this is critical for correctness
