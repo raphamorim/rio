@@ -1,5 +1,6 @@
 pub mod sync;
 
+use crate::ansi::graphics::UpdateQueues;
 use crate::clipboard::ClipboardType;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
@@ -71,6 +72,11 @@ pub enum RioEvent {
     TerminalDamaged {
         route_id: usize,
         damage: TerminalDamage,
+    },
+    /// Graphics update available from terminal.
+    UpdateGraphics {
+        route_id: usize,
+        queues: UpdateQueues,
     },
     Paste,
     Copy(String),
@@ -231,6 +237,9 @@ impl Debug for RioEvent {
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
+            RioEvent::UpdateGraphics { route_id, .. } => {
+                write!(f, "UpdateGraphics({route_id})")
+            }
         }
     }
 }

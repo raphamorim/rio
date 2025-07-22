@@ -18,7 +18,6 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
-use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -764,8 +763,6 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
-        let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
-
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let mut has_active_changed = false;
@@ -866,15 +863,6 @@ impl Renderer {
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
                 };
-
-                // Handle graphics queues while we have the lock
-                if let Some(queues_to_add) = terminal.graphics_take_queues() {
-                    if let Some(ref mut queues) = graphic_queues {
-                        queues.push(queues_to_add);
-                    } else {
-                        graphic_queues = Some(vec![queues_to_add]);
-                    }
-                }
 
                 terminal.reset_damage();
                 drop(terminal);
@@ -1030,18 +1018,6 @@ impl Renderer {
                     }
 
                     let _duration = start.elapsed();
-                }
-            }
-        }
-
-        if let Some(op) = graphic_queues.take() {
-            for queues in op {
-                for graphic_data in queues.pending {
-                    sugarloaf.graphics.insert(graphic_data);
-                }
-
-                for graphic_data in queues.remove_queue {
-                    sugarloaf.graphics.remove(&graphic_data);
                 }
             }
         }

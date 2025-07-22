@@ -23,6 +23,7 @@ pub struct ClearSubregion {
     pub y: u16,
 }
 
+#[derive(Debug, Clone)]
 pub struct UpdateQueues {
     /// Graphics read from the PTY.
     pub pending: Vec<GraphicData>,
@@ -167,6 +168,10 @@ impl Graphics {
     /// Get queues to update graphics in the grid.
     ///
     /// If all queues are empty, it returns `None`.
+    pub fn has_pending_updates(&self) -> bool {
+        !self.pending.is_empty() || !self.texture_operations.lock().is_empty()
+    }
+
     pub fn take_queues(&mut self) -> Option<UpdateQueues> {
         let texture_operations = {
             let mut queue = self.texture_operations.lock();

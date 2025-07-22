@@ -316,6 +316,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Check if this is the current route
+                    if route_id == route.window.screen.ctx().current_route() {
+                        // Process graphics directly in sugarloaf
+                        let sugarloaf = &mut route.window.screen.sugarloaf;
+
+                        for graphic_data in queues.pending {
+                            sugarloaf.graphics.insert(graphic_data);
+                        }
+
+                        for graphic_data in queues.remove_queue {
+                            sugarloaf.graphics.remove(&graphic_data);
+                        }
+
+                        // Request a redraw to display the updated graphics
+                        route.request_redraw();
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
                 let timer_id = TimerId::new(Topic::UpdateConfig, 0);
                 let event = EventPayload::new(
