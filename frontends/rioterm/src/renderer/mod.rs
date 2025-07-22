@@ -899,7 +899,14 @@ impl Renderer {
 
                             if let Some(ref mut lines) = specific_lines {
                                 lines.insert(LineDamage {
-                                    line: context.renderable_content.cursor.state.pos.row.0 as usize,
+                                    line: context
+                                        .renderable_content
+                                        .cursor
+                                        .state
+                                        .pos
+                                        .row
+                                        .0
+                                        as usize,
                                     damaged: true,
                                 });
                             }
