@@ -1319,7 +1319,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .pending_update
                     .is_dirty()
                 {
-                    route.request_redraw();
+                    route.schedule_redraw(
+                        &mut self.scheduler,
+                        &self.event_proxy,
+                        route.window.screen.ctx().current_route(),
+                    );
                 }
 
                 if self.config.renderer.strategy.is_game() {
