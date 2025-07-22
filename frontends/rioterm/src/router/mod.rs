@@ -58,6 +58,40 @@ impl Route<'_> {
     }
 
     #[inline]
+    pub fn schedule_redraw(
+        &mut self,
+        scheduler: &mut crate::scheduler::Scheduler,
+        event_proxy: &EventProxy,
+        route_id: usize,
+    ) {
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, use direct redraw as CVDisplayLink handles VSync
+            let _ = (scheduler, event_proxy, route_id); // Suppress warnings
+            self.request_redraw();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            use crate::event::{EventPayload, RioEvent, RioEventType};
+            use crate::scheduler::{TimerId, Topic};
+
+            // Windows and Linux use the frame scheduler with refresh rate timing
+            let timer_id = TimerId::new(Topic::Render, route_id);
+            let event = EventPayload::new(
+                RioEventType::Rio(RioEvent::Render),
+                self.window.winit_window.id(),
+            );
+
+            // Schedule a render if not already scheduled
+            // Use vblank_interval for proper frame timing
+            if !scheduler.scheduled(timer_id) {
+                scheduler.schedule(event, self.window.vblank_interval, false, timer_id);
+            }
+        }
+    }
+
+    #[inline]
     pub fn begin_render(&mut self) {
         self.window.render_timestamp = Instant::now();
 

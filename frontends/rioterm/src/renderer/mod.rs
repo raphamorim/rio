@@ -4,8 +4,11 @@ pub mod navigation;
 mod search;
 pub mod utils;
 
+use crate::context::renderable::TerminalSnapshot;
 use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
+use rio_backend::crosswords::LineDamage;
+use rio_backend::event::TerminalDamage;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -15,20 +18,18 @@ use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
 use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
-use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
     drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -762,15 +763,11 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
-        let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
-
-        // let grid_start = std::time::Instant::now();
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let mut has_active_changed = false;
         if self.last_active != Some(active_key) {
             has_active_changed = true;
-
             self.last_active = Some(active_key);
         }
 
@@ -793,66 +790,71 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes is: {:?}", duration);
-            // let renderable_content = context.renderable_content();
             let force_full_damage = has_active_changed || is_active && hints.is_some();
 
-            let mut specific_lines = None;
-            // let duration = start.elapsed();
-            // println!("Time elapsed in before lock is: {:?}", duration);
-            let (colors, display_offset, blinking_cursor, visible_rows) = {
-                let mut terminal = context.terminal.lock();
-                let result = (
-                    terminal.colors,
-                    terminal.display_offset(),
-                    terminal.blinking_cursor,
-                    terminal.visible_rows(),
-                );
+            // Check if we need to render
+            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
+            {
+                // No updates pending, skip rendering
+                continue;
+            }
 
-                context.renderable_content.cursor.state = terminal.cursor();
-
-                // Early exit if no rendering is needed
-                if !force_full_damage && !terminal.needs_render() {
-                    terminal.reset_damage();
-                    return;
-                }
-
-                if let Some(queues_to_add) = terminal.graphics_take_queues() {
-                    if let Some(ref mut queues) = graphic_queues {
-                        queues.push(queues_to_add);
-                    } else {
-                        graphic_queues = Some(vec![queues_to_add]);
+            // Take the pending snapshot
+            let terminal_snapshot =
+                match context.renderable_content.pending_update.take_snapshot() {
+                    Some(snapshot) => snapshot,
+                    None if force_full_damage => {
+                        // Force full damage case - create a fresh snapshot
+                        let mut terminal = context.terminal.lock();
+                        let snapshot = TerminalSnapshot {
+                            colors: terminal.colors,
+                            display_offset: terminal.display_offset(),
+                            blinking_cursor: terminal.blinking_cursor,
+                            visible_rows: terminal.visible_rows(),
+                            cursor: terminal.cursor(),
+                            damage: TerminalDamage::Full,
+                            columns: terminal.columns(),
+                            screen_lines: terminal.screen_lines(),
+                        };
+                        terminal.reset_damage();
+                        drop(terminal);
+                        snapshot
                     }
-                }
+                    None => {
+                        // No pending update and not forcing
+                        continue;
+                    }
+                };
 
-                // Check for partial damage to optimize rendering
-                if !force_full_damage && !terminal.is_fully_damaged() {
-                    if let TermDamage::Partial(lines) = terminal.damage() {
-                        // Pre-allocate with estimated capacity to reduce allocations
-                        let capacity =
-                            lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
-                        let mut own_lines =
-                            std::collections::HashSet::with_capacity(capacity + 1);
-                        for line in lines {
-                            own_lines.insert(line.line);
-                        }
-                        // Only set specific_lines if there are actually damaged lines
-                        if !own_lines.is_empty() {
-                            specific_lines = Some(own_lines);
-                        }
-                    };
-                }
-                terminal.reset_damage();
-                result
-            };
+            // Process the snapshot
+            // let _duration = start.elapsed();
 
-            // If the last line is bigger than the actual visible rows, then some resize
-            // has happened. In this case, request full draw.
-            if let Some(ref lines) = specific_lines {
-                if let Some(max_value) = lines.iter().max() {
-                    if max_value > &(visible_rows.len() - 1) {
-                        specific_lines = None;
+            // Update cursor state from snapshot
+            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+
+            let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
+
+            // Check for partial damage to optimize rendering
+            if !force_full_damage {
+                match terminal_snapshot.damage {
+                    TerminalDamage::Full => {
+                        // Full damage, render everything
+                    }
+                    TerminalDamage::Partial(lines) => {
+                        if !lines.is_empty() {
+                            specific_lines = Some(lines.clone());
+                        }
+                    }
+                    TerminalDamage::CursorOnly => {
+                        specific_lines = Some(
+                            [LineDamage {
+                                line: *context.renderable_content.cursor.state.pos.row
+                                    as usize,
+                                damaged: true,
+                            }]
+                            .into_iter()
+                            .collect(),
+                        );
                     }
                 }
             }
@@ -861,8 +863,10 @@ impl Renderer {
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
-            context.renderable_content.has_blinking_enabled = blinking_cursor;
-            if blinking_cursor {
+            context.renderable_content.has_blinking_enabled =
+                terminal_snapshot.blinking_cursor;
+
+            if terminal_snapshot.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
                     let mut should_blink = true;
@@ -894,10 +898,17 @@ impl Renderer {
                             context.renderable_content.last_blink_toggle = Some(now);
 
                             if let Some(ref mut lines) = specific_lines {
-                                lines.insert(
-                                    context.renderable_content.cursor.state.pos.row.0
+                                lines.insert(LineDamage {
+                                    line: context
+                                        .renderable_content
+                                        .cursor
+                                        .state
+                                        .pos
+                                        .row
+                                        .0
                                         as usize,
-                                );
+                                    damaged: true,
+                                });
                             }
                         }
                     } else {
@@ -922,10 +933,9 @@ impl Renderer {
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    // let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
-                    for (i, row) in visible_rows.iter().enumerate() {
+                    for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == i;
                         self.create_line(
@@ -933,60 +943,46 @@ impl Renderer {
                             row,
                             has_cursor,
                             None,
-                            Line((i as i32) - display_offset as i32),
+                            Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
                             hints,
                             focused_match,
-                            &colors,
+                            &terminal_snapshot.colors,
                             is_active,
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!(
-                    //     "Time elapsed in -renderer.TermDamage::Full is: {:?}",
-                    //     duration
-                    // );
+                    // let _duration = start.elapsed();
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
+                        let line = line.line;
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
-                        if let Some(visible_row) = visible_rows.get(line) {
+                        if let Some(visible_row) =
+                            terminal_snapshot.visible_rows.get(line)
+                        {
                             self.create_line(
                                 content,
                                 visible_row,
                                 has_cursor,
                                 Some(line),
-                                Line((line as i32) - display_offset as i32),
+                                Line(
+                                    (line as i32)
+                                        - terminal_snapshot.display_offset as i32,
+                                ),
                                 &context.renderable_content,
                                 hints,
                                 focused_match,
-                                &colors,
+                                &terminal_snapshot.colors,
                                 is_active,
                             );
                         }
                     }
 
-                    // let duration = start.elapsed();
-                    // println!(
-                    //     "Time elapsed in -renderer.TermDamage::Lines is: {:?}",
-                    //     duration
-                    // );
-                }
-            };
-        }
-
-        if let Some(op) = graphic_queues.take() {
-            for queues in op {
-                for graphic_data in queues.pending {
-                    sugarloaf.graphics.insert(graphic_data);
-                }
-
-                for graphic_data in queues.remove_queue {
-                    sugarloaf.graphics.remove(&graphic_data);
+                    // let _duration = start.elapsed();
                 }
             }
         }
@@ -1019,22 +1015,13 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed before extend_with_grid_objects is: {:?}",
-        //     duration
-        // );
+        // let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
-        // let duration = start.elapsed();
-        // println!(
-        //     "Time elapsed after extend_with_grid_objects is: {:?}",
-        //     duration
-        // );
+        // let _duration = start.elapsed();
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
-        // let duration = start.elapsed();
-        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
+        // let _duration = start.elapsed();
     }
 }
