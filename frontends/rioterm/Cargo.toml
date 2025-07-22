@@ -45,7 +45,7 @@ unicode-width = { workspace = true }
 copa = { workspace = true }
 url = { workspace = true }
 rio-window = { workspace = true }
-lru = "0.13.0"
+lru = "0.16.0"
 slotmap = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -54,7 +54,7 @@ objc = { workspace = true }
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.11", default-features = false, features = ["std"] }
 tinyvec = { version = "1.8.1", features = ["alloc"] }
-windows-sys = { version = "0.59.0", features = [
+windows-sys = { version = "0.60.2", features = [
     "Win32_System_Console",
     "Win32_Foundation",
     "Win32_Security",

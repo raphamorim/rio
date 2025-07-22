@@ -44,8 +44,8 @@ rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
 approx = "0.5.1"
-lru = "0.14.0"
-skrifa = "0.31.3"
+lru = "0.16.0"
+skrifa = "0.33.0"
 halfbrown = "0.3.0"
 half = "2.6.0"
 string_cache = "0.8.7"
