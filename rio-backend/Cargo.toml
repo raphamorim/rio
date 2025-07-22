@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 tracing = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-toml = "0.8.19"
+toml = "0.9.2"
 base64 = { workspace = true }
 memchr = { version = "2.7.4", default-features = false }
 bitflags = { workspace = true }
