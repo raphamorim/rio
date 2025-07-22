@@ -13,7 +13,7 @@ pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
     any(feature = "wayland", feature = "x11"),
     not(any(target_os = "macos", windows))
 ))]
-pub const APPLICATION_ID: &str = "rio";
+pub const APPLICATION_ID: &str = "Rio";
 
 pub fn create_window_builder(
     title: &str,
@@ -64,13 +64,15 @@ pub fn create_window_builder(
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
         use rio_window::platform::x11::WindowAttributesExtX11;
-        window_builder = window_builder.with_name(APPLICATION_ID, "");
+        window_builder =
+            window_builder.with_name(APPLICATION_ID.to_lowercase(), APPLICATION_ID);
     }
 
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     {
         use rio_window::platform::wayland::WindowAttributesExtWayland;
-        window_builder = window_builder.with_name(APPLICATION_ID, "");
+        window_builder =
+            window_builder.with_name(APPLICATION_ID.to_lowercase(), APPLICATION_ID);
     }
 
     #[cfg(target_os = "windows")]

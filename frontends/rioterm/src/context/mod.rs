@@ -66,6 +66,12 @@ impl<T: EventListener> Context<T> {
             let mut terminal = self.terminal.lock();
             let display_offset = terminal.display_offset();
             terminal.update_selection_damage(selection_range, display_offset);
+            drop(terminal);
+
+            // Mark pending update as dirty so the selection change is rendered
+            self.renderable_content
+                .pending_update
+                .invalidate_full(&self.terminal);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -74,8 +80,9 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
         self.renderable_content.hyperlink_range = hyperlink_range;
-        self.renderable_content.has_pending_updates =
-            Some(rio_backend::event::TerminalDamage::Full);
+        self.renderable_content
+            .pending_update
+            .invalidate_full(&self.terminal);
     }
 
     #[inline]

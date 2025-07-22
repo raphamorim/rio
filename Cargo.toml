@@ -43,6 +43,7 @@ parking_lot = { version = "0.12.4", features = [
     "hardware-lock-elision",
 ] }
 rustc-hash = "2.1.1"
+smallvec = "1.15.1"
 
 # unicode-width = "0.2.0"
 unicode-width = { package = "unicode-width-16", version = "0.1.0" }

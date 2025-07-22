@@ -51,7 +51,7 @@ use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -210,7 +210,7 @@ impl Iterator for TermDamageIterator<'_> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LineDamage {
     /// Line number.
     pub line: usize,
@@ -567,7 +567,7 @@ impl<U: EventListener> Crosswords<U> {
             TerminalDamage::Full
         } else {
             // Collect damaged lines
-            let damaged_lines: Vec<LineDamage> = self
+            let damaged_lines: BTreeSet<LineDamage> = self
                 .damage
                 .lines
                 .iter()
@@ -594,6 +594,34 @@ impl<U: EventListener> Crosswords<U> {
             },
             self.window_id,
         );
+    }
+
+    /// Peek damage event based on current damage state
+    pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
+        let display_offset = self.grid.display_offset();
+        if self.damage.full {
+            Some(TerminalDamage::Full)
+        } else {
+            // Collect damaged lines
+            let damaged_lines: BTreeSet<LineDamage> = self
+                .damage
+                .lines
+                .iter()
+                .filter(|line| line.is_damaged())
+                .map(|line| LineDamage::new(line.line + display_offset, true))
+                .collect();
+
+            if damaged_lines.is_empty() {
+                // Check if cursor moved
+                if self.damage.last_cursor != self.grid.cursor.pos {
+                    Some(TerminalDamage::CursorOnly)
+                } else {
+                    None // No damage to emit
+                }
+            } else {
+                Some(TerminalDamage::Partial(damaged_lines))
+            }
+        }
     }
 
     #[inline]
@@ -647,6 +675,21 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn graphics_take_queues(&mut self) -> Option<UpdateQueues> {
         self.graphics.take_queues()
+    }
+
+    #[inline]
+    pub fn send_graphics_updates(&mut self) {
+        if self.graphics.has_pending_updates() {
+            if let Some(queues) = self.graphics.take_queues() {
+                self.event_proxy.send_event(
+                    RioEvent::UpdateGraphics {
+                        route_id: self.route_id,
+                        queues,
+                    },
+                    self.window_id,
+                );
+            }
+        }
     }
 
     #[inline]
@@ -888,13 +931,13 @@ impl<U: EventListener> Crosswords<U> {
     pub fn damage_cursor(&mut self) {
         self.damage_cursor_line();
 
-        self.event_proxy.send_event(
-            RioEvent::TerminalDamaged {
-                route_id: self.route_id,
-                damage: TerminalDamage::CursorOnly,
-            },
-            self.window_id,
-        );
+        // self.event_proxy.send_event(
+        //     RioEvent::TerminalDamaged {
+        //         route_id: self.route_id,
+        //         damage: TerminalDamage::CursorOnly(self.grid.cursor.pos.line, None),
+        //     },
+        //     self.window_id,
+        // );
     }
 
     #[inline]
@@ -905,13 +948,13 @@ impl<U: EventListener> Crosswords<U> {
             // Use line-based damage for cursor blinking
             self.damage_cursor_line();
 
-            self.event_proxy.send_event(
-                RioEvent::TerminalDamaged {
-                    route_id: self.route_id,
-                    damage: TerminalDamage::CursorOnly,
-                },
-                self.window_id,
-            );
+            // self.event_proxy.send_event(
+            //     RioEvent::TerminalDamaged {
+            //         route_id: self.route_id,
+            //         damage: TerminalDamage::CursorOnly,
+            //     },
+            //     self.window_id,
+            // );
         }
     }
 
@@ -1168,6 +1211,70 @@ impl<U: EventListener> Crosswords<U> {
         visible_rows
     }
 
+    /// Get visible rows with damage information - only clones damaged lines
+    pub fn visible_rows_with_damage(
+        &self,
+        damage: &TerminalDamage,
+    ) -> (Vec<Row<Square>>, Vec<usize>) {
+        let mut start = self.scroll_region.start.0;
+        let mut end = self.scroll_region.end.0;
+        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
+        let mut damaged_lines = Vec::new();
+
+        let scroll = self.display_offset() as i32;
+        if scroll != 0 {
+            start -= scroll;
+            end -= scroll;
+        }
+
+        // Determine which lines are damaged
+        match damage {
+            TerminalDamage::Full => {
+                // For full damage, all lines are damaged
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    damaged_lines.push(i);
+                }
+            }
+            TerminalDamage::Partial(lines) => {
+                // Only clone damaged lines
+                let damaged_set: std::collections::HashSet<usize> =
+                    lines.iter().filter(|d| d.damaged).map(|d| d.line).collect();
+
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    if damaged_set.contains(&i) {
+                        damaged_lines.push(i);
+                    }
+                }
+            }
+            TerminalDamage::CursorOnly => {
+                // For cursor-only damage, we still need all rows but mark cursor line
+                let cursor_line = self.grid.cursor.pos.row.0 as usize;
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    if i == cursor_line {
+                        damaged_lines.push(i);
+                    }
+                }
+            }
+        }
+
+        (visible_rows, damaged_lines)
+    }
+
+    /// Get terminal dimensions
+    #[inline]
+    pub fn columns(&self) -> usize {
+        self.grid.columns()
+    }
+
+    /// Get terminal screen lines
+    #[inline]
+    pub fn screen_lines(&self) -> usize {
+        self.grid.screen_lines()
+    }
+
     fn deccolm(&mut self)
     where
         U: EventListener,
@@ -1272,7 +1379,7 @@ impl<U: EventListener> Crosswords<U> {
             self.event_proxy.send_event(
                 RioEvent::TerminalDamaged {
                     route_id: self.route_id,
-                    damage: TerminalDamage::Partial(vec![damaged_line]),
+                    damage: TerminalDamage::Partial([damaged_line].into_iter().collect()),
                 },
                 self.window_id,
             );
@@ -3030,6 +3137,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             id: graphic_id,
             ..graphic
         });
+
+        // Send graphics update event
+        self.send_graphics_updates();
     }
 
     #[inline]
