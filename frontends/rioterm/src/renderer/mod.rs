@@ -753,7 +753,7 @@ impl Renderer {
         hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
-        let start = std::time::Instant::now();
+        // let start = std::time::Instant::now();
 
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
@@ -870,7 +870,7 @@ impl Renderer {
             };
 
             // Process the snapshot
-            let _duration = start.elapsed();
+            // let _duration = start.elapsed();
 
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor;
@@ -987,7 +987,7 @@ impl Renderer {
                         );
                     }
                     content.build();
-                    let _duration = start.elapsed();
+                    // let _duration = start.elapsed();
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
@@ -1017,7 +1017,7 @@ impl Renderer {
                         }
                     }
 
-                    let _duration = start.elapsed();
+                    // let _duration = start.elapsed();
                 }
             }
         }
@@ -1050,13 +1050,13 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
-        let _duration = start.elapsed();
+        // let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
-        let _duration = start.elapsed();
+        // let _duration = start.elapsed();
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
-        let _duration = start.elapsed();
+        // let _duration = start.elapsed();
     }
 }
