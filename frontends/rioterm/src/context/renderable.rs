@@ -147,17 +147,3 @@ impl PendingUpdate {
         }
     }
 }
-
-// Compatibility layer for old API
-impl PendingUpdate {
-    pub fn has(&self) -> bool {
-        self.is_dirty()
-    }
-
-    pub fn push_full_snapshot<U: rio_backend::event::EventListener>(
-        &mut self,
-        terminal: &FairMutex<Crosswords<U>>,
-    ) {
-        self.invalidate_full(terminal);
-    }
-}

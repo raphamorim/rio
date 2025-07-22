@@ -66,6 +66,12 @@ impl<T: EventListener> Context<T> {
             let mut terminal = self.terminal.lock();
             let display_offset = terminal.display_offset();
             terminal.update_selection_damage(selection_range, display_offset);
+            drop(terminal);
+
+            // Mark pending update as dirty so the selection change is rendered
+            self.renderable_content
+                .pending_update
+                .invalidate_full(&self.terminal);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -76,7 +82,7 @@ impl<T: EventListener> Context<T> {
         self.renderable_content.hyperlink_range = hyperlink_range;
         self.renderable_content
             .pending_update
-            .push_full_snapshot(&self.terminal);
+            .invalidate_full(&self.terminal);
     }
 
     #[inline]

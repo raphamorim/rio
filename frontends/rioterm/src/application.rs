@@ -242,7 +242,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             let ctx = grid_context.context();
 
                             // In this case we know we have to render something that's pending.
-                            if ctx.renderable_content.pending_update.has() {
+                            if ctx.renderable_content.pending_update.is_dirty() {
                                 request_pending_redraw = true;
                             }
 
@@ -1294,7 +1294,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .current()
                     .renderable_content
                     .pending_update
-                    .has()
+                    .is_dirty()
                 {
                     route.request_redraw();
                 }
