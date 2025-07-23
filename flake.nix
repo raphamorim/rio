@@ -56,7 +56,7 @@
         };
         packages.rio = pkgs.callPackage mkRio {rust-toolchain = rust-toolchain;};
 
-        devShells.msrv = mkDevShell rust-toolchain;
+        devShells.msrv = mkDevShell (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
         devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.default;
         devShells.nightly = mkDevShell (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default));
       };
