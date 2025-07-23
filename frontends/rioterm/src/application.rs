@@ -1310,7 +1310,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if route
+                if self.config.renderer.strategy.is_game() {
+                    route.request_redraw();
+                } else if route
                     .window
                     .screen
                     .ctx()
@@ -1324,10 +1326,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         &self.event_proxy,
                         route.window.screen.ctx().current_route(),
                     );
-                }
-
-                if self.config.renderer.strategy.is_game() {
-                    route.request_redraw();
                 }
 
                 event_loop.set_control_flow(ControlFlow::Wait);
