@@ -42,6 +42,7 @@ pub struct Search {
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
+    is_game_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
     use_drawable_chars: bool,
     pub named_colors: Colors,
@@ -116,6 +117,7 @@ impl Renderer {
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             char_cache: CharCache::new(),
+            is_game_mode_enabled: config.renderer.strategy.is_game(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -790,7 +792,9 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            let force_full_damage = has_active_changed || is_active && hints.is_some();
+            let force_full_damage = has_active_changed
+                || is_active && hints.is_some()
+                || self.is_game_mode_enabled;
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
