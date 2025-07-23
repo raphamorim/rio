@@ -26,10 +26,6 @@
         lib,
         ...
       }: let
-        rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = ["rust-src" "rust-analyzer"];
-        };
-
         mkRio = import ./pkgRio.nix;
 
         mkDevShell = rust-toolchain: let
@@ -54,7 +50,7 @@
           type = "app";
           program = self'.packages.default;
         };
-        packages.rio = pkgs.callPackage mkRio {rust-toolchain = rust-toolchain;};
+        packages.rio = pkgs.callPackage mkRio {rust-toolchain = pkgs.rust-bin.stable.latest.minimal;};
 
         devShells.msrv = mkDevShell (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
         devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.default;
