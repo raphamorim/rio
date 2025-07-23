@@ -2,12 +2,12 @@
 **/*.rs.bk
 
 # Nix build output
-result
-result-lib
-result-dev
-result-man
+/result
+/result-lib
+/result-dev
+/result-man
 
-target/
+/target/
 .DS_Store
 rls/
 .vs
@@ -22,7 +22,7 @@ NOTES
 .direnv/
 
 # compiled terminfo files
-misc/72/
+/misc/72/
 
 # goreleaser
-dist/
+/dist/
