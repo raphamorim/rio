@@ -17,6 +17,7 @@ use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
+use smallvec::{SmallVec, smallvec};
 
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -34,8 +35,6 @@ use std::time::{Duration, Instant};
 use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
-
-const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
 pub struct Context<T: EventListener> {
     pub route_id: usize,
@@ -121,8 +120,10 @@ pub struct ContextManagerConfig {
     pub keyboard: rio_backend::config::keyboard::Keyboard,
 }
 
+const DEFAULT_CONTEXT_CAPACITY: usize = 28;
+
 pub struct ContextManager<T: EventListener> {
-    contexts: Vec<ContextGrid<T>>,
+    contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
     acc_current_route: usize,
@@ -382,7 +383,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_index: 0,
             current_route: 0,
             acc_current_route: 0,
-            contexts: vec![ContextGrid::new(
+            contexts: smallvec![ContextGrid::new(
                 initial_context,
                 margin,
                 ctx_config.split_color,
@@ -431,7 +432,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_index: 0,
             current_route: 0,
             acc_current_route: 0,
-            contexts: vec![ContextGrid::new(
+            contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Delta::<f32>::default(),
                 config.split_color,
@@ -715,7 +716,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn contexts_mut(&mut self) -> &mut Vec<ContextGrid<T>> {
+    pub fn contexts_mut(&mut self) -> &mut SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]> {
         &mut self.contexts
     }
 
