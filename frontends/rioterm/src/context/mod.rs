@@ -10,10 +10,10 @@ use crate::context::title::{
     create_title_extra_from_context, update_title, ContextManagerTitles,
 };
 use crate::event::sync::FairMutex;
-use crate::event::RioEvent;
+use crate::event::{Msg, RioEvent};
 use crate::ime::Ime;
 use crate::messenger::Messenger;
-use crate::performer::Machine;
+use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
@@ -27,6 +27,7 @@ use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "windows")]
@@ -48,10 +49,14 @@ pub struct Context<T: EventListener> {
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub ime: Ime,
+    _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
+        // Shutdown the terminal's PTY.
+        let _ = self.messenger.channel.send(Msg::Shutdown);
+
         #[cfg(not(target_os = "windows"))]
         teletypewriter::kill_pid(self.shell_pid as i32);
     }
@@ -158,6 +163,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         rich_text_id,
         dimension,
         ime: Ime::new(),
+        _io_thread: None,
     }
 }
 
@@ -285,9 +291,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             route_id,
         )?;
         let channel = machine.channel();
-        if config.spawn_performer {
-            machine.spawn();
-        }
+        let io_thread = if config.spawn_performer {
+            Some(machine.spawn())
+        } else {
+            None
+        };
 
         let messenger = Messenger::new(channel);
 
@@ -303,6 +311,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
             ime: Ime::new(),
+            _io_thread: io_thread,
         })
     }
 
