@@ -33,6 +33,7 @@ pub struct RenderableContent {
     pub has_blinking_enabled: bool,
     pub is_blinking_cursor_visible: bool,
     pub selection_range: Option<SelectionRange>,
+    pub hyperlink_range: Option<SelectionRange>,
     pub hint_labels: Vec<HintLabel>,
     pub highlighted_hint: Option<crate::hints::HintMatch>,
     pub last_typing: Option<Instant>,
@@ -50,6 +51,7 @@ impl RenderableContent {
             highlighted_hint: None,
             last_typing: None,
             last_blink_toggle: None,
+            hyperlink_range: None,
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
         }

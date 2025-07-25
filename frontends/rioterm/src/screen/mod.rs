@@ -1708,8 +1708,7 @@ impl Screen<'_> {
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
-                let columns = terminal.columns();
-                terminal.update_selection_damage(None, display_offset, columns);
+                terminal.update_selection_damage(None, display_offset);
             }
 
             current.renderable_content.highlighted_hint = None;
@@ -1732,7 +1731,6 @@ impl Screen<'_> {
             {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
-                let columns = terminal.columns();
 
                 // Create a temporary selection range for damage tracking
                 let hint_range = rio_backend::selection::SelectionRange::new(
@@ -1743,7 +1741,6 @@ impl Screen<'_> {
                 terminal.update_selection_damage(
                     Some(hint_range),
                     display_offset,
-                    columns,
                 );
             }
 
@@ -1754,8 +1751,7 @@ impl Screen<'_> {
             if current.renderable_content.highlighted_hint.is_some() {
                 let mut terminal = current.terminal.lock();
                 let display_offset = terminal.display_offset();
-                let columns = terminal.columns();
-                terminal.update_selection_damage(None, display_offset, columns);
+                terminal.update_selection_damage(None, display_offset);
             }
 
             current.renderable_content.highlighted_hint = None;
@@ -1991,12 +1987,7 @@ impl Screen<'_> {
         }
 
         if !is_hyperlink_key_active
-            || self
-                .context_manager
-                .current()
-                .renderable_content
-                .highlighted_hint
-                .is_none()
+            || !self.context_manager.current().has_hyperlink_range()
         {
             return false;
         }
@@ -2939,7 +2930,6 @@ impl Screen<'_> {
         if !current.renderable_content.hint_labels.is_empty() {
             let mut terminal = current.terminal.lock();
             let display_offset = terminal.display_offset();
-            let columns = terminal.columns();
 
             // Mark each hint label position as damaged
             for hint_label in &current.renderable_content.hint_labels {
@@ -2951,12 +2941,11 @@ impl Screen<'_> {
                 terminal.update_selection_damage(
                     Some(hint_range),
                     display_offset,
-                    columns,
                 );
             }
 
             // Clear the damage by setting to None (this marks the areas for re-rendering)
-            terminal.update_selection_damage(None, display_offset, columns);
+            terminal.update_selection_damage(None, display_offset);
         }
 
         // Now clear the hint labels
