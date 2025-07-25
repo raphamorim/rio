@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use teletypewriter::WinsizeBuilder;
 
 pub struct Messenger {
-    channel: corcovado::channel::Sender<Msg>,
+    pub channel: corcovado::channel::Sender<Msg>,
 }
 
 impl Messenger {
