@@ -3,9 +3,7 @@ pub mod renderable;
 pub mod title;
 
 use crate::ansi::CursorShape;
-use crate::context::grid::ContextDimension;
-use crate::context::grid::ContextGrid;
-use crate::context::grid::Delta;
+use crate::context::grid::{ContextDimension, ContextGrid, ContextGridItem, Delta};
 use crate::context::title::{
     create_title_extra_from_context, update_title, ContextManagerTitles,
 };
@@ -17,7 +15,7 @@ use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::Shell;
-use smallvec::{SmallVec, smallvec};
+use smallvec::{smallvec, SmallVec};
 
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -27,9 +25,13 @@ use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
 use std::borrow::Cow;
 use std::error::Error;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+// Global atomic counter for generating unique route IDs
+static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
@@ -126,7 +128,6 @@ pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
-    acc_current_route: usize,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -174,7 +175,6 @@ pub fn create_mock_context<
 >(
     event_proxy: T,
     window_id: WindowId,
-    route_id: usize,
     rich_text_id: usize,
     dimension: ContextDimension,
 ) -> Context<T> {
@@ -196,7 +196,6 @@ pub fn create_mock_context<
         (&Cursor::default(), false),
         event_proxy.clone(),
         window_id,
-        route_id,
         rich_text_id,
         dimension,
         &config,
@@ -210,11 +209,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
-        route_id: usize,
         rich_text_id: usize,
         dimension: ContextDimension,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
+        let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
         let cols: u16 = dimension.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
         let rows: u16 = dimension.lines.try_into().unwrap_or(MIN_LINES as u16);
 
@@ -333,7 +332,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cursor_state,
             event_proxy.clone(),
             window_id,
-            route_id,
             rich_text_id,
             size,
             &ctx_config,
@@ -382,7 +380,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
-            acc_current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 margin,
@@ -421,7 +418,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy.clone(),
             window_id,
             0,
-            0,
             ContextDimension::default(),
             &config,
         )?;
@@ -431,7 +427,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
-            acc_current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Delta::<f32>::default(),
@@ -716,7 +711,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn contexts_mut(&mut self) -> &mut SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]> {
+    pub fn get_mut(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
+        self.contexts[self.current_index].get_mut(route_id)
+    }
+
+    #[inline]
+    pub fn contexts_mut(
+        &mut self,
+    ) -> &mut SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]> {
         &mut self.contexts
     }
 
@@ -892,7 +894,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cloned_config.working_dir = working_dir;
         }
 
-        self.acc_current_route += 1;
         let current = self.current();
         let cursor = current.cursor_from_ref();
 
@@ -900,19 +901,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
-            self.acc_current_route,
             rich_text_id,
             self.current().dimension,
             &cloned_config,
         ) {
             Ok(new_context) => {
+                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context);
                 } else {
                     self.contexts[self.current_index].split_right(new_context);
                 }
 
-                self.current_route = self.acc_current_route;
+                self.current_route = new_route_id;
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -949,7 +950,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
         };
 
-        self.acc_current_route += 1;
         let current = self.current();
         let cursor = current.cursor_from_ref();
 
@@ -957,19 +957,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
-            self.acc_current_route,
             rich_text_id,
             self.current().dimension,
             &context_manager_config,
         ) {
             Ok(new_context) => {
+                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context);
                 } else {
                     self.contexts[self.current_index].split_right(new_context);
                 }
 
-                self.current_route = self.acc_current_route;
+                self.current_route = new_route_id;
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1017,7 +1017,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cloned_config.working_dir = working_dir;
             }
 
-            self.acc_current_route += 1;
             let current = self.current();
             let cursor = current.cursor_from_ref();
             let mut dimension = current.dimension;
@@ -1031,7 +1030,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 (&cursor, current.renderable_content.has_blinking_enabled),
                 self.event_proxy.clone(),
                 self.window_id,
-                self.acc_current_route,
                 rich_text_id,
                 dimension,
                 &cloned_config,

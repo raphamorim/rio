@@ -49,7 +49,7 @@ pub struct Renderer {
     pub colors: List,
     pub navigation: ScreenNavigation,
     unfocused_split_opacity: f32,
-    last_active: Option<slotmap::DefaultKey>,
+    last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -774,7 +774,7 @@ impl Renderer {
         }
 
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
-            let is_active = active_key == key;
+            let is_active = &active_key == key;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;

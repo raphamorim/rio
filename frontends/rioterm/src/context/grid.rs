@@ -5,7 +5,7 @@ use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
     layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
 };
-use slotmap::{DefaultKey, SlotMap};
+use std::collections::HashMap;
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -80,19 +80,19 @@ pub struct Delta<T: Default> {
 pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
-    pub current: DefaultKey,
+    pub current: usize,
     pub margin: Delta<f32>,
     border_color: [f32; 4],
     scaled_padding: f32,
-    inner: SlotMap<DefaultKey, ContextGridItem<T>>,
-    pub root: Option<DefaultKey>,
+    inner: HashMap<usize, ContextGridItem<T>>,
+    pub root: Option<usize>,
 }
 
 pub struct ContextGridItem<T: EventListener> {
-    val: Context<T>,
-    right: Option<DefaultKey>,
-    down: Option<DefaultKey>,
-    parent: Option<DefaultKey>,
+    pub val: Context<T>,
+    right: Option<usize>,
+    down: Option<usize>,
+    parent: Option<usize>,
     rich_text_object: Object,
 }
 
@@ -149,8 +149,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let height = context.dimension.height;
         let scale = context.dimension.dimension.scale;
         let scaled_padding = PADDING * scale;
-        let mut inner = SlotMap::new();
-        let root_key = inner.insert(ContextGridItem::new(context));
+        let mut inner = HashMap::new();
+        let root_key = context.route_id;
+        inner.insert(context.route_id, ContextGridItem::new(context));
         let mut grid = Self {
             inner,
             current: root_key,
@@ -163,6 +164,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
         grid.calculate_positions_for_affected_nodes(&[root_key]);
         grid
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self, key: usize) -> Option<&mut ContextGridItem<T>> {
+        self.inner.get_mut(&key)
     }
 
     #[inline]
@@ -183,18 +189,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    pub fn contexts_mut(&mut self) -> &mut SlotMap<DefaultKey, ContextGridItem<T>> {
+    pub fn contexts_mut(&mut self) -> &mut HashMap<usize, ContextGridItem<T>> {
         &mut self.inner
     }
 
     #[inline]
     #[allow(unused)]
-    pub fn contexts(&mut self) -> &SlotMap<DefaultKey, ContextGridItem<T>> {
+    pub fn contexts(&mut self) -> &HashMap<usize, ContextGridItem<T>> {
         &self.inner
     }
 
     /// Get all keys in the order they appear in the grid (depth-first traversal)
-    pub fn get_ordered_keys(&self) -> Vec<DefaultKey> {
+    pub fn get_ordered_keys(&self) -> Vec<usize> {
         let mut keys = Vec::new();
         if let Some(root) = self.root {
             self.collect_keys_recursive(root, &mut keys);
@@ -213,18 +219,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[allow(dead_code)]
     pub fn contexts_ordered(&self) -> Vec<&ContextGridItem<T>> {
         let keys = self.get_ordered_keys();
-        keys.iter().filter_map(|&key| self.inner.get(key)).collect()
+        keys.iter()
+            .filter_map(|&key| self.inner.get(&key))
+            .collect()
     }
 
     /// Get the index of a key in the ordered list
     #[allow(dead_code)]
-    pub fn key_to_index(&self, key: DefaultKey) -> Option<usize> {
+    pub fn key_to_index(&self, key: usize) -> Option<usize> {
         let keys = self.get_ordered_keys();
         keys.iter().position(|&k| k == key)
     }
 
-    fn collect_keys_recursive(&self, key: DefaultKey, keys: &mut Vec<DefaultKey>) {
-        if let Some(item) = self.inner.get(key) {
+    fn collect_keys_recursive(&self, key: usize, keys: &mut Vec<usize>) {
+        if let Some(item) = self.inner.get(&key) {
             keys.push(key);
             if let Some(right_key) = item.right {
                 self.collect_keys_recursive(right_key, keys);
@@ -305,19 +313,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     #[inline]
     #[allow(unused)]
-    pub fn current_key(&self) -> DefaultKey {
+    pub fn current_key(&self) -> usize {
         self.current
     }
 
     #[inline]
     pub fn current(&self) -> &Context<T> {
-        if let Some(item) = self.inner.get(self.current) {
+        if let Some(item) = self.inner.get(&self.current) {
             &item.val
         } else {
             // This should never happen, but if it does, return the first context
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(root) {
+                if let Some(item) = self.inner.get(&root) {
                     return &item.val;
                 }
             }
@@ -331,13 +339,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_key = self.current;
 
         // Check if current key exists, if not try to fix it
-        if !self.inner.contains_key(current_key) {
+        if !self.inner.contains_key(&current_key) {
             tracing::error!("Current key {:?} not found in grid", current_key);
             if let Some(root) = self.root {
                 self.current = root;
             } else if let Some(first_key) = self.inner.keys().next() {
-                self.current = first_key;
-                self.root = Some(first_key);
+                self.current = *first_key;
+                self.root = Some(*first_key);
             } else {
                 panic!("Grid is in an invalid state - no contexts available");
             }
@@ -345,7 +353,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Now get the mutable reference
         let current_key = self.current;
-        if let Some(item) = self.inner.get_mut(current_key) {
+        if let Some(item) = self.inner.get_mut(&current_key) {
             &mut item.val
         } else {
             panic!(
@@ -367,7 +375,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // In case there's only 1 context then ignore quad
         if len == 1 {
             if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(root) {
+                if let Some(item) = self.inner.get(&root) {
                     target.push(item.rich_text_object.clone());
                 }
             }
@@ -388,7 +396,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // In case there's only 1 context then ignore quad
         if len == 1 {
             if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(root) {
+                if let Some(item) = self.inner.get(&root) {
                     objects.push(item.rich_text_object.clone());
                 }
             }
@@ -401,17 +409,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
         let len = self.inner.len();
         if len <= 1 {
-            if let Some(item) = self.inner.get(self.current) {
+            if let Some(item) = self.inner.get(&self.current) {
                 return (&item.val, self.margin);
             } else if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(root) {
+                if let Some(item) = self.inner.get(&root) {
                     return (&item.val, self.margin);
                 }
             }
             panic!("Grid is in an invalid state - no contexts available");
         }
 
-        if let Some(current_item) = self.inner.get(self.current) {
+        if let Some(current_item) = self.inner.get(&self.current) {
             let objects = self.objects();
             let rich_text_id = current_item.val.rich_text_id;
 
@@ -430,7 +438,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(root) {
+                if let Some(item) = self.inner.get(&root) {
                     return (&item.val, self.margin);
                 }
             }
@@ -450,7 +458,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         for obj in objects {
             if let Object::RichText(rich_text_obj) = obj {
                 if let Some(key) = self.find_by_rich_text_id(rich_text_obj.id) {
-                    if let Some(item) = self.inner.get(key) {
+                    if let Some(item) = self.inner.get(&key) {
                         let scaled_position_x =
                             rich_text_obj.position[0] * (self.scaled_padding / PADDING);
                         let scaled_position_y =
@@ -479,13 +487,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
-    pub fn find_by_rich_text_id(
-        &self,
-        searched_rich_text_id: usize,
-    ) -> Option<DefaultKey> {
+    pub fn find_by_rich_text_id(&self, searched_rich_text_id: usize) -> Option<usize> {
         for (key, item) in &self.inner {
             if item.val.rich_text_id == searched_rich_text_id {
-                return Some(key);
+                return Some(*key);
             }
         }
         None
@@ -493,7 +498,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     #[inline]
     pub fn grid_dimension(&self) -> ContextDimension {
-        if let Some(current_item) = self.inner.get(self.current) {
+        if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
             ContextDimension::build(
                 self.width,
@@ -517,8 +522,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, key: DefaultKey) {
-        if let Some(item) = self.inner.get(key) {
+    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, key: usize) {
+        if let Some(item) = self.inner.get(&key) {
             // Add pre-computed rich text object
             objects.push(item.rich_text_object.clone());
 
@@ -589,7 +594,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
         // Update scaled_padding from the first context (they should all have the same scale)
         if let Some(root) = self.root {
-            if let Some(first_context) = self.inner.get(root) {
+            if let Some(first_context) = self.inner.get(&root) {
                 self.scaled_padding =
                     PADDING * first_context.val.dimension.dimension.scale;
             }
@@ -604,7 +609,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.height = new_height;
 
         // Create a map to store resize deltas for each key
-        let mut resize_deltas: std::collections::HashMap<DefaultKey, (f32, f32)> =
+        let mut resize_deltas: std::collections::HashMap<usize, (f32, f32)> =
             std::collections::HashMap::new();
 
         if let Some(root) = self.root {
@@ -618,7 +623,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Apply the resize deltas
         for (key, (width_delta, height_delta)) in resize_deltas {
-            if let Some(context) = self.inner.get_mut(key) {
+            if let Some(context) = self.inner.get_mut(&key) {
                 let current_width = context.val.dimension.width;
                 context
                     .val
@@ -641,19 +646,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // All nodes are affected by resize
-        let all_keys: Vec<DefaultKey> = self.inner.keys().collect();
+        let all_keys: Vec<usize> = self.inner.keys().cloned().collect();
         self.calculate_positions_for_affected_nodes(&all_keys);
     }
 
     // Updated resize_context to work with slotmap
     fn resize_context_slotmap(
         &self,
-        resize_deltas: &mut std::collections::HashMap<DefaultKey, (f32, f32)>,
-        key: DefaultKey,
+        resize_deltas: &mut std::collections::HashMap<usize, (f32, f32)>,
+        key: usize,
         available_width: f32,
         available_height: f32,
     ) -> (f32, f32) {
-        if let Some(item) = self.inner.get(key) {
+        if let Some(item) = self.inner.get(&key) {
             let mut current_available_width = available_width;
             let mut current_available_height = available_height;
 
@@ -685,8 +690,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         (available_width, available_height)
     }
 
-    fn request_resize(&mut self, key: DefaultKey) {
-        if let Some(item) = self.inner.get_mut(key) {
+    fn request_resize(&mut self, key: usize) {
+        if let Some(item) = self.inner.get_mut(&key) {
             let mut terminal = item.val.terminal.lock();
             terminal.resize::<ContextDimension>(item.val.dimension);
             drop(terminal);
@@ -707,17 +712,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Calculate positions only for affected nodes and their children
-    pub fn calculate_positions_for_affected_nodes(
-        &mut self,
-        affected_keys: &[DefaultKey],
-    ) {
+    pub fn calculate_positions_for_affected_nodes(&mut self, affected_keys: &[usize]) {
         if self.inner.is_empty() {
             return;
         }
 
         // For each affected node, we need to recalculate its position and all its children
         for &key in affected_keys {
-            if self.inner.contains_key(key) {
+            if self.inner.contains_key(&key) {
                 // Find the position this node should have based on its parent
                 let margin = self.find_node_margin(key);
                 self.calculate_positions_recursive(key, margin);
@@ -726,16 +728,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Find the margin/position a node should have based on its parent
-    fn find_node_margin(&self, key: DefaultKey) -> Delta<f32> {
+    fn find_node_margin(&self, key: usize) -> Delta<f32> {
         // If it's the root node, use the grid margin
         if Some(key) == self.root {
             return self.margin;
         }
 
         // Get the current node to check its parent reference
-        if let Some(node) = self.inner.get(key) {
+        if let Some(node) = self.inner.get(&key) {
             if let Some(parent_key) = node.parent {
-                if let Some(parent) = self.inner.get(parent_key) {
+                if let Some(parent) = self.inner.get(&parent_key) {
                     // Determine if this node is a right or down child
                     if parent.right == Some(key) {
                         // This is a right child
@@ -769,8 +771,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Recursively calculate positions for grid items
-    fn calculate_positions_recursive(&mut self, key: DefaultKey, margin: Delta<f32>) {
-        if let Some(item) = self.inner.get_mut(key) {
+    fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
+        if let Some(item) = self.inner.get_mut(&key) {
             // Set position for current item in the rich text object
             item.set_position([margin.x, margin.top_y]);
 
@@ -813,7 +815,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        if !self.inner.contains_key(self.current) {
+        if !self.inner.contains_key(&self.current) {
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
                 self.current = root;
@@ -829,7 +831,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let to_be_removed = self.current;
         let (to_be_removed_width, to_be_removed_height) = {
-            if let Some(item) = self.inner.get(to_be_removed) {
+            if let Some(item) = self.inner.get(&to_be_removed) {
                 (
                     item.val.dimension.width + self.margin.x,
                     item.val.dimension.height,
@@ -842,9 +844,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Find parent context if it exists
         let mut parent_context = None;
         if Some(to_be_removed) != self.root {
-            if let Some(node) = self.inner.get(to_be_removed) {
+            if let Some(node) = self.inner.get(&to_be_removed) {
                 if let Some(parent_key) = node.parent {
-                    if let Some(parent) = self.inner.get(parent_key) {
+                    if let Some(parent) = self.inner.get(&parent_key) {
                         // Determine if this is a right or down child
                         if parent.right == Some(to_be_removed) {
                             parent_context = Some((true, parent_key));
@@ -883,14 +885,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     fn handle_removal_with_parent(
         &mut self,
-        to_be_removed: DefaultKey,
-        parent_key: DefaultKey,
+        to_be_removed: usize,
+        parent_key: usize,
         is_right: bool,
         to_be_removed_width: f32,
         to_be_removed_height: f32,
         scaled_padding: f32,
     ) {
-        if !self.inner.contains_key(parent_key) {
+        if !self.inner.contains_key(&parent_key) {
             tracing::error!("Parent key {:?} not found in grid", parent_key);
             return;
         }
@@ -899,17 +901,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         if is_right {
             // Handle right child removal
-            let current_down = self.inner.get(to_be_removed).and_then(|item| item.down);
+            let current_down = self.inner.get(&to_be_removed).and_then(|item| item.down);
             if let Some(current_down) = current_down {
-                if self.inner.contains_key(current_down) {
-                    if let Some(item) = self.inner.get_mut(current_down) {
+                if self.inner.contains_key(&current_down) {
+                    if let Some(item) = self.inner.get_mut(&current_down) {
                         item.val
                             .dimension
                             .increase_height(to_be_removed_height + scaled_padding);
                     }
 
                     let to_be_remove_right =
-                        self.inner.get(to_be_removed).and_then(|item| item.right);
+                        self.inner.get(&to_be_removed).and_then(|item| item.right);
                     self.request_resize(current_down);
                     self.remove_key(to_be_removed);
 
@@ -925,11 +927,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         );
                     }
 
-                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                    if let Some(parent) = self.inner.get_mut(&parent_key) {
                         parent.right = Some(next_current);
                     }
                     // Update parent reference for the new child
-                    if let Some(new_child) = self.inner.get_mut(next_current) {
+                    if let Some(new_child) = self.inner.get_mut(&next_current) {
                         new_child.parent = Some(parent_key);
                     }
                     self.current = next_current;
@@ -939,8 +941,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // No down children, expand parent
             let to_be_removed_right =
-                self.inner.get(to_be_removed).and_then(|item| item.right);
-            if let Some(parent) = self.inner.get_mut(parent_key) {
+                self.inner.get(&to_be_removed).and_then(|item| item.right);
+            if let Some(parent) = self.inner.get_mut(&parent_key) {
                 let parent_width = parent.val.dimension.width;
                 parent
                     .val
@@ -950,17 +952,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
             // Update parent reference for inherited right child
             if let Some(inherited_right) = to_be_removed_right {
-                if let Some(inherited_child) = self.inner.get_mut(inherited_right) {
+                if let Some(inherited_child) = self.inner.get_mut(&inherited_right) {
                     inherited_child.parent = Some(parent_key);
                 }
             }
             self.request_resize(parent_key);
         } else {
             // Handle down child removal
-            let current_right = self.inner.get(to_be_removed).and_then(|item| item.right);
+            let current_right =
+                self.inner.get(&to_be_removed).and_then(|item| item.right);
             if let Some(current_right) = current_right {
-                if self.inner.contains_key(current_right) {
-                    if let Some(item) = self.inner.get_mut(current_right) {
+                if self.inner.contains_key(&current_right) {
+                    if let Some(item) = self.inner.get_mut(&current_right) {
                         item.val
                             .dimension
                             .increase_width(to_be_removed_width + scaled_padding);
@@ -969,18 +972,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.request_resize(current_right);
                     next_current = current_right;
 
-                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                    if let Some(parent) = self.inner.get_mut(&parent_key) {
                         parent.down = Some(next_current);
                     }
                     // Update parent reference for the new child
-                    if let Some(new_child) = self.inner.get_mut(next_current) {
+                    if let Some(new_child) = self.inner.get_mut(&next_current) {
                         new_child.parent = Some(parent_key);
                     }
                 } else {
                     // Invalid right reference, just expand parent
                     let to_be_removed_down =
-                        self.inner.get(to_be_removed).and_then(|item| item.down);
-                    if let Some(parent) = self.inner.get_mut(parent_key) {
+                        self.inner.get(&to_be_removed).and_then(|item| item.down);
+                    if let Some(parent) = self.inner.get_mut(&parent_key) {
                         let parent_height = parent.val.dimension.height;
                         parent.val.dimension.update_height(
                             parent_height + to_be_removed_height + scaled_padding,
@@ -989,7 +992,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     }
                     // Update parent reference for inherited down child
                     if let Some(inherited_down) = to_be_removed_down {
-                        if let Some(inherited_child) = self.inner.get_mut(inherited_down)
+                        if let Some(inherited_child) = self.inner.get_mut(&inherited_down)
                         {
                             inherited_child.parent = Some(parent_key);
                         }
@@ -999,8 +1002,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             } else {
                 // No right children, expand parent
                 let to_be_removed_down =
-                    self.inner.get(to_be_removed).and_then(|item| item.down);
-                if let Some(parent) = self.inner.get_mut(parent_key) {
+                    self.inner.get(&to_be_removed).and_then(|item| item.down);
+                if let Some(parent) = self.inner.get_mut(&parent_key) {
                     let parent_height = parent.val.dimension.height;
                     parent.val.dimension.update_height(
                         parent_height + to_be_removed_height + scaled_padding,
@@ -1009,7 +1012,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
                 // Update parent reference for inherited down child
                 if let Some(inherited_down) = to_be_removed_down {
-                    if let Some(inherited_child) = self.inner.get_mut(inherited_down) {
+                    if let Some(inherited_child) = self.inner.get_mut(&inherited_down) {
                         inherited_child.parent = Some(parent_key);
                     }
                 }
@@ -1023,15 +1026,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     fn handle_root_removal(
         &mut self,
-        to_be_removed: DefaultKey,
+        to_be_removed: usize,
         to_be_removed_height: f32,
         scaled_padding: f32,
     ) {
         // Priority: down items first, then right items
-        let down_val = self.inner.get(to_be_removed).and_then(|item| item.down);
+        let down_val = self.inner.get(&to_be_removed).and_then(|item| item.down);
         if let Some(down_val) = down_val {
-            if self.inner.contains_key(down_val) {
-                if let Some(down_item) = self.inner.get_mut(down_val) {
+            if self.inner.contains_key(&down_val) {
+                if let Some(down_item) = self.inner.get_mut(&down_val) {
                     let down_height = down_item.val.dimension.height;
                     down_item.val.dimension.update_height(
                         down_height + to_be_removed_height + scaled_padding,
@@ -1039,18 +1042,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
 
                 let to_be_removed_right_item =
-                    self.inner.get(to_be_removed).and_then(|item| item.right);
+                    self.inner.get(&to_be_removed).and_then(|item| item.right);
 
                 // Move down item to root position by swapping the data
                 if let (Some(_to_be_removed_item), Some(mut down_item)) = (
-                    self.inner.remove(to_be_removed),
-                    self.inner.remove(down_val),
+                    self.inner.remove(&to_be_removed),
+                    self.inner.remove(&down_val),
                 ) {
                     // Clear parent reference since this becomes the new root
                     down_item.parent = None;
 
                     // Insert the down item as the new root
-                    let new_root = self.inner.insert(down_item);
+                    let new_root = down_item.val.route_id;
+                    self.inner.insert(new_root, down_item);
                     self.root = Some(new_root);
                     self.current = new_root;
 
@@ -1070,19 +1074,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        let right_val = self.inner.get(to_be_removed).and_then(|item| item.right);
+        let right_val = self.inner.get(&to_be_removed).and_then(|item| item.right);
         if let Some(right_val) = right_val {
-            if self.inner.contains_key(right_val) {
+            if self.inner.contains_key(&right_val) {
                 let (right_width, to_be_removed_width) = {
-                    let right_item = self.inner.get(right_val).unwrap();
-                    let to_be_removed_item = self.inner.get(to_be_removed).unwrap();
+                    let right_item = self.inner.get(&right_val).unwrap();
+                    let to_be_removed_item = self.inner.get(&to_be_removed).unwrap();
                     (
                         right_item.val.dimension.width,
                         to_be_removed_item.val.dimension.width + self.margin.x,
                     )
                 };
 
-                if let Some(right_item) = self.inner.get_mut(right_val) {
+                if let Some(right_item) = self.inner.get_mut(&right_val) {
                     right_item
                         .val
                         .dimension
@@ -1091,10 +1095,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
                 // Move right item to root position
                 if let (Some(_to_be_removed_item), Some(right_item)) = (
-                    self.inner.remove(to_be_removed),
-                    self.inner.remove(right_val),
+                    self.inner.remove(&to_be_removed),
+                    self.inner.remove(&right_val),
                 ) {
-                    let new_root = self.inner.insert(right_item);
+                    let new_root = right_item.val.route_id;
+                    self.inner.insert(new_root, right_item);
                     self.root = Some(new_root);
                     self.current = new_root;
 
@@ -1105,68 +1110,68 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Fallback: just remove the item
-        self.inner.remove(to_be_removed);
+        self.inner.remove(&to_be_removed);
         if let Some(first_key) = self.inner.keys().next() {
-            self.current = first_key;
-            self.root = Some(first_key);
+            self.current = *first_key;
+            self.root = Some(*first_key);
         }
     }
 
     fn inherit_right_children(
         &mut self,
-        base_key: DefaultKey,
-        right_val: DefaultKey,
+        base_key: usize,
+        right_val: usize,
         height_increase: f32,
         scaled_padding: f32,
     ) {
-        if !self.inner.contains_key(base_key) || !self.inner.contains_key(right_val) {
+        if !self.inner.contains_key(&base_key) || !self.inner.contains_key(&right_val) {
             return;
         }
 
         let mut last_right = None;
-        let mut right_ptr = self.inner.get(base_key).and_then(|item| item.right);
+        let mut right_ptr = self.inner.get(&base_key).and_then(|item| item.right);
 
         // Find the last right item and resize all
         while let Some(right_key) = right_ptr {
-            if !self.inner.contains_key(right_key) {
+            if !self.inner.contains_key(&right_key) {
                 break;
             }
 
             last_right = Some(right_key);
-            if let Some(item) = self.inner.get_mut(right_key) {
+            if let Some(item) = self.inner.get_mut(&right_key) {
                 let last_right_height = item.val.dimension.height;
                 item.val
                     .dimension
                     .update_height(last_right_height + height_increase + scaled_padding);
             }
             self.request_resize(right_key);
-            right_ptr = self.inner.get(right_key).and_then(|item| item.right);
+            right_ptr = self.inner.get(&right_key).and_then(|item| item.right);
         }
 
         // Attach the inherited right chain
         if let Some(last_right_val) = last_right {
-            if let Some(item) = self.inner.get_mut(last_right_val) {
+            if let Some(item) = self.inner.get_mut(&last_right_val) {
                 item.right = Some(right_val);
             }
-        } else if let Some(item) = self.inner.get_mut(base_key) {
+        } else if let Some(item) = self.inner.get_mut(&base_key) {
             item.right = Some(right_val);
         }
     }
 
-    fn remove_key(&mut self, key: DefaultKey) {
-        if !self.inner.contains_key(key) {
+    fn remove_key(&mut self, key: usize) {
+        if !self.inner.contains_key(&key) {
             tracing::error!("Attempted to remove key {:?} which doesn't exist", key);
             return;
         }
 
         // Update all references to this key
-        let keys_to_update: Vec<DefaultKey> = self.inner.keys().collect();
+        let keys_to_update: Vec<usize> = self.inner.keys().cloned().collect();
         for update_key in keys_to_update {
             if update_key == key {
                 continue;
             }
 
-            if let Some(context) = self.inner.get_mut(update_key) {
+            if let Some(context) = self.inner.get_mut(&update_key) {
                 if let Some(right_val) = context.right {
                     if right_val == key {
                         // The referenced context is being removed
@@ -1183,11 +1188,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        self.inner.remove(key);
+        self.inner.remove(&key);
 
         // Update root if necessary
         if Some(key) == self.root {
-            self.root = self.inner.keys().next();
+            self.root = self.inner.keys().next().copied();
         }
 
         // Ensure current key is still valid
@@ -1195,13 +1200,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Some(new_current) = self.root {
                 self.current = new_current;
             } else if let Some(first_key) = self.inner.keys().next() {
-                self.current = first_key;
+                self.current = *first_key;
             }
         }
     }
 
     pub fn split_right(&mut self, context: Context<T>) {
-        let current_item = if let Some(item) = self.inner.get(self.current) {
+        let current_item = if let Some(item) = self.inner.get(&self.current) {
             item
         } else {
             return;
@@ -1213,7 +1218,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let new_grid_item_width = old_grid_item_width / 2.0;
 
         // Update current item width
-        if let Some(current_item) = self.inner.get_mut(self.current) {
+        if let Some(current_item) = self.inner.get_mut(&self.current) {
             current_item
                 .val
                 .dimension
@@ -1235,20 +1240,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             .dimension
             .update_height(old_grid_item_height);
 
-        let new_key = self.inner.insert(new_context);
+        let new_key = new_context.val.route_id;
+        self.inner.insert(new_key, new_context);
 
         // Update relationships
-        if let Some(new_item) = self.inner.get_mut(new_key) {
+        if let Some(new_item) = self.inner.get_mut(&new_key) {
             new_item.right = old_right;
             new_item.parent = Some(self.current); // Set parent reference
         }
-        if let Some(current_item) = self.inner.get_mut(self.current) {
+        if let Some(current_item) = self.inner.get_mut(&self.current) {
             current_item.right = Some(new_key);
         }
 
         // Update parent reference for old_right if it exists
         if let Some(old_right_key) = old_right {
-            if let Some(old_right_item) = self.inner.get_mut(old_right_key) {
+            if let Some(old_right_item) = self.inner.get_mut(&old_right_key) {
                 old_right_item.parent = Some(new_key);
             }
         }
@@ -1260,7 +1266,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // whenever a margin exists then we need to add
         // half of margin to respect margin.x border on
         // the right side.
-        if let Some(new_item) = self.inner.get_mut(new_key) {
+        if let Some(new_item) = self.inner.get_mut(&new_key) {
             if new_item.right.is_none() {
                 let mut new_margin = new_item.val.dimension.margin;
                 new_margin.x = self.margin.x / 2.0;
@@ -1273,7 +1279,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn split_down(&mut self, context: Context<T>) {
-        let current_item = if let Some(item) = self.inner.get(self.current) {
+        let current_item = if let Some(item) = self.inner.get(&self.current) {
             item
         } else {
             return;
@@ -1285,7 +1291,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let new_grid_item_height = old_grid_item_height / 2.0;
 
         // Update current item
-        if let Some(current_item) = self.inner.get_mut(self.current) {
+        if let Some(current_item) = self.inner.get_mut(&self.current) {
             current_item
                 .val
                 .dimension
@@ -1307,20 +1313,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             .update_height(new_grid_item_height);
         new_context.val.dimension.update_width(old_grid_item_width);
 
-        let new_key = self.inner.insert(new_context);
+        let new_key = new_context.val.route_id;
+        self.inner.insert(new_key, new_context);
 
         // Update relationships
-        if let Some(new_item) = self.inner.get_mut(new_key) {
+        if let Some(new_item) = self.inner.get_mut(&new_key) {
             new_item.down = old_down;
             new_item.parent = Some(self.current); // Set parent reference
         }
-        if let Some(current_item) = self.inner.get_mut(self.current) {
+        if let Some(current_item) = self.inner.get_mut(&self.current) {
             current_item.down = Some(new_key);
         }
 
         // Update parent reference for old_down if it exists
         if let Some(old_down_key) = old_down {
-            if let Some(old_down_item) = self.inner.get_mut(old_down_key) {
+            if let Some(old_down_item) = self.inner.get_mut(&old_down_key) {
                 old_down_item.parent = Some(new_key);
             }
         }
@@ -1333,7 +1340,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // whenever a margin exists then we need to add
         // margin to respect margin.top_y and margin.bottom_y
         // borders on the bottom side.
-        if let Some(new_item) = self.inner.get_mut(new_key) {
+        if let Some(new_item) = self.inner.get_mut(&new_key) {
             if new_item.down.is_none() {
                 let mut new_margin = new_item.val.dimension.margin;
                 new_margin.bottom_y = self.margin.bottom_y;
@@ -1352,20 +1359,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let current_key = self.current;
-        if !self.inner.contains_key(current_key) {
+        if !self.inner.contains_key(&current_key) {
             tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
         // Strategy: Find any vertically adjacent split and adjust the divider between them
         // Case 1: Current split has a parent above (current is a down child)
-        if let Some(current_item) = self.inner.get(current_key) {
+        if let Some(current_item) = self.inner.get(&current_key) {
             if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(parent_key) {
+                if let Some(parent) = self.inner.get(&parent_key) {
                     if parent.down == Some(current_key) {
                         let (current_height, parent_height) = {
-                            let current_item = self.inner.get(current_key).unwrap();
-                            let parent_item = self.inner.get(parent_key).unwrap();
+                            let current_item = self.inner.get(&current_key).unwrap();
+                            let parent_item = self.inner.get(&parent_key).unwrap();
                             (
                                 current_item.val.dimension.height,
                                 parent_item.val.dimension.height,
@@ -1380,13 +1387,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         }
 
                         // Shrink current, expand parent (above)
-                        if let Some(current_item) = self.inner.get_mut(current_key) {
+                        if let Some(current_item) = self.inner.get_mut(&current_key) {
                             current_item
                                 .val
                                 .dimension
                                 .update_height(current_height - amount);
                         }
-                        if let Some(parent_item) = self.inner.get_mut(parent_key) {
+                        if let Some(parent_item) = self.inner.get_mut(&parent_key) {
                             parent_item
                                 .val
                                 .dimension
@@ -1408,12 +1415,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Case 2: Current split has a down child - move the divider between current and down child
-        let down_child_key = self.inner.get(current_key).and_then(|item| item.down);
+        let down_child_key = self.inner.get(&current_key).and_then(|item| item.down);
         if let Some(down_child_key) = down_child_key {
-            if self.inner.contains_key(down_child_key) {
+            if self.inner.contains_key(&down_child_key) {
                 let (current_height, down_height) = {
-                    let current_item = self.inner.get(current_key).unwrap();
-                    let down_item = self.inner.get(down_child_key).unwrap();
+                    let current_item = self.inner.get(&current_key).unwrap();
+                    let down_item = self.inner.get(&down_child_key).unwrap();
                     (
                         current_item.val.dimension.height,
                         down_item.val.dimension.height,
@@ -1428,13 +1435,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
 
                 // Shrink current, expand down child
-                if let Some(current_item) = self.inner.get_mut(current_key) {
+                if let Some(current_item) = self.inner.get_mut(&current_key) {
                     current_item
                         .val
                         .dimension
                         .update_height(current_height - amount);
                 }
-                if let Some(down_item) = self.inner.get_mut(down_child_key) {
+                if let Some(down_item) = self.inner.get_mut(&down_child_key) {
                     down_item.val.dimension.update_height(down_height + amount);
                 }
 
@@ -1460,20 +1467,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let current_key = self.current;
-        if !self.inner.contains_key(current_key) {
+        if !self.inner.contains_key(&current_key) {
             tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
 
         // Strategy: Find any vertically adjacent split and adjust the divider between them
         // Case 1: Current split has a parent above (current is a down child)
-        if let Some(current_item) = self.inner.get(current_key) {
+        if let Some(current_item) = self.inner.get(&current_key) {
             if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(parent_key) {
+                if let Some(parent) = self.inner.get(&parent_key) {
                     if parent.down == Some(current_key) {
                         let (current_height, parent_height) = {
-                            let current_item = self.inner.get(current_key).unwrap();
-                            let parent_item = self.inner.get(parent_key).unwrap();
+                            let current_item = self.inner.get(&current_key).unwrap();
+                            let parent_item = self.inner.get(&parent_key).unwrap();
                             (
                                 current_item.val.dimension.height,
                                 parent_item.val.dimension.height,
@@ -1488,13 +1495,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         }
 
                         // Expand current, shrink parent (above) - divider moves down
-                        if let Some(current_item) = self.inner.get_mut(current_key) {
+                        if let Some(current_item) = self.inner.get_mut(&current_key) {
                             current_item
                                 .val
                                 .dimension
                                 .update_height(current_height + amount);
                         }
-                        if let Some(parent_item) = self.inner.get_mut(parent_key) {
+                        if let Some(parent_item) = self.inner.get_mut(&parent_key) {
                             parent_item
                                 .val
                                 .dimension
@@ -1516,12 +1523,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Case 2: Current split has a down child - move the divider between current and down child
-        let down_child_key = self.inner.get(current_key).and_then(|item| item.down);
+        let down_child_key = self.inner.get(&current_key).and_then(|item| item.down);
         if let Some(down_child_key) = down_child_key {
-            if self.inner.contains_key(down_child_key) {
+            if self.inner.contains_key(&down_child_key) {
                 let (current_height, down_height) = {
-                    let current_item = self.inner.get(current_key).unwrap();
-                    let down_item = self.inner.get(down_child_key).unwrap();
+                    let current_item = self.inner.get(&current_key).unwrap();
+                    let down_item = self.inner.get(&down_child_key).unwrap();
                     (
                         current_item.val.dimension.height,
                         down_item.val.dimension.height,
@@ -1536,13 +1543,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
 
                 // Expand current, shrink down child - divider moves down
-                if let Some(current_item) = self.inner.get_mut(current_key) {
+                if let Some(current_item) = self.inner.get_mut(&current_key) {
                     current_item
                         .val
                         .dimension
                         .update_height(current_height + amount);
                 }
-                if let Some(down_item) = self.inner.get_mut(down_child_key) {
+                if let Some(down_item) = self.inner.get_mut(&down_child_key) {
                     down_item.val.dimension.update_height(down_height - amount);
                 }
 
@@ -1568,7 +1575,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let current_key = self.current;
-        if !self.inner.contains_key(current_key) {
+        if !self.inner.contains_key(&current_key) {
             tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
@@ -1578,9 +1585,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut right_split = None;
 
         // Case 1: Current split is a right child - its parent is to the left
-        if let Some(current_item) = self.inner.get(current_key) {
+        if let Some(current_item) = self.inner.get(&current_key) {
             if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(parent_key) {
+                if let Some(parent) = self.inner.get(&parent_key) {
                     if parent.right == Some(current_key) {
                         left_split = Some(parent_key);
                         right_split = Some(current_key);
@@ -1591,9 +1598,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 2: Current split has a right child - current is left, child is right
         if left_split.is_none() {
-            let right_child_key = self.inner.get(current_key).and_then(|item| item.right);
+            let right_child_key =
+                self.inner.get(&current_key).and_then(|item| item.right);
             if let Some(right_child_key) = right_child_key {
-                if self.inner.contains_key(right_child_key) {
+                if self.inner.contains_key(&right_child_key) {
                     left_split = Some(current_key);
                     right_split = Some(right_child_key);
                 }
@@ -1602,13 +1610,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 3: Current split is a down child - check if its parent has horizontal relationships
         if left_split.is_none() {
-            if let Some(current_item) = self.inner.get(current_key) {
+            if let Some(current_item) = self.inner.get(&current_key) {
                 if let Some(parent_key) = current_item.parent {
-                    if let Some(parent) = self.inner.get(parent_key) {
+                    if let Some(parent) = self.inner.get(&parent_key) {
                         if parent.down == Some(current_key) {
                             // Current is a down child, check if parent has horizontal relationships
                             if let Some(grandparent_key) = parent.parent {
-                                if let Some(grandparent) = self.inner.get(grandparent_key)
+                                if let Some(grandparent) =
+                                    self.inner.get(&grandparent_key)
                                 {
                                     if grandparent.right == Some(parent_key) {
                                         // Parent is a right child, so grandparent is to the left
@@ -1633,8 +1642,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
             let (left_width, right_width) = {
-                let left_item = self.inner.get(left_key).unwrap();
-                let right_item = self.inner.get(right_key).unwrap();
+                let left_item = self.inner.get(&left_key).unwrap();
+                let right_item = self.inner.get(&right_key).unwrap();
                 (
                     left_item.val.dimension.width,
                     right_item.val.dimension.width,
@@ -1647,10 +1656,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             // Move divider left: shrink left split, expand right split
-            if let Some(left_item) = self.inner.get_mut(left_key) {
+            if let Some(left_item) = self.inner.get_mut(&left_key) {
                 left_item.val.dimension.update_width(left_width - amount);
             }
-            if let Some(right_item) = self.inner.get_mut(right_key) {
+            if let Some(right_item) = self.inner.get_mut(&right_key) {
                 right_item.val.dimension.update_width(right_width + amount);
             }
 
@@ -1681,7 +1690,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let current_key = self.current;
-        if !self.inner.contains_key(current_key) {
+        if !self.inner.contains_key(&current_key) {
             tracing::error!("Current key {:?} not found in grid", current_key);
             return false;
         }
@@ -1691,9 +1700,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut right_split = None;
 
         // Case 1: Current split is a right child - its parent is to the left
-        if let Some(current_item) = self.inner.get(current_key) {
+        if let Some(current_item) = self.inner.get(&current_key) {
             if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(parent_key) {
+                if let Some(parent) = self.inner.get(&parent_key) {
                     if parent.right == Some(current_key) {
                         left_split = Some(parent_key);
                         right_split = Some(current_key);
@@ -1704,9 +1713,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 2: Current split has a right child - current is left, child is right
         if left_split.is_none() {
-            let right_child_key = self.inner.get(current_key).and_then(|item| item.right);
+            let right_child_key =
+                self.inner.get(&current_key).and_then(|item| item.right);
             if let Some(right_child_key) = right_child_key {
-                if self.inner.contains_key(right_child_key) {
+                if self.inner.contains_key(&right_child_key) {
                     left_split = Some(current_key);
                     right_split = Some(right_child_key);
                 }
@@ -1715,13 +1725,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Case 3: Current split is a down child - check if its parent has horizontal relationships
         if left_split.is_none() {
-            if let Some(current_item) = self.inner.get(current_key) {
+            if let Some(current_item) = self.inner.get(&current_key) {
                 if let Some(parent_key) = current_item.parent {
-                    if let Some(parent) = self.inner.get(parent_key) {
+                    if let Some(parent) = self.inner.get(&parent_key) {
                         if parent.down == Some(current_key) {
                             // Current is a down child, check if parent has horizontal relationships
                             if let Some(grandparent_key) = parent.parent {
-                                if let Some(grandparent) = self.inner.get(grandparent_key)
+                                if let Some(grandparent) =
+                                    self.inner.get(&grandparent_key)
                                 {
                                     if grandparent.right == Some(parent_key) {
                                         // Parent is a right child, so grandparent is to the left
@@ -1746,8 +1757,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
             let (left_width, right_width) = {
-                let left_item = self.inner.get(left_key).unwrap();
-                let right_item = self.inner.get(right_key).unwrap();
+                let left_item = self.inner.get(&left_key).unwrap();
+                let right_item = self.inner.get(&right_key).unwrap();
                 (
                     left_item.val.dimension.width,
                     right_item.val.dimension.width,
@@ -1760,10 +1771,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             // Move divider right: expand left split, shrink right split
-            if let Some(left_item) = self.inner.get_mut(left_key) {
+            if let Some(left_item) = self.inner.get_mut(&left_key) {
                 left_item.val.dimension.update_width(left_width + amount);
             }
-            if let Some(right_item) = self.inner.get_mut(right_key) {
+            if let Some(right_item) = self.inner.get_mut(&right_key) {
                 right_item.val.dimension.update_width(right_width - amount);
             }
 
@@ -1788,9 +1799,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Update the width of all children in a vertical stack to match the parent's width
-    fn update_children_width(&mut self, parent_key: DefaultKey, new_width: f32) {
+    fn update_children_width(&mut self, parent_key: usize, new_width: f32) {
         // Find all down children and update their width
-        if let Some(parent) = self.inner.get(parent_key) {
+        if let Some(parent) = self.inner.get(&parent_key) {
             if let Some(down_key) = parent.down {
                 self.update_children_width_recursive(down_key, new_width);
             }
@@ -1798,8 +1809,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Recursively update width for all nodes in a vertical chain
-    fn update_children_width_recursive(&mut self, key: DefaultKey, new_width: f32) {
-        let down_key = if let Some(item) = self.inner.get_mut(key) {
+    fn update_children_width_recursive(&mut self, key: usize, new_width: f32) {
+        let down_key = if let Some(item) = self.inner.get_mut(&key) {
             item.val.dimension.update_width(new_width);
             item.down
         } else {
@@ -1815,12 +1826,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Collect all children (down and right) of a given node
-    fn collect_all_children(
-        &self,
-        parent_key: DefaultKey,
-        affected_nodes: &mut Vec<DefaultKey>,
-    ) {
-        if let Some(parent) = self.inner.get(parent_key) {
+    fn collect_all_children(&self, parent_key: usize, affected_nodes: &mut Vec<usize>) {
+        if let Some(parent) = self.inner.get(&parent_key) {
             if let Some(right_key) = parent.right {
                 if !affected_nodes.contains(&right_key) {
                     affected_nodes.push(right_key);
@@ -2036,11 +2043,9 @@ pub mod test {
         assert_eq!(context_dimension.columns, 66);
         assert_eq!(context_dimension.lines, 88);
         let rich_text_id = 0;
-        let route_id = 0;
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            route_id,
             rich_text_id,
             context_dimension,
         );
@@ -2091,12 +2096,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2106,12 +2109,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2154,12 +2155,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2222,12 +2221,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2237,12 +2234,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2308,12 +2303,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2361,12 +2354,10 @@ pub mod test {
 
         let (fourth_context, fourth_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2451,12 +2442,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2466,12 +2455,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2493,12 +2480,10 @@ pub mod test {
 
         let (third_context, _third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2508,12 +2493,10 @@ pub mod test {
 
         let (fourth_context, _fourth_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2523,12 +2506,10 @@ pub mod test {
 
         let (fifth_context, _fifth_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2599,12 +2580,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2614,12 +2593,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2629,12 +2606,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2644,12 +2619,10 @@ pub mod test {
 
         let (fourth_context, fourth_context_id) = {
             let rich_text_id = 4;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2659,12 +2632,10 @@ pub mod test {
 
         let (fifth_context, fifth_context_id) = {
             let rich_text_id = 5;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2772,12 +2743,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2787,12 +2756,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2835,12 +2802,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2931,12 +2896,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2946,12 +2909,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2974,12 +2935,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -2989,12 +2948,10 @@ pub mod test {
 
         let (fourth_context, fourth_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3145,12 +3102,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3160,12 +3115,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3208,12 +3161,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3276,12 +3227,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3291,12 +3240,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3306,12 +3253,10 @@ pub mod test {
 
         let (third_context, _third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3395,12 +3340,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3410,12 +3353,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3487,12 +3428,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3502,12 +3441,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3590,12 +3527,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3605,12 +3540,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3642,12 +3575,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3702,12 +3633,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3717,12 +3646,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3794,12 +3721,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3809,12 +3734,10 @@ pub mod test {
 
         let (second_context, _second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3897,12 +3820,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3912,12 +3833,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -3949,12 +3868,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4009,12 +3926,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4024,12 +3939,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4039,12 +3952,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4054,12 +3965,10 @@ pub mod test {
 
         let (fourth_context, fourth_context_id) = {
             let rich_text_id = 4;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4069,12 +3978,10 @@ pub mod test {
 
         let (fifth_context, fifth_context_id) = {
             let rich_text_id = 5;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4084,12 +3991,10 @@ pub mod test {
 
         let (sixth_context, sixth_context_id) = {
             let rich_text_id = 6;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4167,13 +4072,13 @@ pub mod test {
         let current_index = grid.current_index();
         let right = grid.contexts_ordered()[current_index].right;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             fourth_context_id
         );
         let current_index = grid.current_index();
         let down = grid.contexts_ordered()[current_index].down;
         assert_eq!(
-            grid.inner[down.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&down.unwrap_or_default()].val.rich_text_id,
             fifth_context_id
         );
         // Setup complete, now we have 3 as active as well
@@ -4193,7 +4098,7 @@ pub mod test {
         let current_index = grid.current_index();
         let right = grid.contexts_ordered()[current_index].right;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             sixth_context_id
         );
 
@@ -4208,7 +4113,7 @@ pub mod test {
             assert_eq!(grid.key_to_index(key), Some(1));
         };
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             fifth_context_id
         );
 
@@ -4227,7 +4132,7 @@ pub mod test {
             assert_eq!(grid.key_to_index(key), Some(3));
         };
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             fourth_context_id
         );
     }
@@ -4257,12 +4162,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4272,12 +4175,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4287,12 +4188,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 3;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4302,12 +4201,10 @@ pub mod test {
 
         let (fourth_context, fourth_context_id) = {
             let rich_text_id = 4;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4376,7 +4273,7 @@ pub mod test {
         assert_eq!(current_index, 0);
         assert_eq!(grid.current().rich_text_id, third_context_id);
         let right = grid.contexts_ordered()[current_index].right;
-        let right_context = grid.inner[right.unwrap_or_default()].val.rich_text_id;
+        let right_context = grid.inner[&right.unwrap_or_default()].val.rich_text_id;
         assert_eq!(right_context, second_context_id);
 
         // Result:
@@ -4389,12 +4286,10 @@ pub mod test {
 
         let (fifth_context, fifth_context_id) = {
             let rich_text_id = 5;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4404,12 +4299,10 @@ pub mod test {
 
         let (sixth_context, sixth_context_id) = {
             let rich_text_id = 6;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4419,12 +4312,10 @@ pub mod test {
 
         let (seventh_context, seventh_context_id) = {
             let rich_text_id = 7;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4453,7 +4344,7 @@ pub mod test {
         let current_index = grid.current_index();
         let down = grid.contexts_ordered()[current_index].down;
         assert_eq!(
-            grid.inner[down.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&down.unwrap_or_default()].val.rich_text_id,
             fifth_context_id
         );
 
@@ -4464,7 +4355,7 @@ pub mod test {
         let right = grid.contexts_ordered()[current_index]
             .right
             .unwrap_or_default();
-        let right_context = &grid.contexts()[right];
+        let right_context = &grid.contexts()[&right];
         assert_eq!(right_context.val.rich_text_id, sixth_context_id);
 
         // Current:
@@ -4480,7 +4371,7 @@ pub mod test {
         assert_eq!(grid.contexts_ordered()[current_index].down, None);
         let right = grid.contexts_ordered()[current_index].right;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             seventh_context_id
         );
 
@@ -4488,7 +4379,7 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, seventh_context_id);
         let right = grid.contexts_ordered()[current_index].right;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             second_context_id
         );
 
@@ -4505,12 +4396,10 @@ pub mod test {
 
         let (fifth_context, fifth_context_id) = {
             let rich_text_id = 5;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4520,12 +4409,10 @@ pub mod test {
 
         let (sixth_context, sixth_context_id) = {
             let rich_text_id = 6;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4556,11 +4443,11 @@ pub mod test {
         let right = grid.contexts_ordered()[current_index].right;
         let down = grid.contexts_ordered()[current_index].down;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             second_context_id
         );
         assert_eq!(
-            grid.inner[down.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&down.unwrap_or_default()].val.rich_text_id,
             sixth_context_id
         );
 
@@ -4575,7 +4462,7 @@ pub mod test {
         assert_eq!(grid.current().rich_text_id, sixth_context_id);
         let right = grid.contexts_ordered()[current_index].right;
         assert_eq!(
-            grid.inner[right.unwrap_or_default()].val.rich_text_id,
+            grid.inner[&right.unwrap_or_default()].val.rich_text_id,
             second_context_id
         );
         assert_eq!(grid.contexts_ordered()[current_index].down, None);
@@ -4607,12 +4494,10 @@ pub mod test {
 
         let (first_context, first_context_id) = {
             let rich_text_id = 0;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4622,12 +4507,10 @@ pub mod test {
 
         let (second_context, second_context_id) = {
             let rich_text_id = 1;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4663,12 +4546,10 @@ pub mod test {
 
         let (third_context, third_context_id) = {
             let rich_text_id = 2;
-            let route_id = 0;
             (
                 create_mock_context(
                     VoidListener {},
                     WindowId::from(0),
-                    route_id,
                     rich_text_id,
                     context_dimension,
                 ),
@@ -4703,13 +4584,8 @@ pub mod test {
     fn test_edge_case_empty_grid() {
         let margin = Delta::default();
         let context_dimension = ContextDimension::default();
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
+        let context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
@@ -4756,33 +4632,6 @@ pub mod test {
     }
 
     #[test]
-    fn test_edge_case_out_of_bounds_current() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::default();
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
-
-        let mut grid =
-            ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
-
-        // Manually set current to an invalid key
-        let mut temp_map = SlotMap::<DefaultKey, i32>::new();
-        let invalid_key = temp_map.insert(999);
-        grid.current = invalid_key;
-
-        // These should not panic and should handle the error gracefully
-        let _ = grid.current();
-        let _ = grid.current_mut();
-        let _ = grid.grid_dimension();
-        let _ = grid.current_context_with_computed_dimension();
-    }
-
-    #[test]
     fn test_edge_case_complex_removal_scenario() {
         let margin = Delta::default();
         let context_dimension = ContextDimension::build(
@@ -4799,13 +4648,7 @@ pub mod test {
 
         // Create a complex grid structure
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -4815,7 +4658,6 @@ pub mod test {
             let context = create_mock_context(
                 VoidListener {},
                 WindowId::from(0),
-                i,
                 i,
                 context_dimension,
             );
@@ -4839,67 +4681,11 @@ pub mod test {
             assert_eq!(len_before - 1, len_after);
 
             // Current should still be valid
-            assert!(grid.inner.contains_key(grid.current));
+            assert!(grid.inner.contains_key(&grid.current));
         }
 
         // Should have exactly one context left
         assert_eq!(grid.len(), 1);
-    }
-
-    #[test]
-    fn test_edge_case_rapid_split_and_remove() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::build(
-            800.0,
-            600.0,
-            SugarDimensions {
-                scale: 1.0,
-                width: 12.0,
-                height: 12.0,
-            },
-            1.0,
-            Delta::default(),
-        );
-
-        let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
-            margin,
-            [0., 0., 0., 0.],
-        );
-
-        // Rapidly add and remove contexts
-        for iteration in 0..10 {
-            // Add some contexts
-            for i in 0..3 {
-                let context = create_mock_context(
-                    VoidListener {},
-                    WindowId::from(0),
-                    iteration * 10 + i,
-                    iteration * 10 + i,
-                    context_dimension,
-                );
-                if i % 2 == 0 {
-                    grid.split_right(context);
-                } else {
-                    grid.split_down(context);
-                }
-            }
-
-            // Remove some contexts
-            while grid.len() > 2 {
-                grid.remove_current();
-            }
-
-            // Verify grid is still in a valid state
-            assert!(grid.len() >= 1);
-            assert!(grid.inner.contains_key(grid.current));
-        }
     }
 
     #[test]
@@ -4912,13 +4698,8 @@ pub mod test {
         context_dimension.width = -100.0;
         context_dimension.height = -100.0;
 
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
+        let context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
@@ -4947,25 +4728,14 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add a split
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(context);
 
         let mut mouse = Mouse::default();
@@ -4988,13 +4758,8 @@ pub mod test {
     fn test_edge_case_navigation_with_empty_or_invalid_states() {
         let margin = Delta::default();
         let context_dimension = ContextDimension::default();
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
+        let context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
@@ -5026,13 +4791,7 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -5042,7 +4801,6 @@ pub mod test {
             let context = create_mock_context(
                 VoidListener {},
                 WindowId::from(0),
-                i,
                 i,
                 context_dimension,
             );
@@ -5055,14 +4813,14 @@ pub mod test {
 
             // Verify grid state after each split
             assert!(grid.len() > 0);
-            assert!(grid.inner.contains_key(grid.current));
+            assert!(grid.inner.contains_key(&grid.current));
         }
 
         // Test navigation through all splits
         let initial_current = grid.current;
         for _ in 0..grid.len() * 2 {
             grid.select_next_split();
-            assert!(grid.inner.contains_key(grid.current));
+            assert!(grid.inner.contains_key(&grid.current));
         }
 
         // Should cycle back
@@ -5073,7 +4831,7 @@ pub mod test {
             let len_before = grid.len();
             grid.remove_current();
             assert!(grid.len() < len_before);
-            assert!(grid.inner.contains_key(grid.current));
+            assert!(grid.inner.contains_key(&grid.current));
         }
     }
 
@@ -5093,25 +4851,14 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add a split
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(context);
 
         // Test resize with reasonable large values (not MAX to avoid overflow)
@@ -5123,59 +4870,6 @@ pub mod test {
 
         grid.resize(1.0, 1.0);
         assert!(grid.len() > 0);
-    }
-
-    #[test]
-    fn test_edge_case_corrupted_internal_state() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::default();
-        let context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
-
-        let mut grid =
-            ContextGrid::<VoidListener>::new(context, margin, [0., 0., 0., 0.]);
-
-        // Add some contexts
-        for i in 1..=3 {
-            let context = create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                i,
-                i,
-                context_dimension,
-            );
-            grid.split_right(context);
-        }
-
-        // Manually corrupt the internal state to test robustness
-        if grid.inner.len() > 1 {
-            // Set invalid right/down references using actual keys
-            let keys = grid.get_ordered_keys();
-            if keys.len() > 1 {
-                // Use a key from a different SlotMap to simulate corruption
-                let mut temp_map = SlotMap::<DefaultKey, i32>::new();
-                let invalid_key1 = temp_map.insert(999);
-                let invalid_key2 = temp_map.insert(888);
-
-                if let Some(item) = grid.inner.get_mut(keys[0]) {
-                    item.right = Some(invalid_key1);
-                }
-                if let Some(item) = grid.inner.get_mut(keys[1]) {
-                    item.down = Some(invalid_key2);
-                }
-            }
-        }
-
-        // Operations should handle corrupted state gracefully
-        grid.remove_current();
-        assert!(grid.len() > 0);
-        // Check that current key is valid
-        assert!(grid.inner.contains_key(grid.current));
     }
 
     #[test]
@@ -5217,76 +4911,6 @@ pub mod test {
     }
 
     #[test]
-    fn test_concurrent_operations_simulation() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::build(
-            800.0,
-            600.0,
-            SugarDimensions {
-                scale: 1.0,
-                width: 10.0,
-                height: 10.0,
-            },
-            1.0,
-            Delta::default(),
-        );
-
-        let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
-            margin,
-            [0., 0., 0., 0.],
-        );
-
-        // Simulate concurrent operations that might happen in real usage
-        for round in 0..5 {
-            // Add contexts
-            for i in 0..3 {
-                let context = create_mock_context(
-                    VoidListener {},
-                    WindowId::from(0),
-                    round * 10 + i,
-                    round * 10 + i,
-                    context_dimension,
-                );
-                if i % 2 == 0 {
-                    grid.split_right(context);
-                } else {
-                    grid.split_down(context);
-                }
-            }
-
-            // Navigate
-            for _ in 0..grid.len() {
-                grid.select_next_split();
-            }
-
-            // Resize
-            grid.resize(800.0 + round as f32 * 100.0, 600.0 + round as f32 * 50.0);
-
-            // Mouse selection
-            let mut mouse = Mouse::default();
-            mouse.x = (round * 100) % 400;
-            mouse.y = (round * 80) % 300;
-            grid.select_current_based_on_mouse(&mouse);
-
-            // Remove some contexts
-            while grid.len() > 2 {
-                grid.remove_current();
-            }
-
-            // Verify state consistency
-            assert!(grid.len() >= 1);
-            assert!(grid.inner.contains_key(grid.current));
-        }
-    }
-
-    #[test]
     fn test_move_divider_up_basic() {
         let margin = Delta::default();
         let context_dimension = ContextDimension::build(
@@ -5302,13 +4926,7 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -5317,26 +4935,21 @@ pub mod test {
         assert!(!grid.move_divider_up(20.0));
 
         // Add a split down
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_down(second_context);
 
         // Now we should be able to move divider up
-        let original_current_height = grid.inner[grid.current].val.dimension.height;
+        let original_current_height = grid.inner[&grid.current].val.dimension.height;
         let original_parent_height =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.height;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height;
 
         assert!(grid.move_divider_up(20.0));
 
         // Current split should be smaller, parent should be larger
-        assert!(grid.inner[grid.current].val.dimension.height < original_current_height);
+        assert!(grid.inner[&grid.current].val.dimension.height < original_current_height);
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.height
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height
                 > original_parent_height
         );
     }
@@ -5357,37 +4970,26 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add a split down
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_down(second_context);
 
-        let original_current_height = grid.inner[grid.current].val.dimension.height;
+        let original_current_height = grid.inner[&grid.current].val.dimension.height;
         let original_parent_height =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.height;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height;
 
         assert!(grid.move_divider_down(20.0));
 
         // Current split should be larger, parent should be smaller
-        assert!(grid.inner[grid.current].val.dimension.height > original_current_height);
+        assert!(grid.inner[&grid.current].val.dimension.height > original_current_height);
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.height
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height
                 < original_parent_height
         );
     }
@@ -5408,13 +5010,7 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -5423,49 +5019,44 @@ pub mod test {
         assert!(!grid.move_divider_left(40.0));
 
         // Add a split right
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
         // Test from the right split (index 1) - moving left should shrink left panel, expand right panel
         let original_left_width =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width;
         let original_right_width =
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         assert!(grid.move_divider_left(40.0));
 
         // Left split should be smaller, right split should be larger
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
                 < original_left_width
         );
         assert!(
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width
                 > original_right_width
         );
 
         // Test from the left split (index 0) - should have same effect
         grid.current = grid.get_ordered_keys()[0];
         let original_left_width2 =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width;
         let original_right_width2 =
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         assert!(grid.move_divider_left(20.0));
 
         // Left split should be smaller, right split should be larger
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
                 < original_left_width2
         );
         assert!(
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width
                 > original_right_width2
         );
     }
@@ -5486,61 +5077,50 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add a split right
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
         // Test from the right split (index 1) - moving right should expand left panel, shrink right panel
         let original_left_width =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width;
         let original_right_width =
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         assert!(grid.move_divider_right(40.0));
 
         // Left split should be larger, right split should be smaller
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
                 > original_left_width
         );
         assert!(
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width
                 < original_right_width
         );
 
         // Test from the left split (index 0) - should have same effect
         grid.current = grid.get_ordered_keys()[0];
         let original_left_width2 =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width;
         let original_right_width2 =
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         assert!(grid.move_divider_right(20.0));
 
         // Left split should be larger, right split should be smaller
         assert!(
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
                 > original_left_width2
         );
         assert!(
-            grid.inner[grid.get_ordered_keys()[1]].val.dimension.width
+            grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width
                 < original_right_width2
         );
     }
@@ -5561,34 +5141,18 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add splits
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
-        let third_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            2,
-            2,
-            context_dimension,
-        );
+        let third_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 2, context_dimension);
         grid.split_down(third_context);
 
         // Try to move dividers beyond minimum constraints
@@ -5618,34 +5182,18 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Create a complex layout: split right, then split down on the right side
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
-        let third_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            2,
-            2,
-            context_dimension,
-        );
+        let third_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 2, context_dimension);
         grid.split_down(third_context);
 
         // Test moving dividers in different splits
@@ -5659,7 +5207,7 @@ pub mod test {
 
         // Verify grid is still in valid state
         assert!(grid.len() == 3);
-        assert!(grid.inner.contains_key(grid.current));
+        assert!(grid.inner.contains_key(&grid.current));
     }
 
     #[test]
@@ -5678,31 +5226,23 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Test with zero amount
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
-        let original_width = grid.inner[grid.current].val.dimension.width;
+        let original_width = grid.inner[&grid.current].val.dimension.width;
         assert!(grid.move_divider_left(0.0));
         // Width should remain the same with zero movement
-        assert_eq!(grid.inner[grid.current].val.dimension.width, original_width);
+        assert_eq!(
+            grid.inner[&grid.current].val.dimension.width,
+            original_width
+        );
 
         // Test with negative amount (should still work as it's just direction)
         assert!(grid.move_divider_right(-10.0));
@@ -5724,13 +5264,7 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -5742,13 +5276,8 @@ pub mod test {
         assert!(!grid.move_divider_right(40.0));
 
         // Add only a vertical split (down)
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_down(second_context);
 
         // Select the top split (index 0) - should not be able to move horizontal dividers
@@ -5781,13 +5310,7 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
@@ -5797,7 +5320,6 @@ pub mod test {
             let context = create_mock_context(
                 VoidListener {},
                 WindowId::from(0),
-                i,
                 i,
                 context_dimension,
             );
@@ -5820,7 +5342,7 @@ pub mod test {
 
             // Verify grid state remains valid
             assert!(grid.len() >= 1);
-            assert!(grid.inner.contains_key(grid.current));
+            assert!(grid.inner.contains_key(&grid.current));
 
             // Verify all dimensions are positive
             for (_key, item) in &grid.inner {
@@ -5828,45 +5350,6 @@ pub mod test {
                 assert!(item.val.dimension.height > 0.0);
             }
         }
-    }
-
-    #[test]
-    fn test_move_divider_with_invalid_current_index() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::build(
-            800.0,
-            600.0,
-            SugarDimensions {
-                scale: 1.0,
-                width: 10.0,
-                height: 10.0,
-            },
-            1.0,
-            Delta::default(),
-        );
-
-        let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
-            margin,
-            [0., 0., 0., 0.],
-        );
-
-        // Manually set invalid current key
-        let mut temp_map = SlotMap::<DefaultKey, i32>::new();
-        let invalid_key = temp_map.insert(999);
-        grid.current = invalid_key;
-
-        // All divider movements should fail gracefully
-        assert!(!grid.move_divider_up(20.0));
-        assert!(!grid.move_divider_down(20.0));
-        assert!(!grid.move_divider_left(40.0));
-        assert!(!grid.move_divider_right(40.0));
     }
 
     #[test]
@@ -5885,36 +5368,25 @@ pub mod test {
         );
 
         let mut grid = ContextGrid::<VoidListener>::new(
-            create_mock_context(
-                VoidListener {},
-                WindowId::from(0),
-                0,
-                0,
-                context_dimension,
-            ),
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension),
             margin,
             [0., 0., 0., 0.],
         );
 
         // Add a horizontal split
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            1,
-            context_dimension,
-        );
+        let second_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 1, context_dimension);
         grid.split_right(second_context);
 
         let original_total_width =
-            grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
-                + grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+            grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
+                + grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         // Move divider and check total space is preserved (approximately)
         assert!(grid.move_divider_left(50.0));
 
-        let new_total_width = grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
-            + grid.inner[grid.get_ordered_keys()[1]].val.dimension.width;
+        let new_total_width = grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
+            + grid.inner[&grid.get_ordered_keys()[1]].val.dimension.width;
 
         // Total width should be approximately the same (allowing for small floating point differences)
         let difference = (original_total_width - new_total_width).abs();
@@ -5926,13 +5398,8 @@ pub mod test {
         );
 
         // Test with vertical split
-        let third_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            2,
-            2,
-            context_dimension,
-        );
+        let third_context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 2, context_dimension);
         grid.split_down(third_context);
 
         let parent_key = grid
@@ -5942,15 +5409,16 @@ pub mod test {
                 item.down.is_some() && item.down.unwrap() == grid.current
             })
             .map(|(key, _item)| key)
-            .unwrap();
+            .unwrap()
+            .clone();
 
-        let original_total_height = grid.inner[parent_key].val.dimension.height
-            + grid.inner[grid.current].val.dimension.height;
+        let original_total_height = grid.inner[&parent_key].val.dimension.height
+            + grid.inner[&grid.current].val.dimension.height;
 
         assert!(grid.move_divider_up(30.0));
 
-        let new_total_height = grid.inner[parent_key].val.dimension.height
-            + grid.inner[grid.current].val.dimension.height;
+        let new_total_height = grid.inner[&parent_key].val.dimension.height
+            + grid.inner[&grid.current].val.dimension.height;
 
         let height_difference = (original_total_height - new_total_height).abs();
         assert!(
@@ -5976,7 +5444,7 @@ pub mod test {
         );
 
         let context =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
 
         let margin = Delta {
             x: 10.0,
@@ -5989,7 +5457,7 @@ pub mod test {
 
         // Single context should be positioned at margin
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[0]].position(),
+            grid.inner[&grid.get_ordered_keys()[0]].position(),
             [10.0, 20.0]
         );
         assert_eq!(grid.scaled_padding(), PADDING * 2.0);
@@ -6025,14 +5493,12 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             first_context_dimension,
         );
 
         let second_context = create_mock_context(
             VoidListener,
             WindowId::from(1),
-            2,
             2,
             second_context_dimension,
         );
@@ -6049,21 +5515,21 @@ pub mod test {
 
         // First context should remain at origin
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[0]].position(),
+            grid.inner[&grid.get_ordered_keys()[0]].position(),
             [0.0, 0.0]
         );
 
         // Second context should be positioned to the right of first + padding
         let expected_x = 0.0
             + PADDING
-            + (grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
-                / grid.inner[grid.get_ordered_keys()[0]]
+            + (grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
+                / grid.inner[&grid.get_ordered_keys()[0]]
                     .val
                     .dimension
                     .dimension
                     .scale);
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[1]].position(),
+            grid.inner[&grid.get_ordered_keys()[1]].position(),
             [expected_x, 0.0]
         );
     }
@@ -6098,14 +5564,12 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             first_context_dimension,
         );
 
         let second_context = create_mock_context(
             VoidListener,
             WindowId::from(1),
-            2,
             2,
             second_context_dimension,
         );
@@ -6122,21 +5586,21 @@ pub mod test {
 
         // First context should remain at origin
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[0]].position(),
+            grid.inner[&grid.get_ordered_keys()[0]].position(),
             [0.0, 0.0]
         );
 
         // Second context should be positioned below first + padding
         let expected_y = 0.0
             + PADDING
-            + (grid.inner[grid.get_ordered_keys()[0]].val.dimension.height
-                / grid.inner[grid.get_ordered_keys()[0]]
+            + (grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height
+                / grid.inner[&grid.get_ordered_keys()[0]]
                     .val
                     .dimension
                     .dimension
                     .scale);
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[1]].position(),
+            grid.inner[&grid.get_ordered_keys()[1]].position(),
             [0.0, expected_y]
         );
     }
@@ -6160,14 +5624,12 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             context_dimension.clone(),
         );
 
         let second_context = create_mock_context(
             VoidListener,
             WindowId::from(1),
-            2,
             2,
             context_dimension.clone(),
         );
@@ -6176,12 +5638,11 @@ pub mod test {
             VoidListener,
             WindowId::from(2),
             3,
-            3,
             context_dimension.clone(),
         );
 
         let fourth_context =
-            create_mock_context(VoidListener, WindowId::from(3), 4, 4, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(3), 4, context_dimension);
 
         let margin = Delta {
             x: 0.0,
@@ -6203,36 +5664,36 @@ pub mod test {
 
         // Verify positions
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[0]].position(),
+            grid.inner[&grid.get_ordered_keys()[0]].position(),
             [0.0, 0.0]
         ); // Top-left
 
         let right_x = PADDING
-            + (grid.inner[grid.get_ordered_keys()[0]].val.dimension.width
-                / grid.inner[grid.get_ordered_keys()[0]]
+            + (grid.inner[&grid.get_ordered_keys()[0]].val.dimension.width
+                / grid.inner[&grid.get_ordered_keys()[0]]
                     .val
                     .dimension
                     .dimension
                     .scale);
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[1]].position(),
+            grid.inner[&grid.get_ordered_keys()[1]].position(),
             [right_x, 0.0]
         ); // Top-right
 
         let down_y = PADDING
-            + (grid.inner[grid.get_ordered_keys()[0]].val.dimension.height
-                / grid.inner[grid.get_ordered_keys()[0]]
+            + (grid.inner[&grid.get_ordered_keys()[0]].val.dimension.height
+                / grid.inner[&grid.get_ordered_keys()[0]]
                     .val
                     .dimension
                     .dimension
                     .scale);
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[3]].position(),
+            grid.inner[&grid.get_ordered_keys()[3]].position(),
             [0.0, down_y]
         ); // Bottom-left (Context 3)
 
         assert_eq!(
-            grid.inner[grid.get_ordered_keys()[2]].position(),
+            grid.inner[&grid.get_ordered_keys()[2]].position(),
             [right_x, down_y]
         ); // Bottom-right (Context 4)
     }
@@ -6252,7 +5713,7 @@ pub mod test {
         );
 
         let context =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
 
         let grid = ContextGrid::<VoidListener>::new(
             context,
@@ -6283,12 +5744,11 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             context_dimension.clone(),
         );
 
         let second_context =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid = ContextGrid::<VoidListener>::new(
             first_context,
@@ -6298,15 +5758,15 @@ pub mod test {
         grid.split_right(second_context);
 
         // Record initial positions
-        let initial_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let initial_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let initial_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let initial_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // Move divider right by 50 pixels
         assert!(grid.move_divider_right(50.0));
 
         // Verify positions are updated
-        let new_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let new_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let new_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let new_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // First split position should remain the same (it's at origin)
         assert_eq!(new_first_pos, initial_first_pos);
@@ -6334,12 +5794,11 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             context_dimension.clone(),
         );
 
         let second_context =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid = ContextGrid::<VoidListener>::new(
             first_context,
@@ -6349,15 +5808,15 @@ pub mod test {
         grid.split_down(second_context);
 
         // Record initial positions
-        let initial_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let initial_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let initial_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let initial_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // Move divider down by 30 pixels
         assert!(grid.move_divider_down(30.0));
 
         // Verify positions are updated
-        let new_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let new_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let new_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let new_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // First split position should remain the same (it's at origin)
         assert_eq!(new_first_pos, initial_first_pos);
@@ -6387,12 +5846,11 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             context_dimension.clone(),
         );
 
         let second_context =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid = ContextGrid::<VoidListener>::new(
             first_context,
@@ -6402,15 +5860,15 @@ pub mod test {
         grid.split_right(second_context);
 
         // Record initial positions
-        let initial_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let initial_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let initial_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let initial_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // Move divider left by 40 pixels
         assert!(grid.move_divider_left(40.0));
 
         // Verify positions are updated
-        let new_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let new_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let new_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let new_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // First split position should remain the same (it's at origin)
         assert_eq!(new_first_pos, initial_first_pos);
@@ -6438,12 +5896,11 @@ pub mod test {
             VoidListener,
             WindowId::from(0),
             1,
-            1,
             context_dimension.clone(),
         );
 
         let second_context =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid = ContextGrid::<VoidListener>::new(
             first_context,
@@ -6453,15 +5910,15 @@ pub mod test {
         grid.split_down(second_context);
 
         // Record initial positions
-        let initial_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let initial_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let initial_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let initial_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // Move divider up by 25 pixels
         assert!(grid.move_divider_up(25.0));
 
         // Verify positions are updated
-        let new_first_pos = grid.inner[grid.get_ordered_keys()[0]].position();
-        let new_second_pos = grid.inner[grid.get_ordered_keys()[1]].position();
+        let new_first_pos = grid.inner[&grid.get_ordered_keys()[0]].position();
+        let new_second_pos = grid.inner[&grid.get_ordered_keys()[1]].position();
 
         // First split position should remain the same (it's at origin)
         assert_eq!(new_first_pos, initial_first_pos);
@@ -6491,11 +5948,11 @@ pub mod test {
 
         // Create contexts
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         // Build layout: |1|2/3|
         let mut grid =
@@ -6523,11 +5980,11 @@ pub mod test {
 
         // Record initial widths
         let initial_panel1_width =
-            grid.inner.get(panel1_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width;
         let initial_panel2_width =
-            grid.inner.get(panel2_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width;
         let initial_panel3_width =
-            grid.inner.get(panel3_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panel 2 and 3 should have the same width (they're in the same vertical stack)
         assert_eq!(initial_panel2_width, initial_panel3_width);
@@ -6540,9 +5997,9 @@ pub mod test {
         );
 
         // Check that the widths changed correctly
-        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let new_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panel 1 should shrink, panels 2 and 3 should expand
         assert!(
@@ -6572,9 +6029,9 @@ pub mod test {
         );
 
         // Should be back to approximately original widths
-        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let final_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         assert!((final_panel1_width - initial_panel1_width).abs() < 1.0);
         assert!((final_panel2_width - initial_panel2_width).abs() < 1.0);
@@ -6599,11 +6056,11 @@ pub mod test {
 
         // Create contexts
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         // Build layout: |1|2/3|
         let mut grid =
@@ -6621,11 +6078,11 @@ pub mod test {
 
         // Record initial widths
         let initial_panel1_width =
-            grid.inner.get(panel1_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width;
         let initial_panel2_width =
-            grid.inner.get(panel2_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width;
         let initial_panel3_width =
-            grid.inner.get(panel3_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Move divider left from panel 2
         let move_amount = 30.0;
@@ -6635,9 +6092,9 @@ pub mod test {
         );
 
         // Check that the widths changed correctly
-        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let new_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panel 1 should shrink, panel 2 and 3 should expand equally
         assert!(new_panel1_width < initial_panel1_width);
@@ -6665,9 +6122,9 @@ pub mod test {
         );
 
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -6713,7 +6170,7 @@ pub mod test {
         );
 
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
 
@@ -6741,9 +6198,9 @@ pub mod test {
         );
 
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -6758,9 +6215,9 @@ pub mod test {
 
         // Record initial heights
         let initial_panel1_height =
-            grid.inner.get(panel1_key).unwrap().val.dimension.height;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.height;
         let initial_panel2_height =
-            grid.inner.get(panel2_key).unwrap().val.dimension.height;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.height;
 
         // Move divider up (shrink bottom panel, expand top panel)
         let move_amount = 40.0;
@@ -6769,8 +6226,8 @@ pub mod test {
             "Should be able to move divider up"
         );
 
-        let new_panel1_height = grid.inner.get(panel1_key).unwrap().val.dimension.height;
-        let new_panel2_height = grid.inner.get(panel2_key).unwrap().val.dimension.height;
+        let new_panel1_height = grid.inner.get(&panel1_key).unwrap().val.dimension.height;
+        let new_panel2_height = grid.inner.get(&panel2_key).unwrap().val.dimension.height;
 
         // Top panel should expand, bottom panel should shrink
         assert!(new_panel1_height > initial_panel1_height);
@@ -6783,9 +6240,9 @@ pub mod test {
         );
 
         let final_panel1_height =
-            grid.inner.get(panel1_key).unwrap().val.dimension.height;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.height;
         let final_panel2_height =
-            grid.inner.get(panel2_key).unwrap().val.dimension.height;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.height;
 
         // Should be back to approximately original heights
         assert!((final_panel1_height - initial_panel1_height).abs() < 1.0);
@@ -6811,11 +6268,11 @@ pub mod test {
 
         // Create the |1|2/3| layout step by step
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -6836,19 +6293,19 @@ pub mod test {
 
         // Verify the layout structure
         assert!(
-            grid.inner.get(panel1_key).unwrap().right == Some(panel2_key),
+            grid.inner.get(&panel1_key).unwrap().right == Some(panel2_key),
             "Panel 1 should point right to panel 2"
         );
         assert!(
-            grid.inner.get(panel2_key).unwrap().down == Some(panel3_key),
+            grid.inner.get(&panel2_key).unwrap().down == Some(panel3_key),
             "Panel 2 should point down to panel 3"
         );
         assert!(
-            grid.inner.get(panel3_key).unwrap().right.is_none(),
+            grid.inner.get(&panel3_key).unwrap().right.is_none(),
             "Panel 3 should have no right child"
         );
         assert!(
-            grid.inner.get(panel3_key).unwrap().down.is_none(),
+            grid.inner.get(&panel3_key).unwrap().down.is_none(),
             "Panel 3 should have no down child"
         );
 
@@ -6857,16 +6314,11 @@ pub mod test {
 
         // Record initial widths
         let initial_panel1_width =
-            grid.inner.get(panel1_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width;
         let initial_panel2_width =
-            grid.inner.get(panel2_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width;
         let initial_panel3_width =
-            grid.inner.get(panel3_key).unwrap().val.dimension.width;
-
-        println!(
-            "Initial widths - Panel 1: {}, Panel 2: {}, Panel 3: {}",
-            initial_panel1_width, initial_panel2_width, initial_panel3_width
-        );
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panels 2 and 3 should have the same width (they're in the same vertical column)
         assert_eq!(
@@ -6883,14 +6335,9 @@ pub mod test {
         assert!(result, "Panel 3 should be able to move horizontal divider left (this was the bug we fixed)");
 
         // Verify the changes
-        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
-
-        println!(
-            "New widths - Panel 1: {}, Panel 2: {}, Panel 3: {}",
-            new_panel1_width, new_panel2_width, new_panel3_width
-        );
+        let new_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panel 1 should shrink
         assert!(
@@ -6940,9 +6387,9 @@ pub mod test {
         );
 
         // Should be back to approximately original widths
-        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let final_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         assert!(
             (final_panel1_width - initial_panel1_width).abs() < 1.0,
@@ -6956,8 +6403,6 @@ pub mod test {
             (final_panel3_width - initial_panel3_width).abs() < 1.0,
             "Panel 3 should return to approximately original width"
         );
-
-        println!("✅ Divider movement fix verified for |1|2/3| layout!");
     }
 
     #[test]
@@ -6970,7 +6415,6 @@ pub mod test {
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             1,
             ContextDimension::build(
                 300.,
@@ -6985,13 +6429,12 @@ pub mod test {
         let root_key = grid.root.unwrap();
 
         // Verify root has no parent
-        assert_eq!(grid.inner.get(root_key).unwrap().parent, None);
+        assert_eq!(grid.inner.get(&root_key).unwrap().parent, None);
 
         // Create second context and split right
         let second_context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             2,
             ContextDimension::build(
                 300.,
@@ -7005,13 +6448,12 @@ pub mod test {
         let right_key = grid.current;
 
         // Verify right child has correct parent
-        assert_eq!(grid.inner.get(right_key).unwrap().parent, Some(root_key));
+        assert_eq!(grid.inner.get(&right_key).unwrap().parent, Some(root_key));
 
         // Create third context and split down from right panel
         let third_context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             3,
             ContextDimension::build(
                 300.,
@@ -7025,9 +6467,7 @@ pub mod test {
         let down_key = grid.current;
 
         // Verify down child has correct parent (should be right_key)
-        assert_eq!(grid.inner.get(down_key).unwrap().parent, Some(right_key));
-
-        println!("✅ Basic parent references test passed!");
+        assert_eq!(grid.inner.get(&down_key).unwrap().parent, Some(right_key));
     }
 
     #[test]
@@ -7039,8 +6479,7 @@ pub mod test {
         // Create initial context
         let context = create_mock_context(
             VoidListener {},
-            WindowId::from(0),
-            0,
+            WindowId::from(0), // unique route_id
             1,
             ContextDimension::build(
                 300.,
@@ -7057,8 +6496,7 @@ pub mod test {
         // Create |1|2| layout
         let context2 = create_mock_context(
             VoidListener {},
-            WindowId::from(0),
-            0,
+            WindowId::from(0), // unique route_id
             2,
             ContextDimension::build(
                 300.,
@@ -7074,8 +6512,7 @@ pub mod test {
         // Create |1|2/3| layout (split panel 2 down)
         let context3 = create_mock_context(
             VoidListener {},
-            WindowId::from(0),
-            0,
+            WindowId::from(0), // unique route_id
             3,
             ContextDimension::build(
                 300.,
@@ -7090,28 +6527,26 @@ pub mod test {
 
         // Verify parent relationships
         assert_eq!(
-            grid.inner.get(panel1_key).unwrap().parent,
+            grid.inner.get(&panel1_key).unwrap().parent,
             None,
             "Panel 1 should be root"
         );
         assert_eq!(
-            grid.inner.get(panel2_key).unwrap().parent,
+            grid.inner.get(&panel2_key).unwrap().parent,
             Some(panel1_key),
             "Panel 2 parent should be Panel 1"
         );
         assert_eq!(
-            grid.inner.get(panel3_key).unwrap().parent,
+            grid.inner.get(&panel3_key).unwrap().parent,
             Some(panel2_key),
             "Panel 3 parent should be Panel 2"
         );
 
         // Verify child relationships are maintained
-        assert_eq!(grid.inner.get(panel1_key).unwrap().right, Some(panel2_key));
-        assert_eq!(grid.inner.get(panel2_key).unwrap().down, Some(panel3_key));
-        assert_eq!(grid.inner.get(panel3_key).unwrap().right, None);
-        assert_eq!(grid.inner.get(panel3_key).unwrap().down, None);
-
-        println!("✅ Complex layout parent references test passed!");
+        assert_eq!(grid.inner.get(&panel1_key).unwrap().right, Some(panel2_key));
+        assert_eq!(grid.inner.get(&panel2_key).unwrap().down, Some(panel3_key));
+        assert_eq!(grid.inner.get(&panel3_key).unwrap().right, None);
+        assert_eq!(grid.inner.get(&panel3_key).unwrap().down, None);
     }
 
     #[test]
@@ -7124,7 +6559,6 @@ pub mod test {
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             1,
             ContextDimension::build(
                 300.,
@@ -7142,7 +6576,6 @@ pub mod test {
         let context2 = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             2,
             ContextDimension::build(
                 300.,
@@ -7158,7 +6591,6 @@ pub mod test {
         let context3 = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             3,
             ContextDimension::build(
                 300.,
@@ -7172,8 +6604,14 @@ pub mod test {
         let panel3_key = grid.current;
 
         // Verify initial parent relationships
-        assert_eq!(grid.inner.get(panel2_key).unwrap().parent, Some(panel1_key));
-        assert_eq!(grid.inner.get(panel3_key).unwrap().parent, Some(panel2_key));
+        assert_eq!(
+            grid.inner.get(&panel2_key).unwrap().parent,
+            Some(panel1_key)
+        );
+        assert_eq!(
+            grid.inner.get(&panel3_key).unwrap().parent,
+            Some(panel2_key)
+        );
 
         // Remove middle panel (panel 2)
         grid.current = panel2_key;
@@ -7181,17 +6619,15 @@ pub mod test {
 
         // After removal, panel 3 should now be a direct child of panel 1
         // (the exact behavior depends on removal logic, but parent references should be consistent)
-        if grid.inner.contains_key(panel3_key) {
-            let panel3_parent = grid.inner.get(panel3_key).unwrap().parent;
+        if grid.inner.contains_key(&panel3_key) {
+            let panel3_parent = grid.inner.get(&panel3_key).unwrap().parent;
             if let Some(parent_key) = panel3_parent {
                 assert!(
-                    grid.inner.contains_key(parent_key),
+                    grid.inner.contains_key(&parent_key),
                     "Panel 3's parent should exist in grid"
                 );
             }
         }
-
-        println!("✅ Parent references after removal test passed!");
     }
 
     #[test]
@@ -7204,7 +6640,6 @@ pub mod test {
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             1,
             ContextDimension::build(
                 300.,
@@ -7228,7 +6663,6 @@ pub mod test {
         let context2 = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            0,
             2,
             ContextDimension::build(
                 300.,
@@ -7248,96 +6682,6 @@ pub mod test {
             right_margin.x > root_margin.x,
             "Right child should have x offset"
         );
-
-        println!("✅ Find node margin optimization test passed!");
-    }
-
-    #[test]
-    fn test_debug_ordering() {
-        let margin = Delta::default();
-        let context_dimension = ContextDimension::build(
-            600.0,
-            600.0,
-            SugarDimensions::default(),
-            1.0,
-            Delta::default(),
-        );
-
-        let first_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            0,
-            context_dimension,
-        );
-
-        let mut grid = ContextGrid::new(first_context, margin, [0.0, 0.0, 0.0, 0.0]);
-        println!("After creating first context:");
-        let contexts = grid.contexts_ordered();
-        for (i, context) in contexts.iter().enumerate() {
-            println!(
-                "  contexts[{}]: rich_text_id={}",
-                i, context.val.rich_text_id
-            );
-        }
-
-        let second_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            1,
-            context_dimension,
-        );
-        grid.split_right(second_context);
-        println!("After splitting right (second):");
-        let contexts = grid.contexts_ordered();
-        for (i, context) in contexts.iter().enumerate() {
-            println!(
-                "  contexts[{}]: rich_text_id={}",
-                i, context.val.rich_text_id
-            );
-        }
-
-        let third_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            2,
-            context_dimension,
-        );
-        grid.split_right(third_context);
-        println!("After splitting right (third):");
-        let contexts = grid.contexts_ordered();
-        for (i, context) in contexts.iter().enumerate() {
-            println!(
-                "  contexts[{}]: rich_text_id={}",
-                i, context.val.rich_text_id
-            );
-        }
-
-        grid.select_prev_split();
-        println!("After select_prev_split:");
-        println!("  current_index: {}", grid.current_index());
-        println!("  current rich_text_id: {}", grid.current().rich_text_id);
-
-        let fourth_context = create_mock_context(
-            VoidListener {},
-            WindowId::from(0),
-            0,
-            3,
-            context_dimension,
-        );
-        grid.split_right(fourth_context);
-        println!("After splitting right (fourth):");
-        let contexts = grid.contexts_ordered();
-        for (i, context) in contexts.iter().enumerate() {
-            println!(
-                "  contexts[{}]: rich_text_id={}",
-                i, context.val.rich_text_id
-            );
-        }
-        println!("  current_index: {}", grid.current_index());
-        println!("  current rich_text_id: {}", grid.current().rich_text_id);
     }
 
     #[test]
@@ -7358,11 +6702,11 @@ pub mod test {
 
         // Create contexts for |1|2/3| layout
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -7378,11 +6722,11 @@ pub mod test {
 
         // Record initial widths
         let initial_panel1_width =
-            grid.inner.get(panel1_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width;
         let initial_panel2_width =
-            grid.inner.get(panel2_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width;
         let initial_panel3_width =
-            grid.inner.get(panel3_key).unwrap().val.dimension.width;
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panels 2 and 3 should start with the same width (they're in the same vertical stack)
         assert_eq!(initial_panel2_width, initial_panel3_width);
@@ -7395,9 +6739,9 @@ pub mod test {
             "Should be able to move divider left from panel 3"
         );
 
-        let new_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let new_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let new_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let new_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let new_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Panel 1 should shrink
         assert!(
@@ -7430,17 +6774,15 @@ pub mod test {
             "Should be able to move divider right from panel 3"
         );
 
-        let final_panel1_width = grid.inner.get(panel1_key).unwrap().val.dimension.width;
-        let final_panel2_width = grid.inner.get(panel2_key).unwrap().val.dimension.width;
-        let final_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
+        let final_panel1_width = grid.inner.get(&panel1_key).unwrap().val.dimension.width;
+        let final_panel2_width = grid.inner.get(&panel2_key).unwrap().val.dimension.width;
+        let final_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Should be back to approximately original widths
         assert!((final_panel1_width - initial_panel1_width).abs() < 1.0);
         assert!((final_panel2_width - initial_panel2_width).abs() < 1.0);
         assert!((final_panel3_width - initial_panel3_width).abs() < 1.0);
         assert_eq!(final_panel2_width, final_panel3_width);
-
-        println!("✅ Vertical stack width propagation test passed!");
     }
 
     #[test]
@@ -7461,11 +6803,11 @@ pub mod test {
 
         // Create contexts for |1|2/3| layout
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -7484,17 +6826,17 @@ pub mod test {
         // Test moving from panel 2 (top-right)
         grid.current = panel2_key;
         let initial_widths_2 = (
-            grid.inner.get(panel1_key).unwrap().val.dimension.width,
-            grid.inner.get(panel2_key).unwrap().val.dimension.width,
-            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width,
         );
 
         assert!(grid.move_divider_left(move_amount));
 
         let after_panel2_widths = (
-            grid.inner.get(panel1_key).unwrap().val.dimension.width,
-            grid.inner.get(panel2_key).unwrap().val.dimension.width,
-            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width,
         );
 
         // Reset to original state
@@ -7503,17 +6845,17 @@ pub mod test {
         // Test moving from panel 3 (bottom-right)
         grid.current = panel3_key;
         let initial_widths_3 = (
-            grid.inner.get(panel1_key).unwrap().val.dimension.width,
-            grid.inner.get(panel2_key).unwrap().val.dimension.width,
-            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width,
         );
 
         assert!(grid.move_divider_left(move_amount));
 
         let after_panel3_widths = (
-            grid.inner.get(panel1_key).unwrap().val.dimension.width,
-            grid.inner.get(panel2_key).unwrap().val.dimension.width,
-            grid.inner.get(panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width,
         );
 
         // Both operations should produce the same result
@@ -7531,8 +6873,6 @@ pub mod test {
             after_panel3_widths.1, after_panel3_widths.2,
             "Panels 2 and 3 should have same width"
         );
-
-        println!("✅ Divider movement from different panels test passed!");
     }
 
     #[test]
@@ -7552,13 +6892,13 @@ pub mod test {
         );
 
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
         let context4 =
-            create_mock_context(VoidListener, WindowId::from(3), 4, 4, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(3), 4, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -7570,20 +6910,10 @@ pub mod test {
         grid.split_right(context4); // |1|4|2/3| -> but this creates |1|2/3|4| due to ordering
 
         let ordered_keys = grid.get_ordered_keys();
-
-        // Debug: print the actual layout
-        println!("Debug actual layout:");
-        for (i, &key) in ordered_keys.iter().enumerate() {
-            let item = &grid.inner[key];
-            println!("  Panel {}: rich_text_id={}, width={}, parent={:?}, right={:?}, down={:?}",
-                     i+1, item.val.rich_text_id, item.val.dimension.width,
-                     item.parent, item.right, item.down);
-        }
-
         // Find panels by their rich_text_id for clarity
         let mut panel_keys = std::collections::HashMap::new();
         for &key in &ordered_keys {
-            let item = &grid.inner[key];
+            let item = &grid.inner[&key];
             panel_keys.insert(item.val.rich_text_id, key);
         }
 
@@ -7594,10 +6924,10 @@ pub mod test {
 
         // Record initial widths
         let _initial_widths = (
-            grid.inner.get(panel1_key).unwrap().val.dimension.width,
-            grid.inner.get(panel2_key).unwrap().val.dimension.width,
-            grid.inner.get(panel3_key).unwrap().val.dimension.width,
-            grid.inner.get(panel4_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width,
+            grid.inner.get(&panel4_key).unwrap().val.dimension.width,
         );
 
         // Try moving divider from panel 2 (which should work)
@@ -7607,10 +6937,10 @@ pub mod test {
 
         if move_result {
             let new_widths = (
-                grid.inner.get(panel1_key).unwrap().val.dimension.width,
-                grid.inner.get(panel2_key).unwrap().val.dimension.width,
-                grid.inner.get(panel3_key).unwrap().val.dimension.width,
-                grid.inner.get(panel4_key).unwrap().val.dimension.width,
+                grid.inner.get(&panel1_key).unwrap().val.dimension.width,
+                grid.inner.get(&panel2_key).unwrap().val.dimension.width,
+                grid.inner.get(&panel3_key).unwrap().val.dimension.width,
+                grid.inner.get(&panel4_key).unwrap().val.dimension.width,
             );
 
             // Panels 2 and 3 should have the same width (they're in the same vertical stack)
@@ -7618,10 +6948,10 @@ pub mod test {
                 new_widths.1, new_widths.2,
                 "Panels 2 and 3 should have same width"
             );
-
-            println!("✅ Complex layout divider movement test passed!");
         } else {
-            println!("ℹ️  Divider movement not supported for this specific layout - test skipped");
+            panic!(
+                "Divider movement not supported for this specific layout - test skipped"
+            );
         }
     }
 
@@ -7643,11 +6973,11 @@ pub mod test {
         );
 
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -7662,22 +6992,20 @@ pub mod test {
         let panel3_key = ordered_keys[2];
 
         // Calculate initial total width
-        let initial_total = grid.inner.get(panel1_key).unwrap().val.dimension.width
-            + grid.inner.get(panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
+        let initial_total = grid.inner.get(&panel1_key).unwrap().val.dimension.width
+            + grid.inner.get(&panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
 
         // Move divider and check total width is preserved
         grid.current = panel3_key;
         assert!(grid.move_divider_left(50.0));
 
-        let new_total = grid.inner.get(panel1_key).unwrap().val.dimension.width
-            + grid.inner.get(panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
+        let new_total = grid.inner.get(&panel1_key).unwrap().val.dimension.width
+            + grid.inner.get(&panel2_key).unwrap().val.dimension.width; // Panel 3 shares width with Panel 2
 
         assert!(
             (initial_total - new_total).abs() < 1.0,
             "Total width should be preserved"
         );
-
-        println!("✅ Total width preservation test passed!");
     }
 
     #[test]
@@ -7702,11 +7030,11 @@ pub mod test {
 
         // Create the exact layout described: |1|2/3|
         let context1 =
-            create_mock_context(VoidListener, WindowId::from(0), 1, 1, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(0), 1, context_dimension);
         let context2 =
-            create_mock_context(VoidListener, WindowId::from(1), 2, 2, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(1), 2, context_dimension);
         let context3 =
-            create_mock_context(VoidListener, WindowId::from(2), 3, 3, context_dimension);
+            create_mock_context(VoidListener, WindowId::from(2), 3, context_dimension);
 
         let mut grid =
             ContextGrid::<VoidListener>::new(context1, margin, [1.0, 1.0, 1.0, 1.0]);
@@ -7725,10 +7053,7 @@ pub mod test {
 
         // Record initial width of panel 3
         let initial_panel3_width =
-            grid.inner.get(panel3_key).unwrap().val.dimension.width;
-
-        println!("Before moving divider:");
-        println!("  Panel 3 width: {}", initial_panel3_width);
+            grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // Move divider left (this should now work and change panel 3's width)
         let move_amount = 50.0;
@@ -7736,10 +7061,7 @@ pub mod test {
         assert!(move_result, "Moving divider left should work");
 
         // Check that panel 3's width actually changed
-        let new_panel3_width = grid.inner.get(panel3_key).unwrap().val.dimension.width;
-
-        println!("After moving divider left by {}:", move_amount);
-        println!("  Panel 3 width: {}", new_panel3_width);
+        let new_panel3_width = grid.inner.get(&panel3_key).unwrap().val.dimension.width;
 
         // This is the key assertion - panel 3's width should have changed!
         assert!(
