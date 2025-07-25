@@ -36,7 +36,7 @@ use crate::ansi::{
 use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
-use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
+use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
@@ -427,7 +427,6 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
-    hyperlink_re: regex::Regex,
 
     // The stack for the keyboard modes.
     keyboard_mode_stack: Vec<KeyboardModes>,
@@ -453,7 +452,7 @@ impl<U: EventListener> Crosswords<U> {
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
         let term_colors = TermColors::default();
         // Regex used for the default URL hint.
-        let url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
+        let _url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
                          [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
 
         Crosswords {
@@ -466,7 +465,6 @@ impl<U: EventListener> Crosswords<U> {
             scroll_region,
             event_proxy,
             colors: term_colors,
-            hyperlink_re: regex::Regex::new(url_regex).unwrap(),
             title: String::from(""),
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
@@ -1038,116 +1036,6 @@ impl<U: EventListener> Crosswords<U> {
             *line = std::cmp::max(*line - lines, top);
         }
         self.mark_fully_damaged();
-    }
-
-    #[inline]
-    pub fn search_nearest_hyperlink_from_pos(
-        &mut self,
-        pos: Pos,
-    ) -> Option<SelectionRange> {
-        // Limit the starting pos to the last line in the history
-        let wide = square::Flags::WIDE_CHAR
-            | square::Flags::WIDE_CHAR_SPACER
-            | square::Flags::LEADING_WIDE_CHAR_SPACER;
-
-        let last_column = self.grid.columns() - 1;
-        if pos.col > last_column {
-            return None;
-        }
-
-        let first_column = 0;
-        let last_row = self.grid.screen_lines();
-        let starting_square: &Square = &self.grid[pos];
-
-        let is_existent_hyperlink = starting_square.hyperlink().is_some();
-        if !is_existent_hyperlink && starting_square.c == ' ' {
-            return None;
-        }
-
-        let mut content: std::collections::VecDeque<char> =
-            std::collections::VecDeque::from([starting_square.c]);
-        // TODO: Remove positions_to_update and fully rely on
-        // selection_end and selection_start
-        let mut positions_to_update: Vec<Pos> = vec![pos];
-        let mut selection_start: Pos = pos;
-        let mut selection_end: Pos = pos;
-
-        // Next adjacents squares
-        for square in self.grid.iter_from(pos) {
-            if square.hyperlink().is_some() {
-                content.push_back(square.c);
-                selection_end = square.pos;
-                positions_to_update.push(square.pos);
-                continue;
-            }
-
-            if square.flags.intersects(wide) || square.c == ' ' {
-                break;
-            }
-
-            content.push_back(square.c);
-            selection_end = square.pos;
-            positions_to_update.push(square.pos);
-
-            if pos.col == last_column && pos.row == last_row {
-                break; // cut off if on new line or hit escape char
-            }
-        }
-
-        // Previous adjacents squares
-        let mut iter = self.grid.iter_from(pos);
-        while let Some(square) = iter.prev() {
-            if square.hyperlink().is_some() {
-                content.push_front(square.c);
-                selection_start = square.pos;
-                positions_to_update.push(square.pos);
-                continue;
-            }
-
-            if square.flags.intersects(wide) || square.c == ' ' {
-                break;
-            }
-
-            content.push_front(square.c);
-            selection_start = square.pos;
-            positions_to_update.push(square.pos);
-
-            if square.pos.col == first_column && square.pos.row == 0 {
-                break; // cut off if on new line or hit escape char
-            }
-        }
-
-        if is_existent_hyperlink {
-            let range = SelectionRange {
-                start: selection_start,
-                end: selection_end,
-                is_block: false,
-            };
-            return Some(range);
-        }
-
-        if content.len() <= 4 {
-            return None;
-        }
-
-        let value = content.iter().collect::<String>();
-        if let Some(uri) = self.hyperlink_re.find(&value) {
-            let uri = uri.as_str().to_string();
-            let hyperlink = Some(Hyperlink::new(None, uri));
-
-            for link_pos in positions_to_update.iter() {
-                self.grid[link_pos.row][link_pos.col].set_hyperlink(hyperlink.to_owned());
-            }
-
-            let range = SelectionRange {
-                start: selection_start,
-                end: selection_end,
-                is_block: false,
-            };
-            return Some(range);
-        }
-
-        None
     }
 
     #[inline(always)]

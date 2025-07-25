@@ -253,7 +253,6 @@ impl Renderer {
     ) {
         // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
-        let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
@@ -272,25 +271,33 @@ impl Renderer {
                 continue;
             }
 
-            let (mut style, square_content) =
+            let (mut style, mut square_content) =
                 if has_cursor && column == cursor.state.pos.col {
                     self.create_cursor_style(square, cursor, is_active, term_colors)
                 } else {
                     self.create_style(square, term_colors)
                 };
 
-            if hyperlink_range.is_some()
-                && square.hyperlink().is_some()
-                && hyperlink_range
-                    .unwrap()
-                    .contains(Pos::new(line, Column(column)))
-            {
+            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
+            let should_underline = square.hyperlink().is_some() || {
+                if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
+                    let current_pos = Pos::new(line, Column(column));
+                    highlighted_hint.start <= current_pos
+                        && current_pos <= highlighted_hint.end
+                } else {
+                    false
+                }
+            };
+
+            if should_underline {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
-            } else if selection_range.is_some()
+            }
+
+            if selection_range.is_some()
                 && selection_range
                     .unwrap()
                     .contains(Pos::new(line, Column(column)))
@@ -318,6 +325,42 @@ impl Renderer {
                     style.background_color =
                         Some(self.named_colors.search_match_background);
                 }
+            }
+
+            // Check for hint labels at this position
+            if let Some(hint_label) = self.find_hint_label_at_position(
+                renderable_content,
+                Pos::new(line, Column(column)),
+            ) {
+                // Override character with hint label character if available
+                if let Some(label_char) = hint_label.label.first() {
+                    square_content = *label_char;
+                }
+
+                // Apply hint label styling
+                if hint_label.is_first {
+                    // Use configurable hint colors
+                    style.color = self.named_colors.hint_foreground;
+                    style.background_color = Some(self.named_colors.hint_background);
+                } else {
+                    // End colors: use same foreground, slightly dimmed background
+                    style.color = self.named_colors.hint_foreground;
+                    let mut dimmed_bg = self.named_colors.hint_background;
+                    // Dim the background slightly for continuation labels
+                    dimmed_bg[0] *= 0.8;
+                    dimmed_bg[1] *= 0.8;
+                    dimmed_bg[2] *= 0.8;
+                    style.background_color = Some(dimmed_bg);
+                }
+
+                // Make hint labels bold for better visibility
+                use rio_backend::sugarloaf::font_introspector::{Attributes, Weight};
+                let current_attrs = style.font_attrs;
+                style.font_attrs = Attributes::new(
+                    current_attrs.stretch(),
+                    Weight::BOLD,
+                    current_attrs.style(),
+                );
             }
 
             if !is_active {
@@ -752,7 +795,7 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
-        hints: &mut Option<HintMatches>,
+        search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         // let start = std::time::Instant::now();
@@ -793,8 +836,11 @@ impl Renderer {
             }
 
             let force_full_damage = has_active_changed
-                || is_active && hints.is_some()
-                || self.is_game_mode_enabled;
+                || self.is_game_mode_enabled
+                // TODO: Improve search and highlighted_hint updates
+                // Now it's basically triggering the whole lines render.
+                || context.renderable_content.highlighted_hint.is_some()
+                || is_active && search_hints.is_some();
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
@@ -949,7 +995,7 @@ impl Renderer {
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
-                            hints,
+                            search_hints,
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
@@ -978,7 +1024,7 @@ impl Renderer {
                                         - terminal_snapshot.display_offset as i32,
                                 ),
                                 &context.renderable_content,
-                                hints,
+                                search_hints,
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
@@ -1027,5 +1073,17 @@ impl Renderer {
         sugarloaf.render();
 
         // let _duration = start.elapsed();
+    }
+
+    /// Find hint label at the specified position
+    fn find_hint_label_at_position<'a>(
+        &self,
+        renderable_content: &'a RenderableContent,
+        pos: Pos,
+    ) -> Option<&'a crate::context::renderable::HintLabel> {
+        renderable_content
+            .hint_labels
+            .iter()
+            .find(|label| label.position == pos)
     }
 }

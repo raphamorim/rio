@@ -73,6 +73,10 @@ search-match-foreground = '#FFFFFF'
 search-focused-match-background = '#E6A003'
 search-focused-match-foreground = '#FFFFFF'
 
+# Hints
+hint-foreground = '#181818'
+hint-background = '#f4bf75'
+
 # Selection`
 selection-foreground = '#0F0D0E'
 selection-background = '#44C9F0'
@@ -730,6 +734,71 @@ fonts.use-drawable-chars = true
 - Octants characters
 </p>
 </details>
+
+## hints
+
+The hints system allows you to quickly interact with text patterns in your terminal by displaying keyboard shortcuts over matching content. When activated, Rio scans the visible terminal content for configured patterns and displays keyboard shortcuts over each match.
+
+For detailed information about the hints system, see the [Hints feature documentation](/docs/features/hints).
+
+### Basic Configuration
+
+```toml
+[hints]
+# Characters used for hint labels
+alphabet = "jfkdls;ahgurieowpq"
+
+# URL hint example
+[[hints.rules]]
+regex = "(https://|http://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+"
+hyperlinks = true
+post-processing = true
+persist = false
+
+[hints.rules.action]
+command = "xdg-open"  # Linux/BSD
+# command = "open"    # macOS
+# command = { program = "cmd", args = ["/c", "start", ""] }  # Windows
+
+[hints.rules.binding]
+key = "O"
+mods = ["Control", "Shift"]
+```
+
+### Configuration Options
+
+- **`alphabet`**: String of characters used for hint labels
+- **`regex`**: Regular expression pattern to match
+- **`hyperlinks`**: Whether to treat matches as hyperlinks
+- **`post-processing`**: Apply post-processing to clean up matched text
+- **`persist`**: Keep hint mode active after selection
+
+### Actions
+
+Built-in actions:
+- `"Copy"` - Copy to clipboard
+- `"Paste"` - Paste the matched text
+- `"Select"` - Select the matched text
+
+External commands:
+```toml
+[hints.rules.action]
+command = "xdg-open"  # Simple command
+# Or with arguments:
+command = { program = "code", args = ["--goto"] }
+```
+
+### Key Bindings and Mouse Support
+
+```toml
+[hints.rules.binding]
+key = "O"
+mods = ["Control", "Shift"]
+
+[hints.rules.mouse]
+enabled = true
+mods = ["Control"]  # Optional modifier keys
+```
 
 ## ignore-selection-foreground-color
 
