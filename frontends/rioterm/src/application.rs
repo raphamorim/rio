@@ -276,13 +276,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         // Check if rendering is actually needed
-                        let terminal = route
-                            .window
-                            .screen
-                            .ctx_mut()
-                            .current_mut()
-                            .terminal
-                            .lock();
+                        let terminal =
+                            route.window.screen.ctx_mut().current_mut().terminal.lock();
                         if !terminal.needs_render() {
                             // Skip rendering if no actual damage
                             return;
@@ -294,15 +289,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.needs_render_after_occlusion = false;
                         }
 
-                        let ctx = route.window.screen.ctx_mut().current_mut();
-                        ctx.renderable_content
-                            .pending_update
-                            .invalidate(damage, &ctx.terminal);
-                        route.schedule_redraw(
-                            &mut self.scheduler,
-                            &self.event_proxy,
-                            route_id,
-                        );
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .invalidate(damage, &ctx_item.val.terminal);
+                            route.schedule_redraw(
+                                &mut self.scheduler,
+                                &self.event_proxy,
+                                route_id,
+                            );
+                        }
                     }
                 }
             }
