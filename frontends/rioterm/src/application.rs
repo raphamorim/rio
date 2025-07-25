@@ -196,70 +196,64 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Check if this is the current route
-                        if route_id == route.window.screen.ctx().current_route() {
-                            // Clear the one-time render flag if it was set
-                            if route.window.needs_render_after_occlusion {
-                                route.window.needs_render_after_occlusion = false;
-                            }
+                        // Clear the one-time render flag if it was set
+                        if route.window.needs_render_after_occlusion {
+                            route.window.needs_render_after_occlusion = false;
+                        }
 
-                            // Check if we need to throttle based on timing
-                            if let Some(wait_duration) = route.window.wait_until() {
-                                // We need to wait before rendering again
-                                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
-                                let event = EventPayload::new(
-                                    RioEventType::Rio(RioEvent::Render),
-                                    window_id,
+                        // Check if we need to throttle based on timing
+                        if let Some(wait_duration) = route.window.wait_until() {
+                            // We need to wait before rendering again
+                            let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
+
+                            // Only schedule if not already scheduled
+                            if !self.scheduler.scheduled(timer_id) {
+                                self.scheduler.schedule(
+                                    event,
+                                    wait_duration,
+                                    false,
+                                    timer_id,
                                 );
-
-                                // Only schedule if not already scheduled
-                                if !self.scheduler.scheduled(timer_id) {
-                                    self.scheduler.schedule(
-                                        event,
-                                        wait_duration,
-                                        false,
-                                        timer_id,
-                                    );
-                                }
-                            } else {
-                                // We can render immediately
-                                route.request_redraw();
                             }
+                        } else {
+                            // We can render immediately
+                            route.request_redraw();
                         }
                     }
                 }
             }
             RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Check if this is the current route
-                    if route_id == route.window.screen.ctx().current_route() {
-                        let context_manager = route.window.screen.ctx_mut();
-                        let grid = context_manager.current_grid_mut();
+                    let context_manager = route.window.screen.ctx_mut();
+                    let grid = context_manager.current_grid_mut();
 
-                        let mut request_pending_redraw = false;
+                    let mut request_pending_redraw = false;
 
-                        for (_key, grid_context) in grid.contexts().iter() {
-                            let ctx = grid_context.context();
+                    for (_key, grid_context) in grid.contexts().iter() {
+                        let ctx = grid_context.context();
 
-                            // In this case we know we have to render something that's pending.
-                            if ctx.renderable_content.pending_update.is_dirty() {
-                                request_pending_redraw = true;
-                            }
-
-                            if let Some(terminal) =
-                                grid_context.context().terminal.try_lock_unfair()
-                            {
-                                terminal.emit_damage_event();
-                            }
+                        // In this case we know we have to render something that's pending.
+                        if ctx.renderable_content.pending_update.is_dirty() {
+                            request_pending_redraw = true;
                         }
 
-                        if request_pending_redraw {
-                            route.schedule_redraw(
-                                &mut self.scheduler,
-                                &self.event_proxy,
-                                route.window.screen.ctx().current_route(),
-                            );
+                        if let Some(terminal) =
+                            grid_context.context().terminal.try_lock_unfair()
+                        {
+                            terminal.emit_damage_event();
                         }
+                    }
+
+                    if request_pending_redraw {
+                        route.schedule_redraw(
+                            &mut self.scheduler,
+                            &self.event_proxy,
+                            route_id,
+                        );
                     }
                 }
             }
@@ -281,62 +275,56 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Check if this is the current route
-                        if route_id == route.window.screen.ctx().current_route() {
-                            // Check if rendering is actually needed
-                            let terminal = route
-                                .window
-                                .screen
-                                .ctx_mut()
-                                .current_mut()
-                                .terminal
-                                .lock();
-                            if !terminal.needs_render() {
-                                // Skip rendering if no actual damage
-                                return;
-                            }
-                            drop(terminal);
-
-                            // Clear the one-time render flag if it was set
-                            if route.window.needs_render_after_occlusion {
-                                route.window.needs_render_after_occlusion = false;
-                            }
-
-                            let ctx = route.window.screen.ctx_mut().current_mut();
-                            ctx.renderable_content
-                                .pending_update
-                                .invalidate(damage, &ctx.terminal);
-                            route.schedule_redraw(
-                                &mut self.scheduler,
-                                &self.event_proxy,
-                                route_id,
-                            );
+                        // Check if rendering is actually needed
+                        let terminal = route
+                            .window
+                            .screen
+                            .ctx_mut()
+                            .current_mut()
+                            .terminal
+                            .lock();
+                        if !terminal.needs_render() {
+                            // Skip rendering if no actual damage
+                            return;
                         }
-                    }
-                }
-            }
-            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Check if this is the current route
-                    if route_id == route.window.screen.ctx().current_route() {
-                        // Process graphics directly in sugarloaf
-                        let sugarloaf = &mut route.window.screen.sugarloaf;
+                        drop(terminal);
 
-                        for graphic_data in queues.pending {
-                            sugarloaf.graphics.insert(graphic_data);
+                        // Clear the one-time render flag if it was set
+                        if route.window.needs_render_after_occlusion {
+                            route.window.needs_render_after_occlusion = false;
                         }
 
-                        for graphic_data in queues.remove_queue {
-                            sugarloaf.graphics.remove(&graphic_data);
-                        }
-
-                        // Request a redraw to display the updated graphics
+                        let ctx = route.window.screen.ctx_mut().current_mut();
+                        ctx.renderable_content
+                            .pending_update
+                            .invalidate(damage, &ctx.terminal);
                         route.schedule_redraw(
                             &mut self.scheduler,
                             &self.event_proxy,
                             route_id,
                         );
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Process graphics directly in sugarloaf
+                    let sugarloaf = &mut route.window.screen.sugarloaf;
+
+                    for graphic_data in queues.pending {
+                        sugarloaf.graphics.insert(graphic_data);
+                    }
+
+                    for graphic_data in queues.remove_queue {
+                        sugarloaf.graphics.remove(&graphic_data);
+                    }
+
+                    // Request a redraw to display the updated graphics
+                    route.schedule_redraw(
+                        &mut self.scheduler,
+                        &self.event_proxy,
+                        route_id,
+                    );
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
