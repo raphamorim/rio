@@ -44,6 +44,7 @@ teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 url = { workspace = true }
+smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
 slotmap = { workspace = true }
