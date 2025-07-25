@@ -795,7 +795,7 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
-        hints: &mut Option<HintMatches>,
+        search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         // let start = std::time::Instant::now();
@@ -836,8 +836,11 @@ impl Renderer {
             }
 
             let force_full_damage = has_active_changed
-                || is_active && hints.is_some()
-                || self.is_game_mode_enabled;
+                || self.is_game_mode_enabled
+                // TODO: Improve search and highlighted_hint updates
+                // Now it's basically triggering the whole lines render.
+                || context.renderable_content.highlighted_hint.is_some()
+                || is_active && search_hints.is_some();
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
@@ -992,7 +995,7 @@ impl Renderer {
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
-                            hints,
+                            search_hints,
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
@@ -1021,7 +1024,7 @@ impl Renderer {
                                         - terminal_snapshot.display_offset as i32,
                                 ),
                                 &context.renderable_content,
-                                hints,
+                                search_hints,
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
