@@ -1034,17 +1034,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .screen
                         .context_manager
                         .current()
-                        .renderable_content
-                        .highlighted_hint
-                        .is_some()
+                        .has_hyperlink_range()
                     {
                         route
                             .window
                             .screen
                             .context_manager
                             .current_mut()
-                            .renderable_content
-                            .highlighted_hint = None;
+                            .set_hyperlink_range(None);
                         route.window.screen.context_manager.request_render();
                     }
                 }
