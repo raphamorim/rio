@@ -33,8 +33,20 @@
           tools = self'.packages.rio.nativeBuildInputs ++ self'.packages.rio.buildInputs ++ [rust-toolchain];
         in
           pkgs.mkShell {
+            packages =
+              [
+                # Derivations in `rust-toolchain` provide the toolchain,
+                # which must be listed first to take precedence over nightly.
+                rust-toolchain
+
+                # Use rustfmt, and other tools that require nightly features.
+                (pkgs.rust-bin.selectLatestNightlyWith (toolchain:
+                  toolchain.minimal.override {
+                    extensions = ["rustfmt" "rust-analyzer"];
+                  }))
+              ]
+              ++ tools;
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath runtimeDeps}";
-            packages = tools ++ [rust-toolchain];
           };
       in {
         _module.args.pkgs = import inputs.nixpkgs {
@@ -53,8 +65,8 @@
         packages.rio = pkgs.callPackage mkRio {rust-toolchain = pkgs.rust-bin.stable.latest.minimal;};
 
         devShells.msrv = mkDevShell (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
-        devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.default;
-        devShells.nightly = mkDevShell (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default));
+        devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.minimal;
+        devShells.nightly = mkDevShell (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal));
       };
     };
 }
