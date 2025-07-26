@@ -56,10 +56,7 @@ pub fn padding_bottom_from_config(
         return default_padding;
     }
 
-    if navigation.mode == NavigationMode::BottomTab {
-        return padding_y_bottom + constants::PADDING_Y_BOTTOM_TABS;
-    }
-
+    // No navigation modes require extra padding anymore
     default_padding
 }
 
