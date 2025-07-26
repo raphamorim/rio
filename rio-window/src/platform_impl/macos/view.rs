@@ -135,6 +135,9 @@ pub struct ViewState {
     /// to the application, even during IME
     forward_key_to_app: Cell<bool>,
 
+    /// True if we're currently processing a key event
+    in_key_event: Cell<bool>,
+
     marked_text: RefCell<Retained<NSMutableAttributedString>>,
     accepts_first_mouse: bool,
 
@@ -416,21 +419,21 @@ declare_class!(
 
             let is_control = string.chars().next().is_some_and(|c| c.is_control());
             let has_marked_text = unsafe { self.hasMarkedText() };
+            let is_in_key_event = self.ivars().in_key_event.get();
 
-            // Handle emoji and other Unicode input properly
             if self.is_ime_enabled() {
                 if has_marked_text && !is_control {
-                    // Clear preedit and commit the text
+                    // Clear preedit and commit the text (normal IME flow)
                     self.queue_event(WindowEvent::Ime(Ime::Preedit(String::new(), None)));
                     self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                     self.ivars().ime_state.set(ImeState::Committed);
-                } else if !is_control && !string.is_empty() {
-                    // Direct input (like emoji picker) without marked text
+                } else if !is_control && !string.is_empty() && !is_in_key_event {
+                    // Direct input not from keyboard (e.g., emoji picker)
                     self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
                     self.ivars().ime_state.set(ImeState::Committed);
                 }
-            } else if !is_control && !string.is_empty() {
-                // IME is disabled but we still got text input (e.g., emoji picker)
+            } else if !is_control && !string.is_empty() && !is_in_key_event {
+                // IME is disabled but we got non-keyboard input (e.g., emoji picker)
                 // Temporarily enable IME for this input
                 self.queue_event(WindowEvent::Ime(Ime::Enabled));
                 self.queue_event(WindowEvent::Ime(Ime::Commit(string)));
@@ -464,6 +467,10 @@ declare_class!(
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
             trace_scope!("keyDown:");
+            
+            // Set flag to indicate we're in a key event
+            self.ivars().in_key_event.set(true);
+            
             {
                 let mut prev_input_source = self.ivars().input_source.borrow_mut();
                 let current_input_source = self.current_input_source();
@@ -518,11 +525,17 @@ declare_class!(
                     is_synthetic: false,
                 });
             }
+            
+            // Clear the flag after processing
+            self.ivars().in_key_event.set(false);
         }
 
         #[method(keyUp:)]
         fn key_up(&self, event: &NSEvent) {
             trace_scope!("keyUp:");
+            
+            // Set flag to indicate we're in a key event
+            self.ivars().in_key_event.set(true);
 
             let event = replace_event(event, self.option_as_alt());
             self.update_modifiers(&event, false);
@@ -538,6 +551,9 @@ declare_class!(
                     is_synthetic: false,
                 });
             }
+            
+            // Clear the flag after processing
+            self.ivars().in_key_event.set(false);
         }
 
         #[method(flagsChanged:)]
@@ -826,6 +842,7 @@ impl WinitView {
             input_source: Default::default(),
             ime_allowed: Default::default(),
             forward_key_to_app: Default::default(),
+            in_key_event: Default::default(),
             marked_text: Default::default(),
             accepts_first_mouse,
             _ns_window: WeakId::new(&window.retain()),
