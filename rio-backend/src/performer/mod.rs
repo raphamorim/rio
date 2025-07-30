@@ -274,7 +274,12 @@ where
 
         'write_many: while let Some(mut current) = state.take_current() {
             'write_one: loop {
-                match self.pty.writer().write(current.remaining_bytes()) {
+                let bytes = current.remaining_bytes();
+                // Debug: print escape sequences
+                if bytes.len() > 0 && bytes[0] == 27 {
+                    println!("PTY: Writing escape sequence: {:?}", bytes);
+                }
+                match self.pty.writer().write(bytes) {
                     Ok(0) => {
                         state.set_current(Some(current));
                         break 'write_many;

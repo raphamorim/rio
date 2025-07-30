@@ -18,15 +18,14 @@ Whom can be be combined with the following effect fields:
 | Name              | Description            |
 | ----------------- | ---------------------- |
 | [action](#action) | Predefined Rio actions |
-| [bytes](#bytes)   | Write byte sequence    |
-| [text](#text)     | Write text sequence    |
+| [esc](#esc)       | Send escape sequence   |
 
 ```toml
 [bindings]
 keys = [
   { key = "q", with = "super", action = "Quit" },
-  # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-  { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] },
+  # Send escape sequence to clear screen and move cursor to home
+  { key = "l", with = "control", esc = "\u001b[2J\u001b[H" },
   # Remove existing keybind
   { key = "v", with = "control | shift", action = "none" },
 ]
@@ -122,13 +121,53 @@ Execute a predefined action in Rio terminal.
 | SearchHistoryNext     | |
 | SearchHistoryPrevious | |
 
-## [Bytes](#bytes)
+## [Esc](#esc)
 
-Send a byte sequence to the running application.
+Send escape sequences to the running application.
 
-The `bytes` field writes the specified string to the terminal. This makes
-it possible to pass escape sequences, like `PageUp` ("\x1b[5~"). Note that applications use terminfo to map escape sequences back
-to keys. It is therefore required to update the terminfo when changing an escape sequence.
+The `esc` field writes the specified escape sequence to the terminal. This makes it possible to send control sequences like clearing the screen, moving the cursor, or any other ANSI escape sequences. The sequences are sent directly to the PTY without any text manipulation.
+
+### Common Escape Sequences
+
+```toml
+[bindings]
+keys = [
+  # Clear screen (ESC[2J)
+  { key = "k", with = "control", esc = "\u001b[2J" },
+  
+  # Clear screen and move cursor to home (ESC[2J ESC[H)
+  { key = "l", with = "control", esc = "\u001b[2J\u001b[H" },
+  
+  # Send form feed character (Ctrl+L) - works in most shells
+  { key = "l", with = "control", esc = "\u000C" },
+  
+  # Move cursor to beginning of line (ESC[H)
+  { key = "a", with = "control", esc = "\u001b[H" },
+  
+  # Delete from cursor to end of line (ESC[K)
+  { key = "k", with = "control", esc = "\u001b[K" },
+  
+  # Send custom escape sequence for tmux prefix
+  { key = "a", with = "control", esc = "\u001b[a" },
+  
+  # Send Page Up escape sequence
+  { key = "pageup", esc = "\u001b[5~" },
+  
+  # Send Page Down escape sequence
+  { key = "pagedown", esc = "\u001b[6~" },
+]
+```
+
+### Escape Sequence Format
+
+Escape sequences must use Unicode escape notation in TOML:
+- `\u001b` - ESC character (ASCII 27) - **Required format for ESC in TOML**
+- `\u000C` - Form feed (Ctrl+L)
+- `\n` - Newline
+- `\r` - Carriage return
+- `\t` - Tab
+
+**Important**: In TOML configuration files, you must use `\u001b` for the ESC character. The `\x1b` notation will not work in TOML strings.
 
 ## [With](#with)
 
@@ -173,18 +212,6 @@ There is currently four different modes:
 keys = [
   # Enable VI mode on escape, when not in VI mode.
   { key = "esc", mode = "~vi", action = "ToggleVIMode" },
-]
-```
-
-## [Text](#text)
-
-`text` can be used to write specific text on key press:
-
-```toml
-[bindings]
-keys = [
-  # Write `Rio is awesome!` on `Control + r`
-  { key = "r", with = "control", text = "Rio is awesome!" },
 ]
 ```
 
