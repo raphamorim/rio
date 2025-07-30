@@ -843,8 +843,7 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            let force_full_damage = has_active_changed
-                || self.is_game_mode_enabled;
+            let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
