@@ -181,12 +181,7 @@ impl Screen<'_> {
 
         let renderer = Renderer::new(config, font_library);
 
-        let bindings = crate::bindings::default_key_bindings(
-            config.bindings.keys.to_owned(),
-            config.navigation.has_navigation_key_bindings(),
-            config.navigation.use_split,
-            config.keyboard,
-        );
+        let bindings = crate::bindings::default_key_bindings(config);
 
         let is_native = config.navigation.is_native();
 
@@ -259,76 +254,6 @@ impl Screen<'_> {
         }
         sugarloaf.render();
 
-        // Create hint bindings from config
-        let mut hint_bindings = Vec::new();
-        for hint_config in &config.hints.rules {
-            if let Some(binding_config) = &hint_config.binding {
-                // Parse key using the same logic as in bindings/mod.rs
-                let (key, location) = match binding_config.key.to_lowercase().as_str() {
-                    "o" => (
-                        rio_window::keyboard::Key::Character("o".into()),
-                        rio_window::keyboard::KeyLocation::Standard,
-                    ),
-                    "space" => (
-                        rio_window::keyboard::Key::Named(
-                            rio_window::keyboard::NamedKey::Space,
-                        ),
-                        rio_window::keyboard::KeyLocation::Standard,
-                    ),
-                    "enter" | "return" => (
-                        rio_window::keyboard::Key::Named(
-                            rio_window::keyboard::NamedKey::Enter,
-                        ),
-                        rio_window::keyboard::KeyLocation::Standard,
-                    ),
-                    "escape" | "esc" => (
-                        rio_window::keyboard::Key::Named(
-                            rio_window::keyboard::NamedKey::Escape,
-                        ),
-                        rio_window::keyboard::KeyLocation::Standard,
-                    ),
-                    // Add more keys as needed
-                    single_char if single_char.len() == 1 => (
-                        rio_window::keyboard::Key::Character(single_char.into()),
-                        rio_window::keyboard::KeyLocation::Standard,
-                    ),
-                    _ => continue, // Skip unknown keys
-                };
-
-                // Parse modifiers
-                let mut mods = rio_window::keyboard::ModifiersState::empty();
-                for mod_str in &binding_config.mods {
-                    match mod_str.as_str() {
-                        "Control" => {
-                            mods |= rio_window::keyboard::ModifiersState::CONTROL
-                        }
-                        "Shift" => mods |= rio_window::keyboard::ModifiersState::SHIFT,
-                        "Alt" => mods |= rio_window::keyboard::ModifiersState::ALT,
-                        "Super" | "Cmd" => {
-                            mods |= rio_window::keyboard::ModifiersState::SUPER
-                        }
-                        _ => {}
-                    }
-                }
-
-                let hint_binding = crate::bindings::KeyBinding {
-                    trigger: crate::bindings::BindingKey::Keycode { key, location },
-                    mods,
-                    mode: crate::bindings::BindingMode::empty(),
-                    notmode: crate::bindings::BindingMode::SEARCH
-                        | crate::bindings::BindingMode::VI,
-                    action: crate::bindings::Action::Hint(std::rc::Rc::new(
-                        hint_config.clone(),
-                    )),
-                };
-                hint_bindings.push(hint_binding);
-            }
-        }
-
-        // Add hint bindings to the main bindings
-        let mut all_bindings = bindings;
-        all_bindings.extend(hint_bindings);
-
         Ok(Screen {
             search_state: SearchState::default(),
             hint_state: HintState::new(config.hints.alphabet.clone()),
@@ -345,7 +270,7 @@ impl Screen<'_> {
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
             renderer,
-            bindings: all_bindings,
+            bindings,
             clipboard,
             last_ime_cursor_pos: None,
         })
