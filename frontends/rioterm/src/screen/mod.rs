@@ -789,13 +789,9 @@ impl Screen<'_> {
                 match &binding.action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
-                        let current_context = self.context_manager.current_mut();
-                        current_context.set_selection(None);
-                        let mut terminal = current_context.terminal.lock();
-                        terminal.selection.take();
-                        terminal.scroll_display(Scroll::Bottom);
-                        drop(terminal);
-                        current_context
+                        // Send escape sequences directly without scrolling or manipulation
+                        self.context_manager
+                            .current_mut()
                             .messenger
                             .send_bytes(s.to_owned().into_bytes());
                     }
@@ -2459,13 +2455,11 @@ impl Screen<'_> {
                 .messenger
                 .send_bytes(b"\x1b[201~"[..].to_vec());
         } else {
-            self.scroll_bottom_when_cursor_not_visible();
-            self.clear_selection();
-
+            // When bracketed is false (like for Action::Esc), send bytes directly without manipulation
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+                .send_bytes(text.to_owned().into_bytes());
         }
     }
 

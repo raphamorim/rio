@@ -12,6 +12,12 @@ language: 'en'
   - Emoji picker input correctly sends IME commit events
   - Proper handling of CJK and other IME-based text input
   - Aligns with Alacritty and other terminal emulators' IME behavior
+- **Breaking: Simplified key binding escape sequences**
+  - Replaced separate `text` and `bytes` fields with a single `esc` field
+  - Escape sequences are now sent directly to the PTY without text manipulation
+  - Migration: Replace `bytes = [27, 91, 72]` with `esc = "\u001b[H"`
+  - Migration: Replace `text = "some text"` with `esc = "some text"`
+  - Example: `{ key = "l", with = "control", esc = "\u001b[2J\u001b[H" }` to clear screen
 - TBD.
 
 ## 0.2.24

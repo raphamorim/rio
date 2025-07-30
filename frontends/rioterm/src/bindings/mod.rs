@@ -826,14 +826,8 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
     }
 
     let mut action: Action = config_key_binding.action.into();
-    if !config_key_binding.text.is_empty() {
-        action = Action::Esc(config_key_binding.text);
-    }
-
-    if !config_key_binding.bytes.is_empty() {
-        if let Ok(str_from_bytes) = std::str::from_utf8(&config_key_binding.bytes) {
-            action = Action::Esc(str_from_bytes.into());
-        }
+    if !config_key_binding.esc.is_empty() {
+        action = Action::Esc(config_key_binding.esc);
     }
 
     let mut res_mode = ModeWrapper {
@@ -1491,8 +1485,7 @@ mod tests {
             key: String::from("q"),
             action: String::from("receivechar"),
             with: String::from("super"),
-            bytes: vec![],
-            text: String::from(""),
+            esc: String::from(""),
             mode: String::from(""),
         }];
 
