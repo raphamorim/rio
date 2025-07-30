@@ -32,6 +32,7 @@ pub struct HintMatches<'a> {
     matches: Cow<'a, [Match]>,
 
     /// Index of the last match checked.
+    #[allow(dead_code)]
     index: usize,
 }
 
@@ -57,6 +58,7 @@ impl<'a> HintMatches<'a> {
     /// Advance the regex tracker to the next point.
     ///
     /// This will return `true` if the point passed is part of a regex match.
+    #[allow(dead_code)]
     pub fn advance(&mut self, point: Pos) -> bool {
         while let Some(bounds) = self.get(self.index) {
             if bounds.start() > &point {

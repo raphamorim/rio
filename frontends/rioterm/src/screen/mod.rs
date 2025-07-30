@@ -466,7 +466,7 @@ impl Screen<'_> {
 
             context_grid.update_dimensions(&self.sugarloaf);
 
-            for (_key, current_context) in context_grid.contexts_mut() {
+            for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
@@ -577,7 +577,7 @@ impl Screen<'_> {
         // the wakeup from pty it will also trigger a sugarloaf.render()
         // and then eventually a render with the new layout computation.
         for context_grid in self.context_manager.contexts_mut() {
-            for (_key, context) in context_grid.contexts_mut() {
+            for context in context_grid.contexts_mut().values_mut() {
                 let ctx = context.context_mut();
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
@@ -625,112 +625,6 @@ impl Screen<'_> {
             return;
         }
 
-        // All key bindings are disabled while a hint is being selected
-        // This check must happen BEFORE any other key processing to prevent ANY keys from reaching terminal
-        if self.hint_state.is_active() {
-            // Handle special keys first (for both press and release, but only act on release since that's what we receive)
-            match key.logical_key {
-                rio_window::keyboard::Key::Named(
-                    rio_window::keyboard::NamedKey::Escape,
-                ) => {
-                    // Process on key release since that's what we're receiving
-                    if key.state == ElementState::Released {
-                        self.hint_state.stop();
-                        // Clear hint labels with damage tracking
-                        self.clear_hint_labels_with_damage();
-                        self.render();
-                    }
-                    return;
-                }
-                rio_window::keyboard::Key::Named(
-                    rio_window::keyboard::NamedKey::Backspace,
-                ) => {
-                    // Process on key release since that's what we're receiving
-                    if key.state == ElementState::Released {
-                        let terminal = self.context_manager.current().terminal.lock();
-                        let was_active_before = self.hint_state.is_active();
-                        self.hint_state.keyboard_input(&*terminal, '\x08');
-                        drop(terminal);
-
-                        // Check if hint mode was stopped during keyboard_input
-                        if was_active_before && !self.hint_state.is_active() {
-                            // Clear hint labels with damage tracking
-                            self.clear_hint_labels_with_damage();
-                            self.render();
-                            return;
-                        }
-
-                        self.update_hint_labels();
-                        self.render();
-                    }
-                    return;
-                }
-                _ => {}
-            }
-
-            // Handle text input (only on key release since that's what we're receiving)
-            if key.state == ElementState::Released {
-                let text = key.text_with_all_modifiers().unwrap_or_default();
-
-                // Process all characters (even if text is empty)
-                for character in text.chars() {
-                    let terminal = self.context_manager.current().terminal.lock();
-                    let was_active_before = self.hint_state.is_active();
-                    if let Some(hint_match) =
-                        self.hint_state.keyboard_input(&*terminal, character)
-                    {
-                        drop(terminal);
-                        self.execute_hint_action(&hint_match);
-                        // Clear hint labels after executing action with damage tracking
-                        self.clear_hint_labels_with_damage();
-                        self.render();
-                        return;
-                    }
-                    drop(terminal);
-
-                    // Check if hint mode was stopped during keyboard_input (e.g., ESC pressed)
-                    if was_active_before && !self.hint_state.is_active() {
-                        // Clear hint labels with damage tracking
-                        self.clear_hint_labels_with_damage();
-                        self.render();
-                        return;
-                    }
-                }
-
-                // If text is empty, try to extract character from logical key
-                if text.is_empty() {
-                    if let rio_window::keyboard::Key::Character(ch) = &key.logical_key {
-                        for character in ch.chars() {
-                            let terminal = self.context_manager.current().terminal.lock();
-                            let was_active_before = self.hint_state.is_active();
-                            if let Some(hint_match) =
-                                self.hint_state.keyboard_input(&*terminal, character)
-                            {
-                                drop(terminal);
-                                self.execute_hint_action(&hint_match);
-                                // Clear hint labels after executing action with damage tracking
-                                self.clear_hint_labels_with_damage();
-                                self.render();
-                                return;
-                            }
-                            drop(terminal);
-
-                            // Check if hint mode was stopped during keyboard_input
-                            if was_active_before && !self.hint_state.is_active() {
-                                // Clear hint labels with damage tracking
-                                self.clear_hint_labels_with_damage();
-                                self.render();
-                                return;
-                            }
-                        }
-                    }
-                }
-                self.update_hint_labels();
-                self.render();
-            }
-            return;
-        }
-
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
@@ -769,32 +663,23 @@ impl Screen<'_> {
 
         // All key bindings are disabled while a hint is being selected (like Alacritty)
         if self.hint_state.is_active() {
-            println!("Hint mode is active, processing hint input");
-
             // Handle special keys first
             match key.logical_key {
                 rio_window::keyboard::Key::Named(
                     rio_window::keyboard::NamedKey::Escape,
                 ) => {
-                    println!("ESC pressed, exiting hint mode");
                     self.hint_state.stop();
-                    // Clear hint labels immediately
-                    self.context_manager
-                        .current_mut()
-                        .renderable_content
-                        .hint_labels
-                        .clear();
+                    self.update_hint_state();
                     self.render();
                     return;
                 }
                 rio_window::keyboard::Key::Named(
                     rio_window::keyboard::NamedKey::Backspace,
                 ) => {
-                    println!("Backspace pressed, removing last character");
                     let terminal = self.context_manager.current().terminal.lock();
                     self.hint_state.keyboard_input(&*terminal, '\x08');
                     drop(terminal);
-                    self.update_hint_labels();
+                    self.update_hint_state();
                     self.render();
                     return;
                 }
@@ -804,26 +689,21 @@ impl Screen<'_> {
             // Handle text input
             let text = key.text_with_all_modifiers().unwrap_or_default();
             for character in text.chars() {
-                println!("Processing hint character: '{}'", character);
                 let terminal = self.context_manager.current().terminal.lock();
                 if let Some(hint_match) =
                     self.hint_state.keyboard_input(&*terminal, character)
                 {
-                    println!("Hint match found: {:?}", hint_match.text);
                     drop(terminal);
                     self.execute_hint_action(&hint_match);
-                    // Clear hint labels after executing action
-                    self.context_manager
-                        .current_mut()
-                        .renderable_content
-                        .hint_labels
-                        .clear();
+                    // Stop hint mode and update state with proper damage tracking
+                    self.hint_state.stop();
+                    self.update_hint_state();
                     self.render();
                     return;
                 }
                 drop(terminal);
             }
-            self.update_hint_labels();
+            self.update_hint_state();
             self.render();
             return;
         }
@@ -1738,10 +1618,7 @@ impl Screen<'_> {
                     hint_match.end,
                     false,
                 );
-                terminal.update_selection_damage(
-                    Some(hint_range),
-                    display_offset,
-                );
+                terminal.update_selection_damage(Some(hint_range), display_offset);
             }
 
             current.renderable_content.highlighted_hint = Some(hint_match);
@@ -2710,48 +2587,34 @@ impl Screen<'_> {
                     self.search_state.history.get(history_index).cloned(),
                 );
             }
-        }
 
-        // let search_hints_start = std::time::Instant::now();
-        let mut search_hints = if is_search_active {
+            // Update search hints in renderable content
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
                 .search_state
                 .dfas_mut()
                 .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
             drop(terminal);
-            hints
-        } else if self.hint_state.is_active() {
-            // Update hint labels in renderable content
-            self.update_hint_labels();
 
-            // Convert hint matches to HintMatches format for rendering
-            let matches: Vec<rio_backend::crosswords::search::Match> = self
-                .hint_state
-                .matches()
-                .iter()
-                .map(|hint_match| hint_match.start..=hint_match.end)
-                .collect();
-            Some(crate::screen::hint::HintMatches::new(matches))
-        } else {
-            // Clear hint labels when not in hint mode
             self.context_manager
                 .current_mut()
                 .renderable_content
-                .hint_labels
-                .clear();
-            None
-        };
-        // let search_hints_duration = search_hints_start.elapsed();
-        // if self.renderer.enable_performance_logging {
-        // tracing::debug!("[PERF] Screen search hints: {:?}", search_hints_duration);
-        // }
+                .hint_matches = hints.map(|h| h.iter().cloned().collect());
+
+            // Force invalidation for search
+            {
+                let current = self.context_manager.current_mut();
+                current.renderable_content.pending_update.invalidate(
+                    rio_backend::event::TerminalDamage::Full,
+                    &current.terminal,
+                );
+            }
+        }
 
         // let renderer_run_start = std::time::Instant::now();
         self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
-            &mut search_hints,
             &self.search_state.focused_match,
         );
         // In case the configuration of blinking cursor is enabled
@@ -2847,8 +2710,12 @@ impl Screen<'_> {
         if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
             drop(terminal);
             self.execute_hint_action(&hint_match);
+            // Stop hint mode and update state with proper damage tracking
+            self.hint_state.stop();
+            self.update_hint_state();
         } else {
             drop(terminal);
+            self.update_hint_state();
         }
         self.render();
     }
@@ -2863,14 +2730,8 @@ impl Screen<'_> {
         self.hint_state.update_matches(&*terminal);
         drop(terminal);
 
-        // If hint mode was stopped during update_matches (no matches found), clear labels
-        if !self.hint_state.is_active() {
-            self.context_manager
-                .current_mut()
-                .renderable_content
-                .hint_labels
-                .clear();
-        }
+        // Update hint state and trigger damage tracking
+        self.update_hint_state();
 
         self.render();
     }
@@ -2922,35 +2783,78 @@ impl Screen<'_> {
         }
     }
 
-    /// Clear hint labels and mark their areas as damaged for re-rendering
-    fn clear_hint_labels_with_damage(&mut self) {
-        let current = self.context_manager.current_mut();
+    /// Update hint state and trigger appropriate damage tracking
+    pub fn update_hint_state(&mut self) {
+        use rio_backend::event::TerminalDamage;
 
-        // Mark all hint label areas as damaged before clearing
-        if !current.renderable_content.hint_labels.is_empty() {
-            let mut terminal = current.terminal.lock();
-            let display_offset = terminal.display_offset();
+        if self.hint_state.is_active() {
+            // Update hint labels
+            self.update_hint_labels();
 
-            // Mark each hint label position as damaged
-            for hint_label in &current.renderable_content.hint_labels {
-                let hint_range = rio_backend::selection::SelectionRange::new(
-                    hint_label.position,
-                    hint_label.position,
-                    false,
-                );
-                terminal.update_selection_damage(
-                    Some(hint_range),
-                    display_offset,
-                );
+            // Update hint matches in renderable content
+            let matches: Vec<rio_backend::crosswords::search::Match> = self
+                .hint_state
+                .matches()
+                .iter()
+                .map(|hint_match| hint_match.start..=hint_match.end)
+                .collect();
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .hint_matches = Some(matches);
+
+            // Mark lines with hint labels as damaged
+            let mut damaged_lines = std::collections::BTreeSet::new();
+            {
+                let current = &self.context_manager.current();
+                let hint_labels = &current.renderable_content.hint_labels;
+
+                if !hint_labels.is_empty() {
+                    // Collect all lines that have hint labels
+                    for label in hint_labels {
+                        damaged_lines.insert(rio_backend::crosswords::LineDamage::new(
+                            label.position.row.0 as usize,
+                            true,
+                        ));
+                    }
+                }
             }
 
-            // Clear the damage by setting to None (this marks the areas for re-rendering)
-            terminal.update_selection_damage(None, display_offset);
+            if !damaged_lines.is_empty() {
+                let damage = TerminalDamage::Partial(damaged_lines);
+                let current = self.context_manager.current_mut();
+                current
+                    .renderable_content
+                    .pending_update
+                    .invalidate(damage, &current.terminal);
+            } else {
+                // Force full damage if no specific lines (for hint highlights)
+                let current = self.context_manager.current_mut();
+                current
+                    .renderable_content
+                    .pending_update
+                    .invalidate(TerminalDamage::Full, &current.terminal);
+            }
+        } else {
+            // Clear hint state
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .hint_matches = None;
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .hint_labels
+                .clear();
+            // Force full damage to clear all hint highlights
+            let current = self.context_manager.current_mut();
+            current
+                .renderable_content
+                .pending_update
+                .invalidate(TerminalDamage::Full, &current.terminal);
         }
-
-        // Now clear the hint labels
-        current.renderable_content.hint_labels.clear();
     }
+
     fn update_hint_labels(&mut self) {
         use crate::context::renderable::HintLabel;
 
