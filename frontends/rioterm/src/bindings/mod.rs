@@ -604,12 +604,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
     )
 }
 
-pub fn default_key_bindings(
-    unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
-    use_navigation_key_bindings: bool,
-    use_splits: bool,
-    config_keyboard: ConfigKeyboard,
-) -> Vec<KeyBinding> {
+pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         Key::Named(Copy);  Action::Copy;
@@ -724,12 +719,15 @@ pub fn default_key_bindings(
     ));
 
     bindings.extend(platform_key_bindings(
-        use_navigation_key_bindings,
-        use_splits,
-        config_keyboard,
+        config.navigation.has_navigation_key_bindings(),
+        config.navigation.use_split,
+        config.keyboard,
     ));
 
-    config_key_bindings(unprocessed_config_key_bindings, bindings)
+    // Add hint bindings
+    bindings.extend(create_hint_bindings(&config.hints.rules));
+
+    config_key_bindings(config.bindings.keys.to_owned(), bindings)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -913,6 +911,87 @@ pub fn config_key_bindings(
     }
 
     bindings
+}
+
+/// Create hint bindings from configuration
+pub fn create_hint_bindings(
+    hints_config: &[rio_backend::config::hints::Hint],
+) -> Vec<KeyBinding> {
+    let mut hint_bindings = Vec::new();
+
+    for hint_config in hints_config {
+        if let Some(binding_config) = &hint_config.binding {
+            // Parse key using the same logic as in convert()
+            let (key, location) = match binding_config.key.to_lowercase().as_str() {
+                // Letters
+                single_char if single_char.len() == 1 => {
+                    (Key::Character(single_char.into()), KeyLocation::Standard)
+                }
+                // Named keys
+                "space" => (Key::Named(Space), KeyLocation::Standard),
+                "enter" | "return" => (Key::Named(Enter), KeyLocation::Standard),
+                "escape" | "esc" => (Key::Named(Escape), KeyLocation::Standard),
+                "tab" => (Key::Named(Tab), KeyLocation::Standard),
+                "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
+                "delete" => (Key::Named(Delete), KeyLocation::Standard),
+                "insert" => (Key::Named(Insert), KeyLocation::Standard),
+                "home" => (Key::Named(Home), KeyLocation::Standard),
+                "end" => (Key::Named(End), KeyLocation::Standard),
+                "pageup" => (Key::Named(PageUp), KeyLocation::Standard),
+                "pagedown" => (Key::Named(PageDown), KeyLocation::Standard),
+                "up" => (Key::Named(ArrowUp), KeyLocation::Standard),
+                "down" => (Key::Named(ArrowDown), KeyLocation::Standard),
+                "left" => (Key::Named(ArrowLeft), KeyLocation::Standard),
+                "right" => (Key::Named(ArrowRight), KeyLocation::Standard),
+                // Function keys
+                "f1" => (Key::Named(F1), KeyLocation::Standard),
+                "f2" => (Key::Named(F2), KeyLocation::Standard),
+                "f3" => (Key::Named(F3), KeyLocation::Standard),
+                "f4" => (Key::Named(F4), KeyLocation::Standard),
+                "f5" => (Key::Named(F5), KeyLocation::Standard),
+                "f6" => (Key::Named(F6), KeyLocation::Standard),
+                "f7" => (Key::Named(F7), KeyLocation::Standard),
+                "f8" => (Key::Named(F8), KeyLocation::Standard),
+                "f9" => (Key::Named(F9), KeyLocation::Standard),
+                "f10" => (Key::Named(F10), KeyLocation::Standard),
+                "f11" => (Key::Named(F11), KeyLocation::Standard),
+                "f12" => (Key::Named(F12), KeyLocation::Standard),
+                _ => {
+                    tracing::warn!(
+                        "Unknown key '{}' in hint binding",
+                        binding_config.key
+                    );
+                    continue;
+                }
+            };
+
+            // Parse modifiers
+            let mut mods = ModifiersState::empty();
+            for mod_str in &binding_config.mods {
+                match mod_str.to_lowercase().as_str() {
+                    "control" | "ctrl" => mods |= ModifiersState::CONTROL,
+                    "shift" => mods |= ModifiersState::SHIFT,
+                    "alt" | "option" => mods |= ModifiersState::ALT,
+                    "super" | "cmd" | "command" => mods |= ModifiersState::SUPER,
+                    _ => {
+                        tracing::warn!("Unknown modifier '{}' in hint binding", mod_str);
+                    }
+                }
+            }
+
+            let hint_binding = KeyBinding {
+                trigger: BindingKey::Keycode { key, location },
+                mods,
+                mode: BindingMode::empty(),
+                notmode: BindingMode::SEARCH | BindingMode::VI,
+                action: Action::Hint(std::rc::Rc::new(hint_config.clone())),
+            };
+
+            hint_bindings.push(hint_binding);
+        }
+    }
+
+    hint_bindings
 }
 
 // Macos
