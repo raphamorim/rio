@@ -16,7 +16,6 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
@@ -238,6 +237,15 @@ impl Renderer {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    /// Check if a position is within any hint match
+    fn is_position_in_hint_matches(
+        matches: &[rio_backend::crosswords::search::Match],
+        pos: Pos,
+    ) -> bool {
+        matches.iter().any(|m| m.contains(&pos))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn create_line(
         &mut self,
         builder: &mut Content,
@@ -246,7 +254,7 @@ impl Renderer {
         line_opt: Option<usize>,
         line: Line,
         renderable_content: &RenderableContent,
-        search_hints: &mut Option<HintMatches>,
+        hint_matches: Option<&[rio_backend::crosswords::search::Match]>,
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
         is_active: bool,
@@ -308,10 +316,11 @@ impl Renderer {
                     self.named_colors.selection_foreground
                 };
                 style.background_color = Some(self.named_colors.selection_background);
-            } else if search_hints.is_some()
-                && search_hints
-                    .as_mut()
-                    .is_some_and(|search| search.advance(Pos::new(line, Column(column))))
+            } else if hint_matches.is_some()
+                && Self::is_position_in_hint_matches(
+                    hint_matches.unwrap(),
+                    Pos::new(line, Column(column)),
+                )
             {
                 let is_focused = focused_match
                     .as_ref()
@@ -795,7 +804,6 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
-        search_hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
         // let start = std::time::Instant::now();
@@ -839,8 +847,7 @@ impl Renderer {
                 || self.is_game_mode_enabled
                 // TODO: Improve search and highlighted_hint updates
                 // Now it's basically triggering the whole lines render.
-                || context.renderable_content.highlighted_hint.is_some()
-                || is_active && search_hints.is_some();
+                || context.renderable_content.highlighted_hint.is_some();
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
@@ -876,8 +883,8 @@ impl Renderer {
                     }
                 };
 
-            // Process the snapshot
-            // let _duration = start.elapsed();
+            // Get hint matches from renderable content
+            let hint_matches = context.renderable_content.hint_matches.as_deref();
 
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor;
@@ -995,7 +1002,7 @@ impl Renderer {
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
-                            search_hints,
+                            hint_matches,
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
@@ -1024,7 +1031,7 @@ impl Renderer {
                                         - terminal_snapshot.display_offset as i32,
                                 ),
                                 &context.renderable_content,
-                                search_hints,
+                                hint_matches,
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
@@ -1085,5 +1092,149 @@ impl Renderer {
             .hint_labels
             .iter()
             .find(|label| label.position == pos)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rio_backend::crosswords::pos::{Column, Line, Pos};
+
+    #[test]
+    fn test_is_position_in_hint_matches() {
+        let matches = vec![
+            Pos::new(Line(0), Column(0))..=Pos::new(Line(0), Column(4)),
+            Pos::new(Line(1), Column(5))..=Pos::new(Line(1), Column(9)),
+            Pos::new(Line(5), Column(10))..=Pos::new(Line(5), Column(15)),
+        ];
+
+        // Test positions inside matches
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(0))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(2))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(4))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(5))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(7))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(9))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(10))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(15))
+        ));
+
+        // Test positions outside matches
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(5))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(4))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(10))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(0))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(9))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(16))
+        ));
+    }
+
+    #[test]
+    fn test_empty_hint_matches() {
+        let matches: Vec<rio_backend::crosswords::search::Match> = vec![];
+
+        // Any position should return false for empty matches
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(0))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(10), Column(20))
+        ));
+    }
+
+    #[test]
+    fn test_single_character_match() {
+        let matches = vec![Pos::new(Line(3), Column(7))..=Pos::new(Line(3), Column(7))];
+
+        // Test the exact position
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(7))
+        ));
+
+        // Test adjacent positions
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(6))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(8))
+        ));
+    }
+
+    #[test]
+    fn test_overlapping_matches() {
+        // In practice, matches shouldn't overlap, but let's test the behavior
+        let matches = vec![
+            Pos::new(Line(2), Column(5))..=Pos::new(Line(2), Column(10)),
+            Pos::new(Line(2), Column(8))..=Pos::new(Line(2), Column(12)),
+        ];
+
+        // Test positions in the overlap
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(8))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(9))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(10))
+        ));
+
+        // Test positions in non-overlapping parts
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(5))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(12))
+        ));
     }
 }
