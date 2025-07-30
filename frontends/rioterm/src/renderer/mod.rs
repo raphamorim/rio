@@ -844,10 +844,7 @@ impl Renderer {
             }
 
             let force_full_damage = has_active_changed
-                || self.is_game_mode_enabled
-                // TODO: Improve search and highlighted_hint updates
-                // Now it's basically triggering the whole lines render.
-                || context.renderable_content.highlighted_hint.is_some();
+                || self.is_game_mode_enabled;
 
             // Check if we need to render
             if !context.renderable_content.pending_update.is_dirty() && !force_full_damage

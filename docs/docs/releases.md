@@ -26,9 +26,6 @@ language: 'en'
   - Default behavior unchanged: Command on macOS, Alt on other platforms
   - Supports any combination of Shift, Control, Alt, and Super/Command keys
   - Example: `mouse = { enabled = true, mods = ["Shift"] }` to use Shift key
-
-### Breaking Changes
-
 - **Hints Configuration**: Renamed `hints.enabled` to `hints.rules` for better clarity
   - Update your configuration: `[[hints.enabled]]` → `[[hints.rules]]`
   - All hint configuration sections now use `hints.rules.*` instead of `hints.enabled.*`
