@@ -576,19 +576,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             top_y: padding.1,
             bottom_y: padding.2,
         };
-        for (_, context) in &mut self.inner {
+        for context in self.inner.values_mut() {
             context.val.dimension.update_margin(self.margin);
         }
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
-        for (_, context) in &mut self.inner {
+        for context in self.inner.values_mut() {
             context.val.dimension.update_line_height(line_height);
         }
     }
 
     pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
-        for (_, context) in &mut self.inner {
+        for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
         }
@@ -5345,7 +5345,7 @@ pub mod test {
             assert!(grid.inner.contains_key(&grid.current));
 
             // Verify all dimensions are positive
-            for (_key, item) in &grid.inner {
+            for item in grid.inner.values() {
                 assert!(item.val.dimension.width > 0.0);
                 assert!(item.val.dimension.height > 0.0);
             }

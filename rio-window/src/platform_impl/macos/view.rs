@@ -467,10 +467,10 @@ declare_class!(
         #[method(keyDown:)]
         fn key_down(&self, event: &NSEvent) {
             trace_scope!("keyDown:");
-            
+
             // Set flag to indicate we're in a key event
             self.ivars().in_key_event.set(true);
-            
+
             {
                 let mut prev_input_source = self.ivars().input_source.borrow_mut();
                 let current_input_source = self.current_input_source();
@@ -525,7 +525,7 @@ declare_class!(
                     is_synthetic: false,
                 });
             }
-            
+
             // Clear the flag after processing
             self.ivars().in_key_event.set(false);
         }
@@ -533,7 +533,7 @@ declare_class!(
         #[method(keyUp:)]
         fn key_up(&self, event: &NSEvent) {
             trace_scope!("keyUp:");
-            
+
             // Set flag to indicate we're in a key event
             self.ivars().in_key_event.set(true);
 
@@ -551,7 +551,7 @@ declare_class!(
                     is_synthetic: false,
                 });
             }
-            
+
             // Clear the flag after processing
             self.ivars().in_key_event.set(false);
         }
