@@ -108,39 +108,50 @@ impl PendingUpdate {
 
         let mut terminal = terminal.lock();
 
-        // Get the terminal's current damage and merge with incoming damage
+        // Get the terminal's current damage
         let terminal_damage = terminal.peek_damage_event();
-        let merged_damage = match (terminal_damage, &damage) {
-            (None, damage) => damage.clone(),
-            (Some(term_damage), damage) => Self::merge_damages(&term_damage, damage),
-        };
 
         // Create or update the snapshot
         match &mut self.snapshot {
             None => {
-                // Create new snapshot
+                // Create new snapshot with merged terminal and incoming damage
+                let initial_damage = match (terminal_damage, &damage) {
+                    (None, damage) => damage.clone(),
+                    (Some(term_damage), damage) => {
+                        Self::merge_damages(&term_damage, damage)
+                    }
+                };
+
                 self.snapshot = Some(TerminalSnapshot {
                     colors: terminal.colors,
                     display_offset: terminal.display_offset(),
                     blinking_cursor: terminal.blinking_cursor,
                     visible_rows: terminal.visible_rows(),
                     cursor: terminal.cursor(),
-                    damage: merged_damage,
+                    damage: initial_damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
                 });
             }
             Some(existing_snapshot) => {
-                // Update existing snapshot with fresh terminal state but merge damage
+                // Update existing snapshot with fresh terminal state
                 existing_snapshot.colors = terminal.colors;
                 existing_snapshot.display_offset = terminal.display_offset();
                 existing_snapshot.blinking_cursor = terminal.blinking_cursor;
                 existing_snapshot.visible_rows = terminal.visible_rows();
                 existing_snapshot.cursor = terminal.cursor();
-                existing_snapshot.damage =
-                    Self::merge_damages(&existing_snapshot.damage, &merged_damage);
                 existing_snapshot.columns = terminal.columns();
                 existing_snapshot.screen_lines = terminal.screen_lines();
+
+                // Merge existing snapshot damage with incoming damage
+                existing_snapshot.damage =
+                    Self::merge_damages(&existing_snapshot.damage, &damage);
+
+                // Also merge with terminal damage if present
+                if let Some(term_damage) = terminal_damage {
+                    existing_snapshot.damage =
+                        Self::merge_damages(&existing_snapshot.damage, &term_damage);
+                }
             }
         }
 
@@ -242,6 +253,9 @@ mod tests {
         let mut content = RenderableContent::from_cursor_config(&CursorConfig::default());
         let terminal = create_test_terminal();
 
+        // Reset terminal damage to start fresh
+        terminal.lock().reset_damage();
+
         // Add hint labels
         content.hint_labels.push(HintLabel {
             position: Pos::new(Line(5), Column(10)),
@@ -312,6 +326,9 @@ mod tests {
     fn test_damage_merging() {
         let mut content = RenderableContent::from_cursor_config(&CursorConfig::default());
         let terminal = create_test_terminal();
+
+        // Reset terminal damage to start fresh
+        terminal.lock().reset_damage();
 
         // First invalidation with partial damage
         let mut damaged_lines1 = BTreeSet::new();
