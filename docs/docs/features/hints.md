@@ -155,16 +155,6 @@ mods = ["Control", "Shift"]
 
 Rio's hints system includes optimized rendering with damage tracking to ensure smooth performance:
 
-- **Damage Tracking**: Only re-renders areas where hint labels have changed
-- **Efficient Cleanup**: Properly marks hint label areas for re-rendering when cleared
-- **Minimal Overhead**: Hints are only processed when activated
-
-## Tips
-
-1. **Choose your alphabet wisely**: Use characters that are easy to reach on your keyboard layout
-2. **Test your regex**: Make sure your patterns match what you expect
-3. **Use post-processing**: Helps clean up URLs and file paths for better results
-4. **Combine with mouse**: Enable mouse support for quick activation
-5. **Multiple hint types**: Configure different hints for different content types
-
-For a complete example configuration, see the `example-hints-config.toml` file in the Rio repository.
+- **Damage Tracking**: Only re-renders areas where hint labels have changed.
+- **Efficient Cleanup**: Properly marks hint label areas for re-rendering when cleared.
+- **Minimal Overhead**: Hints are only processed when activated.
