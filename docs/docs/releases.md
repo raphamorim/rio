@@ -8,6 +8,12 @@ language: 'en'
 ## 0.2.31 (unreleased)
 
 - Update Rust to v1.90.
+- **Breaking: Simplified key binding escape sequences**
+  - Replaced separate `text` and `bytes` fields with a single `esc` field
+  - Escape sequences are now sent directly to the PTY without text manipulation
+  - Migration: Replace `bytes = [27, 91, 72]` with `esc = "\u001b[H"`
+  - Migration: Replace `text = "some text"` with `esc = "some text"`
+  - Example: `{ key = "l", with = "control", esc = "\u001b[2J\u001b[H" }` to clear screen
 
 ## 0.2.30
 
