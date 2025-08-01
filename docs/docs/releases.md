@@ -7,11 +7,6 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-- Fix IME (Input Method Editor) behavior on macOS to match standard terminal behavior
-  - Regular keyboard input no longer triggers IME commit events
-  - Emoji picker input correctly sends IME commit events
-  - Proper handling of CJK and other IME-based text input
-  - Aligns with Alacritty and other terminal emulators' IME behavior
 - TBD.
 
 ## 0.2.24
