@@ -61,13 +61,12 @@ impl Route<'_> {
     pub fn schedule_redraw(
         &mut self,
         scheduler: &mut crate::scheduler::Scheduler,
-        event_proxy: &EventProxy,
         route_id: usize,
     ) {
         #[cfg(target_os = "macos")]
         {
             // On macOS, use direct redraw as CVDisplayLink handles VSync
-            let _ = (scheduler, event_proxy, route_id); // Suppress warnings
+            let _ = (scheduler, route_id); // Suppress warnings
             self.request_redraw();
         }
 

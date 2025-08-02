@@ -249,11 +249,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     if request_pending_redraw {
-                        route.schedule_redraw(
-                            &mut self.scheduler,
-                            &self.event_proxy,
-                            route_id,
-                        );
+                        route.schedule_redraw(&mut self.scheduler, route_id);
                     }
                 }
             }
@@ -297,11 +293,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .renderable_content
                                 .pending_update
                                 .invalidate(damage, &ctx_item.val.terminal);
-                            route.schedule_redraw(
-                                &mut self.scheduler,
-                                &self.event_proxy,
-                                route_id,
-                            );
+                            route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
                 }
@@ -320,11 +312,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
 
                     // Request a redraw to display the updated graphics
-                    route.schedule_redraw(
-                        &mut self.scheduler,
-                        &self.event_proxy,
-                        route_id,
-                    );
+                    route.schedule_redraw(&mut self.scheduler, route_id);
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
@@ -1309,7 +1297,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 {
                     route.schedule_redraw(
                         &mut self.scheduler,
-                        &self.event_proxy,
                         route.window.screen.ctx().current_route(),
                     );
                 }
