@@ -188,7 +188,7 @@ impl<T: 'static> EventLoop<T> {
             pending_user_events,
             event_loop,
             window_target: RootActiveEventLoop {
-                p: PlatformActiveEventLoop::Wayland(window_target),
+                p: PlatformActiveEventLoop::Wayland(Box::new(window_target)),
                 _marker: PhantomData,
             },
         };

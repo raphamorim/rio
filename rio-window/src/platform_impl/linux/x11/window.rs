@@ -1061,10 +1061,8 @@ impl UnownedWindow {
         let vert_atom = atoms[_NET_WM_STATE_MAXIMIZED_VERT];
         match state {
             Ok(atoms) => {
-                let horz_maximized =
-                    atoms.iter().any(|atom: &xproto::Atom| *atom == horz_atom);
-                let vert_maximized =
-                    atoms.iter().any(|atom: &xproto::Atom| *atom == vert_atom);
+                let horz_maximized = atoms.contains(&horz_atom);
+                let vert_maximized = atoms.contains(&vert_atom);
                 horz_maximized && vert_maximized
             }
             _ => false,

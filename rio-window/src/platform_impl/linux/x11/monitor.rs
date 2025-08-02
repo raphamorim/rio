@@ -314,7 +314,7 @@ impl XConnection {
         let info = self
             .xcb_connection()
             .extension_information(randr::X11_EXTENSION_NAME)?
-            .ok_or_else(|| X11Error::MissingExtension(randr::X11_EXTENSION_NAME))?;
+            .ok_or(X11Error::MissingExtension(randr::X11_EXTENSION_NAME))?;
 
         // Select input data.
         let event_mask = NotifyMask::CRTC_CHANGE
