@@ -187,7 +187,7 @@ fn push_display(buffer: &mut Vec<u8>, display: &impl std::fmt::Display) {
         }
     }
 
-    write!(Writer { buffer }, "{}", display).unwrap();
+    write!(Writer { buffer }, "{display}").unwrap();
 }
 
 #[cfg(test)]
