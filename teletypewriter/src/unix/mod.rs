@@ -875,9 +875,9 @@ pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-    let comm_path = format!("/proc/{}/comm", pid);
+    let comm_path = format!("/proc/{pid}/comm");
     #[cfg(target_os = "freebsd")]
-    let comm_path = format!("/compat/linux/proc/{}/comm", pid);
+    let comm_path = format!("/compat/linux/proc/{pid}/comm");
 
     #[cfg(not(target_os = "macos"))]
     let name = match std::fs::read(comm_path) {
@@ -904,9 +904,9 @@ pub fn foreground_process_path(
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-    let link_path = format!("/proc/{}/cwd", pid);
+    let link_path = format!("/proc/{pid}/cwd");
     #[cfg(target_os = "freebsd")]
-    let link_path = format!("/compat/linux/proc/{}/cwd", pid);
+    let link_path = format!("/compat/linux/proc/{pid}/cwd");
 
     #[cfg(not(target_os = "macos"))]
     let cwd = std::fs::read_link(link_path)?;
