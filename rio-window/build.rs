@@ -1,5 +1,8 @@
 use cfg_aliases::cfg_aliases;
 
+#[cfg(windows)]
+extern crate winres;
+
 fn main() {
     // The script doesn't depend on our code
     println!("cargo:rerun-if-changed=build.rs");
@@ -39,6 +42,9 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     generate_dispatch_bindings();
+
+    #[cfg(target_os = "windows")]
+    load_app_icon();
 }
 
 #[cfg(target_os = "macos")]
@@ -68,4 +74,12 @@ fn generate_dispatch_bindings() {
     bindings
         .write_to_file(out_path.join("dispatch_sys.rs"))
         .expect("couldn't write dispatch bindings");
+}
+
+#[cfg(target_os = "windows")]
+fn load_app_icon() {
+    let mut res = winres::WindowsResource::new();
+    res.set_icon("../misc/windows/rio-2024.ico");
+    res.compile()
+        .expect("Failed to compile Window icon resource");
 }
