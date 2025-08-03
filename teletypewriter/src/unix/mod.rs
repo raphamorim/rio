@@ -467,11 +467,11 @@ pub fn create_pty_with_spawn(
             // -l: Skips changing directory to $HOME
             // -p: Preserves environment
             // -q: Act as if .hushlogin exists
-            login_cmd.args(&[flags, &user.user]);
+            login_cmd.args([flags, &user.user]);
 
             // Build the exec command to replace the intermediate shell with our target shell
             let exec_cmd = if args.is_empty() {
-                format!("exec -a -{} {}", shell_name, shell_program)
+                format!("exec -a -{shell_name} {shell_program}")
             } else {
                 format!(
                     "exec -a -{} {} {}",
@@ -482,7 +482,7 @@ pub fn create_pty_with_spawn(
             };
 
             // Use /bin/zsh as intermediate shell because it supports 'exec -a'
-            login_cmd.args(&["/bin/zsh", "-fc", &exec_cmd]);
+            login_cmd.args(["/bin/zsh", "-fc", &exec_cmd]);
 
             login_cmd
         }
