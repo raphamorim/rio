@@ -7,7 +7,11 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-- TBD.
+## 0.2.25
+
+- **Fix custom shells in /usr/local/bin not found on macOS**: Fixed an issue where custom shells installed in `/usr/local/bin` were not found when Rio was launched from Finder or other GUI applications
+  - On macOS, Rio now uses `/usr/bin/login` to spawn shells, ensuring proper login shell environment with full PATH
+  - Custom shells like Fish, Nushell, or custom Zsh installations in `/usr/local/bin` will now work correctly
 
 ## 0.2.24
 
