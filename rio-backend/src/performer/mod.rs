@@ -206,6 +206,11 @@ where
             // Parse the incoming bytes.
             state.parser.advance(&mut **terminal, &buf[..unprocessed]);
 
+            // Emit damage event if there's any damage after parsing
+            if terminal.peek_damage_event().is_some() {
+                terminal.emit_damage_event();
+            }
+
             processed += unprocessed;
             unprocessed = 0;
 
@@ -217,8 +222,8 @@ where
 
         // Queue terminal update processing unless all processed bytes were synchronized.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            self.event_proxy
-                .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
+            // Damage events are now emitted directly after parsing
+            // No need to send Wakeup events
         }
 
         Ok(())
@@ -343,9 +348,14 @@ where
 
                 // Handle synchronized update timeout.
                 if events.is_empty() && self.receiver.peek().is_none() {
-                    state.parser.stop_sync(&mut *self.terminal.lock());
-                    self.event_proxy
-                        .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
+                    let mut terminal = self.terminal.lock();
+                    state.parser.stop_sync(&mut *terminal);
+
+                    // Emit damage event if there's any damage after processing sync buffer
+                    if terminal.peek_damage_event().is_some() {
+                        terminal.emit_damage_event();
+                    }
+                    drop(terminal);
 
                     continue;
                 }

@@ -226,36 +226,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let context_manager = route.window.screen.ctx_mut();
-                    let grid = context_manager.current_grid_mut();
-
-                    let mut request_pending_redraw = false;
-
-                    for (_key, grid_context) in grid.contexts().iter() {
-                        let ctx = grid_context.context();
-
-                        // In this case we know we have to render something that's pending.
-                        if ctx.renderable_content.pending_update.is_dirty() {
-                            request_pending_redraw = true;
-                        }
-
-                        if let Some(terminal) =
-                            grid_context.context().terminal.try_lock_unfair()
-                        {
-                            // Only emit damage event if there's actual damage
-                            if terminal.peek_damage_event().is_some() {
-                                terminal.emit_damage_event();
-                            }
-                        }
-                    }
-
-                    if request_pending_redraw {
-                        route.schedule_redraw(&mut self.scheduler, route_id);
-                    }
-                }
-            }
             RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {

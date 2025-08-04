@@ -9,6 +9,14 @@ language: 'en'
 
 - TBD.
 
+## 0.2.26
+
+- **Fix frame dropping in release builds**: Fixed an issue where release builds would drop frames due to damage event timing
+  - Damage events are now emitted directly after parsing PTY data, ensuring proper batching
+  - Removed redundant Wakeup event mechanism that was causing multiple renders per update
+  - Synchronized update timeouts now properly emit damage events
+  - Significantly improves rendering smoothness in optimized builds
+
 ## 0.2.25
 
 - Fix: Rio doesn't launch from context menu on Windows.
