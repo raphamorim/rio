@@ -42,16 +42,19 @@ const LOG_LEVEL_ENV: &str = "RIO_LOG_LEVEL";
 
 pub fn setup_environment_variables(config: &rio_backend::config::Config) {
     #[cfg(unix)]
-    let terminfo = if teletypewriter::terminfo_exists("rio")
-        || teletypewriter::terminfo_exists("xterm-rio")
     {
-        "rio"
-    } else {
-        "xterm-256color"
-    };
+        let terminfo = match (
+            teletypewriter::terminfo_exists("xterm-rio"),
+            teletypewriter::terminfo_exists("rio"),
+        ) {
+            // In case `xterm-rio` exists we prioritize it
+            (true, _) => "xterm-rio",
+            // If is only `rio` installed fallback, compability for versions under 0.2.27
+            (false, true) => "rio",
+            // If none, then fallback to `xterm-256color`
+            (false, false) => "xterm-256color",
+        };
 
-    #[cfg(unix)]
-    {
         let span = tracing::span!(tracing::Level::INFO, "setup_environment_variables");
         let _guard = span.enter();
         tracing::info!("terminfo: {terminfo}");
