@@ -9,6 +9,10 @@ language: 'en'
 
 - TBD.
 
+## 0.2.27 (unreleased)
+
+- Breaking: If `xterm-rio` is installed we prioritized it over `rio` terminfo.
+
 ## 0.2.26
 
 - **Fix frame dropping in release builds**: Fixed an issue where release builds would drop frames due to damage event timing

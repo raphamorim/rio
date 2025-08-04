@@ -49,7 +49,7 @@ pub fn setup_environment_variables(config: &rio_backend::config::Config) {
         ) {
             // In case `xterm-rio` exists we prioritize it
             (true, _) => "xterm-rio",
-            // If is only `rio` installed fallback, compability for versions under 0.2.27
+            // If is only `rio` installed (which was the default for versions under 0.2.27)
             (false, true) => "rio",
             // If none, then fallback to `xterm-256color`
             (false, false) => "xterm-256color",
