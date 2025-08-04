@@ -244,7 +244,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if let Some(terminal) =
                             grid_context.context().terminal.try_lock_unfair()
                         {
-                            terminal.emit_damage_event();
+                            // Only emit damage event if there's actual damage
+                            if terminal.peek_damage_event().is_some() {
+                                terminal.emit_damage_event();
+                            }
                         }
                     }
 
