@@ -25,6 +25,12 @@ choco install rio-terminal
 ```
 
 - Using MINGW package manager: [packages.msys2.org/base/mingw-w64-rio](https://packages.msys2.org/base/mingw-w64-rio)
+- [Using scoop](https://scoop.sh/#/apps?q=rio))
+
+```sh
+scoop bucket add extras
+scoop install rio
+```
 
 There's a few things to note about the installer and the portable version:
 
