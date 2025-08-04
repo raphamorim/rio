@@ -858,7 +858,7 @@ impl Renderer {
                     Some(snapshot) => snapshot,
                     None if force_full_damage => {
                         // Force full damage case - create a fresh snapshot
-                        let terminal = context.terminal.lock();
+                        let mut terminal = context.terminal.lock();
                         let snapshot = TerminalSnapshot {
                             colors: terminal.colors,
                             display_offset: terminal.display_offset(),

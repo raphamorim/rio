@@ -288,7 +288,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             pty,
             event_proxy.clone(),
             window_id,
-            route_id,
         )?;
         let channel = machine.channel();
         let io_thread = if config.spawn_performer {

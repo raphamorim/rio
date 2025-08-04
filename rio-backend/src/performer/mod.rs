@@ -68,7 +68,6 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
     window_id: WindowId,
-    route_id: usize,
 }
 
 #[derive(Default)]
@@ -147,7 +146,6 @@ where
         pty: T,
         event_proxy: U,
         window_id: WindowId,
-        route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
@@ -160,7 +158,6 @@ where
             terminal,
             event_proxy,
             window_id,
-            route_id,
         })
     }
 
