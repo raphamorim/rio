@@ -557,7 +557,7 @@ checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "copa"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "arrayvec",
  "criterion",
@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "corcovado"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "bytes",
  "cfg-if 0.1.10",
@@ -727,15 +727,6 @@ checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
  "itertools 0.10.5",
-]
-
-[[package]]
-name = "crossbeam-channel"
-version = "0.5.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
-dependencies = [
- "crossbeam-utils",
 ]
 
 [[package]]
@@ -2042,12 +2033,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "new_debug_unreachable"
-version = "1.0.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
-
-[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2371,15 +2356,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "phf_shared"
-version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67eabc2ef2a60eb7faa00097bd1ffdb5bd28e62bf39990626a582201b7a754e5"
-dependencies = [
- "siphasher",
-]
-
-[[package]]
 name = "pin-project"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2469,9 +2445,9 @@ dependencies = [
 
 [[package]]
 name = "polling"
-version = "3.9.0"
+version = "3.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ee9b2fa7a4517d2c91ff5bc6c297a427a96749d15f98fcdbb22c05571a4d4b7"
+checksum = "b5bd19146350fe804f7cb2669c851c03d69da628803dab0d98018142aaa5d829"
 dependencies = [
  "cfg-if 1.0.1",
  "concurrent-queue",
@@ -2504,12 +2480,6 @@ checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
 ]
-
-[[package]]
-name = "precomputed-hash"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
 name = "presser"
@@ -2792,7 +2762,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rio-backend"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "base64",
  "bitflags 2.9.1",
@@ -2816,7 +2786,7 @@ dependencies = [
  "smallvec",
  "sugarloaf",
  "teletypewriter",
- "toml 0.9.4",
+ "toml 0.9.5",
  "tracing",
  "unicode-width-16",
  "url",
@@ -2825,7 +2795,7 @@ dependencies = [
 
 [[package]]
 name = "rio-proc-macros"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2833,7 +2803,7 @@ dependencies = [
 
 [[package]]
 name = "rio-window"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "ahash",
  "atomic-waker",
@@ -2887,7 +2857,7 @@ dependencies = [
 
 [[package]]
 name = "rioterm"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "ahash",
  "bitflags 2.9.1",
@@ -2910,7 +2880,6 @@ dependencies = [
  "rio-window",
  "rustc-hash 2.1.1",
  "serde",
- "slotmap",
  "smallvec",
  "teletypewriter",
  "tinyvec",
@@ -3090,9 +3059,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.5"
+version = "1.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
+checksum = "b2a4719bff48cee6b39d12c020eeb490953ad2443b7055bd0b21fca26bd8c28b"
 dependencies = [
  "libc",
 ]
@@ -3108,12 +3077,6 @@ name = "simdutf8"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
-
-[[package]]
-name = "siphasher"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "skrifa"
@@ -3301,19 +3264,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
 
 [[package]]
-name = "string_cache"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf776ba3fa74f83bf4b63c3dcbbf82173db2632ed8452cb2d891d33f459de70f"
-dependencies = [
- "new_debug_unreachable",
- "parking_lot",
- "phf_shared",
- "precomputed-hash",
- "serde",
-]
-
-[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3343,15 +3293,13 @@ dependencies = [
 
 [[package]]
 name = "sugarloaf"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "approx",
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
  "criterion",
- "crossbeam-channel",
- "crossbeam-deque",
  "deflate",
  "fontconfig-parser",
  "futures",
@@ -3379,7 +3327,6 @@ dependencies = [
  "serde",
  "skrifa",
  "slotmap",
- "string_cache",
  "thiserror 2.0.12",
  "tinyvec",
  "tracing",
@@ -3425,7 +3372,7 @@ dependencies = [
 
 [[package]]
 name = "teletypewriter"
-version = "0.2.25"
+version = "0.2.26"
 dependencies = [
  "corcovado",
  "dirs",
@@ -3601,9 +3548,9 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ae868b5a0f67631c14589f7e250c1ea2c574ee5ba21c6c8dd4b1485705a5a1"
+checksum = "75129e1dc5000bfbaa9fee9d1b21f974f9fbad9daec557a521ee6e080825f6e8"
 dependencies = [
  "indexmap",
  "serde",
@@ -3625,9 +3572,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97200572db069e74c512a14117b296ba0a80a30123fbbb5aa1f4a348f639ca30"
+checksum = "b551886f449aa90d4fe2bdaa9f4a2577ad2dde302c61ecf262d80b116db95c10"
 dependencies = [
  "winnow",
 ]
@@ -4798,9 +4745,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a05eb080e015ba39cc9e23bbe5e7fb04d5fb040350f99f34e338d5fdd294428"
+checksum = "bdbb9122ea75b11bf96e7492afb723e8a7fbe12c67417aa95e7e3d18144d37cd"
 dependencies = [
  "yoke",
  "zerofrom",

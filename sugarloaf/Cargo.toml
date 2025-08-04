@@ -45,10 +45,9 @@ raw-window-handle = { workspace = true }
 parking_lot = { workspace = true }
 approx = "0.5.1"
 lru = "0.16.0"
-skrifa = "0.33.0"
+skrifa = "0.33.1"
 halfbrown = "0.3.0"
 half = "2.6.0"
-string_cache = "0.8.7"
 num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.3", optional = true }
@@ -67,10 +66,8 @@ librashader-cache = "0.8.1"
 thiserror = "2.0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-crossbeam-channel = "0.5.14"
-crossbeam-deque = "0.8.6"
 rayon = "1.10.0"
-twox-hash = { version = "2.1.0", default-features = false, features = [
+twox-hash = { version = "2.1.1", default-features = false, features = [
     "std",
     "xxhash64",
 ] }
