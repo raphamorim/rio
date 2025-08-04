@@ -32,9 +32,9 @@ futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.5.27", features = ["derive"] }
+clap = { version = "4.5.42", features = ["derive"] }
 dirs = "6.0.0"
-notify = "8.0.0"
+notify = "8.2.0"
 rustc-hash = { workspace = true }
 image_rs = { workspace = true }
 libc = { workspace = true }
@@ -47,7 +47,6 @@ url = { workspace = true }
 smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
-slotmap = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
@@ -85,7 +84,7 @@ wayland = [
 [package.metadata.deb]
 name = "rioterm"
 maintainer = "Raphael Amorim <rapha850@gmail.com>"
-copyright = "2024, Raphael Amorim <rapha850@gmail.com>"
+copyright = "2022-present, Raphael Amorim <rapha850@gmail.com>"
 depends = "$auto"
 section = "admin"
 priority = "optional"

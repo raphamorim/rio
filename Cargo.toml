@@ -12,7 +12,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.25"
+version = "0.2.26"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -28,15 +28,15 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.2.25" }
-rio-backend = { path = "rio-backend", version = "0.2.25" }
-rio-window = { path = "rio-window", version = "0.2.25", default-features = false }
-sugarloaf = { path = "sugarloaf", version = "0.2.25" }
+teletypewriter = { path = "teletypewriter", version = "0.2.26" }
+rio-backend = { path = "rio-backend", version = "0.2.26" }
+rio-window = { path = "rio-window", version = "0.2.26", default-features = false }
+sugarloaf = { path = "sugarloaf", version = "0.2.26" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.2.25" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.2.25" }
-corcovado = { path = "corcovado", version = "0.2.25" }
+copa = { path = "copa", default-features = true, version = "0.2.26" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.2.26" }
+corcovado = { path = "corcovado", version = "0.2.26" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.4", features = [
     "nightly",
@@ -61,7 +61,7 @@ regex = "1.11.1"
 bytemuck = { version = "1.23.1", features = ["derive"] }
 serde = { version = "1.0.219", features = ["derive"] }
 wgpu = "25.0.2"
-libc = "0.2.173"
+libc = "0.2.174"
 smol_str = "0.3.2"
 futures = "0.3.31"
 wasm-bindgen = "0.2.87"
@@ -76,7 +76,6 @@ tracing = "0.1.41"
 objc = { package = "objc-rs", version = "0.2.8" }
 memmap2 = "0.9.5"
 url = "2.5.4"
-slotmap = "1.0.7"
 criterion = { version = "0.6.0", features = ["html_reports"] }
 
 [profile.release]
