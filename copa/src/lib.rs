@@ -1070,6 +1070,7 @@ impl<P: Perform> OpaqueDispatch for SosDispatch<'_, P> {
     }
 }
 
+#[allow(dead_code)]
 struct ApcDispatch<'a, P: Perform>(&'a mut P);
 
 impl<P: Perform> OpaqueDispatch for ApcDispatch<'_, P> {
