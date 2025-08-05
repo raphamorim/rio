@@ -753,17 +753,30 @@ impl BatchManager {
         coords: &[f32; 4],
         has_alpha: bool,
     ) {
+        self.add_image_rect_with_layer(rect, depth, color, coords, has_alpha, 1);
+    }
+
+    #[inline]
+    pub fn add_image_rect_with_layer(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        coords: &[f32; 4],
+        has_alpha: bool,
+        layer: i32,
+    ) {
         let transparent = has_alpha || color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
-                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                if batch.add_rect(rect, depth, color, Some(coords), Some(layer), None, false)
                 {
                     return;
                 }
             }
         } else {
             for batch in &mut self.opaque {
-                if batch.add_rect(rect, depth, color, Some(coords), Some(1), None, false)
+                if batch.add_rect(rect, depth, color, Some(coords), Some(layer), None, false)
                 {
                     return;
                 }
@@ -774,7 +787,7 @@ impl BatchManager {
             depth,
             color,
             Some(coords),
-            Some(1),
+            Some(layer),
             None,
             false,
         );

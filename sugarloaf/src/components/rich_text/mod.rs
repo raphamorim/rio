@@ -1,5 +1,6 @@
 mod batch;
 mod compositor;
+pub mod graphics;
 mod image_cache;
 #[cfg(test)]
 mod positioning_tests;
@@ -7,14 +8,13 @@ pub mod text;
 mod text_run_manager;
 
 use crate::components::core::orthographic_projection;
+use crate::components::rich_text::graphics::{GraphicsStorage, GraphicId};
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
 use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
-use crate::sugarloaf::graphics::GraphicRenderRequest;
-use crate::Graphics;
 use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
 use std::collections::HashSet;
@@ -50,6 +50,7 @@ pub struct RichTextBrush {
     images: ImageCache,
     glyphs: GlyphCache,
     text_run_manager: TextRunManager,
+    graphics: GraphicsStorage,
 }
 
 impl RichTextBrush {
@@ -266,6 +267,7 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
+            graphics: GraphicsStorage::default(),
         }
     }
 
@@ -274,7 +276,6 @@ impl RichTextBrush {
         &mut self,
         context: &mut crate::context::Context,
         state: &crate::sugarloaf::state::SugarState,
-        graphics: &mut Graphics,
     ) {
         if state.rich_texts.is_empty() {
             self.vertices.clear();
@@ -313,7 +314,6 @@ impl RichTextBrush {
                     Some(position),
                     library,
                     Some(&rt.layout),
-                    graphics,
                 );
             }
         }
@@ -328,12 +328,11 @@ impl RichTextBrush {
         &mut self,
         font_library: &FontLibrary,
         render_data: &crate::layout::BuilderLine,
-        graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
         self.comp.begin();
 
         let lines = vec![render_data.clone()];
-        self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
+        self.draw_layout(0, &lines, &None, None, font_library, None)
     }
 
     #[inline]
@@ -367,7 +366,6 @@ impl RichTextBrush {
         pos: Option<(f32, f32)>,
         font_library: &FontLibrary,
         rte_layout: Option<&RichTextLayout>,
-        graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
         if lines.is_empty() {
             return None;
@@ -382,6 +380,31 @@ impl RichTextBrush {
 
         // Determine if we're calculating dimensions only or drawing layout
         let is_dimensions_only = pos.is_none() || rte_layout.is_none();
+
+        // Pre-process graphics to add them to the image cache
+        let mut graphic_image_map = std::collections::HashMap::new();
+        if !is_dimensions_only {
+            for line in lines.iter() {
+                for run in &line.render_data.runs {
+                    if let Some(graphic) = run.span.media {
+                        if let Some(entry) = self.graphics.get(&graphic.id) {
+                            // Extract pixel data from the handle
+                            match &entry.handle.data {
+                                crate::components::core::image::Data::Rgba { width, height, pixels } => {
+                                    // Add graphic to image cache
+                                    if let Some(image_id) = image_cache.allocate_graphic(*width as u16, *height as u16, pixels.as_ref()) {
+                                        graphic_image_map.insert(graphic.id, (image_id, entry.width, entry.height));
+                                    }
+                                }
+                                _ => {
+                                    // For non-RGBA data, we can't directly add to the atlas
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // For dimensions mode, we only process the first line
         let lines_to_process = if is_dimensions_only {
@@ -398,6 +421,7 @@ impl RichTextBrush {
         let mut last_rendered_graphic = HashSet::new();
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
+        let mut pending_graphics = Vec::new(); // Collect graphics to render after text
 
         let font_metrics = Self::extract_font_metrics(lines_to_process);
         if let Some((
@@ -706,19 +730,25 @@ impl RichTextBrush {
                     if !is_dimensions_only {
                         if let Some(graphic) = run.span.media {
                             if !last_rendered_graphic.contains(&graphic.id) {
-                                let offset_x = graphic.offset_x as f32;
-                                let offset_y = graphic.offset_y as f32;
-
-                                let graphic_render_request = GraphicRenderRequest {
-                                    id: graphic.id,
-                                    pos_x: run_x - offset_x,
-                                    pos_y: py - ascent - offset_y,
-                                    width: None,
-                                    height: None,
-                                };
-
-                                graphics.top_layer.push(graphic_render_request);
-                                last_rendered_graphic.insert(graphic.id);
+                                // Check if we have pre-processed this graphic
+                                if let Some((image_id, width, height)) = graphic_image_map.get(&graphic.id).cloned() {
+                                    let offset_x = graphic.offset_x as f32;
+                                    let offset_y = graphic.offset_y as f32;
+                                    
+                                    // Calculate graphic position relative to text
+                                    let graphic_x = run_x - offset_x;
+                                    let graphic_y = py - ascent - offset_y;
+                                    
+                                    let graphic_rect = Rect::new(graphic_x, graphic_y, width, height);
+                                    
+                                    // Store for rendering after text
+                                    pending_graphics.push((image_id, graphic_rect, depth));
+                                    last_rendered_graphic.insert(graphic.id);
+                                } else {
+                                    // Graphics not in cache, skip for now
+                                    // In the future, we could add it to the cache here
+                                    last_rendered_graphic.insert(graphic.id);
+                                }
                             }
                         }
                     }
@@ -727,6 +757,25 @@ impl RichTextBrush {
                 // Advance line_y for the next line
                 if !is_dimensions_only {
                     line_y += line_height;
+                }
+            }
+        }
+
+        // Render pending graphics after text processing
+        if !is_dimensions_only {
+            for (image_id, graphic_rect, depth) in pending_graphics {
+                if let Some(img) = image_cache.get(&image_id) {
+                    let coords = [img.min.0, img.min.1, img.max.0, img.max.1];
+                    
+                    // Render the graphic inline using the same batch system
+                    comp.batches.add_image_rect_with_layer(
+                        &graphic_rect,
+                        depth,
+                        &[1.0, 1.0, 1.0, 1.0], // White tint
+                        &coords,
+                        true, // Has alpha
+                        1, // Color layer
+                    );
                 }
             }
         }
@@ -759,6 +808,24 @@ impl RichTextBrush {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         tracing::info!("RichTextBrush atlas, glyph cache, and text run cache cleared");
+    }
+
+    /// Insert a graphic into the graphics storage
+    #[inline]
+    pub fn insert_graphic(&mut self, graphic_data: graphics::GraphicData) {
+        self.graphics.insert(graphic_data);
+    }
+
+    /// Remove a graphic from the graphics storage
+    #[inline]
+    pub fn remove_graphic(&mut self, graphic_id: &GraphicId) {
+        self.graphics.remove(graphic_id);
+    }
+
+    /// Clear all graphics
+    #[inline]
+    pub fn clear_graphics(&mut self) {
+        self.graphics.clear();
     }
 
     #[inline]

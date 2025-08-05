@@ -17,7 +17,7 @@ use crate::font_introspector::Metrics;
 use crate::layout::content::{FragmentStyleDecoration, WordCache};
 use crate::layout::FragmentStyle;
 use crate::sugarloaf::primitives::SugarCursor;
-use crate::{Graphic, GraphicId};
+use crate::components::rich_text::graphics::{Graphic, GraphicId};
 
 /// Collection of text, organized into lines, runs and clusters.
 #[derive(Clone, Debug, Default)]
