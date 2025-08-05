@@ -366,6 +366,12 @@ pub trait Handler {
     /// Insert a new graphic item.
     fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
 
+    /// Place an existing graphic at a specific location.
+    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+
+    /// Delete graphics based on the specified criteria.
+    fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
+
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
 
@@ -395,6 +401,9 @@ pub trait Handler {
 
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
+
+    /// Send a kitty graphics protocol response
+    fn kitty_graphics_response(&mut self, _response: String) {}
 }
 
 pub trait Timeout: Default {
@@ -731,7 +740,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
     fn apc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
         warn!("[apc_dispatch] params={params:?} bell_terminated={bell_terminated}");
-        let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+        let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
         fn unhandled(params: &[&[u8]]) {
             let mut buf = String::new();
@@ -751,9 +760,21 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
         match params[0] {
             b"G" => {
-                // Write handler for kitty graphics
-                kitty_graphics_protocol::parse(params);
-                todo!();
+                // Handle kitty graphics protocol
+                if let Some(response) = kitty_graphics_protocol::parse(params) {
+                    if let Some(graphic_data) = response.graphic_data {
+                        self.handler.insert_graphic(graphic_data, None);
+                    }
+                    if let Some(placement) = response.placement_request {
+                        self.handler.place_graphic(placement);
+                    }
+                    if let Some(delete) = response.delete_request {
+                        self.handler.delete_graphics(delete);
+                    }
+                    if let Some(response_str) = response.response {
+                        self.handler.kitty_graphics_response(response_str);
+                    }
+                }
             }
             _ => unhandled(params),
         }
