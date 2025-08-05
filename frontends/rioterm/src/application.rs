@@ -273,15 +273,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Process graphics directly in sugarloaf
+                    // Process graphics through the rich text brush
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
                     for graphic_data in queues.pending {
-                        sugarloaf.graphics.insert(graphic_data);
+                        sugarloaf.insert_graphic(graphic_data);
                     }
 
-                    for graphic_data in queues.remove_queue {
-                        sugarloaf.graphics.remove(&graphic_data);
+                    for graphic_id in queues.remove_queue {
+                        sugarloaf.remove_graphic(&graphic_id);
                     }
 
                     // Request a redraw to display the updated graphics

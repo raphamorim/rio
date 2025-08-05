@@ -5,6 +5,7 @@
 
 #![allow(clippy::uninlined_format_args)]
 
+use crate::components::rich_text::graphics::Graphic;
 use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
@@ -14,7 +15,6 @@ use crate::font_introspector::Metrics;
 use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
-use crate::Graphics;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
@@ -25,7 +25,7 @@ use tracing::debug;
 
 use crate::font_introspector::Attributes;
 use crate::font_introspector::Setting;
-use crate::{sugarloaf::primitives::SugarCursor, DrawableChar, Graphic};
+use crate::{sugarloaf::primitives::SugarCursor, DrawableChar};
 
 /// Cached content that can be either normal clusters or optimized whitespace
 #[derive(Clone, Debug)]
@@ -450,7 +450,6 @@ impl Content {
             if let Some(dimension) = advance_brush.dimensions(
                 &self.fonts,
                 &render_data,
-                &mut Graphics::default(),
             ) {
                 rte.layout.dimensions.height = dimension.height;
                 rte.layout.dimensions.width = dimension.width;

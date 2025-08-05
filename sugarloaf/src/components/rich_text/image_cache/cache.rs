@@ -251,6 +251,20 @@ impl ImageCache {
         tracing::info!("Dual atlases cleared due to font change");
     }
 
+    /// Allocates a graphic image in the color atlas.
+    pub fn allocate_graphic(&mut self, width: u16, height: u16, data: &[u8]) -> Option<ImageId> {
+        // Graphics always go in the color atlas
+        let request = AddImage {
+            width,
+            height,
+            has_alpha: true, // Graphics typically have alpha
+            data: ImageData::Borrowed(data),
+            content_type: ContentType::Color,
+        };
+        
+        self.allocate(request)
+    }
+
     /// Returns true if the image is valid.
     pub fn is_valid(&self, image: ImageId) -> bool {
         // Empty images are always valid (for zero-sized glyphs)

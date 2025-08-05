@@ -7,7 +7,6 @@ use crate::font::FontLibrary;
 use crate::layout::RootStyle;
 use crate::sugarloaf::QuadBrush;
 use crate::sugarloaf::{RichTextBrush, RichTextLayout};
-use crate::Graphics;
 use crate::{Content, Object, Quad, RichText, SugarDimensions};
 use std::collections::HashSet;
 
@@ -224,9 +223,8 @@ impl SugarState {
         advance_brush: &mut RichTextBrush,
         quad_brush: &mut QuadBrush,
         context: &mut super::Context,
-        graphics: &mut Graphics,
     ) {
-        advance_brush.prepare(context, self, graphics);
+        advance_brush.prepare(context, self);
         quad_brush.resize(context);
 
         // Elementary renderer is used for everything else in sugarloaf

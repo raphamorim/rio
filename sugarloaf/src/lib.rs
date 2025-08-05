@@ -11,13 +11,12 @@ pub use wgpu;
 pub use font_introspector::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{
-    graphics::{
-        ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeCommand,
-        ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
-    },
     primitives::*,
     Colorspace, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
     SugarloafWindowSize, SugarloafWithErrors,
+};
+pub use components::rich_text::graphics::{
+    ColorType, Graphic, GraphicData, GraphicId, ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
 };
 pub use components::filters::Filter;
 pub use components::quad::Quad;
