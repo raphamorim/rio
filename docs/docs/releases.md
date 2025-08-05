@@ -12,6 +12,10 @@ language: 'en'
 ## 0.2.27 (unreleased)
 
 - Breaking: If `xterm-rio` is installed we prioritized it over `rio` terminfo.
+- **Fix sixel/iterm2 graphics persistence issue**: Fixed graphics remaining visible when overwritten by text
+  - Graphics are now properly removed when cells containing them are overwritten
+  - Fixes issues with file managers like Yazi where images would persist incorrectly
+  - Simplified graphics cleanup logic by removing unused ClearSubregion functionality
 
 ## 0.2.26
 
