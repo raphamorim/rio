@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pt-br/assets/css/styles.6f48d0c1.css">
-<script src="/pt-br/assets/js/runtime~main.a99d9e6f.js" defer="defer"></script>
+<script src="/pt-br/assets/js/runtime~main.d9fe7a43.js" defer="defer"></script>
 <script src="/pt-br/assets/js/main.825dd573.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -32,6 +32,13 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0227-unreleased">0.2.27 (unreleased)<a href="#0227-unreleased" class="hash-link" aria-label="0.2.27 (unreleased)link direto para" title="0.2.27 (unreleased)link direto para">​</a></h2>
 <ul>
 <li>Breaking: If <code>xterm-rio</code> is installed we prioritized it over <code>rio</code> terminfo.</li>
+<li><strong>Fix sixel/iterm2 graphics persistence issue</strong>: Fixed graphics remaining visible when overwritten by text<!-- -->
+<ul>
+<li>Graphics are now properly removed when cells containing them are overwritten</li>
+<li>Fixes issues with file managers like Yazi where images would persist incorrectly</li>
+<li>Simplified graphics cleanup logic by removing unused ClearSubregion functionality</li>
+</ul>
+</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0226">0.2.26<a href="#0226" class="hash-link" aria-label="0.2.26link direto para" title="0.2.26link direto para">​</a></h2>
 <ul>
