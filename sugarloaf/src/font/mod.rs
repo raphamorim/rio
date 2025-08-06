@@ -261,7 +261,7 @@ impl FontLibraryData {
                 primary_metrics
             };
 
-        if *font_id == FONT_ID_REGULAR {
+        if font_id == &FONT_ID_REGULAR {
             // Primary font uses its own metrics
             Some(primary_metrics.for_rich_text())
         } else {

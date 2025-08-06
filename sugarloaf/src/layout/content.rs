@@ -184,7 +184,6 @@ impl BuilderState {
     pub fn update_font_size(&mut self) {
         let font_size = self.layout.font_size;
         let scale = self.layout.dimensions.scale;
-        let _prev_font_size = self.scaled_font_size;
         self.scaled_font_size = font_size * scale;
 
         self.last_update = BuilderStateUpdate::Full;
