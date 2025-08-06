@@ -351,7 +351,7 @@ impl RichTextBrush {
             .map(|line| &line.render_data.runs[0])
             .next()?;
 
-        let font_id = first_run.span.font_id;
+        let font_id = 0; // FONT_ID_REGULAR
         let font_size = first_run.size;
 
         // Get metrics from the specific font using consistent calculation
