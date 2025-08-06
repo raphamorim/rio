@@ -16,6 +16,12 @@ language: 'en'
   - Graphics are now properly removed when cells containing them are overwritten
   - Fixes issues with file managers like Yazi where images would persist incorrectly
   - Simplified graphics cleanup logic by removing unused ClearSubregion functionality
+- **CJK Font Metrics**: Fixed CJK characters displaying "higher" than Latin characters [#1071](https://github.com/raphamorim/rio/issues/1071)
+  - Implemented comprehensive CJK font metrics handling with consistent baseline adjustment
+  - Fixed scrolling issues for mixed Latin and CJK text content
+  - Added CJK character width measurement using "水" (water ideograph) as reference
+  - Created consistent cell dimensions across different font types
+  - Developed extensive test suite with 40+ font-related tests to verify fixes
 
 ## 0.2.26
 
@@ -193,12 +199,6 @@ These changes are particularly beneficial for:
 
 ### Bug Fixes
 
-- **CJK Font Metrics**: Fixed CJK characters displaying "higher" than Latin characters [#1071](https://github.com/raphamorim/rio/issues/1071)
-  - Implemented comprehensive CJK font metrics handling with consistent baseline adjustment
-  - Fixed scrolling issues for mixed Latin and CJK text content
-  - Added CJK character width measurement using "水" (water ideograph) as reference
-  - Created consistent cell dimensions across different font types
-  - Developed extensive test suite with 40+ font-related tests to verify fixes
 - **Backspace Key Compatibility**: Fixed backspace key not working properly in vim when `TERM=xterm-256color`
   - Changed backspace key bindings to send BS (0x08) instead of DEL (0x7F) 
   - Updated Rio terminfo and termcap entries to match actual key behavior
