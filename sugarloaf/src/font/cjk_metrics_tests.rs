@@ -114,6 +114,25 @@ mod tests {
                 },
             }
         }
+
+        fn noto_color_emoji() -> Self {
+            Self {
+                name: "Noto Color Emoji",
+                face: FaceMetrics {
+                    cell_width: 20.0, // Emoji are typically double-width
+                    ascent: 14.0,
+                    descent: 3.5,
+                    line_gap: 1.0,
+                    underline_position: Some(-2.0),
+                    underline_thickness: Some(1.2),
+                    strikethrough_position: Some(7.0),
+                    strikethrough_thickness: Some(1.2),
+                    cap_height: Some(10.5),
+                    ex_height: Some(7.0),
+                    ic_width: None,
+                },
+            }
+        }
     }
 
     #[test]
@@ -865,5 +884,131 @@ mod tests {
             total_height_latin, total_height_mixed,
             "Mixed content must not affect total height calculations"
         );
+    }
+
+    /// Test edge cases for font metrics calculations
+    #[test]
+    fn test_edge_cases() {
+        // Test extremely small font size
+        let tiny_font = FaceMetrics {
+            cell_width: 0.1,
+            ascent: 0.1,
+            descent: 0.05,
+            line_gap: 0.01,
+            underline_position: Some(-0.01),
+            underline_thickness: Some(0.01),
+            strikethrough_position: Some(0.05),
+            strikethrough_thickness: Some(0.01),
+            cap_height: Some(0.08),
+            ex_height: Some(0.05),
+            ic_width: None,
+        };
+
+        let tiny_metrics = Metrics::calc(tiny_font);
+        assert!(
+            tiny_metrics.cell_width >= 1,
+            "Cell width must be at least 1 pixel"
+        );
+        assert!(
+            tiny_metrics.cell_height >= 1,
+            "Cell height must be at least 1 pixel"
+        );
+        assert!(
+            tiny_metrics.underline_thickness >= 1,
+            "Line thickness must be at least 1 pixel"
+        );
+
+        // Test extremely large font size
+        let huge_font = FaceMetrics {
+            cell_width: 1000.0,
+            ascent: 1200.0,
+            descent: 300.0,
+            line_gap: 100.0,
+            underline_position: Some(-100.0),
+            underline_thickness: Some(100.0),
+            strikethrough_position: Some(600.0),
+            strikethrough_thickness: Some(100.0),
+            cap_height: Some(900.0),
+            ex_height: Some(600.0),
+            ic_width: None,
+        };
+
+        let huge_metrics = Metrics::calc(huge_font);
+        assert_eq!(
+            huge_metrics.cell_width, 1000,
+            "Large font metrics should be preserved"
+        );
+        assert_eq!(
+            huge_metrics.cell_height, 1700,
+            "Large font height calculation"
+        );
+
+        // Test font with missing optional metrics
+        let minimal_font = FaceMetrics {
+            cell_width: 10.0,
+            ascent: 12.0,
+            descent: 3.0,
+            line_gap: 1.0,
+            underline_position: None,
+            underline_thickness: None,
+            strikethrough_position: None,
+            strikethrough_thickness: None,
+            cap_height: None,
+            ex_height: None,
+            ic_width: None,
+        };
+
+        let minimal_metrics = Metrics::calc(minimal_font);
+        assert!(
+            minimal_metrics.underline_thickness >= 1,
+            "Default underline thickness"
+        );
+        assert!(
+            minimal_metrics.strikethrough_thickness >= 1,
+            "Default strikethrough thickness"
+        );
+        assert!(
+            minimal_metrics.underline_position > 0,
+            "Default underline position"
+        );
+        assert!(
+            minimal_metrics.strikethrough_position > 0,
+            "Default strikethrough position"
+        );
+    }
+
+    /// Test mixed script rendering (Latin + CJK + Emoji)
+    #[test]
+    fn test_mixed_script_rendering() {
+        let latin_font = TestFontData::cascadia_code();
+        let cjk_font = TestFontData::noto_sans_cjk();
+        let emoji_font = TestFontData::noto_color_emoji();
+
+        let latin_metrics = Metrics::calc(latin_font.face);
+        let cjk_metrics =
+            Metrics::calc_with_primary_cell_dimensions(cjk_font.face, &latin_metrics);
+        let emoji_metrics =
+            Metrics::calc_with_primary_cell_dimensions(emoji_font.face, &latin_metrics);
+
+        // All fonts should have the same cell height for consistent rendering
+        assert_eq!(latin_metrics.cell_height, cjk_metrics.cell_height);
+        assert_eq!(latin_metrics.cell_height, emoji_metrics.cell_height);
+
+        // All fonts should have the same baseline
+        assert_eq!(latin_metrics.cell_baseline, cjk_metrics.cell_baseline);
+        assert_eq!(latin_metrics.cell_baseline, emoji_metrics.cell_baseline);
+
+        // Verify that a line containing all three scripts renders consistently
+        let mixed_line_height = latin_metrics.cell_height;
+        let latin_only_height = latin_metrics.cell_height;
+        let cjk_only_height = cjk_metrics.cell_height;
+        let emoji_only_height = emoji_metrics.cell_height;
+
+        assert_eq!(
+            mixed_line_height, latin_only_height,
+            "Mixed script lines must have same height as single script lines"
+        );
+        assert_eq!(mixed_line_height, cjk_only_height);
+        assert_eq!(mixed_line_height, emoji_only_height);
     }
 }

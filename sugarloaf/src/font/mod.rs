@@ -241,7 +241,22 @@ impl FontLibraryData {
     }
 
     /// Get font metrics for rich text rendering (consistent metrics approach)
-    /// Primary font determines cell dimensions for all fonts
+    ///
+    /// Primary font determines cell dimensions for all fonts to ensure consistent
+    /// baseline alignment across different scripts (Latin, CJK, emoji, etc.).
+    ///
+    /// # Arguments
+    /// * `font_id` - The font to get metrics for
+    /// * `font_size` - The font size in pixels
+    ///
+    /// # Returns
+    /// A tuple of (width, height, line_height) for the font, or None if the font
+    /// cannot be found or metrics cannot be calculated.
+    ///
+    /// # Implementation Notes
+    /// - Primary font metrics are cached for performance
+    /// - Secondary fonts inherit cell dimensions from primary font
+    /// - This ensures CJK characters don't appear "higher" than Latin text
     pub fn get_font_metrics(
         &mut self,
         font_id: &usize,
@@ -254,20 +269,22 @@ impl FontLibraryData {
             if let Some(cached) = self.primary_metrics_cache.get(&size_key) {
                 *cached
             } else {
-                // Calculate primary font metrics and cache them
                 let primary_font = self.inner.get_mut(&FONT_ID_REGULAR)?;
                 let primary_metrics = primary_font.get_metrics(font_size, None)?;
                 self.primary_metrics_cache.insert(size_key, primary_metrics);
                 primary_metrics
             };
 
-        if font_id == &FONT_ID_REGULAR {
-            // Primary font uses its own metrics
-            Some(primary_metrics.for_rich_text())
-        } else {
-            // Secondary fonts use primary font's cell dimensions
-            let font = self.inner.get_mut(font_id)?;
-            font.get_rich_text_metrics(font_size, Some(&primary_metrics))
+        match font_id {
+            &FONT_ID_REGULAR => {
+                // Primary font uses its own metrics
+                Some(primary_metrics.for_rich_text())
+            }
+            _ => {
+                // Secondary fonts use primary font's cell dimensions
+                let font = self.inner.get_mut(font_id)?;
+                font.get_rich_text_metrics(font_size, Some(&primary_metrics))
+            }
         }
     }
 

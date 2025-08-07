@@ -57,6 +57,13 @@ pub struct FaceMetrics {
     /// if present. This is used for font size adjustment, to normalize
     /// the width of CJK fonts mixed with latin fonts.
     ///
+    /// Why "水" (water)?
+    /// - It's a common CJK ideograph present in most CJK fonts
+    /// - Has typical width characteristics of CJK characters
+    /// - Simple structure makes it reliable for measurement
+    /// - Part of the CJK Unified Ideographs block (U+4E00-U+9FFF)
+    /// - Used as a standard reference in many font metrics systems
+    ///
     /// NOTE: IC = Ideograph Character
     pub ic_width: Option<f64>,
 }
@@ -100,6 +107,12 @@ impl FaceMetrics {
     ///
     /// This measurement is used for font size adjustment to normalize
     /// CJK fonts mixed with Latin fonts in the `calculate_cjk_font_size_adjustment` function.
+    ///
+    /// The water ideograph is chosen because:
+    /// - It has consistent width across different CJK fonts
+    /// - It's present in virtually all CJK fonts (basic kanji/hanzi)
+    /// - Its width is representative of typical CJK character width
+    /// - It avoids edge cases like punctuation or rare characters
     fn measure_cjk_character_width(
         font_ref: &crate::font_introspector::FontRef,
     ) -> Option<f64> {
@@ -142,6 +155,12 @@ impl Metrics {
 
         // Calculate baseline position from bottom of cell (adjusted for Rio's positive descent)
         // Rio uses positive descent format, baseline = half_line_gap + descent
+        //
+        // Baseline Adjustment Strategy:
+        // - The baseline is positioned consistently for all fonts (primary and secondary)
+        // - This ensures CJK characters align properly with Latin text
+        // - The half_line_gap provides breathing room above and below text
+        // - Using descent ensures proper positioning for characters with descenders
         let cell_baseline = (half_line_gap + face.descent).round();
 
         // Calculate top-to-baseline for other calculations
