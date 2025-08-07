@@ -9,7 +9,7 @@ language: 'en'
 
 - TBD.
 
-## 0.2.27 (unreleased)
+## 0.2.27
 
 - Breaking: If `xterm-rio` is installed we prioritized it over `rio` terminfo.
 - **Fix sixel/iterm2 graphics persistence issue**: Fixed graphics remaining visible when overwritten by text
