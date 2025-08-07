@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/assets/css/styles.6f48d0c1.css">
-<script src="/assets/js/runtime~main.48ee0f9a.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.02ccfaae.js" defer="defer"></script>
 <script src="/assets/js/main.e0a3d573.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -37,6 +37,15 @@
 <li>Graphics are now properly removed when cells containing them are overwritten</li>
 <li>Fixes issues with file managers like Yazi where images would persist incorrectly</li>
 <li>Simplified graphics cleanup logic by removing unused ClearSubregion functionality</li>
+</ul>
+</li>
+<li><strong>CJK Font Metrics</strong>: Fixed CJK characters displaying &quot;higher&quot; than Latin characters <a href="https://github.com/raphamorim/rio/issues/1071" target="_blank" rel="noopener noreferrer">#1071</a>
+<ul>
+<li>Implemented comprehensive CJK font metrics handling with consistent baseline adjustment</li>
+<li>Fixed scrolling issues for mixed Latin and CJK text content</li>
+<li>Added CJK character width measurement using &quot;水&quot; (water ideograph) as reference</li>
+<li>Created consistent cell dimensions across different font types</li>
+<li>Developed extensive test suite with 40+ font-related tests to verify fixes</li>
 </ul>
 </li>
 </ul>

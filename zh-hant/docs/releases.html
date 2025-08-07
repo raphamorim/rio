@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hant/assets/css/styles.6f48d0c1.css">
-<script src="/zh-hant/assets/js/runtime~main.212444db.js" defer="defer"></script>
+<script src="/zh-hant/assets/js/runtime~main.539b790f.js" defer="defer"></script>
 <script src="/zh-hant/assets/js/main.97d390ec.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -37,6 +37,15 @@
 <li>Graphics are now properly removed when cells containing them are overwritten</li>
 <li>Fixes issues with file managers like Yazi where images would persist incorrectly</li>
 <li>Simplified graphics cleanup logic by removing unused ClearSubregion functionality</li>
+</ul>
+</li>
+<li><strong>CJK Font Metrics</strong>: Fixed CJK characters displaying &quot;higher&quot; than Latin characters <a href="https://github.com/raphamorim/rio/issues/1071" target="_blank" rel="noopener noreferrer">#1071</a>
+<ul>
+<li>Implemented comprehensive CJK font metrics handling with consistent baseline adjustment</li>
+<li>Fixed scrolling issues for mixed Latin and CJK text content</li>
+<li>Added CJK character width measurement using &quot;水&quot; (water ideograph) as reference</li>
+<li>Created consistent cell dimensions across different font types</li>
+<li>Developed extensive test suite with 40+ font-related tests to verify fixes</li>
 </ul>
 </li>
 </ul>
@@ -379,7 +388,7 @@
 <li>Fix: Issue regarding split not updating opacity style when getting unfocused.</li>
 <li>Add support for custom parsing of APC, SOS and PM sequences.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12的直接連結" title="0.2.12的直接連結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0212">0.2.12<a href="#0212" class="hash-link" aria-label="0.2.12的直接連結" title="0.2.12  的直接連結">​</a></h2>
 <ul>
 <li>Fix crash regarding fonts not found whenever trying to run Rio.</li>
 </ul>

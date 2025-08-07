@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pt-br/assets/css/styles.6f48d0c1.css">
-<script src="/pt-br/assets/js/runtime~main.d9fe7a43.js" defer="defer"></script>
+<script src="/pt-br/assets/js/runtime~main.4483d06e.js" defer="defer"></script>
 <script src="/pt-br/assets/js/main.825dd573.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -37,6 +37,15 @@
 <li>Graphics are now properly removed when cells containing them are overwritten</li>
 <li>Fixes issues with file managers like Yazi where images would persist incorrectly</li>
 <li>Simplified graphics cleanup logic by removing unused ClearSubregion functionality</li>
+</ul>
+</li>
+<li><strong>CJK Font Metrics</strong>: Fixed CJK characters displaying &quot;higher&quot; than Latin characters <a href="https://github.com/raphamorim/rio/issues/1071" target="_blank" rel="noopener noreferrer">#1071</a>
+<ul>
+<li>Implemented comprehensive CJK font metrics handling with consistent baseline adjustment</li>
+<li>Fixed scrolling issues for mixed Latin and CJK text content</li>
+<li>Added CJK character width measurement using &quot;水&quot; (water ideograph) as reference</li>
+<li>Created consistent cell dimensions across different font types</li>
+<li>Developed extensive test suite with 40+ font-related tests to verify fixes</li>
 </ul>
 </li>
 </ul>
@@ -1310,7 +1319,7 @@
 <li>Font loader with not native emoji font (emojis aren&#x27;t stable yet).</li>
 <li>Rect renderer based on provided color (text background), stabilized for monospaced fonts.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="001">0.0.1<a href="#001" class="hash-link" aria-label="0.0.1link direto para" title="0.0.1link direto para">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="001">0.0.1<a href="#001" class="hash-link" aria-label="0.0.1link direto para" title="0.0.1link direto para">  ​</a></h2>
 <ul>
 <li>Basic move/goto functionalities.</li>
 <li>Initial definition of Rio default colors.</li>
