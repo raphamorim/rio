@@ -406,11 +406,9 @@ pub fn default_config_file_content() -> String {
 # Navigation
 #
 # "mode" - Define navigation mode
-#   • NativeTab (MacOS only)
-#   • Bookmark
-#   • BottomTab
-#   • TopTab
+#   • Rio (default)
 #   • Plain
+#   • NativeTab (MacOS only)
 #
 # "hide-if-single" - Hide navigation UI if is single.
 # "clickable" - Enable click on tabs to switch.
@@ -419,7 +417,7 @@ pub fn default_config_file_content() -> String {
 #
 # Example:
 # [navigation]
-# mode = "bookmark"
+# mode = "Rio"
 # clickable = false
 # hide-if-single = true
 # use-current-path = false
