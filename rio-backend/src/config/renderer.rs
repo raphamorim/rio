@@ -22,7 +22,7 @@ pub struct Renderer {
 }
 
 fn default_disable_occluded_render() -> bool {
-    true
+    false
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
