@@ -3035,6 +3035,124 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
+
+    #[inline]
+    fn set_text_selection(
+        &mut self,
+        start_row: i32,
+        start_col: u16,
+        end_row: i32,
+        end_col: u16,
+    ) {
+        debug!(
+            "OSC 53 set_text_selection: start=({},{}), end=({},{})",
+            start_row, start_col, end_row, end_col
+        );
+
+        // Convert viewport-relative coordinates to grid positions
+        // In Rio's coordinate system, viewport row 0 is Line(0) - display_offset
+        let display_offset = self.grid.display_offset() as i32;
+        let num_lines = self.grid.screen_lines();
+
+        debug!(
+            "Display offset: {}, num_lines: {}",
+            display_offset, num_lines
+        );
+
+        // Calculate actual grid positions
+        // Viewport coordinates need to be adjusted by subtracting display_offset
+        let start_line = Line(start_row) - display_offset;
+        let end_line = Line(end_row) - display_offset;
+
+        // Clamp to valid grid bounds
+        let bottommost = self.grid.bottommost_line();
+        let topmost = self.grid.topmost_line();
+
+        let start_line = start_line.max(topmost).min(bottommost);
+        let end_line = end_line.max(topmost).min(bottommost);
+
+        let max_col = self.grid.columns() - 1;
+        let start_col = Column(start_col as usize).min(Column(max_col));
+        let end_col = Column(end_col as usize).min(Column(max_col));
+
+        // Create selection
+        let start_pos = Pos::new(start_line, start_col);
+        let end_pos = Pos::new(end_line, end_col);
+
+        debug!("Grid positions: start={:?}, end={:?}", start_pos, end_pos);
+
+        // Clear selection if start equals end
+        if start_pos == end_pos {
+            self.selection = None;
+            self.mark_fully_damaged();
+            debug!("Selection cleared (start == end)");
+        } else {
+            // Determine the correct order
+            let (selection_start, selection_end) = if start_pos <= end_pos {
+                (start_pos, end_pos)
+            } else {
+                (end_pos, start_pos)
+            };
+
+            // Create a simple selection
+            let mut selection =
+                Selection::new(SelectionType::Simple, selection_start, Side::Left);
+            selection.update(selection_end, Side::Right);
+
+            // Update selection and mark damaged
+            self.selection = Some(selection);
+            self.mark_fully_damaged();
+            debug!(
+                "Selection set: {:?} to {:?}",
+                selection_start, selection_end
+            );
+        }
+    }
+
+    #[inline]
+    fn clear_text_selection(&mut self) {
+        if self.selection.is_some() {
+            self.selection = None;
+            self.mark_fully_damaged();
+        }
+    }
+
+    #[inline]
+    fn query_text_selection(&mut self, terminator: &str) {
+        let response = if let Some(ref selection) = self.selection {
+            // Get the selection range
+            if let Some(range) = selection.to_range(self) {
+                let display_offset = self.grid.display_offset() as i32;
+
+                // Convert grid positions back to viewport-relative coordinates
+                // Grid position + display_offset = viewport row
+                let start_row = range.start.row.0 + display_offset;
+                let start_col = range.start.col.0;
+                let end_row = range.end.row.0 + display_offset;
+                let end_col = range.end.col.0;
+
+                format!(
+                    "\x1b]53;r;{},{};{},{}{}",
+                    start_row, start_col, end_row, end_col, terminator
+                )
+            } else {
+                format!("\x1b]53;r;none{}", terminator)
+            }
+        } else {
+            format!("\x1b]53;r;none{}", terminator)
+        };
+
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
+
+    #[inline]
+    fn copy_text_selection(&mut self) {
+        if let Some(text) = self.selection_to_string() {
+            // Use the existing clipboard store mechanism
+            self.clipboard_store(b'c', text.as_bytes());
+        }
+    }
 }
 
 pub struct CrosswordsSize {
