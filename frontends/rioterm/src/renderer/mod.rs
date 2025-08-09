@@ -846,65 +846,62 @@ impl Renderer {
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
             // Check if we need to render
-            // if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
-            // {
-            //     println!("NAUM tem");
-            //     // No updates pending, skip rendering
-            //     continue;
-            // }
+            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
+            {
+                // No updates pending, skip rendering
+                continue;
+            }
 
-            // Take the pending snapshot
-            let terminal_snapshot =
-                // match context.renderable_content.pending_update.take_snapshot() {
-                    // (Some(snapshot), _) => snapshot,
-                    // (None, was_wakeup) if was_wakeup => {
-                    //     // This was a Wakeup event - check the terminal for damage
-                    //     let mut terminal = context.terminal.lock();
+            // Get UI damage before resetting
+            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            context.renderable_content.pending_update.reset();
 
-                    //     // Get the damage from the terminal
-                    //     if let Some(damage) = terminal.peek_damage_event() {
-                    //         let snapshot = TerminalSnapshot {
-                    //             colors: terminal.colors,
-                    //             display_offset: terminal.display_offset(),
-                    //             blinking_cursor: terminal.blinking_cursor,
-                    //             visible_rows: terminal.visible_rows(),
-                    //             cursor: terminal.cursor(),
-                    //             damage: damage.clone(),
-                    //             columns: terminal.columns(),
-                    //             screen_lines: terminal.screen_lines(),
-                    //         };
-                    //         terminal.reset_damage();
-                    //         drop(terminal);
+            // Compute snapshot at render time
+            let terminal_snapshot = {
+                let mut terminal = context.terminal.lock();
 
-                    //         snapshot
-                    //     } else {
-                    //         // No damage found, skip rendering
-                    //         drop(terminal);
-                    //         continue;
-                    //     }
-                    // }
-                    {
-                        // Force full damage case - create a fresh snapshot
-                        let mut terminal = context.terminal.lock();
-                        let snapshot = TerminalSnapshot {
-                            colors: terminal.colors,
-                            display_offset: terminal.display_offset(),
-                            blinking_cursor: terminal.blinking_cursor,
-                            visible_rows: terminal.visible_rows(),
-                            cursor: terminal.cursor(),
-                            damage: TerminalDamage::Full,
-                            columns: terminal.columns(),
-                            screen_lines: terminal.screen_lines(),
-                        };
-                        terminal.reset_damage();
-                        drop(terminal);
-                        snapshot
-                    };
-                    // (None, _) => {
-                    //     // No pending update and not forcing
-                    //     continue;
-                    // }
-                // };
+                // Get damage from terminal
+                let terminal_damage = if force_full_damage {
+                    Some(TerminalDamage::Full)
+                } else {
+                    terminal.peek_damage_event()
+                };
+
+                // Merge terminal damage with UI damage
+                let damage = match (terminal_damage, ui_damage) {
+                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
+                        TerminalDamage::Full
+                    }
+                    (Some(term), Some(ui)) => {
+                        // Merge partial damages
+                        match (term, ui) {
+                            (TerminalDamage::Partial(mut lines1), TerminalDamage::Partial(lines2)) => {
+                                lines1.extend(lines2);
+                                TerminalDamage::Partial(lines1)
+                            }
+                            _ => TerminalDamage::Full,
+                        }
+                    }
+                    (Some(damage), None) => damage,
+                    (None, Some(damage)) => damage,
+                    (None, None) => TerminalDamage::Full,
+                };
+
+                let snapshot = TerminalSnapshot {
+                    colors: terminal.colors,
+                    display_offset: terminal.display_offset(),
+                    blinking_cursor: terminal.blinking_cursor,
+                    visible_rows: terminal.visible_rows(),
+                    cursor: terminal.cursor(),
+                    damage,
+                    columns: terminal.columns(),
+                    screen_lines: terminal.screen_lines(),
+                };
+                terminal.reset_damage();
+                drop(terminal);
+
+                snapshot
+            };
 
             // Get hint matches from renderable content
             let hint_matches = context.renderable_content.hint_matches.as_deref();

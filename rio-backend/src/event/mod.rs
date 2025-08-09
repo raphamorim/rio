@@ -68,11 +68,6 @@ pub enum RioEvent {
     RenderRoute(usize),
     /// Wake up and check for terminal updates.
     Wakeup(usize),
-    /// Terminal content has changed with specific damage information.
-    TerminalDamaged {
-        route_id: usize,
-        damage: TerminalDamage,
-    },
     /// Graphics update available from terminal.
     UpdateGraphics {
         route_id: usize,
@@ -196,19 +191,6 @@ impl Debug for RioEvent {
             RioEvent::Wakeup(route) => {
                 write!(f, "Wakeup route {route}")
             }
-            RioEvent::TerminalDamaged { route_id, damage } => match damage {
-                TerminalDamage::Full => {
-                    write!(f, "TerminalDamaged route {route_id} (Full)")
-                }
-                TerminalDamage::Partial(lines) => write!(
-                    f,
-                    "TerminalDamaged route {route_id} ({} lines)",
-                    lines.len()
-                ),
-                TerminalDamage::CursorOnly => {
-                    write!(f, "TerminalDamaged route {route_id} (CursorOnly)")
-                }
-            },
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
