@@ -83,12 +83,26 @@ pub struct TerminalSnapshot {
     pub screen_lines: usize,
 }
 
+/// Manages pending terminal updates and their rendering state.
+///
+/// This struct handles two types of updates:
+/// 1. **Synchronized updates** - These come with damage events and create snapshots immediately.
+///    Snapshots capture the terminal state at the time of the damage event, avoiding the need
+///    to lock the terminal during rendering. This is ideal for synchronized terminal sequences
+///    where we know exactly what changed.
+///
+/// 2. **Non-synchronized updates** - These come via Wakeup events and defer damage checking.
+///    Instead of creating snapshots immediately (which would require locking the terminal for
+///    each update), we just mark the update as pending and check for damage at render time.
+///    This reduces lock contention for rapid, non-synchronized terminal output like in notcurses-demo.
 #[derive(Debug, Default)]
 pub struct PendingUpdate {
     /// Whether there's any pending update that needs rendering
     dirty: bool,
-    /// The terminal snapshot with accumulated damage
+    /// The terminal snapshot with accumulated damage (primarily for synchronized updates)
     snapshot: Option<TerminalSnapshot>,
+    /// Whether this update came from a Wakeup event (needs damage check at render time)
+    wakeup: bool,
 }
 
 impl PendingUpdate {
@@ -102,6 +116,7 @@ impl PendingUpdate {
     /// This is used by Wakeup events to defer damage calculation
     pub fn mark_for_damage_check(&mut self) {
         self.dirty = true;
+        self.wakeup = true;
         // Don't create a snapshot yet - let the renderer do it when needed
     }
 
@@ -109,15 +124,28 @@ impl PendingUpdate {
     /// Used when we manually process the damage in the renderer
     pub fn clear_dirty(&mut self) {
         self.dirty = false;
+        self.wakeup = false;
     }
 
-    /// Mark as needing update with the given damage
+    /// Mark as needing update with the given damage.
+    /// 
+    /// For synchronized updates, this creates a snapshot immediately to capture the
+    /// terminal state at the time of damage. For wakeup-based updates, this just
+    /// marks as dirty and defers the actual damage check to render time to avoid
+    /// lock contention.
     pub fn invalidate<U: rio_backend::event::EventListener>(
         &mut self,
         damage: TerminalDamage,
         terminal: &FairMutex<Crosswords<U>>,
     ) {
         self.dirty = true;
+
+        // If we're in wakeup mode, skip the snapshot creation to avoid lock contention
+        // The damage will be retrieved at render time instead
+        if self.wakeup {
+            // Keep the wakeup flag set - damage will be checked at render time
+            return;
+        }
 
         // let lock_start = std::time::Instant::now();
         let mut terminal = terminal.lock();
@@ -202,15 +230,21 @@ impl PendingUpdate {
         &mut self,
         terminal: &FairMutex<Crosswords<U>>,
     ) {
+        // If we're in wakeup mode, just mark as dirty
+        if self.wakeup {
+            self.dirty = true;
+            return;
+        }
         self.invalidate(TerminalDamage::Full, terminal);
     }
 
     /// Take the snapshot and reset dirty flag
     /// This should only be called when actually rendering!
     pub fn take_snapshot(&mut self) -> (Option<TerminalSnapshot>, bool) {
-        let prev = self.dirty;
+        let was_wakeup = self.wakeup;
         self.dirty = false;
-        (self.snapshot.take(), prev)
+        self.wakeup = false;
+        (self.snapshot.take(), was_wakeup)
     }
 
     /// Merge two damages into one - this is critical for correctness

@@ -218,13 +218,13 @@ where
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             // Check if there's any damage to process
             if let Some(ref terminal) = terminal {
-                if terminal.peek_damage_event().is_some() {
+                // if terminal.peek_damage_event().is_some() {
                     // terminal.emit_damage_event();
                     tracing::trace!("PTY read: Sending Wakeup event for {} bytes of non-sync data", processed);
                     // Send a Wakeup event to coalesce renders
                     let route_id = terminal.route_id;
                     self.event_proxy.send_event(RioEvent::Wakeup(route_id), self.window_id);
-                }
+                // }
             }
         }
 

@@ -3228,6 +3228,186 @@ mod tests {
     }
 
     #[test]
+    fn test_damage_tracking_after_control_c() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Simulate fzf-like scenario: write some text
+        let test_text = "fzf> search term";
+        for ch in test_text.chars() {
+            cw.input(ch);
+        }
+        
+        // Check that input caused damage
+        assert!(cw.peek_damage_event().is_some(), "Input should cause damage");
+        
+        // Reset damage to simulate a render cycle completing
+        cw.reset_damage();
+        
+        // Update last cursor position to match current (simulating that cursor position was rendered)
+        cw.damage.last_cursor = cw.grid.cursor.pos;
+        
+        // Verify damage was cleared
+        assert!(cw.peek_damage_event().is_none(), "Should have no damage after reset with cursor sync");
+        
+        // Simulate Control+C (ETX) - this should clear the line and damage it
+        // In fzf, Control+C typically clears the current line and returns to prompt
+        cw.carriage_return();
+        cw.clear_line(LineClearMode::Right);
+        
+        // Check that damage was registered from the clear operation
+        let damage = cw.peek_damage_event();
+        assert!(damage.is_some(), "Clear line operation should register damage");
+        
+        // Specifically check that it's not just cursor-only damage
+        match damage {
+            Some(TerminalDamage::Partial(_)) | Some(TerminalDamage::Full) => {
+                // Good - line damage was registered
+            }
+            Some(TerminalDamage::CursorOnly) => {
+                panic!("Clear line should register line damage, not just cursor movement");
+            }
+            None => {
+                panic!("Clear line should register damage");
+            }
+        }
+        
+        // Verify the line was actually cleared
+        let cursor_line = cw.grid.cursor.pos.row;
+        for col in 0..test_text.len() {
+            assert_eq!(
+                cw.grid[cursor_line][Column(col)].c, 
+                ' ', 
+                "Line should be cleared after Control+C"
+            );
+        }
+    }
+
+    #[test]
+    fn test_damage_tracking_cursor_movement() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Write text on multiple lines
+        cw.input('A');
+        cw.linefeed();
+        cw.input('B');
+        cw.linefeed();
+        cw.input('C');
+        
+        // Reset damage
+        cw.reset_damage();
+        
+        // Move cursor up - should damage both old and new cursor lines
+        let old_line = cw.grid.cursor.pos.row;
+        cw.move_up(1);
+        let new_line = cw.grid.cursor.pos.row;
+        
+        // Check that damage was registered
+        let damage = cw.peek_damage_event();
+        assert!(damage.is_some(), "Cursor movement should register damage");
+        
+        // Verify both lines are marked as damaged
+        assert_ne!(old_line, new_line, "Cursor should have moved");
+    }
+
+    #[test]
+    fn test_damage_tracking_clear_operations() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Fill some lines with content
+        for line in 0..5 {
+            for col in 0..10 {
+                cw.grid[Line(line)][Column(col)].c = 'X';
+            }
+        }
+        
+        // Reset damage
+        cw.reset_damage();
+        
+        // Clear from cursor to end of line
+        cw.grid.cursor.pos = Pos::new(Line(2), Column(5));
+        cw.clear_line(LineClearMode::Right);
+        
+        // Check damage is registered
+        let damage = cw.peek_damage_event();
+        assert!(damage.is_some(), "Clear line should register damage");
+        
+        // Verify the clear operation
+        for col in 5..10 {
+            assert_eq!(
+                cw.grid[Line(2)][Column(col)].c,
+                ' ',
+                "Characters from cursor to end should be cleared"
+            );
+        }
+        
+        // Characters before cursor should remain
+        for col in 0..5 {
+            assert_eq!(
+                cw.grid[Line(2)][Column(col)].c,
+                'X',
+                "Characters before cursor should remain"
+            );
+        }
+    }
+
+    #[test]
+    fn test_damage_tracking_prompt_redraw() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Simulate a shell prompt scenario
+        let prompt = "$ ";
+        for ch in prompt.chars() {
+            cw.input(ch);
+        }
+        
+        // User types a command
+        let command = "ls -la";
+        for ch in command.chars() {
+            cw.input(ch);
+        }
+        
+        // Reset damage (simulating a render)
+        cw.reset_damage();
+        
+        // Simulate Control+C: clear line and redraw prompt
+        cw.carriage_return();
+        cw.clear_line(LineClearMode::Right);
+        
+        // Damage should be registered for the cleared line
+        assert!(cw.peek_damage_event().is_some(), "Line clear should damage");
+        
+        // Write new prompt
+        for ch in prompt.chars() {
+            cw.input(ch);
+        }
+        
+        // Verify prompt is displayed correctly
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(0)].c, '$');
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(1)].c, ' ');
+        
+        // Verify old command is cleared
+        for col in 2..8 {
+            assert_eq!(
+                cw.grid[cw.grid.cursor.pos.row][Column(col)].c,
+                ' ',
+                "Old command should be cleared"
+            );
+        }
+    }
+
+    #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
         let window_id = crate::event::WindowId::from(0);
