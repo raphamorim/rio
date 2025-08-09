@@ -855,8 +855,8 @@ impl Renderer {
             // Take the pending snapshot
             let terminal_snapshot =
                 match context.renderable_content.pending_update.take_snapshot() {
-                    Some(snapshot) => snapshot,
-                    None if force_full_damage => {
+                    (Some(snapshot), _) => snapshot,
+                    (None, true) if force_full_damage => {
                         // Force full damage case - create a fresh snapshot
                         let mut terminal = context.terminal.lock();
                         let snapshot = TerminalSnapshot {
@@ -873,7 +873,38 @@ impl Renderer {
                         drop(terminal);
                         snapshot
                     }
-                    None => {
+                    (None, true) => {
+                        // Check if we were marked dirty by a Wakeup event
+                        // If so, we need to check the terminal for damage
+                        let mut terminal = context.terminal.lock();
+
+                        // Get the damage from the terminal
+                        if let Some(damage) = terminal.peek_damage_event() {
+                            let snapshot = TerminalSnapshot {
+                                colors: terminal.colors,
+                                display_offset: terminal.display_offset(),
+                                blinking_cursor: terminal.blinking_cursor,
+                                visible_rows: terminal.visible_rows(),
+                                cursor: terminal.cursor(),
+                                damage: damage.clone(),
+                                columns: terminal.columns(),
+                                screen_lines: terminal.screen_lines(),
+                            };
+                            terminal.reset_damage();
+                            drop(terminal);
+
+                            // Clear the dirty flag since we're processing it
+                            context.renderable_content.pending_update.clear_dirty();
+
+                            snapshot
+                        } else {
+                            // No damage found, clear the dirty flag and skip rendering
+                            drop(terminal);
+                            context.renderable_content.pending_update.clear_dirty();
+                            continue;
+                        }
+                    },
+                    (None, false) => {
                         // No pending update and not forcing
                         continue;
                     }
