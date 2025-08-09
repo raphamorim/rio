@@ -2526,12 +2526,11 @@ impl Screen<'_> {
                 .renderable_content
                 .hint_matches = hints.map(|h| h.iter().cloned().collect());
 
-            // Force invalidation for search
+            // Force invalidation for search with full damage
             {
                 let current = self.context_manager.current_mut();
-                current.renderable_content.pending_update.invalidate(
-                    rio_backend::event::TerminalDamage::Full,
-                    &current.terminal,
+                current.renderable_content.pending_update.set_ui_damage(
+                    rio_backend::event::TerminalDamage::Full
                 );
             }
         }
@@ -2733,32 +2732,54 @@ impl Screen<'_> {
             {
                 let current = &self.context_manager.current();
                 let hint_labels = &current.renderable_content.hint_labels;
+                let terminal = current.terminal.lock();
+                let display_offset = terminal.display_offset();
+                let screen_lines = terminal.screen_lines();
+                drop(terminal);
 
                 if !hint_labels.is_empty() {
                     // Collect all lines that have hint labels
                     for label in hint_labels {
-                        damaged_lines.insert(rio_backend::crosswords::LineDamage::new(
-                            label.position.row.0 as usize,
-                            true,
-                        ));
+                        let line = label.position.row.0 as i32 - display_offset as i32;
+                        if line >= 0 && (line as usize) < screen_lines {
+                            damaged_lines.insert(rio_backend::crosswords::LineDamage::new(
+                                line as usize,
+                                true,
+                            ));
+                        }
+                    }
+                }
+                
+                // Also damage lines with hint matches
+                if let Some(hint_matches) = &current.renderable_content.hint_matches {
+                    for hint_match in hint_matches {
+                        let start_line = hint_match.start().row.0 as i32 - display_offset as i32;
+                        let end_line = hint_match.end().row.0 as i32 - display_offset as i32;
+                        
+                        for line in start_line..=end_line {
+                            if line >= 0 && (line as usize) < screen_lines {
+                                damaged_lines.insert(rio_backend::crosswords::LineDamage::new(
+                                    line as usize,
+                                    true,
+                                ));
+                            }
+                        }
                     }
                 }
             }
 
+            let current = self.context_manager.current_mut();
             if !damaged_lines.is_empty() {
-                let damage = TerminalDamage::Partial(damaged_lines);
-                let current = self.context_manager.current_mut();
                 current
                     .renderable_content
                     .pending_update
-                    .invalidate(damage, &current.terminal);
+                    .set_ui_damage(TerminalDamage::Partial(damaged_lines));
             } else {
                 // Force full damage if no specific lines (for hint highlights)
-                let current = self.context_manager.current_mut();
                 current
                     .renderable_content
                     .pending_update
-                    .invalidate(TerminalDamage::Full, &current.terminal);
+                    .set_ui_damage(TerminalDamage::Full);
             }
         } else {
             // Clear hint state
@@ -2776,7 +2797,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .invalidate(TerminalDamage::Full, &current.terminal);
+                .set_ui_damage(TerminalDamage::Full);
         }
     }
 

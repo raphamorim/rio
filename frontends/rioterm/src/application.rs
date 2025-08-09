@@ -201,6 +201,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.needs_render_after_occlusion = false;
                         }
 
+                        // Mark the renderable content as needing to render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .set_dirty();
+                        }
+
                         // Check if we need to throttle based on timing
                         if let Some(wait_duration) = route.window.wait_until() {
                             // We need to wait before rendering again
@@ -226,13 +237,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
+
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
                         {
+                            tracing::trace!("Wakeup: Skipping unfocused window");
                             return;
                         }
 
@@ -241,23 +254,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             && route.window.is_occluded
                             && !route.window.needs_render_after_occlusion
                         {
+                            tracing::trace!("Wakeup: Skipping occluded window");
                             return;
                         }
 
-                        // Check if rendering is actually needed
-                        let terminal =
-                            route.window.screen.ctx_mut().current_mut().terminal.lock();
-                        if !terminal.needs_render() {
-                            // Skip rendering if no actual damage
-                            return;
-                        }
-                        drop(terminal);
+                        tracing::trace!(
+                            "Wakeup: Marking route {} for damage check",
+                            route_id
+                        );
 
-                        // Clear the one-time render flag if it was set
-                        if route.window.needs_render_after_occlusion {
-                            route.window.needs_render_after_occlusion = false;
-                        }
-
+                        // Mark the renderable content as needing to check for damage
+                        // The actual damage retrieval will happen during render
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_mut(route_id)
                         {
@@ -265,7 +272,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .val
                                 .renderable_content
                                 .pending_update
-                                .invalidate(damage, &ctx_item.val.terminal);
+                                .set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
