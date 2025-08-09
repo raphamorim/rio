@@ -285,7 +285,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        tracing::trace!("Wakeup: Marking route {} for damage check", route_id);
+                        tracing::trace!(
+                            "Wakeup: Marking route {} for damage check",
+                            route_id
+                        );
 
                         // Mark the renderable content as needing to check for damage
                         // The actual damage retrieval will happen during render

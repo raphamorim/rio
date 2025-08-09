@@ -128,7 +128,7 @@ impl PendingUpdate {
     }
 
     /// Mark as needing update with the given damage.
-    /// 
+    ///
     /// For synchronized updates, this creates a snapshot immediately to capture the
     /// terminal state at the time of damage. For wakeup-based updates, this just
     /// marks as dirty and defers the actual damage check to render time to avoid
@@ -213,13 +213,21 @@ impl PendingUpdate {
         // Log final damage state only for significant updates
         if let Some(ref snapshot) = self.snapshot {
             match &snapshot.damage {
-                TerminalDamage::Full => tracing::trace!("PendingUpdate: Snapshot has full damage"),
+                TerminalDamage::Full => {
+                    tracing::trace!("PendingUpdate: Snapshot has full damage")
+                }
                 TerminalDamage::Partial(ranges) if ranges.len() > 50 => {
-                    tracing::debug!("PendingUpdate: Large snapshot with {} damaged ranges", ranges.len());
-                },
+                    tracing::debug!(
+                        "PendingUpdate: Large snapshot with {} damaged ranges",
+                        ranges.len()
+                    );
+                }
                 TerminalDamage::Partial(ranges) if ranges.len() > 10 => {
-                    tracing::trace!("PendingUpdate: Snapshot has {} damaged ranges", ranges.len());
-                },
+                    tracing::trace!(
+                        "PendingUpdate: Snapshot has {} damaged ranges",
+                        ranges.len()
+                    );
+                }
                 _ => {}
             }
         }
