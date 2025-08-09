@@ -114,8 +114,6 @@ impl PendingUpdate {
         self.dirty = true;
     }
 
-
-
     /// Mark as needing update.
     /// The actual snapshot will be computed at render time.
     pub fn invalidate<U: rio_backend::event::EventListener>(
@@ -138,8 +136,6 @@ impl PendingUpdate {
     pub fn reset(&mut self) {
         self.dirty = false;
     }
-
-
 }
 
 #[cfg(test)]

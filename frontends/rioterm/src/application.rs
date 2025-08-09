@@ -1264,15 +1264,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .pending_update
                     .is_dirty()
                 {
-                    route.request_redraw();
+                    route.schedule_redraw(
+                        &mut self.scheduler,
+                        route.window.screen.ctx().current_route(),
+                    );
                 }
-
-                // route.request_redraw();
-
-                // route.schedule_redraw(
-                //     &mut self.scheduler,
-                //     route.window.screen.ctx().current_route(),
-                // );
 
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
