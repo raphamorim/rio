@@ -83,8 +83,16 @@ impl<T: EventListener> Context<T> {
 
     #[inline]
     pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
+        let old_hyperlink = self.renderable_content.hyperlink_range.clone();
+        
+        if old_hyperlink != hyperlink_range {
+            // For hyperlinks, use full damage as they're less frequent
+            self.renderable_content
+                .pending_update
+                .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+        }
+        
         self.renderable_content.hyperlink_range = hyperlink_range;
-        self.renderable_content.pending_update.set_dirty();
     }
 
     #[inline]

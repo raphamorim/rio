@@ -487,8 +487,16 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn mark_fully_damaged(&mut self) {
         // Only emit event if we weren't already fully damaged
-        let _was_damaged = self.damage.full;
+        let was_damaged = self.damage.full;
         self.damage.full = true;
+        
+        // Request a render to display the damage
+        if !was_damaged {
+            self.event_proxy.send_event(
+                RioEvent::RenderRoute(self.route_id),
+                self.window_id,
+            );
+        }
     }
 
     #[inline]

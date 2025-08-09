@@ -852,19 +852,39 @@ impl Renderer {
                 continue;
             }
 
+            // Get UI damage before resetting
+            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal or use full damage if forced
-                let damage = if force_full_damage {
-                    TerminalDamage::Full
-                } else if let Some(damage) = terminal.peek_damage_event() {
-                    damage
+                // Get damage from terminal
+                let terminal_damage = if force_full_damage {
+                    Some(TerminalDamage::Full)
                 } else {
-                    TerminalDamage::Full
+                    terminal.peek_damage_event()
+                };
+
+                // Merge terminal damage with UI damage
+                let damage = match (terminal_damage, ui_damage) {
+                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
+                        TerminalDamage::Full
+                    }
+                    (Some(term), Some(ui)) => {
+                        // Merge partial damages
+                        match (term, ui) {
+                            (TerminalDamage::Partial(mut lines1), TerminalDamage::Partial(lines2)) => {
+                                lines1.extend(lines2);
+                                TerminalDamage::Partial(lines1)
+                            }
+                            _ => TerminalDamage::Full,
+                        }
+                    }
+                    (Some(damage), None) => damage,
+                    (None, Some(damage)) => damage,
+                    (None, None) => TerminalDamage::Full,
                 };
 
                 let snapshot = TerminalSnapshot {
@@ -879,9 +899,6 @@ impl Renderer {
                 };
                 terminal.reset_damage();
                 drop(terminal);
-
-                // Clear the dirty flag after computing snapshot
-                context.renderable_content.pending_update.reset();
 
                 snapshot
             };

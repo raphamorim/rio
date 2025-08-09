@@ -201,6 +201,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.needs_render_after_occlusion = false;
                         }
 
+                        // Mark the renderable content as needing to render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .set_dirty();
+                        }
+
                         // Check if we need to throttle based on timing
                         if let Some(wait_duration) = route.window.wait_until() {
                             // We need to wait before rendering again
