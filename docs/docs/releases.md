@@ -7,6 +7,13 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
+- **Optimized rendering pipeline for improved performance**: Implemented deferred damage checking and render coalescing
+  - Added Wakeup events to batch multiple rapid terminal updates into single render passes
+  - Deferred damage calculation until render time to reduce unnecessary computations
+  - Skip rendering for unfocused windows when `disable_unfocused_render` is enabled
+  - Skip rendering for occluded windows when `disable_occluded_render` is enabled
+  - Improved damage merging to always accumulate updates even when already marked dirty
+  - Enhanced performance for rapid terminal output by coalescing non-synchronized updates
 - TBD.
 
 ## 0.2.27
