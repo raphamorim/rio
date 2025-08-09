@@ -284,7 +284,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let machine =
-            Machine::new(Arc::clone(&terminal), pty, event_proxy.clone(), window_id)?;
+            Machine::new(Arc::clone(&terminal), pty, event_proxy.clone(), window_id, route_id)?;
         let channel = machine.channel();
         let io_thread = if config.spawn_performer {
             Some(machine.spawn())
