@@ -261,7 +261,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .val
                                 .renderable_content
                                 .pending_update
-                                .mark_for_damage_check();
+                                .set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }

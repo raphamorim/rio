@@ -75,9 +75,7 @@ impl<T: EventListener> Context<T> {
             drop(terminal);
 
             // Mark pending update as dirty so the selection change is rendered
-            self.renderable_content
-                .pending_update
-                .invalidate_full(&self.terminal);
+            self.renderable_content.pending_update.set_dirty();
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -86,9 +84,7 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
         self.renderable_content.hyperlink_range = hyperlink_range;
-        self.renderable_content
-            .pending_update
-            .invalidate_full(&self.terminal);
+        self.renderable_content.pending_update.set_dirty();
     }
 
     #[inline]

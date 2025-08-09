@@ -2529,10 +2529,7 @@ impl Screen<'_> {
             // Force invalidation for search
             {
                 let current = self.context_manager.current_mut();
-                current.renderable_content.pending_update.invalidate(
-                    rio_backend::event::TerminalDamage::Full,
-                    &current.terminal,
-                );
+                current.renderable_content.pending_update.set_dirty();
             }
         }
 
@@ -2746,19 +2743,18 @@ impl Screen<'_> {
             }
 
             if !damaged_lines.is_empty() {
-                let damage = TerminalDamage::Partial(damaged_lines);
                 let current = self.context_manager.current_mut();
                 current
                     .renderable_content
                     .pending_update
-                    .invalidate(damage, &current.terminal);
+                                    .set_dirty();
             } else {
                 // Force full damage if no specific lines (for hint highlights)
                 let current = self.context_manager.current_mut();
                 current
                     .renderable_content
                     .pending_update
-                    .invalidate(TerminalDamage::Full, &current.terminal);
+                                    .set_dirty();
             }
         } else {
             // Clear hint state
@@ -2776,7 +2772,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .invalidate(TerminalDamage::Full, &current.terminal);
+                .set_dirty();
         }
     }
 
