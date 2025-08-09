@@ -244,14 +244,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Check if rendering is actually needed
-                        let terminal =
-                            route.window.screen.ctx_mut().current_mut().terminal.lock();
-                        if !terminal.needs_render() {
-                            // Skip rendering if no actual damage
-                            return;
-                        }
-                        drop(terminal);
+                        // We received a damage event, so we should render
+                        // Don't second-guess the damage event by checking needs_render()
 
                         // Clear the one-time render flag if it was set
                         if route.window.needs_render_after_occlusion {
