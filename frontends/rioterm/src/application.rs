@@ -285,7 +285,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        tracing::trace!("Wakeup: Marking route {} for damage check", route_id);
+                        tracing::trace!(
+                            "Wakeup: Marking route {} for damage check",
+                            route_id
+                        );
 
                         // Mark the renderable content as needing to check for damage
                         // The actual damage retrieval will happen during render
@@ -1299,11 +1302,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .pending_update
                     .is_dirty()
                 {
-                    route.schedule_redraw(
-                        &mut self.scheduler,
-                        route.window.screen.ctx().current_route(),
-                    );
+                    route.request_redraw();
                 }
+
+                // route.request_redraw();
+
+                // route.schedule_redraw(
+                //     &mut self.scheduler,
+                //     route.window.screen.ctx().current_route(),
+                // );
 
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

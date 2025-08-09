@@ -68,6 +68,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     terminal: Arc<FairMutex<Crosswords<U>>>,
     event_proxy: U,
     window_id: WindowId,
+    route_id: usize
 }
 
 #[derive(Default)]
@@ -146,6 +147,7 @@ where
         pty: T,
         event_proxy: U,
         window_id: WindowId,
+        route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
@@ -158,6 +160,7 @@ where
             terminal,
             event_proxy,
             window_id,
+            route_id,
         })
     }
 
@@ -217,15 +220,16 @@ where
         // multiple rapid updates into a single render pass.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
             // Check if there's any damage to process
-            if let Some(ref terminal) = terminal {
                 // if terminal.peek_damage_event().is_some() {
-                    // terminal.emit_damage_event();
-                    tracing::trace!("PTY read: Sending Wakeup event for {} bytes of non-sync data", processed);
-                    // Send a Wakeup event to coalesce renders
-                    let route_id = terminal.route_id;
-                    self.event_proxy.send_event(RioEvent::Wakeup(route_id), self.window_id);
+                // terminal.emit_damage_event();
+                tracing::trace!(
+                    "PTY read: Sending Wakeup event for {} bytes of non-sync data",
+                    processed
+                );
+                // Send a Wakeup event to coalesce renders
+                self.event_proxy
+                    .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
                 // }
-            }
         }
 
         Ok(())
@@ -354,10 +358,7 @@ where
                     state.parser.stop_sync(&mut *terminal);
 
                     // Emit damage event if there's any damage after processing sync buffer
-                    if terminal.peek_damage_event().is_some() {
-                        terminal.emit_damage_event();
-                    }
-                    drop(terminal);
+                    self.event_proxy.send_event(RioEvent::Wakeup(self.route_id), self.window_id);
 
                     continue;
                 }

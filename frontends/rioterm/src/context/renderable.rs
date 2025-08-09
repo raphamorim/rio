@@ -99,10 +99,6 @@ pub struct TerminalSnapshot {
 pub struct PendingUpdate {
     /// Whether there's any pending update that needs rendering
     dirty: bool,
-    /// The terminal snapshot with accumulated damage (primarily for synchronized updates)
-    snapshot: Option<TerminalSnapshot>,
-    /// Whether this update came from a Wakeup event (needs damage check at render time)
-    wakeup: bool,
 }
 
 impl PendingUpdate {
@@ -116,169 +112,37 @@ impl PendingUpdate {
     /// This is used by Wakeup events to defer damage calculation
     pub fn mark_for_damage_check(&mut self) {
         self.dirty = true;
-        self.wakeup = true;
-        // Don't create a snapshot yet - let the renderer do it when needed
     }
 
-    /// Clear the dirty flag without taking the snapshot
-    /// Used when we manually process the damage in the renderer
+    /// Clear the dirty flag
     pub fn clear_dirty(&mut self) {
         self.dirty = false;
-        self.wakeup = false;
     }
 
-    /// Mark as needing update with the given damage.
-    /// 
-    /// For synchronized updates, this creates a snapshot immediately to capture the
-    /// terminal state at the time of damage. For wakeup-based updates, this just
-    /// marks as dirty and defers the actual damage check to render time to avoid
-    /// lock contention.
+    /// Mark as needing update.
+    /// The actual snapshot will be computed at render time.
     pub fn invalidate<U: rio_backend::event::EventListener>(
         &mut self,
-        damage: TerminalDamage,
-        terminal: &FairMutex<Crosswords<U>>,
+        _damage: TerminalDamage,
+        _terminal: &FairMutex<Crosswords<U>>,
     ) {
         self.dirty = true;
-
-        // If we're in wakeup mode, skip the snapshot creation to avoid lock contention
-        // The damage will be retrieved at render time instead
-        if self.wakeup {
-            // Keep the wakeup flag set - damage will be checked at render time
-            return;
-        }
-
-        // let lock_start = std::time::Instant::now();
-        let mut terminal = terminal.lock();
-        // let lock_duration = lock_start.elapsed();
-        // if lock_duration > std::time::Duration::from_millis(5) {
-        //     tracing::warn!("PendingUpdate::invalidate: Lock acquisition took {:?}", lock_duration);
-        // }
-
-        // match &damage {
-        //     TerminalDamage::Full => tracing::trace!("PendingUpdate: Full damage"),
-        //     TerminalDamage::Partial(ranges) => tracing::trace!("PendingUpdate: {} partial ranges damaged", ranges.len()),
-        //     TerminalDamage::CursorOnly => tracing::trace!("PendingUpdate: Cursor-only damage"),
-        // }
-
-        // Get the terminal's current damage
-        let terminal_damage = terminal.peek_damage_event();
-
-        // Create or update the snapshot
-        match &mut self.snapshot {
-            None => {
-                // Create new snapshot with merged terminal and incoming damage
-                let initial_damage = match (terminal_damage, &damage) {
-                    (None, damage) => damage.clone(),
-                    (Some(term_damage), damage) => {
-                        Self::merge_damages(&term_damage, damage)
-                    }
-                };
-
-                self.snapshot = Some(TerminalSnapshot {
-                    colors: terminal.colors,
-                    display_offset: terminal.display_offset(),
-                    blinking_cursor: terminal.blinking_cursor,
-                    visible_rows: terminal.visible_rows(),
-                    cursor: terminal.cursor(),
-                    damage: initial_damage,
-                    columns: terminal.columns(),
-                    screen_lines: terminal.screen_lines(),
-                });
-            }
-            Some(existing_snapshot) => {
-                // Update existing snapshot with fresh terminal state
-                existing_snapshot.colors = terminal.colors;
-                existing_snapshot.display_offset = terminal.display_offset();
-                existing_snapshot.blinking_cursor = terminal.blinking_cursor;
-                existing_snapshot.visible_rows = terminal.visible_rows();
-                existing_snapshot.cursor = terminal.cursor();
-                existing_snapshot.columns = terminal.columns();
-                existing_snapshot.screen_lines = terminal.screen_lines();
-
-                // Merge existing snapshot damage with incoming damage
-                existing_snapshot.damage =
-                    Self::merge_damages(&existing_snapshot.damage, &damage);
-
-                // Also merge with terminal damage if present
-                if let Some(term_damage) = terminal_damage {
-                    existing_snapshot.damage =
-                        Self::merge_damages(&existing_snapshot.damage, &term_damage);
-                }
-            }
-        }
-
-        // Reset terminal damage since we've captured it in the snapshot
-        terminal.reset_damage();
-
-        // Log final damage state only for significant updates
-        if let Some(ref snapshot) = self.snapshot {
-            match &snapshot.damage {
-                TerminalDamage::Full => tracing::trace!("PendingUpdate: Snapshot has full damage"),
-                TerminalDamage::Partial(ranges) if ranges.len() > 50 => {
-                    tracing::debug!("PendingUpdate: Large snapshot with {} damaged ranges", ranges.len());
-                },
-                TerminalDamage::Partial(ranges) if ranges.len() > 10 => {
-                    tracing::trace!("PendingUpdate: Snapshot has {} damaged ranges", ranges.len());
-                },
-                _ => {}
-            }
-        }
     }
 
     /// Mark as needing full update
     pub fn invalidate_full<U: rio_backend::event::EventListener>(
         &mut self,
-        terminal: &FairMutex<Crosswords<U>>,
+        _terminal: &FairMutex<Crosswords<U>>,
     ) {
-        // If we're in wakeup mode, just mark as dirty
-        if self.wakeup {
-            self.dirty = true;
-            return;
-        }
-        self.invalidate(TerminalDamage::Full, terminal);
+        self.dirty = true;
     }
 
-    /// Take the snapshot and reset dirty flag
-    /// This should only be called when actually rendering!
-    pub fn take_snapshot(&mut self) -> (Option<TerminalSnapshot>, bool) {
-        let was_wakeup = self.wakeup;
+    /// Reset the dirty flag after rendering
+    pub fn reset(&mut self) {
         self.dirty = false;
-        self.wakeup = false;
-        (self.snapshot.take(), was_wakeup)
     }
 
-    /// Merge two damages into one - this is critical for correctness
-    fn merge_damages(existing: &TerminalDamage, new: &TerminalDamage) -> TerminalDamage {
-        use std::collections::BTreeSet;
 
-        match (existing, new) {
-            // Any damage + Full = Full
-            (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => TerminalDamage::Full,
-            // Partial damages: merge the line lists efficiently using BTreeSet
-            (TerminalDamage::Partial(lines1), TerminalDamage::Partial(lines2)) => {
-                let mut line_set = BTreeSet::new();
-
-                // Add all damaged lines from both sets
-                for damage in lines1.iter().chain(lines2.iter()) {
-                    if damage.damaged {
-                        line_set.insert(*damage);
-                    }
-                }
-
-                TerminalDamage::Partial(line_set)
-            }
-            // CursorOnly damages need special handling
-            (TerminalDamage::CursorOnly, TerminalDamage::Partial(lines)) => {
-                TerminalDamage::Partial(lines.clone())
-            }
-            (TerminalDamage::Partial(lines), TerminalDamage::CursorOnly) => {
-                TerminalDamage::Partial(lines.clone())
-            }
-            (TerminalDamage::CursorOnly, TerminalDamage::CursorOnly) => {
-                TerminalDamage::CursorOnly
-            }
-        }
-    }
 }
 
 #[cfg(test)]
