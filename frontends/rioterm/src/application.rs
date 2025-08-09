@@ -201,6 +201,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             route.window.needs_render_after_occlusion = false;
                         }
 
+                        // Mark the renderable content as needing to render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .set_dirty();
+                        }
+
                         // Check if we need to throttle based on timing
                         if let Some(wait_duration) = route.window.wait_until() {
                             // We need to wait before rendering again
@@ -226,45 +237,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
-            RioEventType::Rio(RioEvent::TerminalDamaged { route_id, damage }) => {
-                if self.config.renderer.strategy.is_event_based() {
-                    if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        // Skip rendering for unfocused windows if configured
-                        if self.config.renderer.disable_unfocused_render
-                            && !route.window.is_focused
-                        {
-                            return;
-                        }
 
-                        // Skip rendering for occluded windows if configured
-                        if self.config.renderer.disable_occluded_render
-                            && route.window.is_occluded
-                            && !route.window.needs_render_after_occlusion
-                        {
-                            return;
-                        }
-
-                        // We received a damage event, so we should render
-                        // Don't second-guess the damage event by checking needs_render()
-
-                        // Clear the one-time render flag if it was set
-                        if route.window.needs_render_after_occlusion {
-                            route.window.needs_render_after_occlusion = false;
-                        }
-
-                        if let Some(ctx_item) =
-                            route.window.screen.ctx_mut().get_mut(route_id)
-                        {
-                            ctx_item
-                                .val
-                                .renderable_content
-                                .pending_update
-                                .invalidate(damage, &ctx_item.val.terminal);
-                            route.schedule_redraw(&mut self.scheduler, route_id);
-                        }
-                    }
-                }
-            }
             RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
                 if self.config.renderer.strategy.is_event_based() {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -299,7 +272,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .val
                                 .renderable_content
                                 .pending_update
-                                .mark_for_damage_check();
+                                .set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
@@ -1302,15 +1275,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .pending_update
                     .is_dirty()
                 {
-                    route.request_redraw();
+                    route.schedule_redraw(
+                        &mut self.scheduler,
+                        route.window.screen.ctx().current_route(),
+                    );
                 }
-
-                // route.request_redraw();
-
-                // route.schedule_redraw(
-                //     &mut self.scheduler,
-                //     route.window.screen.ctx().current_route(),
-                // );
 
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
