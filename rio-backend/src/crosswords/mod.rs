@@ -487,18 +487,8 @@ impl<U: EventListener> Crosswords<U> {
 
     pub fn mark_fully_damaged(&mut self) {
         // Only emit event if we weren't already fully damaged
-        let was_damaged = self.damage.full;
+        let _was_damaged = self.damage.full;
         self.damage.full = true;
-
-        if !was_damaged {
-            self.event_proxy.send_event(
-                RioEvent::TerminalDamaged {
-                    route_id: self.route_id,
-                    damage: TerminalDamage::Full,
-                },
-                self.window_id,
-            );
-        }
     }
 
     #[inline]
@@ -561,7 +551,7 @@ impl<U: EventListener> Crosswords<U> {
     /// Emit damage event based on current damage state
     pub fn emit_damage_event(&self) {
         let display_offset = self.grid.display_offset();
-        let damage = if self.damage.full {
+        let _damage = if self.damage.full {
             TerminalDamage::Full
         } else {
             // Collect damaged lines
@@ -584,14 +574,6 @@ impl<U: EventListener> Crosswords<U> {
                 TerminalDamage::Partial(damaged_lines)
             }
         };
-
-        self.event_proxy.send_event(
-            RioEvent::TerminalDamaged {
-                route_id: self.route_id,
-                damage,
-            },
-            self.window_id,
-        );
     }
 
     /// Peek damage event based on current damage state
@@ -1263,14 +1245,8 @@ impl<U: EventListener> Crosswords<U> {
 
         // Only emit event if line wasn't already damaged
         if !was_damaged {
-            let damaged_line = LineDamage::new(line_idx, true);
-            self.event_proxy.send_event(
-                RioEvent::TerminalDamaged {
-                    route_id: self.route_id,
-                    damage: TerminalDamage::Partial([damaged_line].into_iter().collect()),
-                },
-                self.window_id,
-            );
+            let _damaged_line = LineDamage::new(line_idx, true);
+            // Event removed - damage is tracked internally
         }
     }
 

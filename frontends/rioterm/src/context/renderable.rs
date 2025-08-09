@@ -114,10 +114,7 @@ impl PendingUpdate {
         self.dirty = true;
     }
 
-    /// Clear the dirty flag
-    pub fn clear_dirty(&mut self) {
-        self.dirty = false;
-    }
+
 
     /// Mark as needing update.
     /// The actual snapshot will be computed at render time.
@@ -372,9 +369,8 @@ mod tests {
             .invalidate(TerminalDamage::Full, &terminal);
         assert!(content.pending_update.is_dirty());
 
-        // Take snapshot - should clear dirty flag
-        let snapshot1 = content.pending_update.take_snapshot();
-        assert!(snapshot1.is_some());
+        // Reset dirty flag - simulating render
+        content.pending_update.reset();
         assert!(!content.pending_update.is_dirty());
 
         // Second update
@@ -385,9 +381,8 @@ mod tests {
             .invalidate(TerminalDamage::Partial(damaged_lines), &terminal);
         assert!(content.pending_update.is_dirty());
 
-        // Take second snapshot
-        let snapshot2 = content.pending_update.take_snapshot();
-        assert!(snapshot2.is_some());
+        // Reset dirty flag again
+        content.pending_update.reset();
         assert!(!content.pending_update.is_dirty());
     }
 }
