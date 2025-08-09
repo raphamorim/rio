@@ -203,11 +203,6 @@ where
             // Parse the incoming bytes.
             state.parser.advance(&mut **terminal, &buf[..unprocessed]);
 
-            // Emit damage event if there's any damage after parsing
-            if terminal.peek_damage_event().is_some() {
-                terminal.emit_damage_event();
-            }
-
             processed += unprocessed;
             unprocessed = 0;
 
@@ -218,9 +213,19 @@ where
         }
 
         // Queue terminal update processing unless all processed bytes were synchronized.
+        // For non-synchronized updates, we send a Wakeup event which will coalesce
+        // multiple rapid updates into a single render pass.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            // Damage events are now emitted directly after parsing
-            // No need to send Wakeup events
+            // Check if there's any damage to process
+            if let Some(ref terminal) = terminal {
+                if terminal.peek_damage_event().is_some() {
+                    // terminal.emit_damage_event();
+                    tracing::trace!("PTY read: Sending Wakeup event for {} bytes of non-sync data", processed);
+                    // Send a Wakeup event to coalesce renders
+                    let route_id = terminal.route_id;
+                    self.event_proxy.send_event(RioEvent::Wakeup(route_id), self.window_id);
+                }
+            }
         }
 
         Ok(())

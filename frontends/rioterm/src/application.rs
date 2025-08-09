@@ -271,6 +271,43 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        // Skip rendering for unfocused windows if configured
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            tracing::trace!("Wakeup: Skipping unfocused window");
+                            return;
+                        }
+
+                        // Skip rendering for occluded windows if configured
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            tracing::trace!("Wakeup: Skipping occluded window");
+                            return;
+                        }
+
+                        tracing::trace!("Wakeup: Marking route {} for damage check", route_id);
+
+                        // Mark the renderable content as needing to check for damage
+                        // The actual damage retrieval will happen during render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item
+                                .val
+                                .renderable_content
+                                .pending_update
+                                .mark_for_damage_check();
+                            route.schedule_redraw(&mut self.scheduler, route_id);
+                        }
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf

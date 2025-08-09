@@ -98,6 +98,19 @@ impl PendingUpdate {
         self.dirty
     }
 
+    /// Mark as needing to check for damage on next render
+    /// This is used by Wakeup events to defer damage calculation
+    pub fn mark_for_damage_check(&mut self) {
+        self.dirty = true;
+        // Don't create a snapshot yet - let the renderer do it when needed
+    }
+
+    /// Clear the dirty flag without taking the snapshot
+    /// Used when we manually process the damage in the renderer
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
+    }
+
     /// Mark as needing update with the given damage
     pub fn invalidate<U: rio_backend::event::EventListener>(
         &mut self,
@@ -106,7 +119,18 @@ impl PendingUpdate {
     ) {
         self.dirty = true;
 
+        // let lock_start = std::time::Instant::now();
         let mut terminal = terminal.lock();
+        // let lock_duration = lock_start.elapsed();
+        // if lock_duration > std::time::Duration::from_millis(5) {
+        //     tracing::warn!("PendingUpdate::invalidate: Lock acquisition took {:?}", lock_duration);
+        // }
+
+        // match &damage {
+        //     TerminalDamage::Full => tracing::trace!("PendingUpdate: Full damage"),
+        //     TerminalDamage::Partial(ranges) => tracing::trace!("PendingUpdate: {} partial ranges damaged", ranges.len()),
+        //     TerminalDamage::CursorOnly => tracing::trace!("PendingUpdate: Cursor-only damage"),
+        // }
 
         // Get the terminal's current damage
         let terminal_damage = terminal.peek_damage_event();
@@ -157,6 +181,20 @@ impl PendingUpdate {
 
         // Reset terminal damage since we've captured it in the snapshot
         terminal.reset_damage();
+
+        // Log final damage state only for significant updates
+        if let Some(ref snapshot) = self.snapshot {
+            match &snapshot.damage {
+                TerminalDamage::Full => tracing::trace!("PendingUpdate: Snapshot has full damage"),
+                TerminalDamage::Partial(ranges) if ranges.len() > 50 => {
+                    tracing::debug!("PendingUpdate: Large snapshot with {} damaged ranges", ranges.len());
+                },
+                TerminalDamage::Partial(ranges) if ranges.len() > 10 => {
+                    tracing::trace!("PendingUpdate: Snapshot has {} damaged ranges", ranges.len());
+                },
+                _ => {}
+            }
+        }
     }
 
     /// Mark as needing full update
@@ -169,9 +207,10 @@ impl PendingUpdate {
 
     /// Take the snapshot and reset dirty flag
     /// This should only be called when actually rendering!
-    pub fn take_snapshot(&mut self) -> Option<TerminalSnapshot> {
+    pub fn take_snapshot(&mut self) -> (Option<TerminalSnapshot>, bool) {
+        let prev = self.dirty;
         self.dirty = false;
-        self.snapshot.take()
+        (self.snapshot.take(), prev)
     }
 
     /// Merge two damages into one - this is critical for correctness
