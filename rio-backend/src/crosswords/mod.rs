@@ -556,33 +556,7 @@ impl<U: EventListener> Crosswords<U> {
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
 
-    /// Emit damage event based on current damage state
-    pub fn emit_damage_event(&self) {
-        let display_offset = self.grid.display_offset();
-        let _damage = if self.damage.full {
-            TerminalDamage::Full
-        } else {
-            // Collect damaged lines
-            let damaged_lines: BTreeSet<LineDamage> = self
-                .damage
-                .lines
-                .iter()
-                .filter(|line| line.is_damaged())
-                .map(|line| LineDamage::new(line.line + display_offset, true))
-                .collect();
 
-            if damaged_lines.is_empty() {
-                // Check if cursor moved
-                if self.damage.last_cursor != self.grid.cursor.pos {
-                    TerminalDamage::CursorOnly
-                } else {
-                    return; // No damage to emit
-                }
-            } else {
-                TerminalDamage::Partial(damaged_lines)
-            }
-        };
-    }
 
     /// Peek damage event based on current damage state
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
@@ -1241,21 +1215,7 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn mark_line_damaged(&mut self, line: Line) {
         let line_idx = line.0 as usize;
-
-        // Check if this line is already damaged
-        let was_damaged = if line_idx < self.damage.lines.len() {
-            self.damage.lines[line_idx].is_damaged()
-        } else {
-            false
-        };
-
         self.damage.damage_line(line_idx);
-
-        // Only emit event if line wasn't already damaged
-        if !was_damaged {
-            let _damaged_line = LineDamage::new(line_idx, true);
-            // Event removed - damage is tracked internally
-        }
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
