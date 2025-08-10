@@ -133,8 +133,8 @@ impl PendingUpdate {
                 TerminalDamage::Partial(lines1)
             }
             // CursorOnly damages need special handling
-            (TerminalDamage::CursorOnly, TerminalDamage::Partial(lines)) |
-            (TerminalDamage::Partial(lines), TerminalDamage::CursorOnly) => {
+            (TerminalDamage::CursorOnly, TerminalDamage::Partial(lines))
+            | (TerminalDamage::Partial(lines), TerminalDamage::CursorOnly) => {
                 TerminalDamage::Partial(lines)
             }
             (TerminalDamage::CursorOnly, TerminalDamage::CursorOnly) => {
