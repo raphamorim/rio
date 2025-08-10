@@ -875,7 +875,10 @@ impl Renderer {
                     (Some(term), Some(ui)) => {
                         // Merge partial damages
                         match (term, ui) {
-                            (TerminalDamage::Partial(mut lines1), TerminalDamage::Partial(lines2)) => {
+                            (
+                                TerminalDamage::Partial(mut lines1),
+                                TerminalDamage::Partial(lines2),
+                            ) => {
                                 lines1.extend(lines2);
                                 TerminalDamage::Partial(lines1)
                             }

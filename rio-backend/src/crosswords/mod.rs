@@ -489,13 +489,11 @@ impl<U: EventListener> Crosswords<U> {
         // Only emit event if we weren't already fully damaged
         let was_damaged = self.damage.full;
         self.damage.full = true;
-        
+
         // Request a render to display the damage
         if !was_damaged {
-            self.event_proxy.send_event(
-                RioEvent::RenderRoute(self.route_id),
-                self.window_id,
-            );
+            self.event_proxy
+                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
         }
     }
 
@@ -555,8 +553,6 @@ impl<U: EventListener> Crosswords<U> {
         let display_offset = self.grid.display_offset();
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
-
-
 
     /// Peek damage event based on current damage state
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
