@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.3.0 (unreleased)
+## 0.2.29 (unreleased)
+
+- TBD.
+
+## 0.2.28
 
 - **Optimized rendering pipeline for improved performance**: Implemented deferred damage checking and render coalescing
   - Added Wakeup events to batch multiple rapid terminal updates into single render passes
@@ -14,7 +18,6 @@ language: 'en'
   - Skip rendering for occluded windows when `disable_occluded_render` is enabled
   - Improved damage merging to always accumulate updates even when already marked dirty
   - Enhanced performance for rapid terminal output by coalescing non-synchronized updates
-- TBD.
 
 ## 0.2.27
 
