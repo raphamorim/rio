@@ -205,11 +205,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_mut(route_id)
                         {
-                            ctx_item
-                                .val
-                                .renderable_content
-                                .pending_update
-                                .set_dirty();
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
                         }
 
                         // Check if we need to throttle based on timing
@@ -268,11 +264,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if let Some(ctx_item) =
                             route.window.screen.ctx_mut().get_mut(route_id)
                         {
-                            ctx_item
-                                .val
-                                .renderable_content
-                                .pending_update
-                                .set_dirty();
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
                         }
                     }
