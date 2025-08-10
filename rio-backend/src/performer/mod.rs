@@ -219,9 +219,6 @@ where
         // For non-synchronized updates, we send a Wakeup event which will coalesce
         // multiple rapid updates into a single render pass.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
-            // Check if there's any damage to process
-            // if terminal.peek_damage_event().is_some() {
-            // terminal.emit_damage_event();
             tracing::trace!(
                 "PTY read: Sending Wakeup event for {} bytes of non-sync data",
                 processed
