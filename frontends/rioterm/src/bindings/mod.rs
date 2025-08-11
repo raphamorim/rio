@@ -262,6 +262,8 @@ impl From<String> for Action {
             "movedividerright" => Some(Action::MoveDividerRight),
             "togglevimode" => Some(Action::ToggleViMode),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
+            "commandpalette" => Some(Action::CommandPalette),
+            "tabswitcher" => Some(Action::TabSwitcher),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -497,6 +499,12 @@ pub enum Action {
 
     /// Allow receiving char input.
     ReceiveChar,
+
+    /// Open command palette.
+    CommandPalette,
+
+    /// Open tab switcher.
+    TabSwitcher,
 
     /// No action.
     None,
@@ -1022,6 +1030,8 @@ pub fn platform_key_bindings(
         "h", ModifiersState::SUPER | ModifiersState::ALT; Action::HideOtherApplications;
         "m", ModifiersState::SUPER; Action::Minimize;
         "q", ModifiersState::SUPER; Action::Quit;
+        "r", ModifiersState::SUPER; Action::CommandPalette;
+        "e", ModifiersState::SUPER; Action::TabSwitcher;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
 
