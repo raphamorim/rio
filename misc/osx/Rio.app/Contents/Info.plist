@@ -135,6 +135,8 @@
   <string>An application in Rio would like to access calendar data.</string>
   <key>NSCameraUsageDescription</key>
   <string>An application in Rio would like to access the camera.</string>
+  <key>NSCameraUseContinuityCameraDeviceType</key>
+  <true/>
   <key>NSContactsUsageDescription</key>
   <string>An application in Rio wants to access your contacts.</string>
   <key>NSLocationAlwaysUsageDescription</key>
