@@ -925,7 +925,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Check if there's any partial damage
-        if !self.damage.lines.is_empty() {
+        if self.damage.lines.iter().any(|line| line.is_damaged()) {
             return true;
         }
 
