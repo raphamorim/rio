@@ -53,6 +53,7 @@ objc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.11", default-features = false, features = ["std"] }
+dunce = "1.0.5"
 tinyvec = { version = "1.8.1", features = ["alloc"] }
 windows-sys = { version = "0.60.2", features = [
     "Win32_System_Console",

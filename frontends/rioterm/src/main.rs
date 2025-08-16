@@ -185,7 +185,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
-            config.working_dir = match std::fs::canonicalize(&working_dir_cli).and_then(
+            // Use dunce::canonicalize on Windows to avoid UNC paths (\\?\)
+            // which break many tools like Neovim and Bun
+            #[cfg(target_os = "windows")]
+            let canonicalize_fn = dunce::canonicalize;
+            #[cfg(not(target_os = "windows"))]
+            let canonicalize_fn = std::fs::canonicalize;
+
+            config.working_dir = match canonicalize_fn(&working_dir_cli).and_then(
                 |path| {
                     if path.is_dir() {
                         path.into_os_string().into_string().map_err(|_| {
