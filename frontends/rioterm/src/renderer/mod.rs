@@ -976,20 +976,6 @@ impl Renderer {
                             context.renderable_content.is_blinking_cursor_visible =
                                 !context.renderable_content.is_blinking_cursor_visible;
                             context.renderable_content.last_blink_toggle = Some(now);
-
-                            if let Some(ref mut lines) = specific_lines {
-                                lines.insert(LineDamage {
-                                    line: context
-                                        .renderable_content
-                                        .cursor
-                                        .state
-                                        .pos
-                                        .row
-                                        .0
-                                        as usize,
-                                    damaged: true,
-                                });
-                            }
                         }
                     } else {
                         // When not blinking (e.g., during typing), ensure cursor is visible

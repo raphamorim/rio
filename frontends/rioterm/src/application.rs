@@ -395,18 +395,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
-                        // Use the new damage_cursor_blink method for more efficient cursor blinking
-                        let mut terminal =
-                            route.window.screen.ctx_mut().current_mut().terminal.lock();
-                        terminal.damage_cursor_blink();
+                        // Get cursor position for damage
+                        let cursor_line = {
+                            let terminal = route
+                                .window
+                                .screen
+                                .ctx_mut()
+                                .current_mut()
+                                .terminal
+                                .lock();
+                            terminal.cursor().pos.row.0 as usize
+                        };
 
-                        // Only request redraw if there's actual damage
-                        let needs_render = terminal.needs_render();
-                        drop(terminal); // Release lock before requesting redraw
+                        // Set UI damage for cursor line
+                        route
+                            .window
+                            .screen
+                            .ctx_mut()
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Partial(
+                                [rio_backend::crosswords::LineDamage::new(
+                                    cursor_line,
+                                    true,
+                                )]
+                                .into_iter()
+                                .collect(),
+                            ));
 
-                        if needs_render {
-                            route.request_redraw();
-                        }
+                        route.request_redraw();
                     }
                 }
             }
