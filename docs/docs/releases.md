@@ -7,7 +7,9 @@ language: 'en'
 
 ## 0.2.29 (unreleased)
 
-- TBD.
+- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269)
+- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows
+- Add NSCameraUseContinuityCameraDeviceType to plist for macOS
 
 ## 0.2.28
 
