@@ -1247,13 +1247,15 @@ impl InitData<'_> {
         // If the system theme is dark, we need to set the window theme now
         // before we update the window flags (and possibly show the
         // window for the first time).
-        let current_theme = try_theme(window, self.attributes.preferred_theme);
+        let preferred_theme = self.attributes.decorations_theme_variant.or(self.attributes.preferred_theme);
+        let current_theme = try_theme(window, preferred_theme);
 
         let window_state = {
             let window_state = WindowState::new(
                 &self.attributes,
                 scale_factor,
                 current_theme,
+                self.attributes.decorations_theme_variant,
                 self.attributes.preferred_theme,
             );
             let window_state = Arc::new(Mutex::new(window_state));

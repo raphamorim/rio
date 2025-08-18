@@ -59,6 +59,20 @@ impl Default for Decorations {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
+pub enum DecorationsThemeVariant {
+    #[serde(alias = "dark")]
+    Dark,
+    #[serde(alias = "light")]
+    Light,
+    #[serde(alias = "none")]
+    None,
+}
+
+impl Default for DecorationsThemeVariant {
+    fn default() -> DecorationsThemeVariant { DecorationsThemeVariant::None }
+}
+
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub enum WindowsCornerPreference {
     #[serde(alias = "default")]
@@ -87,6 +101,8 @@ pub struct Window {
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
     pub decorations: Decorations,
+    #[serde(default = "DecorationsThemeVariant::default", rename = "decorations-theme-variant")]
+    pub decorations_theme_variant: DecorationsThemeVariant,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
@@ -115,6 +131,7 @@ impl Default for Window {
             opacity: default_opacity(),
             background_image: None,
             decorations: Decorations::default(),
+            decorations_theme_variant: DecorationsThemeVariant::default(),
             blur: false,
             macos_use_unified_titlebar: false,
             macos_use_shadow: true,

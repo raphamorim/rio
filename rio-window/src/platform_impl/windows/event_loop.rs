@@ -2574,8 +2574,9 @@ unsafe fn public_window_callback_inner(
 
         WM_SETTINGCHANGE => {
             use crate::event::WindowEvent::ThemeChanged;
+            let decorations_theme_variant = userdata.window_state_lock().decorations_theme_variant;
 
-            let preferred_theme = userdata.window_state_lock().preferred_theme;
+            let preferred_theme = decorations_theme_variant.or(userdata.window_state_lock().preferred_theme);
 
             if preferred_theme.is_none() {
                 let new_theme = try_theme(window, preferred_theme);
