@@ -97,6 +97,7 @@ bitflags! {
         const REPORT_ALTERNATE_KEYS   = 1 << 20;
         const REPORT_ALL_KEYS_AS_ESC  = 1 << 21;
         const REPORT_ASSOCIATED_TEXT  = 1 << 22;
+        const WIN32_INPUT              = 1 << 23;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
@@ -1525,6 +1526,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::Win32Input => self.mode.insert(Mode::WIN32_INPUT),
         }
     }
 
@@ -1597,6 +1599,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::Win32Input => self.mode.remove(Mode::WIN32_INPUT),
         }
     }
 
@@ -1644,6 +1647,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 NamedPrivateMode::SyncUpdate => ModeState::Reset,
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
+                NamedPrivateMode::Win32Input => {
+                    self.mode.contains(Mode::WIN32_INPUT).into()
+                }
             },
             PrivateMode::Unknown(_) => ModeState::NotSupported,
         };
@@ -3067,6 +3073,7 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ansi::mode::{NamedPrivateMode, PrivateMode};
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::CrosswordsSize;
     use crate::event::VoidListener;
@@ -3676,5 +3683,33 @@ mod tests {
 
         // Should damage line 5
         assert_eq!(damage_result_2, Some(true), "Should damage line 5");
+    }
+
+    #[test]
+    fn test_win32_input_mode() {
+        use crate::performer::handler::Handler;
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = crate::event::WindowId::from(0);
+        let route_id = 0;
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener, window_id, route_id);
+
+        // Initially Win32 input mode should be off
+        assert!(!term.mode.contains(Mode::WIN32_INPUT));
+
+        // Enable Win32 input mode
+        Handler::set_private_mode(
+            &mut term,
+            PrivateMode::Named(NamedPrivateMode::Win32Input),
+        );
+        assert!(term.mode.contains(Mode::WIN32_INPUT));
+
+        // Disable Win32 input mode
+        Handler::unset_private_mode(
+            &mut term,
+            PrivateMode::Named(NamedPrivateMode::Win32Input),
+        );
+        assert!(!term.mode.contains(Mode::WIN32_INPUT));
     }
 }

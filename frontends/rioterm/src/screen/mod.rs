@@ -554,6 +554,13 @@ impl Screen<'_> {
         let mods = self.modifiers.state();
 
         if key.state == ElementState::Released {
+            // Win32 input mode sends all key release events
+            if mode.contains(Mode::WIN32_INPUT) {
+                let bytes = build_key_sequence(key, mods, mode);
+                self.ctx_mut().current_mut().messenger.send_write(bytes);
+                return;
+            }
+
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
                 || mode.contains(Mode::VI)
                 || self.search_active()
