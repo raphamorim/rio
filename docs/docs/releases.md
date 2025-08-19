@@ -5,7 +5,16 @@ language: 'en'
 
 # Releases
 
-## 0.2.29 (unreleased)
+## 0.2.30 (unreleased)
+
+- **Add Win32 input mode support for Windows**: Implements Win32 input mode protocol for enhanced keyboard handling
+  - Enables applications to receive complete Windows KEY_EVENT_RECORD data as escape sequences
+  - Supports special key combinations like Ctrl+Space, Shift+Enter, Ctrl+Alt+? that don't work in traditional terminal input
+  - Sends both key press and release events with full modifier state information
+  - Compatible with applications expecting Microsoft Terminal's Win32 input mode format
+  - Can be enabled/disabled via escape sequences: `CSI ? 9001 h` (enable) / `CSI ? 9001 l` (disable)
+
+## 0.2.29
 
 - Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269)
 - Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows
