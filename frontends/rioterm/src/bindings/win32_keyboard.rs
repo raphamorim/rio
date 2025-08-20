@@ -8,7 +8,7 @@ use rio_window::platform::scancode::PhysicalKeyExtScancode;
 
 /// Build Win32 input mode sequence for Windows.
 /// Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
-/// 
+///
 /// Where:
 /// - Vk: Virtual key code (wVirtualKeyCode)
 /// - Sc: Virtual scan code (wVirtualScanCode)  
@@ -19,7 +19,7 @@ use rio_window::platform::scancode::PhysicalKeyExtScancode;
 pub fn build_win32_sequence(key: &KeyEvent, mods: ModifiersState) -> Vec<u8> {
     // Get the scan code from the physical key
     let sc = key.physical_key.to_scancode().unwrap_or(0) as u16;
-    
+
     // Get virtual key code from the logical key or physical key
     let vk = match &key.logical_key {
         Key::Named(named) => named_key_to_vk(named),
@@ -38,20 +38,33 @@ pub fn build_win32_sequence(key: &KeyEvent, mods: ModifiersState) -> Vec<u8> {
     };
 
     // Get Unicode character value
-    let uc = key.text_with_all_modifiers()
+    let uc = key
+        .text_with_all_modifiers()
         .and_then(|s| s.chars().next())
         .map(|c| c as u16)
         .unwrap_or(0);
 
     // Key down flag (1 for pressed, 0 for released)
-    let kd = if key.state == ElementState::Pressed { 1 } else { 0 };
+    let kd = if key.state == ElementState::Pressed {
+        1
+    } else {
+        0
+    };
 
     // Control key state - Windows format
     let mut cs = 0u16;
-    if mods.shift_key() { cs |= 0x0010; }     // SHIFT_PRESSED
-    if mods.control_key() { cs |= 0x0008; }   // LEFT_CTRL_PRESSED  
-    if mods.alt_key() { cs |= 0x0001; }       // LEFT_ALT_PRESSED
-    if mods.super_key() { cs |= 0x0008; }     // Windows key maps to CTRL
+    if mods.shift_key() {
+        cs |= 0x0010;
+    } // SHIFT_PRESSED
+    if mods.control_key() {
+        cs |= 0x0008;
+    } // LEFT_CTRL_PRESSED
+    if mods.alt_key() {
+        cs |= 0x0001;
+    } // LEFT_ALT_PRESSED
+    if mods.super_key() {
+        cs |= 0x0008;
+    } // Windows key maps to CTRL
 
     // Repeat count
     let rc = if key.repeat { 2 } else { 1 };
@@ -147,7 +160,7 @@ mod tests {
         // Test that Win32 input mode flag is properly defined
         let mode = Mode::WIN32_INPUT;
         assert!(!mode.is_empty());
-        
+
         // Test that it doesn't conflict with Kitty keyboard protocol
         let kitty_mode = Mode::KITTY_KEYBOARD_PROTOCOL;
         assert!(!mode.intersects(kitty_mode));
