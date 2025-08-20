@@ -102,7 +102,7 @@ impl TextRunCache {
 
     /// Get a cached text run with optional vertex data matching
     /// Returns different cache hit types based on what data is available
-    pub fn get(&mut self, key: &TextRunKey) -> Option<CacheHitType> {
+    pub fn get(&mut self, key: &TextRunKey) -> Option<CacheHitType<'_>> {
         // First try exact match (including color for vertex cache)
         if let Some(cached_run) = self.cache_with_color.get(key) {
             // Check what type of cache hit this is
@@ -203,7 +203,7 @@ impl TextRunCache {
     }
 
     /// Peek at an entry without updating LRU order
-    pub fn peek(&self, key: &TextRunKey) -> Option<CacheHitType> {
+    pub fn peek(&self, key: &TextRunKey) -> Option<CacheHitType<'_>> {
         // First try exact match (including color for vertex cache)
         if let Some(cached_run) = self.cache_with_color.peek(key) {
             // Check what type of cache hit this is

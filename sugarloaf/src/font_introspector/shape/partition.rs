@@ -25,7 +25,7 @@ pub trait Selector {
 /// Trait for a font provided by a font selector.
 pub trait SelectedFont: PartialEq {
     /// Returns a reference to the underlying font.
-    fn font(&self) -> FontRef;
+    fn font(&self) -> FontRef<'_>;
 
     fn id_override(&self) -> Option<[u64; 2]> {
         None
