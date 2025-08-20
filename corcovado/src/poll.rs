@@ -1464,7 +1464,7 @@ impl Events {
     /// #     try_main().unwrap();
     /// # }
     /// ```
-    pub fn iter(&self) -> Iter {
+    pub fn iter(&self) -> Iter<'_> {
         Iter {
             inner: self,
             pos: 0,
