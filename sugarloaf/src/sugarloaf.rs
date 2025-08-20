@@ -119,14 +119,14 @@ impl SugarloafWindow {
 }
 
 impl HasWindowHandle for SugarloafWindow {
-    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+    fn window_handle(&self) -> std::result::Result<WindowHandle<'_>, HandleError> {
         let raw = self.raw_window_handle();
         Ok(unsafe { WindowHandle::borrow_raw(raw) })
     }
 }
 
 impl HasDisplayHandle for SugarloafWindow {
-    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
         let raw = self.raw_display_handle();
         Ok(unsafe { DisplayHandle::borrow_raw(raw) })
     }
@@ -185,7 +185,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn get_context(&self) -> &Context {
+    pub fn get_context(&self) -> &Context<'_> {
         &self.ctx
     }
 
