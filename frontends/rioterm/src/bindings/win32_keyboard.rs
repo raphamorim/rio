@@ -4,8 +4,8 @@
 
 use rio_window::event::{ElementState, KeyEvent};
 use rio_window::keyboard::{Key, KeyCode, ModifiersState, NamedKey, PhysicalKey};
-use rio_window::platform::scancode::PhysicalKeyExtScancode;
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
+use rio_window::platform::scancode::PhysicalKeyExtScancode;
 
 /// Build Win32 input mode sequence for Windows.
 /// Format: ESC [ Vk ; Sc ; Uc ; Kd ; Cs ; Rc _
