@@ -1123,14 +1123,14 @@ impl Renderer {
 
         // Add visual bell overlay if active
         if visual_bell_active {
-            // Create a white overlay object that covers the entire screen
-            let white_overlay = Object::Quad(Quad {
+            // Create a foreground color overlay that covers the entire screen
+            let bell_overlay = Object::Quad(Quad {
                 position: [0.0, 0.0],
                 size: [window_size.width, window_size.height],
-                color: [1.0, 1.0, 1.0, 1.0], // Completely opaque white
+                color: self.named_colors.foreground, // Use configured foreground color
                 ..Quad::default()
             });
-            objects.push(white_overlay);
+            objects.push(bell_overlay);
         }
 
         sugarloaf.set_objects(objects);
