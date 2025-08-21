@@ -711,7 +711,7 @@ impl Content {
                 let single_char_content = whitespace_char.to_string();
 
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let mut font_library = self.fonts.inner.write();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -780,7 +780,7 @@ impl Content {
             } else {
                 // Normal content - shape as usual
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let mut font_library = self.fonts.inner.write();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -2350,7 +2350,7 @@ mod tests {
         // Helper function to shape content and return clusters
         let shape_content = |use_cache: bool| -> Vec<OwnedGlyphCluster> {
             let mut scx = ShapeContext::new();
-            let font_library_guard = font_library.inner.read();
+            let mut font_library_guard = font_library.inner.write();
             if let Some((shared_data, offset, key)) =
                 font_library_guard.get_data(&font_id)
             {

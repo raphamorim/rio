@@ -33,7 +33,7 @@ pub use crate::font_introspector::{Style, Weight};
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
     synth: &mut Synthesis,
-    library: &FontLibraryData,
+    library: &mut FontLibraryData,
     spec_font_attr_opt: Option<&(crate::font_introspector::Style, bool)>,
 ) -> Option<(usize, bool)> {
     let mut search_result = None;
@@ -155,7 +155,7 @@ impl Default for FontLibraryData {
 impl FontLibraryData {
     #[inline]
     pub fn find_best_font_match(
-        &self,
+        &mut self,
         ch: char,
         fragment_style: &FragmentStyle,
     ) -> Option<(usize, bool)> {
@@ -219,14 +219,15 @@ impl FontLibraryData {
         &self.inner[font_id]
     }
 
-    pub fn get_data(&self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
-        if let Some(font) = self.inner.get(font_id) {
+    pub fn get_data(&mut self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
+        if let Some(font) = self.inner.get_mut(font_id) {
             if let Some(data) = &font.data {
                 return Some((data.clone(), font.offset, font.key));
             } else if let Some(path) = &font.path {
                 // Load font data directly from file when needed
                 if let Some(raw_data) = load_from_font_source(path) {
                     let shared_data = SharedData::new(raw_data);
+                    font.data = Some(shared_data.clone());
                     return Some((shared_data, font.offset, font.key));
                 }
             }
@@ -508,14 +509,14 @@ impl FontLibraryData {
 /// Atomically reference counted, heap allocated or memory mapped buffer.
 #[derive(Clone)]
 pub struct SharedData {
-    inner: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    inner: Arc<[u8]>,
 }
 
 impl SharedData {
     /// Creates shared data from the specified bytes.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            inner: Arc::new(data),
+            inner: Arc::from(data),
         }
     }
 }

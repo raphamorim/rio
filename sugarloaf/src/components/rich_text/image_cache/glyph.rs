@@ -130,7 +130,7 @@ impl GlyphCacheSession<'_> {
         );
 
         self.scaled_image.data.clear();
-        let font_library_data = self.font_library.inner.read();
+        let mut font_library_data = self.font_library.inner.write();
         let enable_hint = font_library_data.hinting;
         let font_data = font_library_data.get(&self.font);
         let should_embolden = font_data.should_embolden;

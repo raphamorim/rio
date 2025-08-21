@@ -2098,9 +2098,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline(never)]
     fn input(&mut self, c: char) {
-        let width = match c.width() {
-            Some(width) => width,
-            None => return,
+        let Some(width) = c.width() else {
+            return;
         };
 
         // Handle zero-width characters.
