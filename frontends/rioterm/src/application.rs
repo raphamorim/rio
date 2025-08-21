@@ -428,6 +428,41 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::Bell) => {
+                // Trigger visual bell (screen flash)
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.renderer.trigger_visual_bell();
+
+                    // Mark content as dirty to ensure render happens
+                    route
+                        .window
+                        .screen
+                        .ctx_mut()
+                        .current_mut()
+                        .renderable_content
+                        .pending_update
+                        .set_dirty();
+
+                    // Force immediate render to show the bell
+                    route.request_redraw();
+
+                    // Schedule a render after the bell duration to clear it
+                    let timer_id = TimerId::new(
+                        Topic::Render,
+                        route.window.screen.ctx().current_route(),
+                    );
+                    let event =
+                        EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
+
+                    // Schedule render to clear bell effect after visual bell duration
+                    self.scheduler.schedule(
+                        event,
+                        Duration::from_millis(crate::constants::VISUAL_BELL_DURATION_MS), // Match bell duration exactly
+                        false,
+                        timer_id,
+                    );
+                }
+            }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
                 if let Some(route) = self.router.routes.get(&window_id) {
                     let timer_id = TimerId::new(

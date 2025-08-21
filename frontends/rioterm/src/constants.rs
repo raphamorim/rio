@@ -30,3 +30,6 @@ pub const ADDITIONAL_PADDING_Y_ON_UNIFIED_TITLEBAR: f32 = 2.;
 
 pub const PADDING_X_COLLAPSED_TABS: f32 = 30.;
 pub const PADDING_Y_BOTTOM_TABS: f32 = 22.0;
+
+// Visual bell configuration
+pub const VISUAL_BELL_DURATION_MS: u64 = 125;
