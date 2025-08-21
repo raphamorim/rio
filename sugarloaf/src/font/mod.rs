@@ -899,19 +899,21 @@ fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
     use std::io::Read;
 
     let cache = get_font_data_cache();
-    
+
     // Check if already cached - DashMap handles concurrent access efficiently
     if let Some(cached_data) = cache.get(path) {
         return Some(cached_data.clone());
     }
-    
+
     // Load from disk if not cached
     if let Ok(mut file) = std::fs::File::open(path) {
         let mut font_data = vec![];
         if file.read_to_end(&mut font_data).is_ok() {
             let shared_data = SharedData::new(font_data);
             // Use entry API to handle concurrent inserts properly
-            let entry = cache.entry(path.clone()).or_insert_with(|| shared_data.clone());
+            let entry = cache
+                .entry(path.clone())
+                .or_insert_with(|| shared_data.clone());
             return Some(entry.clone());
         }
     }
