@@ -429,6 +429,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell) => {
+                // Check if visual bell is enabled in configuration
+                if !self.config.bell.visual {
+                    return;
+                }
+
                 // Trigger visual bell (screen flash)
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.renderer.trigger_visual_bell();
