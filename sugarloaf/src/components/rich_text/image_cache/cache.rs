@@ -70,7 +70,7 @@ pub fn buffer_size(width: u32, height: u32) -> Option<usize> {
         .checked_add(4)
 }
 
-pub const SIZE: u16 = 2048;
+pub const SIZE: u16 = 4096;
 
 impl ImageCache {
     /// Creates a new image cache with dual atlases.
@@ -141,7 +141,7 @@ impl ImageCache {
         buffer_size(width as u32, height as u32)?;
 
         // Too big to allocate
-        if !(width <= self.max_texture_size && height <= (self.max_texture_size / 4)) {
+        if !(width <= self.max_texture_size && height <= self.max_texture_size) {
             return None;
         }
 

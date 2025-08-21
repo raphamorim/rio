@@ -10,7 +10,7 @@ pub use layer::Layer;
 
 use allocator::Allocator;
 
-pub const SIZE: u32 = 2048;
+pub const SIZE: u32 = 4096;
 
 use crate::components::core::shapes::Size;
 
