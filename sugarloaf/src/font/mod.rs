@@ -674,7 +674,7 @@ impl FontData {
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
-        let data = evictable.then_some(data);
+        let data = (!evictable).then_some(data);
 
         Ok(Self {
             data,
