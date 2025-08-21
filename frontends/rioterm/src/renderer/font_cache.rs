@@ -113,7 +113,7 @@ impl FontCache {
             ),
         ];
 
-        if let Some(mut font_ctx) = font_context.inner.try_write() {
+        if let Some(font_ctx) = font_context.inner.try_read() {
             for &ch in &common_chars {
                 for &attrs in &common_attrs {
                     let key = (ch, attrs);
