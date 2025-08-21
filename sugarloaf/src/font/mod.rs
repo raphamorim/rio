@@ -22,7 +22,7 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -31,7 +31,7 @@ use std::sync::{Arc, OnceLock};
 pub use crate::font_introspector::{Style, Weight};
 
 // Type alias for the font data cache to improve readability
-type FontDataCache = Arc<Mutex<FxHashMap<PathBuf, Arc<Vec<u8>>>>>;
+type FontDataCache = Arc<RwLock<FxHashMap<PathBuf, SharedData>>>;
 
 // Global font data cache to avoid reloading fonts from disk
 // This cache stores font file data indexed by path, so fonts are only loaded once
@@ -40,14 +40,14 @@ type FontDataCache = Arc<Mutex<FxHashMap<PathBuf, Arc<Vec<u8>>>>>;
 static FONT_DATA_CACHE: OnceLock<FontDataCache> = OnceLock::new();
 
 fn get_font_data_cache() -> &'static FontDataCache {
-    FONT_DATA_CACHE.get_or_init(|| Arc::new(Mutex::new(FxHashMap::default())))
+    FONT_DATA_CACHE.get_or_init(|| Arc::new(RwLock::new(FxHashMap::default())))
 }
 
 /// Clears the global font data cache, forcing fonts to be reloaded from disk
 /// on next access. This should be called when font configuration changes.
 pub fn clear_font_data_cache() {
     if let Some(cache) = FONT_DATA_CACHE.get() {
-        cache.lock().clear();
+        cache.write().clear();
     }
 }
 
@@ -247,8 +247,7 @@ impl FontLibraryData {
             } else if let Some(path) = &font.path {
                 // Load font data from cache or disk
                 if let Some(raw_data) = load_from_font_source(path) {
-                    let shared_data = SharedData::from_arc(raw_data);
-                    return Some((shared_data, font.offset, font.key));
+                    return Some((raw_data, font.offset, font.key));
                 }
             }
         }
@@ -539,13 +538,6 @@ impl SharedData {
             inner: Arc::from(data),
         }
     }
-
-    /// Creates shared data from an Arc<Vec<u8>> (avoids cloning)
-    pub fn from_arc(data: Arc<Vec<u8>>) -> Self {
-        Self {
-            inner: Arc::from(data.as_ref().clone()),
-        }
-    }
 }
 
 impl std::ops::Deref for SharedData {
@@ -659,7 +651,7 @@ impl FontData {
 
     #[inline]
     pub fn from_data(
-        data: Vec<u8>,
+        data: SharedData,
         path: PathBuf,
         evictable: bool,
         is_emoji: bool,
@@ -682,11 +674,7 @@ impl FontData {
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
-        let data = if evictable {
-            None
-        } else {
-            Some(SharedData::new(data))
-        };
+        let data = evictable.then_some(data);
 
         Ok(Self {
             data,
@@ -811,7 +799,7 @@ fn find_font(
                         // Convert Arc<Vec<u8>> to Vec<u8> for FontData::from_data
                         // We need to clone here because FontData::from_data expects ownership
                         match FontData::from_data(
-                            (*font_data_arc).clone(),
+                            font_data_arc,
                             path.to_path_buf(),
                             evictable,
                             is_emoji,
@@ -906,15 +894,15 @@ fn find_font_path(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_from_font_source(path: &PathBuf) -> Option<Arc<Vec<u8>>> {
+fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
     use std::io::Read;
 
     let cache = get_font_data_cache();
-    let mut cache_guard = cache.lock();
+    let cache_guard = cache.read();
 
     // Check if already cached - avoids repeated disk I/O
     if let Some(cached_data) = cache_guard.get(path) {
-        return Some(Arc::clone(cached_data));
+        return Some(cached_data.clone());
     }
 
     // Load from disk if not cached
@@ -922,8 +910,14 @@ fn load_from_font_source(path: &PathBuf) -> Option<Arc<Vec<u8>>> {
         let mut font_data = vec![];
         if file.read_to_end(&mut font_data).is_ok() {
             // Store in cache for future use
-            let font_data_arc = Arc::new(font_data);
-            cache_guard.insert(path.clone(), Arc::clone(&font_data_arc));
+            let font_data_arc = SharedData::new(font_data);
+
+            // hmm. parking lot doesn't have an `upgrade` fn for RwLockReadGuards, so we have to do
+            // this annoying thing
+            drop(cache_guard);
+            let mut cache_guard = cache.write();
+            cache_guard.insert(path.clone(), font_data_arc.clone());
+
             return Some(font_data_arc);
         }
     }
