@@ -66,7 +66,8 @@ pub fn lookup_for_font_match(
             }
         }
 
-        if let Some((shared_data, offset, key)) = library.get_data(&font_id) {
+        // Use ensure_data_loaded since we already have mutable access
+        if let Some((shared_data, offset, key)) = library.ensure_data_loaded(&font_id) {
             let font_ref = FontRef {
                 data: shared_data.as_ref(),
                 offset,
@@ -219,16 +220,36 @@ impl FontLibraryData {
         &self.inner[font_id]
     }
 
-    pub fn get_data(&mut self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
+    /// Get font data with optimized caching strategy
+    /// Returns cached data if available, otherwise loads and caches it
+    pub fn get_data(&self, font_id: &usize) -> Option<(SharedData, u32, CacheKey)> {
+        // Fast path: check if data is already cached (no mutation needed)
+        if let Some(font) = self.inner.get(font_id) {
+            if let Some(data) = &font.data {
+                return Some((data.clone(), font.offset, font.key));
+            }
+        }
+
+        None
+    }
+
+    /// Load and cache font data if not already cached
+    /// This is separated to allow callers to handle the write lock appropriately
+    pub fn ensure_data_loaded(
+        &mut self,
+        font_id: &usize,
+    ) -> Option<(SharedData, u32, CacheKey)> {
         if let Some(font) = self.inner.get_mut(font_id) {
             if let Some(data) = &font.data {
+                // Already cached
                 return Some((data.clone(), font.offset, font.key));
             } else if let Some(path) = &font.path {
                 // Load font data directly from file when needed
                 if let Some(raw_data) = load_from_font_source(path) {
                     let shared_data = SharedData::new(raw_data);
-                    font.data = Some(shared_data.clone());
-                    return Some((shared_data, font.offset, font.key));
+                    let result = (shared_data.clone(), font.offset, font.key);
+                    font.data = Some(shared_data);
+                    return Some(result);
                 }
             }
         }

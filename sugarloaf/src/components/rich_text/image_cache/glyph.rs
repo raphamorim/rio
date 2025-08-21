@@ -130,15 +130,32 @@ impl GlyphCacheSession<'_> {
         );
 
         self.scaled_image.data.clear();
-        let mut font_library_data = self.font_library.inner.write();
-        let enable_hint = font_library_data.hinting;
-        let font_data = font_library_data.get(&self.font);
-        let should_embolden = font_data.should_embolden;
-        let should_italicize = font_data.should_italicize;
 
-        if let Some((shared_data, offset, cache_key)) =
-            font_library_data.get_data(&self.font)
-        {
+        // Get font metadata with read lock
+        let (enable_hint, should_embolden, should_italicize, font_data_result) = {
+            let font_library_data = self.font_library.inner.read();
+            let enable_hint = font_library_data.hinting;
+            let font_data = font_library_data.get(&self.font);
+            let should_embolden = font_data.should_embolden;
+            let should_italicize = font_data.should_italicize;
+            let font_data_result = font_library_data.get_data(&self.font);
+            (
+                enable_hint,
+                should_embolden,
+                should_italicize,
+                font_data_result,
+            )
+        };
+
+        // If not cached, acquire write lock to load and cache
+        let font_data = if let Some(data) = font_data_result {
+            Some(data)
+        } else {
+            let mut font_library_data = self.font_library.inner.write();
+            font_library_data.ensure_data_loaded(&self.font)
+        };
+
+        if let Some((shared_data, offset, cache_key)) = font_data {
             let font_ref = FontRef {
                 data: shared_data.as_ref(),
                 offset,

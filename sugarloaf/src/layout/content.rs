@@ -710,10 +710,22 @@ impl Content {
                 // Shape only a single whitespace character
                 let single_char_content = whitespace_char.to_string();
 
-                // Process the font data directly without cloning FontRef
-                let mut font_library = self.fonts.inner.write();
-                if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
-                {
+                // Process the font data with optimized read-through cache
+                // Try read lock first for cached data
+                let font_data_result = {
+                    let font_library = self.fonts.inner.read();
+                    font_library.get_data(&font_id)
+                };
+
+                // If not cached, acquire write lock to load and cache
+                let font_data = if let Some(data) = font_data_result {
+                    Some(data)
+                } else {
+                    let mut font_library = self.fonts.inner.write();
+                    font_library.ensure_data_loaded(&font_id)
+                };
+
+                if let Some((shared_data, offset, key)) = font_data {
                     let font_ref = FontRef {
                         data: shared_data.as_ref(),
                         offset,
@@ -779,10 +791,22 @@ impl Content {
                 }
             } else {
                 // Normal content - shape as usual
-                // Process the font data directly without cloning FontRef
-                let mut font_library = self.fonts.inner.write();
-                if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
-                {
+                // Process the font data with optimized read-through cache
+                // Try read lock first for cached data
+                let font_data_result = {
+                    let font_library = self.fonts.inner.read();
+                    font_library.get_data(&font_id)
+                };
+
+                // If not cached, acquire write lock to load and cache
+                let font_data = if let Some(data) = font_data_result {
+                    Some(data)
+                } else {
+                    let mut font_library = self.fonts.inner.write();
+                    font_library.ensure_data_loaded(&font_id)
+                };
+
+                if let Some((shared_data, offset, key)) = font_data {
                     let font_ref = FontRef {
                         data: shared_data.as_ref(),
                         offset,
@@ -2350,10 +2374,20 @@ mod tests {
         // Helper function to shape content and return clusters
         let shape_content = |use_cache: bool| -> Vec<OwnedGlyphCluster> {
             let mut scx = ShapeContext::new();
-            let mut font_library_guard = font_library.inner.write();
-            if let Some((shared_data, offset, key)) =
+            // Use optimized read-through cache pattern
+            let font_data_result = {
+                let font_library_guard = font_library.inner.read();
                 font_library_guard.get_data(&font_id)
-            {
+            };
+
+            let font_data = if let Some(data) = font_data_result {
+                data
+            } else {
+                let mut font_library_guard = font_library.inner.write();
+                font_library_guard.ensure_data_loaded(&font_id)
+            };
+
+            if let Some((shared_data, offset, key)) = font_data {
                 let font_ref = crate::font_introspector::FontRef {
                     data: shared_data.as_ref(),
                     offset,
