@@ -22,13 +22,34 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use crate::font_introspector::{Style, Weight};
+
+// Type alias for the font data cache to improve readability
+type FontDataCache = Arc<Mutex<FxHashMap<PathBuf, Arc<Vec<u8>>>>>;
+
+// Global font data cache to avoid reloading fonts from disk
+// This cache stores font file data indexed by path, so fonts are only loaded once
+// and shared across all font library instances. This significantly improves
+// performance when the same font is referenced multiple times.
+static FONT_DATA_CACHE: OnceLock<FontDataCache> = OnceLock::new();
+
+fn get_font_data_cache() -> &'static FontDataCache {
+    FONT_DATA_CACHE.get_or_init(|| Arc::new(Mutex::new(FxHashMap::default())))
+}
+
+/// Clears the global font data cache, forcing fonts to be reloaded from disk
+/// on next access. This should be called when font configuration changes.
+pub fn clear_font_data_cache() {
+    if let Some(cache) = FONT_DATA_CACHE.get() {
+        cache.lock().clear();
+    }
+}
 
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
@@ -224,9 +245,9 @@ impl FontLibraryData {
             if let Some(data) = &font.data {
                 return Some((data.clone(), font.offset, font.key));
             } else if let Some(path) = &font.path {
-                // Load font data directly from file when needed
+                // Load font data from cache or disk
                 if let Some(raw_data) = load_from_font_source(path) {
-                    let shared_data = SharedData::new(raw_data);
+                    let shared_data = SharedData::from_arc(raw_data);
                     return Some((shared_data, font.offset, font.key));
                 }
             }
@@ -508,14 +529,21 @@ impl FontLibraryData {
 /// Atomically reference counted, heap allocated or memory mapped buffer.
 #[derive(Clone)]
 pub struct SharedData {
-    inner: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    inner: Arc<[u8]>,
 }
 
 impl SharedData {
     /// Creates shared data from the specified bytes.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            inner: Arc::new(data),
+            inner: Arc::from(data),
+        }
+    }
+
+    /// Creates shared data from an Arc<Vec<u8>> (avoids cloning)
+    pub fn from_arc(data: Arc<Vec<u8>>) -> Self {
+        Self {
+            inner: Arc::from(data.as_ref().clone()),
         }
     }
 }
@@ -727,8 +755,6 @@ fn find_font(
     evictable: bool,
     is_emoji: bool,
 ) -> FindResult {
-    use std::io::Read;
-
     if !font_spec.is_default_family() {
         let family = font_spec.family.to_string();
         let mut query = crate::font::loader::Query {
@@ -778,30 +804,32 @@ fn find_font(
                 if let Some((crate::font::loader::Source::File(ref path), _index)) =
                     db.face_source(id)
                 {
-                    if let Ok(mut file) = std::fs::File::open(path) {
-                        let mut font_data = vec![];
-                        if file.read_to_end(&mut font_data).is_ok() {
-                            match FontData::from_data(
-                                font_data,
-                                path.to_path_buf(),
-                                evictable,
-                                is_emoji,
-                                &font_spec,
-                            ) {
-                                Ok(d) => {
-                                    tracing::info!(
-                                        "Font '{}' found in {}",
-                                        family,
-                                        path.display()
-                                    );
-                                    return FindResult::Found(d);
-                                }
-                                Err(err_message) => {
-                                    tracing::info!(
-                                        "Failed to load font '{query:?}', {err_message}"
-                                    );
-                                    return FindResult::NotFound(font_spec);
-                                }
+                    // Use the cached font loading function
+                    if let Some(font_data_arc) =
+                        load_from_font_source(&path.to_path_buf())
+                    {
+                        // Convert Arc<Vec<u8>> to Vec<u8> for FontData::from_data
+                        // We need to clone here because FontData::from_data expects ownership
+                        match FontData::from_data(
+                            (*font_data_arc).clone(),
+                            path.to_path_buf(),
+                            evictable,
+                            is_emoji,
+                            &font_spec,
+                        ) {
+                            Ok(d) => {
+                                tracing::info!(
+                                    "Font '{}' found in {}",
+                                    family,
+                                    path.display()
+                                );
+                                return FindResult::Found(d);
+                            }
+                            Err(err_message) => {
+                                tracing::info!(
+                                    "Failed to load font '{query:?}', {err_message}"
+                                );
+                                return FindResult::NotFound(font_spec);
                             }
                         }
                     }
@@ -878,13 +906,25 @@ fn find_font_path(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_from_font_source(path: &PathBuf) -> Option<Vec<u8>> {
+fn load_from_font_source(path: &PathBuf) -> Option<Arc<Vec<u8>>> {
     use std::io::Read;
 
+    let cache = get_font_data_cache();
+    let mut cache_guard = cache.lock();
+
+    // Check if already cached - avoids repeated disk I/O
+    if let Some(cached_data) = cache_guard.get(path) {
+        return Some(Arc::clone(cached_data));
+    }
+
+    // Load from disk if not cached
     if let Ok(mut file) = std::fs::File::open(path) {
         let mut font_data = vec![];
         if file.read_to_end(&mut font_data).is_ok() {
-            return Some(font_data);
+            // Store in cache for future use
+            let font_data_arc = Arc::new(font_data);
+            cache_guard.insert(path.clone(), Arc::clone(&font_data_arc));
+            return Some(font_data_arc);
         }
     }
 
