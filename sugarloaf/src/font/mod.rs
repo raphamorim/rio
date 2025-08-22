@@ -536,7 +536,7 @@ impl SharedData {
     /// Creates shared data from the specified bytes.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            inner: Arc::from(data.into_boxed_slice()),
+            inner: Arc::from(data),
         }
     }
 }
