@@ -25,8 +25,8 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Object,
-    Quad, Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
+    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
@@ -728,20 +728,20 @@ impl Renderer {
         }
 
         if let Some(start_time) = self.visual_bell_start {
-            const VISUAL_BELL_DURATION: std::time::Duration =
-                std::time::Duration::from_millis(
+            if start_time.elapsed()
+                >= std::time::Duration::from_millis(
                     crate::constants::VISUAL_BELL_DURATION_MS,
-                );
-
-            if start_time.elapsed() >= VISUAL_BELL_DURATION {
+                )
+            {
                 self.visual_bell_active = false;
                 self.visual_bell_start = None;
-                return false;
+                false
+            } else {
+                true
             }
-            return true;
+        } else {
+            false
         }
-
-        false
     }
 
     // Get the RGB value for a color index.
@@ -1118,20 +1118,21 @@ impl Renderer {
         context_manager.extend_with_grid_objects(&mut objects);
         // let _duration = start.elapsed();
 
-        // Update visual bell state and check if we need another render
+        // Update visual bell state and set overlay if needed
         let visual_bell_active = self.update_visual_bell();
 
-        // Add visual bell overlay if active
-        if visual_bell_active {
-            // Create a foreground color overlay that covers the entire screen
-            let bell_overlay = Object::Quad(Quad {
+        // Set visual bell overlay that renders on top of everything
+        let bell_overlay = if visual_bell_active {
+            Some(Quad {
                 position: [0.0, 0.0],
                 size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground, // Use configured foreground color
+                color: self.named_colors.foreground,
                 ..Quad::default()
-            });
-            objects.push(bell_overlay);
-        }
+            })
+        } else {
+            None
+        };
+        sugarloaf.set_visual_bell_overlay(bell_overlay);
 
         sugarloaf.set_objects(objects);
 
