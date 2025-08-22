@@ -21,6 +21,7 @@ use rio_window::platform::macos::ActiveEventLoopExtMacOS;
 use rio_window::platform::macos::WindowExtMacOS;
 use rio_window::window::WindowId;
 use rio_window::window::{CursorIcon, Fullscreen};
+use rodio::Source;
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -86,6 +87,54 @@ impl Application<'_> {
                 | WindowEvent::HoveredFile(_)
                 | WindowEvent::Moved(_)
         )
+    }
+
+    fn handle_visual_bell(&mut self, window_id: WindowId) {
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            route.window.screen.renderer.trigger_visual_bell();
+
+            // Mark content as dirty to ensure render happens
+            route
+                .window
+                .screen
+                .ctx_mut()
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_dirty();
+
+            // Force immediate render to show the bell
+            route.request_redraw();
+
+            // Schedule a render after the bell duration to clear it
+            let timer_id =
+                TimerId::new(Topic::Render, route.window.screen.ctx().current_route());
+            let event = EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
+
+            // Schedule render to clear bell effect after visual bell duration
+            self.scheduler.schedule(
+                event,
+                crate::constants::BELL_DURATION,
+                false,
+                timer_id,
+            );
+        }
+    }
+
+    fn handle_audible_bell(&mut self) {
+        std::thread::spawn(|| {
+            if let Ok(stream_handle) = rodio::OutputStreamBuilder::open_default_stream() {
+                let sink = rodio::Sink::connect_new(&stream_handle.mixer());
+                sink.set_volume(0.2);
+
+                // Create a simple 440Hz sine wave for the beep with limited duration
+                let wave = rodio::source::SineWave::new(440.0)
+                    .take_duration(crate::constants::BELL_DURATION);
+
+                sink.append(wave);
+                sink.sleep_until_end();
+            }
+        });
     }
 
     pub fn run(
@@ -429,43 +478,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell) => {
-                // Check if visual bell is enabled in configuration
-                if !self.config.bell.visual {
-                    return;
+                // Handle visual bell
+                if self.config.bell.visual {
+                    self.handle_visual_bell(window_id);
                 }
 
-                // Trigger visual bell (screen flash)
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.window.screen.renderer.trigger_visual_bell();
-
-                    // Mark content as dirty to ensure render happens
-                    route
-                        .window
-                        .screen
-                        .ctx_mut()
-                        .current_mut()
-                        .renderable_content
-                        .pending_update
-                        .set_dirty();
-
-                    // Force immediate render to show the bell
-                    route.request_redraw();
-
-                    // Schedule a render after the bell duration to clear it
-                    let timer_id = TimerId::new(
-                        Topic::Render,
-                        route.window.screen.ctx().current_route(),
-                    );
-                    let event =
-                        EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-                    // Schedule render to clear bell effect after visual bell duration
-                    self.scheduler.schedule(
-                        event,
-                        Duration::from_millis(crate::constants::VISUAL_BELL_DURATION_MS), // Match bell duration exactly
-                        false,
-                        timer_id,
-                    );
+                // Handle audible bell
+                if self.config.bell.audible {
+                    self.handle_audible_bell();
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {

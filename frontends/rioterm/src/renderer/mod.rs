@@ -728,11 +728,7 @@ impl Renderer {
         }
 
         if let Some(start_time) = self.visual_bell_start {
-            if start_time.elapsed()
-                >= std::time::Duration::from_millis(
-                    crate::constants::VISUAL_BELL_DURATION_MS,
-                )
-            {
+            if start_time.elapsed() >= crate::constants::BELL_DURATION {
                 self.visual_bell_active = false;
                 self.visual_bell_start = None;
                 false
