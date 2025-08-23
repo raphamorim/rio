@@ -305,34 +305,31 @@ impl Renderer {
                     }));
             }
 
-            if selection_range.is_some()
-                && selection_range
-                    .unwrap()
-                    .contains(Pos::new(line, Column(column)))
-            {
-                style.color = if self.ignore_selection_fg_color {
-                    self.compute_color(&square.fg, square.flags, term_colors)
-                } else {
-                    self.named_colors.selection_foreground
-                };
-                style.background_color = Some(self.named_colors.selection_background);
-            } else if hint_matches.is_some()
-                && Self::is_position_in_hint_matches(
-                    hint_matches.unwrap(),
-                    Pos::new(line, Column(column)),
-                )
-            {
-                let is_focused = focused_match
-                    .as_ref()
-                    .is_some_and(|fm| fm.contains(&Pos::new(line, Column(column))));
-                if is_focused {
-                    style.color = self.named_colors.search_focused_match_foreground;
-                    style.background_color =
-                        Some(self.named_colors.search_focused_match_background);
-                } else {
-                    style.color = self.named_colors.search_match_foreground;
-                    style.background_color =
-                        Some(self.named_colors.search_match_background);
+            // Check selection more efficiently
+            if let Some(ref range) = selection_range {
+                let pos = Pos::new(line, Column(column));
+                if range.contains(pos) {
+                    style.color = if self.ignore_selection_fg_color {
+                        self.compute_color(&square.fg, square.flags, term_colors)
+                    } else {
+                        self.named_colors.selection_foreground
+                    };
+                    style.background_color = Some(self.named_colors.selection_background);
+                }
+            } else if let Some(ref matches) = hint_matches {
+                let pos = Pos::new(line, Column(column));
+                if Self::is_position_in_hint_matches(matches, pos) {
+                    let is_focused =
+                        focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
+                    if is_focused {
+                        style.color = self.named_colors.search_focused_match_foreground;
+                        style.background_color =
+                            Some(self.named_colors.search_focused_match_background);
+                    } else {
+                        style.color = self.named_colors.search_match_foreground;
+                        style.background_color =
+                            Some(self.named_colors.search_match_background);
+                    }
                 }
             }
 
