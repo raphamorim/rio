@@ -71,20 +71,11 @@ impl<T: EventListener> Context<T> {
 
         if has_updated {
             // Calculate partial damage for selection changes
-            let damage = self.calculate_selection_damage(old_selection, selection_range);
+            let damage = calculate_selection_damage(old_selection, selection_range);
             self.renderable_content.pending_update.set_ui_damage(damage);
         }
 
         self.renderable_content.selection_range = selection_range;
-    }
-
-    #[inline]
-    fn calculate_selection_damage(
-        &self,
-        old: Option<SelectionRange>,
-        new: Option<SelectionRange>,
-    ) -> rio_backend::event::TerminalDamage {
-        calculate_selection_damage_impl(old, new)
     }
 
     #[inline]
@@ -1096,7 +1087,7 @@ pub fn process_open_url(
 
 // Standalone function for calculating selection damage
 #[inline]
-fn calculate_selection_damage_impl(
+fn calculate_selection_damage(
     old: Option<SelectionRange>,
     new: Option<SelectionRange>,
 ) -> rio_backend::event::TerminalDamage {
@@ -1166,7 +1157,7 @@ mod selection_damage_tests {
 
     #[test]
     fn test_no_selection_to_no_selection() {
-        let damage = calculate_selection_damage_impl(None, None);
+        let damage = calculate_selection_damage(None, None);
         assert!(matches!(
             damage,
             rio_backend::event::TerminalDamage::CursorOnly
@@ -1180,7 +1171,7 @@ mod selection_damage_tests {
             Pos::new(Line(2), Column(10)),
             false,
         ));
-        let damage = calculate_selection_damage_impl(None, new_selection);
+        let damage = calculate_selection_damage(None, new_selection);
         assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
     }
 
@@ -1191,7 +1182,7 @@ mod selection_damage_tests {
             Pos::new(Line(2), Column(10)),
             false,
         ));
-        let damage = calculate_selection_damage_impl(old_selection, None);
+        let damage = calculate_selection_damage(old_selection, None);
         assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
     }
 
@@ -1207,7 +1198,7 @@ mod selection_damage_tests {
             Pos::new(Line(2), Column(10)),
             true, // block selection
         ));
-        let damage = calculate_selection_damage_impl(old_selection, new_selection);
+        let damage = calculate_selection_damage(old_selection, new_selection);
         assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
     }
 
@@ -1223,7 +1214,7 @@ mod selection_damage_tests {
             Pos::new(Line(3), Column(10)), // Extended down by one line
             false,
         ));
-        let damage = calculate_selection_damage_impl(old_selection, new_selection);
+        let damage = calculate_selection_damage(old_selection, new_selection);
 
         if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
             // Should only damage lines 2 and 3 (the changed end rows)
@@ -1248,7 +1239,7 @@ mod selection_damage_tests {
             Pos::new(Line(3), Column(10)),
             false,
         ));
-        let damage = calculate_selection_damage_impl(old_selection, new_selection);
+        let damage = calculate_selection_damage(old_selection, new_selection);
 
         if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
             // Should damage lines 0 and 1 (the changed start rows)
@@ -1273,7 +1264,7 @@ mod selection_damage_tests {
             Pos::new(Line(1), Column(15)), // Extended right on same line
             false,
         ));
-        let damage = calculate_selection_damage_impl(old_selection, new_selection);
+        let damage = calculate_selection_damage(old_selection, new_selection);
 
         if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
             // Should only damage line 1
@@ -1296,7 +1287,7 @@ mod selection_damage_tests {
             Pos::new(Line(5), Column(15)), // End moved down
             false,
         ));
-        let damage = calculate_selection_damage_impl(old_selection, new_selection);
+        let damage = calculate_selection_damage(old_selection, new_selection);
 
         if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
             // Should damage lines 1-2 (start change) and 4-5 (end change)
