@@ -316,7 +316,7 @@ impl Renderer {
                     };
                     style.background_color = Some(self.named_colors.selection_background);
                 }
-            } else if let Some(ref matches) = hint_matches {
+            } else if let Some(matches) = hint_matches {
                 let pos = Pos::new(line, Column(column));
                 if Self::is_position_in_hint_matches(matches, pos) {
                     let is_focused =
