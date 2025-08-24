@@ -3,6 +3,8 @@
 // which is licensed under Apache 2.0 license.
 
 pub mod kitty_keyboard;
+#[cfg(target_os = "windows")]
+pub mod win32_keyboard;
 
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;

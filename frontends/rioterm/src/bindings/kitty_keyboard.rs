@@ -10,8 +10,30 @@ use rio_window::keyboard::NamedKey;
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mode_check() {
+        // Test that Win32 input mode flag is properly defined
+        let mode = Mode::WIN32_INPUT;
+        assert!(!mode.is_empty());
+
+        // Test that it doesn't conflict with other modes
+        let kitty_mode = Mode::KITTY_KEYBOARD_PROTOCOL;
+        assert!(!mode.intersects(kitty_mode));
+    }
+}
+
 #[inline(never)]
 pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> Vec<u8> {
+    // Check for Win32 input mode on Windows
+    #[cfg(target_os = "windows")]
+    if mode.contains(Mode::WIN32_INPUT) {
+        return crate::bindings::win32_keyboard::build_win32_sequence(key, mods);
+    }
+
     let mut modifiers = mods.into();
 
     let kitty_seq = mode.intersects(
