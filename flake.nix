@@ -48,10 +48,24 @@
               ++ tools;
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath runtimeDeps}";
           };
+
+        npmAITools = ''
+          export NPM_CONFIG_PREFIX="$PWD/.npm-global"
+          export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+          if ! command -v codex >/dev/null 2>&1; then
+            echo "Installing OpenAI Codex CLI..."
+            npm install -g @openai/codex
+          fi
+          if ! command -v claude >/dev/null 2>&1; then
+            echo "Installing Anthropic Claude Code CLI..."
+            npm install -g @anthropic-ai/claude-code
+          fi
+        '';
       in {
         _module.args.pkgs = import inputs.nixpkgs {
           inherit system;
           overlays = [(import inputs.rust-overlay)];
+          config.allowUnfree = true;
         };
 
         formatter = pkgs.alejandra;
@@ -67,6 +81,32 @@
         devShells.msrv = mkDevShell (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml);
         devShells.stable = mkDevShell pkgs.rust-bin.stable.latest.minimal;
         devShells.nightly = mkDevShell (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal));
+        devShells.ai = let
+          nightlyRust = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal);
+          runtimeDeps = self'.packages.rio.runtimeDependencies;
+          tools = self'.packages.rio.nativeBuildInputs ++ self'.packages.rio.buildInputs;
+        in
+          pkgs.mkShell {
+            packages = [
+              nightlyRust
+              (pkgs.rust-bin.selectLatestNightlyWith (toolchain:
+                toolchain.minimal.override {
+                  extensions = ["rustfmt" "rust-analyzer"];
+                }))
+              pkgs.git
+              pkgs.curl
+              pkgs.nodejs_20
+              pkgs.nodePackages.npm
+              pkgs.just
+              pkgs.gh
+            ] ++ tools;
+            LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath runtimeDeps}";
+            shellHook = ''
+              ${npmAITools}
+              echo "[ai] node=$(node -v) npm=$(npm -v)"
+              echo "[ai] codex=$(command -v codex || echo missing)  claude=$(command -v claude || echo missing)"
+            '';
+          };
       };
     };
 }
