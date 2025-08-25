@@ -3,15 +3,47 @@ title: 'Frequently Asked Questions'
 language: 'en'
 ---
 
-### I get errors about the terminal being unknown or opening the terminal failing or functional keys like arrow keys don’t work?
+### I get errors about the terminal being unknown or opening the terminal failing or functional keys like arrow keys don't work?
 
 The famous case of "'rio' unknown terminal type".
 
-All the issues all have the same root cause: the rio terminfo is not available. The most common way this happens is SSHing into a computer that does not have the rio terminfo files. The simplest fix would be install the terminfo files on the remote machine (following terminfo instruction in install section [install/terminfo](/docs/install/terminfo))
+All these issues have the same root cause: the rio terminfo is not available. 
 
-Other alternative is use a different terminfo either in config or per connection with environment variable like `TERM=xterm-256color ssh`.
+#### Common Scenarios
 
-If you are using a well maintained Linux distribution, it will have a rio-terminfo package that you can simply install to make the rio terminfo files available system-wide. Then the problem will no longer occur. Arch Linux for example [rio-terminfo](https://archlinux.org/packages/extra/x86_64/rio-terminfo/)
+1. **SSH connections**: The remote system doesn't have Rio's terminfo installed
+2. **Ubuntu 22.04 and older**: Rio's .deb packages don't include terminfo (to avoid conflicts), so manual installation is needed
+3. **Debian 13+/Ubuntu 24.04+**: Terminfo is provided by the system's ncurses-term package
+
+#### Solutions by Distribution
+
+**For Ubuntu 22.04 and older Debian/Ubuntu:**
+```bash
+# Rio .deb packages don't include terminfo, install it manually:
+curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
+sudo tic -xe xterm-rio,rio rio.terminfo
+rm rio.terminfo
+```
+
+**For Debian 13+ / Ubuntu 24.04+:**
+- Terminfo is included in `ncurses-term` (6.5+)
+- Simply ensure ncurses-term is installed: `sudo apt install ncurses-term`
+
+**For Arch Linux:**
+```bash
+sudo pacman -S rio-terminfo
+```
+
+**For RPM-based distributions:**
+- Rio's RPM packages include terminfo, no action needed
+
+#### Quick Workarounds
+
+- Use a fallback TERM for SSH: `TERM=xterm-256color ssh user@host`
+- Configure a different TERM in Rio's config file
+- Copy terminfo to remote hosts: `infocmp -a xterm-rio | ssh myserver tic -x -o ~/.terminfo /dev/stdin`
+
+For more details, see [install/terminfo](/docs/install/terminfo).
 
 ### Colors scheme not working as intended with tmux
 
