@@ -179,6 +179,7 @@ impl Screen<'_> {
 
         sugarloaf.set_filters_target(config.renderer.filters_target);
         sugarloaf.update_filters(config.renderer.filters.as_slice());
+        sugarloaf.set_backdrop(config.renderer.backdrop_source());
 
         let renderer = Renderer::new(config, font_library);
 

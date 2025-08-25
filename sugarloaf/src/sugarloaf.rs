@@ -398,6 +398,38 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn set_backdrop(&mut self, source: BackdropSource) {
+        self.backdrop_source = source;
+        if source == BackdropSource::Os {
+            #[cfg(target_os = "macos")]
+            {
+                use rio_window::platform::backdrop::OsBackdropProvider;
+                self.backdrop_provider = Some(Box::new(OsBackdropProvider::new(
+                    self.ctx.device.clone(),
+                    self.ctx.queue.clone(),
+                )));
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Other platforms not implemented yet
+                self.backdrop_provider = None;
+            }
+        } else {
+            self.backdrop_provider = None;
+        }
+    }
+
+    fn render_backdrop_texture(
+        &mut self, 
+        _render_pass: &mut wgpu::RenderPass,
+        _backdrop_view: &wgpu::TextureView,
+    ) {
+        // TODO: Implement backdrop texture rendering using a fullscreen quad
+        // For now, this is a placeholder that will be expanded to render
+        // the backdrop texture as a fullscreen background
+    }
+
+    #[inline]
     pub fn add_layers(&mut self, _quantity: usize) {}
 
     #[inline]
@@ -407,7 +439,8 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        if self.backdrop_source != BackdropSource::None {
+        // Capture backdrop if enabled
+        let backdrop_view = if self.backdrop_source != BackdropSource::None {
             if let Some(provider) = self.backdrop_provider.as_mut() {
                 let rect = PhysicalRect {
                     x: 0,
@@ -415,10 +448,13 @@ impl Sugarloaf<'_> {
                     width: self.ctx.size.width as u32,
                     height: self.ctx.size.height as u32,
                 };
-                let _backdrop_view = provider.begin_frame(rect);
-                // TODO: feed `_backdrop_view` to the refraction shader
+                provider.begin_frame(rect)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
 
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
@@ -470,9 +506,15 @@ impl Sugarloaf<'_> {
                         bg_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                     {
-                        let load = wgpu::LoadOp::Clear(
-                            self.background_color.unwrap_or(wgpu::Color::TRANSPARENT),
-                        );
+                        let load = if backdrop_view.is_some() {
+                            // If we have a backdrop, clear to transparent first
+                            wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)
+                        } else {
+                            wgpu::LoadOp::Clear(
+                                self.background_color.unwrap_or(wgpu::Color::TRANSPARENT),
+                            )
+                        };
+                        
                         let mut rpass =
                             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                                 timestamp_writes: None,
@@ -490,6 +532,10 @@ impl Sugarloaf<'_> {
                                 )],
                                 depth_stencil_attachment: None,
                             });
+
+                        // Render backdrop texture if available
+                        // TODO: Implement backdrop rendering using a dedicated shader
+                        // For now, the backdrop texture is captured but not yet rendered
 
                         if self.graphics.bottom_layer.is_some() {
                             self.layer_brush.render(0, &mut rpass, None);

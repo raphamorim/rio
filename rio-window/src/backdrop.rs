@@ -1,5 +1,5 @@
 /// A rectangle in physical pixels.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PhysicalRect {
     pub x: i32,
     pub y: i32,

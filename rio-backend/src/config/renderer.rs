@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use sugarloaf::{Filter, FiltersTarget};
+use rio_window::backdrop::BackdropSource;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Renderer {
@@ -21,6 +22,8 @@ pub struct Renderer {
     pub filters_target: FiltersTarget,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
+    #[serde(default, rename = "backdrop-source")]
+    pub backdrop_source: Option<String>,
 }
 
 fn default_disable_occluded_render() -> bool {
@@ -48,6 +51,17 @@ impl RendererStategy {
     }
 }
 
+impl Renderer {
+    pub fn backdrop_source(&self) -> BackdropSource {
+        match self.backdrop_source.as_deref() {
+            Some("os") => BackdropSource::Os,
+            Some("video") => BackdropSource::Video,
+            Some("scene3d") => BackdropSource::Scene3D,
+            _ => BackdropSource::None,
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for Renderer {
     fn default() -> Renderer {
@@ -59,6 +73,7 @@ impl Default for Renderer {
             filters: Vec::default(),
             filters_target: FiltersTarget::Frame,
             strategy: RendererStategy::Events,
+            backdrop_source: None,
         }
     }
 }
