@@ -13,7 +13,7 @@ use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
 use crate::SugarDimensions;
-use crate::{context::Context, Object};
+use crate::{context::Context, Object, Quad};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -443,6 +443,32 @@ impl Sugarloaf<'_> {
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
                 }
 
+                // Visual bell overlay requires separate render pass to appear on top of rich text
+                if let Some(bell_overlay) = self.state.visual_bell_overlay {
+                    let mut overlay_pass =
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            label: Some("visual_bell"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: &view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load, // Load existing content
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                        });
+
+                    // Render just the overlay quad directly
+                    self.quad_brush.render_single(
+                        &mut self.ctx,
+                        &bell_overlay,
+                        &mut overlay_pass,
+                    );
+                }
+
                 if self.graphics.bottom_layer.is_some()
                     || self.graphics.has_graphics_on_top_layer()
                 {
@@ -468,5 +494,10 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
+    }
+
+    #[inline]
+    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
+        self.state.set_visual_bell_overlay(overlay);
     }
 }
