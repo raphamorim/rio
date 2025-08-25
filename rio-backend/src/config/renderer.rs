@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use sugarloaf::Filter;
+use sugarloaf::{Filter, FiltersTarget};
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Renderer {
@@ -17,6 +17,8 @@ pub struct Renderer {
     pub disable_occluded_render: bool,
     #[serde(default = "Vec::default")]
     pub filters: Vec<Filter>,
+    #[serde(default = "FiltersTarget::default", rename = "filters-target")]
+    pub filters_target: FiltersTarget,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
 }
@@ -55,6 +57,7 @@ impl Default for Renderer {
             disable_unfocused_render: false,
             disable_occluded_render: default_disable_occluded_render(),
             filters: Vec::default(),
+            filters_target: FiltersTarget::Frame,
             strategy: RendererStategy::Events,
         }
     }

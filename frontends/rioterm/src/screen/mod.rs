@@ -177,6 +177,7 @@ impl Screen<'_> {
             }
         };
 
+        sugarloaf.set_filters_target(config.renderer.filters_target);
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
         let renderer = Renderer::new(config, font_library);

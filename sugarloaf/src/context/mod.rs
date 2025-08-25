@@ -21,49 +21,33 @@ fn find_best_texture_format(
     formats: &[wgpu::TextureFormat],
     colorspace: Colorspace,
 ) -> wgpu::TextureFormat {
-    let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
-
-    // TODO: Fix formats with signs
-    // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
-    // Reason for this is currently output color space is poorly defined in wgpu and
-    // anything other than Srgb texture formats can cause undeterministic output color
-    // space selection which also causes colors to mismatch. Optionally we can whitelist
-    // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
-    // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
     #[cfg(windows)]
     let unsupported_formats = [
         wgpu::TextureFormat::Rgba8Snorm,
         wgpu::TextureFormat::Rgba16Float,
     ];
 
-    // not reproduce-able on mac
     #[cfg(not(windows))]
     let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
 
-    let filtered_formats: Vec<wgpu::TextureFormat> = formats
+    if let Some(format) = formats
         .iter()
         .copied()
-        .filter(|&x| {
-            // On non-macOS platforms, always avoid sRGB formats
-            // This maintains compatibility with existing Linux/Windows color handling
-            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
-        })
-        .collect();
-
-    // If no compatible formats found, fall back to any non-unsupported format
-    let final_formats = if filtered_formats.is_empty() {
-        formats
-            .iter()
-            .copied()
-            .filter(|&x| !unsupported_formats.contains(&x))
-            .collect()
-    } else {
-        filtered_formats
-    };
-
-    if !final_formats.is_empty() {
-        final_formats.first().unwrap().clone_into(&mut format);
+        .find(|f| wgpu::TextureFormat::is_srgb(f) && !unsupported_formats.contains(f))
+    {
+        tracing::info!(
+            "Sugarloaf selected sRGB format: {format:?} from {:?} for colorspace {:?}",
+            formats,
+            colorspace
+        );
+        return format;
     }
+
+    let format = formats
+        .iter()
+        .copied()
+        .find(|f| !unsupported_formats.contains(f))
+        .unwrap_or(formats[0]);
 
     tracing::info!(
         "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",

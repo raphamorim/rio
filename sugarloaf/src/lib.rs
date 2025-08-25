@@ -8,6 +8,15 @@ mod sugarloaf;
 // Expose WGPU
 pub use wgpu;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+pub enum FiltersTarget {
+    #[default]
+    Frame,
+    Background,
+}
+
 pub use font_introspector::{Stretch, Style, Weight};
 
 pub use crate::sugarloaf::{
