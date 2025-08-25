@@ -7,26 +7,43 @@ language: 'en'
 
 The famous case of "'rio' unknown terminal type".
 
-All these issues have the same root cause: the rio terminfo is not available. Common scenarios include:
+All these issues have the same root cause: the rio terminfo is not available. 
+
+#### Common Scenarios
 
 1. **SSH connections**: The remote system doesn't have Rio's terminfo installed
-2. **Older Linux distributions**: The system doesn't include Rio's terminfo
-3. **Package conflicts**: On Debian 13+/Ubuntu 24.04+, conflicts with ncurses-term package
+2. **Ubuntu 22.04 and older**: Rio's .deb packages don't include terminfo (to avoid conflicts), so manual installation is needed
+3. **Debian 13+/Ubuntu 24.04+**: Terminfo is provided by the system's ncurses-term package
 
-#### Solutions:
+#### Solutions by Distribution
 
-**For Debian 13+ / Ubuntu 24.04+ users:**
-- Rio's terminfo is included in `ncurses-term` (6.5+)
-- If you get installation conflicts, your system already has the terminfo
-- Simply ensure ncurses-term is up to date: `sudo apt install ncurses-term`
+**For Ubuntu 22.04 and older Debian/Ubuntu:**
+```bash
+# Rio .deb packages don't include terminfo, install it manually:
+curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
+sudo tic -xe xterm-rio,rio rio.terminfo
+rm rio.terminfo
+```
 
-**For other distributions:**
-- Install terminfo on the remote/local machine following [install/terminfo](/docs/install/terminfo)
-- Arch Linux users can install: `sudo pacman -S rio-terminfo`
+**For Debian 13+ / Ubuntu 24.04+:**
+- Terminfo is included in `ncurses-term` (6.5+)
+- Simply ensure ncurses-term is installed: `sudo apt install ncurses-term`
 
-**Quick workarounds:**
+**For Arch Linux:**
+```bash
+sudo pacman -S rio-terminfo
+```
+
+**For RPM-based distributions:**
+- Rio's RPM packages include terminfo, no action needed
+
+#### Quick Workarounds
+
 - Use a fallback TERM for SSH: `TERM=xterm-256color ssh user@host`
 - Configure a different TERM in Rio's config file
+- Copy terminfo to remote hosts: `infocmp -a xterm-rio | ssh myserver tic -x -o ~/.terminfo /dev/stdin`
+
+For more details, see [install/terminfo](/docs/install/terminfo).
 
 ### Colors scheme not working as intended with tmux
 

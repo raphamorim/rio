@@ -10,11 +10,11 @@ language: 'en'
 - Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269)
 - Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows
 - Add NSCameraUseContinuityCameraDeviceType to plist for macOS
-- **Fix Debian/Ubuntu package conflicts with ncurses-term**: Fixed installation conflicts on Debian 13+ and Ubuntu 24.04+ [#1264](https://github.com/raphamorim/rio/issues/1264)
-  - Rio's terminfo is now included in ncurses-term 6.5+ on these distributions
-  - Debian packages now properly depend on ncurses-term when available
-  - Removed terminfo file from Debian packages to avoid conflicts with system packages
-  - RPM packages continue to include terminfo as they don't have this conflict
+- **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
+  - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
+  - Users on Ubuntu 22.04 and older need to manually install terminfo after package installation
+  - Debian 13+ and Ubuntu 24.04+ users get terminfo from system's ncurses-term package
+  - RPM packages continue to include terminfo as before
 
 ## 0.2.28
 
