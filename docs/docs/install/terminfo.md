@@ -123,7 +123,4 @@ After installation, verify everything works:
 ```sh
 # Check terminfo is installed
 infocmp rio
-
-# Check Rio detects it
-rio --print-config | grep -i term
 ```
