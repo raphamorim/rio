@@ -155,13 +155,20 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
+      deb:
+        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -173,13 +180,20 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
+      deb:
+        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -191,13 +205,20 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
+      deb:
+        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -209,13 +230,20 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
+      deb:
+        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin

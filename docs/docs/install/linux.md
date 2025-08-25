@@ -82,15 +82,32 @@ nix profile install github:raphamorim/rio/main
 
 ## Terminfo
 
-To ensure Rio works correctly, the "rio" terminfo must be installed. Most package managers will install this automatically, but you can verify it's present:
+To ensure Rio works correctly, the "rio" terminfo must be installed. The installation method depends on your distribution:
+
+### Debian 13+ / Ubuntu 24.04+
+
+These distributions include Rio's terminfo in the `ncurses-term` package (version 6.5+). The Rio package will automatically use the system-provided terminfo. You can verify it's installed:
 
 ```bash
 infocmp rio
 ```
 
-If the command returns an error, install the terminfo manually:
+If you encounter conflicts during installation, ensure you have the latest ncurses-term:
 
 ```bash
+sudo apt update
+sudo apt install ncurses-term
+```
+
+### Other Linux Distributions
+
+For older Debian/Ubuntu versions or other distributions, the terminfo may need manual installation:
+
+```bash
+# Check if terminfo is already installed
+infocmp rio
+
+# If not found, install manually:
 curl -o rio.terminfo https://raw.githubusercontent.com/raphamorim/rio/main/misc/rio.terminfo
 sudo tic -xe xterm-rio,rio rio.terminfo
 rm rio.terminfo

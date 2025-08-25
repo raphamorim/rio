@@ -3,15 +3,30 @@ title: 'Frequently Asked Questions'
 language: 'en'
 ---
 
-### I get errors about the terminal being unknown or opening the terminal failing or functional keys like arrow keys don’t work?
+### I get errors about the terminal being unknown or opening the terminal failing or functional keys like arrow keys don't work?
 
 The famous case of "'rio' unknown terminal type".
 
-All the issues all have the same root cause: the rio terminfo is not available. The most common way this happens is SSHing into a computer that does not have the rio terminfo files. The simplest fix would be install the terminfo files on the remote machine (following terminfo instruction in install section [install/terminfo](/docs/install/terminfo))
+All these issues have the same root cause: the rio terminfo is not available. Common scenarios include:
 
-Other alternative is use a different terminfo either in config or per connection with environment variable like `TERM=xterm-256color ssh`.
+1. **SSH connections**: The remote system doesn't have Rio's terminfo installed
+2. **Older Linux distributions**: The system doesn't include Rio's terminfo
+3. **Package conflicts**: On Debian 13+/Ubuntu 24.04+, conflicts with ncurses-term package
 
-If you are using a well maintained Linux distribution, it will have a rio-terminfo package that you can simply install to make the rio terminfo files available system-wide. Then the problem will no longer occur. Arch Linux for example [rio-terminfo](https://archlinux.org/packages/extra/x86_64/rio-terminfo/)
+#### Solutions:
+
+**For Debian 13+ / Ubuntu 24.04+ users:**
+- Rio's terminfo is included in `ncurses-term` (6.5+)
+- If you get installation conflicts, your system already has the terminfo
+- Simply ensure ncurses-term is up to date: `sudo apt install ncurses-term`
+
+**For other distributions:**
+- Install terminfo on the remote/local machine following [install/terminfo](/docs/install/terminfo)
+- Arch Linux users can install: `sudo pacman -S rio-terminfo`
+
+**Quick workarounds:**
+- Use a fallback TERM for SSH: `TERM=xterm-256color ssh user@host`
+- Configure a different TERM in Rio's config file
 
 ### Colors scheme not working as intended with tmux
 
