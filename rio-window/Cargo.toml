@@ -43,6 +43,7 @@ dpi = { version = "0.1.1" }
 raw-window-handle = { workspace = true }
 smol_str = { workspace = true }
 tracing = { version = "0.1.40", default-features = false }
+wgpu = { workspace = true }
 
 [dev-dependencies]
 image = { version = "0.25.0", default-features = false, features = ["png"] }

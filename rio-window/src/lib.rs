@@ -186,4 +186,5 @@ mod platform_impl;
 mod utils;
 pub mod window;
 
+pub mod backdrop;
 pub mod platform;

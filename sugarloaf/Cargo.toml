@@ -53,6 +53,7 @@ num-traits = "0.2.19"
 yazi = { version = "0.2.1", optional = true }
 zeno = { version = "0.3.3", optional = true }
 futures = { workspace = true }
+rio-window = { workspace = true }
 
 librashader-common = "0.8.1"
 librashader-presets = "0.8.1"

@@ -19,6 +19,7 @@ use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
+use rio_window::backdrop::{BackdropProvider, BackdropSource, PhysicalRect};
 use state::SugarState;
 
 pub struct Sugarloaf<'a> {
@@ -30,6 +31,8 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
+    pub backdrop_source: BackdropSource,
+    pub backdrop_provider: Option<Box<dyn BackdropProvider>>,
     filters_brush: Option<FiltersBrush>,
     bg_rt: Option<wgpu::Texture>,
     pub filters_target: FiltersTarget,
@@ -161,6 +164,8 @@ impl Sugarloaf<'_> {
             background_image: None,
             rich_text_brush,
             graphics: Graphics::default(),
+            backdrop_source: BackdropSource::None,
+            backdrop_provider: None,
             filters_brush: None,
             bg_rt: None,
             filters_target: FiltersTarget::Frame,
@@ -402,6 +407,19 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
+        if self.backdrop_source != BackdropSource::None {
+            if let Some(provider) = self.backdrop_provider.as_mut() {
+                let rect = PhysicalRect {
+                    x: 0,
+                    y: 0,
+                    width: self.ctx.size.width as u32,
+                    height: self.ctx.size.height as u32,
+                };
+                let _backdrop_view = provider.begin_frame(rect);
+                // TODO: feed `_backdrop_view` to the refraction shader
+            }
+        }
+
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
             &mut self.rich_text_brush,
