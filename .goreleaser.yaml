@@ -155,8 +155,6 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
-      deb:
-        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
         contents:
@@ -180,8 +178,6 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
-      deb:
-        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
         contents:
@@ -205,8 +201,6 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
-      deb:
-        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
         contents:
@@ -230,8 +224,6 @@ nfpms:
     package_name: rioterm
     dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11)]
     overrides:
-      deb:
-        dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), ncurses-term (>= 6.5) | ncurses-base (<< 6.5)]
       rpm:
         dependencies: [glibc, libstdc++]
         contents:
