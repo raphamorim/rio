@@ -69,6 +69,7 @@ windows-sys = { version = "0.60.2", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Diagnostics_Debug",
 ]}
 
 [features]
