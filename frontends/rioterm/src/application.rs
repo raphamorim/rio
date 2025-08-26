@@ -122,7 +122,7 @@ impl Application<'_> {
         }
     }
 
-    fn handle_audible_bell(&mut self) {
+    fn handle_audio_bell(&mut self) {
         #[cfg(target_os = "macos")]
         {
             // Use system bell sound on macOS
@@ -501,9 +501,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     self.handle_visual_bell(window_id);
                 }
 
-                // Handle audible bell
-                if self.config.bell.audible {
-                    self.handle_audible_bell();
+                // Handle audio bell
+                if self.config.bell.audio {
+                    self.handle_audio_bell();
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
