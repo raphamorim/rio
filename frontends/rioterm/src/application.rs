@@ -5,7 +5,11 @@ use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
@@ -147,11 +151,18 @@ impl Application<'_> {
 
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
-            std::thread::spawn(|| {
-                if let Err(e) = play_bell_sound() {
-                    tracing::warn!("Failed to play bell sound: {}", e);
-                }
-            });
+            #[cfg(feature = "audio")]
+            {
+                std::thread::spawn(|| {
+                    if let Err(e) = play_bell_sound() {
+                        tracing::warn!("Failed to play bell sound: {}", e);
+                    }
+                });
+            }
+            #[cfg(not(feature = "audio"))]
+            {
+                tracing::debug!("Audio bell requested but audio feature is not enabled");
+            }
         }
     }
 
@@ -1442,7 +1453,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
 fn play_bell_sound() -> Result<(), Box<dyn Error>> {
     let host = cpal::default_host();
     let device = host
@@ -1459,7 +1474,11 @@ fn play_bell_sound() -> Result<(), Box<dyn Error>> {
     }
 }
 
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
 fn run_bell<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
