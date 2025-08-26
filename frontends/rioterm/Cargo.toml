@@ -47,7 +47,9 @@ url = { workspace = true }
 smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
-rodio = { version = "0.21.1", default-features = false, features = ["playback"] }
+
+[target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
+cpal = { version = "0.15", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
@@ -71,6 +73,7 @@ windows-sys = { version = "0.60.2", features = [
 
 [features]
 default = ["wayland", "x11"]
+audio = ["cpal"]
 x11 = [
     "rio-backend/x11",
     "rio-window/x11"
