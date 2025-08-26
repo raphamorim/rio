@@ -34,7 +34,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal
       - run: rustup component add rustfmt clippy
-      - run: sudo apt-get update -yq && sudo apt-get install -yq libasound2-dev
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -yq && sudo apt-get install -yq libasound2-dev
       - run: cargo fetch
       - run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
