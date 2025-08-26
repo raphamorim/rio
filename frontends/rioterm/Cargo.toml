@@ -47,7 +47,9 @@ url = { workspace = true }
 smallvec = { workspace = true }
 rio-window = { workspace = true }
 lru = "0.16.0"
-rodio = { version = "0.21.1", default-features = false, features = ["playback"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+cpal = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
