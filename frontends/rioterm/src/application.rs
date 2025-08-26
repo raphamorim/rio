@@ -143,7 +143,7 @@ impl Application<'_> {
         {
             // Use MessageBeep on Windows with MB_OK (0x00000000) for default beep
             unsafe {
-                windows_sys::Win32::System::Console::Beep(800, 200);
+                windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0x00000000);
             }
         }
 
