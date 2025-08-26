@@ -141,11 +141,9 @@ impl Application<'_> {
 
         #[cfg(target_os = "windows")]
         {
-            // Use system bell sound on Windows
+            // Use console beep on Windows
             unsafe {
-                windows_sys::Win32::UI::WindowsAndMessaging::MessageBeep(
-                    windows_sys::Win32::UI::WindowsAndMessaging::MB_OK,
-                );
+                windows_sys::Win32::System::Console::Beep(800, 200);
             }
         }
 
