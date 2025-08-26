@@ -5,7 +5,7 @@ use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
@@ -134,8 +134,18 @@ impl Application<'_> {
                 NSBeep();
             }
         }
-        
-        #[cfg(not(target_os = "macos"))]
+
+        #[cfg(target_os = "windows")]
+        {
+            // Use system bell sound on Windows
+            unsafe {
+                windows_sys::Win32::UI::WindowsAndMessaging::MessageBeep(
+                    windows_sys::Win32::UI::WindowsAndMessaging::MB_OK,
+                );
+            }
+        }
+
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
             std::thread::spawn(|| {
                 if let Err(e) = play_bell_sound() {
@@ -1432,7 +1442,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn play_bell_sound() -> Result<(), Box<dyn Error>> {
     let host = cpal::default_host();
     let device = host
@@ -1449,7 +1459,7 @@ fn play_bell_sound() -> Result<(), Box<dyn Error>> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn run_bell<T>(
     device: &cpal::Device,
     config: &cpal::StreamConfig,
