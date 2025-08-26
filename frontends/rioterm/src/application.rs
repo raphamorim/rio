@@ -141,7 +141,7 @@ impl Application<'_> {
 
         #[cfg(target_os = "windows")]
         {
-            // Use console beep on Windows
+            // Use MessageBeep on Windows with MB_OK (0x00000000) for default beep
             unsafe {
                 windows_sys::Win32::System::Console::Beep(800, 200);
             }
