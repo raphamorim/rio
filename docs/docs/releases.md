@@ -5,12 +5,15 @@ language: 'en'
 
 # Releases
 
-## 0.2.29 (unreleased)
+## 0.2.30 (unreleased)
 
-- Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284)
-- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269)
-- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows
-- Add NSCameraUseContinuityCameraDeviceType to plist for macOS
+- Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284).
+
+## 0.2.29
+
+- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269).
+- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows.
+- Add NSCameraUseContinuityCameraDeviceType to plist for macOS.
 
 ## 0.2.28
 
