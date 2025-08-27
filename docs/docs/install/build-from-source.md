@@ -74,6 +74,9 @@ Linux with X11:
 # Build for X11
 cargo build -p rioterm --release --no-default-features --features=x11
 
+# Build for X11 with audio bell support
+cargo build -p rioterm --release --no-default-features --features=x11,audio
+
 # Running it
 target/release/rio
 ```
@@ -84,9 +87,36 @@ Linux with Wayland:
 # Build for Wayland
 cargo build -p rioterm --release --no-default-features --features=wayland
 
+# Build for Wayland with audio bell support
+cargo build -p rioterm --release --no-default-features --features=wayland,audio
+
 # Running it
 target/release/rio
 ```
+
+Linux with both X11 and Wayland:
+
+```sh
+# Build with both display protocols (default)
+cargo build -p rioterm --release
+
+# Build with both display protocols and audio bell support
+cargo build -p rioterm --release --features=audio
+
+# Running it
+target/release/rio
+```
+
+#### Audio Feature
+
+The `audio` feature flag enables audio bell support on Linux and BSD systems. When enabled, Rio will play a 440Hz tone when the terminal bell is triggered. This feature:
+
+- Is **optional** and disabled by default to minimize dependencies
+- Adds the `cpal` audio library as a dependency
+- Is **not needed** on macOS and Windows (they use system notification sounds)
+- Can be enabled by adding `audio` to the features list during compilation
+
+If audio support is not compiled in, Rio will log a debug message when the bell is triggered but won't play any sound.
 
 MacOS:
 

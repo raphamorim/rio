@@ -147,6 +147,39 @@ Set cursor blinking interval (default: 800, only configurable from 350ms to 1200
 blinking-interval = 800
 ```
 
+## bell
+
+Configure the terminal bell behavior. The bell can be triggered by applications using the BEL control character (ASCII 7).
+
+#### Visual
+
+Enable or disable the visual bell. When enabled, the screen will flash instead of playing a sound.
+
+Default is `false`.
+
+```toml
+[bell]
+visual = false
+```
+
+#### Audio
+
+Enable or disable the audio bell. When enabled, a sound will play when the bell is triggered.
+
+Default behavior:
+- **macOS**: `true` (uses system notification sound)
+- **Windows**: `true` (uses system notification sound)
+- **Linux/BSD**: `false` (requires `audio` feature during compilation)
+
+```toml
+[bell]
+audio = true
+```
+
+:::info
+On Linux and BSD systems, audio bell support requires Rio to be compiled with the `audio` feature flag. Distribution packages typically don't include this feature to minimize dependencies. See [Build from source](/docs/install/build-from-source) for compilation instructions with audio support.
+:::
+
 ## developer
 
 This property enables log level filter and file. The default level is "OFF" and the logs are not logged to a file as default. The level may be `DEBUG`, `INFO`, `TRACE`, `ERROR`, `WARN` or `OFF`.
