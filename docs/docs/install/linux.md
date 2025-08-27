@@ -98,6 +98,18 @@ rm rio.terminfo
 
 For more details, see the [Terminfo documentation](/docs/install/terminfo).
 
+## Audio Bell Support
+
+On Linux and BSD systems, Rio can optionally play an audio bell sound (a 440Hz tone) when the terminal bell is triggered. This feature requires the `audio` feature flag to be enabled during compilation.
+
+Most distribution packages do not include audio support by default to minimize dependencies. If you need audio bell support, you can:
+
+1. Build from source with the `audio` feature enabled (see [Build from source](/docs/install/build-from-source))
+2. Use the system's visual bell instead (enabled via configuration)
+3. Configure your shell to handle the bell differently
+
+Note: On macOS and Windows, the system notification sound is always used for the bell, regardless of compilation flags.
+
 ## Manual Pages
 
 After installing Rio, you can optionally install manual pages for offline documentation:
