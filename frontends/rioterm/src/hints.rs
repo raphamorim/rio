@@ -390,6 +390,13 @@ impl LabelGenerator {
             }
         }
 
+        // Reverse the order of the labels so that the "simpler" ones (shorter labels and
+        // labels that use characters earlier in the alphabet) come first.  This is done because
+        // the user is probably more likely to want to select the label that is lower
+        // on the screen.
+        labels.truncate(n_labels);
+        labels.reverse();
+
         Self { labels, index: 0 }
     }
 
@@ -459,78 +466,78 @@ mod tests {
     #[test]
     fn test_label_generator() {
         let mut gen_abc3 = LabelGenerator::new("abc", 3);
-        assert_eq!(gen_abc3.next(), vec!['a']);
-        assert_eq!(gen_abc3.next(), vec!['b']);
         assert_eq!(gen_abc3.next(), vec!['c']);
+        assert_eq!(gen_abc3.next(), vec!['b']);
+        assert_eq!(gen_abc3.next(), vec!['a']);
 
         let mut gen_abc4 = LabelGenerator::new("abc", 4);
-        assert_eq!(gen_abc4.next(), vec!['a']);
-        assert_eq!(gen_abc4.next(), vec!['b']);
-        assert_eq!(gen_abc4.next(), vec!['c', 'a']);
         assert_eq!(gen_abc4.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc4.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc4.next(), vec!['b']);
+        assert_eq!(gen_abc4.next(), vec!['a']);
 
         let mut gen_abc6 = LabelGenerator::new("abc", 6);
-        assert_eq!(gen_abc6.next(), vec!['a']);
-        assert_eq!(gen_abc6.next(), vec!['b', 'a']);
-        assert_eq!(gen_abc6.next(), vec!['b', 'b']);
-        assert_eq!(gen_abc6.next(), vec!['b', 'c']);
-        assert_eq!(gen_abc6.next(), vec!['c', 'a']);
         assert_eq!(gen_abc6.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc6.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc6.next(), vec!['a']);
 
         let mut gen_abc7 = LabelGenerator::new("abc", 7);
-        assert_eq!(gen_abc7.next(), vec!['a']);
-        assert_eq!(gen_abc7.next(), vec!['b', 'a']);
-        assert_eq!(gen_abc7.next(), vec!['b', 'b']);
-        assert_eq!(gen_abc7.next(), vec!['b', 'c']);
-        assert_eq!(gen_abc7.next(), vec!['c', 'a']);
-        assert_eq!(gen_abc7.next(), vec!['c', 'b']);
         assert_eq!(gen_abc7.next(), vec!['c', 'c']);
+        assert_eq!(gen_abc7.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc7.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc7.next(), vec!['a']);
 
         let mut gen_abc8 = LabelGenerator::new("abc", 8);
-        assert_eq!(gen_abc8.next(), vec!['a', 'a']);
-        assert_eq!(gen_abc8.next(), vec!['a', 'b']);
-        assert_eq!(gen_abc8.next(), vec!['a', 'c']);
-        assert_eq!(gen_abc8.next(), vec!['b', 'a']);
-        assert_eq!(gen_abc8.next(), vec!['b', 'b']);
-        assert_eq!(gen_abc8.next(), vec!['b', 'c']);
-        assert_eq!(gen_abc8.next(), vec!['c', 'a']);
         assert_eq!(gen_abc8.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'a']);
 
         let mut gen_abc11 = LabelGenerator::new("abc", 11);
-        assert_eq!(gen_abc11.next(), vec!['a', 'a']);
-        assert_eq!(gen_abc11.next(), vec!['a', 'b']);
-        assert_eq!(gen_abc11.next(), vec!['a', 'c']);
-        assert_eq!(gen_abc11.next(), vec!['b', 'a']);
-        assert_eq!(gen_abc11.next(), vec!['b', 'b']);
-        assert_eq!(gen_abc11.next(), vec!['b', 'c']);
-        assert_eq!(gen_abc11.next(), vec!['c', 'a']);
-        assert_eq!(gen_abc11.next(), vec!['c', 'b']);
-        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'a']);
-        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'b']);
         assert_eq!(gen_abc11.next(), vec!['c', 'c', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'a']);
 
         let mut gen_abc12 = LabelGenerator::new("abc", 12);
-        assert_eq!(gen_abc12.next(), vec!['a', 'a']);
-        assert_eq!(gen_abc12.next(), vec!['a', 'b']);
-        assert_eq!(gen_abc12.next(), vec!['a', 'c']);
-        assert_eq!(gen_abc12.next(), vec!['b', 'a']);
-        assert_eq!(gen_abc12.next(), vec!['b', 'b']);
-        assert_eq!(gen_abc12.next(), vec!['b', 'c']);
-        assert_eq!(gen_abc12.next(), vec!['c', 'a']);
-        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'a']);
-        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'b']);
-        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'c']);
-        assert_eq!(gen_abc12.next(), vec!['c', 'c', 'a']);
         assert_eq!(gen_abc12.next(), vec!['c', 'c', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'c', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'a']);
 
         let mut gen_ab7 = LabelGenerator::new("ab", 7);
-        assert_eq!(gen_ab7.next(), vec!['a', 'a']);
-        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'a']);
-        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'b']);
-        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'a']);
-        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'b']);
-        assert_eq!(gen_ab7.next(), vec!['b', 'b', 'a']);
         assert_eq!(gen_ab7.next(), vec!['b', 'b', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'b', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'a']);
     }
 
     #[test]
