@@ -1,3 +1,4 @@
+pub mod bell;
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
@@ -10,6 +11,7 @@ pub mod title;
 pub mod window;
 
 use crate::ansi::CursorShape;
+use crate::config::bell::Bell;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
@@ -163,6 +165,8 @@ pub struct Config {
     pub draw_bold_text_with_light_colors: bool,
     #[serde(default = "Hints::default")]
     pub hints: Hints,
+    #[serde(default = "Bell::default")]
+    pub bell: Bell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -533,6 +537,7 @@ impl Default for Config {
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
+            bell: Bell::default(),
         }
     }
 }

@@ -25,7 +25,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::{BTreeSet, HashMap};
@@ -60,6 +60,9 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
+    // Visual bell state
+    visual_bell_active: bool,
+    visual_bell_start: Option<std::time::Instant>,
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
     char_cache: CharCache,
@@ -112,6 +115,8 @@ impl Renderer {
             ),
             named_colors,
             dynamic_background,
+            visual_bell_active: false,
+            visual_bell_start: None,
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
@@ -708,6 +713,33 @@ impl Renderer {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
+    /// Trigger the visual bell
+    #[inline]
+    pub fn trigger_visual_bell(&mut self) {
+        self.visual_bell_active = true;
+        self.visual_bell_start = Some(std::time::Instant::now());
+    }
+
+    /// Check if visual bell should be displayed and update its state
+    #[inline]
+    pub fn update_visual_bell(&mut self) -> bool {
+        if !self.visual_bell_active {
+            return false;
+        }
+
+        if let Some(start_time) = self.visual_bell_start {
+            if start_time.elapsed() >= crate::constants::BELL_DURATION {
+                self.visual_bell_active = false;
+                self.visual_bell_start = None;
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
+    }
+
     // Get the RGB value for a color index.
     #[inline]
     pub fn color(&self, color: usize, term_colors: &TermColors) -> ColorArray {
@@ -1081,6 +1113,23 @@ impl Renderer {
         // let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
         // let _duration = start.elapsed();
+
+        // Update visual bell state and set overlay if needed
+        let visual_bell_active = self.update_visual_bell();
+
+        // Set visual bell overlay that renders on top of everything
+        let bell_overlay = if visual_bell_active {
+            Some(Quad {
+                position: [0.0, 0.0],
+                size: [window_size.width, window_size.height],
+                color: self.named_colors.foreground,
+                ..Quad::default()
+            })
+        } else {
+            None
+        };
+        sugarloaf.set_visual_bell_overlay(bell_overlay);
+
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();

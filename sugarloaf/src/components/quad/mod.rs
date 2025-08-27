@@ -261,4 +261,33 @@ impl QuadBrush {
 
         render_pass.draw(0..6, 0..total as u32);
     }
+
+    /// Render a single quad directly without requiring it to be in state
+    pub fn render_single<'a>(
+        &'a mut self,
+        context: &mut Context,
+        quad: &Quad,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
+        // Resize buffer if needed for at least one quad
+        if self.supported_quantity == 0 {
+            self.supported_quantity = 1;
+            self.instances = context.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::quad single instance"),
+                size: mem::size_of::<Quad>() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+
+        // Write the single quad to the buffer
+        context
+            .queue
+            .write_buffer(&self.instances, 0, bytemuck::bytes_of(quad));
+
+        render_pass.set_pipeline(&self.pipeline);
+        render_pass.set_bind_group(0, &self.constants, &[]);
+        render_pass.set_vertex_buffer(0, self.instances.slice(..));
+        render_pass.draw(0..6, 0..1);
+    }
 }
