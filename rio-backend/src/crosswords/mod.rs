@@ -2442,7 +2442,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        warn!("[unimplemented] Bell");
+        self.event_proxy.send_event(RioEvent::Bell, self.window_id);
     }
 
     #[inline]
