@@ -7,6 +7,11 @@ language: 'en'
 
 ## 0.2.30 (unreleased)
 
+- **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
+  - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
+  - Users on Ubuntu 22.04 and older need to manually install terminfo after package installation
+  - Debian 13+ and Ubuntu 24.04+ users get terminfo from system's ncurses-term package
+  - RPM packages continue to include terminfo as before
 - Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284).
 
 ## 0.2.29
