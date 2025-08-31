@@ -41,6 +41,7 @@ pub(crate) struct WindowState {
     pub modifiers_state: ModifiersState,
     pub fullscreen: Option<Fullscreen>,
     pub current_theme: Theme,
+    pub decorations_theme_variant: Option<Theme>,
     pub preferred_theme: Option<Theme>,
 
     pub window_flags: WindowFlags,
@@ -141,6 +142,7 @@ impl WindowState {
         attributes: &WindowAttributes,
         scale_factor: f64,
         current_theme: Theme,
+        decorations_theme_variant: Option<Theme>,
         preferred_theme: Option<Theme>,
     ) -> WindowState {
         WindowState {
@@ -165,7 +167,8 @@ impl WindowState {
             modifiers_state: ModifiersState::default(),
             fullscreen: None,
             current_theme,
-            preferred_theme,
+            decorations_theme_variant: decorations_theme_variant,
+            preferred_theme: decorations_theme_variant.or(preferred_theme),
             window_flags: WindowFlags::empty(),
 
             ime_state: ImeState::Disabled,
