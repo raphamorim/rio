@@ -832,7 +832,7 @@ impl BatchManager {
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
-        let stroke = ((line_width.min(line_height) / 8.0) as i32).max(1) as f32;
+        let stroke = (line_height / 10.).max(1.0).round();
 
         match character {
             DrawableChar::Horizontal => {
