@@ -5,7 +5,11 @@ language: 'en'
 
 # Releases
 
-## 0.2.30 (unreleased)
+## 0.2.31 (unreleased)
+
+- TBD.
+
+## 0.2.30
 
 - **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
   - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
