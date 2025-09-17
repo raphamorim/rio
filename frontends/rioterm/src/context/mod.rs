@@ -1807,8 +1807,13 @@ pub mod test {
         // Make sure the file doesn't exist already
         let _ = std::fs::remove_file(test_file_path);
 
-        let mut context_manager =
-            ContextManager::start_with_capacity_and_config(5, config, VoidListener {}, window_id).unwrap();
+        let mut context_manager = ContextManager::start_with_capacity_and_config(
+            5,
+            config,
+            VoidListener {},
+            window_id,
+        )
+        .unwrap();
         context_manager.add_context(false, 0);
 
         //TODO: This might be racey?
