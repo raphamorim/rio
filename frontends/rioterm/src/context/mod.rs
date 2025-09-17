@@ -1814,9 +1814,14 @@ pub mod test {
             window_id,
         )
         .unwrap();
-        context_manager.add_context(false, 0);
+        context_manager.add_context(true, 0);
+        // Wait for the command to finish running
+        context_manager
+            .current_mut()
+            ._io_thread
+            .take()
+            .map(|thread| thread.join());
 
-        //TODO: This might be racey?
         assert!(matches!(std::fs::exists(test_file_path), Ok(true)));
 
         // Clean up
