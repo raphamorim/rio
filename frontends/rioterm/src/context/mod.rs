@@ -235,6 +235,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     &Cow::Borrowed(&config.shell.program),
+                    config.shell.args.as_ref(),
                     cols,
                     rows,
                 ) {
@@ -1781,7 +1782,7 @@ pub mod test {
     /// Common functionality between [`test_forking_context_creation_propagate_correct_arguments`]
     /// and [`test_spawning_context_creation_propagate_correct_arguments`]
     #[cfg(not(target_os = "windows"))]
-    fn test_context_creation_propagate_correct_arguments<>(use_fork: bool) {
+    fn test_context_creation_propagate_correct_arguments(use_fork: bool) {
         let window_id = WindowId::from(0);
         let test_file_path: &str = if use_fork {
             "/tmp/rio_test_forking_context_creation_propagate_correct_arguments"
@@ -1810,6 +1811,7 @@ pub mod test {
             ContextManager::start_with_capacity_and_config(5, config, VoidListener {}, window_id).unwrap();
         context_manager.add_context(false, 0);
 
+        //TODO: This might be racey?
         assert!(matches!(std::fs::exists(test_file_path), Ok(true)));
 
         // Clean up
