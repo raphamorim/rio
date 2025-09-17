@@ -414,6 +414,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cwd: false,
             ..ContextManagerConfig::default()
         };
+        Self::start_with_capacity_and_config(capacity, config, event_proxy, window_id)
+    }
+
+    #[cfg(test)]
+    pub fn start_with_capacity_and_config(
+        capacity: usize,
+        config: ContextManagerConfig,
+        event_proxy: T,
+        window_id: WindowId,
+    ) -> Result<Self, Box<dyn Error>> {
         let initial_context = ContextManager::create_context(
             (&Cursor::default(), false),
             event_proxy.clone(),
@@ -1766,5 +1776,55 @@ pub mod test {
         context_manager.move_current_to_prev();
         assert_eq!(context_manager.current_index, 4);
         assert_eq!(context_manager.current().rich_text_id, 1);
+    }
+
+    /// Common functionality between [`test_forking_context_creation_propagate_correct_arguments`]
+    /// and [`test_spawning_context_creation_propagate_correct_arguments`]
+    #[cfg(not(target_os = "windows"))]
+    fn test_context_creation_propagate_correct_arguments<>(use_fork: bool) {
+        let window_id = WindowId::from(0);
+        let test_file_path: &str = if use_fork {
+            "/tmp/rio_test_forking_context_creation_propagate_correct_arguments"
+        } else {
+            "/tmp/rio_test_spawning_context_creation_propagate_correct_arguments"
+        };
+
+        let config = ContextManagerConfig {
+            use_fork,
+            working_dir: None,
+            shell: Shell {
+                program: "touch".to_string(),
+                args: vec![test_file_path.to_string()],
+            },
+            spawn_performer: true,
+            is_native: false,
+            should_update_title_extra: false,
+            cwd: false,
+            ..ContextManagerConfig::default()
+        };
+
+        // Make sure the file doesn't exist already
+        let _ = std::fs::remove_file(test_file_path);
+
+        let mut context_manager =
+            ContextManager::start_with_capacity_and_config(5, config, VoidListener {}, window_id).unwrap();
+        context_manager.add_context(false, 0);
+
+        assert!(matches!(std::fs::exists(test_file_path), Ok(true)));
+
+        // Clean up
+        let _ = std::fs::remove_file(test_file_path);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_forking_context_creation_propagate_correct_arguments() {
+        test_context_creation_propagate_correct_arguments(true);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_spawning_context_creation_propagate_correct_arguments() {
+        test_context_creation_propagate_correct_arguments(false);
     }
 }
