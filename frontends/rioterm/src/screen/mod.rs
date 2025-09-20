@@ -749,7 +749,9 @@ impl Screen<'_> {
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
-            let binding = self.bindings[i].clone();
+            let binding = &self.bindings[i];
+            let trigger = &binding.trigger;
+            let action = binding.action.clone();
 
             // We don't want the key without modifier, because it means something else most of
             // the time. However what we want is to manually lowercase the character to account
@@ -775,7 +777,7 @@ impl Screen<'_> {
                 key.logical_key.clone()
             };
 
-            let key_match = match (&binding.trigger, logical_key) {
+            let key_match = match (&trigger, logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
                     key: code,
@@ -784,9 +786,9 @@ impl Screen<'_> {
             };
 
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &key_match) {
-                *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
+                *ignore_chars.get_or_insert(true) &= action != Act::ReceiveChar;
 
-                match &binding.action {
+                match &action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
                         self.paste(s, false);
