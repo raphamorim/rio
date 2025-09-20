@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pl/assets/css/styles.6f48d0c1.css">
-<script src="/pl/assets/js/runtime~main.f4640062.js" defer="defer"></script>
+<script src="/pl/assets/js/runtime~main.1595ed81.js" defer="defer"></script>
 <script src="/pl/assets/js/main.c5fd0fe2.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -28,6 +28,15 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0231-unreleased">0.2.31 (unreleased)<a href="#0231-unreleased" class="hash-link" aria-label="Bezpośredni link do 0.2.31 (unreleased)" title="Bezpośredni link do 0.2.31 (unreleased)">​</a></h2>
 <ul>
 <li>Update Rust to v1.90.</li>
+<li><strong>Breaking: Simplified key binding escape sequences</strong>
+<ul>
+<li>Replaced separate <code>text</code> and <code>bytes</code> fields with a single <code>esc</code> field</li>
+<li>Escape sequences are now sent directly to the PTY without text manipulation</li>
+<li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
+<li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
+<li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0230">0.2.30<a href="#0230" class="hash-link" aria-label="Bezpośredni link do 0.2.30" title="Bezpośredni link do 0.2.30">​</a></h2>
 <ul>

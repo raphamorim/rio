@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/pt-br/assets/css/styles.6f48d0c1.css">
-<script src="/pt-br/assets/js/runtime~main.64843ce2.js" defer="defer"></script>
+<script src="/pt-br/assets/js/runtime~main.ab4d8434.js" defer="defer"></script>
 <script src="/pt-br/assets/js/main.825dd573.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -28,6 +28,15 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0231-unreleased">0.2.31 (unreleased)<a href="#0231-unreleased" class="hash-link" aria-label="0.2.31 (unreleased)link direto para" title="0.2.31 (unreleased)link direto para">​</a></h2>
 <ul>
 <li>Update Rust to v1.90.</li>
+<li><strong>Breaking: Simplified key binding escape sequences</strong>
+<ul>
+<li>Replaced separate <code>text</code> and <code>bytes</code> fields with a single <code>esc</code> field</li>
+<li>Escape sequences are now sent directly to the PTY without text manipulation</li>
+<li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
+<li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
+<li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0230">0.2.30<a href="#0230" class="hash-link" aria-label="0.2.30link direto para" title="0.2.30link direto para">​</a></h2>
 <ul>
@@ -962,7 +971,7 @@
 <ul>
 <li>Corrections for TMUX scroll calculations.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0028">0.0.28<a href="#0028" class="hash-link" aria-label="0.0.28link direto para" title="0.0.28link direto para">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0028">0.0.28<a href="#0028" class="hash-link" aria-label="0.0.28link direto para" title="0.0.28link direto para"> ​</a></h2>
 <ul>
 <li><strong>Breaking</strong>: Settings UI has been removed and <code>editor</code> property has been added.</li>
 <li><strong>Breaking</strong>: default <code>padding-x</code> for MacOS has moved from <code>10.0</code> to <code>5.0</code>.</li>

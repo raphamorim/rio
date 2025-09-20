@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hant/assets/css/styles.6f48d0c1.css">
-<script src="/zh-hant/assets/js/runtime~main.c4c06859.js" defer="defer"></script>
+<script src="/zh-hant/assets/js/runtime~main.7b886561.js" defer="defer"></script>
 <script src="/zh-hant/assets/js/main.97d390ec.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -28,6 +28,15 @@
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0231-unreleased">0.2.31 (unreleased)<a href="#0231-unreleased" class="hash-link" aria-label="0.2.31 (unreleased)的直接連結" title="0.2.31 (unreleased)的直接連結">​</a></h2>
 <ul>
 <li>Update Rust to v1.90.</li>
+<li><strong>Breaking: Simplified key binding escape sequences</strong>
+<ul>
+<li>Replaced separate <code>text</code> and <code>bytes</code> fields with a single <code>esc</code> field</li>
+<li>Escape sequences are now sent directly to the PTY without text manipulation</li>
+<li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
+<li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
+<li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0230">0.2.30<a href="#0230" class="hash-link" aria-label="0.2.30的直接連結" title="0.2.30的直接連結">​</a></h2>
 <ul>
@@ -247,7 +256,7 @@
 </li>
 <li><strong>CLI accepts relative paths for working directory CLI argument</strong>: When invoking rio from other terminals using <code>rio --working-dir=&lt;path&gt;</code>, a relative path is now correctly processed</li>
 </ul>
-<h3 class="anchor anchorWithStickyNavbar_LWe7" id="bug-fixes">Bug Fixes<a href="#bug-fixes" class="hash-link" aria-label="Bug Fixes的直接連結" title="Bug Fixes的  直接連結">​</a></h3>
+<h3 class="anchor anchorWithStickyNavbar_LWe7" id="bug-fixes">Bug Fixes<a href="#bug-fixes" class="hash-link" aria-label="Bug Fixes的直接連結" title="Bug Fixes的直接連結">​</a></h3>
 <ul>
 <li><strong>Cursor Damage Tracking</strong>: Fixed cursor rendering issues after <code>clear</code> command and during rapid typing<!-- -->
 <ul>
@@ -1128,7 +1137,7 @@
 <ul>
 <li>Action <code>TabSwitchNext</code> and <code>TabSwitchPrev</code> has been renamed to <code>SelectNextTab</code> and <code>SelectPrevTab</code>.</li>
 </ul>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog的直接連結" title="Rest of 0.0.17 changelog的直接連結">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog的直接連 結" title="Rest of 0.0.17 changelog的直接連結">​</a></h4>
 <ul>
 <li>Support to <code>NativeTab</code> (MacOS only).</li>
 <li>Support for kitty&#x27;s keyboard protocol (<code>CSI u</code>). Ref: <a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/" target="_blank" rel="noopener noreferrer">https://sw.kovidgoyal.net/kitty/keyboard-protocol/</a></li>
