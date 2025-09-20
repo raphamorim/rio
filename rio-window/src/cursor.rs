@@ -236,7 +236,7 @@ impl CursorImage {
             return Err(BadImage::TooLarge { width, height });
         }
 
-        if rgba.len() % PIXEL_SIZE != 0 {
+        if !rgba.len().is_multiple_of(PIXEL_SIZE) {
             return Err(BadImage::ByteCountNotDivisibleBy4 {
                 byte_count: rgba.len(),
             });
