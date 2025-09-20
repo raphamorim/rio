@@ -75,7 +75,7 @@ mod constructors {
             width: u32,
             height: u32,
         ) -> Result<Self, BadIcon> {
-            if rgba.len() % PIXEL_SIZE != 0 {
+            if !rgba.len().is_multiple_of(PIXEL_SIZE) {
                 return Err(BadIcon::ByteCountNotDivisibleBy4 {
                     byte_count: rgba.len(),
                 });

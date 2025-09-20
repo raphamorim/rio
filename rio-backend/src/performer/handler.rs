@@ -768,7 +768,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Set color index.
             b"4" => {
-                if params.len() <= 1 || params.len() % 2 == 0 {
+                if params.len() <= 1 || params.len().is_multiple_of(2) {
                     unhandled(params);
                     return;
                 }
@@ -1339,7 +1339,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
 
 /// Decode hex-encoded string (2 hex digits per character).
 fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
-    if hex_bytes.len() % 2 != 0 {
+    if !hex_bytes.len().is_multiple_of(2) {
         return Err("Invalid hex string length");
     }
 

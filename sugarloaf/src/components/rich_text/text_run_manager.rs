@@ -112,7 +112,7 @@ impl TextRunManager {
         // layers: [i32; 2] = 8 bytes
         const VERTEX_SIZE: usize = 44;
 
-        if vertices_data.len() % VERTEX_SIZE != 0 {
+        if !vertices_data.len().is_multiple_of(VERTEX_SIZE) {
             debug!("Invalid vertex data size: {}", vertices_data.len());
             output_vertices.extend_from_slice(vertices_data);
             return;
