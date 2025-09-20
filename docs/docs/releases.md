@@ -7,7 +7,7 @@ language: 'en'
 
 ## 0.2.31 (unreleased)
 
-- TBD.
+- Update Rust to v1.90.
 
 ## 0.2.30
 
