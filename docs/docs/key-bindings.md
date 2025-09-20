@@ -132,42 +132,43 @@ The `esc` field writes the specified escape sequence to the terminal. This makes
 ```toml
 [bindings]
 keys = [
-  # Clear screen (ESC[2J)
+  # Clear screen (ESC [ 2 J)
   { key = "k", with = "control", esc = "\u001b[2J" },
-  
-  # Clear screen and move cursor to home (ESC[2J ESC[H)
+
+  # Clear screen and move cursor to home (ESC [ 2 J  ESC [ H)
   { key = "l", with = "control", esc = "\u001b[2J\u001b[H" },
-  
-  # Send form feed character (Ctrl+L) - works in most shells
-  { key = "l", with = "control", esc = "\u000C" },
-  
-  # Move cursor to beginning of line (ESC[H)
+
+  # Send form feed character (Ctrl+L) — works in most shells
+  { key = "l", with = "control", esc = "\u000c" },
+
+  # Move cursor to beginning of line (ESC [ H)
   { key = "a", with = "control", esc = "\u001b[H" },
-  
-  # Delete from cursor to end of line (ESC[K)
+
+  # Delete from cursor to end of line (ESC [ K)
   { key = "k", with = "control", esc = "\u001b[K" },
-  
-  # Send custom escape sequence for tmux prefix
-  { key = "a", with = "control", esc = "\u001b[a" },
-  
-  # Send Page Up escape sequence
-  { key = "pageup", esc = "\u001b[5~" },
-  
-  # Send Page Down escape sequence
-  { key = "pagedown", esc = "\u001b[6~" },
+
+  # Send custom escape sequence (example: tmux prefix)
+  { key = "a", with = "control", esc = "\u001ba" },
+
+  # Page Up (ESC [ 5 ~)
+  { key = "PageUp", esc = "\u001b[5~" },
+
+  # Page Down (ESC [ 6 ~)
+  { key = "PageDown", esc = "\u001b[6~" },
 ]
 ```
 
 ### Escape Sequence Format
 
-Escape sequences must use Unicode escape notation in TOML:
-- `\u001b` - ESC character (ASCII 27) - **Required format for ESC in TOML**
-- `\u000C` - Form feed (Ctrl+L)
-- `\n` - Newline
-- `\r` - Carriage return
-- `\t` - Tab
+Escape sequences must use **Unicode escape notation** in TOML:
 
-**Important**: In TOML configuration files, you must use `\u001b` for the ESC character. The `\x1b` notation will not work in TOML strings.
+* `\u001b` → ESC character (ASCII 27)
+* `\u000c` → Form feed (Ctrl+L)
+* `\n` → Newline
+* `\r` → Carriage return
+* `\t` → Tab
+
+**Important**: In TOML configuration files, you must use `\u001b` for the ESC character. The `\x1b` notation will **not** work in TOML strings.
 
 ## [With](#with)
 
