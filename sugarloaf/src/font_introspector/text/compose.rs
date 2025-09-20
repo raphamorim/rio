@@ -118,7 +118,7 @@ fn compose_hangul(a: char, b: char) -> Option<char> {
         return None;
     }
     if a >= SBASE {
-        if (a - SBASE) % TCOUNT == 0 {
+        if (a - SBASE).is_multiple_of(TCOUNT) {
             Some(unsafe { from_u32_unchecked(a + (b - TBASE)) })
         } else {
             None
