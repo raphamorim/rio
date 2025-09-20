@@ -679,7 +679,7 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+            self.ctx_mut().current_mut().messenger.send_write(bytes);
         }
     }
 
@@ -2230,7 +2230,7 @@ impl Screen<'_> {
         self.ctx_mut()
             .current_mut()
             .messenger
-            .send_bytes(msg.into_bytes());
+            .send_write(msg.into_bytes());
     }
 
     #[inline]
@@ -2313,7 +2313,7 @@ impl Screen<'_> {
             msg.push(32 + 1 + row.0 as u8);
         }
 
-        self.ctx_mut().current_mut().messenger.send_bytes(msg);
+        self.ctx_mut().current_mut().messenger.send_write(msg);
     }
 
     #[inline]
@@ -2325,7 +2325,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(msg.into_bytes());
+                .send_write(msg.into_bytes());
         }
     }
 
@@ -2401,7 +2401,7 @@ impl Screen<'_> {
             }
 
             if !content.is_empty() {
-                self.ctx_mut().current_mut().messenger.send_bytes(content);
+                self.ctx_mut().current_mut().messenger.send_write(content);
             }
         } else {
             self.mouse.accumulated_scroll.y +=
@@ -2467,10 +2467,7 @@ impl Screen<'_> {
                 text.to_owned().into_bytes()
             };
 
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(payload);
+            self.ctx_mut().current_mut().messenger.send_write(payload);
         }
     }
 

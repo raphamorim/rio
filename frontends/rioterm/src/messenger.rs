@@ -17,8 +17,8 @@ impl Messenger {
     }
 
     #[inline]
-    pub fn send_write<B: Into<Cow<'static, [u8]>>>(&self, data: B) {
-        let bytes = data.into();
+    pub fn send_write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
+        let bytes = bytes.into();
         // terminal hangs if we send 0 bytes through.
         if bytes.is_empty() {
             return;
