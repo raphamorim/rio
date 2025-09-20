@@ -749,7 +749,7 @@ impl Screen<'_> {
         let mut ignore_chars = None;
 
         for i in 0..self.bindings.len() {
-            let binding = &self.bindings[i];
+            let binding = self.bindings[i].clone();
 
             // We don't want the key without modifier, because it means something else most of
             // the time. However what we want is to manually lowercase the character to account
@@ -789,11 +789,7 @@ impl Screen<'_> {
                 match &binding.action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
-                        // Send escape sequences directly without scrolling or manipulation
-                        self.context_manager
-                            .current_mut()
-                            .messenger
-                            .send_bytes(s.to_owned().into_bytes());
+                        self.paste(s, false);
                     }
                     Act::Paste => {
                         let content =
@@ -2437,7 +2433,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[200~"[..].to_vec());
+                .send_write(&b"\x1b[200~"[..]);
 
             // Write filtered escape sequences.
             //
@@ -2448,18 +2444,33 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(filtered.into_bytes());
+                .send_write(filtered.into_bytes());
 
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[201~"[..].to_vec());
+                .send_write(&b"\x1b[201~"[..]);
         } else {
-            // When bracketed is false (like for Action::Esc), send bytes directly without manipulation
+            let payload = if bracketed {
+                // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
+                // pasted data from keystrokes.
+                //
+                // In theory, we should construct the keystrokes needed to produce the data we are
+                // pasting... since that's neither practical nor sensible (and probably an
+                // impossible task to solve in a general way), we'll just replace line breaks
+                // (windows and unix style) with a single carriage return (\r, which is what the
+                // Enter key produces).
+                text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+            } else {
+                // When we explicitly disable bracketed paste don't manipulate with the input,
+                // so we pass user input as is.
+                text.to_owned().into_bytes()
+            };
+
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(text.to_owned().into_bytes());
+                .send_write(payload);
         }
     }
 
