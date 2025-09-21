@@ -14,6 +14,9 @@ language: 'en'
   - Migration: Replace `bytes = [27, 91, 72]` with `esc = "\u001b[H"`
   - Migration: Replace `text = "some text"` with `esc = "some text"`
   - Example: `{ key = "l", with = "control", esc = "\u001b[2J\u001b[H" }` to clear screen
+- **Fix key binding conflicts**: Resolved issues where keys like `PageUp`, `PageDown`, and `Alt+Enter` required explicit `"None"` bindings before they could be reassigned
+  - Simplified binding conflict resolution logic to automatically remove conflicting default bindings
+  - User-defined bindings now always take precedence without requiring placeholder "None" entries
 
 ## 0.2.30
 
