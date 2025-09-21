@@ -871,33 +871,14 @@ pub fn config_key_bindings(
 
     for ckb in config_key_bindings {
         match convert(ckb) {
-            Ok(key_binding) => match key_binding.action {
-                Action::None | Action::ReceiveChar => {
-                    let mut found_idx = None;
-                    for (idx, binding) in bindings.iter().enumerate() {
-                        if binding.triggers_match(&key_binding) {
-                            found_idx = Some(idx);
-                            break;
-                        }
-                    }
+            Ok(key_binding) => {
+                // Remove any default binding that would conflict with this user binding
+                // This ensures user bindings always take precedence and prevents conflicts
+                bindings.retain(|b| !b.triggers_match(&key_binding));
 
-                    if let Some(idx) = found_idx {
-                        bindings.remove(idx);
-                        tracing::warn!(
-                            "overwritten a previous key_binding with new one: {:?}",
-                            key_binding
-                        );
-                    } else {
-                        tracing::info!("added a new key_binding: {:?}", key_binding);
-                    }
-
-                    bindings.push(key_binding)
-                }
-                _ => {
-                    tracing::info!("added a new key_binding: {:?}", key_binding);
-                    bindings.push(key_binding)
-                }
-            },
+                tracing::info!("added a new key_binding: {:?}", key_binding);
+                bindings.push(key_binding)
+            }
             Err(err_message) => {
                 tracing::error!("error loading a key binding: {:?}", err_message);
             }
@@ -1493,5 +1474,73 @@ mod tests {
 
         assert_eq!(new_bindings.len(), 2);
         assert_eq!(new_bindings[1].action, Action::ReceiveChar);
+    }
+
+    #[test]
+    fn bindings_conflict_resolution() {
+        // Test that conflicting bindings are properly replaced
+        let bindings = bindings!(
+            KeyBinding;
+            Key::Named(PageUp), ModifiersState::empty(); Action::Esc("\x1b[5~".into());
+            Key::Named(PageDown), ModifiersState::empty(); Action::Esc("\x1b[6~".into());
+        );
+
+        // User wants to use PageUp/PageDown for scrolling
+        let config_bindings = vec![
+            ConfigKeyBinding {
+                key: String::from("pageup"),
+                action: String::from("scroll(1)"),
+                with: String::from(""),
+                esc: String::from(""),
+                mode: String::from(""),
+            },
+            ConfigKeyBinding {
+                key: String::from("pagedown"),
+                action: String::from("scroll(-1)"),
+                with: String::from(""),
+                esc: String::from(""),
+                mode: String::from(""),
+            },
+        ];
+
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+
+        // Should have 2 bindings (the original defaults should be replaced)
+        assert_eq!(new_bindings.len(), 2);
+
+        // Check that the actions were updated to scroll actions
+        let has_scroll_actions = new_bindings
+            .iter()
+            .any(|b| matches!(b.action, Action::Scroll(_)));
+        assert!(has_scroll_actions);
+    }
+
+    #[test]
+    fn bindings_alt_enter_conflict_resolution() {
+        // Test Windows Alt+Enter conflict resolution
+        let bindings = bindings!(
+            KeyBinding;
+            Key::Named(Enter), ModifiersState::ALT; Action::ToggleFullscreen;
+        );
+
+        // User wants to use Alt+Enter for a custom action
+        let config_bindings = vec![ConfigKeyBinding {
+            key: String::from("return"),
+            action: String::from("scroll(1)"),
+            with: String::from("alt"),
+            esc: String::from(""),
+            mode: String::from(""),
+        }];
+
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+
+        // Should have 1 binding (the original Alt+Enter should be replaced)
+        assert_eq!(new_bindings.len(), 1);
+
+        // Check that the action was updated to scroll action
+        match &new_bindings[0].action {
+            Action::Scroll(_) => assert!(true),
+            _ => assert!(false, "Expected scroll action"),
+        }
     }
 }
