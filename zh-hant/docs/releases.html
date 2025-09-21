@@ -17,8 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hant/assets/css/styles.6f48d0c1.css">
-<script src="/zh-hant/assets/js/runtime~main.7b886561.js" defer="defer"></script>
-<script src="/zh-hant/assets/js/main.97d390ec.js" defer="defer"></script>
+<script src="/zh-hant/assets/js/runtime~main.cdd21658.js" defer="defer"></script>
+<script src="/zh-hant/assets/js/main.3e38d4ff.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg xmlns="http://www.w3.org/2000/svg" style="display: none;"><defs>
@@ -35,6 +35,12 @@
 <li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
 <li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
 <li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
+<li><strong>Fix key binding conflicts</strong>: Resolved issues where keys like <code>PageUp</code>, <code>PageDown</code>, and <code>Alt+Enter</code> required explicit <code>&quot;None&quot;</code> bindings before they could be reassigned<!-- -->
+<ul>
+<li>Simplified binding conflict resolution logic to automatically remove conflicting default bindings</li>
+<li>User-defined bindings now always take precedence without requiring placeholder &quot;None&quot; entries</li>
 </ul>
 </li>
 </ul>
@@ -111,7 +117,7 @@
 </ul>
 </li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0224">0.2.24<a href="#0224" class="hash-link" aria-label="0.2.24的直接連結" title="0.2.24的直接連結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0224">0.2.24<a href="#0224" class="hash-link" aria-label="0.2.24的直接連結" title="0.2.24的直接 連結">​</a></h2>
 <ul>
 <li>Fix game mode regression.</li>
 <li><strong>Hint Label Damage Tracking</strong>: Improved hint label rendering performance with proper damage tracking<!-- -->
@@ -479,7 +485,7 @@
 <li>fix: Can the &quot;base 16&quot; colors be changed at runtime through Ansi escape sequences? <a href="https://github.com/raphamorim/rio/issues/188" target="_blank" rel="noopener noreferrer">#188</a></li>
 <li>fix: Changing release and nightly build Ubuntu runners for x86 (<code>ubuntu-latest</code> to <code>ubuntu-22.04</code>) and arm (<code>ubuntu-24.04-arm</code> to <code>ubuntu-22.04-arm</code>)</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6的直接連結" title="0.2.6的直接連結">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="026">0.2.6<a href="#026" class="hash-link" aria-label="0.2.6的 直接連結" title="0.2.6的直接連結">​</a></h2>
 <ul>
 <li>Fix: 0.2.5 doesn&#x27;t render grey scale font on macOS <a href="https://github.com/raphamorim/rio/issues/937" target="_blank" rel="noopener noreferrer">#937</a>.</li>
 <li>fix: fix duplicate tab_id by monotonic counter for unique tab IDs by <a href="https://github.com/hilaolu" target="_blank" rel="noopener noreferrer">@hilaolu</a>.</li>
@@ -1137,7 +1143,7 @@
 <ul>
 <li>Action <code>TabSwitchNext</code> and <code>TabSwitchPrev</code> has been renamed to <code>SelectNextTab</code> and <code>SelectPrevTab</code>.</li>
 </ul>
-<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog的直接連 結" title="Rest of 0.0.17 changelog的直接連結">​</a></h4>
+<h4 class="anchor anchorWithStickyNavbar_LWe7" id="rest-of-0017-changelog">Rest of 0.0.17 changelog<a href="#rest-of-0017-changelog" class="hash-link" aria-label="Rest of 0.0.17 changelog的直接連結" title="Rest of 0.0.17 changelog的直接連結">​</a></h4>
 <ul>
 <li>Support to <code>NativeTab</code> (MacOS only).</li>
 <li>Support for kitty&#x27;s keyboard protocol (<code>CSI u</code>). Ref: <a href="https://sw.kovidgoyal.net/kitty/keyboard-protocol/" target="_blank" rel="noopener noreferrer">https://sw.kovidgoyal.net/kitty/keyboard-protocol/</a></li>

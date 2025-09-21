@@ -17,8 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/es/assets/css/styles.6f48d0c1.css">
-<script src="/es/assets/js/runtime~main.6da5dccf.js" defer="defer"></script>
-<script src="/es/assets/js/main.456ddb45.js" defer="defer"></script>
+<script src="/es/assets/js/runtime~main.a12c7db7.js" defer="defer"></script>
+<script src="/es/assets/js/main.98e08652.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg xmlns="http://www.w3.org/2000/svg" style="display: none;"><defs>
@@ -35,6 +35,12 @@
 <li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
 <li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
 <li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
+<li><strong>Fix key binding conflicts</strong>: Resolved issues where keys like <code>PageUp</code>, <code>PageDown</code>, and <code>Alt+Enter</code> required explicit <code>&quot;None&quot;</code> bindings before they could be reassigned<!-- -->
+<ul>
+<li>Simplified binding conflict resolution logic to automatically remove conflicting default bindings</li>
+<li>User-defined bindings now always take precedence without requiring placeholder &quot;None&quot; entries</li>
 </ul>
 </li>
 </ul>
@@ -828,7 +834,7 @@
 <li>Improvements on font loader (avoid set weight or style in the lookup if isn&#x27;t defined).</li>
 <li>Fallbacks fonts doesn&#x27;t trigger alerts anymore.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="010">0.1.0<a href="#010" class="hash-link" aria-label="Enlace directo al 0.1.0" title="Enlace directo al 0.1.0"> ​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="010">0.1.0<a href="#010" class="hash-link" aria-label="Enlace directo al 0.1.0" title="Enlace directo al 0.1.0">​</a></h2>
 <p><strong>Breaking change: Opacity API has changed</strong></p>
 <ul>
 <li><code>background-opacity</code> has been renamed to <code>opacity</code>. It sets window background opacity.</li>

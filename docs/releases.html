@@ -17,8 +17,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/assets/css/styles.6f48d0c1.css">
-<script src="/assets/js/runtime~main.562cb831.js" defer="defer"></script>
-<script src="/assets/js/main.e0a3d573.js" defer="defer"></script>
+<script src="/assets/js/runtime~main.047c144a.js" defer="defer"></script>
+<script src="/assets/js/main.c076f127.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
 <svg xmlns="http://www.w3.org/2000/svg" style="display: none;"><defs>
@@ -35,6 +35,12 @@
 <li>Migration: Replace <code>bytes = [27, 91, 72]</code> with <code>esc = &quot;\u001b[H&quot;</code></li>
 <li>Migration: Replace <code>text = &quot;some text&quot;</code> with <code>esc = &quot;some text&quot;</code></li>
 <li>Example: <code>{ key = &quot;l&quot;, with = &quot;control&quot;, esc = &quot;\u001b[2J\u001b[H&quot; }</code> to clear screen</li>
+</ul>
+</li>
+<li><strong>Fix key binding conflicts</strong>: Resolved issues where keys like <code>PageUp</code>, <code>PageDown</code>, and <code>Alt+Enter</code> required explicit <code>&quot;None&quot;</code> bindings before they could be reassigned<!-- -->
+<ul>
+<li>Simplified binding conflict resolution logic to automatically remove conflicting default bindings</li>
+<li>User-defined bindings now always take precedence without requiring placeholder &quot;None&quot; entries</li>
 </ul>
 </li>
 </ul>
