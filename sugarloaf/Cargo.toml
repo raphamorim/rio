@@ -69,7 +69,7 @@ thiserror = "2.0.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 metal = "0.32.0"
 objc = "0.2.7"
-core-graphics-types = "0.1.3"
+core-graphics-types = "0.2.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"
