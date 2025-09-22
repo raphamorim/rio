@@ -404,6 +404,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
+
+                // Apply system theme to ensure colors are consistent across all windows
+                if let Some(route) = self.router.routes.values().next() {
+                    let system_theme = route.window.winit_window.theme();
+                    update_colors_based_on_theme(&mut self.config, system_theme);
+                }
                 for (_id, route) in self.router.routes.iter_mut() {
                     if has_font_updates {
                         if let Some(ref err) = font_library_errors {
