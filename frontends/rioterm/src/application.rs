@@ -174,20 +174,7 @@ impl Application<'_> {
 }
 
 impl ApplicationHandler<EventPayload> for Application<'_> {
-    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {
-        #[cfg(not(any(target_os = "macos", windows)))]
-        {
-            // This is a hacky solution to force an update to the window on linux
-            // Fix is only for windows with opacity that aren't being computed at all
-            if self.config.window.opacity < 1. || self.config.window.blur {
-                for (_id, route) in self.router.routes.iter_mut() {
-                    route.update_config(&self.config, &self.router.font_library, false);
-
-                    route.request_redraw();
-                }
-            }
-        }
-    }
+    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {}
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init
@@ -405,11 +392,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 self.config = config;
 
-                // Apply system theme to ensure colors are consistent across all windows
-                if let Some(route) = self.router.routes.values().next() {
+                // Apply system theme to ensure colors are consistent
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
                     let system_theme = route.window.winit_window.theme();
                     update_colors_based_on_theme(&mut self.config, system_theme);
                 }
+
                 for (_id, route) in self.router.routes.iter_mut() {
                     if has_font_updates {
                         if let Some(ref err) = font_library_errors {
