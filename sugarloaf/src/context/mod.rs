@@ -166,11 +166,9 @@ impl WgpuContext<'_> {
             },
         );
     }
-} 
-
-pub struct MetalContext {
-
 }
+
+pub struct MetalContext {}
 
 #[inline]
 #[cfg(not(target_os = "macos"))]
@@ -245,7 +243,6 @@ impl Context<'_> {
         sugarloaf_window: SugarloafWindow,
         renderer_config: SugarloafRenderer,
     ) -> Context<'a> {
-        
         tracing::info!("F16 shader support: {}", supports_f16);
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);
