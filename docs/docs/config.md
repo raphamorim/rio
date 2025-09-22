@@ -33,6 +33,20 @@ program = "vi"
 args = []
 ```
 
+## adaptive-theme
+
+Rio supports adaptive themes that automatically switch between light and dark themes based on the system theme. This feature works on Web, MacOS, and Windows platforms.
+
+```toml
+[adaptive-theme]
+light = "belafonte-day"
+dark = "belafonte-night"
+```
+
+When configured, Rio will automatically switch between the specified light and dark themes based on your system's current theme setting.
+
+![Adaptive theme](/assets/features/adaptive-theme.gif)
+
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
@@ -1318,7 +1332,7 @@ theme = "lucario"
 
 You can find more than 250 themes for Rio terminal in this repository: [mbadolato/iTerm2-Color-Schemes/tree/master/rio](https://github.com/mbadolato/iTerm2-Color-Schemes/tree/master/rio).
 
-## Building your own theme
+### Building your own theme
 
 Building your own theme for Rio is very straightforward.
 
