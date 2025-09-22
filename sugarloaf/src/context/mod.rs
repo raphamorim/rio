@@ -1,12 +1,8 @@
-use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
+use crate::sugarloaf::{Colorspace, SugarloafBackend, SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
 
 pub struct Context<'a> {
     pub inner: ContextType<'a>,
-    pub size: SugarloafWindowSize,
-    pub scale: f32,
-    pub supports_f16: bool,
-    pub colorspace: Colorspace,
 }
 
 pub enum ContextType<'a> {
@@ -22,13 +18,21 @@ pub struct WgpuContext<'a> {
     alpha_mode: wgpu::CompositeAlphaMode,
     pub adapter_info: wgpu::AdapterInfo,
     surface_caps: wgpu::SurfaceCapabilities,
+    pub size: SugarloafWindowSize,
+    pub scale: f32,
+    pub supports_f16: bool,
+    pub colorspace: Colorspace,
 }
 
-impl WgpuContext<'_> {
+impl<'a> WgpuContext<'a> {
     pub fn new(
         sugarloaf_window: SugarloafWindow,
         renderer_config: SugarloafRenderer,
+        wgpu_backend: wgpu::Backends,
     ) -> WgpuContext<'a> {
+        let size = sugarloaf_window.size;
+        let scale = sugarloaf_window.scale;
+
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
         // will be used. The following values are allowed:
@@ -39,7 +43,7 @@ impl WgpuContext<'_> {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend = wgpu::Backends::from_env().unwrap_or(renderer_config.backend);
+        let backend = wgpu::Backends::from_env().unwrap_or(wgpu_backend);
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: backend,
             ..Default::default()
@@ -56,9 +60,6 @@ impl WgpuContext<'_> {
         }
 
         tracing::info!("initializing the surface");
-
-        let size = sugarloaf_window.size;
-        let scale = sugarloaf_window.scale;
 
         let surface: wgpu::Surface<'a> =
             instance.create_surface(sugarloaf_window).unwrap();
@@ -165,6 +166,127 @@ impl WgpuContext<'_> {
                 desired_maximum_frame_latency: 2,
             },
         );
+
+        tracing::info!("F16 shader support: {}", supports_f16);
+        tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
+        tracing::info!("Surface format: {:?}", format);
+
+        WgpuContext {
+            device,
+            queue,
+            surface,
+            format,
+            alpha_mode,
+            size: SugarloafWindowSize {
+                width: size.width,
+                height: size.height,
+            },
+            scale,
+            adapter_info,
+            surface_caps,
+            supports_f16,
+            colorspace: renderer_config.colorspace,
+        }
+    }
+
+    fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
+        let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
+
+        // COPY_DST and COPY_SRC are required for FiltersBrush
+        // But some backends like OpenGL might not support COPY_DST and COPY_SRC
+        // https://github.com/emilk/egui/pull/3078
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
+            usage |= wgpu::TextureUsages::COPY_DST;
+        }
+
+        if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+            usage |= wgpu::TextureUsages::COPY_SRC;
+        }
+
+        usage
+    }
+
+    #[inline]
+    pub fn resize(&mut self, width: u32, height: u32) {
+        self.size.width = width as f32;
+        self.size.height = height as f32;
+
+        // Configure view formats for wide color gamut support
+        let view_formats = match self.colorspace {
+            Colorspace::DisplayP3 | Colorspace::Rec2020 => {
+                vec![self.format]
+            }
+            Colorspace::Srgb => {
+                vec![]
+            }
+        };
+
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: Self::get_texture_usage(&self.surface_caps),
+                format: self.format,
+                width,
+                height,
+                view_formats,
+                alpha_mode: self.alpha_mode,
+                present_mode: wgpu::PresentMode::Fifo,
+                desired_maximum_frame_latency: 2,
+            },
+        );
+    }
+
+    #[inline]
+    pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
+        &self.surface_caps
+    }
+
+    #[inline]
+    pub fn supports_f16(&self) -> bool {
+        self.supports_f16
+    }
+
+    pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
+        if self.supports_f16 {
+            match channels {
+                1 => wgpu::TextureFormat::R16Float,
+                2 => wgpu::TextureFormat::Rg16Float,
+                4 => wgpu::TextureFormat::Rgba16Float,
+                _ => wgpu::TextureFormat::Rgba8Unorm, // fallback
+            }
+        } else {
+            wgpu::TextureFormat::Rgba8Unorm
+        }
+    }
+
+    pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {
+        // Both Rgba16Float (f16) and Rgba8Unorm (f32) use Float sample type with filtering
+        wgpu::TextureSampleType::Float { filterable: true }
+    }
+
+    pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {
+        if self.supports_f16 {
+            // Convert u8 RGBA to f16 RGBA
+            let mut f16_data = Vec::with_capacity(rgba8_data.len() * 2);
+            for chunk in rgba8_data.chunks(4) {
+                if chunk.len() == 4 {
+                    // Convert u8 [0-255] to f16 [0.0-1.0]
+                    let r = half::f16::from_f32(chunk[0] as f32 / 255.0);
+                    let g = half::f16::from_f32(chunk[1] as f32 / 255.0);
+                    let b = half::f16::from_f32(chunk[2] as f32 / 255.0);
+                    let a = half::f16::from_f32(chunk[3] as f32 / 255.0);
+
+                    f16_data.extend_from_slice(&r.to_le_bytes());
+                    f16_data.extend_from_slice(&g.to_le_bytes());
+                    f16_data.extend_from_slice(&b.to_le_bytes());
+                    f16_data.extend_from_slice(&a.to_le_bytes());
+                }
+            }
+            f16_data
+        } else {
+            rgba8_data.to_vec()
+        }
     }
 }
 
@@ -229,6 +351,12 @@ fn find_best_texture_format(
     format
 }
 
+impl MetalContext {
+    fn new() -> Self {
+        MetalContext {}
+    }
+}
+
 #[inline]
 #[cfg(target_os = "macos")]
 fn get_macos_texture_format(colorspace: Colorspace) -> wgpu::TextureFormat {
@@ -243,122 +371,26 @@ impl Context<'_> {
         sugarloaf_window: SugarloafWindow,
         renderer_config: SugarloafRenderer,
     ) -> Context<'a> {
-        tracing::info!("F16 shader support: {}", supports_f16);
-        tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
-        tracing::info!("Surface format: {:?}", format);
+        let inner = match renderer_config.backend {
+            SugarloafBackend::Wgpu(backends) => {
+                ContextType::Wgpu(WgpuContext::new(sugarloaf_window, renderer_config, backends))
+            },
+            SugarloafBackend::Metal => {
+                ContextType::Metal(MetalContext::new())
+            },
+        };
 
         Context {
-            device,
-            queue,
-            surface,
-            format,
-            alpha_mode,
-            size: SugarloafWindowSize {
-                width: size.width,
-                height: size.height,
-            },
-            scale,
-            adapter_info,
-            surface_caps,
-            supports_f16,
-            colorspace: renderer_config.colorspace,
+            inner,
         }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
-        self.size.width = width as f32;
-        self.size.height = height as f32;
-
-        // Configure view formats for wide color gamut support
-        let view_formats = match self.colorspace {
-            Colorspace::DisplayP3 | Colorspace::Rec2020 => {
-                vec![self.format]
+        match &mut self.inner {
+            ContextType::Wgpu(ctx) => {
+                ctx.resize(width, height);
             }
-            Colorspace::Srgb => {
-                vec![]
-            }
-        };
-
-        self.surface.configure(
-            &self.device,
-            &wgpu::SurfaceConfiguration {
-                usage: Self::get_texture_usage(&self.surface_caps),
-                format: self.format,
-                width,
-                height,
-                view_formats,
-                alpha_mode: self.alpha_mode,
-                present_mode: wgpu::PresentMode::Fifo,
-                desired_maximum_frame_latency: 2,
-            },
-        );
-    }
-
-    pub fn surface_caps(&self) -> &wgpu::SurfaceCapabilities {
-        &self.surface_caps
-    }
-
-    pub fn supports_f16(&self) -> bool {
-        self.supports_f16
-    }
-
-    pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
-        if self.supports_f16 {
-            match channels {
-                1 => wgpu::TextureFormat::R16Float,
-                2 => wgpu::TextureFormat::Rg16Float,
-                4 => wgpu::TextureFormat::Rgba16Float,
-                _ => wgpu::TextureFormat::Rgba8Unorm, // fallback
-            }
-        } else {
-            wgpu::TextureFormat::Rgba8Unorm
+            ContextType::Metal(_) => {},
         }
-    }
-
-    pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {
-        // Both Rgba16Float (f16) and Rgba8Unorm (f32) use Float sample type with filtering
-        wgpu::TextureSampleType::Float { filterable: true }
-    }
-
-    pub fn convert_rgba8_to_optimal_format(&self, rgba8_data: &[u8]) -> Vec<u8> {
-        if self.supports_f16 {
-            // Convert u8 RGBA to f16 RGBA
-            let mut f16_data = Vec::with_capacity(rgba8_data.len() * 2);
-            for chunk in rgba8_data.chunks(4) {
-                if chunk.len() == 4 {
-                    // Convert u8 [0-255] to f16 [0.0-1.0]
-                    let r = half::f16::from_f32(chunk[0] as f32 / 255.0);
-                    let g = half::f16::from_f32(chunk[1] as f32 / 255.0);
-                    let b = half::f16::from_f32(chunk[2] as f32 / 255.0);
-                    let a = half::f16::from_f32(chunk[3] as f32 / 255.0);
-
-                    f16_data.extend_from_slice(&r.to_le_bytes());
-                    f16_data.extend_from_slice(&g.to_le_bytes());
-                    f16_data.extend_from_slice(&b.to_le_bytes());
-                    f16_data.extend_from_slice(&a.to_le_bytes());
-                }
-            }
-            f16_data
-        } else {
-            rgba8_data.to_vec()
-        }
-    }
-
-    fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
-        let mut usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
-
-        // COPY_DST and COPY_SRC are required for FiltersBrush
-        // But some backends like OpenGL might not support COPY_DST and COPY_SRC
-        // https://github.com/emilk/egui/pull/3078
-
-        if caps.usages.contains(wgpu::TextureUsages::COPY_DST) {
-            usage |= wgpu::TextureUsages::COPY_DST;
-        }
-
-        if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
-            usage |= wgpu::TextureUsages::COPY_SRC;
-        }
-
-        usage
     }
 }
