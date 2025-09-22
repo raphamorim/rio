@@ -393,7 +393,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 self.config = config;
 
                 // Apply system theme to ensure colors are consistent
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                if let Some(route) = self.router.routes.get(&window_id) {
                     let system_theme = route.window.winit_window.theme();
                     update_colors_based_on_theme(&mut self.config, system_theme);
                 }
