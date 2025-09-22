@@ -1,5 +1,5 @@
-pub mod webgpu;
 pub mod metal;
+pub mod webgpu;
 
 use crate::sugarloaf::{SugarloafBackend, SugarloafWindow};
 use crate::SugarloafRenderer;
@@ -19,17 +19,13 @@ impl Context<'_> {
         renderer_config: SugarloafRenderer,
     ) -> Context<'a> {
         let inner = match renderer_config.backend {
-            SugarloafBackend::Wgpu(backends) => {
-                ContextType::Wgpu(webgpu::WgpuContext::new(sugarloaf_window, renderer_config, backends))
-            },
-            SugarloafBackend::Metal => {
-                ContextType::Metal(metal::MetalContext::new())
-            },
+            SugarloafBackend::Wgpu(backends) => ContextType::Wgpu(
+                webgpu::WgpuContext::new(sugarloaf_window, renderer_config, backends),
+            ),
+            SugarloafBackend::Metal => ContextType::Metal(metal::MetalContext::new()),
         };
 
-        Context {
-            inner,
-        }
+        Context { inner }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
@@ -37,7 +33,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => {
                 ctx.resize(width, height);
             }
-            ContextType::Metal(_) => {},
+            ContextType::Metal(_) => {}
         }
     }
 }

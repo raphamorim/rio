@@ -281,7 +281,6 @@ impl<'a> WgpuContext<'a> {
     }
 }
 
-
 #[inline]
 #[cfg(not(target_os = "macos"))]
 fn find_best_texture_format(
