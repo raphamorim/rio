@@ -100,13 +100,18 @@ impl Default for Colorspace {
 impl Default for SugarloafRenderer {
     fn default() -> SugarloafRenderer {
         #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-        #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
+        let default_backend =
+            SugarloafBackend::Wgpu(wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL);
+
+        #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+        let default_backend = SugarloafBackend::Wgpu(wgpu::Backends::all());
+
+        #[cfg(all(target_os = "macos", not(target_arch = "wasm32")))]
+        let default_backend = SugarloafBackend::Metal;
 
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
-            backend: SugarloafBackend::Wgpu(default_backend),
+            backend: default_backend,
             font_features: None,
             colorspace: Colorspace::default(),
         }

@@ -39,7 +39,7 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::renderer::{
-    Backend as WgpuBackend, SugarloafBackend, Performance as RendererPerformance,
+    Backend as WgpuBackend, Performance as RendererPerformance, SugarloafBackend,
 };
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;

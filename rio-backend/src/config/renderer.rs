@@ -100,7 +100,7 @@ pub enum Backend {
     #[serde(alias = "wgpumetal")]
     WgpuMetal,
     #[serde(alias = "metal")]
-    Metal
+    Metal,
 }
 
 impl Default for Backend {
