@@ -392,13 +392,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 self.config = config;
 
-                // Apply system theme to ensure colors are consistent
-                if let Some(route) = self.router.routes.get(&window_id) {
-                    let system_theme = route.window.winit_window.theme();
-                    update_colors_based_on_theme(&mut self.config, system_theme);
-                }
-
+                let mut has_checked_adaptive_colors = false;
                 for (_id, route) in self.router.routes.iter_mut() {
+                    // Apply system theme to ensure colors are consistent
+                    if !has_checked_adaptive_colors {
+                        let system_theme = route.window.winit_window.theme();
+                        update_colors_based_on_theme(&mut self.config, system_theme);
+                        has_checked_adaptive_colors = true;
+                    }
+
                     if has_font_updates {
                         if let Some(ref err) = font_library_errors {
                             route

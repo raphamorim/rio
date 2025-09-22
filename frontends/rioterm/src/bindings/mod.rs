@@ -1537,10 +1537,6 @@ mod tests {
         // Should have 1 binding (the original Alt+Enter should be replaced)
         assert_eq!(new_bindings.len(), 1);
 
-        // Check that the action was updated to scroll action
-        match &new_bindings[0].action {
-            Action::Scroll(_) => assert!(true),
-            _ => assert!(false, "Expected scroll action"),
-        }
+        assert_eq!(&new_bindings[0].action, &Action::Scroll(1));
     }
 }
