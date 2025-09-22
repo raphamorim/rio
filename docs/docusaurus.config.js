@@ -104,7 +104,7 @@ const config = {
           { to: '/docs/install', label: 'Install', position: 'left' },
           { to: '/docs/config', label: 'Config', position: 'left', },
           { to: '/docs/features', label: 'Features', position: 'left' },
-          { to: '/docs/releases', label: 'Releases', position: 'left' },
+          { to: '/docs/changelog', label: 'Changelog', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
