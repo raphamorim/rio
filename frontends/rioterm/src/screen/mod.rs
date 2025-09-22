@@ -39,7 +39,7 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
+    Backend as WgpuBackend, SugarloafBackend, Performance as RendererPerformance,
 };
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
@@ -151,10 +151,11 @@ impl Screen<'_> {
 
                 default_backend
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
+            RendererBackend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+            RendererBackend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+            RendererBackend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+            RendererBackend::Metal => SugarloafBackend::Metal,
+            RendererBackend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };
 
         let sugarloaf_renderer = SugarloafRenderer {

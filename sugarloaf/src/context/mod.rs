@@ -2,92 +2,33 @@ use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
 
 pub struct Context<'a> {
-    pub device: wgpu::Device,
-    pub surface: wgpu::Surface<'a>,
-    pub queue: wgpu::Queue,
-    pub format: wgpu::TextureFormat,
+    pub inner: ContextType<'a>,
     pub size: SugarloafWindowSize,
     pub scale: f32,
-    alpha_mode: wgpu::CompositeAlphaMode,
-    pub adapter_info: wgpu::AdapterInfo,
-    surface_caps: wgpu::SurfaceCapabilities,
     pub supports_f16: bool,
     pub colorspace: Colorspace,
 }
 
-#[inline]
-#[cfg(not(target_os = "macos"))]
-fn find_best_texture_format(
-    formats: &[wgpu::TextureFormat],
-    colorspace: Colorspace,
-) -> wgpu::TextureFormat {
-    let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
-
-    // TODO: Fix formats with signs
-    // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
-    // Reason for this is currently output color space is poorly defined in wgpu and
-    // anything other than Srgb texture formats can cause undeterministic output color
-    // space selection which also causes colors to mismatch. Optionally we can whitelist
-    // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
-    // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
-    #[cfg(windows)]
-    let unsupported_formats = [
-        wgpu::TextureFormat::Rgba8Snorm,
-        wgpu::TextureFormat::Rgba16Float,
-    ];
-
-    // not reproduce-able on mac
-    #[cfg(not(windows))]
-    let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
-
-    let filtered_formats: Vec<wgpu::TextureFormat> = formats
-        .iter()
-        .copied()
-        .filter(|&x| {
-            // On non-macOS platforms, always avoid sRGB formats
-            // This maintains compatibility with existing Linux/Windows color handling
-            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
-        })
-        .collect();
-
-    // If no compatible formats found, fall back to any non-unsupported format
-    let final_formats = if filtered_formats.is_empty() {
-        formats
-            .iter()
-            .copied()
-            .filter(|&x| !unsupported_formats.contains(&x))
-            .collect()
-    } else {
-        filtered_formats
-    };
-
-    if !final_formats.is_empty() {
-        final_formats.first().unwrap().clone_into(&mut format);
-    }
-
-    tracing::info!(
-        "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",
-        formats,
-        colorspace
-    );
-
-    format
+pub enum ContextType<'a> {
+    Wgpu(WgpuContext<'a>),
+    Metal(MetalContext),
 }
 
-#[inline]
-#[cfg(target_os = "macos")]
-fn get_macos_texture_format(colorspace: Colorspace) -> wgpu::TextureFormat {
-    match colorspace {
-        Colorspace::Srgb => wgpu::TextureFormat::Bgra8UnormSrgb,
-        Colorspace::DisplayP3 | Colorspace::Rec2020 => wgpu::TextureFormat::Bgra8Unorm,
-    }
+pub struct WgpuContext<'a> {
+    pub device: wgpu::Device,
+    pub surface: wgpu::Surface<'a>,
+    pub queue: wgpu::Queue,
+    pub format: wgpu::TextureFormat,
+    alpha_mode: wgpu::CompositeAlphaMode,
+    pub adapter_info: wgpu::AdapterInfo,
+    surface_caps: wgpu::SurfaceCapabilities,
 }
 
-impl Context<'_> {
-    pub fn new<'a>(
+impl WgpuContext<'_> {
+    pub fn new(
         sugarloaf_window: SugarloafWindow,
         renderer_config: SugarloafRenderer,
-    ) -> Context<'a> {
+    ) -> WgpuContext<'a> {
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
         // will be used. The following values are allowed:
@@ -224,7 +165,87 @@ impl Context<'_> {
                 desired_maximum_frame_latency: 2,
             },
         );
+    }
+} 
 
+pub struct MetalContext {
+
+}
+
+#[inline]
+#[cfg(not(target_os = "macos"))]
+fn find_best_texture_format(
+    formats: &[wgpu::TextureFormat],
+    colorspace: Colorspace,
+) -> wgpu::TextureFormat {
+    let mut format: wgpu::TextureFormat = formats.first().unwrap().to_owned();
+
+    // TODO: Fix formats with signs
+    // FIXME: On Nvidia GPUs usage Rgba16Float texture format causes driver to enable HDR.
+    // Reason for this is currently output color space is poorly defined in wgpu and
+    // anything other than Srgb texture formats can cause undeterministic output color
+    // space selection which also causes colors to mismatch. Optionally we can whitelist
+    // only the Srgb texture formats for now until output color space selection lands in wgpu. See #205
+    // TODO: use output color format for the CanvasConfiguration when it lands on the wgpu
+    #[cfg(windows)]
+    let unsupported_formats = [
+        wgpu::TextureFormat::Rgba8Snorm,
+        wgpu::TextureFormat::Rgba16Float,
+    ];
+
+    // not reproduce-able on mac
+    #[cfg(not(windows))]
+    let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+
+    let filtered_formats: Vec<wgpu::TextureFormat> = formats
+        .iter()
+        .copied()
+        .filter(|&x| {
+            // On non-macOS platforms, always avoid sRGB formats
+            // This maintains compatibility with existing Linux/Windows color handling
+            !wgpu::TextureFormat::is_srgb(&x) && !unsupported_formats.contains(&x)
+        })
+        .collect();
+
+    // If no compatible formats found, fall back to any non-unsupported format
+    let final_formats = if filtered_formats.is_empty() {
+        formats
+            .iter()
+            .copied()
+            .filter(|&x| !unsupported_formats.contains(&x))
+            .collect()
+    } else {
+        filtered_formats
+    };
+
+    if !final_formats.is_empty() {
+        final_formats.first().unwrap().clone_into(&mut format);
+    }
+
+    tracing::info!(
+        "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",
+        formats,
+        colorspace
+    );
+
+    format
+}
+
+#[inline]
+#[cfg(target_os = "macos")]
+fn get_macos_texture_format(colorspace: Colorspace) -> wgpu::TextureFormat {
+    match colorspace {
+        Colorspace::Srgb => wgpu::TextureFormat::Bgra8UnormSrgb,
+        Colorspace::DisplayP3 | Colorspace::Rec2020 => wgpu::TextureFormat::Bgra8Unorm,
+    }
+}
+
+impl Context<'_> {
+    pub fn new<'a>(
+        sugarloaf_window: SugarloafWindow,
+        renderer_config: SugarloafRenderer,
+    ) -> Context<'a> {
+        
         tracing::info!("F16 shader support: {}", supports_f16);
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);

@@ -62,9 +62,14 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+pub enum SugarloafBackend {
+    Wgpu(wgpu::Backends),
+    Metal,
+}
+
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
-    pub backend: wgpu::Backends,
+    pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
 }
@@ -101,7 +106,7 @@ impl Default for SugarloafRenderer {
 
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
-            backend: default_backend,
+            backend: SugarloafBackend::Wgpu(default_backend),
             font_features: None,
             colorspace: Colorspace::default(),
         }
