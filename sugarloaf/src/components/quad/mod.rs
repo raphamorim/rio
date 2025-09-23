@@ -1,4 +1,5 @@
 use crate::components::core::{orthographic_projection, uniforms::Uniforms};
+use crate::context::webgpu::WgpuContext;
 use crate::context::Context;
 
 use bytemuck::{Pod, Zeroable};
@@ -58,7 +59,7 @@ pub struct QuadBrush {
 }
 
 impl QuadBrush {
-    pub fn new(context: &Context) -> QuadBrush {
+    pub fn new(context: &WgpuContext) -> QuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
         let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Instances Buffer"),
@@ -209,7 +210,7 @@ impl QuadBrush {
         }
     }
 
-    pub fn resize(&mut self, ctx: &mut Context) {
+    pub fn resize(&mut self, ctx: &mut WgpuContext) {
         let transform: [f32; 16] =
             orthographic_projection(ctx.size.width, ctx.size.height);
         // device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -227,7 +228,7 @@ impl QuadBrush {
 
     pub fn render<'a>(
         &'a mut self,
-        context: &mut Context,
+        context: &mut WgpuContext,
         state: &crate::sugarloaf::state::SugarState,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
@@ -265,7 +266,7 @@ impl QuadBrush {
     /// Render a single quad directly without requiring it to be in state
     pub fn render_single<'a>(
         &'a mut self,
-        context: &mut Context,
+        context: &mut WgpuContext,
         quad: &Quad,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {

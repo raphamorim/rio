@@ -379,18 +379,40 @@ impl Sugarloaf<'_> {
             &mut self.graphics,
         );
 
-        match self.ctx.surface.get_current_texture() {
+        match self.ctx.inner {
+            crate::context::ContextType::Wgpu(_) => {
+                self.render_wgpu();
+            }
+            crate::context::ContextType::Metal(_) => {
+                self.render_metal();
+            }
+        }
+    }
+
+    pub fn render_metal(&mut self) {}
+
+    #[inline]
+    pub fn render_wgpu(&mut self) {
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Wgpu(wgpu) => wgpu,
+            crate::context::ContextType::Metal(_) => {
+                return;
+            }
+        };
+
+        match ctx.surface.get_current_texture() {
             Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
+                let mut encoder =
+                    ctx.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: None,
+                        });
 
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
                 if let Some(layer) = &self.graphics.bottom_layer {
-                    self.layer_brush
-                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
+                    self.layer_brush.prepare(&mut encoder, ctx, &[&layer.data]);
                 }
 
                 if self.graphics.has_graphics_on_top_layer() {
@@ -398,7 +420,7 @@ impl Sugarloaf<'_> {
                         if let Some(entry) = self.graphics.get(&request.id) {
                             self.layer_brush.prepare_with_handle(
                                 &mut encoder,
-                                &mut self.ctx,
+                                ctx,
                                 &entry.handle,
                                 &Rectangle {
                                     width: request.width.unwrap_or(entry.width),
@@ -448,9 +470,8 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
-                    self.quad_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
-                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
+                    self.quad_brush.render(ctx, &self.state, &mut rpass);
+                    self.rich_text_brush.render(ctx, &mut rpass);
                 }
 
                 // Visual bell overlay requires separate render pass to appear on top of rich text
@@ -472,11 +493,8 @@ impl Sugarloaf<'_> {
                         });
 
                     // Render just the overlay quad directly
-                    self.quad_brush.render_single(
-                        &mut self.ctx,
-                        &bell_overlay,
-                        &mut overlay_pass,
-                    );
+                    self.quad_brush
+                        .render_single(ctx, &bell_overlay, &mut overlay_pass);
                 }
 
                 if self.graphics.bottom_layer.is_some()
@@ -488,13 +506,13 @@ impl Sugarloaf<'_> {
 
                 if let Some(ref mut filters_brush) = self.filters_brush {
                     filters_brush.render(
-                        &self.ctx,
+                        ctx,
                         &mut encoder,
                         &frame.texture,
                         &frame.texture,
                     );
                 }
-                self.ctx.queue.submit(Some(encoder.finish()));
+                ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
             Err(error) => {
