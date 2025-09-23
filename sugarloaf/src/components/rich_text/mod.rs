@@ -9,6 +9,7 @@ mod text_run_manager;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
+use crate::context::webgpu::WgpuContext;
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -781,7 +782,7 @@ impl RichTextBrush {
     #[inline]
     pub fn render<'pass>(
         &'pass mut self,
-        ctx: &mut Context,
+        ctx: &mut WgpuContext,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // let start = std::time::Instant::now();
