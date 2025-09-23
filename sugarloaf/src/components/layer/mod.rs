@@ -2,6 +2,7 @@ mod atlas;
 mod raster;
 pub mod types;
 
+use crate::context::webgpu::WgpuContext;
 use crate::context::Context;
 use atlas::Atlas;
 
@@ -122,7 +123,7 @@ impl Layer {
 }
 
 impl LayerBrush {
-    pub fn new(context: &Context) -> Self {
+    pub fn new(context: &WgpuContext) -> Self {
         let device = &context.device;
         use wgpu::util::DeviceExt;
 
@@ -310,7 +311,7 @@ impl LayerBrush {
     pub fn prepare(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        ctx: &mut Context,
+        ctx: &mut WgpuContext,
         images: &[&types::Raster],
     ) {
         let transformation: [f32; 16] =
@@ -376,7 +377,7 @@ impl LayerBrush {
     pub fn prepare_with_handle(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
-        ctx: &mut Context,
+        ctx: &mut WgpuContext,
         handle: &image::Handle,
         bounds: &Rectangle,
     ) {

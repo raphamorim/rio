@@ -1,7 +1,7 @@
 mod builtin;
 mod runtime;
 
-use crate::context::Context;
+use crate::context::webgpu::WgpuContext;
 use librashader_common::{Size, Viewport};
 use librashader_presets::ShaderFeatures;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ pub struct FiltersBrush {
 
 impl FiltersBrush {
     #[inline]
-    pub fn update_filters(&mut self, ctx: &Context, filters: &[Filter]) {
+    pub fn update_filters(&mut self, ctx: &WgpuContext, filters: &[Filter]) {
         self.filter_chains.clear();
         self.filter_intermediates.clear();
 
@@ -127,7 +127,7 @@ impl FiltersBrush {
     #[inline]
     pub fn render(
         &mut self,
-        ctx: &Context,
+        ctx: &WgpuContext,
         encoder: &mut wgpu::CommandEncoder,
         src_texture: &wgpu::Texture,
         dst_texture: &wgpu::Texture,
