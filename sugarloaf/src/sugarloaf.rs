@@ -25,7 +25,7 @@ pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
     quad_brush: QuadBrush,
     rich_text_brush: RichTextBrush,
-    layer_brush: LayerBrush,
+    // layer_brush: LayerBrush,
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
@@ -155,14 +155,14 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let layer_brush = LayerBrush::new(&ctx);
+        // let layer_brush = LayerBrush::new(&ctx);
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
-            layer_brush,
+            // layer_brush,
             quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
@@ -186,11 +186,11 @@ impl Sugarloaf<'_> {
         self.rich_text_brush.clear_atlas();
 
         // Clear the layer atlas to remove old cached images
-        self.layer_brush.clear_atlas(
-            &self.ctx.device,
-            self.ctx.adapter_info.backend,
-            &self.ctx,
-        );
+        // self.layer_brush.clear_atlas(
+        //     &self.ctx.device,
+        //     self.ctx.adapter_info.backend,
+        //     &self.ctx,
+        // );
 
         self.state.reset();
         self.state
@@ -204,7 +204,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn get_scale(&self) -> f32 {
-        self.ctx.scale
+        self.ctx.scale()
     }
 
     #[inline]
@@ -269,18 +269,18 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
         let handle = Handle::from_path(image.path.to_owned());
-        self.graphics.bottom_layer = Some(BottomLayer {
-            should_fit: image.width.is_none() && image.height.is_none(),
-            data: types::Raster {
-                handle,
-                bounds: Rectangle {
-                    width: image.width.unwrap_or(self.ctx.size.width),
-                    height: image.height.unwrap_or(self.ctx.size.height),
-                    x: image.x,
-                    y: image.y,
-                },
-            },
-        });
+        // self.graphics.bottom_layer = Some(BottomLayer {
+        //     should_fit: image.width.is_none() && image.height.is_none(),
+        //     data: types::Raster {
+        //         handle,
+        //         bounds: Rectangle {
+        //             width: image.width.unwrap_or(self.ctx.size.width),
+        //             height: image.height.unwrap_or(self.ctx.size.height),
+        //             x: image.x,
+        //             y: image.y,
+        //         },
+        //     },
+        // });
         self
     }
 
@@ -334,7 +334,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn window_size(&self) -> SugarloafWindowSize {
-        self.ctx.size
+        self.ctx.size()
     }
 
     #[inline]
@@ -345,25 +345,25 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
+        // if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+        //     if bottom_layer.should_fit {
+        //         bottom_layer.data.bounds.width = self.ctx.size.width;
+        //         bottom_layer.data.bounds.height = self.ctx.size.height;
+        //     }
+        // }
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
-        self.ctx.scale = scale;
+        self.ctx.set_scale(scale);
         self.state
             .compute_layout_rescale(scale, &mut self.rich_text_brush);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
+        // if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
+        //     if bottom_layer.should_fit {
+        //         bottom_layer.data.bounds.width = self.ctx.size.width;
+        //         bottom_layer.data.bounds.height = self.ctx.size.height;
+        //     }
+        // }
     }
 
     #[inline]
@@ -416,27 +416,27 @@ impl Sugarloaf<'_> {
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-                if let Some(layer) = &self.graphics.bottom_layer {
-                    self.layer_brush.prepare(&mut encoder, ctx, &[&layer.data]);
-                }
+                // if let Some(layer) = &self.graphics.bottom_layer {
+                //     self.layer_brush.prepare(&mut encoder, ctx, &[&layer.data]);
+                // }
 
-                if self.graphics.has_graphics_on_top_layer() {
-                    for request in &self.graphics.top_layer {
-                        if let Some(entry) = self.graphics.get(&request.id) {
-                            self.layer_brush.prepare_with_handle(
-                                &mut encoder,
-                                ctx,
-                                &entry.handle,
-                                &Rectangle {
-                                    width: request.width.unwrap_or(entry.width),
-                                    height: request.height.unwrap_or(entry.height),
-                                    x: request.pos_x,
-                                    y: request.pos_y,
-                                },
-                            );
-                        }
-                    }
-                }
+                // if self.graphics.has_graphics_on_top_layer() {
+                //     for request in &self.graphics.top_layer {
+                //         if let Some(entry) = self.graphics.get(&request.id) {
+                //             self.layer_brush.prepare_with_handle(
+                //                 &mut encoder,
+                //                 ctx,
+                //                 &entry.handle,
+                //                 &Rectangle {
+                //                     width: request.width.unwrap_or(entry.width),
+                //                     height: request.height.unwrap_or(entry.height),
+                //                     x: request.pos_x,
+                //                     y: request.pos_y,
+                //                 },
+                //             );
+                //         }
+                //     }
+                // }
 
                 {
                     let load = if let Some(background_color) = self.background_color {
@@ -461,53 +461,30 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    if self.graphics.bottom_layer.is_some() {
-                        self.layer_brush.render(0, &mut rpass, None);
-                    }
+                    // if self.graphics.bottom_layer.is_some() {
+                    //     self.layer_brush.render(0, &mut rpass, None);
+                    // }
 
-                    if self.graphics.has_graphics_on_top_layer() {
-                        let range_request = if self.graphics.bottom_layer.is_some() {
-                            1..(self.graphics.top_layer.len() + 1)
-                        } else {
-                            0..self.graphics.top_layer.len()
-                        };
-                        for request in range_request {
-                            self.layer_brush.render(request, &mut rpass, None);
-                        }
-                    }
-                    self.quad_brush.render(ctx, &self.state, &mut rpass);
+                    // if self.graphics.has_graphics_on_top_layer() {
+                    //     let range_request = if self.graphics.bottom_layer.is_some() {
+                    //         1..(self.graphics.top_layer.len() + 1)
+                    //     } else {
+                    //         0..self.graphics.top_layer.len()
+                    //     };
+                    //     for request in range_request {
+                    //         self.layer_brush.render(request, &mut rpass, None);
+                    //     }
+                    // }
+                    self.quad_brush.render_wgpu(ctx, &self.state, &mut rpass);
                     self.rich_text_brush.render(ctx, &mut rpass);
                 }
 
-                // Visual bell overlay requires separate render pass to appear on top of rich text
-                if let Some(bell_overlay) = self.state.visual_bell_overlay {
-                    let mut overlay_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                            label: Some("visual_bell"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load, // Load existing content
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                        });
-
-                    // Render just the overlay quad directly
-                    self.quad_brush
-                        .render_single(ctx, &bell_overlay, &mut overlay_pass);
-                }
-
-                if self.graphics.bottom_layer.is_some()
-                    || self.graphics.has_graphics_on_top_layer()
-                {
-                    self.layer_brush.end_frame();
-                    self.graphics.clear_top_layer();
-                }
+                // if self.graphics.bottom_layer.is_some()
+                //     || self.graphics.has_graphics_on_top_layer()
+                // {
+                //     self.layer_brush.end_frame();
+                //     self.graphics.clear_top_layer();
+                // }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {
                     filters_brush.render(
@@ -527,10 +504,5 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
-    }
-
-    #[inline]
-    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
-        self.state.set_visual_bell_overlay(overlay);
     }
 }
