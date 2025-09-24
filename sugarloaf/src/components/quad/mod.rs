@@ -1,5 +1,7 @@
+use crate::context::ContextType;
 use crate::components::core::{orthographic_projection, uniforms::Uniforms};
 use crate::context::webgpu::WgpuContext;
+use crate::context::metal::MetalContext;
 use crate::context::Context;
 
 use bytemuck::{Pod, Zeroable};
@@ -48,18 +50,96 @@ pub struct Quad {
 }
 
 #[derive(Debug)]
-pub struct QuadBrush {
+pub enum BrushType {
+    Wgpu(WgpuQuadBrush),
+    Metal(MetalQuadBrush),
+}
+
+#[derive(Debug)]
+pub struct WgpuQuadBrush {
     pipeline: wgpu::RenderPipeline,
-    current_transform: [f32; 16],
     constants: wgpu::BindGroup,
     transform: wgpu::Buffer,
     instances: wgpu::Buffer,
-    // transform: wgpu::Buffer,
     supported_quantity: usize,
 }
 
+#[derive(Debug)]
+pub struct MetalQuadBrush {
+    // Metal-specific fields will be added here
+    supported_quantity: usize,
+}
+
+#[derive(Debug)]
+pub struct QuadBrush {
+    current_transform: [f32; 16],
+    brush_type: BrushType,
+}
+
 impl QuadBrush {
-    pub fn new(context: &WgpuContext) -> QuadBrush {
+    pub fn new(context: &Context) -> QuadBrush {
+        let brush_type = match &context.inner {
+            ContextType::Wgpu(wgpu_context) => {
+                BrushType::Wgpu(WgpuQuadBrush::new(wgpu_context))
+            }
+            ContextType::Metal(_metal_context) => {
+                BrushType::Metal(MetalQuadBrush {
+                    supported_quantity: INITIAL_QUANTITY,
+                })
+            }
+        };
+
+        QuadBrush {
+            current_transform: [0.0; 16],
+            brush_type,
+        }
+    }
+
+    pub fn resize(&mut self, ctx: &mut Context) {
+        let transform: [f32; 16] = match &ctx.inner {
+            ContextType::Wgpu(wgpu_ctx) => {
+                orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
+            }
+            ContextType::Metal(metal_ctx) => {
+                orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
+            }
+        };
+
+        if transform != self.current_transform {
+            match &mut self.brush_type {
+                BrushType::Wgpu(wgpu_brush) => {
+                    let (scale, queue) = match &ctx.inner {
+                        ContextType::Wgpu(wgpu_ctx) => (wgpu_ctx.scale, &wgpu_ctx.queue),
+                        _ => unreachable!(),
+                    };
+
+                    let uniforms = Uniforms::new(transform, scale);
+                    queue.write_buffer(&wgpu_brush.transform, 0, bytemuck::bytes_of(&uniforms));
+                }
+                BrushType::Metal(_metal_brush) => {
+                    // Metal implementation will be added later
+                }
+            }
+
+            self.current_transform = transform;
+        }
+    }
+
+    pub fn render_wgpu<'a>(
+        &'a mut self,
+        context: &mut WgpuContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
+        if let BrushType::Wgpu(brush) = &mut self.brush_type {
+            brush.render(context, state, render_pass);
+        }
+    }
+}
+
+
+impl WgpuQuadBrush {
+    pub fn new(context: &WgpuContext) -> WgpuQuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
         let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Instances Buffer"),
@@ -89,7 +169,7 @@ impl QuadBrush {
 
         let transform = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad uniforms buffer"),
-            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            size: mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -200,29 +280,12 @@ impl QuadBrush {
                     multiview: None,
                 });
 
-        Self {
+        WgpuQuadBrush {
             supported_quantity,
             instances,
             constants,
             transform,
             pipeline,
-            current_transform: [0.0; 16],
-        }
-    }
-
-    pub fn resize(&mut self, ctx: &mut WgpuContext) {
-        let transform: [f32; 16] =
-            orthographic_projection(ctx.size.width, ctx.size.height);
-        // device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let scale = ctx.scale;
-        let queue = &mut ctx.queue;
-
-        if transform != self.current_transform {
-            let uniforms = Uniforms::new(transform, scale);
-
-            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
-
-            self.current_transform = transform;
         }
     }
 
@@ -263,32 +326,4 @@ impl QuadBrush {
         render_pass.draw(0..6, 0..total as u32);
     }
 
-    /// Render a single quad directly without requiring it to be in state
-    pub fn render_single<'a>(
-        &'a mut self,
-        context: &mut WgpuContext,
-        quad: &Quad,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
-        // Resize buffer if needed for at least one quad
-        if self.supported_quantity == 0 {
-            self.supported_quantity = 1;
-            self.instances = context.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sugarloaf::quad single instance"),
-                size: mem::size_of::<Quad>() as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-        }
-
-        // Write the single quad to the buffer
-        context
-            .queue
-            .write_buffer(&self.instances, 0, bytemuck::bytes_of(quad));
-
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.constants, &[]);
-        render_pass.set_vertex_buffer(0, self.instances.slice(..));
-        render_pass.draw(0..6, 0..1);
-    }
 }

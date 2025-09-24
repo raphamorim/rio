@@ -109,6 +109,11 @@ impl MetalContext {
         self.layer.set_drawable_size(drawable_size);
     }
 
+    #[inline]
+    pub fn set_scale(&mut self, scale: f32)  {
+        self.scale = scale;
+    }
+
     fn get_current_texture(&self) -> Result<MetalTexture, String> {
         if let Some(drawable) = self.layer.next_drawable() {
             let texture = drawable.texture().to_owned();
