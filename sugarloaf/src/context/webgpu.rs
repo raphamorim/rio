@@ -238,6 +238,11 @@ impl<'a> WgpuContext<'a> {
         self.supports_f16
     }
 
+    #[inline]
+    pub fn set_scale(&mut self, scale: f32)  {
+        self.scale = scale;
+    }
+
     pub fn get_optimal_texture_format(&self, channels: u32) -> wgpu::TextureFormat {
         if self.supports_f16 {
             match channels {
