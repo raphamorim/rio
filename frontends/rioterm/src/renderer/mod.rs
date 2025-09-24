@@ -1115,20 +1115,20 @@ impl Renderer {
         // let _duration = start.elapsed();
 
         // Update visual bell state and set overlay if needed
-        let visual_bell_active = self.update_visual_bell();
+        // let visual_bell_active = self.update_visual_bell();
 
         // Set visual bell overlay that renders on top of everything
-        let bell_overlay = if visual_bell_active {
-            Some(Quad {
-                position: [0.0, 0.0],
-                size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground,
-                ..Quad::default()
-            })
-        } else {
-            None
-        };
-        sugarloaf.set_visual_bell_overlay(bell_overlay);
+        // let bell_overlay = if visual_bell_active {
+        //     Some(Quad {
+        //         position: [0.0, 0.0],
+        //         size: [window_size.width, window_size.height],
+        //         color: self.named_colors.foreground,
+        //         ..Quad::default()
+        //     })
+        // } else {
+        //     None
+        // };
+        // sugarloaf.set_visual_bell_overlay(bell_overlay);
 
         sugarloaf.set_objects(objects);
 
