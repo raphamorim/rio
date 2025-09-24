@@ -5,6 +5,7 @@ use crate::context::metal::MetalContext;
 use crate::context::Context;
 
 use bytemuck::{Pod, Zeroable};
+use metal::*;
 
 use std::mem;
 
@@ -66,7 +67,9 @@ pub struct WgpuQuadBrush {
 
 #[derive(Debug)]
 pub struct MetalQuadBrush {
-    // Metal-specific fields will be added here
+    pipeline_state: RenderPipelineState,
+    vertex_buffer: Buffer,
+    uniform_buffer: Buffer,
     supported_quantity: usize,
 }
 
@@ -82,10 +85,8 @@ impl QuadBrush {
             ContextType::Wgpu(wgpu_context) => {
                 BrushType::Wgpu(WgpuQuadBrush::new(wgpu_context))
             }
-            ContextType::Metal(_metal_context) => {
-                BrushType::Metal(MetalQuadBrush {
-                    supported_quantity: INITIAL_QUANTITY,
-                })
+            ContextType::Metal(metal_context) => {
+                BrushType::Metal(MetalQuadBrush::new(metal_context))
             }
         };
 
@@ -116,8 +117,17 @@ impl QuadBrush {
                     let uniforms = Uniforms::new(transform, scale);
                     queue.write_buffer(&wgpu_brush.transform, 0, bytemuck::bytes_of(&uniforms));
                 }
-                BrushType::Metal(_metal_brush) => {
-                    // Metal implementation will be added later
+                BrushType::Metal(metal_brush) => {
+                    let scale = match &ctx.inner {
+                        ContextType::Metal(metal_ctx) => metal_ctx.scale,
+                        _ => unreachable!(),
+                    };
+
+                    let uniforms = Uniforms::new(transform, scale);
+                    let contents = metal_brush.uniform_buffer.contents() as *mut Uniforms;
+                    unsafe {
+                        *contents = uniforms;
+                    }
                 }
             }
 
@@ -135,8 +145,18 @@ impl QuadBrush {
             brush.render(context, state, render_pass);
         }
     }
-}
 
+    pub fn render_metal(
+        &mut self,
+        context: &MetalContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_encoder: &RenderCommandEncoderRef,
+    ) {
+        if let BrushType::Metal(brush) = &mut self.brush_type {
+            brush.render(context, state, render_encoder);
+        }
+    }
+}
 
 impl WgpuQuadBrush {
     pub fn new(context: &WgpuContext) -> WgpuQuadBrush {
@@ -325,5 +345,252 @@ impl WgpuQuadBrush {
 
         render_pass.draw(0..6, 0..total as u32);
     }
+}
 
+impl MetalQuadBrush {
+    pub fn new(context: &MetalContext) -> MetalQuadBrush {
+        let supported_quantity = INITIAL_QUANTITY;
+
+        // Create vertex buffer for quad instances
+        let vertex_buffer = context.device.new_buffer(
+            (mem::size_of::<Quad>() * supported_quantity) as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        vertex_buffer.set_label("sugarloaf::quad vertex buffer");
+
+        // Create uniform buffer
+        let uniform_buffer = context.device.new_buffer(
+            mem::size_of::<Uniforms>() as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        uniform_buffer.set_label("sugarloaf::quad uniform buffer");
+
+        // Create shader library from the Metal shader source
+        let shader_source = include_str!("./quad.metal");
+
+        let library = context
+            .device
+            .new_library_with_source(shader_source, &CompileOptions::new())
+            .expect("Failed to create shader library");
+
+        // let function_names = library.function_names();
+        // println!("Available Metal functions: {:?}", function_names);
+
+        let vertex_function = library
+            .get_function("vertex_main", None)
+            .expect("Failed to get vertex function");
+        let fragment_function = library
+            .get_function("fragment_main", None)
+            .expect("Failed to get fragment function");
+
+        // Create vertex descriptor
+        let vertex_descriptor = VertexDescriptor::new();
+
+        // Set up vertex attributes to match the Quad struct
+        let attributes = vertex_descriptor.attributes();
+
+        // Color (attribute 0)
+        attributes
+            .object_at(0)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half4);
+        attributes.object_at(0).unwrap().set_offset(0);
+        attributes.object_at(0).unwrap().set_buffer_index(0);
+
+        // Position (attribute 1)
+        attributes
+            .object_at(1)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes
+            .object_at(1)
+            .unwrap()
+            .set_offset(16); // 4 * 4 bytes for color
+        attributes.object_at(1).unwrap().set_buffer_index(0);
+
+        // Size (attribute 2)
+        attributes
+            .object_at(2)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes
+            .object_at(2)
+            .unwrap()
+            .set_offset(24); // 16 + 2 * 4 bytes
+        attributes.object_at(2).unwrap().set_buffer_index(0);
+
+        // Border color (attribute 3)
+        attributes
+            .object_at(3)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half4);
+        attributes
+            .object_at(3)
+            .unwrap()
+            .set_offset(32); // 24 + 2 * 4 bytes
+        attributes.object_at(3).unwrap().set_buffer_index(0);
+
+        // Border radius (attribute 4)
+        attributes
+            .object_at(4)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half4);
+        attributes
+            .object_at(4)
+            .unwrap()
+            .set_offset(40); // 32 + 4 * 2 bytes
+        attributes.object_at(4).unwrap().set_buffer_index(0);
+
+        // Border width (attribute 5)
+        attributes
+            .object_at(5)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half);
+        attributes
+            .object_at(5)
+            .unwrap()
+            .set_offset(48); // 40 + 4 * 2 bytes
+        attributes.object_at(5).unwrap().set_buffer_index(0);
+
+        // Shadow color (attribute 6)
+        attributes
+            .object_at(6)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half4);
+        attributes
+            .object_at(6)
+            .unwrap()
+            .set_offset(52); // 48 + 4 bytes
+        attributes.object_at(6).unwrap().set_buffer_index(0);
+
+        // Shadow offset (attribute 7)
+        attributes
+            .object_at(7)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes
+            .object_at(7)
+            .unwrap()
+            .set_offset(60); // 52 + 4 * 2 bytes
+        attributes.object_at(7).unwrap().set_buffer_index(0);
+
+        // Shadow blur radius (attribute 8)
+        attributes
+            .object_at(8)
+            .unwrap()
+            .set_format(MTLVertexFormat::Half);
+        attributes
+            .object_at(8)
+            .unwrap()
+            .set_offset(68); // 60 + 2 * 4 bytes
+        attributes.object_at(8).unwrap().set_buffer_index(0);
+
+        // Set up buffer layout
+        let layouts = vertex_descriptor.layouts();
+        layouts.object_at(0).unwrap().set_stride(mem::size_of::<Quad>() as u64);
+        layouts
+            .object_at(0)
+            .unwrap()
+            .set_step_function(MTLVertexStepFunction::PerInstance);
+        layouts.object_at(0).unwrap().set_step_rate(1);
+
+        // Create render pipeline descriptor
+        let pipeline_descriptor = RenderPipelineDescriptor::new();
+        pipeline_descriptor.set_vertex_function(Some(&vertex_function));
+        pipeline_descriptor.set_fragment_function(Some(&fragment_function));
+        pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
+
+        // Set up color attachment
+        let color_attachments = pipeline_descriptor.color_attachments();
+        color_attachments.object_at(0).unwrap().set_pixel_format(context.layer.pixel_format());
+        color_attachments.object_at(0).unwrap().set_blending_enabled(true);
+
+        // Set up alpha blending
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_rgb_blend_operation(MTLBlendOperation::Add);
+
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_source_alpha_blend_factor(MTLBlendFactor::One);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_alpha_blend_operation(MTLBlendOperation::Add);
+
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_write_mask(MTLColorWriteMask::All);
+
+        // Create the pipeline state
+        let pipeline_state = context
+            .device
+            .new_render_pipeline_state(&pipeline_descriptor)
+            .expect("Failed to create render pipeline state");
+
+        MetalQuadBrush {
+            pipeline_state,
+            vertex_buffer,
+            uniform_buffer,
+            supported_quantity,
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        context: &MetalContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_encoder: &RenderCommandEncoderRef,
+    ) {
+        let instances = &state.quads;
+        let total = instances.len();
+
+        if total == 0 {
+            return;
+        }
+
+        // Resize buffer if needed
+        if total > self.supported_quantity {
+            self.supported_quantity = total;
+            self.vertex_buffer = context.device.new_buffer(
+                (mem::size_of::<Quad>() * self.supported_quantity) as u64,
+                MTLResourceOptions::StorageModeShared,
+            );
+            self.vertex_buffer.set_label("sugarloaf::quad vertex buffer");
+        }
+
+        // Copy quad data to vertex buffer
+        let vertex_data = self.vertex_buffer.contents() as *mut Quad;
+        unsafe {
+            std::ptr::copy_nonoverlapping(instances.as_ptr(), vertex_data, total);
+        }
+
+        // Set up render state
+        render_encoder.set_render_pipeline_state(&self.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
+
+        // Draw quads (6 vertices per quad instance)
+        render_encoder.draw_primitives_instanced(
+            MTLPrimitiveType::Triangle,
+            0,
+            6,
+            total as u64,
+        );
+    }
 }
