@@ -99,7 +99,8 @@ impl MetalContext {
         }
     }
 
-    fn resize(&mut self, width: u32, height: u32) {
+    #[inline]
+    pub fn resize(&mut self, width: u32, height: u32) {
         self.size.width = width as f32;
         self.size.height = height as f32;
         let drawable_size = CGSize {
@@ -114,7 +115,8 @@ impl MetalContext {
         self.scale = scale;
     }
 
-    fn get_current_texture(&self) -> Result<MetalTexture, String> {
+    #[inline]
+    pub fn get_current_texture(&self) -> Result<MetalTexture, String> {
         if let Some(drawable) = self.layer.next_drawable() {
             let texture = drawable.texture().to_owned();
             Ok(MetalTexture {
