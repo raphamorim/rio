@@ -69,7 +69,9 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => {
                 ctx.resize(width, height);
             }
-            ContextType::Metal(_) => {}
+            ContextType::Metal(ctx) => {
+                ctx.resize(width, height);
+            }
         }
     }
 }
