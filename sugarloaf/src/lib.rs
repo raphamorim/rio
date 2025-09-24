@@ -17,7 +17,7 @@ pub use crate::sugarloaf::{
     },
     primitives::*,
     Colorspace, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize, SugarloafWithErrors,
+    SugarloafWindowSize, SugarloafWithErrors, SugarloafBackend,
 };
 pub use components::filters::Filter;
 pub use components::quad::Quad;

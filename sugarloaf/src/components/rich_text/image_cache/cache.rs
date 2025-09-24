@@ -1,4 +1,4 @@
-use crate::context::Context;
+use crate::context::{Context, ContextType};
 use tracing::debug;
 
 use super::atlas::*;
@@ -52,15 +52,31 @@ impl Atlas {
     }
 }
 
+#[derive(Debug)]
+pub enum ImageCacheType {
+    Wgpu(WgpuImageCache),
+    Metal(MetalImageCache),
+}
+
+#[derive(Debug)]
+pub struct WgpuImageCache {
+    mask_texture: wgpu::Texture,
+    color_texture: wgpu::Texture,
+    pub mask_texture_view: wgpu::TextureView,
+    pub color_texture_view: wgpu::TextureView,
+}
+
+#[derive(Debug)]
+pub struct MetalImageCache {
+    // Metal-specific texture fields will be added here
+}
+
 pub struct ImageCache {
     pub entries: Vec<Entry>,
     mask_atlas: Atlas,
     color_atlas: Atlas,
     max_texture_size: u16,
-    mask_texture: wgpu::Texture,
-    color_texture: wgpu::Texture,
-    pub mask_texture_view: wgpu::TextureView,
-    pub color_texture_view: wgpu::TextureView,
+    cache_type: ImageCacheType,
 }
 
 #[inline]
@@ -75,55 +91,67 @@ pub const SIZE: u16 = 4096;
 impl ImageCache {
     /// Creates a new image cache with dual atlases.
     pub fn new(context: &Context) -> Self {
-        let device = &context.device;
         let max_texture_size = SIZE;
 
-        // Create mask texture (R8 format for alpha masks)
-        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text mask atlas"),
-            size: wgpu::Extent3d {
-                width: SIZE as u32,
-                height: SIZE as u32,
-                depth_or_array_layers: 1,
-            },
-            view_formats: &[],
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::R8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            mip_level_count: 1,
-            sample_count: 1,
-        });
-        let mask_texture_view =
-            mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let cache_type = match &context.inner {
+            ContextType::Wgpu(wgpu_context) => {
+                // Create mask texture (R8 format for alpha masks)
+                let mask_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("rich_text mask atlas"),
+                    size: wgpu::Extent3d {
+                        width: SIZE as u32,
+                        height: SIZE as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    view_formats: &[],
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::R8Unorm,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                });
+                let mask_texture_view =
+                    mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Create color texture (RGBA8 format for color glyphs - simpler than f16)
-        let color_texture_format = wgpu::TextureFormat::Rgba8Unorm;
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rich_text color atlas"),
-            size: wgpu::Extent3d {
-                width: SIZE as u32,
-                height: SIZE as u32,
-                depth_or_array_layers: 1,
-            },
-            view_formats: &[],
-            dimension: wgpu::TextureDimension::D2,
-            format: color_texture_format,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-            mip_level_count: 1,
-            sample_count: 1,
-        });
-        let color_texture_view =
-            color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+                // Create color texture (RGBA8 format for color glyphs - simpler than f16)
+                let color_texture_format = wgpu::TextureFormat::Rgba8Unorm;
+                let color_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("rich_text color atlas"),
+                    size: wgpu::Extent3d {
+                        width: SIZE as u32,
+                        height: SIZE as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    view_formats: &[],
+                    dimension: wgpu::TextureDimension::D2,
+                    format: color_texture_format,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                });
+                let color_texture_view =
+                    color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                ImageCacheType::Wgpu(WgpuImageCache {
+                    mask_texture,
+                    color_texture,
+                    mask_texture_view,
+                    color_texture_view,
+                })
+            }
+            ContextType::Metal(_metal_context) => {
+                ImageCacheType::Metal(MetalImageCache {
+                    // Metal texture creation will be implemented here
+                })
+            }
+        };
 
         Self {
             entries: Vec::new(),
             mask_atlas: Atlas::new(AtlasKind::Mask),
             color_atlas: Atlas::new(AtlasKind::Color), // Always 4 bytes per pixel for Rgba8Unorm
             max_texture_size,
-            mask_texture,
-            color_texture,
-            mask_texture_view,
-            color_texture_view,
+            cache_type,
         }
     }
 
@@ -287,64 +315,86 @@ impl ImageCache {
     // }
     #[inline]
     pub fn process_atlases(&mut self, context: &mut Context) {
-        // Process mask atlas
-        if self.mask_atlas.dirty {
-            let texture_size = wgpu::Extent3d {
-                width: self.max_texture_size as u32,
-                height: self.max_texture_size as u32,
-                depth_or_array_layers: 1,
-            };
+        match &context.inner {
+            ContextType::Wgpu(wgpu_context) => {
+                if let ImageCacheType::Wgpu(wgpu_cache) = &self.cache_type {
+                    // Process mask atlas
+                    if self.mask_atlas.dirty {
+                        let texture_size = wgpu::Extent3d {
+                            width: self.max_texture_size as u32,
+                            height: self.max_texture_size as u32,
+                            depth_or_array_layers: 1,
+                        };
 
-            context.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.mask_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &self.mask_atlas.buffer,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(
-                        self.max_texture_size as u32 * self.mask_atlas.channels as u32,
-                    ),
-                    rows_per_image: Some(self.max_texture_size as u32),
-                },
-                texture_size,
-            );
+                        wgpu_context.queue.write_texture(
+                            wgpu::TexelCopyTextureInfo {
+                                texture: &wgpu_cache.mask_texture,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            &self.mask_atlas.buffer,
+                            wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(
+                                    self.max_texture_size as u32 * self.mask_atlas.channels as u32,
+                                ),
+                                rows_per_image: Some(self.max_texture_size as u32),
+                            },
+                            texture_size,
+                        );
 
-            self.mask_atlas.fresh = false;
-            self.mask_atlas.dirty = false;
+                        self.mask_atlas.fresh = false;
+                        self.mask_atlas.dirty = false;
+                    }
+
+                    // Process color atlas
+                    if self.color_atlas.dirty {
+                        let texture_size = wgpu::Extent3d {
+                            width: self.max_texture_size as u32,
+                            height: self.max_texture_size as u32,
+                            depth_or_array_layers: 1,
+                        };
+
+                        wgpu_context.queue.write_texture(
+                            wgpu::TexelCopyTextureInfo {
+                                texture: &wgpu_cache.color_texture,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            &self.color_atlas.buffer,
+                            wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(
+                                    self.max_texture_size as u32 * self.color_atlas.channels as u32,
+                                ),
+                                rows_per_image: Some(self.max_texture_size as u32),
+                            },
+                            texture_size,
+                        );
+
+                        self.color_atlas.fresh = false;
+                        self.color_atlas.dirty = false;
+                    }
+                }
+            }
+            ContextType::Metal(_metal_context) => {
+                // Metal texture updates will be implemented here
+                if let ImageCacheType::Metal(_metal_cache) = &self.cache_type {
+                    // Metal implementation for processing atlases
+                }
+            }
         }
+    }
 
-        // Process color atlas
-        if self.color_atlas.dirty {
-            let texture_size = wgpu::Extent3d {
-                width: self.max_texture_size as u32,
-                height: self.max_texture_size as u32,
-                depth_or_array_layers: 1,
-            };
-
-            context.queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.color_texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &self.color_atlas.buffer,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(
-                        self.max_texture_size as u32 * self.color_atlas.channels as u32,
-                    ),
-                    rows_per_image: Some(self.max_texture_size as u32),
-                },
-                texture_size,
-            );
-
-            self.color_atlas.fresh = false;
-            self.color_atlas.dirty = false;
+    /// Get texture views for WebGPU rendering
+    pub fn get_texture_views(&self) -> Option<(&wgpu::TextureView, &wgpu::TextureView)> {
+        match &self.cache_type {
+            ImageCacheType::Wgpu(wgpu_cache) => {
+                Some((&wgpu_cache.color_texture_view, &wgpu_cache.mask_texture_view))
+            }
+            ImageCacheType::Metal(_) => None,
         }
     }
 }
