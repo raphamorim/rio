@@ -512,7 +512,7 @@ impl LayerBrush {
         &mut self,
         device: &wgpu::Device,
         backend: wgpu::Backend,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) {
         self.texture_atlas.clear(device, backend, context);
         self.texture_version = self.texture_atlas.layer_count();

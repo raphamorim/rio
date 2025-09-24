@@ -294,7 +294,7 @@ impl FilterChain {
         &mut self,
         input: &wgpu::Texture,
         cmd: &mut wgpu::CommandEncoder,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) {
         if let Some(mut back) = self.history_framebuffers.pop_back() {
             if back.image.size() != input.size() || input.format() != back.image.format()
