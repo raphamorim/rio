@@ -399,7 +399,7 @@ fn version_number(mut version: &str) -> usize {
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
 // Max size of the keyboard modes.
-const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
+const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 
 #[derive(Debug)]
 pub struct Crosswords<U>
@@ -429,10 +429,10 @@ where
     pub current_directory: Option<std::path::PathBuf>,
 
     // The stack for the keyboard modes.
-    keyboard_mode_stack: Vec<KeyboardModes>,
-
-    // Currently inactive keyboard mode stack.
-    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
+    keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    keyboard_mode_idx: usize,
+    inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    inactive_keyboard_mode_idx: usize,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -481,7 +481,9 @@ impl<U: EventListener> Crosswords<U> {
             title_stack: Default::default(),
             current_directory: None,
             keyboard_mode_stack: Default::default(),
+            keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
+            inactive_keyboard_mode_idx: 0,
         }
     }
 
@@ -1193,13 +1195,9 @@ impl<U: EventListener> Crosswords<U> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        self.set_keyboard_mode(
-            self.keyboard_mode_stack
-                .last()
-                .copied()
-                .unwrap_or(KeyboardModes::NO_MODE)
-                .into(),
-            KeyboardModesApplyBehavior::Replace,
+        mem::swap(
+            &mut self.keyboard_mode_idx,
+            &mut self.inactive_keyboard_mode_idx,
         );
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
@@ -1345,17 +1343,16 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
+    fn set_keyboard_mode(&mut self, mode: u8, apply: KeyboardModesApplyBehavior) {
         // println!("{:?}", mode);
-        let active_mode = self.mode & Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        let active_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let new_mode = match apply {
             KeyboardModesApplyBehavior::Replace => mode,
-            KeyboardModesApplyBehavior::Union => active_mode.union(mode),
-            KeyboardModesApplyBehavior::Difference => active_mode.difference(mode),
+            KeyboardModesApplyBehavior::Union => active_mode | mode,
+            KeyboardModesApplyBehavior::Difference => active_mode & !mode,
         };
         info!("Setting keyboard mode to {new_mode:?}");
-        self.mode |= new_mode;
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -1942,7 +1939,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
-        self.keyboard_mode_stack = Vec::new();
+        self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.keyboard_mode_idx = 0;
+        self.inactive_keyboard_mode_idx = 0;
         self.title = String::from("");
         self.selection = None;
         self.vi_mode_cursor = Default::default();
@@ -2221,11 +2221,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_keyboard_mode(&mut self) {
-        let current_mode = self
-            .keyboard_mode_stack
-            .last()
-            .unwrap_or(&KeyboardModes::NO_MODE)
-            .bits();
+        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
@@ -2233,29 +2229,29 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
-        if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            let _removed = self.title_stack.remove(0);
+        self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_add(1);
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
         }
-
-        self.keyboard_mode_stack.push(mode);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
     }
 
     #[inline]
     fn pop_keyboard_modes(&mut self, to_pop: u16) {
-        let new_len = self
-            .keyboard_mode_stack
-            .len()
-            .saturating_sub(to_pop as usize);
-        self.keyboard_mode_stack.truncate(new_len);
-
-        // Reload active mode.
-        let mode = self
-            .keyboard_mode_stack
-            .last()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        // If popping more modes than we have, just clear the stack.
+        if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
+            self.keyboard_mode_idx = 0;
+            return;
+        }
+        for _ in 0..to_pop {
+            self.keyboard_mode_stack[self.keyboard_mode_idx] =
+                KeyboardModes::NO_MODE.bits();
+            self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
+        }
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+        }
     }
 
     #[inline]
@@ -2264,7 +2260,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         mode: KeyboardModes,
         apply: KeyboardModesApplyBehavior,
     ) {
-        self.set_keyboard_mode(mode.into(), apply);
+        self.set_keyboard_mode(mode.bits(), apply);
     }
 
     #[inline]
