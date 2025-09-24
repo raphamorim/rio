@@ -250,7 +250,12 @@ impl Sugarloaf<'_> {
                 self.filters_brush = Some(FiltersBrush::default());
             }
             if let Some(ref mut brush) = self.filters_brush {
-                brush.update_filters(&self.ctx, filters);
+                match &self.ctx.inner {
+                    crate::context::ContextType::Wgpu(ctx) => {
+                        brush.update_filters(ctx, filters);
+                    }
+                    _ => {}
+                };
             }
         }
     }
