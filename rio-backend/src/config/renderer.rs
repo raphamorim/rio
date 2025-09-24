@@ -105,7 +105,7 @@ pub enum Backend {
 
 impl Default for Backend {
     fn default() -> Self {
-        if cfg(target_os = "macos") {
+        if cfg!(target_os = "macos") {
             Backend::Metal
         } else {
             Backend::Automatic
