@@ -450,8 +450,6 @@ impl MetalQuadBrush {
         let instances = &state.quads;
         let total = instances.len();
 
-        println!("Metal: Rendering {} quads", total); // Debug output
-
         if total == 0 {
             return;
         }
@@ -470,18 +468,6 @@ impl MetalQuadBrush {
         let vertex_data = self.vertex_buffer.contents() as *mut Quad;
         unsafe {
             std::ptr::copy_nonoverlapping(instances.as_ptr(), vertex_data, total);
-        }
-        
-        // Debug: print first few quad positions
-        if total > 0 {
-            println!("First quad: pos=[{}, {}] size=[{}, {}]", 
-                instances[0].position[0], instances[0].position[1],
-                instances[0].size[0], instances[0].size[1]);
-        }
-        if total > 1 {
-            println!("Second quad: pos=[{}, {}] size=[{}, {}]", 
-                instances[1].position[0], instances[1].position[1],
-                instances[1].size[0], instances[1].size[1]);
         }
 
         // Set up render state (simplified - no unit vertices buffer needed)
