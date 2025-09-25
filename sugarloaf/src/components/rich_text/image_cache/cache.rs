@@ -96,39 +96,47 @@ impl ImageCache {
         let cache_type = match &context.inner {
             ContextType::Wgpu(wgpu_context) => {
                 // Create mask texture (R8 format for alpha masks)
-                let mask_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("rich_text mask atlas"),
-                    size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
-                        depth_or_array_layers: 1,
-                    },
-                    view_formats: &[],
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::R8Unorm,
-                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                });
+                let mask_texture =
+                    wgpu_context
+                        .device
+                        .create_texture(&wgpu::TextureDescriptor {
+                            label: Some("rich_text mask atlas"),
+                            size: wgpu::Extent3d {
+                                width: SIZE as u32,
+                                height: SIZE as u32,
+                                depth_or_array_layers: 1,
+                            },
+                            view_formats: &[],
+                            dimension: wgpu::TextureDimension::D2,
+                            format: wgpu::TextureFormat::R8Unorm,
+                            usage: wgpu::TextureUsages::COPY_DST
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                            mip_level_count: 1,
+                            sample_count: 1,
+                        });
                 let mask_texture_view =
                     mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
                 // Create color texture (RGBA8 format for color glyphs - simpler than f16)
                 let color_texture_format = wgpu::TextureFormat::Rgba8Unorm;
-                let color_texture = wgpu_context.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("rich_text color atlas"),
-                    size: wgpu::Extent3d {
-                        width: SIZE as u32,
-                        height: SIZE as u32,
-                        depth_or_array_layers: 1,
-                    },
-                    view_formats: &[],
-                    dimension: wgpu::TextureDimension::D2,
-                    format: color_texture_format,
-                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                    mip_level_count: 1,
-                    sample_count: 1,
-                });
+                let color_texture =
+                    wgpu_context
+                        .device
+                        .create_texture(&wgpu::TextureDescriptor {
+                            label: Some("rich_text color atlas"),
+                            size: wgpu::Extent3d {
+                                width: SIZE as u32,
+                                height: SIZE as u32,
+                                depth_or_array_layers: 1,
+                            },
+                            view_formats: &[],
+                            dimension: wgpu::TextureDimension::D2,
+                            format: color_texture_format,
+                            usage: wgpu::TextureUsages::COPY_DST
+                                | wgpu::TextureUsages::TEXTURE_BINDING,
+                            mip_level_count: 1,
+                            sample_count: 1,
+                        });
                 let color_texture_view =
                     color_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -337,7 +345,8 @@ impl ImageCache {
                             wgpu::TexelCopyBufferLayout {
                                 offset: 0,
                                 bytes_per_row: Some(
-                                    self.max_texture_size as u32 * self.mask_atlas.channels as u32,
+                                    self.max_texture_size as u32
+                                        * self.mask_atlas.channels as u32,
                                 ),
                                 rows_per_image: Some(self.max_texture_size as u32),
                             },
@@ -367,7 +376,8 @@ impl ImageCache {
                             wgpu::TexelCopyBufferLayout {
                                 offset: 0,
                                 bytes_per_row: Some(
-                                    self.max_texture_size as u32 * self.color_atlas.channels as u32,
+                                    self.max_texture_size as u32
+                                        * self.color_atlas.channels as u32,
                                 ),
                                 rows_per_image: Some(self.max_texture_size as u32),
                             },
@@ -391,9 +401,10 @@ impl ImageCache {
     /// Get texture views for WebGPU rendering
     pub fn get_texture_views(&self) -> Option<(&wgpu::TextureView, &wgpu::TextureView)> {
         match &self.cache_type {
-            ImageCacheType::Wgpu(wgpu_cache) => {
-                Some((&wgpu_cache.color_texture_view, &wgpu_cache.mask_texture_view))
-            }
+            ImageCacheType::Wgpu(wgpu_cache) => Some((
+                &wgpu_cache.color_texture_view,
+                &wgpu_cache.mask_texture_view,
+            )),
             ImageCacheType::Metal(_) => None,
         }
     }

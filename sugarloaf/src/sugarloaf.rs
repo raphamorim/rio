@@ -438,12 +438,13 @@ impl Sugarloaf<'_> {
                 }
 
                 // Create render command encoder
-                let render_encoder = command_buffer
-                    .new_render_command_encoder(&render_pass_descriptor);
+                let render_encoder =
+                    command_buffer.new_render_command_encoder(&render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
                 // Render quad brush (backgrounds, borders, etc.) - use immutable reference
-                self.quad_brush.render_metal(ctx, &self.state, &render_encoder);
+                self.quad_brush
+                    .render_metal(ctx, &self.state, &render_encoder);
 
                 // End encoding
                 render_encoder.end_encoding();
