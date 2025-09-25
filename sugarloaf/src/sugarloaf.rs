@@ -446,6 +446,9 @@ impl Sugarloaf<'_> {
                 self.quad_brush
                     .render_metal(ctx, &self.state, &render_encoder);
 
+                // Render rich text
+                self.rich_text_brush.render_metal(ctx, &render_encoder);
+
                 // End encoding
                 render_encoder.end_encoding();
 
