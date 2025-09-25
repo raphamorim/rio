@@ -34,9 +34,10 @@ struct VertexOut {
     float shadow_blur_radius;
 };
 
-// Generate vertex position like WGPU version
+// Generates unit quad vertices using efficient bit manipulation
+// Equivalent to: positions = [(1,1), (1,0), (0,0), (0,0), (0,1), (1,1)]
+// This creates 2 triangles: (1,1)→(1,0)→(0,0) and (0,0)→(0,1)→(1,1)
 float2 vertex_position(uint vertex_index) {
-    // Direct translation from WGPU:
     uint2 base = uint2(1, 2) + vertex_index;
     uint2 modulo = base % uint2(6);
     uint2 comparison = select(uint2(0), uint2(1), modulo < uint2(3));
