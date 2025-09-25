@@ -16,8 +16,8 @@ pub use crate::sugarloaf::{
         ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::*,
-    Colorspace, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize, SugarloafWithErrors, SugarloafBackend,
+    Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };
 pub use components::filters::Filter;
 pub use components::quad::Quad;

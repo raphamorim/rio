@@ -111,7 +111,7 @@ impl MetalContext {
     }
 
     #[inline]
-    pub fn set_scale(&mut self, scale: f32)  {
+    pub fn set_scale(&mut self, scale: f32) {
         self.scale = scale;
     }
 

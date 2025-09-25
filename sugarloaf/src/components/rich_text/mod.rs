@@ -9,8 +9,8 @@ mod text_run_manager;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
-use crate::context::webgpu::WgpuContext;
 use crate::context::metal::MetalContext;
+use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -614,7 +614,12 @@ impl RichTextBrush {
         if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
             // Update bind group with latest texture views if needed
             if let Some((color_view, mask_view)) = self.images.get_texture_views() {
-                brush.update_bind_group(ctx, color_view, mask_view, self.images.entries.len());
+                brush.update_bind_group(
+                    ctx,
+                    color_view,
+                    mask_view,
+                    self.images.entries.len(),
+                );
             }
             brush.render(ctx, &self.vertices, rpass);
         }
@@ -638,7 +643,11 @@ impl RichTextBrush {
                         _ => unreachable!(),
                     };
 
-                    queue.write_buffer(&wgpu_brush.transform, 0, bytemuck::bytes_of(&transform));
+                    queue.write_buffer(
+                        &wgpu_brush.transform,
+                        0,
+                        bytemuck::bytes_of(&transform),
+                    );
                     wgpu_brush.current_transform = transform;
                 }
             }
@@ -655,83 +664,92 @@ impl WgpuRichTextBrush {
 
         let current_transform =
             orthographic_projection(context.size.width, context.size.height);
-        let transform = context.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&current_transform),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let transform =
+            context
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: None,
+                    contents: bytemuck::cast_slice(&current_transform),
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                });
 
         // Create pipeline layout
         let constant_bind_group_layout =
-            context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: wgpu::BufferSize::new(mem::size_of::<
-                                [f32; 16],
-                            >(
-                            )
-                                as wgpu::BufferAddress),
+            context
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: wgpu::BufferSize::new(mem::size_of::<
+                                    [f32; 16],
+                                >(
+                                )
+                                    as wgpu::BufferAddress),
+                            },
+                            count: None,
                         },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX
-                            | wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(
-                            wgpu::SamplerBindingType::Filtering,
-                        ),
-                        count: None,
-                    },
-                ],
-            });
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::VERTEX
+                                | wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(
+                                wgpu::SamplerBindingType::Filtering,
+                            ),
+                            count: None,
+                        },
+                    ],
+                });
 
         let layout_bind_group_layout =
-            context.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[
-                    // Color texture (binding 0)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: context.get_optimal_texture_sample_type(),
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    // Mask texture (binding 1)
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: true,
+            context
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: &[
+                        // Color texture (binding 0)
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: context.get_optimal_texture_sample_type(),
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
                             },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
+                            count: None,
                         },
-                        count: None,
-                    },
-                ],
-            });
+                        // Mask texture (binding 1)
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float {
+                                    filterable: true,
+                                },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
 
         let pipeline_layout =
-            context.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                push_constant_ranges: &[],
-                bind_group_layouts: &[
-                    &constant_bind_group_layout,
-                    &layout_bind_group_layout,
-                ],
-            });
+            context
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    push_constant_ranges: &[],
+                    bind_group_layouts: &[
+                        &constant_bind_group_layout,
+                        &layout_bind_group_layout,
+                    ],
+                });
 
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -745,62 +763,84 @@ impl WgpuRichTextBrush {
             ..Default::default()
         });
 
-        let constant_bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &constant_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: &transform,
-                        offset: 0,
-                        size: None,
-                    }),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-            label: Some("rich_text::constant_bind_group"),
-        });
+        let constant_bind_group =
+            context
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &constant_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer(
+                                wgpu::BufferBinding {
+                                    buffer: &transform,
+                                    offset: 0,
+                                    size: None,
+                                },
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&sampler),
+                        },
+                    ],
+                    label: Some("rich_text::constant_bind_group"),
+                });
 
         // Create initial layout bind group (will be updated when textures change)
-        let layout_bind_group = context.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &layout_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &context.device.create_texture(&wgpu::TextureDescriptor {
-                            label: Some("placeholder_color"),
-                            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: wgpu::TextureDimension::D2,
-                            format: wgpu::TextureFormat::Rgba8Unorm,
-                            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                            view_formats: &[],
-                        }).create_view(&wgpu::TextureViewDescriptor::default())
-                    ),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(
-                        &context.device.create_texture(&wgpu::TextureDescriptor {
-                            label: Some("placeholder_mask"),
-                            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-                            mip_level_count: 1,
-                            sample_count: 1,
-                            dimension: wgpu::TextureDimension::D2,
-                            format: wgpu::TextureFormat::R8Unorm,
-                            usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                            view_formats: &[],
-                        }).create_view(&wgpu::TextureViewDescriptor::default())
-                    ),
-                },
-            ],
-            label: Some("rich_text::layout_bind_group"),
-        });
+        let layout_bind_group =
+            context
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &layout_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(
+                                &context
+                                    .device
+                                    .create_texture(&wgpu::TextureDescriptor {
+                                        label: Some("placeholder_color"),
+                                        size: wgpu::Extent3d {
+                                            width: 1,
+                                            height: 1,
+                                            depth_or_array_layers: 1,
+                                        },
+                                        mip_level_count: 1,
+                                        sample_count: 1,
+                                        dimension: wgpu::TextureDimension::D2,
+                                        format: wgpu::TextureFormat::Rgba8Unorm,
+                                        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                                        view_formats: &[],
+                                    })
+                                    .create_view(&wgpu::TextureViewDescriptor::default()),
+                            ),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(
+                                &context
+                                    .device
+                                    .create_texture(&wgpu::TextureDescriptor {
+                                        label: Some("placeholder_mask"),
+                                        size: wgpu::Extent3d {
+                                            width: 1,
+                                            height: 1,
+                                            depth_or_array_layers: 1,
+                                        },
+                                        mip_level_count: 1,
+                                        sample_count: 1,
+                                        dimension: wgpu::TextureDimension::D2,
+                                        format: wgpu::TextureFormat::R8Unorm,
+                                        usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                                        view_formats: &[],
+                                    })
+                                    .create_view(&wgpu::TextureViewDescriptor::default()),
+                            ),
+                        },
+                    ],
+                    label: Some("rich_text::layout_bind_group"),
+                });
 
         let shader_source = if context.supports_f16() {
             include_str!("rich_text.wgsl")
@@ -808,54 +848,59 @@ impl WgpuRichTextBrush {
             include_str!("rich_text_f32.wgsl")
         };
 
-        let shader = context.device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
-        });
+        let shader = context
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
+            });
 
-        let pipeline = context.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            cache: None,
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: mem::size_of::<Vertex>() as u64,
-                    // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array!(
-                        0 => Float32x3,
-                        1 => Float32x4,
-                        2 => Float32x2,
-                        3 => Sint32x2,
-                    ),
-                }],
-            },
-            fragment: Some(wgpu::FragmentState {
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: context.format,
-                    blend: BLEND,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
+        let pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: None,
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: mem::size_of::<Vertex>() as u64,
+                            // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array!(
+                                0 => Float32x3,
+                                1 => Float32x4,
+                                2 => Float32x2,
+                                3 => Sint32x2,
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: BLEND,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                });
 
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Vertices Buffer"),
@@ -922,23 +967,30 @@ impl WgpuRichTextBrush {
         // println!("Time elapsed in rich_text::render is: {:?}", duration);
     }
 
-    pub fn update_bind_group(&mut self, ctx: &WgpuContext, color_view: &wgpu::TextureView, mask_view: &wgpu::TextureView, textures_version: usize) {
+    pub fn update_bind_group(
+        &mut self,
+        ctx: &WgpuContext,
+        color_view: &wgpu::TextureView,
+        mask_view: &wgpu::TextureView,
+        textures_version: usize,
+    ) {
         if textures_version != self.textures_version {
             self.textures_version = textures_version;
-            self.layout_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.layout_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(color_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(mask_view),
-                    },
-                ],
-                label: Some("rich_text::Pipeline uniforms"),
-            });
+            self.layout_bind_group =
+                ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    layout: &self.layout_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(color_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(mask_view),
+                        },
+                    ],
+                    label: Some("rich_text::Pipeline uniforms"),
+                });
         }
     }
 }

@@ -22,7 +22,9 @@ impl Context<'_> {
             SugarloafBackend::Wgpu(backends) => ContextType::Wgpu(
                 webgpu::WgpuContext::new(sugarloaf_window, renderer_config, backends),
             ),
-            SugarloafBackend::Metal => ContextType::Metal(metal::MetalContext::new(sugarloaf_window)),
+            SugarloafBackend::Metal => {
+                ContextType::Metal(metal::MetalContext::new(sugarloaf_window))
+            }
         };
 
         Context { inner }
@@ -31,12 +33,8 @@ impl Context<'_> {
     #[inline]
     pub fn scale(&self) -> f32 {
         match &self.inner {
-            ContextType::Wgpu(ctx) => {
-                ctx.scale
-            }
-            ContextType::Metal(ctx) => {
-                ctx.scale
-            }
+            ContextType::Wgpu(ctx) => ctx.scale,
+            ContextType::Metal(ctx) => ctx.scale,
         }
     }
 
@@ -55,12 +53,8 @@ impl Context<'_> {
     #[inline]
     pub fn size(&self) -> SugarloafWindowSize {
         match &self.inner {
-            ContextType::Wgpu(ctx) => {
-                ctx.size
-            }
-            ContextType::Metal(ctx) => {
-                ctx.size
-            }
+            ContextType::Wgpu(ctx) => ctx.size,
+            ContextType::Metal(ctx) => ctx.size,
         }
     }
 
