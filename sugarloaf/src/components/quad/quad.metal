@@ -52,7 +52,11 @@ vertex VertexOut vertex_main(uint vertex_id [[vertex_id]],
     float2 unit_vertex = vertex_position(vertex_id);
     constant Quad& quad = quads[instance_id];
 
-    float2 world_pos = quad.position + unit_vertex * quad.size;
+    // Apply scale like WGPU version does
+    float2 scaled_position = quad.position * uniforms.scale;
+    float2 scaled_size = quad.size * uniforms.scale;
+    
+    float2 world_pos = scaled_position + unit_vertex * scaled_size;
     float4 clip_pos = uniforms.transform * float4(world_pos, 0.0, 1.0);
 
     VertexOut out;
@@ -60,7 +64,7 @@ vertex VertexOut vertex_main(uint vertex_id [[vertex_id]],
     out.color = quad.color;
     out.border_color = quad.border_color;
     out.quad_pos = float2(unit_vertex);
-    out.quad_size = float2(quad.size);
+    out.quad_size = float2(scaled_size);
     out.border_radius = quad.border_radius;
     out.border_width = quad.border_width;
     out.shadow_color = quad.shadow_color;
