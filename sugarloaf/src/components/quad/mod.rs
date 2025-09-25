@@ -573,7 +573,7 @@ impl MetalQuadBrush {
             std::ptr::copy_nonoverlapping(instances.as_ptr(), vertex_data, total);
         }
 
-        // Set up render state with proper vertex descriptor approach
+        // Set up render state
         render_encoder.set_render_pipeline_state(&self.pipeline_state);
         render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
         render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
