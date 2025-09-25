@@ -241,10 +241,6 @@ declare_class!(
 
         #[method(applicationWillFinishLaunching:)]
         fn will_finish_launching(&self, _sender: Option<&AnyObject>) {
-            // println!("applicationWillFinishLaunching:");
-            // TODO: Notify every window that it will be destroyed, like done in iOS?
-            // self.internal_exit();
-
             use objc::runtime::Object;
             use objc::{msg_send};
             use objc::sel;
@@ -800,7 +796,7 @@ pub(crate) enum QueuedEvent {
 #[derive(Debug)]
 pub(crate) struct HandlePendingUserEvents;
 
-pub fn str_to_nsstring(str: &str) -> *mut objc::runtime::Object {
+fn str_to_nsstring(str: &str) -> *mut objc::runtime::Object {
     unsafe {
         use objc::class;
         use objc::msg_send;
