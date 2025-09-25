@@ -79,6 +79,9 @@ url = "2.5.4"
 criterion = { version = "0.6.0", features = ["html_reports"] }
 dashmap = "6.1.0"
 
+[patch.crates-io]
+persy = { git = "https://gitlab.com/persy/persy.git", branch = "1.7.x" }
+
 [profile.release]
 strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
 split-debuginfo = "packed"  # generates a separate *.dwp/*.dSYM so the binary can get stripped
