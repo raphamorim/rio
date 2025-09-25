@@ -68,7 +68,6 @@ pub struct WgpuQuadBrush {
 #[derive(Debug)]
 pub struct MetalQuadBrush {
     pipeline_state: RenderPipelineState,
-    unit_vertices_buffer: Buffer,
     vertex_buffer: Buffer,
     uniform_buffer: Buffer,
     supported_quantity: usize,
@@ -352,23 +351,6 @@ impl MetalQuadBrush {
     pub fn new(context: &MetalContext) -> MetalQuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
 
-        // Create unit vertices buffer (similar to Zed's approach)
-        let unit_vertices: [[f32; 2]; 6] = [
-            [0.0, 0.0], // Bottom-left
-            [1.0, 0.0], // Bottom-right  
-            [0.0, 1.0], // Top-left
-            [0.0, 1.0], // Top-left
-            [1.0, 0.0], // Bottom-right
-            [1.0, 1.0], // Top-right
-        ];
-        
-        let unit_vertices_buffer = context.device.new_buffer_with_data(
-            unit_vertices.as_ptr() as *const std::ffi::c_void,
-            std::mem::size_of_val(&unit_vertices) as u64,
-            MTLResourceOptions::StorageModeShared,
-        );
-        unit_vertices_buffer.set_label("sugarloaf::quad unit vertices");
-
         // Create vertex buffer for quad instances  
         let vertex_buffer = context.device.new_buffer(
             (mem::size_of::<Quad>() * supported_quantity) as u64,
@@ -451,7 +433,6 @@ impl MetalQuadBrush {
 
         let metal_brush = MetalQuadBrush {
             pipeline_state,
-            unit_vertices_buffer,
             vertex_buffer,
             uniform_buffer,
             supported_quantity,
@@ -503,11 +484,10 @@ impl MetalQuadBrush {
                 instances[1].size[0], instances[1].size[1]);
         }
 
-        // Set up render state
+        // Set up render state (simplified - no unit vertices buffer needed)
         render_encoder.set_render_pipeline_state(&self.pipeline_state);
-        render_encoder.set_vertex_buffer(0, Some(&self.unit_vertices_buffer), 0);
-        render_encoder.set_vertex_buffer(1, Some(&self.vertex_buffer), 0);
-        render_encoder.set_vertex_buffer(2, Some(&self.uniform_buffer), 0);
+        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
 
         // Draw quads (6 vertices per quad instance)
         render_encoder.draw_primitives_instanced(
