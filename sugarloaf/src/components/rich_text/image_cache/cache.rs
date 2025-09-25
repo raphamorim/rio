@@ -68,7 +68,8 @@ pub struct WgpuImageCache {
 
 #[derive(Debug)]
 pub struct MetalImageCache {
-    // Metal-specific texture fields will be added here
+    mask_texture: metal::Texture,
+    color_texture: metal::Texture,
 }
 
 pub struct ImageCache {
@@ -147,9 +148,26 @@ impl ImageCache {
                     color_texture_view,
                 })
             }
-            ContextType::Metal(_metal_context) => {
+            ContextType::Metal(metal_context) => {
+                let mask_descriptor = metal::TextureDescriptor::new();
+                mask_descriptor.set_pixel_format(metal::MTLPixelFormat::R8Unorm);
+                mask_descriptor.set_width(max_texture_size as u64);
+                mask_descriptor.set_height(max_texture_size as u64);
+                mask_descriptor.set_usage(metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite);
+                let mask_texture = metal_context.device.new_texture(&mask_descriptor);
+                mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
+
+                let color_descriptor = metal::TextureDescriptor::new();
+                color_descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                color_descriptor.set_width(max_texture_size as u64);
+                color_descriptor.set_height(max_texture_size as u64);
+                color_descriptor.set_usage(metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite);
+                let color_texture = metal_context.device.new_texture(&color_descriptor);
+                color_texture.set_label("Sugarloaf Rich Text Color Atlas");
+
                 ImageCacheType::Metal(MetalImageCache {
-                    // Metal texture creation will be implemented here
+                    mask_texture,
+                    color_texture,
                 })
             }
         };
@@ -390,9 +408,56 @@ impl ImageCache {
                 }
             }
             ContextType::Metal(_metal_context) => {
-                // Metal texture updates will be implemented here
-                if let ImageCacheType::Metal(_metal_cache) = &self.cache_type {
-                    // Metal implementation for processing atlases
+                if let ImageCacheType::Metal(metal_cache) = &self.cache_type {
+                    // Process mask atlas
+                    if self.mask_atlas.dirty {
+                        println!("Metal: Updating mask atlas with {} bytes", self.mask_atlas.buffer.len());
+                        let region = metal::MTLRegion {
+                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            size: metal::MTLSize {
+                                width: self.max_texture_size as u64,
+                                height: self.max_texture_size as u64,
+                                depth: 1,
+                            },
+                        };
+
+                        metal_cache.mask_texture.replace_region(
+                            region,
+                            0,
+                            self.mask_atlas.buffer.as_ptr() as *const std::ffi::c_void,
+                            self.max_texture_size as u64 * 1, // 1 byte per pixel for R8
+                        );
+
+                        self.mask_atlas.fresh = false;
+                        self.mask_atlas.dirty = false;
+                    } else {
+                        println!("Metal: Mask atlas not dirty, no update needed");
+                    }
+
+                    // Process color atlas
+                    if self.color_atlas.dirty {
+                        println!("Metal: Updating color atlas with {} bytes", self.color_atlas.buffer.len());
+                        let region = metal::MTLRegion {
+                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            size: metal::MTLSize {
+                                width: self.max_texture_size as u64,
+                                height: self.max_texture_size as u64,
+                                depth: 1,
+                            },
+                        };
+
+                        metal_cache.color_texture.replace_region(
+                            region,
+                            0,
+                            self.color_atlas.buffer.as_ptr() as *const std::ffi::c_void,
+                            self.max_texture_size as u64 * 4, // 4 bytes per pixel for RGBA8
+                        );
+
+                        self.color_atlas.fresh = false;
+                        self.color_atlas.dirty = false;
+                    } else {
+                println!("Metal: Color atlas not dirty, no update needed");
+                    }
                 }
             }
         }
@@ -406,6 +471,17 @@ impl ImageCache {
                 &wgpu_cache.mask_texture_view,
             )),
             ImageCacheType::Metal(_) => None,
+        }
+    }
+
+    /// Get Metal textures for Metal rendering
+    pub fn get_metal_textures(&self) -> Option<(&metal::Texture, &metal::Texture)> {
+        match &self.cache_type {
+            ImageCacheType::Wgpu(_) => None,
+            ImageCacheType::Metal(metal_cache) => Some((
+                &metal_cache.color_texture,
+                &metal_cache.mask_texture,
+            )),
         }
     }
 }
