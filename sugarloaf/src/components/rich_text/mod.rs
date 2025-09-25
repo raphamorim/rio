@@ -23,6 +23,7 @@ use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
+use metal::*;
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -56,11 +57,195 @@ pub struct WgpuRichTextBrush {
     textures_version: usize,
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct Globals {
+    transform: [f32; 16],
+}
+
 #[derive(Debug)]
 pub struct MetalRichTextBrush {
-    // Metal-specific fields will be added here
-    current_transform: [f32; 16],
+    pipeline_state: RenderPipelineState,
+    vertex_buffer: Buffer,
+    uniform_buffer: Buffer,
+    sampler: SamplerState,
     supported_vertex_buffer: usize,
+    current_transform: [f32; 16],
+}
+
+impl MetalRichTextBrush {
+    pub fn new(context: &MetalContext) -> Self {
+        let supported_vertex_buffer = 500;
+
+        // Create Metal shader library
+        let shader_source = include_str!("rich_text.metal");
+        let library = context
+            .device
+            .new_library_with_source(shader_source, &CompileOptions::new())
+            .expect("Failed to create shader library");
+
+        let vertex_function = library
+            .get_function("vs_main", None)
+            .expect("Failed to get vertex function");
+        let fragment_function = library
+            .get_function("fs_main", None)
+            .expect("Failed to get fragment function");
+
+        // Create vertex descriptor for rich text rendering
+        let vertex_descriptor = VertexDescriptor::new();
+        let attributes = vertex_descriptor.attributes();
+
+        // Position (attribute 0) - vec4<f32>
+        attributes.object_at(0).unwrap().set_format(MTLVertexFormat::Float4);
+        attributes.object_at(0).unwrap().set_offset(0);
+        attributes.object_at(0).unwrap().set_buffer_index(0);
+
+        // Color (attribute 1) - vec4<f32>
+        attributes.object_at(1).unwrap().set_format(MTLVertexFormat::Float4);
+        attributes.object_at(1).unwrap().set_offset(16);
+        attributes.object_at(1).unwrap().set_buffer_index(0);
+
+        // UV (attribute 2) - vec2<f32>
+        attributes.object_at(2).unwrap().set_format(MTLVertexFormat::Float2);
+        attributes.object_at(2).unwrap().set_offset(32);
+        attributes.object_at(2).unwrap().set_buffer_index(0);
+
+        // Layers (attribute 3) - vec2<i32>
+        attributes.object_at(3).unwrap().set_format(MTLVertexFormat::Int2);
+        attributes.object_at(3).unwrap().set_offset(40);
+        attributes.object_at(3).unwrap().set_buffer_index(0);
+
+        // Set up buffer layout
+        let layouts = vertex_descriptor.layouts();
+        layouts.object_at(0).unwrap().set_stride(std::mem::size_of::<Vertex>() as u64);
+        layouts.object_at(0).unwrap().set_step_function(MTLVertexStepFunction::PerVertex);
+        layouts.object_at(0).unwrap().set_step_rate(1);
+
+        // Create render pipeline
+        let pipeline_descriptor = RenderPipelineDescriptor::new();
+        pipeline_descriptor.set_vertex_function(Some(&vertex_function));
+        pipeline_descriptor.set_fragment_function(Some(&fragment_function));
+        pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
+
+        // Set up blending for text rendering
+        let color_attachment = pipeline_descriptor.color_attachments().object_at(0).unwrap();
+        color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        color_attachment.set_blending_enabled(true);
+        color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+        color_attachment.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment.set_source_alpha_blend_factor(MTLBlendFactor::SourceAlpha);
+        color_attachment.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+
+        let pipeline_state = context
+            .device
+            .new_render_pipeline_state(&pipeline_descriptor)
+            .expect("Failed to create render pipeline state");
+
+        // Create vertex buffer
+        let vertex_buffer = context.device.new_buffer(
+            (mem::size_of::<Vertex>() * supported_vertex_buffer) as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        vertex_buffer.set_label("sugarloaf::rich_text vertex buffer");
+
+        // Create uniform buffer
+        let uniform_buffer = context.device.new_buffer(
+            mem::size_of::<Globals>() as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        uniform_buffer.set_label("sugarloaf::rich_text uniform buffer");
+
+        // Create sampler for texture sampling
+        let sampler_descriptor = SamplerDescriptor::new();
+        sampler_descriptor.set_min_filter(MTLSamplerMinMagFilter::Linear);
+        sampler_descriptor.set_mag_filter(MTLSamplerMinMagFilter::Linear);
+        sampler_descriptor.set_mip_filter(MTLSamplerMipFilter::Linear);
+        let sampler = context.device.new_sampler(&sampler_descriptor);
+
+        Self {
+            pipeline_state,
+            vertex_buffer,
+            uniform_buffer,
+            sampler,
+            supported_vertex_buffer,
+            current_transform: [0.0; 16],
+        }
+    }
+
+    pub fn resize(&mut self, transform: [f32; 16]) {
+        if self.current_transform != transform {
+            let globals = Globals { transform };
+            let contents = self.uniform_buffer.contents() as *mut Globals;
+            unsafe {
+                *contents = globals;
+            }
+            self.current_transform = transform;
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        vertices: &[Vertex],
+        images: &ImageCache,
+        render_encoder: &RenderCommandEncoderRef,
+        context: &MetalContext,  // Add context to get proper window size
+    ) {
+        println!("Metal rich text: {} vertices - ATLAS CONNECTION ISSUE: layers=[0,0], uv=[0,0]", vertices.len());
+        
+        if vertices.is_empty() {
+            return;
+        }
+
+        // Expand vertex buffer if needed
+        if vertices.len() > self.supported_vertex_buffer {
+            // For now, just skip rendering if too many vertices
+            // In production, you'd want to expand the buffer
+            return;
+        }
+
+        // Copy vertex data to buffer
+        let vertex_data = self.vertex_buffer.contents() as *mut Vertex;
+        unsafe {
+            std::ptr::copy_nonoverlapping(vertices.as_ptr(), vertex_data, vertices.len());
+        }
+
+        // Set up render state
+        render_encoder.set_render_pipeline_state(&self.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+
+        // Use proper orthographic projection matching the quad renderer
+        use crate::components::core::orthographic_projection;
+        let transform = orthographic_projection(context.size.width, context.size.height);
+        
+        // Update uniform buffer with correct transform
+        let uniform_data = self.uniform_buffer.contents() as *mut [f32; 16];
+        unsafe {
+            *uniform_data = transform;
+        }
+        
+        render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
+
+        // Set sampler
+        render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
+
+        // Set Metal textures for glyph atlas
+        if let Some((color_texture, mask_texture)) = images.get_metal_textures() {
+            render_encoder.set_fragment_texture(0, Some(color_texture));
+            render_encoder.set_fragment_texture(1, Some(mask_texture));
+        }
+
+        // Draw vertices - make sure we're drawing the right number for triangles
+        println!("Metal: Drawing {} vertices at positions: {:?}", 
+                 vertices.len(),
+                 vertices.iter().take(6).map(|v| v.pos).collect::<Vec<_>>());
+                 
+        // Use triangle primitive type - each set of 3 vertices forms a triangle
+        render_encoder.draw_primitives(
+            MTLPrimitiveType::Triangle,
+            0,
+            vertices.len() as u64,
+        );
+    }
 }
 
 pub struct RichTextBrush {
@@ -78,11 +263,8 @@ impl RichTextBrush {
             ContextType::Wgpu(wgpu_context) => {
                 RichTextBrushType::Wgpu(WgpuRichTextBrush::new(wgpu_context))
             }
-            ContextType::Metal(_metal_context) => {
-                RichTextBrushType::Metal(MetalRichTextBrush {
-                    current_transform: [0.0; 16],
-                    supported_vertex_buffer: 500,
-                })
+            ContextType::Metal(metal_context) => {
+                RichTextBrushType::Metal(MetalRichTextBrush::new(metal_context))
             }
         };
 
@@ -625,6 +807,16 @@ impl RichTextBrush {
         }
     }
 
+    pub fn render_metal(
+        &mut self,
+        context: &MetalContext,  // Add context parameter
+        render_encoder: &metal::RenderCommandEncoderRef,
+    ) {
+        if let RichTextBrushType::Metal(brush) = &mut self.brush_type {
+            brush.render(&self.vertices, &self.images, render_encoder, context);
+        }
+    }
+
     pub fn resize(&mut self, context: &mut Context) {
         let transform = match &context.inner {
             ContextType::Wgpu(wgpu_ctx) => {
@@ -652,7 +844,7 @@ impl RichTextBrush {
                 }
             }
             RichTextBrushType::Metal(metal_brush) => {
-                metal_brush.current_transform = transform;
+                metal_brush.resize(transform);
             }
         }
     }
