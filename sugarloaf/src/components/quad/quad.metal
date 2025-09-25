@@ -1,4 +1,4 @@
-// Metal quad shader - simplified to match WGPU approach
+// Metal quad shader - matching WGPU approach with generated vertices
 #include <metal_stdlib>
 #include <simd/simd.h>
 using namespace metal;
@@ -33,16 +33,25 @@ struct VertexOut {
     float shadow_blur_radius;
 };
 
+// Generate vertex position like WGPU version
+float2 vertex_position(uint vertex_index) {
+    // Same logic as WGPU: generate unit quad positions
+    // #: 0 1 2 3 4 5
+    // x: 1 1 0 0 0 1  
+    // y: 1 0 0 0 1 1
+    uint2 temp = (uint2(1, 2) + vertex_index) % uint2(6);
+    uint2 result = select(uint2(0), uint2(1), temp < uint2(3));
+    return float2(result);
+}
+
 vertex VertexOut vertex_main(uint vertex_id [[vertex_id]],
                            uint instance_id [[instance_id]],
-                           constant float2* unit_vertices [[buffer(0)]],
-                           constant Quad* quads [[buffer(1)]],
-                           constant Uniforms& uniforms [[buffer(2)]]) {
+                           constant Quad* quads [[buffer(0)]],
+                           constant Uniforms& uniforms [[buffer(1)]]) {
 
-    float2 unit_vertex = unit_vertices[vertex_id];
+    float2 unit_vertex = vertex_position(vertex_id);
     constant Quad& quad = quads[instance_id];
 
-    // Simple coordinate calculation like WGPU version
     float2 world_pos = quad.position + unit_vertex * quad.size;
     float4 clip_pos = uniforms.transform * float4(world_pos, 0.0, 1.0);
 
