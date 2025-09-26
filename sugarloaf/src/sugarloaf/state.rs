@@ -56,8 +56,11 @@ impl SugarState {
     #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
         if let Some(state) = self.content.get_state(id) {
+            println!("get_state_layout returning dimensions {}x{} for state {}", 
+                     state.layout.dimensions.width, state.layout.dimensions.height, id);
             state.layout.clone()
         } else {
+            println!("get_state_layout: state {} not found, returning default", id);
             RichTextLayout::from_default_layout(&self.style)
         }
     }
@@ -188,8 +191,13 @@ impl SugarState {
 
     #[inline]
     pub fn create_rich_text(&mut self) -> usize {
-        self.content
-            .create_state(&RichTextLayout::from_default_layout(&self.style))
+        let layout = RichTextLayout::from_default_layout(&self.style);
+        let id = self.content.create_state(&layout);
+        
+        // Dimensions are now calculated eagerly during create_state
+        // No need to mark for repaint since we have valid dimensions immediately
+        
+        id
     }
 
     #[inline]

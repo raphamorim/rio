@@ -39,6 +39,7 @@ fn compute(
     // Calculate columns
     let char_width = dimensions.width / dimensions.scale;
     if char_width <= 0.0 {
+        eprintln!("WARNING: char_width is {}, using fallback. dimensions: {:?}", char_width, dimensions);
         return (MIN_COLS, MIN_LINES);
     }
     let visible_columns =
@@ -584,9 +585,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
+    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
+        println!("Grid update_dimensions called");
+        
+        // First, ensure dimensions are calculated for all contexts
+        for context in self.inner.values() {
+            sugarloaf.get_rich_text_dimensions(&context.val.rich_text_id);
+        }
+        
+        // Now get the updated layouts
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
+            println!("Grid got layout with dimensions {}x{} for rich_text_id {}", 
+                     layout.dimensions.width, layout.dimensions.height, context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
         }
         // Update scaled_padding from the first context (they should all have the same scale)

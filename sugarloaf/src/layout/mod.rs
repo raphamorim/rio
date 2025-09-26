@@ -40,11 +40,21 @@ pub struct Delta<T: Default> {
     pub bottom_y: T,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SugarDimensions {
     pub width: f32,
     pub height: f32,
     pub scale: f32,
+}
+
+impl Default for SugarDimensions {
+    fn default() -> Self {
+        Self {
+            width: 8.0,   // Reasonable character cell width fallback
+            height: 16.0, // Reasonable character cell height fallback  
+            scale: 1.0,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
