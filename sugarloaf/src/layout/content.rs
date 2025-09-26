@@ -435,10 +435,10 @@ impl Content {
                     // Get metrics using swash
                     let font_metrics = font_ref.metrics(&[]);
                     
-                    // Calculate character cell width - use advance width of '0' for monospace
-                    let char_width = match font_ref.charmap().map('0' as u32) {
+                    // Calculate character cell width using space character
+                    let char_width = match font_ref.charmap().map(' ' as u32) {
                         glyph_id => {
-                            // Get advance width for '0' character using GlyphMetrics
+                            // Get advance width for space character using GlyphMetrics
                             let glyph_metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
                             let advance = glyph_metrics.advance_width(glyph_id);
                             
