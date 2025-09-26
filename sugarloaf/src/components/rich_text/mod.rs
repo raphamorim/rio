@@ -391,6 +391,38 @@ impl RichTextBrush {
     }
 
     #[inline]
+    /// Get character cell dimensions using font metrics (fast, no rendering)
+    pub fn get_character_cell_dimensions(
+        &self,
+        font_library: &FontLibrary,
+        font_size: f32,
+        line_height: f32,
+    ) -> Option<SugarDimensions> {
+        // Use read lock instead of write lock since we're not modifying
+        if let Some(font_library_data) = font_library.inner.try_read() {
+            let font_id = 0; // FONT_ID_REGULAR
+            
+            // Use existing method to get cached metrics  
+            drop(font_library_data); // Drop read lock
+            let mut font_library_data = font_library.inner.write();
+            if let Some((ascent, descent, leading)) = 
+                font_library_data.get_font_metrics(&font_id, font_size) {
+                
+                // Calculate character width using font metrics
+                // For monospace fonts, we can estimate character width
+                let char_width = font_size * 0.6; // Common monospace width ratio
+                let total_line_height = (ascent + descent + leading) * line_height;
+                
+                return Some(SugarDimensions {
+                    width: char_width.max(1.0),
+                    height: total_line_height.max(1.0),
+                    scale: 1.0,
+                });
+            }
+        }
+        None
+    }
+
     pub fn dimensions(
         &mut self,
         font_library: &FontLibrary,
