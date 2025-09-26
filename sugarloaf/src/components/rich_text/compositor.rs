@@ -113,6 +113,12 @@ impl Compositor {
         self.batches.build_display_list(vertices);
     }
 
+    /// Add a rectangle - unified quad rendering
+    #[inline]
+    pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
+        self.batches.add_primitive_rect(rect, depth);
+    }
+
     /// Standard draw_run method (for compatibility)
     #[inline]
     pub fn draw_run(

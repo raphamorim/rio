@@ -229,7 +229,7 @@ impl Screen<'_> {
             is_ime_enabled: false,
         };
 
-        let context_manager = context::ContextManager::start(
+        let mut context_manager = context::ContextManager::start(
             // config.cursor.blinking
             (&cursor, config.cursor.blinking),
             event_proxy,
@@ -247,6 +247,19 @@ impl Screen<'_> {
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
+
+        // Set initial positions for all rich texts
+        for context_grid in context_manager.contexts_mut() {
+            for item in context_grid.contexts().values() {
+                let position = item.position();
+                sugarloaf.show_rich_text(
+                    item.val.rich_text_id,
+                    position[0],
+                    position[1],
+                );
+            }
+        }
+
         sugarloaf.render();
 
         Ok(Screen {
@@ -462,6 +475,15 @@ impl Screen<'_> {
 
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.resize(width, height);
+            // Update Sugarloaf positions after grid resize
+            for item in context_grid.contexts().values() {
+                let position = item.position();
+                self.sugarloaf.show_rich_text(
+                    item.val.rich_text_id,
+                    position[0],
+                    position[1],
+                );
+            }
         }
 
         self
@@ -485,6 +507,15 @@ impl Screen<'_> {
 
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.resize(width, height);
+            // Update Sugarloaf positions after grid resize
+            for item in context_grid.contexts().values() {
+                let position = item.position();
+                self.sugarloaf.show_rich_text(
+                    item.val.rich_text_id,
+                    position[0],
+                    position[1],
+                );
+            }
         }
 
         self
@@ -504,6 +535,21 @@ impl Screen<'_> {
                 drop(terminal);
                 let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
                 let _ = ctx.messenger.send_resize(winsize);
+            }
+        }
+    }
+
+    /// Update rich text positions in Sugarloaf for all contexts
+    #[inline]
+    fn update_all_positions(&mut self) {
+        for context_grid in self.context_manager.contexts_mut() {
+            for item in context_grid.contexts().values() {
+                let position = item.position();
+                self.sugarloaf.show_rich_text(
+                    item.val.rich_text_id,
+                    position[0],
+                    position[1],
+                );
             }
         }
     }
@@ -1911,10 +1957,19 @@ impl Screen<'_> {
         let width = (layout.dimension.width) as usize;
         let margin_x = layout.margin.x * layout.dimension.scale;
 
+        if width == 0 {
+            return Side::Left; // Avoid division by zero, default to left
+        }
+
         let cell_x = x.saturating_sub(margin_x as usize) % width;
+        
         let half_cell_width = width / 2;
 
-        let additional_padding = (layout.width - margin_x) % width as f32;
+        let additional_padding = if width > 0 {
+            (layout.width - margin_x) % width as f32
+        } else {
+            0.0
+        };
         let end_of_grid = layout.width - margin_x - additional_padding;
 
         if cell_x > half_cell_width

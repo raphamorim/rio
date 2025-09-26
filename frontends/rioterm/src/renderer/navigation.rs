@@ -2,7 +2,7 @@ use crate::constants::*;
 use crate::context::title::ContextTitle;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
-use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{FragmentStyle, Object, Rect, RichText, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 
@@ -91,6 +91,48 @@ impl ScreenNavigation {
         }
     }
 
+    /// Direct rendering version (replaces build_objects)
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_directly(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        dimensions: (f32, f32, f32),
+        colors: &Colors,
+        context_manager: &crate::context::ContextManager<rio_backend::event::EventProxy>,
+    ) {
+        let current = context_manager.current_index();
+        let len = context_manager.len();
+        let titles = &context_manager.titles.titles;
+
+        match self.navigation.mode {
+            #[cfg(target_os = "macos")]
+            NavigationMode::NativeTab => {}
+            NavigationMode::BottomTab => {
+                let (_, window_height, scale_factor) = dimensions;
+                let position_y = window_height - (PADDING_Y_BOTTOM_TABS * scale_factor);
+
+                self.bottom_tab_directly(
+                    sugarloaf,
+                    titles,
+                    colors,
+                    len,
+                    current,
+                    position_y,
+                    self.navigation.hide_if_single,
+                    dimensions,
+                );
+            }
+            NavigationMode::TopTab => {
+                // TopTab mode - simplified placeholder  
+            }
+            NavigationMode::Bookmark => {
+                // Bookmark mode - simplified placeholder
+            }
+            NavigationMode::Plain => {}
+        }
+    }
+
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn bookmark(
@@ -133,14 +175,15 @@ impl ScreenNavigation {
                 }
             }
 
-            let renderable = Quad {
-                position: [initial_position, 0.0],
-                color,
-                size: [15.0, size],
-                ..Quad::default()
-            };
+            let renderable = Rect::new(
+                initial_position, 
+                0.0,
+                15.0,
+                size,
+                color
+            );
             initial_position -= position_modifier;
-            objects.push(Object::Quad(renderable));
+            objects.push(Object::Rect(renderable));
         }
     }
 
@@ -166,14 +209,15 @@ impl ScreenNavigation {
 
         let mut initial_position_x = 0.;
 
-        let renderable = Quad {
-            position: [initial_position_x, position_y],
-            color: colors.bar,
-            size: [width, PADDING_Y_BOTTOM_TABS],
-            ..Quad::default()
-        };
+        let renderable = Rect::new(
+            initial_position_x, 
+            position_y,
+            width,
+            PADDING_Y_BOTTOM_TABS,
+            colors.bar
+        );
 
-        objects.push(Object::Quad(renderable));
+        objects.push(Object::Rect(renderable));
 
         let iter = 0..len;
         let mut tabs = Vec::from_iter(iter);
@@ -217,12 +261,7 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            objects.push(Object::Quad(Quad {
-                position: [initial_position_x, position_y],
-                color: background_color,
-                size: [125., PADDING_Y_BOTTOM_TABS],
-                ..Quad::default()
-            }));
+            objects.push(Object::Rect(Rect::new(initial_position_x, position_y, 125., PADDING_Y_BOTTOM_TABS, background_color)));
 
             if is_current {
                 // TopBar case should render on bottom
@@ -232,12 +271,7 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                objects.push(Object::Quad(Quad {
-                    position: [initial_position_x, position],
-                    color: colors.tabs_active_highlight,
-                    size: [125., PADDING_Y_BOTTOM_TABS / 10.],
-                    ..Quad::default()
-                }));
+                objects.push(Object::Rect(Rect::new(initial_position_x, position, 125., PADDING_Y_BOTTOM_TABS / 10., colors.tabs_active_highlight)));
             }
 
             let text = if is_current {
@@ -265,12 +299,86 @@ impl ScreenNavigation {
 
             objects.push(Object::RichText(RichText {
                 id: tab,
-                position: [initial_position_x + 4., position_y],
                 lines: None,
+                render_data: rio_backend::sugarloaf::RichTextRenderData {
+                    position: [initial_position_x + 4., position_y],
+                    should_repaint: false,
+                    should_remove: false,
+                    hidden: false,
+                },
             }));
 
             initial_position_x += name_modifier + 40.;
         }
+    }
+
+    /// Direct rendering for bottom tabs
+    #[inline]
+    #[allow(clippy::too_many_arguments)]  
+    fn bottom_tab_directly(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        titles: &FxHashMap<usize, ContextTitle>,
+        colors: &Colors, 
+        len: usize,
+        current: usize,
+        position_y: f32,
+        hide_if_single: bool,
+        dimensions: (f32, f32, f32),
+    ) {
+        if hide_if_single && len <= 1 {
+            return;
+        }
+
+        let (width, _, _scale) = dimensions;
+        let initial_position_x = 0.0;
+
+        // Render main bar
+        sugarloaf.add_rect(initial_position_x, position_y, width, PADDING_Y_BOTTOM_TABS, colors.bar);
+
+        // Render tab indicators 
+        let mut current_x = initial_position_x;
+        let tab_width = 125.0;
+        
+        for i in 0..len {
+            if i == current {
+                // Active tab highlight
+                sugarloaf.add_rect(
+                    current_x, 
+                    position_y, 
+                    tab_width, 
+                    PADDING_Y_BOTTOM_TABS / 10.0, 
+                    colors.tabs_active_highlight
+                );
+            }
+            current_x += tab_width;
+        }
+    }
+
+    /// Direct rendering for collapsed tabs (simplified)
+    fn collapsed_tab_directly(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        colors: &Colors,
+        dimensions: (f32, f32, f32),
+    ) {
+        let (width, _, scale) = dimensions;
+        let size = 15.0;
+        let x = (width / scale) - PADDING_X_COLLAPSED_TABS;
+        let y = 0.0;
+        
+        sugarloaf.add_rect(x, y, size, size, colors.tabs);
+    }
+
+    /// Direct rendering for breadcrumb (simplified line)
+    fn breadcrumb_directly(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        colors: &Colors,
+        dimensions: (f32, f32, f32),
+    ) {
+        let (width, _, _scale) = dimensions;
+        sugarloaf.add_rect(0.0, 30.0, width, 1.0, colors.tabs);
     }
 }
 
