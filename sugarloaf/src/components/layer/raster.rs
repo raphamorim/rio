@@ -108,7 +108,7 @@ impl Cache {
         encoder: &mut wgpu::CommandEncoder,
         handle: &crate::components::layer::image::Handle,
         atlas: &mut Atlas,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) -> Option<&atlas::Entry> {
         let memory = self.load(handle);
 
