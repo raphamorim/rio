@@ -8,7 +8,7 @@ struct Globals {
 
 // Vertex input structure - matches Vertex struct exactly
 struct VertexInput {
-    float4 v_pos [[attribute(0)]];      // Position (first 16 bytes)
+    float3 v_pos [[attribute(0)]];      // Position (first 12 bytes) - FIXED to float3
     float4 v_color [[attribute(1)]];    // Color (next 16 bytes) 
     float2 v_uv [[attribute(2)]];       // UV coords (next 8 bytes)
     int2 layers [[attribute(3)]];       // Layers (next 8 bytes)
@@ -34,8 +34,7 @@ vertex VertexOutput vs_main(
     out.color_layer = input.layers.x;
     out.mask_layer = input.layers.y;
     
-    // Transform position - match WGSL exactly:
-    // out.position = globals.transform * vec4<f32>(input.v_pos.xy, 0.0, 1.0);
+    // Transform position - use float4 constructor with z=0.0, w=1.0
     out.position = globals.transform * float4(input.v_pos.xy, 0.0, 1.0);
     
     return out;
@@ -50,17 +49,10 @@ fragment float4 fs_main(
 ) {
     float4 out = input.f_color;
     
-    // Match WGSL logic exactly:
-    // if input.color_layer > 0 {
-    //     out = textureSampleLevel(color_texture, font_sampler, input.f_uv, 0.0);
-    // }
     if (input.color_layer > 0) {
         out = color_texture.sample(font_sampler, input.f_uv, level(0.0));
     }
     
-    // if input.mask_layer > 0 {
-    //     out = vec4<f32>(out.xyz, input.f_color.a * textureSampleLevel(mask_texture, font_sampler, input.f_uv, 0.0).x);
-    // }
     if (input.mask_layer > 0) {
         float mask_alpha = mask_texture.sample(font_sampler, input.f_uv, level(0.0)).x;
         out = float4(out.xyz, input.f_color.a * mask_alpha);
@@ -68,5 +60,3 @@ fragment float4 fs_main(
     
     return out;
 }
-    // Force all pixels to be bright green to test if shader is running at all
- //   return float4(0.0, 1.0, 0.0, 1.0);

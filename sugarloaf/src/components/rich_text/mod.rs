@@ -96,23 +96,23 @@ impl MetalRichTextBrush {
         let attributes = vertex_descriptor.attributes();
 
         // Position (attribute 0) - vec4<f32>
-        attributes.object_at(0).unwrap().set_format(MTLVertexFormat::Float4);
+        attributes.object_at(0).unwrap().set_format(MTLVertexFormat::Float3);
         attributes.object_at(0).unwrap().set_offset(0);
         attributes.object_at(0).unwrap().set_buffer_index(0);
 
         // Color (attribute 1) - vec4<f32>
         attributes.object_at(1).unwrap().set_format(MTLVertexFormat::Float4);
-        attributes.object_at(1).unwrap().set_offset(16);
+        attributes.object_at(1).unwrap().set_offset(12);
         attributes.object_at(1).unwrap().set_buffer_index(0);
 
         // UV (attribute 2) - vec2<f32>
         attributes.object_at(2).unwrap().set_format(MTLVertexFormat::Float2);
-        attributes.object_at(2).unwrap().set_offset(32);
+        attributes.object_at(2).unwrap().set_offset(28);
         attributes.object_at(2).unwrap().set_buffer_index(0);
 
         // Layers (attribute 3) - vec2<i32>
         attributes.object_at(3).unwrap().set_format(MTLVertexFormat::Int2);
-        attributes.object_at(3).unwrap().set_offset(40);
+        attributes.object_at(3).unwrap().set_offset(36);
         attributes.object_at(3).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
