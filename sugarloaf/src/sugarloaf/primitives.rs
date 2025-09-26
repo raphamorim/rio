@@ -3,7 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::Quad;
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -35,15 +34,75 @@ pub struct RichTextLinesRange {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RichTextRenderData {
+    pub position: [f32; 2],
+    pub should_repaint: bool,
+    pub should_remove: bool,
+    pub hidden: bool,
+}
+
+impl Default for RichTextRenderData {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            should_repaint: false,
+            should_remove: false,
+            hidden: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RichText {
     pub id: usize,
-    pub position: [f32; 2],
     pub lines: Option<RichTextLinesRange>,
+    pub render_data: RichTextRenderData,
+}
+
+impl RichText {
+    pub fn new(id: usize) -> Self {
+        Self {
+            id,
+            lines: None,
+            render_data: RichTextRenderData::default(),
+        }
+    }
+
+    pub fn with_position(mut self, x: f32, y: f32) -> Self {
+        self.render_data.position = [x, y];
+        self
+    }
+
+    pub fn with_lines(mut self, start: usize, end: usize) -> Self {
+        self.lines = Some(RichTextLinesRange { start, end });
+        self
+    }
+
+    pub fn hidden(mut self, hidden: bool) -> Self {
+        self.render_data.hidden = hidden;
+        self
+    }
+}
+
+/// Simple rectangle for rendering - replaces the complex Quad
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub color: [f32; 4],
+}
+
+impl Rect {
+    pub fn new(x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) -> Self {
+        Self { x, y, width, height, color }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
-    Quad(Quad),
+    Rect(Rect),
     RichText(RichText),
 }
 
