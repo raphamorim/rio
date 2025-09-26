@@ -668,12 +668,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
-    #[inline]
-    pub fn render_grid_rects_directly(&self, _sugarloaf: &mut rio_backend::sugarloaf::Sugarloaf) {
-        // Simplified - grid rectangles will be rendered via direct add_rect calls
-        // TODO: Implement grid border rendering if needed
-    }
-
     pub fn extend_with_grid_objects(&self, target: &mut Vec<Object>) {
         self.contexts[self.current_index].extend_with_objects(target);
     }
