@@ -117,7 +117,7 @@ impl MetalRichTextBrush {
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
-        layouts.object_at(0).unwrap().set_stride(std::mem::size_of::<Vertex>() as u64);
+        layouts.object_at(0).unwrap().set_stride(mem::size_of::<Vertex>() as u64);
         layouts.object_at(0).unwrap().set_step_function(MTLVertexStepFunction::PerVertex);
         layouts.object_at(0).unwrap().set_step_rate(1);
 
@@ -127,14 +127,19 @@ impl MetalRichTextBrush {
         pipeline_descriptor.set_fragment_function(Some(&fragment_function));
         pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
 
-        // Set up blending for text rendering
+        // Set up blending for text rendering - FIXED BLENDING
         let color_attachment = pipeline_descriptor.color_attachments().object_at(0).unwrap();
         color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         color_attachment.set_blending_enabled(true);
+        // Match WGSL BLEND settings exactly:
+        // color: src_factor: SrcAlpha, dst_factor: OneMinusSrcAlpha, operation: Add
         color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
         color_attachment.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
-        color_attachment.set_source_alpha_blend_factor(MTLBlendFactor::SourceAlpha);
+        color_attachment.set_rgb_blend_operation(MTLBlendOperation::Add);
+        // alpha: src_factor: One, dst_factor: OneMinusSrcAlpha, operation: Add  
+        color_attachment.set_source_alpha_blend_factor(MTLBlendFactor::One);
         color_attachment.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment.set_alpha_blend_operation(MTLBlendOperation::Add);
 
         let pipeline_state = context
             .device
@@ -155,20 +160,25 @@ impl MetalRichTextBrush {
         );
         uniform_buffer.set_label("sugarloaf::rich_text uniform buffer");
 
-        // Create sampler for texture sampling
+        // Create sampler for texture sampling - IMPROVED SAMPLER SETTINGS
         let sampler_descriptor = SamplerDescriptor::new();
+        // Match WGPU settings: Linear filtering for crisp text
         sampler_descriptor.set_min_filter(MTLSamplerMinMagFilter::Linear);
         sampler_descriptor.set_mag_filter(MTLSamplerMinMagFilter::Linear);
         sampler_descriptor.set_mip_filter(MTLSamplerMipFilter::Linear);
+        // ClampToEdge addressing to prevent texture bleeding
+        sampler_descriptor.set_address_mode_s(MTLSamplerAddressMode::ClampToEdge);
+        sampler_descriptor.set_address_mode_t(MTLSamplerAddressMode::ClampToEdge);
+        sampler_descriptor.set_address_mode_r(MTLSamplerAddressMode::ClampToEdge);
         let sampler = context.device.new_sampler(&sampler_descriptor);
 
         Self {
             pipeline_state,
             vertex_buffer,
-            uniform_buffer,
             sampler,
             supported_vertex_buffer,
             current_transform: [0.0; 16],
+            uniform_buffer,
         }
     }
 
@@ -188,19 +198,22 @@ impl MetalRichTextBrush {
         vertices: &[Vertex],
         images: &ImageCache,
         render_encoder: &RenderCommandEncoderRef,
-        context: &MetalContext,  // Add context to get proper window size
+        context: &MetalContext,
     ) {
-        println!("Metal rich text: {} vertices - ATLAS CONNECTION ISSUE: layers=[0,0], uv=[0,0]", vertices.len());
-        
         if vertices.is_empty() {
             return;
         }
 
         // Expand vertex buffer if needed
         if vertices.len() > self.supported_vertex_buffer {
-            // For now, just skip rendering if too many vertices
-            // In production, you'd want to expand the buffer
-            return;
+            self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
+            
+            // Recreate vertex buffer with larger size
+            self.vertex_buffer = context.device.new_buffer(
+                (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
+                MTLResourceOptions::StorageModeShared,
+            );
+            self.vertex_buffer.set_label("sugarloaf::rich_text vertex buffer (resized)");
         }
 
         // Copy vertex data to buffer
@@ -213,33 +226,33 @@ impl MetalRichTextBrush {
         render_encoder.set_render_pipeline_state(&self.pipeline_state);
         render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
 
-        // Use proper orthographic projection matching the quad renderer
-        use crate::components::core::orthographic_projection;
+        // FIXED: Update transform matrix with current context size
         let transform = orthographic_projection(context.size.width, context.size.height);
-        
-        // Update uniform buffer with correct transform
-        let uniform_data = self.uniform_buffer.contents() as *mut [f32; 16];
-        unsafe {
-            *uniform_data = transform;
+        if self.current_transform != transform {
+            let globals = Globals { transform };
+            let uniform_data = self.uniform_buffer.contents() as *mut Globals;
+            unsafe {
+                *uniform_data = globals;
+            }
+            self.current_transform = transform;
         }
         
+        // FIXED: Bind uniform buffer at correct index (buffer 1 in Metal shader)
         render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
 
         // Set sampler
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
 
-        // Set Metal textures for glyph atlas
+        // Set textures if available
         if let Some((color_texture, mask_texture)) = images.get_metal_textures() {
             render_encoder.set_fragment_texture(0, Some(color_texture));
             render_encoder.set_fragment_texture(1, Some(mask_texture));
+        } else {
+            // No textures available - vertices with layers=[0,0] will just use vertex colors
+            tracing::warn!("Metal: No textures available - using vertex colors only");
         }
 
-        // Draw vertices - make sure we're drawing the right number for triangles
-        println!("Metal: Drawing {} vertices at positions: {:?}", 
-                 vertices.len(),
-                 vertices.iter().take(6).map(|v| v.pos).collect::<Vec<_>>());
-                 
-        // Use triangle primitive type - each set of 3 vertices forms a triangle
+        // Draw vertices
         render_encoder.draw_primitives(
             MTLPrimitiveType::Triangle,
             0,
@@ -947,9 +960,9 @@ impl WgpuRichTextBrush {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             lod_min_clamp: 0f32,
             lod_max_clamp: 0f32,
             ..Default::default()
