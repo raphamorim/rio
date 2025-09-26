@@ -2,20 +2,18 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
-use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
-use crate::components::layer::{self, LayerBrush};
-use crate::components::quad::QuadBrush;
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
-use crate::sugarloaf::graphics::{BottomLayer, Graphics};
-use crate::sugarloaf::layer::types;
+use crate::sugarloaf::graphics::Graphics;
+
 use crate::Content;
 use crate::SugarDimensions;
-use crate::{context::Context, Object, Quad};
-use core::fmt::{Debug, Formatter};
+use crate::context::Context;
 use primitives::ImageProperties;
+use core::fmt::{Debug, Formatter};
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -23,7 +21,6 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    quad_brush: QuadBrush,
     rich_text_brush: RichTextBrush,
     // layer_brush: LayerBrush,
     state: state::SugarState,
@@ -156,14 +153,12 @@ impl Sugarloaf<'_> {
         let ctx = Context::new(window, renderer);
 
         // let layer_brush = LayerBrush::new(&ctx);
-        let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
             // layer_brush,
-            quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
@@ -311,9 +306,29 @@ impl Sugarloaf<'_> {
         self.state.content()
     }
 
+    /// Add a rectangle directly to the rendering pipeline
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn add_rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) {
+        let rect = crate::sugarloaf::primitives::Rect::new(x, y, width, height, color);
+        self.rich_text_brush.add_rect(&rect, 0.0);
+    }
+
+    /// Show a rich text at a specific position
+    #[inline]
+    pub fn show_rich_text(&mut self, id: usize, x: f32, y: f32) {
+        self.state.set_rich_text_visibility_and_position(id, x, y, false);
+    }
+
+    /// Hide a rich text
+    #[inline]
+    pub fn hide_rich_text(&mut self, id: usize) {
+        self.state.set_rich_text_hidden(id, true);
+    }
+
+    /// Show/hide a rich text
+    #[inline]
+    pub fn set_rich_text_visibility(&mut self, id: usize, hidden: bool) {
+        self.state.set_rich_text_hidden(id, hidden);
     }
 
     #[inline]
@@ -379,7 +394,6 @@ impl Sugarloaf<'_> {
         self.state.compute_dimensions(&mut self.rich_text_brush);
         self.state.compute_updates(
             &mut self.rich_text_brush,
-            &mut self.quad_brush,
             &mut self.ctx,
             &mut self.graphics,
         );
@@ -441,8 +455,6 @@ impl Sugarloaf<'_> {
                     command_buffer.new_render_command_encoder(&render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
-                self.quad_brush
-                    .render_metal(ctx, &self.state, &render_encoder);
                 self.rich_text_brush.render_metal(ctx, &render_encoder);
 
                 render_encoder.end_encoding();
@@ -536,7 +548,6 @@ impl Sugarloaf<'_> {
                     //         self.layer_brush.render(request, &mut rpass, None);
                     //     }
                     // }
-                    self.quad_brush.render_wgpu(ctx, &self.state, &mut rpass);
                     self.rich_text_brush.render(ctx, &mut rpass);
                 }
 

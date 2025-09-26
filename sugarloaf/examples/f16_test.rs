@@ -186,7 +186,6 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
                     id: self.rich_text,
                     position: [10., 0.],
                     lines: None,
