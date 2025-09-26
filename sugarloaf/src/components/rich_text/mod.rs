@@ -298,18 +298,38 @@ impl RichTextBrush {
         state: &crate::sugarloaf::state::SugarState,
         graphics: &mut Graphics,
     ) {
-        if state.rich_texts.is_empty() {
-            self.vertices.clear();
+        // Always clear vertices first
+        self.vertices.clear();
+        
+        if state.content.states.is_empty() {
             return;
         }
 
         self.comp.begin();
         let library = state.content.font_library();
 
-        for rich_text in &state.rich_texts {
-            if let Some(rt) = state.content.get_state(&rich_text.id) {
-                // Check if this specific rich text needs cache invalidation
-                match &rt.last_update {
+        // Iterate over all content states and render visible ones
+        for (rich_text_id, builder_state) in &state.content.states {
+            println!("rich_text_id on prepare {:?}", rich_text_id);
+            // Skip if marked for removal or hidden
+            if builder_state.render_data.should_remove || builder_state.render_data.hidden {
+                continue;
+            }
+
+            // Skip if there are no lines to render
+            if builder_state.lines.is_empty() {
+                continue;
+            }
+
+            // Skip if all lines are empty (no content)
+            if builder_state.lines.iter().all(|line| {
+                line.fragments.is_empty() || line.fragments.iter().all(|frag| frag.content.trim().is_empty())
+            }) {
+                continue;
+            }
+            
+            // Check if this specific rich text needs cache invalidation
+            match &builder_state.last_update {
                     BuilderStateUpdate::Full => {
                         // For full updates, we don't need to clear text run cache
                         // as it's shared across all text and font-specific
@@ -323,22 +343,23 @@ impl RichTextBrush {
                     }
                 };
 
-                let position = (
-                    rich_text.position[0] * state.style.scale_factor,
-                    rich_text.position[1] * state.style.scale_factor,
+                let pos = (
+                    builder_state.render_data.position[0] * state.style.scale_factor,
+                    builder_state.render_data.position[1] * state.style.scale_factor,
                 );
 
                 self.draw_layout(
-                    rich_text.id, // Pass the rich text ID for caching
-                    &rt.lines,
-                    &rich_text.lines,
-                    Some(position),
+                    *rich_text_id, // Pass the rich text ID for caching
+                    &builder_state.lines,
+                    &None, // No line range filtering for now
+                    Some(pos),
                     library,
-                    Some(&rt.layout),
+                    Some(&builder_state.layout),
                     graphics,
                 );
-            }
         }
+
+        self.vertices.clear();
 
         self.vertices.clear();
         self.images.process_atlases(context);
@@ -346,6 +367,38 @@ impl RichTextBrush {
     }
 
     #[inline]
+    /// Get character cell dimensions using font metrics (fast, no rendering)
+    pub fn get_character_cell_dimensions(
+        &self,
+        font_library: &FontLibrary,
+        font_size: f32,
+        line_height: f32,
+    ) -> Option<SugarDimensions> {
+        // Use read lock instead of write lock since we're not modifying
+        if let Some(font_library_data) = font_library.inner.try_read() {
+            let font_id = 0; // FONT_ID_REGULAR
+            
+            // Use existing method to get cached metrics  
+            drop(font_library_data); // Drop read lock
+            let mut font_library_data = font_library.inner.write();
+            if let Some((ascent, descent, leading)) = 
+                font_library_data.get_font_metrics(&font_id, font_size) {
+                
+                // Calculate character width using font metrics
+                // For monospace fonts, we can estimate character width
+                let char_width = font_size * 0.6; // Common monospace width ratio
+                let total_line_height = (ascent + descent + leading) * line_height;
+                
+                return Some(SugarDimensions {
+                    width: char_width.max(1.0),
+                    height: total_line_height.max(1.0),
+                    scale: 1.0,
+                });
+            }
+        }
+        None
+    }
+
     pub fn dimensions(
         &mut self,
         font_library: &FontLibrary,
@@ -798,6 +851,12 @@ impl RichTextBrush {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         tracing::info!("RichTextBrush atlas, glyph cache, and text run cache cleared");
+    }
+
+    /// Add a rectangle - unified quad rendering approach
+    #[inline]
+    pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
+        self.comp.add_rect(rect, depth);
     }
 
     #[inline]

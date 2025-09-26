@@ -8,7 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, Quad, RichText, Sugarloaf, SugarloafWindow,
+    layout::RootStyle, FragmentStyle, Object, Rect, RichText, Sugarloaf, SugarloafWindow,
     SugarloafWindowSize,
 };
 
@@ -153,35 +153,19 @@ impl ApplicationHandler for Application {
                     .new_line()
                     .build();
 
-                sugarloaf.set_objects(vec![
                     Object::RichText(RichText {
                         id: self.rich_text,
                         position: [10., 10.],
                         lines: None,
                     }),
-                    Object::Quad(Quad {
-                        position: [10., 10.],
-                        color: [1.0, 0.3, 0.5, 1.0],
-                        size: [120., 100.],
-                        ..Quad::default()
-                    }),
+                    Object::Rect(Rect::new(10., 10., 120., 100., [1.0)),
                     Object::RichText(RichText {
                         id: self.second_rich_text,
                         position: [10., 60.],
                         lines: None,
                     }),
-                    Object::Quad(Quad {
-                        position: [10., 80.],
-                        color: [0.0, 0.3, 0.5, 1.0],
-                        size: [120., 100.],
-                        ..Quad::default()
-                    }),
-                    Object::Quad(Quad {
-                        position: [95., 30.],
-                        color: [1.0, 1.0, 0.5, 1.0],
-                        size: [20., 100.],
-                        ..Quad::default()
-                    }),
+                    Object::Rect(Rect::new(10., 80., 120., 100., [0.0)),
+                    Object::Rect(Rect::new(95., 30., 20., 100., [1.0)),
                     Object::RichText(RichText {
                         id: self.rich_text,
                         position: [100., 100.],
