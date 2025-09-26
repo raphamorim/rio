@@ -800,6 +800,18 @@ impl BatchManager {
             .add_rect(rect, depth, color, None, None, None, false);
     }
 
+    /// Add a rectangle with color - unified with quad rendering
+    #[inline]
+    pub fn add_primitive_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
+        let batch_rect = Rect {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        };
+        self.add_rect(&batch_rect, depth, &rect.color);
+    }
+
     #[inline]
     pub fn build_display_list(&self, list: &mut Vec<Vertex>) {
         for batch in &self.opaque {

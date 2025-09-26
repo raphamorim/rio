@@ -7,12 +7,14 @@
 // nav and span_style were originally retired from dfrg/swash_demo licensed under MIT
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
-mod content;
+pub mod content;
 mod glyph;
 mod render_data;
+pub mod rich_text_render_data;
 
 pub use glyph::Glyph;
 pub use render_data::RenderData;
+pub use rich_text_render_data::RichTextRenderData;
 
 pub use content::{
     BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentStyle,

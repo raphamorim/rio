@@ -1,44 +1,15 @@
 use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
+use rio_backend::sugarloaf::{FragmentStyle, Sugarloaf};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
-    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
-    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
-    let red = [1.0, 0.07058824, 0.38039216, 1.0];
-    let black = [0.0, 0.0, 0.0, 1.0];
-
     let layout = sugarloaf.window_size();
 
-    let mut objects = Vec::with_capacity(7);
-
-    objects.push(Object::Quad(Quad {
-        position: [0., 0.0],
-        color: black,
-        size: [
-            layout.width / context_dimension.dimension.scale,
-            layout.height,
-        ],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [0., 30.0],
-        color: blue,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
+    // Render rectangles directly
+    sugarloaf.add_rect(0.0, 0.0, layout.width / context_dimension.dimension.scale, layout.height, [0.0, 0.0, 0.0, 1.0]);
+    sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, [0.0, 0.0, 1.0, 1.0]);
+    sugarloaf.add_rect(15.0, context_dimension.margin.top_y + 60.0, 15.0, layout.height, [1.0, 1.0, 0.0, 1.0]);
+    sugarloaf.add_rect(30.0, context_dimension.margin.top_y + 120.0, 15.0, layout.height, [1.0, 0.0, 0.0, 1.0]);
 
     let heading = sugarloaf.create_temp_rich_text();
     let paragraph_action = sugarloaf.create_temp_rich_text();
@@ -46,87 +17,95 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
 
     sugarloaf.set_rich_text_font_size(&heading, 28.0);
     sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);
-    sugarloaf.set_rich_text_font_size(&paragraph, 16.0);
+    sugarloaf.set_rich_text_font_size(&paragraph, 14.0);
 
     let content = sugarloaf.content();
     let heading_line = content.sel(heading);
     heading_line
         .clear()
-        .add_text("Welcome to Rio Terminal", FragmentStyle::default())
+        .add_text(
+            "Welcome to Rio",
+            FragmentStyle {
+                color: [0.9019608, 0.494118, 0.13333334, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(
+            " terminal",
+            FragmentStyle {
+                color: [1.0, 1.0, 1.0, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
         .build();
 
     let paragraph_action_line = content.sel(paragraph_action);
     paragraph_action_line
         .clear()
         .add_text(
-            "> press enter to continue",
+            "> Hint: Use ",
             FragmentStyle {
-                color: yellow,
+                color: [0.7019608, 0.7019608, 0.7019608, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(
+            "config edit",
+            FragmentStyle {
+                color: [0.7019608, 0.7019608, 0.7019608, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(
+            " to open configuration file",
+            FragmentStyle {
+                color: [0.7019608, 0.7019608, 0.7019608, 1.0],
                 ..FragmentStyle::default()
             },
         )
         .build();
 
-    #[cfg(target_os = "macos")]
-    let shortcut = "\"Command\" + \",\" (comma)";
-
-    #[cfg(not(target_os = "macos"))]
-    let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
-
-    let paragraph_line = content.sel(paragraph);
+    let paragraph_line = content.sel(paragraph).clear();
     paragraph_line
-        .clear()
         .add_text(
-            "Your configuration file will be created in",
-            FragmentStyle::default(),
-        )
-        .new_line()
-        .add_text(
-            &format!(" {} ", rio_backend::config::config_file_path().display()),
+            "\n\nBuilt in Rust with:",
             FragmentStyle {
-                background_color: Some(yellow),
-                color: [0., 0., 0., 1.],
+                color: [1.0, 1.0, 1.0, 1.0],
                 ..FragmentStyle::default()
             },
         )
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("To open settings menu use", FragmentStyle::default())
-        .new_line()
         .add_text(
-            &format!(" {shortcut} "),
+            "\n• WGPU as rendering backend",
             FragmentStyle {
-                background_color: Some(yellow),
-                color: [0., 0., 0., 1.],
+                color: [1.0, 1.0, 1.0, 1.0],
                 ..FragmentStyle::default()
             },
         )
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("More info in rioterm.com", FragmentStyle::default())
+        .add_text(
+            "\n• Tokio as async runtime",
+            FragmentStyle {
+                color: [1.0, 1.0, 1.0, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(
+            "\n• Sugarloaf for Advanced Text Rendering",
+            FragmentStyle {
+                color: [1.0, 1.0, 1.0, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(
+            "\n• And lots of ❤️",
+            FragmentStyle {
+                color: [1.0, 1.0, 1.0, 1.0],
+                ..FragmentStyle::default()
+            },
+        )
         .build();
 
-    objects.push(Object::RichText(RichText {
-        id: heading,
-        position: [70., context_dimension.margin.top_y + 30.],
-        lines: None,
-    }));
-
-    objects.push(Object::RichText(RichText {
-        id: paragraph_action,
-        position: [70., context_dimension.margin.top_y + 70.],
-        lines: None,
-    }));
-
-    objects.push(Object::RichText(RichText {
-        id: paragraph,
-        position: [70., context_dimension.margin.top_y + 140.],
-        lines: None,
-    }));
-
-    sugarloaf.set_objects(objects);
+    // Show rich texts at specific positions
+    sugarloaf.show_rich_text(heading, 70.0, context_dimension.margin.top_y + 30.0);
+    sugarloaf.show_rich_text(paragraph_action, 70.0, context_dimension.margin.top_y + 70.0);
+    sugarloaf.show_rich_text(paragraph, 70.0, context_dimension.margin.top_y + 140.0);
 }

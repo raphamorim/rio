@@ -116,6 +116,7 @@ pub struct BuilderState {
     pub last_update: BuilderStateUpdate,
     scaled_font_size: f32,
     pub layout: RichTextLayout,
+    pub render_data: crate::layout::RichTextRenderData,
 }
 
 impl BuilderState {
@@ -368,6 +369,12 @@ impl Content {
     #[inline]
     pub fn sel(&mut self, state_id: usize) -> &mut Content {
         self.selector = Some(state_id);
+        
+        // Ensure the state exists - create it with default layout if missing
+        if !self.states.contains_key(&state_id) {
+            let default_layout = RichTextLayout::default();
+            self.states.insert(state_id, BuilderState::from_layout(&default_layout));
+        }
 
         self
     }
@@ -429,6 +436,7 @@ impl Content {
     ) {
         let mut content = Content::new(&self.fonts);
         if let Some(rte) = self.states.get_mut(state_id) {
+            println!("update_dimensions {:?}", state_id);
             let id = content.create_state(&rte.layout);
             content
                 .sel(id)

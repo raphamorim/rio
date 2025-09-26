@@ -15,12 +15,11 @@ pub use crate::sugarloaf::{
         ColorType, Graphic, GraphicData, GraphicId, Graphics, ResizeCommand,
         ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
-    primitives::*,
+    primitives::{RichText, RichTextLinesRange, RichTextRenderData, SugarCursor, DrawableChar, contains_braille_dot, ImageProperties, drawable_character, Rect, Object},
     Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,
 };
 pub use components::filters::Filter;
-pub use components::quad::Quad;
 pub use layout::{
     Content, FragmentStyle, FragmentStyleDecoration, SugarDimensions, UnderlineInfo,
     UnderlineShape,

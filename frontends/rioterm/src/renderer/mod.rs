@@ -25,7 +25,7 @@ use rio_backend::config::colors::{
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::{BTreeSet, HashMap};
@@ -969,6 +969,7 @@ impl Renderer {
             }
 
             let rich_text_id = context.rich_text_id;
+            println!("{:?}", rich_text_id);
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
@@ -1086,51 +1087,32 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(15);
-        self.navigation.build_objects(
+        // Render navigation rectangles directly
+        self.navigation.render_directly(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
             &self.named_colors,
             context_manager,
-            self.search.active_search.is_some(),
-            &mut objects,
         );
 
-        if has_search {
-            if let Some(rich_text_id) = self.search.rich_text_id {
-                search::draw_search_bar(
-                    &mut objects,
-                    rich_text_id,
-                    &self.named_colors,
-                    (window_size.width, window_size.height, scale_factor),
+        // Search bar disabled for now - TODO: Implement direct rendering
+        // if has_search { ... }
+
+        // Render grid borders directly
+        context_manager.render_grid_rects_directly(sugarloaf);
+
+        // Update rich text positions after content is built
+        for context_grid in context_manager.contexts_mut() {
+            for item in context_grid.contexts().values() {
+                let position = item.position();
+                println!("DEBUG: Setting rich text {} at position [{}, {}]", item.val.rich_text_id, position[0], position[1]);
+                sugarloaf.show_rich_text(
+                    item.val.rich_text_id,
+                    position[0],
+                    position[1],
                 );
             }
-
-            self.search.active_search = None;
-            self.search.rich_text_id = None;
         }
-
-        // let _duration = start.elapsed();
-        context_manager.extend_with_grid_objects(&mut objects);
-        // let _duration = start.elapsed();
-
-        // Update visual bell state and set overlay if needed
-        // let visual_bell_active = self.update_visual_bell();
-
-        // Set visual bell overlay that renders on top of everything
-        // let bell_overlay = if visual_bell_active {
-        //     Some(Quad {
-        //         position: [0.0, 0.0],
-        //         size: [window_size.width, window_size.height],
-        //         color: self.named_colors.foreground,
-        //         ..Quad::default()
-        //     })
-        // } else {
-        //     None
-        // };
-        // sugarloaf.set_visual_bell_overlay(bell_overlay);
-
-        sugarloaf.set_objects(objects);
 
         sugarloaf.render();
 
