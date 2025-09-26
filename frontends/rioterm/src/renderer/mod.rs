@@ -1088,32 +1088,15 @@ impl Renderer {
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
         // Render navigation rectangles directly
-        self.navigation.render_directly(
-            sugarloaf,
-            (window_size.width, window_size.height, scale_factor),
-            &self.named_colors,
-            context_manager,
-        );
+        // self.navigation.render_directly(
+        //     sugarloaf,
+        //     (window_size.width, window_size.height, scale_factor),
+        //     &self.named_colors,
+        //     context_manager,
+        // );
 
         // Search bar disabled for now - TODO: Implement direct rendering
         // if has_search { ... }
-
-        // Render grid borders directly
-        context_manager.render_grid_rects_directly(sugarloaf);
-
-        // Update rich text positions after content is built
-        for context_grid in context_manager.contexts_mut() {
-            for item in context_grid.contexts().values() {
-                let position = item.position();
-                println!("DEBUG: Setting rich text {} at position [{}, {}]", item.val.rich_text_id, position[0], position[1]);
-                sugarloaf.show_rich_text(
-                    item.val.rich_text_id,
-                    position[0],
-                    position[1],
-                );
-            }
-        }
-
         sugarloaf.render();
 
         // let _duration = start.elapsed();
