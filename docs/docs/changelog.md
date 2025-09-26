@@ -1,13 +1,18 @@
 ---
-title: 'Releases'
+title: 'Changelog'
 language: 'en'
 ---
 
-# Releases
+# Changelog
 
-## 0.2.31 (unreleased)
+## 0.2.32 (unreleased)
+
+- TBD.
+
+## 0.2.31
 
 - Update Rust to v1.90.
+- Fix kitty keyboard recognition.
 - **Breaking: Simplified key binding escape sequences**
   - Replaced separate `text` and `bytes` fields with a single `esc` field
   - Escape sequences are now sent directly to the PTY without text manipulation
