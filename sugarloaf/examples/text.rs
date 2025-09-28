@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, FragmentStyleDecoration,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    layout::RootStyle, FragmentStyle, FragmentStyleDecoration, Sugarloaf,
+    SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
