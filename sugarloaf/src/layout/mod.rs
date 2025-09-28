@@ -51,7 +51,7 @@ impl Default for SugarDimensions {
     fn default() -> Self {
         Self {
             width: 8.0,   // Reasonable character cell width fallback
-            height: 16.0, // Reasonable character cell height fallback  
+            height: 16.0, // Reasonable character cell height fallback
             scale: 1.0,
         }
     }

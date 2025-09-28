@@ -7,8 +7,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -186,10 +185,8 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                    id: self.rich_text,
-                    position: [10., 0.],
-                    lines: None,
-                })]);
+                // Show rich text using new API
+                sugarloaf.show_rich_text(self.rich_text, 10., 0.);
                 sugarloaf.render();
             }
             _ => {}
