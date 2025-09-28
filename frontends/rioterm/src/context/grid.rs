@@ -3,7 +3,7 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
+    layout::SugarDimensions, Object, Rect, RichText, Sugarloaf,
 };
 use std::collections::HashMap;
 
@@ -39,6 +39,10 @@ fn compute(
     // Calculate columns
     let char_width = dimensions.width / dimensions.scale;
     if char_width <= 0.0 {
+        eprintln!(
+            "WARNING: char_width is {}, using fallback. dimensions: {:?}",
+            char_width, dimensions
+        );
         return (MIN_COLS, MIN_LINES);
     }
     let visible_columns =
@@ -57,17 +61,7 @@ fn compute(
 
 #[inline]
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
-    Object::Quad(Quad {
-        color,
-        position,
-        shadow_blur_radius: 0.0,
-        shadow_offset: [0.0, 0.0],
-        shadow_color: [0.0, 0.0, 0.0, 0.0],
-        border_color: [0.0, 0.0, 0.0, 0.0],
-        border_width: 0.0,
-        border_radius: [0.0, 0.0, 0.0, 0.0],
-        size,
-    })
+    Object::Rect(Rect::new(position[0], position[1], size[0], size[1], color))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -100,8 +94,13 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
         let rich_text_object = Object::RichText(RichText {
             id: context.rich_text_id,
-            position: [0.0, 0.0],
             lines: None,
+            render_data: rio_backend::sugarloaf::RichTextRenderData {
+                position: [0.0, 0.0],
+                should_repaint: false,
+                should_remove: false,
+                hidden: false,
+            },
         });
 
         Self {
@@ -129,7 +128,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
     pub fn position(&self) -> [f32; 2] {
         if let Object::RichText(ref rich_text) = self.rich_text_object {
-            rich_text.position
+            rich_text.render_data.position
         } else {
             [0.0, 0.0]
         }
@@ -138,7 +137,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     /// Update the position in the rich text object
     fn set_position(&mut self, position: [f32; 2]) {
         if let Object::RichText(ref mut rich_text) = self.rich_text_object {
-            rich_text.position = position;
+            rich_text.render_data.position = position;
         }
     }
 }
@@ -427,8 +426,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             for obj in objects {
                 if let Object::RichText(rich_text_obj) = obj {
                     if rich_text_obj.id == rich_text_id {
-                        margin.x = rich_text_obj.position[0] + self.scaled_padding;
-                        margin.top_y = rich_text_obj.position[1] + self.scaled_padding;
+                        margin.x =
+                            rich_text_obj.render_data.position[0] + self.scaled_padding;
+                        margin.top_y =
+                            rich_text_obj.render_data.position[1] + self.scaled_padding;
                         break;
                     }
                 }
@@ -459,10 +460,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Object::RichText(rich_text_obj) = obj {
                 if let Some(key) = self.find_by_rich_text_id(rich_text_obj.id) {
                     if let Some(item) = self.inner.get(&key) {
-                        let scaled_position_x =
-                            rich_text_obj.position[0] * (self.scaled_padding / PADDING);
-                        let scaled_position_y =
-                            rich_text_obj.position[1] * (self.scaled_padding / PADDING);
+                        let scaled_position_x = rich_text_obj.render_data.position[0]
+                            * (self.scaled_padding / PADDING);
+                        let scaled_position_y = rich_text_obj.render_data.position[1]
+                            * (self.scaled_padding / PADDING);
                         if mouse.x >= scaled_position_x as usize
                             && mouse.y >= scaled_position_y as usize
                             && mouse.x
@@ -587,9 +588,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
+    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
+        println!("Grid update_dimensions called");
+
+        // First, ensure dimensions are calculated for all contexts
+        for context in self.inner.values() {
+            sugarloaf.get_rich_text_dimensions(&context.val.rich_text_id);
+        }
+
+        // Now get the updated layouts
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
+            println!(
+                "Grid got layout with dimensions {}x{} for rich_text_id {}",
+                layout.dimensions.width,
+                layout.dimensions.height,
+                context.val.rich_text_id
+            );
             context.val.dimension.update_dimensions(layout.dimensions);
         }
         // Update scaled_padding from the first context (they should all have the same scale)
@@ -703,10 +718,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Calculate and update positions for all grid items
     pub fn calculate_positions(&mut self) {
+        println!("DEBUG: calculate_positions called");
         if self.inner.is_empty() {
             return;
         }
         if let Some(root) = self.root {
+            println!(
+                "DEBUG: calculate_positions with root {} and margin [{}, {}]",
+                root, self.margin.x, self.margin.top_y
+            );
             self.calculate_positions_recursive(root, self.margin);
         }
     }
@@ -774,6 +794,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
         if let Some(item) = self.inner.get_mut(&key) {
             // Set position for current item in the rich text object
+            println!(
+                "DEBUG: calculate_positions_recursive for key {} with margin [{}, {}]",
+                key, margin.x, margin.top_y
+            );
             item.set_position([margin.x, margin.top_y]);
 
             // Calculate margin for down item
