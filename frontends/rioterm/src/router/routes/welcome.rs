@@ -6,10 +6,28 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let layout = sugarloaf.window_size();
 
     // Render rectangles directly
-    sugarloaf.add_rect(0.0, 0.0, layout.width / context_dimension.dimension.scale, layout.height, [0.0, 0.0, 0.0, 1.0]);
+    sugarloaf.add_rect(
+        0.0,
+        0.0,
+        layout.width / context_dimension.dimension.scale,
+        layout.height,
+        [0.0, 0.0, 0.0, 1.0],
+    );
     sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, [0.0, 0.0, 1.0, 1.0]);
-    sugarloaf.add_rect(15.0, context_dimension.margin.top_y + 60.0, 15.0, layout.height, [1.0, 1.0, 0.0, 1.0]);
-    sugarloaf.add_rect(30.0, context_dimension.margin.top_y + 120.0, 15.0, layout.height, [1.0, 0.0, 0.0, 1.0]);
+    sugarloaf.add_rect(
+        15.0,
+        context_dimension.margin.top_y + 60.0,
+        15.0,
+        layout.height,
+        [1.0, 1.0, 0.0, 1.0],
+    );
+    sugarloaf.add_rect(
+        30.0,
+        context_dimension.margin.top_y + 120.0,
+        15.0,
+        layout.height,
+        [1.0, 0.0, 0.0, 1.0],
+    );
 
     let heading = sugarloaf.create_temp_rich_text();
     let paragraph_action = sugarloaf.create_temp_rich_text();
@@ -106,6 +124,10 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
 
     // Show rich texts at specific positions
     sugarloaf.show_rich_text(heading, 70.0, context_dimension.margin.top_y + 30.0);
-    sugarloaf.show_rich_text(paragraph_action, 70.0, context_dimension.margin.top_y + 70.0);
+    sugarloaf.show_rich_text(
+        paragraph_action,
+        70.0,
+        context_dimension.margin.top_y + 70.0,
+    );
     sugarloaf.show_rich_text(paragraph, 70.0, context_dimension.margin.top_y + 140.0);
 }

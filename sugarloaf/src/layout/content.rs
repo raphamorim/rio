@@ -369,11 +369,12 @@ impl Content {
     #[inline]
     pub fn sel(&mut self, state_id: usize) -> &mut Content {
         self.selector = Some(state_id);
-        
+
         // Ensure the state exists - create it with default layout if missing
         if !self.states.contains_key(&state_id) {
             let default_layout = RichTextLayout::default();
-            self.states.insert(state_id, BuilderState::from_layout(&default_layout));
+            self.states
+                .insert(state_id, BuilderState::from_layout(&default_layout));
         }
 
         self
@@ -412,49 +413,61 @@ impl Content {
     pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
         let id = self.counter.next();
         let mut state = BuilderState::from_layout(rich_text_layout);
-        
+
         // Immediately calculate dimensions for a representative character
         // This ensures we never have zero dimensions
-        state.layout.dimensions = self.calculate_character_cell_dimensions(rich_text_layout);
-        
+        state.layout.dimensions =
+            self.calculate_character_cell_dimensions(rich_text_layout);
+
         self.states.insert(id, state);
         id
     }
-    
+
     /// Calculate character cell dimensions using swash FontRef directly (fast, no rendering)
-    fn calculate_character_cell_dimensions(&self, layout: &RichTextLayout) -> crate::layout::SugarDimensions {
+    fn calculate_character_cell_dimensions(
+        &self,
+        layout: &RichTextLayout,
+    ) -> crate::layout::SugarDimensions {
         // Try to get font metrics directly using swash
         if let Some(font_library_data) = self.fonts.inner.try_read() {
             let font_id = 0; // FONT_ID_REGULAR
             let font_size = layout.font_size;
-            
+
             // Get font data to create swash FontRef
-            if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id) {
-                // Create swash FontRef directly from font data  
-                if let Some(font_ref) = crate::font_introspector::FontRef::from_index(&font_data, offset as usize) {
+            if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
+            {
+                // Create swash FontRef directly from font data
+                if let Some(font_ref) = crate::font_introspector::FontRef::from_index(
+                    &font_data,
+                    offset as usize,
+                ) {
                     // Get metrics using swash
                     let font_metrics = font_ref.metrics(&[]);
-                    
+
                     // Calculate character cell width using space character
                     let char_width = match font_ref.charmap().map(' ' as u32) {
                         glyph_id => {
                             // Get advance width for space character using GlyphMetrics
-                            let glyph_metrics = crate::font_introspector::GlyphMetrics::from_font(&font_ref, &[]);
+                            let glyph_metrics =
+                                crate::font_introspector::GlyphMetrics::from_font(
+                                    &font_ref,
+                                    &[],
+                                );
                             let advance = glyph_metrics.advance_width(glyph_id);
-                            
+
                             // Scale to font size
                             let units_per_em = font_metrics.units_per_em as f32;
                             let scale_factor = font_size / units_per_em;
-                            
+
                             if advance > 0.0 {
                                 advance * scale_factor
                             } else {
                                 // Fallback: approximate monospace character width
-                                font_size * 0.6 
+                                font_size * 0.6
                             }
                         }
                     };
-                    
+
                     // Calculate line height using scaled metrics
                     let units_per_em = font_metrics.units_per_em as f32;
                     let scale_factor = font_size / units_per_em;
@@ -462,19 +475,19 @@ impl Content {
                     let descent = font_metrics.descent.abs() * scale_factor;
                     let leading = font_metrics.leading * scale_factor;
                     let line_height = (ascent + descent + leading) * layout.line_height;
-                    
+
                     return crate::layout::SugarDimensions {
-                        width: char_width.max(1.0), // Ensure non-zero
+                        width: char_width.max(1.0),   // Ensure non-zero
                         height: line_height.max(1.0), // Ensure non-zero
                         scale: layout.dimensions.scale,
                     };
                 }
             }
         }
-        
+
         // Fallback to reasonable defaults if font metrics unavailable
         crate::layout::SugarDimensions {
-            width: (layout.font_size * 0.6).max(8.0),  // Ensure minimum width
+            width: (layout.font_size * 0.6).max(8.0), // Ensure minimum width
             height: (layout.font_size * layout.line_height).max(16.0), // Ensure minimum height
             scale: layout.dimensions.scale,
         }
@@ -514,7 +527,10 @@ impl Content {
                 &render_data,
                 &mut Graphics::default(),
             ) {
-                println!("Setting layout dimensions to {}x{} for state {}", dimension.width, dimension.height, state_id);
+                println!(
+                    "Setting layout dimensions to {}x{} for state {}",
+                    dimension.width, dimension.height, state_id
+                );
                 rte.layout.dimensions.height = dimension.height;
                 rte.layout.dimensions.width = dimension.width;
             } else {

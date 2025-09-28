@@ -149,7 +149,7 @@ impl MetalContext {
         self.scale
     }
 
-    fn supports_f16(&self) -> bool {
+    pub fn supports_f16(&self) -> bool {
         self.supports_f16
     }
 }

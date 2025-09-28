@@ -20,7 +20,7 @@ impl Default for RichTextRenderData {
     fn default() -> Self {
         Self {
             position: [0.0, 0.0],
-            hidden: false, // Visible by default
+            hidden: false,       // Visible by default
             needs_repaint: true, // Should paint initially
             should_remove: false,
         }
@@ -37,7 +37,7 @@ impl RichTextRenderData {
             should_remove: false,
         }
     }
-    
+
     /// Update position and mark for repaint if changed
     pub fn set_position(&mut self, x: f32, y: f32) {
         if self.position[0] != x || self.position[1] != y {
@@ -45,7 +45,7 @@ impl RichTextRenderData {
             self.needs_repaint = true;
         }
     }
-    
+
     /// Set visibility and mark for repaint if changed
     pub fn set_hidden(&mut self, hidden: bool) {
         if self.hidden != hidden {
@@ -53,12 +53,12 @@ impl RichTextRenderData {
             self.needs_repaint = true;
         }
     }
-    
+
     /// Mark for removal
     pub fn mark_for_removal(&mut self) {
         self.should_remove = true;
     }
-    
+
     /// Clear repaint flag after rendering
     pub fn clear_repaint_flag(&mut self) {
         self.needs_repaint = false;

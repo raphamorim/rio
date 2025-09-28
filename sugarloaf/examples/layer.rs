@@ -8,8 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, Rect, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -153,25 +152,16 @@ impl ApplicationHandler for Application {
                     .new_line()
                     .build();
 
-                    Object::RichText(RichText {
-                        id: self.rich_text,
-                        position: [10., 10.],
-                        lines: None,
-                    }),
-                    Object::Rect(Rect::new(10., 10., 120., 100., [1.0)),
-                    Object::RichText(RichText {
-                        id: self.second_rich_text,
-                        position: [10., 60.],
-                        lines: None,
-                    }),
-                    Object::Rect(Rect::new(10., 80., 120., 100., [0.0)),
-                    Object::Rect(Rect::new(95., 30., 20., 100., [1.0)),
-                    Object::RichText(RichText {
-                        id: self.rich_text,
-                        position: [100., 100.],
-                        lines: None,
-                    }),
-                ]);
+                // Add rectangles directly
+                sugarloaf.add_rect(10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0]);
+                sugarloaf.add_rect(10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0]);
+                sugarloaf.add_rect(95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0]);
+
+                // Show rich text
+                sugarloaf.show_rich_text(self.rich_text, 10., 10.);
+                sugarloaf.show_rich_text(self.second_rich_text, 10., 60.);
+                sugarloaf.show_rich_text(self.rich_text, 100., 100.);
+
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

@@ -10,10 +10,7 @@ use rio_window::{
     dpi::LogicalSize, event::WindowEvent, event_loop::EventLoop, window::WindowAttributes,
 };
 use std::error::Error;
-use sugarloaf::{
-    layout::RootStyle, Object, Rect, RichText,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize,
-};
+use sugarloaf::{layout::RootStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 fn main() {
     let width = 800.0;
@@ -91,9 +88,7 @@ impl ApplicationHandler for Application {
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::ScaleFactorChanged {
-                scale_factor, ..
-            } => {
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 let scale_factor_f32 = scale_factor as f32;
                 let new_inner_size = window.inner_size();
                 sugarloaf.rescale(scale_factor_f32);
@@ -105,35 +100,18 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                // Demonstrate the unified rendering - rectangles and text rendered together
-                    // Background
-                    Object::Rect(Rect::new(
-                        0.0, 0.0,  // x, y
-                        self.width, self.height,  // width, height
-                        [0.1, 0.1, 0.2, 1.0], // dark blue background
-                    )),
-                    // Red rectangle
-                    Object::Rect(Rect::new(
-                        50.0, 50.0,   // x, y
-                        200.0, 100.0,  // width, height
-                        [1.0, 0.2, 0.2, 0.8], // red color with transparency
-                    )),
-                    // Green rectangle
-                    Object::Rect(Rect::new(
-                        300.0, 150.0, // x, y
-                        150.0, 80.0,   // width, height
-                        [0.2, 1.0, 0.2, 0.9], // green color
-                    )),
-                    // Blue rectangle
-                    Object::Rect(Rect::new(
-                        500.0, 300.0, // x, y
-                        180.0, 120.0,  // width, height
-                        [0.2, 0.2, 1.0, 0.7], // blue color
-                    )),
-                    // Rich text object would go here
-                    // Object::RichText(RichText { ... }),
-                ]);
-                
+                // Add rectangles directly using the unified rendering approach
+                sugarloaf.add_rect(
+                    0.0,
+                    0.0,
+                    self.width,
+                    self.height,
+                    [0.1, 0.1, 0.2, 1.0],
+                ); // background
+                sugarloaf.add_rect(50.0, 50.0, 200.0, 100.0, [1.0, 0.2, 0.2, 0.8]); // red rectangle
+                sugarloaf.add_rect(300.0, 150.0, 150.0, 80.0, [0.2, 1.0, 0.2, 0.9]); // green rectangle
+                sugarloaf.add_rect(500.0, 300.0, 180.0, 120.0, [0.2, 0.2, 1.0, 0.7]); // blue rectangle
+
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
