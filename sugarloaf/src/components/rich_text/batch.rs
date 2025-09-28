@@ -802,7 +802,11 @@ impl BatchManager {
 
     /// Add a rectangle with color - unified with quad rendering
     #[inline]
-    pub fn add_primitive_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
+    pub fn add_primitive_rect(
+        &mut self,
+        rect: &crate::sugarloaf::primitives::Rect,
+        depth: f32,
+    ) {
         let batch_rect = Rect {
             x: rect.x,
             y: rect.y,

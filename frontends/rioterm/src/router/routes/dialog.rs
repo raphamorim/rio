@@ -12,7 +12,13 @@ pub fn screen(
     let layout = sugarloaf.window_size();
 
     // Render rectangles directly
-    sugarloaf.add_rect(0.0, 0.0, layout.width / context_dimension.dimension.scale, layout.height, [0.0, 0.0, 0.0, 0.5]);
+    sugarloaf.add_rect(
+        0.0,
+        0.0,
+        layout.width / context_dimension.dimension.scale,
+        layout.height,
+        [0.0, 0.0, 0.0, 0.5],
+    );
     sugarloaf.add_rect(128.0, 256.0, 350.0, 150.0, [0.0, 0.0, 0.0, 1.0]);
     sugarloaf.add_rect(128.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0]);
     sugarloaf.add_rect(240.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0]);
@@ -26,7 +32,7 @@ pub fn screen(
     sugarloaf.set_rich_text_font_size(&quit, 20.0);
 
     let content = sugarloaf.content();
-    
+
     content
         .sel(heading)
         .clear()
@@ -47,6 +53,6 @@ pub fn screen(
 
     // Show rich texts at specific positions
     sugarloaf.show_rich_text(heading, 150.0, 270.0);
-    sugarloaf.show_rich_text(confirm, 150.0, 330.0);  
+    sugarloaf.show_rich_text(confirm, 150.0, 330.0);
     sugarloaf.show_rich_text(quit, 268.0, 330.0);
 }

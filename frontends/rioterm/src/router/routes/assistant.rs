@@ -48,21 +48,26 @@ pub fn screen(
 
     // Render rectangles directly
     sugarloaf.add_rect(
-        0.0, 0.0,
+        0.0,
+        0.0,
         layout.width / context_dimension.dimension.scale,
         layout.height,
-        black
+        black,
     );
     sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, blue);
     sugarloaf.add_rect(
-        15.0, context_dimension.margin.top_y + 60.0,
-        15.0, layout.height,
-        yellow
+        15.0,
+        context_dimension.margin.top_y + 60.0,
+        15.0,
+        layout.height,
+        yellow,
     );
     sugarloaf.add_rect(
-        30.0, context_dimension.margin.top_y + 120.0,
-        15.0, layout.height,
-        red
+        30.0,
+        context_dimension.margin.top_y + 120.0,
+        15.0,
+        layout.height,
+        red,
     );
 
     let heading = sugarloaf.create_temp_rich_text();
@@ -102,9 +107,13 @@ pub fn screen(
         paragraph_line.build();
     }
 
-    // Show rich texts at specific positions  
+    // Show rich texts at specific positions
     sugarloaf.show_rich_text(heading, 70.0, context_dimension.margin.top_y + 30.0);
-    sugarloaf.show_rich_text(paragraph_action, 70.0, context_dimension.margin.top_y + 70.0);
+    sugarloaf.show_rich_text(
+        paragraph_action,
+        70.0,
+        context_dimension.margin.top_y + 70.0,
+    );
     if assistant.inner.is_some() {
         sugarloaf.show_rich_text(paragraph, 70.0, context_dimension.margin.top_y + 140.0);
     }

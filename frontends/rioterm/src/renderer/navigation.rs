@@ -124,7 +124,7 @@ impl ScreenNavigation {
                 );
             }
             NavigationMode::TopTab => {
-                // TopTab mode - simplified placeholder  
+                // TopTab mode - simplified placeholder
             }
             NavigationMode::Bookmark => {
                 // Bookmark mode - simplified placeholder
@@ -175,13 +175,7 @@ impl ScreenNavigation {
                 }
             }
 
-            let renderable = Rect::new(
-                initial_position, 
-                0.0,
-                15.0,
-                size,
-                color
-            );
+            let renderable = Rect::new(initial_position, 0.0, 15.0, size, color);
             initial_position -= position_modifier;
             objects.push(Object::Rect(renderable));
         }
@@ -210,11 +204,11 @@ impl ScreenNavigation {
         let mut initial_position_x = 0.;
 
         let renderable = Rect::new(
-            initial_position_x, 
+            initial_position_x,
             position_y,
             width,
             PADDING_Y_BOTTOM_TABS,
-            colors.bar
+            colors.bar,
         );
 
         objects.push(Object::Rect(renderable));
@@ -261,7 +255,13 @@ impl ScreenNavigation {
                 name = name[0..14].to_string();
             }
 
-            objects.push(Object::Rect(Rect::new(initial_position_x, position_y, 125., PADDING_Y_BOTTOM_TABS, background_color)));
+            objects.push(Object::Rect(Rect::new(
+                initial_position_x,
+                position_y,
+                125.,
+                PADDING_Y_BOTTOM_TABS,
+                background_color,
+            )));
 
             if is_current {
                 // TopBar case should render on bottom
@@ -271,7 +271,13 @@ impl ScreenNavigation {
                     position_y
                 };
 
-                objects.push(Object::Rect(Rect::new(initial_position_x, position, 125., PADDING_Y_BOTTOM_TABS / 10., colors.tabs_active_highlight)));
+                objects.push(Object::Rect(Rect::new(
+                    initial_position_x,
+                    position,
+                    125.,
+                    PADDING_Y_BOTTOM_TABS / 10.,
+                    colors.tabs_active_highlight,
+                )));
             }
 
             let text = if is_current {
@@ -314,12 +320,12 @@ impl ScreenNavigation {
 
     /// Direct rendering for bottom tabs
     #[inline]
-    #[allow(clippy::too_many_arguments)]  
+    #[allow(clippy::too_many_arguments)]
     fn bottom_tab_directly(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         titles: &FxHashMap<usize, ContextTitle>,
-        colors: &Colors, 
+        colors: &Colors,
         len: usize,
         current: usize,
         position_y: f32,
@@ -334,21 +340,27 @@ impl ScreenNavigation {
         let initial_position_x = 0.0;
 
         // Render main bar
-        sugarloaf.add_rect(initial_position_x, position_y, width, PADDING_Y_BOTTOM_TABS, colors.bar);
+        sugarloaf.add_rect(
+            initial_position_x,
+            position_y,
+            width,
+            PADDING_Y_BOTTOM_TABS,
+            colors.bar,
+        );
 
-        // Render tab indicators 
+        // Render tab indicators
         let mut current_x = initial_position_x;
         let tab_width = 125.0;
-        
+
         for i in 0..len {
             if i == current {
                 // Active tab highlight
                 sugarloaf.add_rect(
-                    current_x, 
-                    position_y, 
-                    tab_width, 
-                    PADDING_Y_BOTTOM_TABS / 10.0, 
-                    colors.tabs_active_highlight
+                    current_x,
+                    position_y,
+                    tab_width,
+                    PADDING_Y_BOTTOM_TABS / 10.0,
+                    colors.tabs_active_highlight,
                 );
             }
             current_x += tab_width;
@@ -366,7 +378,7 @@ impl ScreenNavigation {
         let size = 15.0;
         let x = (width / scale) - PADDING_X_COLLAPSED_TABS;
         let y = 0.0;
-        
+
         sugarloaf.add_rect(x, y, size, size, colors.tabs);
     }
 

@@ -9,11 +9,11 @@ use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::layout::{RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::Graphics;
 
+use crate::context::Context;
 use crate::Content;
 use crate::SugarDimensions;
-use crate::context::Context;
-use primitives::ImageProperties;
 use core::fmt::{Debug, Formatter};
+use primitives::ImageProperties;
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
@@ -316,7 +316,8 @@ impl Sugarloaf<'_> {
     /// Show a rich text at a specific position
     #[inline]
     pub fn show_rich_text(&mut self, id: usize, x: f32, y: f32) {
-        self.state.set_rich_text_visibility_and_position(id, x, y, false);
+        self.state
+            .set_rich_text_visibility_and_position(id, x, y, false);
     }
 
     /// Hide a rich text

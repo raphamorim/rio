@@ -10,8 +10,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, Rect, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -110,27 +109,6 @@ impl ApplicationHandler for Application {
         let sugarloaf = self.sugarloaf.as_mut().unwrap();
         let window = self.window.as_mut().unwrap();
 
-        let objects = vec![
-            Object::Rect(Rect::new(5., 5., 200.0, 200.0, [1.0)),
-            Object::RichText(RichText {
-                id: self.rich_texts[0],
-                position: [5., 5.],
-                lines: None,
-            }),
-            Object::Rect(Rect::new(220., 5., 200.0, 150.0, [1.0)),
-            Object::RichText(RichText {
-                id: self.rich_texts[1],
-                position: [220., 5.],
-                lines: None,
-            }),
-            Object::Rect(Rect::new(440., 5., 320.0, 150.0, [1.0)),
-            Object::RichText(RichText {
-                id: self.rich_texts[2],
-                position: [440., 5.],
-                lines: None,
-            }),
-        ];
-
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::ScaleFactorChanged {
@@ -213,7 +191,16 @@ impl ApplicationHandler for Application {
                     }
                 }
 
-                sugarloaf.
+                // Add rectangles directly
+                sugarloaf.add_rect(5., 5., 200.0, 200.0, [1.0, 1.0, 1.0, 1.0]);
+                sugarloaf.add_rect(220., 5., 200.0, 150.0, [1.0, 1.0, 1.0, 1.0]);
+                sugarloaf.add_rect(440., 5., 320.0, 150.0, [1.0, 1.0, 1.0, 1.0]);
+
+                // Show rich text
+                sugarloaf.show_rich_text(self.rich_texts[0], 5., 5.);
+                sugarloaf.show_rich_text(self.rich_texts[1], 220., 5.);
+                sugarloaf.show_rich_text(self.rich_texts[2], 440., 5.);
+
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

@@ -324,7 +324,7 @@ impl RichTextBrush {
     ) {
         // Always clear vertices first
         self.vertices.clear();
-        
+
         if state.content.states.is_empty() {
             return;
         }
@@ -336,7 +336,8 @@ impl RichTextBrush {
         for (rich_text_id, builder_state) in &state.content.states {
             println!("rich_text_id on prepare {:?}", rich_text_id);
             // Skip if marked for removal or hidden
-            if builder_state.render_data.should_remove || builder_state.render_data.hidden {
+            if builder_state.render_data.should_remove || builder_state.render_data.hidden
+            {
                 continue;
             }
 
@@ -347,40 +348,44 @@ impl RichTextBrush {
 
             // Skip if all lines are empty (no content)
             if builder_state.lines.iter().all(|line| {
-                line.fragments.is_empty() || line.fragments.iter().all(|frag| frag.content.trim().is_empty())
+                line.fragments.is_empty()
+                    || line
+                        .fragments
+                        .iter()
+                        .all(|frag| frag.content.trim().is_empty())
             }) {
                 continue;
             }
-            
+
             // Check if this specific rich text needs cache invalidation
             match &builder_state.last_update {
-                    BuilderStateUpdate::Full => {
-                        // For full updates, we don't need to clear text run cache
-                        // as it's shared across all text and font-specific
-                    }
-                    BuilderStateUpdate::Partial(_lines) => {
-                        // For partial updates, we also don't need to clear text run cache
-                        // as individual text runs are still valid
-                    }
-                    BuilderStateUpdate::Noop => {
-                        // Do nothing
-                    }
-                };
+                BuilderStateUpdate::Full => {
+                    // For full updates, we don't need to clear text run cache
+                    // as it's shared across all text and font-specific
+                }
+                BuilderStateUpdate::Partial(_lines) => {
+                    // For partial updates, we also don't need to clear text run cache
+                    // as individual text runs are still valid
+                }
+                BuilderStateUpdate::Noop => {
+                    // Do nothing
+                }
+            };
 
-                let pos = (
-                    builder_state.render_data.position[0] * state.style.scale_factor,
-                    builder_state.render_data.position[1] * state.style.scale_factor,
-                );
+            let pos = (
+                builder_state.render_data.position[0] * state.style.scale_factor,
+                builder_state.render_data.position[1] * state.style.scale_factor,
+            );
 
-                self.draw_layout(
-                    *rich_text_id, // Pass the rich text ID for caching
-                    &builder_state.lines,
-                    &None, // No line range filtering for now
-                    Some(pos),
-                    library,
-                    Some(&builder_state.layout),
-                    graphics,
-                );
+            self.draw_layout(
+                *rich_text_id, // Pass the rich text ID for caching
+                &builder_state.lines,
+                &None, // No line range filtering for now
+                Some(pos),
+                library,
+                Some(&builder_state.layout),
+                graphics,
+            );
         }
 
         self.vertices.clear();
@@ -401,18 +406,18 @@ impl RichTextBrush {
         // Use read lock instead of write lock since we're not modifying
         if let Some(font_library_data) = font_library.inner.try_read() {
             let font_id = 0; // FONT_ID_REGULAR
-            
-            // Use existing method to get cached metrics  
+
+            // Use existing method to get cached metrics
             drop(font_library_data); // Drop read lock
             let mut font_library_data = font_library.inner.write();
-            if let Some((ascent, descent, leading)) = 
-                font_library_data.get_font_metrics(&font_id, font_size) {
-                
+            if let Some((ascent, descent, leading)) =
+                font_library_data.get_font_metrics(&font_id, font_size)
+            {
                 // Calculate character width using font metrics
                 // For monospace fonts, we can estimate character width
                 let char_width = font_size * 0.6; // Common monospace width ratio
                 let total_line_height = (ascent + descent + leading) * line_height;
-                
+
                 return Some(SugarDimensions {
                     width: char_width.max(1.0),
                     height: total_line_height.max(1.0),

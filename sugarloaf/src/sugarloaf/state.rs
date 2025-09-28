@@ -48,7 +48,7 @@ impl SugarState {
     #[inline]
     pub fn new_layer(&mut self) {}
 
-    #[inline] 
+    #[inline]
     pub fn content(&mut self) -> &mut Content {
         &mut self.content
     }
@@ -56,11 +56,16 @@ impl SugarState {
     #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
         if let Some(state) = self.content.get_state(id) {
-            println!("get_state_layout returning dimensions {}x{} for state {}", 
-                     state.layout.dimensions.width, state.layout.dimensions.height, id);
+            println!(
+                "get_state_layout returning dimensions {}x{} for state {}",
+                state.layout.dimensions.width, state.layout.dimensions.height, id
+            );
             state.layout.clone()
         } else {
-            println!("get_state_layout: state {} not found, returning default", id);
+            println!(
+                "get_state_layout: state {} not found, returning default",
+                id
+            );
             RichTextLayout::from_default_layout(&self.style)
         }
     }
@@ -127,7 +132,9 @@ impl SugarState {
     #[inline]
     pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
         // Collect IDs that need repaint first
-        let ids_to_repaint: Vec<usize> = self.content.states
+        let ids_to_repaint: Vec<usize> = self
+            .content
+            .states
             .iter()
             .filter_map(|(id, state)| {
                 if state.render_data.needs_repaint {
@@ -137,17 +144,17 @@ impl SugarState {
                 }
             })
             .collect();
-        
+
         // If nothing needs repainting, return early
         if ids_to_repaint.is_empty() {
             return;
         }
-        
+
         // Process each ID
         for rich_text_id in &ids_to_repaint {
             self.content.update_dimensions(rich_text_id, advance_brush);
         }
-        
+
         // Clear repaint flags after processing
         for id in ids_to_repaint {
             if let Some(state) = self.content.states.get_mut(&id) {
@@ -176,7 +183,7 @@ impl SugarState {
                 to_remove.push(*id);
             }
         }
-        
+
         for id in to_remove {
             self.content.remove_state(&id);
         }
@@ -193,10 +200,10 @@ impl SugarState {
     pub fn create_rich_text(&mut self) -> usize {
         let layout = RichTextLayout::from_default_layout(&self.style);
         let id = self.content.create_state(&layout);
-        
+
         // Dimensions are now calculated eagerly during create_state
         // No need to mark for repaint since we have valid dimensions immediately
-        
+
         id
     }
 
@@ -212,7 +219,13 @@ impl SugarState {
         id
     }
 
-    pub fn set_rich_text_visibility_and_position(&mut self, id: usize, x: f32, y: f32, hidden: bool) {
+    pub fn set_rich_text_visibility_and_position(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        hidden: bool,
+    ) {
         if let Some(state) = self.content.states.get_mut(&id) {
             state.render_data.set_position(x, y);
             state.render_data.set_hidden(hidden);
@@ -227,12 +240,19 @@ impl SugarState {
         }
     }
 
-    pub fn set_visual_bell_overlay(&mut self, overlay: Option<crate::sugarloaf::primitives::Rect>) {
+    pub fn set_visual_bell_overlay(
+        &mut self,
+        overlay: Option<crate::sugarloaf::primitives::Rect>,
+    ) {
         self.visual_bell_overlay = overlay;
     }
 
     #[inline]
-    pub fn set_fonts(&mut self, _font_library: &FontLibrary, _advance_brush: &mut RichTextBrush) {
+    pub fn set_fonts(
+        &mut self,
+        _font_library: &FontLibrary,
+        _advance_brush: &mut RichTextBrush,
+    ) {
         // Simplified - fonts are handled elsewhere in the unified system
     }
 
@@ -253,7 +273,7 @@ impl SugarState {
         _font_size: f32,
         advance_brush: &mut RichTextBrush,
     ) {
-        // Mark for repaint directly in render_data  
+        // Mark for repaint directly in render_data
         if let Some(state) = self.content.states.get_mut(rt_id) {
             state.render_data.needs_repaint = true;
         }
@@ -266,8 +286,12 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_rescale(&mut self, _scale: f32, advance_brush: &mut RichTextBrush) {
-        // Simplified - rescaling handled elsewhere  
+    pub fn compute_layout_rescale(
+        &mut self,
+        _scale: f32,
+        advance_brush: &mut RichTextBrush,
+    ) {
+        // Simplified - rescaling handled elsewhere
         self.compute_dimensions(advance_brush);
     }
 }

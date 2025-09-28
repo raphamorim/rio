@@ -68,4 +68,12 @@ impl Context<'_> {
             }
         }
     }
+
+    #[inline]
+    pub fn supports_f16(&self) -> bool {
+        match &self.inner {
+            ContextType::Wgpu(ctx) => ctx.supports_f16(),
+            ContextType::Metal(ctx) => ctx.supports_f16(),
+        }
+    }
 }
