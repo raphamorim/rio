@@ -117,6 +117,7 @@ pub struct WindowAttributes {
     pub transparent: bool,
     pub blur: bool,
     pub decorations: bool,
+    pub decorations_theme_variant: Option<Theme>,
     pub window_icon: Option<Icon>,
     pub preferred_theme: Option<Theme>,
     pub resize_increments: Option<Size>,
@@ -148,6 +149,7 @@ impl Default for WindowAttributes {
             transparent: false,
             blur: false,
             decorations: true,
+            decorations_theme_variant: None,
             window_level: Default::default(),
             window_icon: None,
             preferred_theme: None,
@@ -392,9 +394,10 @@ impl WindowAttributes {
     ///   system preference. When explicit theme is used, this will avoid dbus all together.
     /// - **x11:** Build window with `_GTK_THEME_VARIANT` hint set to `dark` or `light`.
     /// - **iOS / Android / Web / x11 / Orbital:** Ignored.
+    //// if decorations_theme_variant set use it
     #[inline]
     pub fn with_theme(mut self, theme: Option<Theme>) -> Self {
-        self.preferred_theme = theme;
+        self.preferred_theme = self.decorations_theme_variant.or(theme);
         self
     }
 
