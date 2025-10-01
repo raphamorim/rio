@@ -1,103 +1,120 @@
 {
+  # rust-overlay deps
   rust-toolchain,
   makeRustPlatform,
-  stdenv,
+  # Normal deps
   lib,
-  fontconfig,
+  stdenv,
   darwin,
+  autoPatchelfHook,
+  cmake,
+  ncurses,
+  pkg-config,
   gcc-unwrapped,
+  fontconfig,
   libGL,
-  libxkbcommon,
   vulkan-loader,
+  libxkbcommon,
+  withX11 ? !stdenv.isDarwin,
   libX11,
   libXcursor,
   libXi,
   libXrandr,
   libxcb,
-  wayland,
-  ncurses,
-  pkg-config,
-  cmake,
-  autoPatchelfHook,
-  withX11 ? !stdenv.isDarwin,
   withWayland ? !stdenv.isDarwin,
+  wayland,
   ...
 }: let
-  cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+  readTOML = f: builtins.fromTOML (builtins.readFile f);
+  cargoToml = readTOML ./Cargo.toml;
+  rioToml = readTOML ./frontends/rioterm/Cargo.toml;
   rustPlatform = makeRustPlatform {
     cargo = rust-toolchain;
     rustc = rust-toolchain;
   };
   rlinkLibs =
-    if stdenv.isDarwin
-    then [
-      darwin.libobjc
-      darwin.apple_sdk_11_0.frameworks.AppKit
-      darwin.apple_sdk_11_0.frameworks.AVFoundation
-      darwin.apple_sdk_11_0.frameworks.MetalKit
-      darwin.apple_sdk_11_0.frameworks.Vision
+    lib.optionals stdenv.isLinux [
+      (lib.getLib gcc-unwrapped)
+      fontconfig
+      libGL
+      libxkbcommon
+      vulkan-loader
     ]
-    else
-      [
-        (lib.getLib gcc-unwrapped)
-        fontconfig
-        libGL
-        libxkbcommon
-        vulkan-loader
-      ]
-      ++ lib.optionals withX11 [
-        libX11
-        libXcursor
-        libXi
-        libXrandr
-        libxcb
-      ]
-      ++ lib.optionals withWayland [
-        wayland
-      ];
+    ++ lib.optionals withX11 [
+      libX11
+      libXcursor
+      libXi
+      libXrandr
+      libxcb
+    ]
+    ++ lib.optionals withWayland [
+      wayland
+    ];
+
+  inherit (lib.fileset) unions toSource;
 in
   rustPlatform.buildRustPackage {
     inherit (cargoToml.workspace.package) version;
     name = "rio";
-    src = ./.;
+    src = toSource {
+      root = ./.;
+      fileset = unions ([
+          ./Cargo.lock
+          ./Cargo.toml
+          ./misc # Extra desktop/terminfo files
+        ]
+        ++ (map (x: ./. + "/${x}") cargoToml.workspace.members));
+    };
     cargoLock.lockFile = ./Cargo.lock;
 
     cargoBuildFlags = "-p rioterm";
 
-    buildInputs = rlinkLibs;
+    buildInputs = rlinkLibs ++ (lib.optionals stdenv.isDarwin [darwin.libutil]);
     runtimeDependencies = rlinkLibs;
 
     nativeBuildInputs =
       [
+        rustPlatform.bindgenHook
         ncurses
       ]
       ++ lib.optionals stdenv.isLinux [
-        pkg-config
         cmake
+        pkg-config
         autoPatchelfHook
       ];
-    
-    postInstall = ''
-      install -D -m 644 misc/rio.desktop -t $out/share/applications
-      install -D -m 644 misc/logo.svg \
-                        $out/share/icons/hicolor/scalable/apps/rio.svg
-  
-      # Install terminfo files
-      install -dm 755 "$out/share/terminfo/r/"
-      tic -xe xterm-rio,rio,rio-direct -o "$out/share/terminfo" misc/rio.terminfo
-    '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
-      mkdir $out/Applications/
-      mv misc/osx/Rio.app/ $out/Applications/
-      mkdir $out/Applications/Rio.app/Contents/MacOS/
-      ln -s $out/bin/rio $out/Applications/Rio.app/Contents/MacOS/
-    '';
 
-    
+    outputs = [
+      "out"
+      "terminfo"
+    ];
+
+    postInstall =
+      ''
+        install -D -m 644 misc/rio.desktop -t \
+                          $out/share/applications
+        install -D -m 644 misc/logo.svg \
+                          $out/share/icons/hicolor/scalable/apps/rio.svg
+
+        # Install terminfo files
+        install -dm 755 "$terminfo/share/terminfo/r/"
+        tic -xe xterm-rio,rio,rio-direct -o "$terminfo/share/terminfo" misc/rio.terminfo
+        mkdir -p $out/nix-support
+        echo "$terminfo" >> $out/nix-support/propagated-user-env-packages
+      ''
+      + lib.optionalString stdenv.hostPlatform.isDarwin ''
+        mkdir $out/Applications/
+        mv misc/osx/Rio.app/ $out/Applications/
+        mkdir $out/Applications/Rio.app/Contents/MacOS/
+        ln -s $out/bin/rio $out/Applications/Rio.app/Contents/MacOS/
+      '';
+
     buildNoDefaultFeatures = true;
-    buildFeatures = ["x11" "wayland"];
+    buildFeatures = (lib.optionals withX11 ["x11"]) ++ (lib.optionals withWayland ["wayland"]);
+    checkType = "debug";
     meta = {
-      description = "A hardware-accelerated GPU terminal emulator focusing to run in desktops and browsers";
-      homepage = "https://rioterm.com";
+      description = rioToml.package.description;
+      longDescription = rioToml.package.extended-description;
+      homepage = cargoToml.workspace.package.homepage;
       license = lib.licenses.mit;
       platforms = lib.platforms.unix;
       changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
