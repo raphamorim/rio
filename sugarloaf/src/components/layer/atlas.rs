@@ -25,7 +25,7 @@ impl Atlas {
     pub fn new(
         device: &wgpu::Device,
         backend: wgpu::Backend,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) -> Self {
         let layers = match backend {
             // On the GL backend we start with 2 layers, to help wgpu figure
@@ -93,7 +93,7 @@ impl Atlas {
         &mut self,
         device: &wgpu::Device,
         backend: wgpu::Backend,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) {
         // Reset all layers to empty
         self.layers = match backend {
@@ -138,7 +138,7 @@ impl Atlas {
         width: u32,
         height: u32,
         data: &[u8],
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) -> Option<Entry> {
         let entry = {
             let current_size = self.layers.len();

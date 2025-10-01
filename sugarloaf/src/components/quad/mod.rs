@@ -1,7 +1,11 @@
 use crate::components::core::{orthographic_projection, uniforms::Uniforms};
+use crate::context::metal::MetalContext;
+use crate::context::webgpu::WgpuContext;
 use crate::context::Context;
+use crate::context::ContextType;
 
 use bytemuck::{Pod, Zeroable};
+use metal::*;
 
 use std::mem;
 
@@ -47,18 +51,119 @@ pub struct Quad {
 }
 
 #[derive(Debug)]
-pub struct QuadBrush {
+pub enum BrushType {
+    Wgpu(WgpuQuadBrush),
+    Metal(MetalQuadBrush),
+}
+
+#[derive(Debug)]
+pub struct WgpuQuadBrush {
     pipeline: wgpu::RenderPipeline,
-    current_transform: [f32; 16],
     constants: wgpu::BindGroup,
     transform: wgpu::Buffer,
     instances: wgpu::Buffer,
-    // transform: wgpu::Buffer,
     supported_quantity: usize,
+}
+
+#[derive(Debug)]
+pub struct MetalQuadBrush {
+    pipeline_state: RenderPipelineState,
+    vertex_buffer: Buffer,
+    uniform_buffer: Buffer,
+    supported_quantity: usize,
+}
+
+#[derive(Debug)]
+pub struct QuadBrush {
+    current_transform: [f32; 16],
+    brush_type: BrushType,
 }
 
 impl QuadBrush {
     pub fn new(context: &Context) -> QuadBrush {
+        let brush_type = match &context.inner {
+            ContextType::Wgpu(wgpu_context) => {
+                BrushType::Wgpu(WgpuQuadBrush::new(wgpu_context))
+            }
+            ContextType::Metal(metal_context) => {
+                BrushType::Metal(MetalQuadBrush::new(metal_context))
+            }
+        };
+
+        QuadBrush {
+            current_transform: [0.0; 16],
+            brush_type,
+        }
+    }
+
+    pub fn resize(&mut self, ctx: &mut Context) {
+        let transform: [f32; 16] = match &ctx.inner {
+            ContextType::Wgpu(wgpu_ctx) => {
+                orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
+            }
+            ContextType::Metal(metal_ctx) => {
+                orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
+            }
+        };
+
+        if transform != self.current_transform {
+            match &mut self.brush_type {
+                BrushType::Wgpu(wgpu_brush) => {
+                    let (scale, queue) = match &ctx.inner {
+                        ContextType::Wgpu(wgpu_ctx) => (wgpu_ctx.scale, &wgpu_ctx.queue),
+                        _ => unreachable!(),
+                    };
+
+                    let uniforms = Uniforms::new(transform, scale);
+                    queue.write_buffer(
+                        &wgpu_brush.transform,
+                        0,
+                        bytemuck::bytes_of(&uniforms),
+                    );
+                }
+                BrushType::Metal(metal_brush) => {
+                    let scale = match &ctx.inner {
+                        ContextType::Metal(metal_ctx) => metal_ctx.scale,
+                        _ => unreachable!(),
+                    };
+
+                    let uniforms = Uniforms::new(transform, scale);
+                    let contents = metal_brush.uniform_buffer.contents() as *mut Uniforms;
+                    unsafe {
+                        *contents = uniforms;
+                    }
+                }
+            }
+
+            self.current_transform = transform;
+        }
+    }
+
+    pub fn render_wgpu<'a>(
+        &'a mut self,
+        context: &mut WgpuContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_pass: &mut wgpu::RenderPass<'a>,
+    ) {
+        if let BrushType::Wgpu(brush) = &mut self.brush_type {
+            brush.render(context, state, render_pass);
+        }
+    }
+
+    pub fn render_metal(
+        &mut self,
+        context: &MetalContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_encoder: &RenderCommandEncoderRef,
+    ) {
+        if let BrushType::Metal(brush) = &mut self.brush_type {
+            brush.render(context, state, render_encoder);
+        }
+    }
+}
+
+impl WgpuQuadBrush {
+    pub fn new(context: &WgpuContext) -> WgpuQuadBrush {
         let supported_quantity = INITIAL_QUANTITY;
         let instances = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad Instances Buffer"),
@@ -88,7 +193,7 @@ impl QuadBrush {
 
         let transform = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sugarloaf::quad uniforms buffer"),
-            size: mem::size_of::<Uniforms>() as wgpu::BufferAddress,
+            size: mem::size_of::<Uniforms>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -199,35 +304,18 @@ impl QuadBrush {
                     multiview: None,
                 });
 
-        Self {
+        WgpuQuadBrush {
             supported_quantity,
             instances,
             constants,
             transform,
             pipeline,
-            current_transform: [0.0; 16],
-        }
-    }
-
-    pub fn resize(&mut self, ctx: &mut Context) {
-        let transform: [f32; 16] =
-            orthographic_projection(ctx.size.width, ctx.size.height);
-        // device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let scale = ctx.scale;
-        let queue = &mut ctx.queue;
-
-        if transform != self.current_transform {
-            let uniforms = Uniforms::new(transform, scale);
-
-            queue.write_buffer(&self.transform, 0, bytemuck::bytes_of(&uniforms));
-
-            self.current_transform = transform;
         }
     }
 
     pub fn render<'a>(
         &'a mut self,
-        context: &mut Context,
+        context: &mut WgpuContext,
         state: &crate::sugarloaf::state::SugarState,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
@@ -261,33 +349,241 @@ impl QuadBrush {
 
         render_pass.draw(0..6, 0..total as u32);
     }
+}
 
-    /// Render a single quad directly without requiring it to be in state
-    pub fn render_single<'a>(
-        &'a mut self,
-        context: &mut Context,
-        quad: &Quad,
-        render_pass: &mut wgpu::RenderPass<'a>,
+impl MetalQuadBrush {
+    pub fn new(context: &MetalContext) -> MetalQuadBrush {
+        let supported_quantity = INITIAL_QUANTITY;
+
+        // Create vertex buffer for quad instances
+        let vertex_buffer = context.device.new_buffer(
+            (mem::size_of::<Quad>() * supported_quantity) as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        vertex_buffer.set_label("sugarloaf::quad vertex buffer");
+
+        // Create uniform buffer (back to Uniforms like WGPU)
+        let uniform_buffer = context.device.new_buffer(
+            mem::size_of::<Uniforms>() as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        uniform_buffer.set_label("sugarloaf::quad uniform buffer");
+
+        // Create shader library from the Metal shader source
+        let shader_source = include_str!("./quad.metal");
+
+        let library = context
+            .device
+            .new_library_with_source(shader_source, &CompileOptions::new())
+            .expect("Failed to create shader library");
+
+        // let function_names = library.function_names();
+        // println!("Available Metal functions: {:?}", function_names);
+
+        let vertex_function = library
+            .get_function("vertex_main", None)
+            .expect("Failed to get vertex function");
+        let fragment_function = library
+            .get_function("fragment_main", None)
+            .expect("Failed to get fragment function");
+
+        // Create vertex descriptor for proper instanced rendering
+        let vertex_descriptor = VertexDescriptor::new();
+        let attributes = vertex_descriptor.attributes();
+
+        // Per-instance attributes (Quad data)
+        // Color (attribute 0) - [f32; 4]
+        attributes
+            .object_at(0)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(0).unwrap().set_offset(0);
+        attributes.object_at(0).unwrap().set_buffer_index(0);
+
+        // Position (attribute 1) - [f32; 2]
+        attributes
+            .object_at(1)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes.object_at(1).unwrap().set_offset(16);
+        attributes.object_at(1).unwrap().set_buffer_index(0);
+
+        // Size (attribute 2) - [f32; 2]
+        attributes
+            .object_at(2)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes.object_at(2).unwrap().set_offset(24);
+        attributes.object_at(2).unwrap().set_buffer_index(0);
+
+        // Border color (attribute 3) - [f32; 4]
+        attributes
+            .object_at(3)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(3).unwrap().set_offset(32);
+        attributes.object_at(3).unwrap().set_buffer_index(0);
+
+        // Border radius (attribute 4) - [f32; 4]
+        attributes
+            .object_at(4)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(4).unwrap().set_offset(48);
+        attributes.object_at(4).unwrap().set_buffer_index(0);
+
+        // Border width (attribute 5) - f32
+        attributes
+            .object_at(5)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float);
+        attributes.object_at(5).unwrap().set_offset(64);
+        attributes.object_at(5).unwrap().set_buffer_index(0);
+
+        // Shadow color (attribute 6) - [f32; 4]
+        attributes
+            .object_at(6)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(6).unwrap().set_offset(68);
+        attributes.object_at(6).unwrap().set_buffer_index(0);
+
+        // Shadow offset (attribute 7) - [f32; 2]
+        attributes
+            .object_at(7)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes.object_at(7).unwrap().set_offset(84);
+        attributes.object_at(7).unwrap().set_buffer_index(0);
+
+        // Shadow blur radius (attribute 8) - f32
+        attributes
+            .object_at(8)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float);
+        attributes.object_at(8).unwrap().set_offset(92);
+        attributes.object_at(8).unwrap().set_buffer_index(0);
+
+        // Set up buffer layout for per-instance data
+        let layouts = vertex_descriptor.layouts();
+        layouts
+            .object_at(0)
+            .unwrap()
+            .set_stride(std::mem::size_of::<Quad>() as u64);
+        layouts
+            .object_at(0)
+            .unwrap()
+            .set_step_function(MTLVertexStepFunction::PerInstance);
+        layouts.object_at(0).unwrap().set_step_rate(1);
+
+        // Create render pipeline descriptor
+        let pipeline_descriptor = RenderPipelineDescriptor::new();
+        pipeline_descriptor.set_vertex_function(Some(&vertex_function));
+        pipeline_descriptor.set_fragment_function(Some(&fragment_function));
+        pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
+
+        // Set up color attachment
+        let color_attachments = pipeline_descriptor.color_attachments();
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_pixel_format(context.layer.pixel_format());
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_blending_enabled(true);
+
+        // Set up alpha blending
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_rgb_blend_operation(MTLBlendOperation::Add);
+
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_source_alpha_blend_factor(MTLBlendFactor::One);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_alpha_blend_operation(MTLBlendOperation::Add);
+
+        color_attachments
+            .object_at(0)
+            .unwrap()
+            .set_write_mask(MTLColorWriteMask::All);
+
+        // Create the pipeline state
+        let pipeline_state = context
+            .device
+            .new_render_pipeline_state(&pipeline_descriptor)
+            .expect("Failed to create render pipeline state");
+
+        let metal_brush = MetalQuadBrush {
+            pipeline_state,
+            vertex_buffer,
+            uniform_buffer,
+            supported_quantity,
+        };
+
+        metal_brush
+    }
+
+    pub fn render(
+        &mut self,
+        context: &MetalContext,
+        state: &crate::sugarloaf::state::SugarState,
+        render_encoder: &RenderCommandEncoderRef,
     ) {
-        // Resize buffer if needed for at least one quad
-        if self.supported_quantity == 0 {
-            self.supported_quantity = 1;
-            self.instances = context.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("sugarloaf::quad single instance"),
-                size: mem::size_of::<Quad>() as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        let instances = &state.quads;
+        let total = instances.len();
+
+        if total == 0 {
+            return;
         }
 
-        // Write the single quad to the buffer
-        context
-            .queue
-            .write_buffer(&self.instances, 0, bytemuck::bytes_of(quad));
+        // Resize buffer if needed
+        if total > self.supported_quantity {
+            self.supported_quantity = total;
+            self.vertex_buffer = context.device.new_buffer(
+                (mem::size_of::<Quad>() * self.supported_quantity) as u64,
+                MTLResourceOptions::StorageModeShared,
+            );
+            self.vertex_buffer
+                .set_label("sugarloaf::quad vertex buffer");
+        }
 
-        render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.constants, &[]);
-        render_pass.set_vertex_buffer(0, self.instances.slice(..));
-        render_pass.draw(0..6, 0..1);
+        if total == 0 {
+            return;
+        }
+        let vertex_data = self.vertex_buffer.contents() as *mut Quad;
+        unsafe {
+            std::ptr::copy_nonoverlapping(instances.as_ptr(), vertex_data, total);
+        }
+
+        // Set up render state
+        render_encoder.set_render_pipeline_state(&self.pipeline_state);
+        render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
+        render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
+
+        // Draw quads (6 vertices per quad instance)
+        render_encoder.draw_primitives_instanced(
+            MTLPrimitiveType::Triangle,
+            0,
+            6,
+            total as u64,
+        );
     }
 }
