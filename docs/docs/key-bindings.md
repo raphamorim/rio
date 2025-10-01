@@ -28,6 +28,11 @@ keys = [
   { key = "l", with = "control", esc = "\u001b[2J\u001b[H" },
   # Remove existing keybind
   { key = "v", with = "control | shift", action = "none" },
+  # Panel resize actions (customize as needed)
+  { key = "up", with = "control | super", action = "MoveDividerUp" },
+  { key = "down", with = "control | super", action = "MoveDividerDown" },
+  { key = "left", with = "control | super", action = "MoveDividerLeft" },
+  { key = "right", with = "control | super", action = "MoveDividerRight" },
 ]
 ```
 
@@ -80,6 +85,10 @@ Execute a predefined action in Rio terminal.
 | CloseSplitOrTab      | Close split, if split is the last then will close the tab |
 | SelectNextSplitOrTab | Select next split if available if not next tab |
 | SelectPrevSplitOrTab | Select previous split if available if not previous tab |
+| MoveDividerUp        | Move the split divider up to resize panels |
+| MoveDividerDown      | Move the split divider down to resize panels |
+| MoveDividerLeft      | Move the split divider left to resize panels |
+| MoveDividerRight     | Move the split divider right to resize panels |
 
 ### [Tab Actions](#tab-actions)
 
