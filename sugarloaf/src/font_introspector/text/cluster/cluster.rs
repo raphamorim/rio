@@ -1,6 +1,7 @@
 // font_introspector was retired from https://github.com/dfrg/swash
 // which is licensed under MIT license
 
+use super::super::compose::compose_pair;
 use super::super::{Codepoint as _, JoiningType};
 use super::char::{Char, ShapeClass};
 use super::token::Token;
@@ -202,7 +203,7 @@ impl CharCluster {
                 let mut last = self.decomp.chars[0];
                 let mut i = 0;
                 for ch in &self.decomp.chars()[1..] {
-                    if let Some(comp) = char::compose(last.ch, ch.ch) {
+                    if let Some(comp) = compose_pair(last.ch, ch.ch) {
                         last.ch = comp;
                     } else {
                         self.comp.chars[i] = last;
