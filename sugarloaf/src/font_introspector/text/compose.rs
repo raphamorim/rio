@@ -195,3 +195,40 @@ pub fn decompose_compat(c: char) -> Decompose {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_korean_hangul_composition() {
+        // Test the specific case from the issue: 한 -> 한
+        let choseong = '\u{1112}'; // HANGUL CHOSEONG HIEUH
+        let jungseong = '\u{1161}'; // HANGUL JUNGSEONG A  
+        let jongseong = '\u{11AB}'; // HANGUL JONGSEONG NIEUN
+        
+        // Test L+V composition
+        let lv_composed = compose_pair(choseong, jungseong);
+        assert!(lv_composed.is_some(), "Failed to compose L+V");
+        
+        // Test (L+V)+T composition
+        let final_composed = compose_pair(lv_composed.unwrap(), jongseong);
+        assert!(final_composed.is_some(), "Failed to compose (L+V)+T");
+        
+        // Verify the result is correct
+        assert_eq!(final_composed.unwrap(), '한');
+    }
+    
+    #[test]
+    fn test_korean_decomposition() {
+        // Test decomposition of 한
+        let han = '한';
+        let decomposed = decompose(han);
+        let chars: Vec<char> = decomposed.chars().to_vec();
+        
+        assert_eq!(chars.len(), 3);
+        assert_eq!(chars[0], '\u{1112}'); // HANGUL CHOSEONG HIEUH
+        assert_eq!(chars[1], '\u{1161}'); // HANGUL JUNGSEONG A
+        assert_eq!(chars[2], '\u{11AB}'); // HANGUL JONGSEONG NIEUN
+    }
+}

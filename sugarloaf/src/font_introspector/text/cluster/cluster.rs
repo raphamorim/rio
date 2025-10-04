@@ -5,6 +5,7 @@ use super::super::{Codepoint as _, JoiningType};
 use super::char::{Char, ShapeClass};
 use super::token::Token;
 use super::{ClusterInfo, UserData};
+use super::compose::compose_pair;
 use crate::font_introspector::GlyphId;
 
 use core::fmt;
@@ -202,7 +203,7 @@ impl CharCluster {
                 let mut last = self.decomp.chars[0];
                 let mut i = 0;
                 for ch in &self.decomp.chars()[1..] {
-                    if let Some(comp) = char::compose(last.ch, ch.ch) {
+                    if let Some(comp) = compose_pair(last.ch, ch.ch) {
                         last.ch = comp;
                     } else {
                         self.comp.chars[i] = last;
@@ -434,3 +435,27 @@ const DEFAULT_CHAR: Char = Char {
     data: 0,
     offset: 0,
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_korean_hangul_cluster_composition() {
+        // Test the specific case from the issue: 한 should compose to 한
+        let mut cluster = CharCluster::new();
+        
+        // Add the three Jamo characters
+        cluster.push('\u{1112}'); // HANGUL CHOSEONG HIEUH
+        cluster.push('\u{1161}'); // HANGUL JUNGSEONG A  
+        cluster.push('\u{11AB}'); // HANGUL JONGSEONG NIEUN
+        
+        // Check that composition works
+        if let Some(composed_chars) = cluster.composed() {
+            assert_eq!(composed_chars.len(), 1, "Should compose to single character");
+            assert_eq!(composed_chars[0].ch, '한', "Should compose to 한");
+        } else {
+            panic!("Composition should succeed");
+        }
+    }
+}
