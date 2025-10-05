@@ -12,6 +12,9 @@ insert_final_newline = true
 indent_style = space
 indent_size = 4
 
+[*.nix]
+indent_size = 2
+
 [*.scd]
 indent_style = tab
 indent_size = 4
