@@ -66,15 +66,13 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
 impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
-        let has_updated = self.renderable_content.selection_range != selection_range;
+        let old_selection = self.renderable_content.selection_range;
+        let has_updated = old_selection != selection_range;
 
         if has_updated {
-            // Selection is a UI-level change, so we use UI damage tracking
-            // Use full damage for selections since they can span multiple lines
-            // and change frequently (during dragging)
-            self.renderable_content
-                .pending_update
-                .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+            // Calculate partial damage for selection changes
+            let damage = calculate_selection_damage(old_selection, selection_range);
+            self.renderable_content.pending_update.set_ui_damage(damage);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -1085,6 +1083,224 @@ pub fn process_open_url(
     }
 
     (shell, working_dir)
+}
+
+// Standalone function for calculating selection damage
+#[inline]
+fn calculate_selection_damage(
+    old: Option<SelectionRange>,
+    new: Option<SelectionRange>,
+) -> rio_backend::event::TerminalDamage {
+    use rio_backend::crosswords::LineDamage;
+    use std::collections::BTreeSet;
+
+    match (old, new) {
+        // No selection -> No selection: no damage
+        (None, None) => rio_backend::event::TerminalDamage::CursorOnly,
+
+        // Selection cleared or created: need full damage
+        (None, Some(_)) | (Some(_), None) => rio_backend::event::TerminalDamage::Full,
+
+        // Selection changed: calculate partial damage
+        (Some(old_range), Some(new_range)) => {
+            let mut damaged_lines = BTreeSet::new();
+
+            // If block selection mode changed, use full damage
+            if old_range.is_block != new_range.is_block {
+                return rio_backend::event::TerminalDamage::Full;
+            }
+
+            // Calculate the range of lines that need updating
+            let min_start_row = old_range.start.row.min(new_range.start.row);
+            let max_start_row = old_range.start.row.max(new_range.start.row);
+            let min_end_row = old_range.end.row.min(new_range.end.row);
+            let max_end_row = old_range.end.row.max(new_range.end.row);
+
+            // Start row changes
+            if old_range.start.row != new_range.start.row {
+                for row in min_start_row.0..=max_start_row.0 {
+                    damaged_lines.insert(LineDamage::new(row as usize, true));
+                }
+            }
+
+            // End row changes
+            if old_range.end.row != new_range.end.row {
+                for row in min_end_row.0..=max_end_row.0 {
+                    damaged_lines.insert(LineDamage::new(row as usize, true));
+                }
+            }
+
+            // If only columns changed on the same rows
+            if old_range.start.row == new_range.start.row
+                && old_range.start.col != new_range.start.col
+            {
+                damaged_lines
+                    .insert(LineDamage::new(old_range.start.row.0 as usize, true));
+            }
+
+            if old_range.end.row == new_range.end.row
+                && old_range.end.col != new_range.end.col
+            {
+                damaged_lines.insert(LineDamage::new(old_range.end.row.0 as usize, true));
+            }
+
+            rio_backend::event::TerminalDamage::Partial(damaged_lines)
+        }
+    }
+}
+
+#[cfg(test)]
+mod selection_damage_tests {
+    use super::*;
+    use rio_backend::crosswords::pos::{Column, Line, Pos};
+    use rio_backend::selection::SelectionRange;
+
+    #[test]
+    fn test_no_selection_to_no_selection() {
+        let damage = calculate_selection_damage(None, None);
+        assert!(matches!(
+            damage,
+            rio_backend::event::TerminalDamage::CursorOnly
+        ));
+    }
+
+    #[test]
+    fn test_new_selection_created() {
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(2), Column(10)),
+            false,
+        ));
+        let damage = calculate_selection_damage(None, new_selection);
+        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
+    }
+
+    #[test]
+    fn test_selection_cleared() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(2), Column(10)),
+            false,
+        ));
+        let damage = calculate_selection_damage(old_selection, None);
+        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
+    }
+
+    #[test]
+    fn test_block_mode_change() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(2), Column(10)),
+            false, // regular selection
+        ));
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(2), Column(10)),
+            true, // block selection
+        ));
+        let damage = calculate_selection_damage(old_selection, new_selection);
+        assert!(matches!(damage, rio_backend::event::TerminalDamage::Full));
+    }
+
+    #[test]
+    fn test_selection_extend_down() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(2), Column(10)),
+            false,
+        ));
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(3), Column(10)), // Extended down by one line
+            false,
+        ));
+        let damage = calculate_selection_damage(old_selection, new_selection);
+
+        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
+            // Should only damage lines 2 and 3 (the changed end rows)
+            assert_eq!(lines.len(), 2);
+            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
+            assert!(damaged.contains(&2));
+            assert!(damaged.contains(&3));
+        } else {
+            panic!("Expected partial damage");
+        }
+    }
+
+    #[test]
+    fn test_selection_shrink_up() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(0), Column(0)),
+            Pos::new(Line(3), Column(10)),
+            false,
+        ));
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(1), Column(0)), // Start moved down
+            Pos::new(Line(3), Column(10)),
+            false,
+        ));
+        let damage = calculate_selection_damage(old_selection, new_selection);
+
+        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
+            // Should damage lines 0 and 1 (the changed start rows)
+            assert_eq!(lines.len(), 2);
+            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
+            assert!(damaged.contains(&0));
+            assert!(damaged.contains(&1));
+        } else {
+            panic!("Expected partial damage");
+        }
+    }
+
+    #[test]
+    fn test_column_change_same_line() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(1), Column(5)),
+            Pos::new(Line(1), Column(10)),
+            false,
+        ));
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(1), Column(5)),
+            Pos::new(Line(1), Column(15)), // Extended right on same line
+            false,
+        ));
+        let damage = calculate_selection_damage(old_selection, new_selection);
+
+        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
+            // Should only damage line 1
+            assert_eq!(lines.len(), 1);
+            assert_eq!(lines.iter().next().unwrap().line, 1);
+        } else {
+            panic!("Expected partial damage");
+        }
+    }
+
+    #[test]
+    fn test_both_ends_change() {
+        let old_selection = Some(SelectionRange::new(
+            Pos::new(Line(2), Column(5)),
+            Pos::new(Line(4), Column(10)),
+            false,
+        ));
+        let new_selection = Some(SelectionRange::new(
+            Pos::new(Line(1), Column(0)),  // Start moved up
+            Pos::new(Line(5), Column(15)), // End moved down
+            false,
+        ));
+        let damage = calculate_selection_damage(old_selection, new_selection);
+
+        if let rio_backend::event::TerminalDamage::Partial(lines) = damage {
+            // Should damage lines 1-2 (start change) and 4-5 (end change)
+            assert_eq!(lines.len(), 4);
+            let damaged: Vec<_> = lines.iter().map(|l| l.line).collect();
+            assert!(damaged.contains(&1));
+            assert!(damaged.contains(&2));
+            assert!(damaged.contains(&4));
+            assert!(damaged.contains(&5));
+        } else {
+            panic!("Expected partial damage");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -829,10 +829,10 @@ impl BatchManager {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = f32::clamp(line_height / 10., 1.0, 6.0).round();
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
+        let stroke = (line_height / 10.).max(1.0).round();
 
         match character {
             DrawableChar::Horizontal => {
@@ -1962,68 +1962,50 @@ impl BatchManager {
                 self.add_rect(&lower_left_rect, depth, &color);
             }
             DrawableChar::DiagonalRisingBar => {
-                // DiagonalRisingBar (╱) - diagonal line from bottom-left to top-right
-                // We'll approximate this with a rotated rectangle
-                // let diagonal_width =
-                // (line_width * line_width + line_height * line_height).sqrt();
-                // let diagonal_height = stroke;
-
-                // Calculate the angle of rotation in radians
-                // let angle = (line_height / line_width).atan();
-
-                // Calculate the offset to center the rotated rectangle
-                // let offset_x = (diagonal_width - line_width) / 2.0;
-                // let offset_y = (diagonal_height - line_height) / 2.0;
-
-                // Create a path for the diagonal line
-                let path = vec![
-                    (x, y + line_height),          // bottom-left
-                    (x + stroke, y + line_height), // bottom-left + stroke width
-                    (x + line_width, y),           // top-right
-                    (x + line_width - stroke, y),  // top-right - stroke width
-                ];
-
-                self.add_polygon(&path, depth, color);
+                self.add_line(
+                    x,
+                    y + line_height, // bottom-left corner
+                    x + line_width,
+                    y, // top-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::DiagonalFallingBar => {
-                // DiagonalFallingBar (╲) - diagonal line from top-left to bottom-right
-                // We'll approximate this with a rotated rectangle
-                // let diagonal_width =
-                //     (line_width * line_width + line_height * line_height).sqrt();
-                // let diagonal_height = stroke;
-
-                // // Calculate the angle of rotation in radians
-                // let angle = (line_height / line_width).atan();
-
-                // Create a path for the diagonal line
-                let path = vec![
-                    (x, y),                                     // top-left
-                    (x + stroke, y),                            // top-left + stroke width
-                    (x + line_width, y + line_height),          // bottom-right
-                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
-                ];
-
-                self.add_polygon(&path, depth, color);
+                self.add_line(
+                    x,
+                    y,
+                    x + line_width,
+                    y + line_height,
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::DiagonalCross => {
-                // DiagonalCross (╳) - combination of rising and falling diagonals
-                // Create paths for both diagonals
-                let rising_path = vec![
-                    (x, y + line_height),          // bottom-left
-                    (x + stroke, y + line_height), // bottom-left + stroke width
-                    (x + line_width, y),           // top-right
-                    (x + line_width - stroke, y),  // top-right - stroke width
-                ];
+                // DiagonalCross (╳) - combination of both diagonals using add_line
+                // Rising diagonal (╱)
+                self.add_line(
+                    x,
+                    y + line_height, // bottom-left corner
+                    x + line_width,
+                    y, // top-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
 
-                let falling_path = vec![
-                    (x, y),                                     // top-left
-                    (x + stroke, y),                            // top-left + stroke width
-                    (x + line_width, y + line_height),          // bottom-right
-                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
-                ];
-
-                self.add_polygon(&rising_path, depth, color);
-                self.add_polygon(&falling_path, depth, color);
+                // Falling diagonal (╲)
+                self.add_line(
+                    x,
+                    y, // top-left corner
+                    x + line_width,
+                    y + line_height, // bottom-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::LowerOneEighthBlock => {
                 // Lower One Eighth Block (▁) - fills bottom 1/8 of the cell

@@ -1,15 +1,42 @@
 ---
-title: 'Releases'
+title: 'Changelog'
 language: 'en'
 ---
 
-# Releases
+# Changelog
 
-## 0.2.29 (unreleased)
+## 0.2.32 (unreleased)
 
-- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269)
-- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows
-- Add NSCameraUseContinuityCameraDeviceType to plist for macOS
+- TBD.
+
+## 0.2.31
+
+- Update Rust to v1.90.
+- Fix kitty keyboard recognition.
+- **Breaking: Simplified key binding escape sequences**
+  - Replaced separate `text` and `bytes` fields with a single `esc` field
+  - Escape sequences are now sent directly to the PTY without text manipulation
+  - Migration: Replace `bytes = [27, 91, 72]` with `esc = "\u001b[H"`
+  - Migration: Replace `text = "some text"` with `esc = "some text"`
+  - Example: `{ key = "l", with = "control", esc = "\u001b[2J\u001b[H" }` to clear screen
+- **Fix key binding conflicts**: Resolved issues where keys like `PageUp`, `PageDown`, and `Alt+Enter` required explicit `"None"` bindings before they could be reassigned
+  - Simplified binding conflict resolution logic to automatically remove conflicting default bindings
+  - User-defined bindings now always take precedence without requiring placeholder "None" entries
+
+## 0.2.30
+
+- **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
+  - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
+  - Users on Ubuntu 22.04 and older need to manually install terminfo after package installation
+  - Debian 13+ and Ubuntu 24.04+ users get terminfo from system's ncurses-term package
+  - RPM packages continue to include terminfo as before
+- Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284).
+
+## 0.2.29
+
+- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269).
+- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows.
+- Add NSCameraUseContinuityCameraDeviceType to plist for macOS.
 
 ## 0.2.28
 

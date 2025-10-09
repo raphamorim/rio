@@ -12,13 +12,13 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.29"
+version = "0.2.31"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
 keywords = ["graphics", "terminal", "application"]
 # Minimal stable rust version (MSRV)
-rust-version = "1.88.0"
+rust-version = "1.90.0"
 repository = "https://github.com/raphamorim/rio"
 homepage = "https://raphamorim.io/rio"
 documentation = "https://github.com/raphamorim/rio#readme"
@@ -28,15 +28,15 @@ readme = "README.md"
 # Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
 # Sugarloaf example uses path when used locally, but uses
 # version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.2.29" }
-rio-backend = { path = "rio-backend", version = "0.2.29" }
-rio-window = { path = "rio-window", version = "0.2.29", default-features = false }
-sugarloaf = { path = "sugarloaf", version = "0.2.29" }
+teletypewriter = { path = "teletypewriter", version = "0.2.31" }
+rio-backend = { path = "rio-backend", version = "0.2.31" }
+rio-window = { path = "rio-window", version = "0.2.31", default-features = false }
+sugarloaf = { path = "sugarloaf", version = "0.2.31" }
 
 # Own dependencies
-copa = { path = "copa", default-features = true, version = "0.2.29" }
-rio-proc-macros = { path = "rio-proc-macros", version = "0.2.29" }
-corcovado = { path = "corcovado", version = "0.2.29" }
+copa = { path = "copa", default-features = true, version = "0.2.31" }
+rio-proc-macros = { path = "rio-proc-macros", version = "0.2.31" }
+corcovado = { path = "corcovado", version = "0.2.31" }
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.4", features = [
     "nightly",
@@ -77,6 +77,7 @@ objc = { package = "objc-rs", version = "0.2.8" }
 memmap2 = "0.9.5"
 url = "2.5.4"
 criterion = { version = "0.6.0", features = ["html_reports"] }
+dashmap = "6.1.0"
 
 [profile.release]
 strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%

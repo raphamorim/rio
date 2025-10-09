@@ -33,6 +33,20 @@ program = "vi"
 args = []
 ```
 
+## adaptive-theme
+
+Rio supports adaptive themes that automatically switch between light and dark themes based on the system theme. This feature works on Web, MacOS, and Windows platforms.
+
+```toml
+[adaptive-theme]
+light = "belafonte-day"
+dark = "belafonte-night"
+```
+
+When configured, Rio will automatically switch between the specified light and dark themes based on your system's current theme setting.
+
+![Adaptive theme](/assets/features/adaptive-theme.gif)
+
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
@@ -146,6 +160,39 @@ Set cursor blinking interval (default: 800, only configurable from 350ms to 1200
 [cursor]
 blinking-interval = 800
 ```
+
+## bell
+
+Configure the terminal bell behavior. The bell can be triggered by applications using the BEL control character (ASCII 7).
+
+#### Visual
+
+Enable or disable the visual bell. When enabled, the screen will flash instead of playing a sound.
+
+Default is `false`.
+
+```toml
+[bell]
+visual = false
+```
+
+#### Audio
+
+Enable or disable the audio bell. When enabled, a sound will play when the bell is triggered.
+
+Default behavior:
+- **macOS**: `true` (uses system notification sound)
+- **Windows**: `true` (uses system notification sound)
+- **Linux/BSD**: `false` (requires `audio` feature during compilation)
+
+```toml
+[bell]
+audio = true
+```
+
+:::info
+On Linux and BSD systems, audio bell support requires Rio to be compiled with the `audio` feature flag. Distribution packages typically don't include this feature to minimize dependencies. See [Build from source](/docs/install/build-from-source) for compilation instructions with audio support.
+:::
 
 ## developer
 
@@ -1285,7 +1332,7 @@ theme = "lucario"
 
 You can find more than 250 themes for Rio terminal in this repository: [mbadolato/iTerm2-Color-Schemes/tree/master/rio](https://github.com/mbadolato/iTerm2-Color-Schemes/tree/master/rio).
 
-## Building your own theme
+### Building your own theme
 
 Building your own theme for Rio is very straightforward.
 

@@ -353,7 +353,7 @@ impl TabStops {
     fn resize(&mut self, columns: usize) {
         let mut index = self.tabs.len();
         self.tabs.resize_with(columns, || {
-            let is_tabstop = index % INITIAL_TABSTOPS == 0;
+            let is_tabstop = index.is_multiple_of(INITIAL_TABSTOPS);
             index += 1;
             is_tabstop
         });
@@ -399,7 +399,7 @@ fn version_number(mut version: &str) -> usize {
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
 // Max size of the keyboard modes.
-const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
+const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 
 #[derive(Debug)]
 pub struct Crosswords<U>
@@ -429,10 +429,10 @@ where
     pub current_directory: Option<std::path::PathBuf>,
 
     // The stack for the keyboard modes.
-    keyboard_mode_stack: Vec<KeyboardModes>,
-
-    // Currently inactive keyboard mode stack.
-    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
+    keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    keyboard_mode_idx: usize,
+    inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    inactive_keyboard_mode_idx: usize,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -481,7 +481,9 @@ impl<U: EventListener> Crosswords<U> {
             title_stack: Default::default(),
             current_directory: None,
             keyboard_mode_stack: Default::default(),
+            keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
+            inactive_keyboard_mode_idx: 0,
         }
     }
 
@@ -1193,13 +1195,9 @@ impl<U: EventListener> Crosswords<U> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        self.set_keyboard_mode(
-            self.keyboard_mode_stack
-                .last()
-                .copied()
-                .unwrap_or(KeyboardModes::NO_MODE)
-                .into(),
-            KeyboardModesApplyBehavior::Replace,
+        mem::swap(
+            &mut self.keyboard_mode_idx,
+            &mut self.inactive_keyboard_mode_idx,
         );
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
@@ -1345,17 +1343,16 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
+    fn set_keyboard_mode(&mut self, mode: u8, apply: KeyboardModesApplyBehavior) {
         // println!("{:?}", mode);
-        let active_mode = self.mode & Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        let active_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let new_mode = match apply {
             KeyboardModesApplyBehavior::Replace => mode,
-            KeyboardModesApplyBehavior::Union => active_mode.union(mode),
-            KeyboardModesApplyBehavior::Difference => active_mode.difference(mode),
+            KeyboardModesApplyBehavior::Union => active_mode | mode,
+            KeyboardModesApplyBehavior::Difference => active_mode & !mode,
         };
         info!("Setting keyboard mode to {new_mode:?}");
-        self.mode |= new_mode;
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -1942,7 +1939,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
-        self.keyboard_mode_stack = Vec::new();
+        self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.keyboard_mode_idx = 0;
+        self.inactive_keyboard_mode_idx = 0;
         self.title = String::from("");
         self.selection = None;
         self.vi_mode_cursor = Default::default();
@@ -2221,11 +2221,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_keyboard_mode(&mut self) {
-        let current_mode = self
-            .keyboard_mode_stack
-            .last()
-            .unwrap_or(&KeyboardModes::NO_MODE)
-            .bits();
+        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
@@ -2233,29 +2229,29 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
-        if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            let _removed = self.title_stack.remove(0);
+        self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_add(1);
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
         }
-
-        self.keyboard_mode_stack.push(mode);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
     }
 
     #[inline]
     fn pop_keyboard_modes(&mut self, to_pop: u16) {
-        let new_len = self
-            .keyboard_mode_stack
-            .len()
-            .saturating_sub(to_pop as usize);
-        self.keyboard_mode_stack.truncate(new_len);
-
-        // Reload active mode.
-        let mode = self
-            .keyboard_mode_stack
-            .last()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        // If popping more modes than we have, just clear the stack.
+        if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
+            self.keyboard_mode_idx = 0;
+            return;
+        }
+        for _ in 0..to_pop {
+            self.keyboard_mode_stack[self.keyboard_mode_idx] =
+                KeyboardModes::NO_MODE.bits();
+            self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
+        }
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+        }
     }
 
     #[inline]
@@ -2264,7 +2260,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         mode: KeyboardModes,
         apply: KeyboardModesApplyBehavior,
     ) {
-        self.set_keyboard_mode(mode.into(), apply);
+        self.set_keyboard_mode(mode.bits(), apply);
     }
 
     #[inline]
@@ -2442,7 +2438,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        warn!("[unimplemented] Bell");
+        self.event_proxy.send_event(RioEvent::Bell, self.window_id);
     }
 
     #[inline]
@@ -3676,5 +3672,252 @@ mod tests {
 
         // Should damage line 5
         assert_eq!(damage_result_2, Some(true), "Should damage line 5");
+    }
+
+    /// Unit tests for keyboard mode stack functionality
+    /// These tests verify the push, pop, and set operations for the keyboard mode stack
+    /// which was refactored in commit 7cfd5f73a1934f641174ed3fe335b6f37cb75316
+    ///
+    /// Test coverage:
+    /// - test_keyboard_mode_push_pop: Basic push and pop operations
+    /// - test_keyboard_mode_stack_wraparound: Stack overflow protection and wraparound
+    /// - test_keyboard_mode_pop_excessive: Handling of excessive pop operations
+    /// - test_keyboard_mode_set_replace: Replace behavior for keyboard modes
+    /// - test_keyboard_mode_set_union: Union behavior for keyboard modes
+    /// - test_keyboard_mode_set_difference: Difference behavior for keyboard modes
+    /// - test_keyboard_mode_report: Current mode reporting functionality
+    /// - test_keyboard_mode_reset: Terminal reset behavior on keyboard stack
+    /// - test_keyboard_mode_stack_underflow_protection: Stack underflow protection
+
+    #[test]
+    fn test_keyboard_mode_push_pop() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Initial state: stack should be empty with NO_MODE
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::NO_MODE.bits()
+        );
+        assert_eq!(term.keyboard_mode_idx, 0);
+
+        // Push first mode using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        assert_eq!(term.keyboard_mode_idx, 1);
+        assert_eq!(
+            term.keyboard_mode_stack[1],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+
+        // Push second mode
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        assert_eq!(term.keyboard_mode_idx, 2);
+        assert_eq!(
+            term.keyboard_mode_stack[2],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+
+        // Pop one mode using Handler trait
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert_eq!(term.keyboard_mode_idx, 1);
+        assert_eq!(term.keyboard_mode_stack[2], KeyboardModes::NO_MODE.bits()); // Should be cleared
+
+        // Pop remaining mode
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert_eq!(term.keyboard_mode_idx, 0);
+        assert_eq!(term.keyboard_mode_stack[1], KeyboardModes::NO_MODE.bits()); // Should be cleared
+    }
+
+    #[test]
+    fn test_keyboard_mode_stack_wraparound() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Fill the stack to maximum depth using Handler trait
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+            assert_eq!(
+                term.keyboard_mode_idx,
+                (i + 1) % KEYBOARD_MODE_STACK_MAX_DEPTH
+            );
+        }
+
+        // Push one more - should wrap around
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        assert_eq!(term.keyboard_mode_idx, 1); // Should wrap to 1
+        assert_eq!(
+            term.keyboard_mode_stack[1],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_pop_excessive() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Push a few modes using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALTERNATE_KEYS);
+
+        // Pop more modes than exist - should clear everything
+        Handler::pop_keyboard_modes(&mut term, KEYBOARD_MODE_STACK_MAX_DEPTH as u16);
+
+        assert_eq!(term.keyboard_mode_idx, 0);
+        // All modes should be cleared to NO_MODE
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            assert_eq!(term.keyboard_mode_stack[i], KeyboardModes::NO_MODE.bits());
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_replace() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set initial mode using Handler trait method
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::DISAMBIGUATE_ESC_CODES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+
+        // Replace with different mode
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_union() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set initial mode using Handler trait method
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::DISAMBIGUATE_ESC_CODES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+
+        // Add another mode using union
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Union,
+        );
+
+        let expected = KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+            | KeyboardModes::REPORT_EVENT_TYPES.bits();
+        assert_eq!(term.keyboard_mode_stack[term.keyboard_mode_idx], expected);
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_difference() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set combined mode using Handler trait method
+        let combined_mode =
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_EVENT_TYPES;
+        Handler::set_keyboard_mode(
+            &mut term,
+            combined_mode,
+            KeyboardModesApplyBehavior::Replace,
+        );
+
+        // Remove one mode using difference
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Difference,
+        );
+
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_report() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let listener = VoidListener {};
+        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+
+        // Push a mode and test reporting using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+
+        // The report_keyboard_mode function sends an event through event_proxy
+        // We can't easily test the exact output without mocking the event system,
+        // but we can verify the current mode is correctly retrieved
+        let current_mode = term.keyboard_mode_stack[term.keyboard_mode_idx];
+        assert_eq!(current_mode, KeyboardModes::DISAMBIGUATE_ESC_CODES.bits());
+    }
+
+    #[test]
+    fn test_keyboard_mode_reset() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Push several modes
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALTERNATE_KEYS);
+
+        // Reset terminal using Handler trait - use reset_state method
+        term.reset_state();
+
+        // Verify stack is reset
+        assert_eq!(term.keyboard_mode_idx, 0);
+        assert_eq!(term.inactive_keyboard_mode_idx, 0);
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            assert_eq!(term.keyboard_mode_stack[i], 0);
+            assert_eq!(term.inactive_keyboard_mode_stack[i], 0);
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_stack_underflow_protection() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Start at index 0, try to pop using Handler trait - should wrap correctly
+        assert_eq!(term.keyboard_mode_idx, 0);
+
+        Handler::pop_keyboard_modes(&mut term, 1);
+
+        // With wraparound logic, index should wrap to max-1
+        let expected_idx = (0_usize.wrapping_sub(1)) % KEYBOARD_MODE_STACK_MAX_DEPTH;
+        assert_eq!(term.keyboard_mode_idx, expected_idx);
+        assert_eq!(term.keyboard_mode_stack[0], KeyboardModes::NO_MODE.bits()); // Should be cleared
     }
 }

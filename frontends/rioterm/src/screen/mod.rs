@@ -679,7 +679,7 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+            self.ctx_mut().current_mut().messenger.send_write(bytes);
         }
     }
 
@@ -750,6 +750,8 @@ impl Screen<'_> {
 
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
+            let trigger = &binding.trigger;
+            let action = binding.action.clone();
 
             // We don't want the key without modifier, because it means something else most of
             // the time. However what we want is to manually lowercase the character to account
@@ -775,7 +777,7 @@ impl Screen<'_> {
                 key.logical_key.clone()
             };
 
-            let key_match = match (&binding.trigger, logical_key) {
+            let key_match = match (&trigger, logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
                     key: code,
@@ -784,20 +786,12 @@ impl Screen<'_> {
             };
 
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &key_match) {
-                *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
+                *ignore_chars.get_or_insert(true) &= action != Act::ReceiveChar;
 
-                match &binding.action {
+                match &action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
-                        let current_context = self.context_manager.current_mut();
-                        current_context.set_selection(None);
-                        let mut terminal = current_context.terminal.lock();
-                        terminal.selection.take();
-                        terminal.scroll_display(Scroll::Bottom);
-                        drop(terminal);
-                        current_context
-                            .messenger
-                            .send_bytes(s.to_owned().into_bytes());
+                        self.paste(s, false);
                     }
                     Act::Paste => {
                         let content =
@@ -2238,7 +2232,7 @@ impl Screen<'_> {
         self.ctx_mut()
             .current_mut()
             .messenger
-            .send_bytes(msg.into_bytes());
+            .send_write(msg.into_bytes());
     }
 
     #[inline]
@@ -2321,7 +2315,7 @@ impl Screen<'_> {
             msg.push(32 + 1 + row.0 as u8);
         }
 
-        self.ctx_mut().current_mut().messenger.send_bytes(msg);
+        self.ctx_mut().current_mut().messenger.send_write(msg);
     }
 
     #[inline]
@@ -2333,7 +2327,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(msg.into_bytes());
+                .send_write(msg.into_bytes());
         }
     }
 
@@ -2409,7 +2403,7 @@ impl Screen<'_> {
             }
 
             if !content.is_empty() {
-                self.ctx_mut().current_mut().messenger.send_bytes(content);
+                self.ctx_mut().current_mut().messenger.send_write(content);
             }
         } else {
             self.mouse.accumulated_scroll.y +=
@@ -2441,7 +2435,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[200~"[..].to_vec());
+                .send_write(&b"\x1b[200~"[..]);
 
             // Write filtered escape sequences.
             //
@@ -2452,20 +2446,30 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(filtered.into_bytes());
+                .send_write(filtered.into_bytes());
 
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[201~"[..].to_vec());
+                .send_write(&b"\x1b[201~"[..]);
         } else {
-            self.scroll_bottom_when_cursor_not_visible();
-            self.clear_selection();
+            let payload = if bracketed {
+                // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
+                // pasted data from keystrokes.
+                //
+                // In theory, we should construct the keystrokes needed to produce the data we are
+                // pasting... since that's neither practical nor sensible (and probably an
+                // impossible task to solve in a general way), we'll just replace line breaks
+                // (windows and unix style) with a single carriage return (\r, which is what the
+                // Enter key produces).
+                text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+            } else {
+                // When we explicitly disable bracketed paste don't manipulate with the input,
+                // so we pass user input as is.
+                text.to_owned().into_bytes()
+            };
 
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+            self.ctx_mut().current_mut().messenger.send_write(payload);
         }
     }
 
