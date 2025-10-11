@@ -153,7 +153,10 @@ impl ImageCache {
                 mask_descriptor.set_pixel_format(metal::MTLPixelFormat::R8Unorm);
                 mask_descriptor.set_width(max_texture_size as u64);
                 mask_descriptor.set_height(max_texture_size as u64);
-                mask_descriptor.set_usage(metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite);
+                mask_descriptor.set_usage(
+                    metal::MTLTextureUsage::ShaderRead
+                        | metal::MTLTextureUsage::ShaderWrite,
+                );
                 let mask_texture = metal_context.device.new_texture(&mask_descriptor);
                 mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
 
@@ -161,7 +164,10 @@ impl ImageCache {
                 color_descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
                 color_descriptor.set_width(max_texture_size as u64);
                 color_descriptor.set_height(max_texture_size as u64);
-                color_descriptor.set_usage(metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite);
+                color_descriptor.set_usage(
+                    metal::MTLTextureUsage::ShaderRead
+                        | metal::MTLTextureUsage::ShaderWrite,
+                );
                 let color_texture = metal_context.device.new_texture(&color_descriptor);
                 color_texture.set_label("Sugarloaf Rich Text Color Atlas");
 
@@ -411,7 +417,6 @@ impl ImageCache {
                 if let ImageCacheType::Metal(metal_cache) = &self.cache_type {
                     // Process mask atlas
                     if self.mask_atlas.dirty {
-                        println!("Metal: Updating mask atlas with {} bytes", self.mask_atlas.buffer.len());
                         let region = metal::MTLRegion {
                             origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
                             size: metal::MTLSize {
@@ -430,13 +435,10 @@ impl ImageCache {
 
                         self.mask_atlas.fresh = false;
                         self.mask_atlas.dirty = false;
-                    } else {
-                        println!("Metal: Mask atlas not dirty, no update needed");
                     }
 
                     // Process color atlas
                     if self.color_atlas.dirty {
-                        println!("Metal: Updating color atlas with {} bytes", self.color_atlas.buffer.len());
                         let region = metal::MTLRegion {
                             origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
                             size: metal::MTLSize {
@@ -455,8 +457,6 @@ impl ImageCache {
 
                         self.color_atlas.fresh = false;
                         self.color_atlas.dirty = false;
-                    } else {
-                println!("Metal: Color atlas not dirty, no update needed");
                     }
                 }
             }
@@ -478,10 +478,9 @@ impl ImageCache {
     pub fn get_metal_textures(&self) -> Option<(&metal::Texture, &metal::Texture)> {
         match &self.cache_type {
             ImageCacheType::Wgpu(_) => None,
-            ImageCacheType::Metal(metal_cache) => Some((
-                &metal_cache.color_texture,
-                &metal_cache.mask_texture,
-            )),
+            ImageCacheType::Metal(metal_cache) => {
+                Some((&metal_cache.color_texture, &metal_cache.mask_texture))
+            }
         }
     }
 }
