@@ -38,15 +38,13 @@ use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
-use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
-};
+use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
+    SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -143,18 +141,19 @@ impl Screen<'_> {
         };
 
         let backend = match config.renderer.backend {
-            RendererBackend::Automatic => {
+            Backend::Automatic => {
                 #[cfg(target_arch = "wasm32")]
                 let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
                 #[cfg(not(target_arch = "wasm32"))]
                 let default_backend = wgpu::Backends::all();
 
-                default_backend
+                SugarloafBackend::Wgpu(default_backend)
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
+            Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+            Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+            Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+            Backend::Metal => SugarloafBackend::Metal,
+            Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
@@ -243,15 +242,12 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") {
-            sugarloaf.set_background_color(None);
-        } else {
-            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
-        }
+        sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
+
         sugarloaf.render();
 
         Ok(Screen {
@@ -389,7 +385,7 @@ impl Screen<'_> {
                 padding_y_bottom,
             ));
 
-            context_grid.update_dimensions(&self.sugarloaf);
+            context_grid.update_dimensions(&mut self.sugarloaf);
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
@@ -444,7 +440,7 @@ impl Screen<'_> {
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
 
         self.render();
         self.resize_all_contexts();
@@ -484,7 +480,7 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 

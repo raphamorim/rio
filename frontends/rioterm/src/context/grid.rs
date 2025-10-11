@@ -3,7 +3,7 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Object, Quad, RichText, Sugarloaf,
+    layout::SugarDimensions, Object, Rect, RichText, Sugarloaf,
 };
 use std::collections::HashMap;
 
@@ -19,55 +19,74 @@ fn compute(
     line_height: f32,
     margin: Delta<f32>,
 ) -> (usize, usize) {
+    println!("=== COMPUTE CALLED ===");
+    println!("  width: {}, height: {}", width, height);
+    println!("  dimensions: scale={}, width={}, height={}", dimensions.scale, dimensions.width, dimensions.height);
+    println!("  line_height: {}", line_height);
+    println!("  margin: x={}, top_y={}, bottom_y={}", margin.x, margin.top_y, margin.bottom_y);
+    
     // Ensure we have positive dimensions
     if width <= 0.0 || height <= 0.0 || dimensions.scale <= 0.0 || line_height <= 0.0 {
+        println!("  -> Returning MIN (invalid inputs)");
         return (MIN_COLS, MIN_LINES);
     }
 
-    let margin_x = (margin.x * dimensions.scale).round();
-    let margin_spaces = margin.top_y + margin.bottom_y;
+    // Convert margin to scaled/physical pixels
+    let margin_x_physical = margin.x * dimensions.scale;
+    let margin_top_physical = margin.top_y * dimensions.scale;
+    let margin_bottom_physical = margin.bottom_y * dimensions.scale;
 
-    // Calculate available space for content
-    let available_width = (width / dimensions.scale) - margin_x;
-    let available_height = (height / dimensions.scale) - margin_spaces;
+    // Calculate available space in physical pixels
+    let available_width_physical = width - margin_x_physical;
+    let available_height_physical = height - margin_top_physical - margin_bottom_physical;
+    
+    println!("  margin in physical pixels: x={}, top={}, bottom={}", 
+        margin_x_physical, margin_top_physical, margin_bottom_physical);
+    println!("  available (physical): width={}, height={}", 
+        available_width_physical, available_height_physical);
 
     // Ensure we have positive available space
-    if available_width <= 0.0 || available_height <= 0.0 {
+    if available_width_physical <= 0.0 || available_height_physical <= 0.0 {
+        println!("  -> Returning MIN (no available space)");
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate columns
-    let char_width = dimensions.width / dimensions.scale;
-    if char_width <= 0.0 {
+    // Character dimensions from the brush are already in physical pixels
+    // (measured at the actual scaled font size)
+    // So we use them directly without scaling
+    let char_width_physical = dimensions.width;
+    let char_height_physical = dimensions.height * line_height;
+    
+    println!("  char (physical, from brush): width={}, height={}", char_width_physical, char_height_physical);
+    
+    if char_width_physical <= 0.0 {
+        eprintln!(
+            "WARNING: char_width_physical is {}, using fallback. dimensions: {:?}",
+            char_width_physical, dimensions
+        );
+        println!("  -> Returning MIN (zero char_width)");
         return (MIN_COLS, MIN_LINES);
     }
-    let visible_columns =
-        std::cmp::max((available_width / char_width) as usize, MIN_COLS);
-
-    // Calculate lines
-    let char_height = (dimensions.height / dimensions.scale) * line_height;
-    if char_height <= 0.0 {
+    
+    if char_height_physical <= 0.0 {
+        println!("  -> Returning (cols, MIN) (zero char_height)");
+        let visible_columns = std::cmp::max((available_width_physical / char_width_physical) as usize, MIN_COLS);
         return (visible_columns, MIN_LINES);
     }
-    let lines = (available_height / char_height) - 1.0;
+    
+    let visible_columns = std::cmp::max((available_width_physical / char_width_physical) as usize, MIN_COLS);
+    let lines = (available_height_physical / char_height_physical) - 1.0;
     let visible_lines = std::cmp::max(lines.round() as usize, MIN_LINES);
+
+    println!("  -> Result: {} cols x {} rows", visible_columns, visible_lines);
+    println!("=== END COMPUTE ===\n");
 
     (visible_columns, visible_lines)
 }
 
 #[inline]
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object {
-    Object::Quad(Quad {
-        color,
-        position,
-        shadow_blur_radius: 0.0,
-        shadow_offset: [0.0, 0.0],
-        shadow_color: [0.0, 0.0, 0.0, 0.0],
-        border_color: [0.0, 0.0, 0.0, 0.0],
-        border_width: 0.0,
-        border_radius: [0.0, 0.0, 0.0, 0.0],
-        size,
-    })
+    Object::Rect(Rect::new(position[0], position[1], size[0], size[1], color))
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -100,8 +119,13 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
         let rich_text_object = Object::RichText(RichText {
             id: context.rich_text_id,
-            position: [0.0, 0.0],
             lines: None,
+            render_data: rio_backend::sugarloaf::RichTextRenderData {
+                position: [0.0, 0.0],
+                should_repaint: false,
+                should_remove: false,
+                hidden: false,
+            },
         });
 
         Self {
@@ -129,7 +153,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
     pub fn position(&self) -> [f32; 2] {
         if let Object::RichText(ref rich_text) = self.rich_text_object {
-            rich_text.position
+            rich_text.render_data.position
         } else {
             [0.0, 0.0]
         }
@@ -138,7 +162,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     /// Update the position in the rich text object
     fn set_position(&mut self, position: [f32; 2]) {
         if let Object::RichText(ref mut rich_text) = self.rich_text_object {
-            rich_text.position = position;
+            rich_text.render_data.position = position;
         }
     }
 }
@@ -427,8 +451,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             for obj in objects {
                 if let Object::RichText(rich_text_obj) = obj {
                     if rich_text_obj.id == rich_text_id {
-                        margin.x = rich_text_obj.position[0] + self.scaled_padding;
-                        margin.top_y = rich_text_obj.position[1] + self.scaled_padding;
+                        margin.x =
+                            rich_text_obj.render_data.position[0] + self.scaled_padding;
+                        margin.top_y =
+                            rich_text_obj.render_data.position[1] + self.scaled_padding;
                         break;
                     }
                 }
@@ -459,10 +485,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Object::RichText(rich_text_obj) = obj {
                 if let Some(key) = self.find_by_rich_text_id(rich_text_obj.id) {
                     if let Some(item) = self.inner.get(&key) {
-                        let scaled_position_x =
-                            rich_text_obj.position[0] * (self.scaled_padding / PADDING);
-                        let scaled_position_y =
-                            rich_text_obj.position[1] * (self.scaled_padding / PADDING);
+                        let scaled_position_x = rich_text_obj.render_data.position[0]
+                            * (self.scaled_padding / PADDING);
+                        let scaled_position_y = rich_text_obj.render_data.position[1]
+                            * (self.scaled_padding / PADDING);
                         if mouse.x >= scaled_position_x as usize
                             && mouse.y >= scaled_position_y as usize
                             && mouse.x
@@ -500,13 +526,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn grid_dimension(&self) -> ContextDimension {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
-            ContextDimension::build(
+            println!("\n>>> grid_dimension called for current context");
+            println!("    Context dimension: {}x{} (scale={})", 
+                current_context_dimension.width,
+                current_context_dimension.height,
+                current_context_dimension.dimension.scale
+            );
+            println!("    Grid size: {}x{}", self.width, self.height);
+            println!("    Margin: x={}, top_y={}, bottom_y={}", 
+                self.margin.x, self.margin.top_y, self.margin.bottom_y);
+            
+            let result = ContextDimension::build(
                 self.width,
                 self.height,
                 current_context_dimension.dimension,
                 current_context_dimension.line_height,
                 self.margin,
-            )
+            );
+            
+            println!("    Resulting dimension: {} cols x {} rows", result.columns, result.lines);
+            println!("<<< grid_dimension done\n");
+            result
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             ContextDimension::default()
@@ -587,9 +627,43 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
+    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
+        println!("\n╔═══════════════════════════════════════════════════════════════╗");
+        println!("║ Grid::update_dimensions called                                ║");
+        println!("╚═══════════════════════════════════════════════════════════════╝");
+
+        // First, check if any context has invalid dimensions and force recomputation
+        for context in self.inner.values() {
+            let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
+            println!("  Checking rich_text_id {}: dimensions {}x{} (scale={})",
+                context.val.rich_text_id,
+                layout.dimensions.width,
+                layout.dimensions.height,
+                layout.dimensions.scale
+            );
+            
+            // If dimensions are zero or scale is wrong (equals font_size), force recomputation
+            if layout.dimensions.width == 0.0 
+                || layout.dimensions.height == 0.0
+                || layout.dimensions.scale == layout.font_size {
+                println!("    -> Detected invalid dimensions, forcing recomputation");
+                sugarloaf.force_update_dimensions(&context.val.rich_text_id);
+            } else {
+                println!("    -> Dimensions look valid, calling get_rich_text_dimensions");
+                sugarloaf.get_rich_text_dimensions(&context.val.rich_text_id);
+            }
+        }
+
+        println!("\n  Getting final layouts for all contexts:");
+        // Now get the updated layouts
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
+            println!("    rich_text_id {}: dimensions {}x{} (scale={})",
+                context.val.rich_text_id,
+                layout.dimensions.width,
+                layout.dimensions.height,
+                layout.dimensions.scale
+            );
             context.val.dimension.update_dimensions(layout.dimensions);
         }
         // Update scaled_padding from the first context (they should all have the same scale)
@@ -597,9 +671,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Some(first_context) = self.inner.get(&root) {
                 self.scaled_padding =
                     PADDING * first_context.val.dimension.dimension.scale;
+                println!("  Updated scaled_padding to {}", self.scaled_padding);
             }
         }
         self.calculate_positions();
+        println!("╚═══════════════════════════════════════════════════════════════╝\n");
     }
 
     pub fn resize(&mut self, new_width: f32, new_height: f32) {
@@ -703,10 +779,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Calculate and update positions for all grid items
     pub fn calculate_positions(&mut self) {
+        println!("DEBUG: calculate_positions called");
         if self.inner.is_empty() {
             return;
         }
         if let Some(root) = self.root {
+            println!(
+                "DEBUG: calculate_positions with root {} and margin [{}, {}]",
+                root, self.margin.x, self.margin.top_y
+            );
             self.calculate_positions_recursive(root, self.margin);
         }
     }
@@ -774,6 +855,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
         if let Some(item) = self.inner.get_mut(&key) {
             // Set position for current item in the rich text object
+            println!(
+                "DEBUG: calculate_positions_recursive for key {} with margin [{}, {}]",
+                key, margin.x, margin.top_y
+            );
             item.set_position([margin.x, margin.top_y]);
 
             // Calculate margin for down item
@@ -7078,3 +7163,7 @@ pub mod test {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "grid_compute_tests.rs"]
+mod grid_compute_tests;
