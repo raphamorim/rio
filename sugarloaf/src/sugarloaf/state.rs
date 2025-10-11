@@ -84,7 +84,7 @@ impl SugarState {
         if let Some(state) = self.content.get_state(id) {
             let layout = &state.layout;
             SugarDimensions {
-                scale: layout.font_size / layout.line_height,
+                scale: layout.dimensions.scale,  // Use the actual scale, not font_size/line_height!
                 width: layout.dimensions.width,
                 height: layout.dimensions.height,
             }
