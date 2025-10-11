@@ -867,8 +867,8 @@ impl RichTextBrush {
         match &mut self.brush_type {
             RichTextBrushType::Wgpu(wgpu_brush) => {
                 if transform != wgpu_brush.current_transform {
-                    let (queue) = match &context.inner {
-                        ContextType::Wgpu(wgpu_ctx) => (&wgpu_ctx.queue),
+                    let queue = match &context.inner {
+                        ContextType::Wgpu(wgpu_ctx) => &wgpu_ctx.queue,
                         _ => unreachable!(),
                     };
 
