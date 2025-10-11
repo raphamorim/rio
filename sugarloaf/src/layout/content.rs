@@ -476,19 +476,40 @@ impl Content {
                     let leading = font_metrics.leading * scale_factor;
                     let line_height = (ascent + descent + leading) * layout.line_height;
 
-                    return crate::layout::SugarDimensions {
-                        width: char_width.max(1.0),   // Ensure non-zero
-                        height: line_height.max(1.0), // Ensure non-zero
+                    println!("calculate_character_cell_dimensions:");
+                    println!("  font_size: {}", font_size);
+                    println!("  char_width (logical): {}", char_width);
+                    println!("  line_height (logical): {}", line_height);
+                    println!("  layout.dimensions.scale: {}", layout.dimensions.scale);
+                    
+                    // Scale to physical pixels to match what the brush returns
+                    let char_width_physical = char_width * layout.dimensions.scale;
+                    let line_height_physical = line_height * layout.dimensions.scale;
+                    
+                    // Return dimensions in physical pixels (matching brush behavior)
+                    let result = crate::layout::SugarDimensions {
+                        width: char_width_physical.max(1.0),
+                        height: line_height_physical.max(1.0),
                         scale: layout.dimensions.scale,
                     };
+                    
+                    println!("  -> Returning dimensions (physical): width={}, height={}, scale={}", 
+                        result.width, result.height, result.scale);
+                    
+                    return result;
                 }
             }
         }
 
+        println!("calculate_character_cell_dimensions: Using fallback");
         // Fallback to reasonable defaults if font metrics unavailable
+        // Return in physical pixels to match brush behavior
+        let fallback_width = (layout.font_size * 0.6).max(8.0);
+        let fallback_height = (layout.font_size * layout.line_height).max(16.0);
+        
         crate::layout::SugarDimensions {
-            width: (layout.font_size * 0.6).max(8.0), // Ensure minimum width
-            height: (layout.font_size * layout.line_height).max(16.0), // Ensure minimum height
+            width: fallback_width * layout.dimensions.scale,
+            height: fallback_height * layout.dimensions.scale,
             scale: layout.dimensions.scale,
         }
     }
@@ -514,6 +535,11 @@ impl Content {
         let mut content = Content::new(&self.fonts);
         if let Some(rte) = self.states.get_mut(state_id) {
             println!("update_dimensions {:?}", state_id);
+            println!("  Before: width={}, height={}, scale={}", 
+                rte.layout.dimensions.width, 
+                rte.layout.dimensions.height,
+                rte.layout.dimensions.scale);
+            
             let id = content.create_state(&rte.layout);
             content
                 .sel(id)
@@ -528,11 +554,20 @@ impl Content {
                 &mut Graphics::default(),
             ) {
                 println!(
-                    "Setting layout dimensions to {}x{} for state {}",
-                    dimension.width, dimension.height, state_id
+                    "  Brush returned dimensions: {}x{} (scale={})",
+                    dimension.width, dimension.height, dimension.scale
                 );
+                
+                // Preserve the scale from the layout (window DPI scale)
+                // The brush only calculates width/height
                 rte.layout.dimensions.height = dimension.height;
                 rte.layout.dimensions.width = dimension.width;
+                // rte.layout.dimensions.scale stays unchanged (preserves window DPI scale)
+                
+                println!("  After: width={}, height={}, scale={}", 
+                    rte.layout.dimensions.width, 
+                    rte.layout.dimensions.height,
+                    rte.layout.dimensions.scale);
             } else {
                 println!("Failed to get dimensions for state {}", state_id);
             }
