@@ -407,6 +407,7 @@ impl Sugarloaf<'_> {
 
         match ctx.get_current_texture() {
             Ok(surface_texture) => {
+                // Create command buffer
                 let command_buffer = ctx.command_queue.new_command_buffer();
                 command_buffer.set_label("Sugarloaf Metal Render");
 
