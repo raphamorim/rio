@@ -3,7 +3,6 @@ mod raster;
 pub mod types;
 
 use crate::context::webgpu::WgpuContext;
-use crate::context::Context;
 use atlas::Atlas;
 
 use crate::components::core::buffer::Buffer;
