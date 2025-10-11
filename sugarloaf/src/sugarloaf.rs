@@ -407,14 +407,11 @@ impl Sugarloaf<'_> {
 
         match ctx.get_current_texture() {
             Ok(surface_texture) => {
-                // Create command buffer
                 let command_buffer = ctx.command_queue.new_command_buffer();
                 command_buffer.set_label("Sugarloaf Metal Render");
 
                 // Create render pass descriptor
                 let render_pass_descriptor = RenderPassDescriptor::new();
-
-                // Set up color attachment
                 let color_attachment = render_pass_descriptor
                     .color_attachments()
                     .object_at(0)
@@ -422,40 +419,33 @@ impl Sugarloaf<'_> {
 
                 color_attachment.set_texture(Some(&surface_texture.texture));
                 color_attachment.set_store_action(MTLStoreAction::Store);
+                color_attachment.set_load_action(MTLLoadAction::Clear);
 
-                // Set background color or load existing content
-                if let Some(background_color) = self.background_color {
-                    let clear_color = MTLClearColor::new(
+                // Set background color
+                let clear_color = if let Some(background_color) = self.background_color {
+                    MTLClearColor::new(
                         background_color.r,
                         background_color.g,
                         background_color.b,
                         background_color.a,
-                    );
-                    color_attachment.set_clear_color(clear_color);
-                    color_attachment.set_load_action(MTLLoadAction::Clear);
+                    )
                 } else {
-                    color_attachment.set_load_action(MTLLoadAction::Load);
-                }
+                    // Default to transparent black if no background color set
+                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
+                };
+                color_attachment.set_clear_color(clear_color);
 
                 // Create render command encoder
                 let render_encoder =
                     command_buffer.new_render_command_encoder(&render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
-                // Render quad brush (backgrounds, borders, etc.) - use immutable reference
                 self.quad_brush
                     .render_metal(ctx, &self.state, &render_encoder);
-
-                // Render rich text
                 self.rich_text_brush.render_metal(ctx, &render_encoder);
 
-                // End encoding
                 render_encoder.end_encoding();
-
-                // Present the drawable
                 command_buffer.present_drawable(&surface_texture.drawable);
-
-                // Commit the command buffer
                 command_buffer.commit();
             }
             Err(error) => {

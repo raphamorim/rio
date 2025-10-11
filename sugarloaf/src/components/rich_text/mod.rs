@@ -19,11 +19,11 @@ use crate::sugarloaf::graphics::GraphicRenderRequest;
 use crate::Graphics;
 use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
+use metal::*;
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
-use metal::*;
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -96,29 +96,47 @@ impl MetalRichTextBrush {
         let attributes = vertex_descriptor.attributes();
 
         // Position (attribute 0) - vec4<f32>
-        attributes.object_at(0).unwrap().set_format(MTLVertexFormat::Float3);
+        attributes
+            .object_at(0)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float3);
         attributes.object_at(0).unwrap().set_offset(0);
         attributes.object_at(0).unwrap().set_buffer_index(0);
 
         // Color (attribute 1) - vec4<f32>
-        attributes.object_at(1).unwrap().set_format(MTLVertexFormat::Float4);
+        attributes
+            .object_at(1)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
         attributes.object_at(1).unwrap().set_offset(12);
         attributes.object_at(1).unwrap().set_buffer_index(0);
 
         // UV (attribute 2) - vec2<f32>
-        attributes.object_at(2).unwrap().set_format(MTLVertexFormat::Float2);
+        attributes
+            .object_at(2)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
         attributes.object_at(2).unwrap().set_offset(28);
         attributes.object_at(2).unwrap().set_buffer_index(0);
 
         // Layers (attribute 3) - vec2<i32>
-        attributes.object_at(3).unwrap().set_format(MTLVertexFormat::Int2);
+        attributes
+            .object_at(3)
+            .unwrap()
+            .set_format(MTLVertexFormat::Int2);
         attributes.object_at(3).unwrap().set_offset(36);
         attributes.object_at(3).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
-        layouts.object_at(0).unwrap().set_stride(mem::size_of::<Vertex>() as u64);
-        layouts.object_at(0).unwrap().set_step_function(MTLVertexStepFunction::PerVertex);
+        layouts
+            .object_at(0)
+            .unwrap()
+            .set_stride(mem::size_of::<Vertex>() as u64);
+        layouts
+            .object_at(0)
+            .unwrap()
+            .set_step_function(MTLVertexStepFunction::PerVertex);
         layouts.object_at(0).unwrap().set_step_rate(1);
 
         // Create render pipeline
@@ -128,17 +146,22 @@ impl MetalRichTextBrush {
         pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
 
         // Set up blending for text rendering - FIXED BLENDING
-        let color_attachment = pipeline_descriptor.color_attachments().object_at(0).unwrap();
+        let color_attachment = pipeline_descriptor
+            .color_attachments()
+            .object_at(0)
+            .unwrap();
         color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         color_attachment.set_blending_enabled(true);
         // Match WGSL BLEND settings exactly:
         // color: src_factor: SrcAlpha, dst_factor: OneMinusSrcAlpha, operation: Add
         color_attachment.set_source_rgb_blend_factor(MTLBlendFactor::SourceAlpha);
-        color_attachment.set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment
+            .set_destination_rgb_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
         color_attachment.set_rgb_blend_operation(MTLBlendOperation::Add);
-        // alpha: src_factor: One, dst_factor: OneMinusSrcAlpha, operation: Add  
+        // alpha: src_factor: One, dst_factor: OneMinusSrcAlpha, operation: Add
         color_attachment.set_source_alpha_blend_factor(MTLBlendFactor::One);
-        color_attachment.set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment
+            .set_destination_alpha_blend_factor(MTLBlendFactor::OneMinusSourceAlpha);
         color_attachment.set_alpha_blend_operation(MTLBlendOperation::Add);
 
         let pipeline_state = context
@@ -207,13 +230,14 @@ impl MetalRichTextBrush {
         // Expand vertex buffer if needed
         if vertices.len() > self.supported_vertex_buffer {
             self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
-            
+
             // Recreate vertex buffer with larger size
             self.vertex_buffer = context.device.new_buffer(
                 (mem::size_of::<Vertex>() * self.supported_vertex_buffer) as u64,
                 MTLResourceOptions::StorageModeShared,
             );
-            self.vertex_buffer.set_label("sugarloaf::rich_text vertex buffer (resized)");
+            self.vertex_buffer
+                .set_label("sugarloaf::rich_text vertex buffer (resized)");
         }
 
         // Copy vertex data to buffer
@@ -236,7 +260,7 @@ impl MetalRichTextBrush {
             }
             self.current_transform = transform;
         }
-        
+
         // FIXED: Bind uniform buffer at correct index (buffer 1 in Metal shader)
         render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
 
@@ -822,7 +846,7 @@ impl RichTextBrush {
 
     pub fn render_metal(
         &mut self,
-        context: &MetalContext,  // Add context parameter
+        context: &MetalContext, // Add context parameter
         render_encoder: &metal::RenderCommandEncoderRef,
     ) {
         if let RichTextBrushType::Metal(brush) = &mut self.brush_type {
