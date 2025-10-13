@@ -30,6 +30,7 @@ tabs-active = '#303030'
 tabs-active-highlight = '#ffa133'
 tabs-active-foreground = '#FFFFFF'
 bar = '#1b1a1a'
+split = '#292527'
 
 # Search
 search-match-background = '#44C9F0'
