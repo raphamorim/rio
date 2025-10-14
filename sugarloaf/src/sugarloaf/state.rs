@@ -152,7 +152,7 @@ impl SugarState {
 
         // Process each ID
         for rich_text_id in &ids_to_repaint {
-            self.content.update_dimensions(rich_text_id, advance_brush);
+            self.content.update_dimensions(rich_text_id);
         }
 
         // Clear repaint flags after processing

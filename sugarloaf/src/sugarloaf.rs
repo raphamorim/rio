@@ -341,7 +341,7 @@ impl Sugarloaf<'_> {
     pub fn force_update_dimensions(&mut self, id: &usize) {
         self.state
             .content
-            .update_dimensions(id, &mut self.rich_text_brush);
+            .update_dimensions(id);
     }
 
     #[inline]

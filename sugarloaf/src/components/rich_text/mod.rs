@@ -428,18 +428,6 @@ impl RichTextBrush {
         None
     }
 
-    pub fn dimensions(
-        &mut self,
-        font_library: &FontLibrary,
-        render_data: &crate::layout::BuilderLine,
-        graphics: &mut Graphics,
-    ) -> Option<SugarDimensions> {
-        self.comp.begin();
-
-        let lines = vec![render_data.clone()];
-        self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
-    }
-
     /// Extract font metrics using per-font calculation.
     /// Each font calculates its own metrics using consistent approach.
     #[inline]
@@ -487,20 +475,13 @@ impl RichTextBrush {
         font_library: &FontLibrary,
         rte_layout: Option<&RichTextLayout>,
         graphics: &mut Graphics,
-    ) -> Option<SugarDimensions> {
+    ) {
         if lines.is_empty() {
-            return None;
+            return;
         }
 
-        // Determine if we're calculating dimensions only or drawing layout
-        let is_dimensions_only = pos.is_none() || rte_layout.is_none();
-
         // For dimensions mode, we only process the first line
-        let lines_to_process = if is_dimensions_only {
-            std::slice::from_ref(&lines[0])
-        } else {
-            lines.as_slice()
-        };
+        let lines_to_process = lines.as_slice();
 
         // Extract font metrics before borrowing self.comp
         let font_metrics =
@@ -520,7 +501,6 @@ impl RichTextBrush {
         let mut glyphs = Vec::new();
         let mut last_rendered_graphic = HashSet::new();
         let mut line_y = y;
-        let mut dimensions = SugarDimensions::default();
         if let Some((
             ascent,
             descent,
@@ -564,11 +544,7 @@ impl RichTextBrush {
 
                 // Calculate baseline using proper typographic positioning
                 let padding_top = (line_height - ascent - descent) / 2.0;
-                let baseline = if is_dimensions_only {
-                    y + padding_top + ascent
-                } else {
-                    line_y + padding_top + ascent
-                };
+                let baseline = line_y + padding_top + ascent;
 
                 // Keep line_y as the top of the line for proper line spacing
                 // Don't modify line_y here - it should remain at the top of the line
@@ -580,7 +556,7 @@ impl RichTextBrush {
                     0.0
                 };
 
-                let py = if is_dimensions_only { y } else { line_y };
+                let py = line_y;
 
                 for run in &line.render_data.runs {
                     let font = run.span.font_id;
@@ -595,7 +571,7 @@ impl RichTextBrush {
                         .collect::<String>();
 
                     // Try to get cached data for this text run
-                    let cached_result = if !is_dimensions_only && !run_text.is_empty() {
+                    let cached_result = if !run_text.is_empty() {
                         self.text_run_manager.get_cached_data(
                             &run_text,
                             font,
@@ -608,7 +584,7 @@ impl RichTextBrush {
 
                     match cached_result {
                         CacheResult::FullRender {
-                            glyphs: cached_glyphs,
+                            glyphs: _cached_glyphs,
                             vertices,
                             base_position,
                             ..
@@ -622,14 +598,7 @@ impl RichTextBrush {
                                 &mut vertex_output,
                             );
 
-                            // Update position based on cached advance
-                            let cached_advance =
-                                cached_glyphs.iter().map(|g| g.x_advance).sum::<f32>();
-                            if is_dimensions_only {
-                                px += cached_advance * char_width;
-                            } else {
-                                px += rte_layout.unwrap().dimensions.width * char_width;
-                            }
+                            px += rte_layout.unwrap().dimensions.width * char_width;
                         }
                         CacheResult::ShapingOnly {
                             glyphs: cached_glyphs,
@@ -645,12 +614,8 @@ impl RichTextBrush {
                                 let x = px;
                                 let y = baseline; // Glyph y should be at baseline position
 
-                                if is_dimensions_only {
-                                    px += shaped_glyph.x_advance * char_width;
-                                } else {
-                                    px +=
-                                        rte_layout.unwrap().dimensions.width * char_width;
-                                }
+                                px +=
+                                    rte_layout.unwrap().dimensions.width * char_width;
 
                                 glyphs.push(Glyph {
                                     id: shaped_glyph.glyph_id as GlyphId,
@@ -660,58 +625,56 @@ impl RichTextBrush {
                             }
 
                             // Render using cached glyph data
-                            if !is_dimensions_only {
-                                let style = TextRunStyle {
+                            let style = TextRunStyle {
+                                font_coords,
+                                font_size: run.size,
+                                color: run.span.color,
+                                cursor: run.span.cursor,
+                                drawable_char: run.span.drawable_char,
+                                background_color: run.span.background_color,
+                                baseline,
+                                topline: py, // Use py (line top) for cursor positioning
+                                line_height,
+                                padding_y,
+                                line_height_without_mod,
+                                advance: cached_glyphs
+                                    .iter()
+                                    .map(|g| g.x_advance)
+                                    .sum(),
+                                decoration: run.span.decoration,
+                                decoration_color: run.span.decoration_color,
+                                underline_offset: run.underline_offset,
+                                strikeout_offset: run.strikeout_offset,
+                                underline_thickness: run.strikeout_size,
+                                x_height: run.x_height,
+                                ascent: run.ascent,
+                                descent: run.descent,
+                            };
+
+                            // Update font session if needed
+                            if font != current_font
+                                || style.font_size != current_font_size
+                            {
+                                current_font = font;
+                                current_font_size = style.font_size;
+
+                                session = glyphs_cache.session(
+                                    image_cache,
+                                    current_font,
+                                    font_library,
                                     font_coords,
-                                    font_size: run.size,
-                                    color: run.span.color,
-                                    cursor: run.span.cursor,
-                                    drawable_char: run.span.drawable_char,
-                                    background_color: run.span.background_color,
-                                    baseline,
-                                    topline: py, // Use py (line top) for cursor positioning
-                                    line_height,
-                                    padding_y,
-                                    line_height_without_mod,
-                                    advance: cached_glyphs
-                                        .iter()
-                                        .map(|g| g.x_advance)
-                                        .sum(),
-                                    decoration: run.span.decoration,
-                                    decoration_color: run.span.decoration_color,
-                                    underline_offset: run.underline_offset,
-                                    strikeout_offset: run.strikeout_offset,
-                                    underline_thickness: run.strikeout_size,
-                                    x_height: run.x_height,
-                                    ascent: run.ascent,
-                                    descent: run.descent,
-                                };
-
-                                // Update font session if needed
-                                if font != current_font
-                                    || style.font_size != current_font_size
-                                {
-                                    current_font = font;
-                                    current_font_size = style.font_size;
-
-                                    session = glyphs_cache.session(
-                                        image_cache,
-                                        current_font,
-                                        font_library,
-                                        font_coords,
-                                        style.font_size,
-                                    );
-                                }
-
-                                comp.draw_run(
-                                    &mut session,
-                                    Rect::new(run_x, py, px - run_x, 1.),
-                                    depth,
-                                    &style,
-                                    &glyphs,
-                                    None,
+                                    style.font_size,
                                 );
                             }
+
+                            comp.draw_run(
+                                &mut session,
+                                Rect::new(run_x, py, px - run_x, 1.),
+                                depth,
+                                &style,
+                                &glyphs,
+                                None,
+                            );
                         }
                         CacheResult::Miss => {
                             // No cached data - need to shape and render from scratch
@@ -724,12 +687,8 @@ impl RichTextBrush {
                                 let advance = glyph.simple_data().1;
 
                                 // Different advance calculation based on mode
-                                if is_dimensions_only {
-                                    px += advance * char_width;
-                                } else {
-                                    px +=
-                                        rte_layout.unwrap().dimensions.width * char_width;
-                                }
+                                px +=
+                                    rte_layout.unwrap().dimensions.width * char_width;
 
                                 let glyph_id = glyph.simple_data().0;
                                 glyphs.push(Glyph { id: glyph_id, x, y });
@@ -750,7 +709,7 @@ impl RichTextBrush {
                             }
 
                             // Cache the shaped glyphs for future use
-                            if !is_dimensions_only && !run_text.is_empty() {
+                            if !run_text.is_empty() {
                                 self.text_run_manager.cache_shaping_data(
                                     &run_text,
                                     font,
@@ -762,7 +721,6 @@ impl RichTextBrush {
                             }
 
                             // Create style for rendering
-                            if !is_dimensions_only {
                                 let style = TextRunStyle {
                                     font_coords,
                                     font_size: run.size,
@@ -811,20 +769,9 @@ impl RichTextBrush {
                                     None,
                                 );
                             }
-                        }
-                    }
-
-                    // Update dimensions if in dimensions mode
-                    if is_dimensions_only {
-                        let advance = px - run_x;
-                        if advance > 0.0 && line_height > 0.0 {
-                            dimensions.width = advance.round();
-                            dimensions.height = line_height.round();
-                        }
                     }
 
                     // Handle graphics if in layout mode
-                    if !is_dimensions_only {
                         if let Some(graphic) = run.span.media {
                             if !last_rendered_graphic.contains(&graphic.id) {
                                 let offset_x = graphic.offset_x as f32;
@@ -842,30 +789,16 @@ impl RichTextBrush {
                                 last_rendered_graphic.insert(graphic.id);
                             }
                         }
-                    }
                 }
 
                 // Advance line_y for the next line
-                if !is_dimensions_only {
-                    line_y += line_height;
-                }
+                line_y += line_height;
             }
         }
 
         // let screen_render_duration = start.elapsed();
         // if self.renderer.enable_performance_logging {
         // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
-
-        // Return dimensions if in dimensions mode
-        if is_dimensions_only {
-            if dimensions.height > 0.0 && dimensions.width > 0.0 {
-                Some(dimensions)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
     }
 
     #[inline]

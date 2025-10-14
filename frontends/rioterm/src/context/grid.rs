@@ -35,15 +35,9 @@ fn compute(
     if available_width <= 0.0 || available_height <= 0.0 {
         return (MIN_COLS, MIN_LINES);
     }
-
-    // Calculate columns
-    let char_width = dimensions.width / dimensions.scale;
-    if char_width <= 0.0 {
-        return (MIN_COLS, MIN_LINES);
-    }
     
     let visible_columns =
-        std::cmp::max((available_width / char_width) as usize, MIN_COLS);
+        std::cmp::max((available_width / (dimensions.width / dimensions.scale)) as usize, MIN_COLS);
 
     // Calculate lines
     let char_height = (dimensions.height / dimensions.scale) * line_height;
@@ -51,8 +45,8 @@ fn compute(
         return (visible_columns, MIN_LINES);
     }
 
-    let lines = (available_height / char_height) - 1.0;
-    let visible_lines = std::cmp::max(lines.round() as usize, MIN_LINES);
+    let lines = available_height / char_height;
+    let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
 }
@@ -601,7 +595,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
-        // Now get the updated layouts
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
