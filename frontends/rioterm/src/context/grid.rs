@@ -19,67 +19,40 @@ fn compute(
     line_height: f32,
     margin: Delta<f32>,
 ) -> (usize, usize) {
-    println!("=== COMPUTE CALLED ===");
-    println!("  width: {}, height: {}", width, height);
-    println!("  dimensions: scale={}, width={}, height={}", dimensions.scale, dimensions.width, dimensions.height);
-    println!("  line_height: {}", line_height);
-    println!("  margin: x={}, top_y={}, bottom_y={}", margin.x, margin.top_y, margin.bottom_y);
-    
     // Ensure we have positive dimensions
     if width <= 0.0 || height <= 0.0 || dimensions.scale <= 0.0 || line_height <= 0.0 {
-        println!("  -> Returning MIN (invalid inputs)");
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Convert margin to scaled/physical pixels
-    let margin_x_physical = margin.x * dimensions.scale;
-    let margin_top_physical = margin.top_y * dimensions.scale;
-    let margin_bottom_physical = margin.bottom_y * dimensions.scale;
+    let margin_x = (margin.x * dimensions.scale).round();
+    let margin_spaces = margin.top_y + margin.bottom_y;
 
     // Calculate available space in physical pixels
-    let available_width_physical = width - margin_x_physical;
-    let available_height_physical = height - margin_top_physical - margin_bottom_physical;
+    let available_width = (width / dimensions.scale) - margin_x;
+    let available_height = (height / dimensions.scale) - margin_spaces;
     
-    println!("  margin in physical pixels: x={}, top={}, bottom={}", 
-        margin_x_physical, margin_top_physical, margin_bottom_physical);
-    println!("  available (physical): width={}, height={}", 
-        available_width_physical, available_height_physical);
-
     // Ensure we have positive available space
-    if available_width_physical <= 0.0 || available_height_physical <= 0.0 {
-        println!("  -> Returning MIN (no available space)");
+    if available_width <= 0.0 || available_height <= 0.0 {
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Character dimensions from the brush are already in physical pixels
-    // (measured at the actual scaled font size)
-    // So we use them directly without scaling
-    let char_width_physical = dimensions.width;
-    let char_height_physical = dimensions.height * line_height;
-    
-    println!("  char (physical, from brush): width={}, height={}", char_width_physical, char_height_physical);
-    
-    if char_width_physical <= 0.0 {
-        eprintln!(
-            "WARNING: char_width_physical is {}, using fallback. dimensions: {:?}",
-            char_width_physical, dimensions
-        );
-        println!("  -> Returning MIN (zero char_width)");
+    // Calculate columns
+    let char_width = dimensions.width / dimensions.scale;
+    if char_width <= 0.0 {
         return (MIN_COLS, MIN_LINES);
     }
     
-    if char_height_physical <= 0.0 {
-        println!("  -> Returning (cols, MIN) (zero char_height)");
-        let visible_columns = std::cmp::max((available_width_physical / char_width_physical) as usize, MIN_COLS);
+    let visible_columns =
+        std::cmp::max((available_width / char_width) as usize, MIN_COLS);
+
+    // Calculate lines
+    let char_height = (dimensions.height / dimensions.scale) * line_height;
+    if char_height <= 0.0 {
         return (visible_columns, MIN_LINES);
     }
-    
-    let visible_columns = std::cmp::max((available_width_physical / char_width_physical) as usize, MIN_COLS);
-    let lines = (available_height_physical / char_height_physical) - 1.0;
-    let visible_lines = std::cmp::max(lines.round() as usize, MIN_LINES);
 
-    println!("  -> Result: {} cols x {} rows", visible_columns, visible_lines);
-    println!("=== END COMPUTE ===\n");
+    let lines = (available_height / char_height) - 1.0;
+    let visible_lines = std::cmp::max(lines.round() as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
 }
@@ -628,42 +601,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
-        println!("\n╔═══════════════════════════════════════════════════════════════╗");
-        println!("║ Grid::update_dimensions called                                ║");
-        println!("╚═══════════════════════════════════════════════════════════════╝");
-
-        // First, check if any context has invalid dimensions and force recomputation
-        for context in self.inner.values() {
-            let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
-            println!("  Checking rich_text_id {}: dimensions {}x{} (scale={})",
-                context.val.rich_text_id,
-                layout.dimensions.width,
-                layout.dimensions.height,
-                layout.dimensions.scale
-            );
-            
-            // If dimensions are zero or scale is wrong (equals font_size), force recomputation
-            if layout.dimensions.width == 0.0 
-                || layout.dimensions.height == 0.0
-                || layout.dimensions.scale == layout.font_size {
-                println!("    -> Detected invalid dimensions, forcing recomputation");
-                sugarloaf.force_update_dimensions(&context.val.rich_text_id);
-            } else {
-                println!("    -> Dimensions look valid, calling get_rich_text_dimensions");
-                sugarloaf.get_rich_text_dimensions(&context.val.rich_text_id);
-            }
-        }
-
-        println!("\n  Getting final layouts for all contexts:");
         // Now get the updated layouts
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
-            println!("    rich_text_id {}: dimensions {}x{} (scale={})",
-                context.val.rich_text_id,
-                layout.dimensions.width,
-                layout.dimensions.height,
-                layout.dimensions.scale
-            );
             context.val.dimension.update_dimensions(layout.dimensions);
         }
         // Update scaled_padding from the first context (they should all have the same scale)
@@ -671,11 +611,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if let Some(first_context) = self.inner.get(&root) {
                 self.scaled_padding =
                     PADDING * first_context.val.dimension.dimension.scale;
-                println!("  Updated scaled_padding to {}", self.scaled_padding);
             }
         }
         self.calculate_positions();
-        println!("╚═══════════════════════════════════════════════════════════════╝\n");
     }
 
     pub fn resize(&mut self, new_width: f32, new_height: f32) {
@@ -7163,7 +7101,3 @@ pub mod test {
         );
     }
 }
-
-#[cfg(test)]
-#[path = "grid_compute_tests.rs"]
-mod grid_compute_tests;
