@@ -856,6 +856,7 @@ impl Renderer {
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
             let context = grid_context.context_mut();
+            println!("{:?}", context.dimension);
 
             let mut has_ime = false;
             if let Some(preedit) = context.ime.preedit() {
