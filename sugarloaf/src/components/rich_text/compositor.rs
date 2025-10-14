@@ -105,15 +105,16 @@ impl Compositor {
         }
     }
 
+    #[inline]
     pub fn begin(&mut self) {
         self.batches.reset();
     }
 
+    #[inline]
     pub fn finish(&mut self, vertices: &mut Vec<Vertex>) {
         self.batches.build_display_list(vertices);
     }
 
-    /// Add a rectangle - unified quad rendering
     #[inline]
     pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
         self.batches.add_primitive_rect(rect, depth);
@@ -128,7 +129,6 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: &[Glyph],
-        _cache_operations: Option<&mut Vec<()>>, // Ignored - legacy parameter
     ) {
         self.draw_run_internal(session, rect, depth, style, glyphs);
     }

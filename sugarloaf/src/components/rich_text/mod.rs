@@ -334,7 +334,6 @@ impl RichTextBrush {
 
         // Iterate over all content states and render visible ones
         for (rich_text_id, builder_state) in &state.content.states {
-            println!("rich_text_id on prepare {:?}", rich_text_id);
             // Skip if marked for removal or hidden
             if builder_state.render_data.should_remove || builder_state.render_data.hidden
             {
@@ -357,21 +356,6 @@ impl RichTextBrush {
                 continue;
             }
 
-            // Check if this specific rich text needs cache invalidation
-            match &builder_state.last_update {
-                BuilderStateUpdate::Full => {
-                    // For full updates, we don't need to clear text run cache
-                    // as it's shared across all text and font-specific
-                }
-                BuilderStateUpdate::Partial(_lines) => {
-                    // For partial updates, we also don't need to clear text run cache
-                    // as individual text runs are still valid
-                }
-                BuilderStateUpdate::Noop => {
-                    // Do nothing
-                }
-            };
-
             let pos = (
                 builder_state.render_data.position[0] * state.style.scale_factor,
                 builder_state.render_data.position[1] * state.style.scale_factor,
@@ -387,8 +371,6 @@ impl RichTextBrush {
                 graphics,
             );
         }
-
-        self.vertices.clear();
 
         self.vertices.clear();
         self.images.process_atlases(context);
@@ -669,7 +651,6 @@ impl RichTextBrush {
                                 depth,
                                 &style,
                                 &glyphs,
-                                None,
                             );
                         }
                         CacheResult::Miss => {
@@ -761,7 +742,6 @@ impl RichTextBrush {
                                 depth,
                                 &style,
                                 &glyphs,
-                                None,
                             );
                         }
                     }
@@ -810,7 +790,6 @@ impl RichTextBrush {
         tracing::info!("RichTextBrush atlas, glyph cache, and text run cache cleared");
     }
 
-    /// Add a rectangle - unified quad rendering approach
     #[inline]
     pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
         self.comp.add_rect(rect, depth);

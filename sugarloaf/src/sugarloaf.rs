@@ -221,14 +221,13 @@ impl Sugarloaf<'_> {
         self.state.set_rich_text_font_size_based_on_action(
             rt_id,
             operation,
-            &mut self.rich_text_brush,
         );
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
         self.state
-            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+            .set_rich_text_font_size(rt_id, font_size);
     }
 
     #[inline]
@@ -397,7 +396,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_dimensions(&mut self.rich_text_brush);
+        self.state.compute_dimensions();
         self.state.compute_updates(
             &mut self.rich_text_brush,
             &mut self.ctx,

@@ -106,7 +106,6 @@ impl SugarState {
         &mut self,
         rich_text_id: &usize,
         operation: u8,
-        advance_brush: &mut RichTextBrush,
     ) {
         if let Some(rte) = self.content.get_state_mut(rich_text_id) {
             let should_update = match operation {
@@ -126,11 +125,11 @@ impl SugarState {
             }
         }
 
-        self.compute_dimensions(advance_brush);
+        self.compute_dimensions();
     }
 
     #[inline]
-    pub fn compute_dimensions(&mut self, advance_brush: &mut RichTextBrush) {
+    pub fn compute_dimensions(&mut self) {
         // Collect IDs that need repaint first
         let ids_to_repaint: Vec<usize> = self
             .content
@@ -163,6 +162,7 @@ impl SugarState {
         }
     }
 
+    #[inline]
     pub fn compute_updates(
         &mut self,
         advance_brush: &mut RichTextBrush,
@@ -170,8 +170,6 @@ impl SugarState {
         graphics: &mut Graphics,
     ) {
         advance_brush.prepare(context, self, graphics);
-        // Rectangles are now rendered directly via add_rect() calls
-        // No object processing needed anymore
     }
 
     #[inline]
@@ -261,9 +259,8 @@ impl SugarState {
         &mut self,
         rich_text_id: &usize,
         operation: u8,
-        advance_brush: &mut RichTextBrush,
     ) {
-        self.update_rich_text_style(rich_text_id, operation, advance_brush);
+        self.update_rich_text_style(rich_text_id, operation);
     }
 
     #[inline]
@@ -271,13 +268,12 @@ impl SugarState {
         &mut self,
         rt_id: &usize,
         _font_size: f32,
-        advance_brush: &mut RichTextBrush,
     ) {
         // Mark for repaint directly in render_data
         if let Some(state) = self.content.states.get_mut(rt_id) {
             state.render_data.needs_repaint = true;
         }
-        self.compute_dimensions(advance_brush);
+        self.compute_dimensions();
     }
 
     #[inline]
@@ -292,6 +288,6 @@ impl SugarState {
         advance_brush: &mut RichTextBrush,
     ) {
         // Simplified - rescaling handled elsewhere
-        self.compute_dimensions(advance_brush);
+        self.compute_dimensions();
     }
 }
