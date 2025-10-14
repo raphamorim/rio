@@ -526,10 +526,7 @@ impl Content {
     }
 
     #[inline]
-    pub fn update_dimensions(
-        &mut self,
-        state_id: &usize,
-    ) {
+    pub fn update_dimensions(&mut self, state_id: &usize) {
         let layout = if let Some(rte) = self.states.get(state_id) {
             rte.layout
         } else {

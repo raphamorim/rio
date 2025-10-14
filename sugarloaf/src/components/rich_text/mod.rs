@@ -614,8 +614,7 @@ impl RichTextBrush {
                                 let x = px;
                                 let y = baseline; // Glyph y should be at baseline position
 
-                                px +=
-                                    rte_layout.unwrap().dimensions.width * char_width;
+                                px += rte_layout.unwrap().dimensions.width * char_width;
 
                                 glyphs.push(Glyph {
                                     id: shaped_glyph.glyph_id as GlyphId,
@@ -637,10 +636,7 @@ impl RichTextBrush {
                                 line_height,
                                 padding_y,
                                 line_height_without_mod,
-                                advance: cached_glyphs
-                                    .iter()
-                                    .map(|g| g.x_advance)
-                                    .sum(),
+                                advance: cached_glyphs.iter().map(|g| g.x_advance).sum(),
                                 decoration: run.span.decoration,
                                 decoration_color: run.span.decoration_color,
                                 underline_offset: run.underline_offset,
@@ -687,8 +683,7 @@ impl RichTextBrush {
                                 let advance = glyph.simple_data().1;
 
                                 // Different advance calculation based on mode
-                                px +=
-                                    rte_layout.unwrap().dimensions.width * char_width;
+                                px += rte_layout.unwrap().dimensions.width * char_width;
 
                                 let glyph_id = glyph.simple_data().0;
                                 glyphs.push(Glyph { id: glyph_id, x, y });
@@ -721,74 +716,74 @@ impl RichTextBrush {
                             }
 
                             // Create style for rendering
-                                let style = TextRunStyle {
+                            let style = TextRunStyle {
+                                font_coords,
+                                font_size: run.size,
+                                color: run.span.color,
+                                cursor: run.span.cursor,
+                                drawable_char: run.span.drawable_char,
+                                background_color: run.span.background_color,
+                                baseline,
+                                topline: py, // Use py (line top) for cursor positioning
+                                line_height,
+                                padding_y,
+                                line_height_without_mod,
+                                advance: px - run_x,
+                                decoration: run.span.decoration,
+                                decoration_color: run.span.decoration_color,
+                                underline_offset: run.underline_offset,
+                                strikeout_offset: run.strikeout_offset,
+                                underline_thickness: run.strikeout_size,
+                                x_height: run.x_height,
+                                ascent: run.ascent,
+                                descent: run.descent,
+                            };
+
+                            // Update font session if needed
+                            if font != current_font
+                                || style.font_size != current_font_size
+                            {
+                                current_font = font;
+                                current_font_size = style.font_size;
+
+                                session = glyphs_cache.session(
+                                    image_cache,
+                                    current_font,
+                                    font_library,
                                     font_coords,
-                                    font_size: run.size,
-                                    color: run.span.color,
-                                    cursor: run.span.cursor,
-                                    drawable_char: run.span.drawable_char,
-                                    background_color: run.span.background_color,
-                                    baseline,
-                                    topline: py, // Use py (line top) for cursor positioning
-                                    line_height,
-                                    padding_y,
-                                    line_height_without_mod,
-                                    advance: px - run_x,
-                                    decoration: run.span.decoration,
-                                    decoration_color: run.span.decoration_color,
-                                    underline_offset: run.underline_offset,
-                                    strikeout_offset: run.strikeout_offset,
-                                    underline_thickness: run.strikeout_size,
-                                    x_height: run.x_height,
-                                    ascent: run.ascent,
-                                    descent: run.descent,
-                                };
-
-                                // Update font session if needed
-                                if font != current_font
-                                    || style.font_size != current_font_size
-                                {
-                                    current_font = font;
-                                    current_font_size = style.font_size;
-
-                                    session = glyphs_cache.session(
-                                        image_cache,
-                                        current_font,
-                                        font_library,
-                                        font_coords,
-                                        style.font_size,
-                                    );
-                                }
-
-                                comp.draw_run(
-                                    &mut session,
-                                    Rect::new(run_x, py, px - run_x, 1.),
-                                    depth,
-                                    &style,
-                                    &glyphs,
-                                    None,
+                                    style.font_size,
                                 );
                             }
+
+                            comp.draw_run(
+                                &mut session,
+                                Rect::new(run_x, py, px - run_x, 1.),
+                                depth,
+                                &style,
+                                &glyphs,
+                                None,
+                            );
+                        }
                     }
 
                     // Handle graphics if in layout mode
-                        if let Some(graphic) = run.span.media {
-                            if !last_rendered_graphic.contains(&graphic.id) {
-                                let offset_x = graphic.offset_x as f32;
-                                let offset_y = graphic.offset_y as f32;
+                    if let Some(graphic) = run.span.media {
+                        if !last_rendered_graphic.contains(&graphic.id) {
+                            let offset_x = graphic.offset_x as f32;
+                            let offset_y = graphic.offset_y as f32;
 
-                                let graphic_render_request = GraphicRenderRequest {
-                                    id: graphic.id,
-                                    pos_x: run_x - offset_x,
-                                    pos_y: py - ascent - offset_y,
-                                    width: None,
-                                    height: None,
-                                };
+                            let graphic_render_request = GraphicRenderRequest {
+                                id: graphic.id,
+                                pos_x: run_x - offset_x,
+                                pos_y: py - ascent - offset_y,
+                                width: None,
+                                height: None,
+                            };
 
-                                graphics.top_layer.push(graphic_render_request);
-                                last_rendered_graphic.insert(graphic.id);
-                            }
+                            graphics.top_layer.push(graphic_render_request);
+                            last_rendered_graphic.insert(graphic.id);
                         }
+                    }
                 }
 
                 // Advance line_y for the next line
