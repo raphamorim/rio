@@ -24,28 +24,29 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    let margin_x = (margin.x * dimensions.scale).round();
+    let margin_x = margin.x;
     let margin_spaces = margin.top_y + margin.bottom_y;
 
     // Calculate available space in physical pixels
-    let available_width = (width / dimensions.scale) - margin_x;
-    let available_height = (height / dimensions.scale) - margin_spaces;
-    
+    let available_width = width - margin_x;
+    let available_height = height - margin_spaces;
+
     // Ensure we have positive available space
     if available_width <= 0.0 || available_height <= 0.0 {
         return (MIN_COLS, MIN_LINES);
     }
-    
-    let visible_columns =
-        std::cmp::max((available_width / (dimensions.width / dimensions.scale)) as usize, MIN_COLS);
 
-    // Calculate lines
-    let char_height = (dimensions.height / dimensions.scale) * line_height;
+    // Calculate columns - divide by scaled character width
+    let visible_columns =
+        std::cmp::max((available_width / dimensions.width) as usize, MIN_COLS);
+
+    // Calculate lines - divide by scaled character height
+    let char_height = dimensions.height * line_height;
     if char_height <= 0.0 {
         return (visible_columns, MIN_LINES);
     }
 
-    let lines = available_height / char_height;
+    let lines = (available_height / char_height).floor() - 1.0;
     let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
@@ -494,15 +495,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
             println!("\n>>> grid_dimension called for current context");
-            println!("    Context dimension: {}x{} (scale={})", 
+            println!(
+                "    Context dimension: {}x{} (scale={})",
                 current_context_dimension.width,
                 current_context_dimension.height,
                 current_context_dimension.dimension.scale
             );
             println!("    Grid size: {}x{}", self.width, self.height);
-            println!("    Margin: x={}, top_y={}, bottom_y={}", 
-                self.margin.x, self.margin.top_y, self.margin.bottom_y);
-            
+            println!(
+                "    Margin: x={}, top_y={}, bottom_y={}",
+                self.margin.x, self.margin.top_y, self.margin.bottom_y
+            );
+
             let result = ContextDimension::build(
                 self.width,
                 self.height,
@@ -510,8 +514,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 current_context_dimension.line_height,
                 self.margin,
             );
-            
-            println!("    Resulting dimension: {} cols x {} rows", result.columns, result.lines);
+
+            println!(
+                "    Resulting dimension: {} cols x {} rows",
+                result.columns, result.lines
+            );
             println!("<<< grid_dimension done\n");
             result
         } else {
