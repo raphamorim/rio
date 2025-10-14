@@ -71,11 +71,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn get_rich_text_dimensions(
-        &mut self,
-        id: &usize,
-        advance_brush: &mut RichTextBrush,
-    ) -> SugarDimensions {
+    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
         // Mark for repaint directly in render_data
         if let Some(state) = self.content.states.get_mut(id) {
             state.render_data.needs_repaint = true;
@@ -102,11 +98,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn update_rich_text_style(
-        &mut self,
-        rich_text_id: &usize,
-        operation: u8,
-    ) {
+    pub fn update_rich_text_style(&mut self, rich_text_id: &usize, operation: u8) {
         if let Some(rte) = self.content.get_state_mut(rich_text_id) {
             let should_update = match operation {
                 0 => rte.reset_font_size(),
@@ -264,11 +256,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_rich_text_font_size(
-        &mut self,
-        rt_id: &usize,
-        _font_size: f32,
-    ) {
+    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, _font_size: f32) {
         // Mark for repaint directly in render_data
         if let Some(state) = self.content.states.get_mut(rt_id) {
             state.render_data.needs_repaint = true;
@@ -282,11 +270,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_rescale(
-        &mut self,
-        _scale: f32,
-        advance_brush: &mut RichTextBrush,
-    ) {
+    pub fn compute_layout_rescale(&mut self, _scale: f32) {
         // Simplified - rescaling handled elsewhere
         self.compute_dimensions();
     }

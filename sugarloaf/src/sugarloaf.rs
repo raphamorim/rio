@@ -218,16 +218,13 @@ impl Sugarloaf<'_> {
         rt_id: &usize,
         operation: u8,
     ) {
-        self.state.set_rich_text_font_size_based_on_action(
-            rt_id,
-            operation,
-        );
+        self.state
+            .set_rich_text_font_size_based_on_action(rt_id, operation);
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state
-            .set_rich_text_font_size(rt_id, font_size);
+        self.state.set_rich_text_font_size(rt_id, font_size);
     }
 
     #[inline]
@@ -307,9 +304,27 @@ impl Sugarloaf<'_> {
 
     /// Add a rectangle directly to the rendering pipeline
     #[inline]
-    pub fn add_rect(&mut self, x: f32, y: f32, width: f32, height: f32, color: [f32; 4]) {
-        let rect = crate::sugarloaf::primitives::Rect::new(x, y, width, height, color);
-        self.rich_text_brush.add_rect(&rect, 0.0);
+    pub fn add_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        self.rich_text_brush.add_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+        );
     }
 
     /// Show a rich text at a specific position
@@ -343,8 +358,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
-        self.state
-            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+        self.state.get_rich_text_dimensions(id)
     }
 
     #[inline]
@@ -376,8 +390,7 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
         self.ctx.set_scale(scale);
-        self.state
-            .compute_layout_rescale(scale, &mut self.rich_text_brush);
+        self.state.compute_layout_rescale(scale);
         // if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
         //     if bottom_layer.should_fit {
         //         bottom_layer.data.bounds.width = self.ctx.size.width;

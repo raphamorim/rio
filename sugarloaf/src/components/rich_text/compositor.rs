@@ -106,18 +106,9 @@ impl Compositor {
     }
 
     #[inline]
-    pub fn begin(&mut self) {
-        self.batches.reset();
-    }
-
-    #[inline]
     pub fn finish(&mut self, vertices: &mut Vec<Vertex>) {
         self.batches.build_display_list(vertices);
-    }
-
-    #[inline]
-    pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
-        self.batches.add_primitive_rect(rect, depth);
+        self.batches.reset();
     }
 
     /// Standard draw_run method (for compatibility)

@@ -329,9 +329,7 @@ impl RichTextBrush {
             return;
         }
 
-        self.comp.begin();
         let library = state.content.font_library();
-
         // Iterate over all content states and render visible ones
         for (rich_text_id, builder_state) in &state.content.states {
             // Skip if marked for removal or hidden
@@ -791,8 +789,25 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn add_rect(&mut self, rect: &crate::sugarloaf::primitives::Rect, depth: f32) {
-        self.comp.add_rect(rect, depth);
+    pub fn add_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        self.comp.batches.add_rect(
+            &Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            depth,
+            &color,
+        );
     }
 
     #[inline]
