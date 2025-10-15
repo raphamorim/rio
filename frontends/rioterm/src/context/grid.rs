@@ -494,19 +494,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn grid_dimension(&self) -> ContextDimension {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
-            println!("\n>>> grid_dimension called for current context");
-            println!(
-                "    Context dimension: {}x{} (scale={})",
-                current_context_dimension.width,
-                current_context_dimension.height,
-                current_context_dimension.dimension.scale
-            );
-            println!("    Grid size: {}x{}", self.width, self.height);
-            println!(
-                "    Margin: x={}, top_y={}, bottom_y={}",
-                self.margin.x, self.margin.top_y, self.margin.bottom_y
-            );
-
             let result = ContextDimension::build(
                 self.width,
                 self.height,
@@ -514,12 +501,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 current_context_dimension.line_height,
                 self.margin,
             );
-
-            println!(
-                "    Resulting dimension: {} cols x {} rows",
-                result.columns, result.lines
-            );
-            println!("<<< grid_dimension done\n");
             result
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
@@ -717,15 +698,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Calculate and update positions for all grid items
     pub fn calculate_positions(&mut self) {
-        println!("DEBUG: calculate_positions called");
         if self.inner.is_empty() {
             return;
         }
         if let Some(root) = self.root {
-            println!(
-                "DEBUG: calculate_positions with root {} and margin [{}, {}]",
-                root, self.margin.x, self.margin.top_y
-            );
             self.calculate_positions_recursive(root, self.margin);
         }
     }
@@ -793,10 +769,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
         if let Some(item) = self.inner.get_mut(&key) {
             // Set position for current item in the rich text object
-            println!(
-                "DEBUG: calculate_positions_recursive for key {} with margin [{}, {}]",
-                key, margin.x, margin.top_y
-            );
             item.set_position([margin.x, margin.top_y]);
 
             // Calculate margin for down item
@@ -3010,15 +2982,6 @@ pub mod test {
         // If the split right happens in not the last
         // then should not update margin to half of x
         let contexts = grid.contexts_ordered();
-
-        // Debug: print actual values
-        println!("Debug test_split_right_with_margin after fourth split:");
-        for (i, context) in contexts.iter().enumerate() {
-            println!(
-                "  contexts[{}]: width={}, margin.x={}",
-                i, context.val.dimension.width, context.val.dimension.margin.x
-            );
-        }
 
         assert_eq!(contexts[0].val.dimension.width, 286.);
         assert_eq!(contexts[0].val.dimension.margin.x, 0.);
