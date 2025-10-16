@@ -5,9 +5,14 @@ language: 'en'
 
 # Changelog
 
-## 0.2.32 (unreleased)
+## 0.2.33 (unreleased)
+
+- TBD.
+
+## 0.2.32
 
 - Updated WGPU to "27.0.1".
+- Fix No backend are enabled on FreeBSD [#1235](https://github.com/raphamorim/rio/issues/1235).
 
 ## 0.2.31
 
