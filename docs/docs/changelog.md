@@ -7,11 +7,11 @@ language: 'en'
 
 ## 0.2.32 (unreleased)
 
-- TBD.
+- Updated WGPU to "27.0.1".
 
 ## 0.2.31
 
-- Update Rust to v1.90.
+- Updated Rust to v1.90.
 - Fix kitty keyboard recognition.
 - **Breaking: Simplified key binding escape sequences**
   - Replaced separate `text` and `bytes` fields with a single `esc` field
