@@ -335,6 +335,7 @@ impl LayerBrush {
                     [bounds.width, bounds.height],
                     atlas_entry,
                     instances,
+                    self.texture_atlas.size(),
                 );
             }
         }
@@ -396,6 +397,7 @@ impl LayerBrush {
                 [bounds.width, bounds.height],
                 atlas_entry,
                 instances,
+                self.texture_atlas.size(),
             );
         }
 
@@ -586,10 +588,17 @@ fn add_instances(
     image_size: [f32; 2],
     entry: &atlas::Entry,
     instances: &mut Vec<Instance>,
+    atlas_size: u32,
 ) {
     match entry {
         atlas::Entry::Contiguous(allocation) => {
-            add_instance(image_position, image_size, allocation, instances);
+            add_instance(
+                image_position,
+                image_size,
+                allocation,
+                instances,
+                atlas_size,
+            );
         }
         atlas::Entry::Fragmented { fragments, size } => {
             let scaling_x = image_size[0] / size.width as f32;
@@ -615,7 +624,7 @@ fn add_instances(
                     fragment_height as f32 * scaling_y,
                 ];
 
-                add_instance(position, size, allocation, instances);
+                add_instance(position, size, allocation, instances, atlas_size);
             }
         }
     }
@@ -627,6 +636,7 @@ fn add_instance(
     size: [f32; 2],
     allocation: &atlas::Allocation,
     instances: &mut Vec<Instance>,
+    atlas_size: u32,
 ) {
     let (x, y) = allocation.position();
     let Size { width, height } = allocation.size();
@@ -636,12 +646,12 @@ fn add_instance(
         _position: position,
         _size: size,
         _position_in_atlas: [
-            (x as f32 + 0.5) / atlas::SIZE as f32,
-            (y as f32 + 0.5) / atlas::SIZE as f32,
+            (x as f32 + 0.5) / atlas_size as f32,
+            (y as f32 + 0.5) / atlas_size as f32,
         ],
         _size_in_atlas: [
-            (width as f32 - 1.0) / atlas::SIZE as f32,
-            (height as f32 - 1.0) / atlas::SIZE as f32,
+            (width as f32 - 1.0) / atlas_size as f32,
+            (height as f32 - 1.0) / atlas_size as f32,
         ],
         _layer: layer as u32,
     };
