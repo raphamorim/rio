@@ -13,6 +13,7 @@ pub struct Context<'a> {
     surface_caps: wgpu::SurfaceCapabilities,
     pub supports_f16: bool,
     pub colorspace: Colorspace,
+    pub max_texture_dimension_2d: u32,
 }
 
 #[inline]
@@ -225,9 +226,12 @@ impl Context<'_> {
             },
         );
 
+        let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+
         tracing::info!("F16 shader support: {}", supports_f16);
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);
+        tracing::info!("Max texture dimension 2D: {}", max_texture_dimension_2d);
 
         Context {
             device,
@@ -244,6 +248,7 @@ impl Context<'_> {
             surface_caps,
             supports_f16,
             colorspace: renderer_config.colorspace,
+            max_texture_dimension_2d,
         }
     }
 
@@ -295,6 +300,10 @@ impl Context<'_> {
         } else {
             wgpu::TextureFormat::Rgba8Unorm
         }
+    }
+
+    pub fn max_texture_dimension_2d(&self) -> u32 {
+        self.max_texture_dimension_2d
     }
 
     pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {
