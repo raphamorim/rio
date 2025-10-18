@@ -183,7 +183,12 @@ impl Graphics {
     }
 
     /// Store a kitty graphics image for later placement
-    pub fn store_kitty_image(&mut self, image_id: u32, image_number: Option<u32>, data: GraphicData) {
+    pub fn store_kitty_image(
+        &mut self,
+        image_id: u32,
+        image_number: Option<u32>,
+        data: GraphicData,
+    ) {
         self.kitty_images.insert(
             image_id,
             StoredImage {
@@ -212,10 +217,14 @@ impl Graphics {
     }
 
     /// Delete kitty graphics images
-    pub fn delete_kitty_images(&mut self, predicate: impl Fn(&u32, &StoredImage) -> bool) {
+    pub fn delete_kitty_images(
+        &mut self,
+        predicate: impl Fn(&u32, &StoredImage) -> bool,
+    ) {
         self.kitty_images.retain(|id, img| !predicate(id, img));
         // Clean up stale number mappings
-        self.kitty_image_numbers.retain(|_, id| self.kitty_images.contains_key(id));
+        self.kitty_image_numbers
+            .retain(|_, id| self.kitty_images.contains_key(id));
     }
 }
 

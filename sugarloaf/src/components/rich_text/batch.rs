@@ -32,6 +32,9 @@ pub struct Vertex {
     pub color: [f32; 4],
     pub uv: [f32; 2],
     pub layers: [i32; 2],
+    pub border_radius: f32,
+    pub rect_size: [f32; 2],
+    pub _padding: f32, // Padding to align to 16 bytes
 }
 
 /// Rectangle with floating point coordinates.
@@ -144,24 +147,36 @@ impl Batch {
             color,
             uv: [0.0, 0.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         };
         let v1 = Vertex {
             pos: [x2_top, y2_top, depth],
             color,
             uv: [1.0, 0.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         };
         let v2 = Vertex {
             pos: [x2_bottom, y2_bottom, depth],
             color,
             uv: [1.0, 1.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         };
         let v3 = Vertex {
             pos: [x1_bottom, y1_bottom, depth],
             color,
             uv: [0.0, 1.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         };
 
         // Add vertices directly in drawing order (two triangles)
@@ -217,18 +232,27 @@ impl Batch {
             color,
             uv: [0.0, 0.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         });
         self.vertices.push(Vertex {
             pos: [x2, y2, depth],
             color,
             uv: [1.0, 0.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         });
         self.vertices.push(Vertex {
             pos: [x3, y3, depth],
             color,
             uv: [0.0, 1.0],
             layers,
+            border_radius: 0.0,
+            rect_size: [0.0, 0.0],
+            _padding: 0.0,
         });
 
         true
@@ -308,24 +332,36 @@ impl Batch {
                 color: *color,
                 uv: [0.0, 0.0],
                 layers,
+                border_radius: 0.0,
+                rect_size: [0.0, 0.0],
+                _padding: 0.0,
             };
             let v1 = Vertex {
                 pos: [inner_x2, inner_y2, depth],
                 color: *color,
                 uv: [0.0, 1.0],
                 layers,
+                border_radius: 0.0,
+                rect_size: [0.0, 0.0],
+                _padding: 0.0,
             };
             let v2 = Vertex {
                 pos: [outer_x2, outer_y2, depth],
                 color: *color,
                 uv: [1.0, 1.0],
                 layers,
+                border_radius: 0.0,
+                rect_size: [0.0, 0.0],
+                _padding: 0.0,
             };
             let v3 = Vertex {
                 pos: [outer_x1, outer_y1, depth],
                 color: *color,
                 uv: [1.0, 0.0],
                 layers,
+                border_radius: 0.0,
+                rect_size: [0.0, 0.0],
+                _padding: 0.0,
             };
 
             // Add vertices directly in drawing order (two triangles)
@@ -372,7 +408,39 @@ impl Batch {
         self.image = image;
         self.mask = mask;
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
-        self.push_rect(rect, depth, color, coords, layers);
+        self.push_rect(rect, depth, color, coords, layers, 0.0);
+        true
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    fn rounded_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        coords: Option<&[f32; 4]>,
+        image: Option<i32>,
+        mask: Option<i32>,
+        subpix: bool,
+        border_radius: f32,
+    ) -> bool {
+        if !self.vertices.is_empty() && subpix != self.subpix {
+            return false;
+        }
+        let has_image = image.is_some();
+        let has_mask = mask.is_some();
+        if has_image && self.image.is_some() && self.image != image {
+            return false;
+        }
+        if has_mask && self.mask.is_some() && self.mask != mask {
+            return false;
+        }
+        self.subpix = subpix;
+        self.image = image;
+        self.mask = mask;
+        let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
+        self.push_rect(rect, depth, color, coords, layers, border_radius);
         true
     }
 
@@ -384,6 +452,7 @@ impl Batch {
         color: &[f32; 4],
         coords: Option<&[f32; 4]>,
         layers: [i32; 2],
+        border_radius: f32,
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -403,24 +472,36 @@ impl Batch {
             color: *color,
             uv: [l, t],
             layers,
+            border_radius,
+            rect_size: [w, h],
+            _padding: 0.0,
         };
         let v1 = Vertex {
             pos: [x, y + h, depth],
             color: *color,
             uv: [l, b],
             layers,
+            border_radius,
+            rect_size: [w, h],
+            _padding: 0.0,
         };
         let v2 = Vertex {
             pos: [x + w, y + h, depth],
             color: *color,
             uv: [r, b],
             layers,
+            border_radius,
+            rect_size: [w, h],
+            _padding: 0.0,
         };
         let v3 = Vertex {
             pos: [x + w, y, depth],
             color: *color,
             uv: [r, t],
             layers,
+            border_radius,
+            rect_size: [w, h],
+            _padding: 0.0,
         };
 
         // Add vertices directly in the order they'll be drawn
@@ -796,6 +877,59 @@ impl BatchManager {
         }
         self.alloc_batch(transparent)
             .rect(rect, depth, color, None, None, None, false);
+    }
+
+    /// Add a rounded rectangle with the specified border radius
+    #[inline]
+    pub fn rounded_rect(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        border_radius: f32,
+    ) {
+        let transparent = color[3] != 1.0;
+        if transparent {
+            for batch in &mut self.transparent {
+                if batch.rounded_rect(
+                    rect,
+                    depth,
+                    color,
+                    None,
+                    None,
+                    None,
+                    false,
+                    border_radius,
+                ) {
+                    return;
+                }
+            }
+        } else {
+            for batch in &mut self.opaque {
+                if batch.rounded_rect(
+                    rect,
+                    depth,
+                    color,
+                    None,
+                    None,
+                    None,
+                    false,
+                    border_radius,
+                ) {
+                    return;
+                }
+            }
+        }
+        self.alloc_batch(transparent).rounded_rect(
+            rect,
+            depth,
+            color,
+            None,
+            None,
+            None,
+            false,
+            border_radius,
+        );
     }
 
     /// Add a rectangle with color - unified with quad rendering

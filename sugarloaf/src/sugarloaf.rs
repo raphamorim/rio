@@ -254,10 +254,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn create_rich_text(
-        &mut self,
-        config: Option<&RichTextConfig>,
-    ) -> usize {
+    pub fn create_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
         self.state.create_rich_text(config)
     }
 
@@ -270,10 +267,7 @@ impl Sugarloaf<'_> {
     // it will be removed after the render and doesn't
     // offer any type of optimization (e.g: cache) per render.
     #[inline]
-    pub fn create_temp_rich_text(
-        &mut self,
-        config: Option<&RichTextConfig>,
-    ) -> usize {
+    pub fn create_temp_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
         self.state.create_temp_rich_text(config)
     }
 
@@ -308,6 +302,34 @@ impl Sugarloaf<'_> {
             scaled_height,
             color,
             depth,
+        );
+    }
+
+    /// Add a rounded rectangle directly to the rendering pipeline
+    #[inline]
+    pub fn rounded_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        let scaled_border_radius = border_radius * self.state.style.scale_factor;
+        self.rich_text_brush.rounded_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+            scaled_border_radius,
         );
     }
 

@@ -38,6 +38,15 @@ const MAX_TITLE_CHARS: usize = 25;
 /// Minimum width for a single island
 const ISLAND_MIN_WIDTH: f32 = 60.0;
 
+/// Width of the small indicator inside single tab
+const SINGLE_TAB_INDICATOR_WIDTH: f32 = 5.0;
+
+/// Height of the small indicator inside single tab
+const SINGLE_TAB_INDICATOR_HEIGHT: f32 = 16.0;
+
+/// Width of the island container when showing single tab indicator
+const SINGLE_TAB_ISLAND_WIDTH: f32 = 18.0;
+
 /// Data for each individual tab island
 struct TabIslandData {
     /// Rich text ID for this tab's title
@@ -57,6 +66,8 @@ pub struct Island {
     pub active_background_color: [f32; 4],
     /// Title text color (RGBA)
     pub title_color: [f32; 4],
+    /// Cursor color for single-tab indicator (RGBA)
+    pub cursor_color: [f32; 4],
     /// Whether to show shadow below islands
     pub show_shadow: bool,
     /// Tab-specific data keyed by tab index
@@ -74,6 +85,8 @@ impl Default for Island {
             active_background_color: [0.2, 0.2, 0.2, 1.0],
             // Light text color
             title_color: [0.85, 0.85, 0.85, 1.0],
+            // Default cursor color (pink)
+            cursor_color: [0.97, 0.07, 1.0, 1.0],
             show_shadow: true,
             tab_data: HashMap::new(),
         }
@@ -127,71 +140,97 @@ impl Island {
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
 
-        // Calculate available width for islands
-        let available_width = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT;
+        // Hide all existing island rich texts first
+        for tab_data in self.tab_data.values() {
+            sugarloaf.hide_rich_text(tab_data.rich_text_id);
+        }
+
+        // Always render the single-tab indicator (leftmost element)
+        let indicator_island_width = SINGLE_TAB_ISLAND_WIDTH;
+        let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
+        let island_y = ISLAND_PADDING_Y;
+
+        // Calculate starting position (will be adjusted based on total width)
+        let mut indicator_x =
+            (window_width / scale_factor) - indicator_island_width - ISLAND_MARGIN_RIGHT;
+
+        // If we have multiple tabs, we need to account for their width too
+        let available_width = if num_tabs > 1 {
+            (window_width / scale_factor)
+                - indicator_island_width
+                - ISLAND_SPACING
+                - ISLAND_MARGIN_RIGHT
+        } else {
+            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT
+        };
 
         // First pass: prepare all tab data and calculate total width
+        // Skip this if we only have 1 tab (we'll just show the indicator)
         let mut island_widths = Vec::with_capacity(num_tabs);
         let mut display_titles = Vec::with_capacity(num_tabs);
         let mut total_width = 0.0;
 
-        for tab_index in 0..num_tabs {
-            // Get title for this tab
-            let mut title = self.get_title_for_tab(context_manager, tab_index);
-            if title.is_empty() {
-                island_widths.push(0.0);
-                display_titles.push(String::new());
-                continue;
-            }
-
-            // Get or create tab data
-            let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
-                let rich_text_id = sugarloaf.create_rich_text(None);
-                sugarloaf.set_rich_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
-                TabIslandData {
-                    rich_text_id,
-                    last_title: String::new(),
-                    text_width: 0.0,
-                }
-            });
-
-            // Limit title to max characters
-            if title.len() > MAX_TITLE_CHARS {
-                title = title.chars().take(MAX_TITLE_CHARS).collect();
-            }
-
-            // Update text if title changed
-            if tab_data.last_title != title {
-                use rio_backend::sugarloaf::FragmentStyle;
-                let content = sugarloaf.content();
-                content
-                    .sel(tab_data.rich_text_id)
-                    .clear()
-                    .new_line()
-                    .add_text(
-                        &title,
-                        FragmentStyle {
-                            color: self.title_color,
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .build();
-
-                // Measure text width
-                let dims = sugarloaf.get_rich_text_dimensions(&tab_data.rich_text_id);
-                tab_data.text_width = dims.width;
-                tab_data.last_title = title.clone();
-            }
-
-            // Calculate and constrain island width
-            let (island_width, _padding_x) = Self::calculate_island_width(tab_data.text_width);
-            island_widths.push(island_width);
-            display_titles.push(title);
-            total_width += island_width;
-        }
-
-        // Add spacing between islands
         if num_tabs > 1 {
+            for tab_index in 0..num_tabs {
+                // Get title for this tab
+                let mut title = self.get_title_for_tab(context_manager, tab_index);
+                if title.is_empty() {
+                    island_widths.push(0.0);
+                    display_titles.push(String::new());
+                    continue;
+                }
+
+                // Get or create tab data
+                let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
+                    use rio_backend::sugarloaf::layout::RichTextConfig;
+                    // Text should be in front of everything (terminal at 0.0, island at 0.1)
+                    let config = RichTextConfig::new().with_depth(-0.1);
+                    let rich_text_id = sugarloaf.create_rich_text(Some(&config));
+                    sugarloaf.set_rich_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
+                    TabIslandData {
+                        rich_text_id,
+                        last_title: String::new(),
+                        text_width: 0.0,
+                    }
+                });
+
+                // Limit title to max characters
+                if title.len() > MAX_TITLE_CHARS {
+                    title = title.chars().take(MAX_TITLE_CHARS).collect();
+                }
+
+                // Update text if title changed
+                if tab_data.last_title != title {
+                    use rio_backend::sugarloaf::FragmentStyle;
+                    let content = sugarloaf.content();
+                    content
+                        .sel(tab_data.rich_text_id)
+                        .clear()
+                        .new_line()
+                        .add_text(
+                            &title,
+                            FragmentStyle {
+                                color: self.title_color,
+                                ..FragmentStyle::default()
+                            },
+                        )
+                        .build();
+
+                    // Measure text width
+                    let dims = sugarloaf.get_rich_text_dimensions(&tab_data.rich_text_id);
+                    tab_data.text_width = dims.width;
+                    tab_data.last_title = title.clone();
+                }
+
+                // Calculate and constrain island width
+                let (island_width, _padding_x) =
+                    Self::calculate_island_width(tab_data.text_width);
+                island_widths.push(island_width);
+                display_titles.push(title);
+                total_width += island_width;
+            }
+
+            // Add spacing between islands
             total_width += ISLAND_SPACING * (num_tabs - 1) as f32;
         }
 
@@ -203,68 +242,94 @@ impl Island {
         };
 
         // Calculate starting x position from right edge
+        // If we have tabs, leave space for indicator on the right
         let final_total_width = total_width * scale_factor_width;
-        let mut x_position = (window_width / scale_factor) - final_total_width - ISLAND_MARGIN_RIGHT;
+        let mut x_position = if num_tabs > 1 {
+            (window_width / scale_factor)
+                - final_total_width
+                - indicator_island_width
+                - ISLAND_SPACING
+                - ISLAND_MARGIN_RIGHT
+        } else {
+            (window_width / scale_factor) - final_total_width - ISLAND_MARGIN_RIGHT
+        };
 
-        // Second pass: render all islands with scaled widths
-        let scaled_spacing = ISLAND_SPACING * scale_factor_width;
+        // Second pass: render all islands with scaled widths (only if num_tabs > 1)
+        if num_tabs > 1 {
+            let scaled_spacing = ISLAND_SPACING * scale_factor_width;
 
-        for tab_index in 0..num_tabs {
-            let base_island_width = island_widths[tab_index];
-            if base_island_width == 0.0 {
-                continue;
-            }
-
-            // Apply scaling to island width
-            let island_width = base_island_width * scale_factor_width;
-            let is_active = tab_index == current_tab_index;
-            let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
-            let island_y = ISLAND_PADDING_Y;
-
-            // Choose background color based on active state
-            let bg_color = if is_active {
-                self.active_background_color
-            } else {
-                self.background_color
-            };
-
-            // Render island background (rounded rectangle)
-            sugarloaf.rect(
-                x_position,
-                island_y,
-                island_width,
-                island_height,
-                bg_color,
-                -0.1, // Render in front of terminal content
-            );
-
-            // Render shadow below island if enabled
-            if self.show_shadow {
-                for i in 0..2 {
-                    let alpha = 0.15 * (1.0 - (i as f32 / 2.0));
-                    let shadow_color = [0.0, 0.0, 0.0, alpha];
-                    sugarloaf.rect(
-                        x_position,
-                        island_y + island_height + (i as f32),
-                        island_width,
-                        1.0,
-                        shadow_color,
-                        -0.05,
-                    );
+            for tab_index in 0..num_tabs {
+                let base_island_width = island_widths[tab_index];
+                if base_island_width == 0.0 {
+                    continue;
                 }
+
+                // Apply scaling to island width
+                let island_width = base_island_width * scale_factor_width;
+                let is_active = tab_index == current_tab_index;
+                let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
+                let island_y = ISLAND_PADDING_Y;
+
+                // Choose background color based on active state
+                let bg_color = if is_active {
+                    self.active_background_color
+                } else {
+                    self.background_color
+                };
+
+                // Render island background (rounded rectangle)
+                sugarloaf.rounded_rect(
+                    x_position,
+                    island_y,
+                    island_width,
+                    island_height,
+                    bg_color,
+                    0.1, // Render behind terminal content (terminal is at 0.0)
+                    ISLAND_CORNER_RADIUS,
+                );
+
+                // Position and show title text
+                let tab_data = &self.tab_data[&tab_index];
+                // Recalculate padding for the scaled island width to keep text centered
+                let text_padding = (island_width - tab_data.text_width) / 2.0;
+                let text_x = x_position + text_padding;
+                let text_y = island_y + (island_height / 2.0) - (TITLE_FONT_SIZE / 2.0);
+                sugarloaf.show_rich_text(tab_data.rich_text_id, text_x, text_y);
+
+                // Move to next island position
+                x_position += island_width + scaled_spacing;
             }
 
-            // Position and show title text
-            let tab_data = &self.tab_data[&tab_index];
-            // Recalculate padding for the scaled island width to keep text centered
-            let text_padding = (island_width - tab_data.text_width) / 2.0;
-            let text_x = x_position + text_padding;
-            let text_y = island_y + (island_height / 2.0) - (TITLE_FONT_SIZE / 2.0);
-            sugarloaf.show_rich_text(tab_data.rich_text_id, text_x, text_y);
-
-            // Move to next island position
-            x_position += island_width + scaled_spacing;
+            // Position indicator after all tabs with spacing
+            indicator_x = x_position;
         }
+
+        // Render indicator island background
+        sugarloaf.rounded_rect(
+            indicator_x,
+            island_y,
+            indicator_island_width,
+            island_height,
+            self.background_color,
+            0.1, // Behind terminal content (terminal is at 0.0)
+            ISLAND_CORNER_RADIUS,
+        );
+
+        // Render small cursor-colored indicator centered inside
+        let indicator_inner_x =
+            indicator_x + (indicator_island_width - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
+        let indicator_inner_y =
+            island_y + (island_height - SINGLE_TAB_INDICATOR_HEIGHT) / 2.0;
+
+        sugarloaf.rounded_rect(
+            indicator_inner_x,
+            indicator_inner_y,
+            SINGLE_TAB_INDICATOR_WIDTH,
+            SINGLE_TAB_INDICATOR_HEIGHT,
+            self.cursor_color,
+            0.05, // In front of island background but behind terminal
+            2.0,   // Rounded corners
+        );
     }
 
     /// Get the title text for a specific tab index
@@ -298,6 +363,16 @@ impl Island {
     /// Set the background color of the island
     pub fn set_background_color(&mut self, color: [f32; 4]) {
         self.background_color = color;
+    }
+
+    /// Set the active background color of the island
+    pub fn set_active_background_color(&mut self, color: [f32; 4]) {
+        self.active_background_color = color;
+    }
+
+    /// Set the cursor color for single-tab indicator
+    pub fn set_cursor_color(&mut self, color: [f32; 4]) {
+        self.cursor_color = color;
     }
 
     /// Set the title text color
@@ -439,9 +514,13 @@ mod tests {
         assert_eq!(ISLAND_PADDING_Y, 8.0);
         assert_eq!(ISLAND_SPACING, 8.0);
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
+        assert_eq!(ISLAND_CORNER_RADIUS, 8.0);
         assert_eq!(TITLE_FONT_SIZE, 13.0);
         assert_eq!(ISLAND_MIN_WIDTH, 60.0);
         assert_eq!(MAX_TITLE_CHARS, 25);
+        assert_eq!(SINGLE_TAB_INDICATOR_WIDTH, 5.0);
+        assert_eq!(SINGLE_TAB_INDICATOR_HEIGHT, 16.0);
+        assert_eq!(SINGLE_TAB_ISLAND_WIDTH, 18.0);
     }
 
     #[test]
@@ -509,9 +588,120 @@ mod tests {
             // For all short text, padding * 2 + text_width should equal island_width
             if island_width == ISLAND_MIN_WIDTH {
                 let total = padding * 2.0 + text_width;
-                assert_eq!(total, island_width,
-                    "Text width {} should be centered with padding {}", text_width, padding);
+                assert_eq!(
+                    total, island_width,
+                    "Text width {} should be centered with padding {}",
+                    text_width, padding
+                );
             }
         }
+    }
+
+    #[test]
+    fn test_single_tab_indicator_fits_in_island() {
+        // Verify the indicator fits within the island container
+        assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
+        assert!(SINGLE_TAB_INDICATOR_HEIGHT < ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
+    }
+
+    #[test]
+    fn test_single_tab_indicator_centering() {
+        // Calculate centering for indicator
+        let island_width = SINGLE_TAB_ISLAND_WIDTH;
+        let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
+
+        // Horizontal centering
+        let x_padding = (island_width - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
+        assert_eq!(x_padding, (18.0 - 5.0) / 2.0); // 6.5px on each side
+
+        // Vertical centering
+        let y_padding = (island_height - SINGLE_TAB_INDICATOR_HEIGHT) / 2.0;
+        assert_eq!(y_padding, (24.0 - 16.0) / 2.0); // 4.0px on top and bottom
+    }
+
+    #[test]
+    fn test_island_default_colors() {
+        let island = Island::default();
+
+        // Verify default colors are set
+        assert_eq!(island.background_color, [0.15, 0.15, 0.15, 0.9]);
+        assert_eq!(island.active_background_color, [0.2, 0.2, 0.2, 1.0]);
+        assert_eq!(island.title_color, [0.85, 0.85, 0.85, 1.0]);
+        assert_eq!(island.cursor_color, [0.97, 0.07, 1.0, 1.0]);
+        assert!(!island.enabled);
+        assert!(island.show_shadow);
+    }
+
+    #[test]
+    fn test_island_color_setters() {
+        let mut island = Island::new();
+
+        let bg_color = [0.1, 0.2, 0.3, 0.9];
+        let active_color = [0.4, 0.5, 0.6, 1.0];
+        let cursor_color = [1.0, 0.0, 0.5, 1.0];
+        let title_color = [0.9, 0.9, 0.9, 1.0];
+
+        island.set_background_color(bg_color);
+        island.set_active_background_color(active_color);
+        island.set_cursor_color(cursor_color);
+        island.set_title_color(title_color);
+
+        assert_eq!(island.background_color, bg_color);
+        assert_eq!(island.active_background_color, active_color);
+        assert_eq!(island.cursor_color, cursor_color);
+        assert_eq!(island.title_color, title_color);
+    }
+
+    #[test]
+    fn test_island_height_when_disabled() {
+        let island = Island::default();
+        assert!(!island.enabled);
+        assert_eq!(island.height(), 0.0);
+    }
+
+    #[test]
+    fn test_island_height_when_enabled() {
+        let mut island = Island::default();
+        island.set_enabled(true);
+        assert_eq!(island.height(), ISLAND_HEIGHT);
+    }
+
+    #[test]
+    fn test_corner_radius_is_reasonable() {
+        // Corner radius should be less than half the island height to look good
+        let max_reasonable_radius = ISLAND_HEIGHT / 2.0;
+        assert!(ISLAND_CORNER_RADIUS < max_reasonable_radius);
+
+        // Should be a reasonable size for visibility
+        assert!(ISLAND_CORNER_RADIUS >= 4.0);
+        assert!(ISLAND_CORNER_RADIUS <= 12.0);
+    }
+
+    #[test]
+    fn test_indicator_proportions() {
+        // Indicator should be taller than it is wide (vertical orientation)
+        assert!(SINGLE_TAB_INDICATOR_HEIGHT > SINGLE_TAB_INDICATOR_WIDTH);
+
+        // Height should be roughly 2-4x the width for good proportions
+        let ratio = SINGLE_TAB_INDICATOR_HEIGHT / SINGLE_TAB_INDICATOR_WIDTH;
+        assert!(
+            ratio >= 2.0 && ratio <= 4.0,
+            "Ratio {} should be between 2 and 4",
+            ratio
+        );
+    }
+
+    #[test]
+    fn test_single_tab_island_width_reasonable() {
+        // Island width should provide adequate padding around indicator
+        let min_padding = (SINGLE_TAB_ISLAND_WIDTH - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
+        assert!(
+            min_padding >= 4.0,
+            "Padding {} should be at least 4px",
+            min_padding
+        );
+
+        // But not be excessively wide
+        assert!(SINGLE_TAB_ISLAND_WIDTH <= 30.0);
     }
 }

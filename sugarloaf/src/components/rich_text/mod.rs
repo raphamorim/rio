@@ -128,6 +128,22 @@ impl MetalRichTextBrush {
         attributes.object_at(3).unwrap().set_offset(36);
         attributes.object_at(3).unwrap().set_buffer_index(0);
 
+        // Border radius (attribute 4) - f32
+        attributes
+            .object_at(4)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float);
+        attributes.object_at(4).unwrap().set_offset(44);
+        attributes.object_at(4).unwrap().set_buffer_index(0);
+
+        // Rect size (attribute 5) - vec2<f32>
+        attributes
+            .object_at(5)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float2);
+        attributes.object_at(5).unwrap().set_offset(48);
+        attributes.object_at(5).unwrap().set_buffer_index(0);
+
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
         layouts
@@ -370,12 +386,14 @@ impl RichTextBrush {
                 builder_state.render_data.position[0] * state.style.scale_factor,
                 builder_state.render_data.position[1] * state.style.scale_factor,
             );
+            let depth = builder_state.render_data.depth;
 
             self.draw_layout(
                 *rich_text_id, // Pass the rich text ID for caching
                 &builder_state.lines,
                 &None, // No line range filtering for now
                 Some(pos),
+                depth,
                 library,
                 Some(&builder_state.layout),
                 graphics,
@@ -464,6 +482,7 @@ impl RichTextBrush {
         lines: &Vec<crate::layout::BuilderLine>,
         selected_lines: &Option<RichTextLinesRange>,
         pos: Option<(f32, f32)>,
+        depth: f32,
         font_library: &FontLibrary,
         rte_layout: Option<&RichTextLayout>,
         graphics: &mut Graphics,
@@ -500,7 +519,12 @@ impl RichTextBrush {
 
                     // Not cached - need to upload to atlas
                     if let Some(entry) = graphics.get(&graphic.id) {
-                        if let crate::components::core::image::Data::Rgba { width, height, ref pixels } = entry.handle.data {
+                        if let crate::components::core::image::Data::Rgba {
+                            width,
+                            height,
+                            ref pixels,
+                        } = entry.handle.data
+                        {
                             let add_image = image_cache::AddImage {
                                 width: width as u16,
                                 height: height as u16,
@@ -514,7 +538,9 @@ impl RichTextBrush {
 
                             if image_id.is_none() {
                                 // Atlas full - try evicting oldest graphics
-                                tracing::warn!("Atlas full, attempting to evict oldest graphics");
+                                tracing::warn!(
+                                    "Atlas full, attempting to evict oldest graphics"
+                                );
                                 let mut evicted_count = 0;
 
                                 // Try evicting up to 5 graphics
@@ -524,7 +550,8 @@ impl RichTextBrush {
                                         evicted_count += 1;
 
                                         // Retry allocation
-                                        image_id = self.images.allocate(add_image.clone());
+                                        image_id =
+                                            self.images.allocate(add_image.clone());
                                         if image_id.is_some() {
                                             tracing::info!("Successfully allocated after evicting {} graphics", evicted_count);
                                             break;
@@ -542,12 +569,15 @@ impl RichTextBrush {
                             if let Some(id) = image_id {
                                 if let Some(location) = self.images.get(&id) {
                                     // Cache coords + dimensions + frame
-                                    self.graphic_cache.insert(graphic.id, CachedGraphic {
-                                        location,
-                                        width: entry.width,
-                                        height: entry.height,
-                                        last_used_frame: self.current_frame,
-                                    });
+                                    self.graphic_cache.insert(
+                                        graphic.id,
+                                        CachedGraphic {
+                                            location,
+                                            width: entry.width,
+                                            height: entry.height,
+                                            last_used_frame: self.current_frame,
+                                        },
+                                    );
                                 }
                             }
                         }
@@ -561,7 +591,6 @@ impl RichTextBrush {
         let caches = (&mut self.images, &mut self.glyphs);
         let (image_cache, glyphs_cache) = caches;
         let font_coords: &[i16] = &[0, 0, 0, 0];
-        let depth = 0.0;
 
         // Set up caches based on mode
         let mut glyphs = Vec::new();
@@ -684,7 +713,8 @@ impl RichTextBrush {
                                     let x = px;
                                     let y = baseline; // Glyph y should be at baseline position
 
-                                    px += rte_layout.unwrap().dimensions.width * char_width;
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
 
                                     glyphs.push(Glyph {
                                         id: shaped_glyph.glyph_id as GlyphId,
@@ -757,7 +787,8 @@ impl RichTextBrush {
                                     let advance = glyph.simple_data().1;
 
                                     // Different advance calculation based on mode
-                                    px += rte_layout.unwrap().dimensions.width * char_width;
+                                    px +=
+                                        rte_layout.unwrap().dimensions.width * char_width;
 
                                     let glyph_id = glyph.simple_data().0;
                                     glyphs.push(Glyph { id: glyph_id, x, y });
@@ -842,22 +873,36 @@ impl RichTextBrush {
 
                     // Handle graphics - render directly using add_image_rect
                     if let Some(graphic) = run.span.media {
-                        tracing::info!("Rendering graphic: id={}, offset_x={}, offset_y={}",
-                            graphic.id.0, graphic.offset_x, graphic.offset_y);
+                        tracing::info!(
+                            "Rendering graphic: id={}, offset_x={}, offset_y={}",
+                            graphic.id.0,
+                            graphic.offset_x,
+                            graphic.offset_y
+                        );
                         if !last_rendered_graphic.contains(&graphic.id) {
                             // Get cached graphic data
                             if let Some(cached) = self.graphic_cache.get(&graphic.id) {
                                 let gx = run_x - graphic.offset_x as f32;
                                 let gy = py - ascent - graphic.offset_y as f32;
 
-                                tracing::info!("Drawing graphic at ({}, {}), size={}x{}",
-                                    gx, gy, cached.width, cached.height);
+                                tracing::info!(
+                                    "Drawing graphic at ({}, {}), size={}x{}",
+                                    gx,
+                                    gy,
+                                    cached.width,
+                                    cached.height
+                                );
 
                                 comp.batches.add_image_rect(
                                     &Rect::new(gx, gy, cached.width, cached.height),
                                     depth,
                                     &[1.0, 1.0, 1.0, 1.0],
-                                    &[cached.location.min.0, cached.location.min.1, cached.location.max.0, cached.location.max.1],
+                                    &[
+                                        cached.location.min.0,
+                                        cached.location.min.1,
+                                        cached.location.max.0,
+                                        cached.location.max.1,
+                                    ],
                                     true,
                                 );
                             } else {
@@ -916,7 +961,9 @@ impl RichTextBrush {
         self.glyphs = GlyphCache::new();
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
-        tracing::info!("RichTextBrush atlas, glyph cache, text run cache, and graphic cache cleared");
+        tracing::info!(
+            "RichTextBrush atlas, glyph cache, text run cache, and graphic cache cleared"
+        );
     }
 
     #[inline]
@@ -938,6 +985,31 @@ impl RichTextBrush {
             },
             depth,
             &color,
+        );
+    }
+
+    /// Add a rounded rectangle with the specified border radius
+    #[inline]
+    pub fn rounded_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+    ) {
+        self.comp.batches.rounded_rect(
+            &Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            depth,
+            &color,
+            border_radius,
         );
     }
 
