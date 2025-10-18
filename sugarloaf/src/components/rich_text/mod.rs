@@ -789,7 +789,7 @@ impl RichTextBrush {
     }
 
     #[inline]
-    pub fn add_rect(
+    pub fn rect(
         &mut self,
         x: f32,
         y: f32,
@@ -798,7 +798,7 @@ impl RichTextBrush {
         color: [f32; 4],
         depth: f32,
     ) {
-        self.comp.batches.add_rect(
+        self.comp.batches.rect(
             &Rect {
                 x,
                 y,

@@ -153,9 +153,9 @@ impl ApplicationHandler for Application {
                     .build();
 
                 // Add rectangles directly
-                sugarloaf.add_rect(10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0]);
-                sugarloaf.add_rect(10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0]);
-                sugarloaf.add_rect(95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0]);
+                sugarloaf.rect(10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0]);
+                sugarloaf.rect(10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0]);
+                sugarloaf.rect(95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0]);
 
                 // Show rich text
                 sugarloaf.show_rich_text(self.rich_text, 10., 10.);
