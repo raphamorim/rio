@@ -73,9 +73,9 @@ pub fn screen(
         0.0,
     );
 
-    let heading = sugarloaf.create_temp_rich_text();
-    let paragraph_action = sugarloaf.create_temp_rich_text();
-    let paragraph = sugarloaf.create_temp_rich_text();
+    let heading = sugarloaf.create_temp_rich_text(None);
+    let paragraph_action = sugarloaf.create_temp_rich_text(None);
+    let paragraph = sugarloaf.create_temp_rich_text(None);
 
     sugarloaf.set_rich_text_font_size(&heading, 28.0);
     sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);

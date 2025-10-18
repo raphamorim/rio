@@ -179,9 +179,12 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
+    pub fn create_rich_text(
+        &mut self,
+        config: Option<&crate::layout::RichTextConfig>,
+    ) -> usize {
         let layout = RichTextLayout::from_default_layout(&self.style);
-        let id = self.content.create_state(&layout);
+        let id = self.content.create_state(&layout, config);
 
         // Dimensions are now calculated eagerly during create_state
         // No need to mark for repaint since we have valid dimensions immediately
@@ -190,10 +193,13 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn create_temp_rich_text(&mut self) -> usize {
+    pub fn create_temp_rich_text(
+        &mut self,
+        config: Option<&crate::layout::RichTextConfig>,
+    ) -> usize {
         let id = self
             .content
-            .create_state(&RichTextLayout::from_default_layout(&self.style));
+            .create_state(&RichTextLayout::from_default_layout(&self.style), config);
         // Mark as temporary (for removal) directly in render_data
         if let Some(state) = self.content.states.get_mut(&id) {
             state.render_data.should_remove = true;

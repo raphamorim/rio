@@ -837,7 +837,7 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text();
+            let search_rich_text = sugarloaf.create_temp_rich_text(None);
             sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }

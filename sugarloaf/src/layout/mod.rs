@@ -98,6 +98,30 @@ impl Default for RichTextLayout {
     }
 }
 
+/// Configuration for creating rich text with custom properties
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct RichTextConfig {
+    /// Initial position [x, y] where the rich text should be rendered
+    pub position: Option<[f32; 2]>,
+}
+
+impl Default for RichTextConfig {
+    fn default() -> Self {
+        Self { position: None }
+    }
+}
+
+impl RichTextConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_position(mut self, x: f32, y: f32) -> Self {
+        self.position = Some([x, y]);
+        self
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub struct RootStyle {
     pub scale_factor: f32,
