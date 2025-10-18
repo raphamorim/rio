@@ -143,7 +143,10 @@ impl FilterChain {
 
         // Wait for device
         let index = queue.submit([cmd]);
-        let _ = device.poll(wgpu::PollType::WaitForSubmissionIndex(index));
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: Some(index),
+            timeout: None,
+        });
 
         Ok(filter_chain)
     }
