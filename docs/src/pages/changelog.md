@@ -9,13 +9,9 @@ language: 'en'
 
 - Native Metal Support.
 - Native Vulkan Support.
-- Quake window support, [clike here to see more]().
+- Quake window support.
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
-
-## 0.2.32 (unreleased)
-
-- TBD.
 
 ## 0.2.31
 
