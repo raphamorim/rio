@@ -209,9 +209,12 @@ impl Screen<'_> {
 
         let rich_text_id = sugarloaf.create_rich_text();
 
+        // Add island height to top padding if island is enabled
+        let padding_y_top_with_island = padding_y_top + renderer.island.height();
+
         let margin = Delta {
             x: config.padding_x,
-            top_y: padding_y_top,
+            top_y: padding_y_top_with_island,
             bottom_y: padding_y_bottom,
         };
         let context_dimension = ContextDimension::build(
@@ -376,12 +379,15 @@ impl Screen<'_> {
             .update_filters(config.renderer.filters.as_slice());
         self.renderer = Renderer::new(config, font_library);
 
+        // Add island height to top padding if island is enabled
+        let padding_y_top_with_island = padding_y_top + self.renderer.island.height();
+
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
             context_grid.update_margin((
                 config.padding_x,
-                padding_y_top,
+                padding_y_top_with_island,
                 padding_y_bottom,
             ));
 
@@ -1224,19 +1230,22 @@ impl Screen<'_> {
         let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[0],
+            &self.renderer.navigation,
+            self.renderer.padding_y[0],
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[1],
+            &self.renderer.navigation,
+            self.renderer.padding_y[1],
             num_tabs,
             self.search_active(),
         );
 
-        if previous_margin.top_y != padding_y_top
+        // Add island height to top padding if island is enabled
+        let padding_y_top_with_island = padding_y_top + self.renderer.island.height();
+
+        if previous_margin.top_y != padding_y_top_with_island
             || previous_margin.bottom_y != padding_y_bottom
         {
             let layout = self
@@ -1247,7 +1256,7 @@ impl Screen<'_> {
             s.line_height = layout.line_height;
 
             let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
+            d.update_margin((d.margin.x, padding_y_top_with_island, padding_y_bottom));
             self.resize_all_contexts();
         }
     }

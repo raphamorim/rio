@@ -1,8 +1,7 @@
 mod char_cache;
 mod font_cache;
-pub mod navigation;
+pub mod island;
 mod search;
-pub mod titlebar;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
@@ -17,12 +16,12 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use navigation::ScreenNavigation;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
@@ -47,8 +46,9 @@ pub struct Renderer {
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
-    pub navigation: ScreenNavigation,
-    pub titlebar: titlebar::Titlebar,
+    pub navigation: Navigation,
+    pub padding_y: [f32; 2],
+    pub island: island::Island,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
@@ -88,19 +88,12 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
-            HashMap::new();
-
-        for rule in &config.navigation.color_automation {
-            color_automation
-                .entry(rule.program.clone())
-                .or_default()
-                .insert(rule.path.clone(), rule.color);
+        // Initialize island
+        // Enabled when using Enabled navigation mode for full GPU rendering
+        let mut island = island::Island::new();
+        if config.navigation.is_enabled() {
+            island.set_enabled(true);
         }
-
-        // Initialize titlebar (disabled by default)
-        // Can be enabled via configuration if needed
-        let titlebar = titlebar::Titlebar::new();
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
@@ -114,12 +107,9 @@ impl Renderer {
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
-            navigation: ScreenNavigation::new(
-                config.navigation.clone(),
-                color_automation,
-                config.padding_y,
-            ),
-            titlebar,
+            navigation: config.navigation.clone(),
+            padding_y: config.padding_y,
+            island,
             named_colors,
             dynamic_background,
             visual_bell_active: false,
@@ -1096,8 +1086,8 @@ impl Renderer {
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
 
-        // Render titlebar (GPU-rendered, similar to boo/Zed)
-        self.titlebar.render(
+        // Render island (GPU-rendered, similar to boo/Zed)
+        self.island.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
             context_manager,
