@@ -3,7 +3,6 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::components::layer::types;
 use crate::sugarloaf::Handle;
 use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
@@ -18,37 +17,12 @@ pub struct GraphicDataEntry {
     pub height: f32,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GraphicRenderRequest {
-    pub id: GraphicId,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-}
-
-pub struct BottomLayer {
-    pub data: types::Raster,
-    pub should_fit: bool,
-}
-
 #[derive(Default)]
 pub struct Graphics {
     inner: FxHashMap<GraphicId, GraphicDataEntry>,
-    pub bottom_layer: Option<BottomLayer>,
-    pub top_layer: Vec<GraphicRenderRequest>,
 }
 
 impl Graphics {
-    #[inline]
-    pub fn has_graphics_on_top_layer(&self) -> bool {
-        !self.top_layer.is_empty()
-    }
-
-    #[inline]
-    pub fn clear_top_layer(&mut self) {
-        self.top_layer.clear();
-    }
 
     #[inline]
     pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
