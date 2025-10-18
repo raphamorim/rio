@@ -179,7 +179,7 @@ impl Default for KittyGraphicsCommand {
 }
 
 pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
-    if params.is_empty() || params[0] != b"G" {
+    let Some(b"G") = params.first() else {
         return None;
     }
 
