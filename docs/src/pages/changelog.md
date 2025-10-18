@@ -5,7 +5,7 @@ language: 'en'
 
 # Changelog
 
-## 0.3.30 (unreleased)
+## 0.3.0 (unreleased)
 
 - Native Metal Support.
 - Native Vulkan Support.
