@@ -35,6 +35,8 @@ pub struct Island {
     last_title: Option<String>,
     /// Cached text width from last measurement
     cached_text_width: f32,
+    /// Persistent rich text ID for the title
+    title_rich_text_id: Option<usize>,
 }
 
 impl Default for Island {
@@ -49,6 +51,7 @@ impl Default for Island {
             show_shadow: true,
             last_title: None,
             cached_text_width: 0.0,
+            title_rich_text_id: None,
         }
     }
 }
@@ -95,7 +98,6 @@ impl Island {
         // Render shadow below island if enabled
         if self.show_shadow {
             // Subtle shadow gradient
-            let shadow_height = 3.0;
             for i in 0..3 {
                 let alpha = 0.2 * (1.0 - (i as f32 / 3.0));
                 let shadow_color = [0.0, 0.0, 0.0, alpha];
@@ -114,9 +116,16 @@ impl Island {
         let title = self.get_title_text(context_manager);
 
         if !title.is_empty() {
-            // Create temporary rich text for the title
-            let title_rt_id = sugarloaf.create_temp_rich_text();
-            sugarloaf.set_rich_text_font_size(&title_rt_id, TITLE_FONT_SIZE);
+            // Create persistent rich text for the title if it doesn't exist
+            let title_rt_id = match self.title_rich_text_id {
+                Some(id) => id,
+                None => {
+                    let id = sugarloaf.create_rich_text(None);
+                    sugarloaf.set_rich_text_font_size(&id, TITLE_FONT_SIZE);
+                    self.title_rich_text_id = Some(id);
+                    id
+                }
+            };
 
             // Check if title has changed - only rebuild text if needed
             let title_changed = self.last_title.as_ref() != Some(&title);

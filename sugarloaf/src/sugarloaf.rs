@@ -6,7 +6,7 @@ use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{RichTextLayout, RootStyle};
+use crate::layout::{RichTextConfig, RichTextLayout, RootStyle};
 use crate::sugarloaf::graphics::Graphics;
 
 use crate::context::Context;
@@ -254,8 +254,11 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
-        self.state.create_rich_text()
+    pub fn create_rich_text(
+        &mut self,
+        config: Option<&RichTextConfig>,
+    ) -> usize {
+        self.state.create_rich_text(config)
     }
 
     #[inline]
@@ -267,8 +270,11 @@ impl Sugarloaf<'_> {
     // it will be removed after the render and doesn't
     // offer any type of optimization (e.g: cache) per render.
     #[inline]
-    pub fn create_temp_rich_text(&mut self) -> usize {
-        self.state.create_temp_rich_text()
+    pub fn create_temp_rich_text(
+        &mut self,
+        config: Option<&RichTextConfig>,
+    ) -> usize {
+        self.state.create_temp_rich_text(config)
     }
 
     #[inline]

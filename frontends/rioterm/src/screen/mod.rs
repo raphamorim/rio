@@ -43,8 +43,8 @@ use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, RichTextConfig, Sugarloaf, SugarloafBackend, SugarloafErrors,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -207,10 +207,13 @@ impl Screen<'_> {
             keyboard: config.keyboard,
         };
 
-        let rich_text_id = sugarloaf.create_rich_text();
-
         // Add island height to top padding if island is enabled
         let padding_y_top_with_island = padding_y_top + renderer.island.height();
+
+        // Create rich text with initial position accounting for island
+        let rich_text_config =
+            RichTextConfig::new().with_position(config.padding_x, padding_y_top_with_island);
+        let rich_text_id = sugarloaf.create_rich_text(Some(&rich_text_config));
 
         let margin = Delta {
             x: config.padding_x,
@@ -1138,7 +1141,11 @@ impl Screen<'_> {
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let rich_text_config =
+            RichTextConfig::new().with_position(config.padding_x, padding_y_top);
+        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager
             .split_from_config(rich_text_id, false, config);
 
@@ -1146,14 +1153,26 @@ impl Screen<'_> {
     }
 
     pub fn split_right(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.split(rich_text_id, false);
 
         self.render();
     }
 
     pub fn split_down(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.split(rich_text_id, true);
 
         self.render();
@@ -1195,7 +1214,13 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         self.resize_top_or_bottom_line(num_tabs + 1);
 
-        let rich_text_id = self.sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.add_context(redirect, rich_text_id);
 
         self.cancel_search();

@@ -410,7 +410,11 @@ impl Content {
     }
 
     #[inline]
-    pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
+    pub fn create_state(
+        &mut self,
+        rich_text_layout: &RichTextLayout,
+        config: Option<&crate::layout::RichTextConfig>,
+    ) -> usize {
         let id = self.counter.next();
         let mut state = BuilderState::from_layout(rich_text_layout);
 
@@ -418,6 +422,13 @@ impl Content {
         // This ensures we never have zero dimensions
         state.layout.dimensions =
             self.calculate_character_cell_dimensions(rich_text_layout);
+
+        // Apply config if provided
+        if let Some(cfg) = config {
+            if let Some(position) = cfg.position {
+                state.render_data.position = position;
+            }
+        }
 
         self.states.insert(id, state);
         id
@@ -2680,7 +2691,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         // Add a line with long whitespace sequence
         let whitespace_content = "          "; // 10 spaces
@@ -2736,7 +2747,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -2822,7 +2833,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;

@@ -81,7 +81,7 @@ impl ApplicationHandler for Application {
         println!("F16 support enabled: {}", sugarloaf.ctx.supports_f16());
 
         sugarloaf.set_background_color(Some(wgpu::Color::BLACK));
-        self.rich_text = sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
