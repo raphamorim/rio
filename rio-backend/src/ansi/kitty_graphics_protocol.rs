@@ -179,21 +179,25 @@ impl Default for KittyGraphicsCommand {
 }
 
 pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
-    let Some(b"G") = params.first() else {
+    let Some(&b"G") = params.first() else {
         return None;
-    }
+    };
 
     let mut cmd = KittyGraphicsCommand::default();
 
     // Parse control data if present
-    if let Some(control) = params.get(1) && !control.is_empty() {
-        let control_data = std::str::from_utf8(control).ok()?;
-        parse_control_data(&mut cmd, control_data);
+    if let Some(control) = params.get(1) {
+        if !control.is_empty() {
+            let control_data = std::str::from_utf8(control).ok()?;
+            parse_control_data(&mut cmd, control_data);
+        }
     }
 
     // Parse payload if present
-    if let Some(payload) = params.get(2) && !payload.is_empty() {
-        cmd.payload = payload.to_vec();
+    if let Some(payload) = params.get(2) {
+        if !payload.is_empty() {
+            cmd.payload = payload.to_vec();
+        }
     }
 
     // Handle query action
