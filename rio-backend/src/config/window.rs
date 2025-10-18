@@ -52,6 +52,15 @@ pub enum Decorations {
     Buttonless,
 }
 
+#[cfg(target_os = "macos")]
+#[allow(clippy::derivable_impls)]
+impl Default for Decorations {
+    fn default() -> Decorations {
+        Decorations::Transparent
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
 #[allow(clippy::derivable_impls)]
 impl Default for Decorations {
     fn default() -> Decorations {
