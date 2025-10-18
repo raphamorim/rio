@@ -17,10 +17,10 @@ pub const ISLAND_HEIGHT: f32 = 40.0;
 const TITLE_MARGIN_RIGHT: f32 = 16.0;
 
 /// Vertical centering offset for title text within island
-const TITLE_OFFSET_Y: f32 = 25.0;
+const TITLE_OFFSET_Y: f32 = 14.0;
 
 /// Font size for the title text
-const TITLE_FONT_SIZE: f32 = 13.0;
+const TITLE_FONT_SIZE: f32 = 14.0;
 
 pub struct Island {
     /// Whether the island is enabled
@@ -31,6 +31,10 @@ pub struct Island {
     pub title_color: [f32; 4],
     /// Whether to show shadow below island
     pub show_shadow: bool,
+    /// Last rendered title (for change detection)
+    last_title: Option<String>,
+    /// Cached text width from last measurement
+    cached_text_width: f32,
 }
 
 impl Default for Island {
@@ -39,10 +43,12 @@ impl Default for Island {
             // Disabled by default - can be enabled via configuration
             enabled: false,
             // Very subtle dark overlay
-            background_color: [0.0, 0.0, 0.0, 0.1],
+            background_color: [0.0, 0.0, 0.0, 1.0],
             // Subtle text color
             title_color: [0.7, 0.7, 0.7, 0.8],
             show_shadow: true,
+            last_title: None,
+            cached_text_width: 0.0,
         }
     }
 }
@@ -65,7 +71,7 @@ impl Island {
     /// Render the island using GPU primitives
     #[inline]
     pub fn render(
-        &self,
+        &mut self,
         sugarloaf: &mut Sugarloaf,
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
@@ -112,31 +118,37 @@ impl Island {
             let title_rt_id = sugarloaf.create_temp_rich_text();
             sugarloaf.set_rich_text_font_size(&title_rt_id, TITLE_FONT_SIZE);
 
-            // Measure text width (approximate)
-            // TODO: Use proper text measurement once available in Sugarloaf
-            let approx_char_width = TITLE_FONT_SIZE * 0.6;
-            let text_width = title.len() as f32 * approx_char_width;
+            // Check if title has changed - only rebuild text if needed
+            let title_changed = self.last_title.as_ref() != Some(&title);
+            if title_changed {
+                // Add title text using Content API
+                {
+                    use rio_backend::sugarloaf::FragmentStyle;
+                    let content = sugarloaf.content();
+                    content
+                        .sel(title_rt_id)
+                        .clear()
+                        .new_line()
+                        .add_text(
+                            &title,
+                            FragmentStyle {
+                                color: self.title_color,
+                                ..FragmentStyle::default()
+                            },
+                        )
+                        .build();
+                }
 
-            // Position title on the right side
-            let title_x = (window_width / scale_factor) - text_width - TITLE_MARGIN_RIGHT;
-            let title_y = TITLE_OFFSET_Y;
-
-            // Add title text using Content API
-            {
-                use rio_backend::sugarloaf::FragmentStyle;
-                let content = sugarloaf.content();
-                content
-                    .sel(title_rt_id)
-                    .clear()
-                    .new_line()
-                    .add_text(
-                        &title,
-                        FragmentStyle {
-                            color: self.title_color,
-                            ..FragmentStyle::default()
-                        },
-                    );
+                // Measure text width using Sugarloaf's proper text measurement API
+                let dimensions = sugarloaf.get_rich_text_dimensions(&title_rt_id);
+                self.cached_text_width = dimensions.width;
+                self.last_title = Some(title);
             }
+
+            // Position title on the right side using cached width
+            let title_x =
+                (window_width / scale_factor) - self.cached_text_width - TITLE_MARGIN_RIGHT;
+            let title_y = TITLE_OFFSET_Y;
 
             // Show the title text at calculated position
             sugarloaf.show_rich_text(title_rt_id, title_x, title_y);
