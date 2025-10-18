@@ -256,7 +256,7 @@ declare_class!(
                 // Adapted from: https://github.com/ghostty-org/ghostty/pull/8625
                 let name = str_to_nsstring("NSAutoFillHeuristicControllerEnabled");
                 let existing_value: *mut Object = msg_send![user_defaults, objectForKey: name];
-                if existing_value == std::ptr::null_mut() {
+                if existing_value.is_null() {
                     let false_value: *mut Object = msg_send![class!(NSNumber), numberWithBool:false];
                     let _: () = msg_send![user_defaults, setObject: false_value forKey: name];
                 }
