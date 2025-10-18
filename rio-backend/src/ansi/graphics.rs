@@ -7,6 +7,7 @@ use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
 use crate::sugarloaf::{GraphicData, GraphicId};
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::mem;
 use std::sync::{Arc, Weak};
@@ -93,6 +94,13 @@ impl Drop for GraphicCell {
     }
 }
 
+/// Stored image data for Kitty graphics protocol
+#[derive(Debug, Clone)]
+pub struct StoredImage {
+    pub data: GraphicData,
+    pub transmission_time: std::time::Instant,
+}
+
 /// Track changes in the grid to add or to remove graphics.
 #[derive(Debug, Default)]
 pub struct Graphics {
@@ -116,6 +124,14 @@ pub struct Graphics {
 
     /// Current Sixel parser.
     pub sixel_parser: Option<Box<sixel::Parser>>,
+
+    /// Kitty graphics: Cache of transmitted images (by image_id)
+    /// Allows placing the same image multiple times without re-transmission
+    pub kitty_images: FxHashMap<u32, StoredImage>,
+
+    /// Kitty graphics: Image number to ID mapping (for I= parameter)
+    /// Maps image number to the most recently transmitted image with that number
+    pub kitty_image_numbers: FxHashMap<u32, u32>,
 }
 
 impl Graphics {
@@ -164,6 +180,42 @@ impl Graphics {
     pub fn resize<S: Dimensions>(&mut self, size: &S) {
         self.cell_height = size.square_height();
         self.cell_width = size.square_width();
+    }
+
+    /// Store a kitty graphics image for later placement
+    pub fn store_kitty_image(&mut self, image_id: u32, image_number: Option<u32>, data: GraphicData) {
+        self.kitty_images.insert(
+            image_id,
+            StoredImage {
+                data,
+                transmission_time: std::time::Instant::now(),
+            },
+        );
+
+        // Update image number mapping if provided
+        if let Some(number) = image_number {
+            self.kitty_image_numbers.insert(number, image_id);
+        }
+    }
+
+    /// Get a stored kitty graphics image by ID
+    pub fn get_kitty_image(&self, image_id: u32) -> Option<&StoredImage> {
+        self.kitty_images.get(&image_id)
+    }
+
+    /// Get a stored kitty graphics image by number (I= parameter)
+    /// Returns the most recently transmitted image with that number
+    pub fn get_kitty_image_by_number(&self, image_number: u32) -> Option<&StoredImage> {
+        self.kitty_image_numbers
+            .get(&image_number)
+            .and_then(|id| self.kitty_images.get(id))
+    }
+
+    /// Delete kitty graphics images
+    pub fn delete_kitty_images(&mut self, predicate: impl Fn(&u32, &StoredImage) -> bool) {
+        self.kitty_images.retain(|id, img| !predicate(id, img));
+        // Clean up stale number mappings
+        self.kitty_image_numbers.retain(|_, id| self.kitty_images.contains_key(id));
     }
 }
 

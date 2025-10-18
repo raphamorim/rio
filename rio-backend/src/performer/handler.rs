@@ -363,10 +363,13 @@ pub trait Handler {
     fn sixel_graphic_reset(&mut self) {}
     fn sixel_graphic_finish(&mut self) {}
 
-    /// Insert a new graphic item.
+    /// Insert a new graphic item (displays immediately at cursor).
     fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
 
-    /// Place an existing graphic at a specific location.
+    /// Store a graphic without displaying (for a=t transmit-only).
+    fn store_graphic(&mut self, _data: GraphicData) {}
+
+    /// Place an existing graphic at a specific location (for a=p).
     fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
 
     /// Delete graphics based on the specified criteria.
@@ -761,19 +764,50 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
         match params[0] {
             b"G" => {
                 // Handle kitty graphics protocol
+                debug!("[apc_dispatch] Kitty graphics APC received");
                 if let Some(response) = kitty_graphics_protocol::parse(params) {
+                    debug!("[apc_dispatch] Kitty graphics parsed successfully");
+
+                    // Handle based on what the response contains:
+                    // - graphic_data only (a=t): Store without displaying
+                    // - graphic_data + placement (a=T): Store and display
+                    // - placement only (a=p): Display stored image
+
+                    let has_graphic = response.graphic_data.is_some();
+                    let has_placement = response.placement_request.is_some();
+
                     if let Some(graphic_data) = response.graphic_data {
-                        self.handler.insert_graphic(graphic_data, None);
+                        debug!("[apc_dispatch] Graphic data present: id={}, {}x{}",
+                            graphic_data.id.0, graphic_data.width, graphic_data.height);
+
+                        if has_placement {
+                            // a=T: Transmit and display - use old behavior
+                            self.handler.insert_graphic(graphic_data, None);
+                        } else {
+                            // a=t: Transmit only - store without displaying
+                            self.handler.store_graphic(graphic_data);
+                        }
                     }
+
                     if let Some(placement) = response.placement_request {
-                        self.handler.place_graphic(placement);
+                        debug!("[apc_dispatch] Placement request: image_id={}", placement.image_id);
+
+                        if !has_graphic {
+                            // a=p: Display previously stored image
+                            self.handler.place_graphic(placement);
+                        }
+                        // If has_graphic, placement was already handled by insert_graphic above
                     }
+
                     if let Some(delete) = response.delete_request {
+                        debug!("[apc_dispatch] Delete request");
                         self.handler.delete_graphics(delete);
                     }
                     if let Some(response_str) = response.response {
                         self.handler.kitty_graphics_response(response_str);
                     }
+                } else {
+                    warn!("[apc_dispatch] Failed to parse kitty graphics protocol");
                 }
             }
             _ => unhandled(params),

@@ -842,11 +842,16 @@ impl RichTextBrush {
 
                     // Handle graphics - render directly using add_image_rect
                     if let Some(graphic) = run.span.media {
+                        tracing::info!("Rendering graphic: id={}, offset_x={}, offset_y={}",
+                            graphic.id.0, graphic.offset_x, graphic.offset_y);
                         if !last_rendered_graphic.contains(&graphic.id) {
                             // Get cached graphic data
                             if let Some(cached) = self.graphic_cache.get(&graphic.id) {
                                 let gx = run_x - graphic.offset_x as f32;
                                 let gy = py - ascent - graphic.offset_y as f32;
+
+                                tracing::info!("Drawing graphic at ({}, {}), size={}x{}",
+                                    gx, gy, cached.width, cached.height);
 
                                 comp.batches.add_image_rect(
                                     &Rect::new(gx, gy, cached.width, cached.height),
@@ -855,6 +860,8 @@ impl RichTextBrush {
                                     &[cached.location.min.0, cached.location.min.1, cached.location.max.0, cached.location.max.1],
                                     true,
                                 );
+                            } else {
+                                tracing::warn!("Graphic {} not in cache!", graphic.id.0);
                             }
 
                             last_rendered_graphic.insert(graphic.id);
