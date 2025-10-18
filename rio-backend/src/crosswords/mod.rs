@@ -37,6 +37,7 @@ use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
+use crate::crosswords::square::Flags;
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
@@ -1383,6 +1384,119 @@ impl<U: EventListener> Crosswords<U> {
         point.col = self.grid.last_column();
 
         point
+    }
+}
+
+impl<U: EventListener> Crosswords<U> {
+    /// Delete all graphics from the visible grid
+    fn delete_all_graphics(&mut self) {
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                }
+            }
+            self.mark_line_damaged(line);
+        }
+    }
+
+    /// Delete graphics matching a predicate
+    fn delete_graphics_matching<F>(&mut self, mut predicate: F)
+    where
+        F: FnMut(&GraphicCell) -> bool,
+    {
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    if let Some(graphics) = cell.take_graphics() {
+                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> = graphics
+                            .into_iter()
+                            .filter(|g| !predicate(g))
+                            .collect();
+
+                        if filtered.is_empty() {
+                            cell.flags.remove(Flags::GRAPHICS);
+                        } else {
+                            cell.set_graphics(filtered);
+                        }
+                    }
+                }
+            }
+            self.mark_line_damaged(line);
+        }
+    }
+
+    /// Delete graphic at a specific position
+    fn delete_graphic_at_position(&mut self, col: Column, row: Line) {
+        if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() &&
+           col.0 < self.grid.columns() {
+            let cell = &mut self.grid[row][col];
+            if cell.flags.contains(Flags::GRAPHICS) {
+                cell.set_graphics(smallvec::SmallVec::new());
+                cell.flags.remove(Flags::GRAPHICS);
+                self.mark_line_damaged(row);
+            }
+        }
+    }
+
+    /// Delete all graphics in a column
+    fn delete_graphics_in_column(&mut self, col: Column) {
+        if col.0 < self.grid.columns() {
+            for line_idx in 0..self.grid.screen_lines() {
+                let line = Line(line_idx as i32);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                    self.mark_line_damaged(line);
+                }
+            }
+        }
+    }
+
+    /// Delete all graphics in a row
+    fn delete_graphics_in_row(&mut self, row: Line) {
+        if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() {
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[row][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                }
+            }
+            self.mark_line_damaged(row);
+        }
+    }
+
+    /// Cleanup unused kitty images from cache
+    fn cleanup_unused_kitty_images(&mut self) {
+        // Collect all currently used graphic IDs from the grid
+        let mut used_ids = std::collections::HashSet::new();
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    if let Some(graphics) = cell.graphics() {
+                        for graphic in graphics {
+                            used_ids.insert(graphic.texture.id.0 as u32);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Delete images not in use
+        self.graphics.delete_kitty_images(|id, _| !used_ids.contains(id));
     }
 }
 
@@ -2964,6 +3078,162 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Send graphics update event
         self.send_graphics_updates();
+    }
+
+    #[inline]
+    fn store_graphic(&mut self, graphic: GraphicData) {
+        // Store graphic without displaying (a=t transmit-only)
+        let image_id = graphic.id.0 as u32;
+        debug!("Storing kitty graphic: id={}, {}x{}", image_id, graphic.width, graphic.height);
+
+        // Store in cache
+        self.graphics.store_kitty_image(image_id, None, graphic);
+    }
+
+    #[inline]
+    fn place_graphic(&mut self, placement: crate::ansi::kitty_graphics_protocol::PlacementRequest) {
+        // Place a previously stored image (a=p)
+        debug!(
+            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}",
+            placement.image_id, placement.x, placement.y, placement.columns, placement.rows
+        );
+
+        // Look up the stored image
+        if let Some(stored) = self.graphics.get_kitty_image(placement.image_id) {
+            // Clone the graphic data and display it at the specified position
+            let mut graphic_data = stored.data.clone();
+
+            // Update resize parameters based on placement
+            if placement.columns > 0 || placement.rows > 0 {
+                graphic_data.resize = Some(sugarloaf::ResizeCommand {
+                    width: if placement.columns > 0 {
+                        sugarloaf::ResizeParameter::Cells(placement.columns)
+                    } else {
+                        sugarloaf::ResizeParameter::Auto
+                    },
+                    height: if placement.rows > 0 {
+                        sugarloaf::ResizeParameter::Cells(placement.rows)
+                    } else {
+                        sugarloaf::ResizeParameter::Auto
+                    },
+                    preserve_aspect_ratio: true,
+                });
+            }
+
+            // Save current cursor position
+            let saved_cursor = self.grid.cursor.pos;
+
+            // Move cursor to placement position if specified
+            if placement.x > 0 || placement.y > 0 {
+                let col = Column(placement.x as usize);
+                let row = Line(placement.y as i32);
+                self.grid.cursor.pos.col = col;
+                self.grid.cursor.pos.row = row;
+            }
+
+            // Display the graphic at the cursor position
+            self.insert_graphic(graphic_data, None);
+
+            // Restore cursor position (optional - matches kitty behavior)
+            // self.grid.cursor.pos = saved_cursor;
+        } else {
+            warn!("Attempted to place non-existent kitty graphic: id={}", placement.image_id);
+        }
+    }
+
+    #[inline]
+    fn delete_graphics(&mut self, delete: crate::ansi::kitty_graphics_protocol::DeleteRequest) {
+        debug!(
+            "Kitty graphics delete: action={}, image_id={}, x={}, y={}, z_index={}",
+            delete.action as char, delete.image_id, delete.x, delete.y, delete.z_index
+        );
+
+        match delete.action {
+            b'a' | b'A' => {
+                // Delete all graphics from visible grid
+                self.delete_all_graphics();
+
+                // If uppercase (A), also delete from stored images cache
+                if delete.action == b'A' && delete.delete_data {
+                    self.graphics.kitty_images.clear();
+                    self.graphics.kitty_image_numbers.clear();
+                }
+            }
+            b'i' | b'I' => {
+                // Delete by image ID
+                let image_id_to_match = delete.image_id;
+                self.delete_graphics_matching(|cell_graphic| {
+                    // Match by GraphicId - need to check if this graphic's ID matches
+                    cell_graphic.texture.id.0 == image_id_to_match as u64
+                });
+
+                // If uppercase, also delete from cache
+                if delete.action == b'I' && delete.delete_data {
+                    self.graphics.delete_kitty_images(|id, _| *id == image_id_to_match);
+                }
+            }
+            b'c' | b'C' => {
+                // Delete graphics intersecting cursor position
+                let cursor_pos = self.grid.cursor.pos;
+                self.delete_graphic_at_position(cursor_pos.col, cursor_pos.row);
+
+                if delete.action == b'C' && delete.delete_data {
+                    // Delete unused images from cache
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'p' | b'P' => {
+                // Delete at specific cell position (x, y are column/row)
+                if delete.x > 0 && delete.y > 0 {
+                    let col = Column((delete.x - 1) as usize); // 1-indexed to 0-indexed
+                    let row = Line((delete.y - 1) as i32);
+                    self.delete_graphic_at_position(col, row);
+                }
+
+                if delete.action == b'P' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'x' | b'X' => {
+                // Delete by column
+                if delete.x > 0 {
+                    let col = Column((delete.x - 1) as usize);
+                    self.delete_graphics_in_column(col);
+                }
+
+                if delete.action == b'X' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'y' | b'Y' => {
+                // Delete by row
+                if delete.y > 0 {
+                    let row = Line((delete.y - 1) as i32);
+                    self.delete_graphics_in_row(row);
+                }
+
+                if delete.action == b'Y' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'z' | b'Z' => {
+                // Delete by z-index (not fully implemented - would need z-index tracking)
+                debug!("Delete by z-index not implemented - treating as delete all");
+                self.delete_all_graphics();
+            }
+            _ => {
+                debug!("Kitty graphics delete mode '{}' not implemented", delete.action as char);
+            }
+        }
+
+        self.send_graphics_updates();
+    }
+
+    #[inline]
+    fn kitty_graphics_response(&mut self, response: String) {
+        // Send response back to the terminal
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
 
     #[inline]
