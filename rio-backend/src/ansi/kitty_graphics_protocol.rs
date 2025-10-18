@@ -192,8 +192,8 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
     }
 
     // Parse payload if present
-    if params.len() > 2 && !params[2].is_empty() {
-        cmd.payload = params[2].to_vec();
+    if let Some(payload) = params.get(2) && !payload.is_empty() {
+        cmd.payload = payload.to_vec();
     }
 
     // Handle query action
