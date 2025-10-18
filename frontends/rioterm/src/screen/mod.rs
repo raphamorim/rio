@@ -207,17 +207,14 @@ impl Screen<'_> {
             keyboard: config.keyboard,
         };
 
-        // Add island height to top padding if island is enabled
-        let padding_y_top_with_island = padding_y_top;
-
         // Create rich text with initial position accounting for island
         let rich_text_config = RichTextConfig::new()
-            .with_position(config.padding_x, padding_y_top_with_island);
+            .with_position(config.padding_x, padding_y_top);
         let rich_text_id = sugarloaf.create_rich_text(Some(&rich_text_config));
 
         let margin = Delta {
             x: config.padding_x,
-            top_y: padding_y_top_with_island,
+            top_y: padding_y_top,
             bottom_y: padding_y_bottom,
         };
         let context_dimension = ContextDimension::build(
@@ -380,15 +377,12 @@ impl Screen<'_> {
             .update_filters(config.renderer.filters.as_slice());
         self.renderer = Renderer::new(config, font_library);
 
-        // Add island height to top padding if island is enabled
-        let padding_y_top_with_island = padding_y_top + self.renderer.island.height();
-
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
             context_grid.update_margin((
                 config.padding_x,
-                padding_y_top_with_island,
+                padding_y_top,
                 padding_y_bottom,
             ));
 
@@ -555,6 +549,21 @@ impl Screen<'_> {
 
         let mode = self.get_mode();
         let mods = self.modifiers.state();
+
+        // Handle command palette toggle (Cmd+Shift+P on macOS, Ctrl+Shift+P elsewhere)
+        if key.state == ElementState::Pressed {
+            let is_command_palette_key = matches!(key.logical_key.as_ref(), Key::Character("p") | Key::Character("P"));
+            #[cfg(target_os = "macos")]
+            let has_correct_modifiers = mods.super_key() && mods.shift_key();
+            #[cfg(not(target_os = "macos"))]
+            let has_correct_modifiers = mods.control_key() && mods.shift_key();
+
+            if is_command_palette_key && has_correct_modifiers {
+                self.renderer.command_palette.toggle();
+                self.render();
+                return;
+            }
+        }
 
         if key.state == ElementState::Released {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
@@ -1268,10 +1277,7 @@ impl Screen<'_> {
             self.search_active(),
         );
 
-        // Add island height to top padding if island is enabled
-        let padding_y_top_with_island = padding_y_top + self.renderer.island.height();
-
-        if previous_margin.top_y != padding_y_top_with_island
+        if previous_margin.top_y != padding_y_top
             || previous_margin.bottom_y != padding_y_bottom
         {
             let layout = self
@@ -1282,7 +1288,7 @@ impl Screen<'_> {
             s.line_height = layout.line_height;
 
             let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top_with_island, padding_y_bottom));
+            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
             self.resize_all_contexts();
         }
     }

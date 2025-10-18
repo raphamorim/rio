@@ -1,4 +1,5 @@
 mod char_cache;
+pub mod command_palette;
 mod font_cache;
 pub mod island;
 mod search;
@@ -49,6 +50,7 @@ pub struct Renderer {
     pub navigation: Navigation,
     pub padding_y: [f32; 2],
     pub island: island::Island,
+    pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
@@ -113,6 +115,7 @@ impl Renderer {
             navigation: config.navigation.clone(),
             padding_y: config.padding_y,
             island,
+            command_palette: command_palette::CommandPalette::new(),
             named_colors,
             dynamic_background,
             visual_bell_active: false,
@@ -1092,6 +1095,12 @@ impl Renderer {
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
             context_manager,
+        );
+
+        // Render command palette (above everything else)
+        self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
         );
 
         // Render navigation rectangles directly
