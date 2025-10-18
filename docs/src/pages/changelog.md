@@ -5,18 +5,21 @@ language: 'en'
 
 # Changelog
 
-## 0.2.33 (unreleased)
+## 0.3.30 (unreleased)
+
+- Native Metal Support.
+- Native Vulkan Support.
+- Quake window support, [clike here to see more]().
+- Kitty image protocol.
+- Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
+
+## 0.2.32 (unreleased)
 
 - TBD.
 
-## 0.2.32
-
-- Updated WGPU to "27.0.1".
-- Fix No backend are enabled on FreeBSD [#1235](https://github.com/raphamorim/rio/issues/1235).
-
 ## 0.2.31
 
-- Updated Rust to v1.90.
+- Update Rust to v1.90.
 - Fix kitty keyboard recognition.
 - **Breaking: Simplified key binding escape sequences**
   - Replaced separate `text` and `bytes` fields with a single `esc` field
