@@ -53,14 +53,16 @@ pub fn screen(
         layout.width / context_dimension.dimension.scale,
         layout.height,
         black,
+        0.0,
     );
-    sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, blue);
+    sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, blue, 0.0);
     sugarloaf.add_rect(
         15.0,
         context_dimension.margin.top_y + 60.0,
         15.0,
         layout.height,
         yellow,
+        0.0,
     );
     sugarloaf.add_rect(
         30.0,
@@ -68,6 +70,7 @@ pub fn screen(
         15.0,
         layout.height,
         red,
+        0.0,
     );
 
     let heading = sugarloaf.create_temp_rich_text();

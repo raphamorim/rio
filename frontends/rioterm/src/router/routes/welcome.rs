@@ -1,5 +1,5 @@
 use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Sugarloaf};
+use rio_backend::sugarloaf::Sugarloaf;
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
@@ -12,14 +12,16 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         layout.width / context_dimension.dimension.scale,
         layout.height,
         [0.0, 0.0, 0.0, 1.0],
+        0.0,
     );
-    sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, [0.0, 0.0, 1.0, 1.0]);
+    sugarloaf.add_rect(0.0, 30.0, 15.0, layout.height, [0.0, 0.0, 1.0, 1.0], 0.0);
     sugarloaf.add_rect(
         15.0,
         context_dimension.margin.top_y + 60.0,
         15.0,
         layout.height,
         [1.0, 1.0, 0.0, 1.0],
+        0.0,
     );
     sugarloaf.add_rect(
         30.0,
@@ -27,6 +29,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         15.0,
         layout.height,
         [1.0, 0.0, 0.0, 1.0],
+        0.0,
     );
 
     // let heading = sugarloaf.create_temp_rich_text();

@@ -18,10 +18,11 @@ pub fn screen(
         layout.width / context_dimension.dimension.scale,
         layout.height,
         [0.0, 0.0, 0.0, 0.5],
+        0.0,
     );
-    sugarloaf.add_rect(128.0, 256.0, 350.0, 150.0, [0.0, 0.0, 0.0, 1.0]);
-    sugarloaf.add_rect(128.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0]);
-    sugarloaf.add_rect(240.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0]);
+    sugarloaf.add_rect(128.0, 256.0, 350.0, 150.0, [0.0, 0.0, 0.0, 1.0], 0.0);
+    sugarloaf.add_rect(128.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
+    sugarloaf.add_rect(240.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
 
     let heading = sugarloaf.create_temp_rich_text();
     let confirm = sugarloaf.create_temp_rich_text();

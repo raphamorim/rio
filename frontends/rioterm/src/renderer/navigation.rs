@@ -346,6 +346,7 @@ impl ScreenNavigation {
             width,
             PADDING_Y_BOTTOM_TABS,
             colors.bar,
+            0.0,
         );
 
         // Render tab indicators
@@ -361,6 +362,7 @@ impl ScreenNavigation {
                     tab_width,
                     PADDING_Y_BOTTOM_TABS / 10.0,
                     colors.tabs_active_highlight,
+                    0.0,
                 );
             }
             current_x += tab_width;
@@ -379,7 +381,7 @@ impl ScreenNavigation {
         let x = (width / scale) - PADDING_X_COLLAPSED_TABS;
         let y = 0.0;
 
-        sugarloaf.add_rect(x, y, size, size, colors.tabs);
+        sugarloaf.add_rect(x, y, size, size, colors.tabs, 0.0);
     }
 
     /// Direct rendering for breadcrumb (simplified line)
@@ -390,7 +392,7 @@ impl ScreenNavigation {
         dimensions: (f32, f32, f32),
     ) {
         let (width, _, _scale) = dimensions;
-        sugarloaf.add_rect(0.0, 30.0, width, 1.0, colors.tabs);
+        sugarloaf.add_rect(0.0, 30.0, width, 1.0, colors.tabs, 0.0);
     }
 }
 
