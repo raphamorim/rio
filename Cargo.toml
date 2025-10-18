@@ -78,6 +78,8 @@ memmap2 = "0.9.5"
 url = "2.5.4"
 criterion = { version = "0.6.0", features = ["html_reports"] }
 dashmap = "6.1.0"
+flate2 = "1.0"
+lazy_static = "1.5"
 
 [profile.release]
 strip = "symbols"           # See split-debuginfo - allows us to drop the size by ~65%
