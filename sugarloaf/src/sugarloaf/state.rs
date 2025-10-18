@@ -56,16 +56,8 @@ impl SugarState {
     #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
         if let Some(state) = self.content.get_state(id) {
-            println!(
-                "get_state_layout returning dimensions {}x{} for state {}",
-                state.layout.dimensions.width, state.layout.dimensions.height, id
-            );
             state.layout.clone()
         } else {
-            println!(
-                "get_state_layout: state {} not found, returning default",
-                id
-            );
             RichTextLayout::from_default_layout(&self.style)
         }
     }

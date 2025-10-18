@@ -2,6 +2,7 @@ mod char_cache;
 mod font_cache;
 pub mod navigation;
 mod search;
+pub mod titlebar;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
@@ -47,6 +48,7 @@ pub struct Renderer {
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
+    pub titlebar: titlebar::Titlebar,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
@@ -96,6 +98,10 @@ impl Renderer {
                 .insert(rule.path.clone(), rule.color);
         }
 
+        // Initialize titlebar (disabled by default)
+        // Can be enabled via configuration if needed
+        let titlebar = titlebar::Titlebar::new();
+
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
             last_active: None,
@@ -113,6 +119,7 @@ impl Renderer {
                 color_automation,
                 config.padding_y,
             ),
+            titlebar,
             named_colors,
             dynamic_background,
             visual_bell_active: false,
@@ -1088,6 +1095,14 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
+
+        // Render titlebar (GPU-rendered, similar to boo/Zed)
+        self.titlebar.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+            context_manager,
+        );
+
         // Render navigation rectangles directly
         // self.navigation.render_directly(
         //     sugarloaf,
