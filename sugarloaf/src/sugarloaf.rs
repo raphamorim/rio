@@ -304,7 +304,7 @@ impl Sugarloaf<'_> {
 
     /// Add a rectangle directly to the rendering pipeline
     #[inline]
-    pub fn add_rect(
+    pub fn rect(
         &mut self,
         x: f32,
         y: f32,
@@ -317,7 +317,7 @@ impl Sugarloaf<'_> {
         let scaled_y = y * self.state.style.scale_factor;
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
-        self.rich_text_brush.add_rect(
+        self.rich_text_brush.rect(
             scaled_x,
             scaled_y,
             scaled_width,

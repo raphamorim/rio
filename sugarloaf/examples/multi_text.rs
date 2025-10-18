@@ -191,9 +191,9 @@ impl ApplicationHandler for Application {
                     }
                 }
 
-                sugarloaf.add_rect(5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.add_rect(220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.add_rect(440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
 
                 // Show rich text
                 sugarloaf.show_rich_text(self.rich_texts[0], 5., 5.);

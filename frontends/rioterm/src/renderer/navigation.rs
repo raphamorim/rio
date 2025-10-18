@@ -340,7 +340,7 @@ impl ScreenNavigation {
         let initial_position_x = 0.0;
 
         // Render main bar
-        sugarloaf.add_rect(
+        sugarloaf.rect(
             initial_position_x,
             position_y,
             width,
@@ -356,7 +356,7 @@ impl ScreenNavigation {
         for i in 0..len {
             if i == current {
                 // Active tab highlight
-                sugarloaf.add_rect(
+                sugarloaf.rect(
                     current_x,
                     position_y,
                     tab_width,
@@ -381,7 +381,7 @@ impl ScreenNavigation {
         let x = (width / scale) - PADDING_X_COLLAPSED_TABS;
         let y = 0.0;
 
-        sugarloaf.add_rect(x, y, size, size, colors.tabs, 0.0);
+        sugarloaf.rect(x, y, size, size, colors.tabs, 0.0);
     }
 
     /// Direct rendering for breadcrumb (simplified line)
@@ -392,7 +392,7 @@ impl ScreenNavigation {
         dimensions: (f32, f32, f32),
     ) {
         let (width, _, _scale) = dimensions;
-        sugarloaf.add_rect(0.0, 30.0, width, 1.0, colors.tabs, 0.0);
+        sugarloaf.rect(0.0, 30.0, width, 1.0, colors.tabs, 0.0);
     }
 }
 
