@@ -20,7 +20,7 @@ keywords = ["graphics", "terminal", "application"]
 # Minimal stable rust version (MSRV)
 rust-version = "1.90.0"
 repository = "https://github.com/raphamorim/rio"
-homepage = "https://raphamorim.io/rio"
+homepage = "https://rioterm.com"
 documentation = "https://github.com/raphamorim/rio#readme"
 readme = "README.md"
 
