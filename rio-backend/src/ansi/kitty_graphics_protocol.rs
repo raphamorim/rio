@@ -186,8 +186,8 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
     let mut cmd = KittyGraphicsCommand::default();
 
     // Parse control data if present
-    if params.len() > 1 && !params[1].is_empty() {
-        let control_data = std::str::from_utf8(params[1]).ok()?;
+    if let Some(control) = params.get(1) && !control.is_empty() {
+        let control_data = std::str::from_utf8(control).ok()?;
         parse_control_data(&mut cmd, control_data);
     }
 
