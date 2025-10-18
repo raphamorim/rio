@@ -12,6 +12,14 @@ language: 'en'
 - Quake window support.
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
+- **Breaking: Navigation mode simplification for full GPU rendering**
+  - Removed `TopTab` and `BottomTab` navigation modes
+  - Removed `Bookmark` navigation mode
+  - Added new `Enabled` navigation mode for GPU-rendered navigation
+  - Remaining modes: `Plain`, `Enabled`, and `NativeTab` (macOS only)
+  - Default navigation mode changed from `NativeTab` to `Enabled` on macOS
+  - Default navigation mode changed from `Bookmark` to `Enabled` on other platforms
+  - Migration: Replace `mode = "TopTab"`, `mode = "BottomTab"`, or `mode = "Bookmark"` with `mode = "Enabled"` in your config
 
 ## 0.2.31
 

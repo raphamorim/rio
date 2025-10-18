@@ -1,6 +1,6 @@
 mod char_cache;
 mod font_cache;
-pub mod navigation;
+pub mod island;
 mod search;
 pub mod utils;
 
@@ -16,19 +16,19 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use navigation::ScreenNavigation;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -46,7 +46,9 @@ pub struct Renderer {
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
-    pub navigation: ScreenNavigation,
+    pub navigation: Navigation,
+    pub padding_y: [f32; 2],
+    pub island: island::Island,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
@@ -86,14 +88,14 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
-            HashMap::new();
-
-        for rule in &config.navigation.color_automation {
-            color_automation
-                .entry(rule.program.clone())
-                .or_default()
-                .insert(rule.path.clone(), rule.color);
+        // Initialize island
+        // Enabled when using Enabled navigation mode for full GPU rendering
+        let mut island = island::Island::new();
+        if config.navigation.is_enabled() {
+            island.set_enabled(true);
+            island.set_background_color(named_colors.tabs);
+            island.set_active_background_color(named_colors.tabs_active);
+            island.set_cursor_color(named_colors.cursor);
         }
 
         let mut renderer = Renderer {
@@ -108,11 +110,9 @@ impl Renderer {
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
-            navigation: ScreenNavigation::new(
-                config.navigation.clone(),
-                color_automation,
-                config.padding_y,
-            ),
+            navigation: config.navigation.clone(),
+            padding_y: config.padding_y,
+            island,
             named_colors,
             dynamic_background,
             visual_bell_active: false,
@@ -840,7 +840,7 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text();
+            let search_rich_text = sugarloaf.create_temp_rich_text(None);
             sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }
@@ -969,6 +969,7 @@ impl Renderer {
             }
 
             let rich_text_id = context.rich_text_id;
+            println!("{:?}", rich_text_id);
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
@@ -1086,52 +1087,23 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(15);
-        self.navigation.build_objects(
+
+        self.island.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
-            &self.named_colors,
             context_manager,
-            self.search.active_search.is_some(),
-            &mut objects,
         );
 
-        if has_search {
-            if let Some(rich_text_id) = self.search.rich_text_id {
-                search::draw_search_bar(
-                    &mut objects,
-                    rich_text_id,
-                    &self.named_colors,
-                    (window_size.width, window_size.height, scale_factor),
-                );
-            }
+        // Render navigation rectangles directly
+        // self.navigation.render_directly(
+        //     sugarloaf,
+        //     (window_size.width, window_size.height, scale_factor),
+        //     &self.named_colors,
+        //     context_manager,
+        // );
 
-            self.search.active_search = None;
-            self.search.rich_text_id = None;
-        }
-
-        // let _duration = start.elapsed();
-        context_manager.extend_with_grid_objects(&mut objects);
-        // let _duration = start.elapsed();
-
-        // Update visual bell state and set overlay if needed
-        let visual_bell_active = self.update_visual_bell();
-
-        // Set visual bell overlay that renders on top of everything
-        let bell_overlay = if visual_bell_active {
-            Some(Quad {
-                position: [0.0, 0.0],
-                size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground,
-                ..Quad::default()
-            })
-        } else {
-            None
-        };
-        sugarloaf.set_visual_bell_overlay(bell_overlay);
-
-        sugarloaf.set_objects(objects);
-
+        // Search bar disabled for now - TODO: Implement direct rendering
+        // if has_search { ... }
         sugarloaf.render();
 
         // let _duration = start.elapsed();

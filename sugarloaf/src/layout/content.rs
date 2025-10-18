@@ -116,6 +116,7 @@ pub struct BuilderState {
     pub last_update: BuilderStateUpdate,
     scaled_font_size: f32,
     pub layout: RichTextLayout,
+    pub render_data: crate::layout::RichTextRenderData,
 }
 
 impl BuilderState {
@@ -369,6 +370,13 @@ impl Content {
     pub fn sel(&mut self, state_id: usize) -> &mut Content {
         self.selector = Some(state_id);
 
+        // Ensure the state exists - create it with default layout if missing
+        if !self.states.contains_key(&state_id) {
+            let default_layout = RichTextLayout::default();
+            self.states
+                .insert(state_id, BuilderState::from_layout(&default_layout));
+        }
+
         self
     }
 
@@ -402,11 +410,119 @@ impl Content {
     }
 
     #[inline]
-    pub fn create_state(&mut self, rich_text_layout: &RichTextLayout) -> usize {
+    pub fn create_state(
+        &mut self,
+        rich_text_layout: &RichTextLayout,
+        config: Option<&crate::layout::RichTextConfig>,
+    ) -> usize {
         let id = self.counter.next();
-        self.states
-            .insert(id, BuilderState::from_layout(rich_text_layout));
+        let mut state = BuilderState::from_layout(rich_text_layout);
+
+        // Immediately calculate dimensions for a representative character
+        // This ensures we never have zero dimensions
+        state.layout.dimensions =
+            self.calculate_character_cell_dimensions(rich_text_layout);
+
+        // Apply config if provided
+        if let Some(cfg) = config {
+            if let Some(position) = cfg.position {
+                state.render_data.position = position;
+            }
+            state.render_data.depth = cfg.depth;
+        }
+
+        self.states.insert(id, state);
         id
+    }
+
+    /// Calculate character cell dimensions
+    fn calculate_character_cell_dimensions(
+        &self,
+        layout: &RichTextLayout,
+    ) -> crate::layout::SugarDimensions {
+        if let Some(font_library_data) = self.fonts.inner.try_read() {
+            let font_id = 0; // FONT_ID_REGULAR
+            let font_size = layout.font_size;
+
+            // Get font data to create swash FontRef
+            if let Some((font_data, offset, _key)) = font_library_data.get_data(&font_id)
+            {
+                // Create swash FontRef directly from font data
+                if let Some(font_ref) = crate::font_introspector::FontRef::from_index(
+                    &font_data,
+                    offset as usize,
+                ) {
+                    // Get metrics using swash
+                    let font_metrics = font_ref.metrics(&[]);
+
+                    // Calculate character cell width using space character
+                    let char_width = match font_ref.charmap().map(' ' as u32) {
+                        glyph_id => {
+                            // Get advance width for space character using GlyphMetrics
+                            let glyph_metrics =
+                                crate::font_introspector::GlyphMetrics::from_font(
+                                    &font_ref,
+                                    &[],
+                                );
+                            let advance = glyph_metrics.advance_width(glyph_id);
+
+                            // Scale to font size
+                            let units_per_em = font_metrics.units_per_em as f32;
+                            let scale_factor = font_size / units_per_em;
+
+                            if advance > 0.0 {
+                                advance * scale_factor
+                            } else {
+                                // Fallback: approximate monospace character width
+                                font_size
+                            }
+                        }
+                    };
+
+                    // Calculate line height using scaled metrics
+                    let units_per_em = font_metrics.units_per_em as f32;
+                    let scale_factor = font_size / units_per_em;
+                    let ascent = font_metrics.ascent * scale_factor;
+                    let descent = font_metrics.descent.abs() * scale_factor;
+                    let leading = font_metrics.leading * scale_factor;
+                    let line_height = (ascent + descent + leading) * layout.line_height;
+
+                    println!("calculate_character_cell_dimensions:");
+                    println!("  font_size: {}", font_size);
+                    println!("  char_width (logical): {}", char_width);
+                    println!("  line_height (logical): {}", line_height);
+                    println!("  layout.dimensions.scale: {}", layout.dimensions.scale);
+
+                    // Scale to physical pixels to match what the brush returns
+                    let char_width_physical = char_width * layout.dimensions.scale;
+                    let line_height_physical = line_height * layout.dimensions.scale;
+
+                    // Return dimensions in physical pixels (matching brush behavior)
+                    let result = crate::layout::SugarDimensions {
+                        width: char_width_physical,
+                        height: line_height_physical,
+                        scale: layout.dimensions.scale,
+                    };
+
+                    println!("  -> Returning dimensions (physical): width={}, height={}, scale={}", 
+                        result.width, result.height, result.scale);
+
+                    return result;
+                }
+            }
+        }
+
+        println!("calculate_character_cell_dimensions: Using fallback");
+        // Fallback to reasonable defaults if font metrics unavailable
+        // Return in physical pixels to match brush behavior
+        let fallback_width = layout.font_size;
+        let fallback_height = layout.font_size * layout.line_height;
+
+        crate::layout::SugarDimensions {
+            width: fallback_width * layout.dimensions.scale,
+            height: fallback_height * layout.dimensions.scale,
+            scale: layout.dimensions.scale,
+        }
     }
 
     #[inline]
@@ -422,29 +538,17 @@ impl Content {
     }
 
     #[inline]
-    pub fn update_dimensions(
-        &mut self,
-        state_id: &usize,
-        advance_brush: &mut RichTextBrush,
-    ) {
-        let mut content = Content::new(&self.fonts);
-        if let Some(rte) = self.states.get_mut(state_id) {
-            let id = content.create_state(&rte.layout);
-            content
-                .sel(id)
-                .new_line()
-                .add_text(" ", FragmentStyle::default())
-                .build();
-            let render_data = content.get_state(&id).unwrap().lines[0].clone();
+    pub fn update_dimensions(&mut self, state_id: &usize) {
+        let layout = if let Some(rte) = self.states.get(state_id) {
+            rte.layout
+        } else {
+            return;
+        };
 
-            if let Some(dimension) = advance_brush.dimensions(
-                &self.fonts,
-                &render_data,
-                &mut Graphics::default(),
-            ) {
-                rte.layout.dimensions.height = dimension.height;
-                rte.layout.dimensions.width = dimension.width;
-            }
+        let new_dimension = self.calculate_character_cell_dimensions(&layout);
+
+        if let Some(rte) = self.states.get_mut(state_id) {
+            rte.layout.dimensions = new_dimension;
         }
     }
 
@@ -647,14 +751,6 @@ impl Content {
                     // Handle different types of cached content
                     match cached_content {
                         CachedContent::Normal(clusters) => {
-                            // debug!("=== CACHE HIT: USING NORMAL CONTENT ===");
-                            // debug!("Content: '{}' (len={})", content, content.len());
-                            // debug!(
-                            //     "Using cached Normal content with {} clusters",
-                            //     clusters.len()
-                            // );
-                            // debug!("=== END CACHE HIT ===");
-
                             if line.render_data.push_run_without_shaper(
                                 style,
                                 scaled_font_size,
@@ -667,13 +763,6 @@ impl Content {
                         }
                         CachedContent::RepeatedWhitespace { .. } => {
                             // Expand the whitespace sequence to the actual clusters
-                            // debug!("=== CACHE HIT: USING OPTIMIZED WHITESPACE ===");
-                            // debug!("Content: '{}' (len={})", content, content.len());
-                            // debug!(
-                            //     "Using cached RepeatedWhitespace - no shaping needed!"
-                            // );
-                            // debug!("=== END CACHE HIT ===");
-
                             let expanded_clusters = cached_content.expand(None);
 
                             if line.render_data.push_run_without_shaper(
@@ -700,13 +789,6 @@ impl Content {
             if let Some((whitespace_char, count)) =
                 WordCache::analyze_whitespace_sequence(content)
             {
-                debug!("=== WHITESPACE OPTIMIZATION ===");
-                debug!(
-                    "Detected repeated whitespace: '{}' x{}",
-                    whitespace_char, count
-                );
-                debug!("Shaping only single character instead of {}", count);
-
                 // Shape only a single whitespace character
                 let single_char_content = whitespace_char.to_string();
 
@@ -2610,7 +2692,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         // Add a line with long whitespace sequence
         let whitespace_content = "          "; // 10 spaces
@@ -2666,7 +2748,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;
@@ -2752,7 +2834,7 @@ mod tests {
             line_height: 1.0,
             dimensions: Default::default(),
         };
-        let state_id = content.create_state(&layout);
+        let state_id = content.create_state(&layout, None);
 
         let whitespace_content = "          "; // 10 spaces
         let font_id = 0;

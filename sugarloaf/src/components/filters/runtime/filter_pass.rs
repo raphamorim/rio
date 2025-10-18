@@ -11,6 +11,7 @@ use crate::components::filters::runtime::graphics_pipeline::WgpuGraphicsPipeline
 use crate::components::filters::runtime::options::FrameOptionsWgpu;
 use crate::components::filters::runtime::samplers::SamplerSet;
 use crate::components::filters::runtime::texture::InputImage;
+use crate::context::webgpu::WgpuContext;
 use librashader_common::map::FastHashMap;
 use librashader_common::{ImageFormat, Size, Viewport};
 use librashader_preprocess::ShaderSource;
@@ -117,7 +118,7 @@ impl FilterPass {
         source: &InputImage,
         output: &RenderTarget<WgpuOutputView>,
         vbo_type: QuadType,
-        context: &crate::context::Context,
+        context: &WgpuContext,
     ) -> error::Result<()> {
         let mut main_heap = FastHashMap::default();
         let mut sampler_heap = FastHashMap::default();
@@ -237,7 +238,7 @@ impl FilterPass {
         source: &InputImage,
         main_heap: &'a mut FastHashMap<u32, WgpuArcBinding<wgpu::TextureView>>,
         sampler_heap: &'a mut FastHashMap<u32, WgpuArcBinding<wgpu::Sampler>>,
-        context: &crate::context::Context,
+        context: &WgpuContext,
     ) {
         Self::bind_semantics(
             &context.device,

@@ -1,4 +1,5 @@
 use crate::ansi::iterm2_image_protocol;
+use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
 use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::batched_parser::BatchedParser;
@@ -362,8 +363,17 @@ pub trait Handler {
     fn sixel_graphic_reset(&mut self) {}
     fn sixel_graphic_finish(&mut self) {}
 
-    /// Insert a new graphic item.
+    /// Insert a new graphic item (displays immediately at cursor).
     fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
+
+    /// Store a graphic without displaying (for a=t transmit-only).
+    fn store_graphic(&mut self, _data: GraphicData) {}
+
+    /// Place an existing graphic at a specific location (for a=p).
+    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+
+    /// Delete graphics based on the specified criteria.
+    fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
@@ -394,6 +404,9 @@ pub trait Handler {
 
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
+
+    /// Send a kitty graphics protocol response
+    fn kitty_graphics_response(&mut self, _response: String) {}
 }
 
 pub trait Timeout: Default {
@@ -725,6 +738,84 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             self.state.xtgettcap_state.buffer.clear();
         } else {
             debug!("[unhandled dcs_unhook]");
+        }
+    }
+
+    fn apc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
+        warn!("[apc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+        let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
+
+        fn unhandled(params: &[&[u8]]) {
+            let mut buf = String::new();
+            for items in params {
+                buf.push('[');
+                for item in *items {
+                    let _ = write!(buf, "{:?}", *item as char);
+                }
+                buf.push_str("],");
+            }
+            warn!("[unhandled osc_dispatch]: [{}] at line {}", &buf, line!());
+        }
+
+        if params.is_empty() || params[0].is_empty() {
+            return;
+        }
+
+        match params[0] {
+            b"G" => {
+                // Handle kitty graphics protocol
+                debug!("[apc_dispatch] Kitty graphics APC received");
+                if let Some(response) = kitty_graphics_protocol::parse(params) {
+                    debug!("[apc_dispatch] Kitty graphics parsed successfully");
+
+                    // Handle based on what the response contains:
+                    // - graphic_data only (a=t): Store without displaying
+                    // - graphic_data + placement (a=T): Store and display
+                    // - placement only (a=p): Display stored image
+
+                    let has_graphic = response.graphic_data.is_some();
+                    let has_placement = response.placement_request.is_some();
+
+                    if let Some(graphic_data) = response.graphic_data {
+                        debug!(
+                            "[apc_dispatch] Graphic data present: id={}, {}x{}",
+                            graphic_data.id.0, graphic_data.width, graphic_data.height
+                        );
+
+                        if has_placement {
+                            // a=T: Transmit and display - use old behavior
+                            self.handler.insert_graphic(graphic_data, None);
+                        } else {
+                            // a=t: Transmit only - store without displaying
+                            self.handler.store_graphic(graphic_data);
+                        }
+                    }
+
+                    if let Some(placement) = response.placement_request {
+                        debug!(
+                            "[apc_dispatch] Placement request: image_id={}",
+                            placement.image_id
+                        );
+
+                        if !has_graphic {
+                            // a=p: Display previously stored image
+                            self.handler.place_graphic(placement);
+                        }
+                        // If has_graphic, placement was already handled by insert_graphic above
+                    }
+
+                    if let Some(delete) = response.delete_request {
+                        debug!("[apc_dispatch] Delete request");
+                        self.handler.delete_graphics(delete);
+                    }
+                    if let Some(response_str) = response.response {
+                        self.handler.kitty_graphics_response(response_str);
+                    }
+                } else {
+                    warn!("[apc_dispatch] Failed to parse kitty graphics protocol");
+                }
+            }
+            _ => unhandled(params),
         }
     }
 
