@@ -1416,10 +1416,8 @@ impl<U: EventListener> Crosswords<U> {
                 let cell = &mut self.grid[line][col];
                 if cell.flags.contains(Flags::GRAPHICS) {
                     if let Some(graphics) = cell.take_graphics() {
-                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> = graphics
-                            .into_iter()
-                            .filter(|g| !predicate(g))
-                            .collect();
+                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> =
+                            graphics.into_iter().filter(|g| !predicate(g)).collect();
 
                         if filtered.is_empty() {
                             cell.flags.remove(Flags::GRAPHICS);
@@ -1435,8 +1433,10 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Delete graphic at a specific position
     fn delete_graphic_at_position(&mut self, col: Column, row: Line) {
-        if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() &&
-           col.0 < self.grid.columns() {
+        if row.0 >= 0
+            && (row.0 as usize) < self.grid.screen_lines()
+            && col.0 < self.grid.columns()
+        {
             let cell = &mut self.grid[row][col];
             if cell.flags.contains(Flags::GRAPHICS) {
                 cell.set_graphics(smallvec::SmallVec::new());
@@ -1496,7 +1496,8 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Delete images not in use
-        self.graphics.delete_kitty_images(|id, _| !used_ids.contains(id));
+        self.graphics
+            .delete_kitty_images(|id, _| !used_ids.contains(id));
     }
 }
 
@@ -3084,18 +3085,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn store_graphic(&mut self, graphic: GraphicData) {
         // Store graphic without displaying (a=t transmit-only)
         let image_id = graphic.id.0 as u32;
-        debug!("Storing kitty graphic: id={}, {}x{}", image_id, graphic.width, graphic.height);
+        debug!(
+            "Storing kitty graphic: id={}, {}x{}",
+            image_id, graphic.width, graphic.height
+        );
 
         // Store in cache
         self.graphics.store_kitty_image(image_id, None, graphic);
     }
 
     #[inline]
-    fn place_graphic(&mut self, placement: crate::ansi::kitty_graphics_protocol::PlacementRequest) {
+    fn place_graphic(
+        &mut self,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
         // Place a previously stored image (a=p)
         debug!(
             "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}",
-            placement.image_id, placement.x, placement.y, placement.columns, placement.rows
+            placement.image_id,
+            placement.x,
+            placement.y,
+            placement.columns,
+            placement.rows
         );
 
         // Look up the stored image
@@ -3137,12 +3148,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // Restore cursor position (optional - matches kitty behavior)
             // self.grid.cursor.pos = saved_cursor;
         } else {
-            warn!("Attempted to place non-existent kitty graphic: id={}", placement.image_id);
+            warn!(
+                "Attempted to place non-existent kitty graphic: id={}",
+                placement.image_id
+            );
         }
     }
 
     #[inline]
-    fn delete_graphics(&mut self, delete: crate::ansi::kitty_graphics_protocol::DeleteRequest) {
+    fn delete_graphics(
+        &mut self,
+        delete: crate::ansi::kitty_graphics_protocol::DeleteRequest,
+    ) {
         debug!(
             "Kitty graphics delete: action={}, image_id={}, x={}, y={}, z_index={}",
             delete.action as char, delete.image_id, delete.x, delete.y, delete.z_index
@@ -3169,7 +3186,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
                 // If uppercase, also delete from cache
                 if delete.action == b'I' && delete.delete_data {
-                    self.graphics.delete_kitty_images(|id, _| *id == image_id_to_match);
+                    self.graphics
+                        .delete_kitty_images(|id, _| *id == image_id_to_match);
                 }
             }
             b'c' | b'C' => {
@@ -3222,7 +3240,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.delete_all_graphics();
             }
             _ => {
-                debug!("Kitty graphics delete mode '{}' not implemented", delete.action as char);
+                debug!(
+                    "Kitty graphics delete mode '{}' not implemented",
+                    delete.action as char
+                );
             }
         }
 

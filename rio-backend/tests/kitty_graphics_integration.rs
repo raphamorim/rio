@@ -14,7 +14,11 @@ struct TestHandler {
 }
 
 impl rio_backend::performer::handler::Handler for TestHandler {
-    fn insert_graphic(&mut self, data: GraphicData, _palette: Option<Vec<rio_backend::config::colors::ColorRgb>>) {
+    fn insert_graphic(
+        &mut self,
+        data: GraphicData,
+        _palette: Option<Vec<rio_backend::config::colors::ColorRgb>>,
+    ) {
         self.graphics.push(data);
     }
 
@@ -37,7 +41,11 @@ fn test_direct_parse_transmit() {
 
     // Parse kitty graphics directly through the protocol parser
     // 1x1 RGBA pixel (4 bytes) - base64 encoded [255, 0, 0, 255] (red pixel)
-    let params = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=1".as_ref(), b"/wAA/w==".as_ref()];
+    let params = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1,i=1".as_ref(),
+        b"/wAA/w==".as_ref(),
+    ];
 
     if let Some(response) = kitty_graphics_protocol::parse(&params) {
         if let Some(graphic_data) = response.graphic_data {
@@ -123,7 +131,11 @@ fn test_chunked_transfer() {
     // Split into 3 chunks: "/wA", "A/", "w=="
 
     // Send first chunk (m=1 means more chunks coming)
-    let params1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(), b"/wA".as_ref()];
+    let params1 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(),
+        b"/wA".as_ref(),
+    ];
     let result1 = kitty_graphics_protocol::parse(&params1);
     assert!(result1.is_none());
 
@@ -133,7 +145,11 @@ fn test_chunked_transfer() {
     assert!(result2.is_none());
 
     // Send final chunk with complete image info (m=0 means last chunk)
-    let params3 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=100".as_ref(), b"w==".as_ref()];
+    let params3 = vec![
+        b"G".as_ref(),
+        b"a=t,f=32,s=1,v=1,m=0,i=100".as_ref(),
+        b"w==".as_ref(),
+    ];
     if let Some(response) = kitty_graphics_protocol::parse(&params3) {
         if let Some(graphic_data) = response.graphic_data {
             handler.insert_graphic(graphic_data, None);
@@ -154,9 +170,30 @@ fn test_multiple_graphics_in_sequence() {
     // Send multiple graphics (1x1 RGBA pixels with different IDs)
     // Base64 for [255, 0, 0, 255] = "/wAA/w=="
     let graphics_params = [
-        (vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=1".as_ref(), b"/wAA/w==".as_ref()], 1u64),
-        (vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=2".as_ref(), b"/wAA/w==".as_ref()], 2u64),
-        (vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,i=3".as_ref(), b"/wAA/w==".as_ref()], 3u64),
+        (
+            vec![
+                b"G".as_ref(),
+                b"a=t,f=32,s=1,v=1,i=1".as_ref(),
+                b"/wAA/w==".as_ref(),
+            ],
+            1u64,
+        ),
+        (
+            vec![
+                b"G".as_ref(),
+                b"a=t,f=32,s=1,v=1,i=2".as_ref(),
+                b"/wAA/w==".as_ref(),
+            ],
+            2u64,
+        ),
+        (
+            vec![
+                b"G".as_ref(),
+                b"a=t,f=32,s=1,v=1,i=3".as_ref(),
+                b"/wAA/w==".as_ref(),
+            ],
+            3u64,
+        ),
     ];
 
     for (params, _) in &graphics_params {

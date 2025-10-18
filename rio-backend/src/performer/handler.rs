@@ -777,8 +777,10 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     let has_placement = response.placement_request.is_some();
 
                     if let Some(graphic_data) = response.graphic_data {
-                        debug!("[apc_dispatch] Graphic data present: id={}, {}x{}",
-                            graphic_data.id.0, graphic_data.width, graphic_data.height);
+                        debug!(
+                            "[apc_dispatch] Graphic data present: id={}, {}x{}",
+                            graphic_data.id.0, graphic_data.width, graphic_data.height
+                        );
 
                         if has_placement {
                             // a=T: Transmit and display - use old behavior
@@ -790,7 +792,10 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     }
 
                     if let Some(placement) = response.placement_request {
-                        debug!("[apc_dispatch] Placement request: image_id={}", placement.image_id);
+                        debug!(
+                            "[apc_dispatch] Placement request: image_id={}",
+                            placement.image_id
+                        );
 
                         if !has_graphic {
                             // a=p: Display previously stored image

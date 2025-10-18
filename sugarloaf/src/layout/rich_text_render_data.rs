@@ -8,6 +8,8 @@
 pub struct RichTextRenderData {
     /// Position where the rich text should be rendered [x, y]
     pub position: [f32; 2],
+    /// Depth value for z-ordering (more negative = closer to camera/in front)
+    pub depth: f32,
     /// Whether this rich text should be hidden during rendering
     pub hidden: bool,
     /// Whether this rich text needs to be repainted
@@ -20,6 +22,7 @@ impl Default for RichTextRenderData {
     fn default() -> Self {
         Self {
             position: [0.0, 0.0],
+            depth: 0.0,          // Default depth
             hidden: false,       // Visible by default
             needs_repaint: true, // Should paint initially
             should_remove: false,
@@ -32,6 +35,7 @@ impl RichTextRenderData {
     pub fn new(x: f32, y: f32) -> Self {
         Self {
             position: [x, y],
+            depth: 0.0,
             hidden: false,
             needs_repaint: true,
             should_remove: false,

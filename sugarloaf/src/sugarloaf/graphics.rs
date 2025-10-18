@@ -23,7 +23,6 @@ pub struct Graphics {
 }
 
 impl Graphics {
-
     #[inline]
     pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
         self.inner.get(id)

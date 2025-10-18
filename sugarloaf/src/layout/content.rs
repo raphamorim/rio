@@ -428,6 +428,7 @@ impl Content {
             if let Some(position) = cfg.position {
                 state.render_data.position = position;
             }
+            state.render_data.depth = cfg.depth;
         }
 
         self.states.insert(id, state);

@@ -208,11 +208,11 @@ impl Screen<'_> {
         };
 
         // Add island height to top padding if island is enabled
-        let padding_y_top_with_island = padding_y_top + renderer.island.height();
+        let padding_y_top_with_island = padding_y_top;
 
         // Create rich text with initial position accounting for island
-        let rich_text_config =
-            RichTextConfig::new().with_position(config.padding_x, padding_y_top_with_island);
+        let rich_text_config = RichTextConfig::new()
+            .with_position(config.padding_x, padding_y_top_with_island);
         let rich_text_id = sugarloaf.create_rich_text(Some(&rich_text_config));
 
         let margin = Delta {
@@ -253,8 +253,6 @@ impl Screen<'_> {
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
-
-        sugarloaf.render();
 
         Ok(Screen {
             search_state: SearchState::default(),
@@ -1158,7 +1156,8 @@ impl Screen<'_> {
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
-        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_config =
+            RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.split(rich_text_id, false);
 
@@ -1171,7 +1170,8 @@ impl Screen<'_> {
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
-        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_config =
+            RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.split(rich_text_id, true);
 
@@ -1219,7 +1219,8 @@ impl Screen<'_> {
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
-        let rich_text_config = RichTextConfig::new().with_position(padding_x, padding_y_top);
+        let rich_text_config =
+            RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.add_context(redirect, rich_text_id);
 

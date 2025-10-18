@@ -103,11 +103,16 @@ impl Default for RichTextLayout {
 pub struct RichTextConfig {
     /// Initial position [x, y] where the rich text should be rendered
     pub position: Option<[f32; 2]>,
+    /// Depth value for z-ordering (more negative = closer to camera/in front)
+    pub depth: f32,
 }
 
 impl Default for RichTextConfig {
     fn default() -> Self {
-        Self { position: None }
+        Self {
+            position: None,
+            depth: 0.0,
+        }
     }
 }
 
@@ -118,6 +123,11 @@ impl RichTextConfig {
 
     pub fn with_position(mut self, x: f32, y: f32) -> Self {
         self.position = Some([x, y]);
+        self
+    }
+
+    pub fn with_depth(mut self, depth: f32) -> Self {
+        self.depth = depth;
         self
     }
 }

@@ -28,7 +28,7 @@ use rio_backend::sugarloaf::{
     drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -93,6 +93,9 @@ impl Renderer {
         let mut island = island::Island::new();
         if config.navigation.is_enabled() {
             island.set_enabled(true);
+            island.set_background_color(named_colors.tabs);
+            island.set_active_background_color(named_colors.tabs_active);
+            island.set_cursor_color(named_colors.cursor);
         }
 
         let mut renderer = Renderer {
@@ -853,7 +856,6 @@ impl Renderer {
         for (key, grid_context) in grid.contexts_mut().iter_mut() {
             let is_active = &active_key == key;
             let context = grid_context.context_mut();
-            println!("{:?}", context.dimension);
 
             let mut has_ime = false;
             if let Some(preedit) = context.ime.preedit() {
@@ -1086,7 +1088,6 @@ impl Renderer {
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
 
-        // Render island (GPU-rendered, similar to boo/Zed)
         self.island.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
