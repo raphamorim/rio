@@ -3,37 +3,37 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 //
-// titlebar.rs was originally retired from boo editor
+// island.rs was originally retired from boo editor
 // which is licensed under MIT license.
 
 use crate::context::ContextManager;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::Sugarloaf;
 
-/// Height of the titlebar in pixels
-pub const TITLEBAR_HEIGHT: f32 = 40.0;
+/// Height of the island in pixels
+pub const ISLAND_HEIGHT: f32 = 40.0;
 
 /// Margin from the right edge for the title text
 const TITLE_MARGIN_RIGHT: f32 = 16.0;
 
-/// Vertical centering offset for title text within titlebar
+/// Vertical centering offset for title text within island
 const TITLE_OFFSET_Y: f32 = 25.0;
 
 /// Font size for the title text
 const TITLE_FONT_SIZE: f32 = 13.0;
 
-pub struct Titlebar {
-    /// Whether the titlebar is enabled
+pub struct Island {
+    /// Whether the island is enabled
     pub enabled: bool,
-    /// Background color of the titlebar (RGBA)
+    /// Background color of the island (RGBA)
     pub background_color: [f32; 4],
     /// Title text color (RGBA)
     pub title_color: [f32; 4],
-    /// Whether to show shadow below titlebar
+    /// Whether to show shadow below island
     pub show_shadow: bool,
 }
 
-impl Default for Titlebar {
+impl Default for Island {
     fn default() -> Self {
         Self {
             // Disabled by default - can be enabled via configuration
@@ -47,12 +47,22 @@ impl Default for Titlebar {
     }
 }
 
-impl Titlebar {
+impl Island {
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Render the titlebar using GPU primitives
+    /// Get the effective height of the island (0 if disabled)
+    #[inline]
+    pub fn height(&self) -> f32 {
+        if self.enabled {
+            ISLAND_HEIGHT
+        } else {
+            0.0
+        }
+    }
+
+    /// Render the island using GPU primitives
     #[inline]
     pub fn render(
         &self,
@@ -66,20 +76,17 @@ impl Titlebar {
 
         let (window_width, _window_height, scale_factor) = dimensions;
 
-        // Scale titlebar height
-        let scaled_titlebar_height = TITLEBAR_HEIGHT * scale_factor;
-
-        // Render titlebar background rectangle
+        // Render island background rectangle
         sugarloaf.rect(
             0.0,
             0.0,
             window_width / scale_factor,
-            TITLEBAR_HEIGHT,
+            ISLAND_HEIGHT,
             self.background_color,
-            0.9, // depth - above terminal content but below dialogs
+            -0.1, // depth - negative to render in front of terminal content (depth 0.0)
         );
 
-        // Render shadow below titlebar if enabled
+        // Render shadow below island if enabled
         if self.show_shadow {
             // Subtle shadow gradient
             let shadow_height = 3.0;
@@ -88,11 +95,11 @@ impl Titlebar {
                 let shadow_color = [0.0, 0.0, 0.0, alpha];
                 sugarloaf.rect(
                     0.0,
-                    TITLEBAR_HEIGHT + (i as f32),
+                    ISLAND_HEIGHT + (i as f32),
                     window_width / scale_factor,
                     1.0,
                     shadow_color,
-                    0.9,
+                    -0.05, // Slightly behind island but still in front of terminal
                 );
             }
         }
@@ -157,12 +164,12 @@ impl Titlebar {
         String::from("Rio")
     }
 
-    /// Set whether the titlebar is enabled
+    /// Set whether the island is enabled
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
 
-    /// Set the background color of the titlebar
+    /// Set the background color of the island
     pub fn set_background_color(&mut self, color: [f32; 4]) {
         self.background_color = color;
     }
