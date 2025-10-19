@@ -883,7 +883,8 @@ impl RichTextBrush {
                             // Get cached graphic data
                             if let Some(cached) = self.graphic_cache.get(&graphic.id) {
                                 let gx = run_x - graphic.offset_x as f32;
-                                let gy = py - ascent - graphic.offset_y as f32;
+                                // py is the top of the line, offset_y is from top of cell
+                                let gy = py + graphic.offset_y as f32;
 
                                 tracing::info!(
                                     "Drawing graphic at ({}, {}), size={}x{}",
