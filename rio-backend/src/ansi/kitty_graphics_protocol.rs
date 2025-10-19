@@ -2,6 +2,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
+use tracing::debug;
 
 // Global storage for incomplete image transfers
 lazy_static::lazy_static! {
@@ -180,8 +181,10 @@ impl Default for KittyGraphicsCommand {
 
 pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
     let Some(&b"G") = params.first() else {
+        debug!("Kitty graphics parse failed: first param is not 'G'");
         return None;
     };
+    debug!("Kitty graphics parse: starting with {} params", params.len());
 
     let mut cmd = KittyGraphicsCommand::default();
 

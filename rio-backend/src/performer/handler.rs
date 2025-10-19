@@ -762,10 +762,51 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
         }
 
         match params[0] {
-            b"G" => {
+            p if p.starts_with(b"G") => {
                 // Handle kitty graphics protocol
                 debug!("[apc_dispatch] Kitty graphics APC received");
-                if let Some(response) = kitty_graphics_protocol::parse(params) {
+
+                // Reassemble params for Kitty graphics parser
+                // APC gives us: ["Ga=q,", "f=24,", "s=1,", ...]
+                // Parser needs: ["G", "a=q,f=24,s=1,...", "<payload>"]
+
+                // Join all params (except payload) into control data
+                let mut control_data = Vec::new();
+                for (i, param) in params.iter().enumerate() {
+                    if i == 0 {
+                        // First param is "Ga=..." - skip the 'G' prefix
+                        if param.len() > 1 {
+                            control_data.extend_from_slice(&param[1..]);
+                        }
+                    } else {
+                        control_data.extend_from_slice(param);
+                    }
+                }
+
+                // Split control data from payload (separated by semicolon)
+                let (control_bytes, payload_bytes): (Vec<u8>, Vec<u8>) =
+                    if let Some(semicolon_pos) = control_data.iter().position(|&b| b == b';') {
+                        let (control, payload) = control_data.split_at(semicolon_pos);
+                        let mut payload_vec: Vec<u8> = payload[1..].to_vec(); // Skip semicolon
+
+                        // Remove escape character if present at end
+                        if payload_vec.last() == Some(&27) {
+                            payload_vec.pop();
+                        }
+
+                        (control.to_vec(), payload_vec)
+                    } else {
+                        (control_data, Vec::new())
+                    };
+
+                let kitty_params: Vec<&[u8]> = vec![b"G", &control_bytes, &payload_bytes];
+
+                debug!(
+                    "[apc_dispatch] Reassembled Kitty params: control={}, payload_len={}",
+                    String::from_utf8_lossy(&control_bytes),
+                    payload_bytes.len()
+                );
+                if let Some(response) = kitty_graphics_protocol::parse(&kitty_params) {
                     debug!("[apc_dispatch] Kitty graphics parsed successfully");
 
                     // Handle based on what the response contains:
@@ -1408,14 +1449,17 @@ fn attrs_from_sgr_parameters(params: &mut ParamsIter<'_>) -> Vec<Option<Attr>> {
 
 /// Process XTGETTCAP request and return DCS response.
 fn process_xtgettcap_request(buffer: &[u8]) -> String {
+    debug!("Processing XTGETTCAP request: {:?}", buffer);
     // Decode hex-encoded capability name
     let capability_name = match decode_hex_string(buffer) {
         Ok(name) => name,
         Err(_) => {
             // Invalid hex encoding - return error response
+            debug!("Invalid hex encoding in XTGETTCAP request");
             return "\x1bP0+r\x1b\\".to_string();
         }
     };
+    debug!("Decoded capability name: {}", capability_name);
 
     if let Some(value) = get_termcap_capability(&capability_name) {
         // Encode both name and value in hex
@@ -1452,6 +1496,7 @@ fn encode_hex_string(s: &str) -> String {
 /// Get termcap/terminfo capability value for Rio terminal.
 /// Based on misc/rio.termcap and misc/rio.terminfo files.
 fn get_termcap_capability(name: &str) -> Option<String> {
+    debug!("XTGETTCAP query for capability: {}", name);
     match name {
         // Terminal name
         "TN" | "name" => Some("rio".to_string()),
@@ -1489,6 +1534,7 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         // Image protocol support
         "sixel" => Some("".to_string()), // Sixel graphics support
         "iterm2" => Some("".to_string()), // iTerm2 image protocol support
+        "TK" | "kitty" => Some("yes".to_string()), // Kitty graphics protocol support
 
         // Cursor movement - from terminfo
         "cup" | "cm" => Some("\\E[%i%p1%d;%p2%dH".to_string()),

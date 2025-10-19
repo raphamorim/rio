@@ -6,6 +6,7 @@ pub mod control;
 pub mod graphics;
 pub mod iterm2_image_protocol;
 pub mod kitty_graphics_protocol;
+pub mod kitty_virtual;
 pub mod mode;
 pub mod sixel;
 
