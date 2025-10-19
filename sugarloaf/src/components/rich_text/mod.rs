@@ -873,18 +873,17 @@ impl RichTextBrush {
 
                     // Handle graphics - render directly using add_image_rect
                     if let Some(graphic) = run.span.media {
-                        tracing::info!(
-                            "Rendering graphic: id={}, offset_x={}, offset_y={}",
-                            graphic.id.0,
-                            graphic.offset_x,
-                            graphic.offset_y
-                        );
+                        // Each cell stores which part of the graphic it shows via offset_x/offset_y
+                        // We render once per graphic per frame, using the first cell we encounter
+                        // We calculate the graphic's position by subtracting the cell's offset
+                        // This ensures the graphic renders even when the origin cell is scrolled off-screen
                         if !last_rendered_graphic.contains(&graphic.id) {
                             // Get cached graphic data
                             if let Some(cached) = self.graphic_cache.get(&graphic.id) {
+                                // Calculate graphic position: current cell position minus this cell's offset
+                                // This positions the full graphic correctly regardless of which cell we encounter
                                 let gx = run_x - graphic.offset_x as f32;
-                                // py is the top of the line, offset_y is from top of cell
-                                let gy = py + graphic.offset_y as f32;
+                                let gy = py - graphic.offset_y as f32;
 
                                 tracing::info!(
                                     "Drawing graphic at ({}, {}), size={}x{}",
