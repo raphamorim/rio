@@ -266,6 +266,7 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
         is_active: bool,
+        terminal_snapshot: &TerminalSnapshot,
     ) {
         // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
@@ -381,6 +382,97 @@ impl Renderer {
                 style.color[3] = self.unfocused_split_opacity;
                 if let Some(mut background_color) = style.background_color {
                     background_color[3] = self.unfocused_split_opacity;
+                }
+            }
+
+            // Check for Kitty virtual placements (U=1)
+            if square_content == '\u{10EEEE}' {
+                tracing::debug!("Found Kitty placeholder at line={:?}, col={}", line, column);
+                // Build the full grapheme cluster (base char + diacritics)
+                let mut grapheme = String::from(square_content);
+                if let Some(zerowidth_chars) = square.zerowidth() {
+                    for ch in zerowidth_chars {
+                        grapheme.push(*ch);
+                    }
+                }
+
+                // Decode the placeholder to extract row/col/image_id_high
+                if let Some((row_idx, col_idx, image_id_high)) =
+                    rio_backend::ansi::kitty_virtual::decode_placeholder(&grapheme)
+                {
+                    // Decode image_id from foreground color
+                    let image_id_low = match square.fg {
+                        rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                            rio_backend::ansi::kitty_virtual::rgb_to_id(rgb)
+                        }
+                        rio_backend::config::colors::AnsiColor::Named(_) => 0,
+                        rio_backend::config::colors::AnsiColor::Indexed(idx) => idx as u32,
+                    };
+
+                    // Combine low and high parts of image_id
+                    let image_id = if let Some(high) = image_id_high {
+                        image_id_low | ((high as u32) << 24)
+                    } else {
+                        image_id_low
+                    };
+
+                    // Decode placement_id from underline color (if present)
+                    let placement_id = square.underline_color()
+                        .and_then(|color| match color {
+                            rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                                Some(rio_backend::ansi::kitty_virtual::rgb_to_id(rgb))
+                            }
+                            rio_backend::config::colors::AnsiColor::Indexed(idx) => Some(idx as u32),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+
+                    tracing::debug!(
+                        "Decoded Kitty virtual placeholder: line={:?}, col={}, row_idx={}, col_idx={}, image_id={:#X}, placement_id={}",
+                        line, column, row_idx, col_idx, image_id, placement_id
+                    );
+
+                    // Look up the virtual placement
+                    if let Some(placement) = terminal_snapshot.kitty_virtual_placements.get(&(image_id, placement_id)) {
+                        // Look up the stored image data
+                        if let Some(stored_image) = terminal_snapshot.kitty_images.get(&image_id) {
+                            // Calculate the offset for this specific cell within the placement
+                            // row_idx/col_idx tell us which cell in the placement grid this is
+                            let cell_width = stored_image.data.width as u32 / placement.columns;
+                            let cell_height = stored_image.data.height as u32 / placement.rows;
+
+                            let offset_x = col_idx * cell_width;
+                            let offset_y = row_idx * cell_height;
+
+                            tracing::debug!(
+                                "Rendering Kitty virtual placement: image_id={:#X}, placement_id={}, cell=({},{}), offset=({},{})",
+                                image_id, placement_id, col_idx, row_idx, offset_x, offset_y
+                            );
+
+                            // Render the image fragment at this position
+                            style.media = Some(Graphic {
+                                id: stored_image.data.id,
+                                offset_x: offset_x as u16,
+                                offset_y: offset_y as u16,
+                            });
+                            style.background_color = None;
+                        } else {
+                            tracing::warn!(
+                                "Kitty virtual placement references missing image: image_id={:#X}",
+                                image_id
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "No virtual placement found for image_id={:#X}, placement_id={}",
+                            image_id, placement_id
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "Failed to decode Kitty placeholder at line={:?}, col={}, grapheme={:?}",
+                        line, column, grapheme
+                    );
                 }
             }
 
@@ -931,6 +1023,8 @@ impl Renderer {
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
+                    kitty_virtual_placements: terminal.graphics.kitty_virtual_placements.clone(),
+                    kitty_images: terminal.graphics.kitty_images.clone(),
                 };
                 terminal.reset_damage();
                 drop(terminal);
@@ -942,13 +1036,13 @@ impl Renderer {
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
             // Update cursor state from snapshot
-            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+            context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
             // Check for partial damage to optimize rendering
             if !force_full_damage {
-                match terminal_snapshot.damage {
+                match &terminal_snapshot.damage {
                     TerminalDamage::Full => {
                         // Full damage, render everything
                     }
@@ -972,7 +1066,6 @@ impl Renderer {
             }
 
             let rich_text_id = context.rich_text_id;
-            println!("{:?}", rich_text_id);
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
@@ -1048,6 +1141,7 @@ impl Renderer {
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
+                            &terminal_snapshot,
                         );
                     }
                     content.build();
@@ -1077,6 +1171,7 @@ impl Renderer {
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
+                                &terminal_snapshot,
                             );
                         }
                     }

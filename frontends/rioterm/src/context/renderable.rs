@@ -1,3 +1,4 @@
+use rio_backend::ansi::graphics::{StoredImage, VirtualPlacement};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
@@ -5,6 +6,7 @@ use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
 use rio_backend::event::TerminalDamage;
 use rio_backend::selection::SelectionRange;
+use rustc_hash::FxHashMap;
 use std::time::Instant;
 
 #[derive(Default, Clone, Debug)]
@@ -79,6 +81,10 @@ pub struct TerminalSnapshot {
     // Cache terminal dimensions to avoid repeated calls
     pub columns: usize,
     pub screen_lines: usize,
+    // Kitty graphics virtual placements
+    pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
+    // Kitty graphics stored images
+    pub kitty_images: FxHashMap<u32, StoredImage>,
 }
 
 #[derive(Debug, Default)]

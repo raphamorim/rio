@@ -10,6 +10,17 @@ language: 'en'
 **What's New**
 
 - **Kitty Graphics Protocol**: Display images directly in your terminal
+  - ✅ Direct placements (U=0) - works like Sixel
+  - ✅ Virtual placements (U=1) - full Ghostty-compatible encoding
+  - ✅ Diacritic-based row/column encoding (283 combining characters)
+  - ✅ RGB color encoding for image/placement IDs (24+8 bit support)
+  - ⚠️  Virtual placement rendering (infrastructure complete, rendering pending)
+- **Sixel Graphics**: Full support with proper scrolling and positioning
+- **Graphics Rendering Improvements**:
+  - Fixed vertical positioning alignment
+  - Fixed scrolling (images persist when origin scrolls off-screen)
+  - Fixed duplicate rendering with per-frame deduplication
+  - LRU cache with automatic eviction
 - **Native Metal Support** (macOS): Hardware-accelerated rendering with Metal
 - **Native Vulkan Support** (Linux/Windows): Hardware-accelerated rendering with Vulkan
 - **New GPU-Rendered Navigation**: Faster, smoother tab interface
@@ -33,6 +44,9 @@ language: 'en'
 - Parser now supports APC sequences for Kitty graphics protocol
 - Removed legacy layer/quad rendering system
 - Added Metal backend for macOS, split WebGPU backend for cross-platform
+- New `kitty_virtual` module for Ghostty-compatible placeholder encoding
+- Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
+- Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
 ## 0.2.31
 

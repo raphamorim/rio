@@ -94,11 +94,27 @@ impl Drop for GraphicCell {
     }
 }
 
+/// Kitty graphics Unicode placeholder character
+pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
+
 /// Stored image data for Kitty graphics protocol
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StoredImage {
     pub data: GraphicData,
+    #[allow(dead_code)]
     pub transmission_time: std::time::Instant,
+}
+
+/// Virtual placement metadata for Kitty graphics protocol
+/// Stored separately from direct graphics in cells
+#[derive(Debug, Clone, PartialEq)]
+pub struct VirtualPlacement {
+    pub image_id: u32,
+    pub placement_id: u32,
+    pub columns: u32,
+    pub rows: u32,
+    pub x: u32,
+    pub y: u32,
 }
 
 /// Track changes in the grid to add or to remove graphics.
@@ -132,6 +148,10 @@ pub struct Graphics {
     /// Kitty graphics: Image number to ID mapping (for I= parameter)
     /// Maps image number to the most recently transmitted image with that number
     pub kitty_image_numbers: FxHashMap<u32, u32>,
+
+    /// Kitty graphics: Virtual placements (when U=1)
+    /// Key is (image_id, placement_id), value is placement metadata
+    pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
 }
 
 impl Graphics {

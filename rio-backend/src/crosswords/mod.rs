@@ -3101,14 +3101,23 @@ impl<U: EventListener> Handler for Crosswords<U> {
     ) {
         // Place a previously stored image (a=p)
         debug!(
-            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}",
+            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, unicode_placeholder={}",
             placement.image_id,
             placement.x,
             placement.y,
             placement.columns,
-            placement.rows
+            placement.rows,
+            placement.unicode_placeholder
         );
 
+        // Check if this is a virtual placement (unicode_placeholder > 0 means U=1)
+        if placement.unicode_placeholder > 0 {
+            // Virtual placement: Write placeholder character(s) to grid
+            self.place_virtual_graphic(placement);
+            return;
+        }
+
+        // Direct placement (U=0): Insert graphic directly into cells
         // Look up the stored image
         if let Some(stored) = self.graphics.get_kitty_image(placement.image_id) {
             // Clone the graphic data and display it at the specified position
@@ -3348,6 +3357,119 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
 
     fn square_height(&self) -> f32 {
         self.graphics.cell_height
+    }
+}
+
+// Additional Crosswords methods (not part of Handler trait)
+impl<U: EventListener> Crosswords<U> {
+    fn place_virtual_graphic(
+        &mut self,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
+        use crate::ansi::graphics::VirtualPlacement;
+        use crate::ansi::kitty_virtual;
+
+        debug!(
+            "Virtual placement: image_id={}, placement_id={}, columns={}, rows={}",
+            placement.image_id, placement.placement_id, placement.columns, placement.rows
+        );
+
+        // Store the virtual placement metadata
+        let vp = VirtualPlacement {
+            image_id: placement.image_id,
+            placement_id: placement.placement_id,
+            columns: placement.columns,
+            rows: placement.rows,
+            x: placement.x,
+            y: placement.y,
+        };
+        self.graphics.kitty_virtual_placements.insert(
+            (placement.image_id, placement.placement_id),
+            vp,
+        );
+
+        // Calculate the grid dimensions needed
+        let columns = if placement.columns > 0 {
+            placement.columns as usize
+        } else {
+            // Default to a reasonable size if not specified
+            10
+        };
+        let rows = if placement.rows > 0 {
+            placement.rows as usize
+        } else {
+            10
+        };
+
+        // Extract image ID components
+        let image_id_low = placement.image_id & 0x00FFFFFF; // Lower 24 bits
+        let image_id_high = if placement.image_id > 0x00FFFFFF {
+            Some(((placement.image_id >> 24) & 0xFF) as u8)
+        } else {
+            None
+        };
+
+        // Convert IDs to colors (Ghostty/Kitty encoding)
+        let fg_color = kitty_virtual::id_to_rgb(image_id_low);
+        let underline_color = if placement.placement_id > 0 {
+            Some(kitty_virtual::id_to_rgb(placement.placement_id))
+        } else {
+            None
+        };
+
+        // Save cursor position and template
+        let start_col = self.grid.cursor.pos.col;
+        let _start_row = self.grid.cursor.pos.row;
+        let saved_template = self.grid.cursor.template.clone();
+
+        // Move to placement position if specified
+        if placement.x > 0 || placement.y > 0 {
+            self.grid.cursor.pos.col = Column(placement.x as usize);
+            self.grid.cursor.pos.row = Line(placement.y as i32);
+        }
+
+        // Write placeholder characters with proper encoding
+        for row_idx in 0..rows {
+            // Move to start of row
+            self.grid.cursor.pos.col = if placement.x > 0 {
+                Column(placement.x as usize)
+            } else {
+                start_col
+            };
+
+            for col_idx in 0..columns {
+                // Set colors to encode image_id and placement_id
+                self.grid.cursor.template.fg = crate::config::colors::AnsiColor::Spec(fg_color);
+                if let Some(ul_color) = underline_color {
+                    self.grid.cursor.template.set_underline_color(Some(crate::config::colors::AnsiColor::Spec(ul_color)));
+                }
+
+                // Encode placeholder with diacritics for this cell's position
+                let placeholder_str = kitty_virtual::encode_placeholder(
+                    row_idx as u32,
+                    col_idx as u32,
+                    image_id_high,
+                );
+
+                // Write each character of the encoded placeholder
+                for ch in placeholder_str.chars() {
+                    self.write_at_cursor(ch);
+                }
+            }
+
+            // Move to next row
+            if row_idx < rows - 1 {
+                self.linefeed();
+            }
+        }
+
+        // Restore cursor template
+        self.grid.cursor.template = saved_template;
+
+        debug!(
+            "Wrote {}x{} placeholder cells for virtual placement (image_id={:#X})",
+            columns, rows, placement.image_id
+        );
     }
 }
 
