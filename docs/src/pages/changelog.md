@@ -7,19 +7,32 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-- Native Metal Support.
-- Native Vulkan Support.
-- Quake window support.
-- Kitty image protocol.
-- Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
-- **Breaking: Navigation mode simplification for full GPU rendering**
-  - Removed `TopTab` and `BottomTab` navigation modes
-  - Removed `Bookmark` navigation mode
-  - Added new `Enabled` navigation mode for GPU-rendered navigation
-  - Remaining modes: `Plain`, `Enabled`, and `NativeTab` (macOS only)
-  - Default navigation mode changed from `NativeTab` to `Enabled` on macOS
-  - Default navigation mode changed from `Bookmark` to `Enabled` on other platforms
-  - Migration: Replace `mode = "TopTab"`, `mode = "BottomTab"`, or `mode = "Bookmark"` with `mode = "Enabled"` in your config
+**What's New**
+
+- **Kitty Graphics Protocol**: Display images directly in your terminal
+- **Native Metal Support** (macOS): Hardware-accelerated rendering with Metal
+- **Native Vulkan Support** (Linux/Windows): Hardware-accelerated rendering with Vulkan
+- **New GPU-Rendered Navigation**: Faster, smoother tab interface
+- **Command Palette**: Quick access to terminal functions
+- **Quake Window Mode**: Drop-down terminal from top of screen
+
+**Breaking Changes**
+
+- Navigation modes simplified - if you use `TopTab`, `BottomTab`, or `Bookmark`, change to:
+  ```toml
+  [navigation]
+  mode = "Enabled"
+  ```
+- Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
+- Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
+- Available modes: `Plain`, `Enabled`, `NativeTab` (macOS only)
+
+**Technical Details**
+
+- Complete rendering architecture rewrite for GPU-based UI
+- Parser now supports APC sequences for Kitty graphics protocol
+- Removed legacy layer/quad rendering system
+- Added Metal backend for macOS, split WebGPU backend for cross-platform
 
 ## 0.2.31
 
