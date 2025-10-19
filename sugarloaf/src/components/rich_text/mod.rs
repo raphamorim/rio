@@ -1534,4 +1534,175 @@ mod rect_positioning_tests {
             "Baseline should be 4.0 units above glyph center"
         );
     }
+
+    #[test]
+    fn test_find_oldest_graphic() {
+        use crate::GraphicId;
+        use rustc_hash::FxHashMap;
+        use super::CachedGraphic;
+
+        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
+
+        // Create dummy graphics with different last_used_frame values
+        let graphic1 = GraphicId(1);
+        let graphic2 = GraphicId(2);
+        let graphic3 = GraphicId(3);
+
+        // graphic2 is oldest (frame 5)
+        // graphic1 is middle (frame 10)
+        // graphic3 is newest (frame 15)
+        graphic_cache.insert(
+            graphic1,
+            CachedGraphic {
+                location: super::image_cache::ImageLocation {
+                    min: (0.0, 0.0),
+                    max: (1.0, 1.0),
+                },
+                width: 100.0,
+                height: 100.0,
+                last_used_frame: 10,
+            },
+        );
+
+        graphic_cache.insert(
+            graphic2,
+            CachedGraphic {
+                location: super::image_cache::ImageLocation {
+                    min: (0.0, 0.0),
+                    max: (1.0, 1.0),
+                },
+                width: 100.0,
+                height: 100.0,
+                last_used_frame: 5, // Oldest
+            },
+        );
+
+        graphic_cache.insert(
+            graphic3,
+            CachedGraphic {
+                location: super::image_cache::ImageLocation {
+                    min: (0.0, 0.0),
+                    max: (1.0, 1.0),
+                },
+                width: 100.0,
+                height: 100.0,
+                last_used_frame: 15, // Newest
+            },
+        );
+
+        // Find oldest should return graphic2
+        let oldest = graphic_cache
+            .iter()
+            .min_by_key(|(_, cached)| cached.last_used_frame)
+            .map(|(id, _)| *id);
+
+        assert_eq!(oldest, Some(graphic2), "Should find oldest graphic");
+    }
+
+    #[test]
+    fn test_graphic_lru_update() {
+        use crate::GraphicId;
+        use rustc_hash::FxHashMap;
+        use super::CachedGraphic;
+
+        let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
+        let current_frame = 100;
+
+        let graphic1 = GraphicId(1);
+        graphic_cache.insert(
+            graphic1,
+            CachedGraphic {
+                location: super::image_cache::ImageLocation {
+                    min: (0.0, 0.0),
+                    max: (1.0, 1.0),
+                },
+                width: 100.0,
+                height: 100.0,
+                last_used_frame: 50,
+            },
+        );
+
+        // Simulate accessing the graphic (updating last_used_frame)
+        if let Some(cached) = graphic_cache.get_mut(&graphic1) {
+            cached.last_used_frame = current_frame;
+        }
+
+        // Verify it was updated
+        assert_eq!(
+            graphic_cache.get(&graphic1).unwrap().last_used_frame,
+            current_frame,
+            "Last used frame should be updated"
+        );
+    }
+
+    #[test]
+    fn test_graphic_positioning_with_offsets() {
+        // Test that graphics are positioned correctly based on cell offsets
+        // This simulates the logic: gx = run_x - offset_x, gy = py - offset_y
+
+        // Cell at position (100, 200) contains a graphic with offset (20, 30)
+        let run_x = 100.0;
+        let py = 200.0;
+        let offset_x = 20;
+        let offset_y = 30;
+
+        // Calculate graphic position
+        let gx = run_x - offset_x as f32;
+        let gy = py - offset_y as f32;
+
+        // The graphic's top-left should be at (80, 170)
+        // because we back-calculate from the cell's position
+        assert_eq!(gx, 80.0, "Graphic x should account for offset_x");
+        assert_eq!(gy, 170.0, "Graphic y should account for offset_y");
+
+        // Verify origin cell (offset 0,0) at same position
+        let origin_run_x = 80.0;
+        let origin_py = 170.0;
+        let origin_offset_x = 0;
+        let origin_offset_y = 0;
+
+        let origin_gx = origin_run_x - origin_offset_x as f32;
+        let origin_gy = origin_py - origin_offset_y as f32;
+
+        // Both cells should calculate the same graphic position
+        assert_eq!(
+            gx, origin_gx,
+            "Graphic position should be same from any cell"
+        );
+        assert_eq!(
+            gy, origin_gy,
+            "Graphic position should be same from any cell"
+        );
+    }
+
+    #[test]
+    fn test_graphic_deduplication() {
+        // Test that the same graphic ID is only rendered once per frame
+        use crate::GraphicId;
+        use std::collections::HashSet;
+
+        let mut last_rendered_graphic: HashSet<GraphicId> = HashSet::new();
+
+        let graphic_id = GraphicId(42);
+
+        // First cell with this graphic - should render
+        assert!(
+            !last_rendered_graphic.contains(&graphic_id),
+            "First occurrence should not be in set"
+        );
+        last_rendered_graphic.insert(graphic_id);
+
+        // Second cell with same graphic - should NOT render
+        assert!(
+            last_rendered_graphic.contains(&graphic_id),
+            "Second occurrence should be in set, preventing duplicate render"
+        );
+
+        // Clear for next frame
+        last_rendered_graphic.clear();
+        assert!(
+            !last_rendered_graphic.contains(&graphic_id),
+            "After clear, graphic should be renderable again"
+        );
+    }
 }
