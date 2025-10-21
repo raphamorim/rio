@@ -46,6 +46,9 @@ simdutf8 = { version = "0.1.5", default-features = false }
 flate2 = { workspace = true }
 lazy_static = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60.2", features = ["Win32_System_Memory", "Win32_Foundation"] }
+
 [features]
 default = ["wayland", "x11"]
 x11 = [
