@@ -3047,6 +3047,7 @@ dependencies = [
  "unicode-width-16",
  "url",
  "wgpu",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

@@ -623,6 +623,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     let mut stat: libc::stat = std::mem::zeroed();
                     if libc::fstat(fd, &mut stat) < 0 {
                         libc::close(fd);
+                        libc::shm_unlink(shm_name.as_ptr());
                         debug!("Failed to fstat shared memory");
                         return None;
                     }
@@ -639,6 +640,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
 
                     if data_size > shm_size {
                         libc::close(fd);
+                        libc::shm_unlink(shm_name.as_ptr());
                         debug!("Requested size {} exceeds shared memory size {}", data_size, shm_size);
                         return None;
                     }
@@ -671,7 +673,114 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     data
                 }
             }
-            #[cfg(not(unix))]
+            #[cfg(windows)]
+            {
+                use std::os::windows::ffi::OsStrExt;
+                use std::ffi::OsStr;
+                use windows_sys::Win32::System::Memory::{
+                    MapViewOfFile, UnmapViewOfFile, VirtualQuery,
+                    FILE_MAP_READ, MEMORY_BASIC_INFORMATION,
+                };
+                use windows_sys::Win32::Foundation::CloseHandle;
+                use windows_sys::Win32::System::Memory::OpenFileMappingW;
+
+                // Payload contains the base64-encoded shared memory name
+                debug!("Decoding shared memory name from base64, payload length={}", cmd.payload.len());
+                let shm_name_bytes = match BASE64.decode(&cmd.payload) {
+                    Ok(bytes) => {
+                        debug!("Base64 decoded shm name: {} bytes", bytes.len());
+                        bytes
+                    }
+                    Err(e) => {
+                        debug!("Failed to decode shm name from base64: {:?}", e);
+                        return None;
+                    }
+                };
+                let shm_name_str = std::str::from_utf8(&shm_name_bytes).ok()?;
+
+                debug!("Opening shared memory: {}", shm_name_str);
+
+                unsafe {
+                    // Convert to wide string for Windows API
+                    let wide_name: Vec<u16> = OsStr::new(shm_name_str)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    // Open the file mapping
+                    let handle = OpenFileMappingW(
+                        FILE_MAP_READ,
+                        0,
+                        wide_name.as_ptr(),
+                    );
+
+                    if handle == 0 {
+                        let err = std::io::Error::last_os_error();
+                        debug!("Failed to open shared memory '{}': {}", shm_name_str, err);
+                        return None;
+                    }
+
+                    // Map view of file
+                    let base_ptr = MapViewOfFile(
+                        handle,
+                        FILE_MAP_READ,
+                        0,
+                        0,
+                        0,
+                    );
+
+                    if base_ptr.is_null() {
+                        let err = std::io::Error::last_os_error();
+                        debug!("Failed to map view of file: {}", err);
+                        CloseHandle(handle);
+                        return None;
+                    }
+
+                    // Query memory to get size
+                    let mut mem_info: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
+                    if VirtualQuery(
+                        base_ptr,
+                        &mut mem_info,
+                        std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+                    ) == 0 {
+                        debug!("Failed to query memory information");
+                        UnmapViewOfFile(base_ptr);
+                        CloseHandle(handle);
+                        return None;
+                    }
+
+                    let shm_size = mem_info.RegionSize;
+                    debug!("Shared memory size: {} bytes", shm_size);
+
+                    // Use cmd.size if specified, otherwise use the full shm size
+                    let data_size = if cmd.size > 0 {
+                        cmd.size as usize
+                    } else {
+                        shm_size
+                    };
+
+                    // Validate offset and size
+                    if cmd.offset as usize + data_size > shm_size {
+                        debug!("Requested offset {} + size {} exceeds shared memory size {}",
+                            cmd.offset, data_size, shm_size);
+                        UnmapViewOfFile(base_ptr);
+                        CloseHandle(handle);
+                        return None;
+                    }
+
+                    // Copy data from shared memory
+                    let data_ptr = (base_ptr as *const u8).add(cmd.offset as usize);
+                    let data = std::slice::from_raw_parts(data_ptr, data_size).to_vec();
+
+                    // Cleanup
+                    UnmapViewOfFile(base_ptr);
+                    CloseHandle(handle);
+
+                    debug!("Successfully read {} bytes from shared memory", data.len());
+                    data
+                }
+            }
+            #[cfg(not(any(unix, windows)))]
             {
                 debug!("SharedMemory transmission not supported on this platform");
                 return None;
@@ -753,13 +862,21 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 _ => unreachable!(),
             };
 
-            // Validate data size
+            // Validate data size - for shared memory, we may have more data than needed due to padding
             let expected_size =
                 cmd.width as usize * cmd.height as usize * bytes_per_pixel;
-            if pixel_data.len() != expected_size {
-                debug!("RGB/RGBA data size mismatch: got {} bytes, expected {}", pixel_data.len(), expected_size);
+            if pixel_data.len() < expected_size {
+                debug!("RGB/RGBA data size insufficient: got {} bytes, expected at least {}", pixel_data.len(), expected_size);
                 return None;
             }
+
+            // Truncate to expected size if we have extra data (e.g., from shared memory padding)
+            let pixel_data = if pixel_data.len() > expected_size {
+                debug!("RGB/RGBA data has padding: got {} bytes, using first {} bytes", pixel_data.len(), expected_size);
+                pixel_data[..expected_size].to_vec()
+            } else {
+                pixel_data
+            };
 
             // Convert RGB24 to RGBA32 if needed (sugarloaf only supports RGBA)
             let (pixels, is_opaque) = if cmd.format == Format::Rgb24 {
