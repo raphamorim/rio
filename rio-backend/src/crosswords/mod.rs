@@ -2890,6 +2890,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
+        debug!(
+            "insert_graphic called: id={}, {}x{}, format={:?}",
+            graphic.id.0, graphic.width, graphic.height, graphic.color_type
+        );
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -2900,19 +2904,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        debug!("insert_graphic: resizing with cell_width={}, cell_height={}", cell_width, cell_height);
         let graphic = match graphic.resized(
             cell_width,
             cell_height,
             cell_width * self.grid.columns(),
             cell_height * self.grid.screen_lines(),
         ) {
-            Some(graphic) => graphic,
-            None => return,
+            Some(graphic) => {
+                debug!("insert_graphic: resized to {}x{}", graphic.width, graphic.height);
+                graphic
+            }
+            None => {
+                debug!("insert_graphic: resize returned None, aborting");
+                return;
+            }
         };
 
         if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
             || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]
         {
+            debug!("insert_graphic: dimensions too large {}x{}, max is {:?}",
+                graphic.width, graphic.height, MAX_GRAPHIC_DIMENSIONS);
             return;
         }
 
@@ -2920,6 +2933,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let height = graphic.height as u16;
 
         if width == 0 || height == 0 {
+            debug!("insert_graphic: zero width or height, aborting");
             return;
         }
 
@@ -3072,12 +3086,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // Add the graphic data to the pending queue.
+        debug!(
+            "insert_graphic: adding to pending queue, graphic_id={}, final size={}x{}",
+            graphic_id.0, width, height
+        );
         self.graphics.pending.push(GraphicData {
             id: graphic_id,
             ..graphic
         });
 
         // Send graphics update event
+        debug!("insert_graphic: sending graphics updates");
         self.send_graphics_updates();
     }
 

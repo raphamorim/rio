@@ -742,7 +742,10 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
     }
 
     fn apc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        warn!("[apc_dispatch] params={params:?} bell_terminated={bell_terminated}");
+        debug!("[apc_dispatch] params count={}, bell_terminated={}", params.len(), bell_terminated);
+        for (i, p) in params.iter().enumerate() {
+            debug!("  apc param[{}] len={}, first_bytes={:?}", i, p.len(), &p[..p.len().min(20)]);
+        }
         let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
         fn unhandled(params: &[&[u8]]) {
@@ -766,45 +769,41 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 // Handle kitty graphics protocol
                 debug!("[apc_dispatch] Kitty graphics APC received");
 
-                // Reassemble params for Kitty graphics parser
-                // APC gives us: ["Ga=q,", "f=24,", "s=1,", ...]
-                // Parser needs: ["G", "a=q,f=24,s=1,...", "<payload>"]
+                // Find the last param which contains the full APC data
+                // Rio's parser splits it, but the last param has everything
+                let full_data = params.last().unwrap();
 
-                // Join all params (except payload) into control data
-                let mut control_data = Vec::new();
-                for (i, param) in params.iter().enumerate() {
-                    if i == 0 {
-                        // First param is "Ga=..." - skip the 'G' prefix
-                        if param.len() > 1 {
-                            control_data.extend_from_slice(&param[1..]);
-                        }
-                    } else {
-                        control_data.extend_from_slice(param);
-                    }
-                }
-
-                // Split control data from payload (separated by semicolon)
-                let (control_bytes, payload_bytes): (Vec<u8>, Vec<u8>) =
-                    if let Some(semicolon_pos) = control_data.iter().position(|&b| b == b';') {
-                        let (control, payload) = control_data.split_at(semicolon_pos);
-                        let mut payload_vec: Vec<u8> = payload[1..].to_vec(); // Skip semicolon
-
-                        // Remove escape character if present at end
-                        if payload_vec.last() == Some(&27) {
-                            payload_vec.pop();
-                        }
-
-                        (control.to_vec(), payload_vec)
-                    } else {
-                        (control_data, Vec::new())
-                    };
-
-                let kitty_params: Vec<&[u8]> = vec![b"G", &control_bytes, &payload_bytes];
+                // Remove escape character if present at end
+                let data = if full_data.last() == Some(&27) {
+                    &full_data[..full_data.len()-1]
+                } else {
+                    *full_data
+                };
 
                 debug!(
-                    "[apc_dispatch] Reassembled Kitty params: control={}, payload_len={}",
-                    String::from_utf8_lossy(&control_bytes),
-                    payload_bytes.len()
+                    "[apc_dispatch] Full APC data length: {}, starts with: {}",
+                    data.len(),
+                    String::from_utf8_lossy(&data[..data.len().min(50)])
+                );
+
+                // Parse like WezTerm: split on semicolon to get control and payload
+                let mut parts = data.splitn(2, |&b| b == b';');
+                let control_data = parts.next().unwrap_or(b"");
+                let payload_data = parts.next().unwrap_or(b"");
+
+                // Skip 'G' at the beginning of control data if present
+                let control = if control_data.first() == Some(&b'G') {
+                    &control_data[1..]
+                } else {
+                    control_data
+                };
+
+                let kitty_params: Vec<&[u8]> = vec![b"G", control, payload_data];
+
+                debug!(
+                    "[apc_dispatch] Parsed Kitty params: control={}, payload_len={}",
+                    String::from_utf8_lossy(control),
+                    payload_data.len()
                 );
                 if let Some(response) = kitty_graphics_protocol::parse(&kitty_params) {
                     debug!("[apc_dispatch] Kitty graphics parsed successfully");

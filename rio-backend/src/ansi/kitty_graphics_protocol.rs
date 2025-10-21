@@ -5,8 +5,9 @@ use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParamete
 use tracing::debug;
 
 // Global storage for incomplete image transfers
+// Stores the accumulated command state for chunked transmissions
 lazy_static::lazy_static! {
-    static ref INCOMPLETE_IMAGES: Mutex<HashMap<u32, Vec<u8>>> = Mutex::new(HashMap::new());
+    static ref INCOMPLETE_IMAGES: Mutex<HashMap<u32, KittyGraphicsCommand>> = Mutex::new(HashMap::new());
 }
 
 #[derive(Debug)]
@@ -75,7 +76,7 @@ enum Compression {
     Zlib,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KittyGraphicsCommand {
     // Action
     action: Action,
@@ -185,6 +186,10 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
         return None;
     };
     debug!("Kitty graphics parse: starting with {} params", params.len());
+    for (i, param) in params.iter().enumerate() {
+        debug!("  param[{}] length={}, preview={:?}", i, param.len(),
+            std::str::from_utf8(&param[..param.len().min(50)]).unwrap_or("(invalid utf8)"));
+    }
 
     let mut cmd = KittyGraphicsCommand::default();
 
@@ -219,38 +224,54 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
     }
 
     // Handle chunked data
+    // Determine the key - use image_number if image_id is not set (0)
+    // For chunked images, kitty uses image_number=0 as a special "current transmission" key
+    let image_key = if cmd.image_id > 0 {
+        cmd.image_id
+    } else if cmd.image_number > 0 {
+        cmd.image_number
+    } else {
+        // Use 0 as the key for anonymous chunked transmissions
+        0
+    };
+
     if cmd.more {
-        // Store chunk for later
+        // Store chunk for later - preserve all metadata from first chunk
         let mut incomplete = INCOMPLETE_IMAGES.lock().unwrap();
-        let image_key = if cmd.image_id > 0 {
-            cmd.image_id
+
+        // Get existing command or create new one
+        let stored_cmd = incomplete.entry(image_key).or_insert_with(|| cmd.clone());
+
+        // If this isn't the first chunk for this image, just append payload
+        if stored_cmd.payload.len() > 0 && stored_cmd.payload != cmd.payload {
+            stored_cmd.payload.extend_from_slice(&cmd.payload);
         } else {
-            cmd.image_number
-        };
-        incomplete
-            .entry(image_key)
-            .or_default()
-            .extend_from_slice(&cmd.payload);
+            // First chunk - store entire command
+            *stored_cmd = cmd.clone();
+        }
+
+        debug!("Stored chunk for image key {}: {} bytes accumulated", image_key, stored_cmd.payload.len());
         return None;
-    } else if cmd.image_id > 0 || cmd.image_number > 0 {
-        // Check if we have incomplete data
+    } else {
+        // Check if we have incomplete data (even if image_id/number is 0)
         let mut incomplete = INCOMPLETE_IMAGES.lock().unwrap();
-        let image_key = if cmd.image_id > 0 {
-            cmd.image_id
-        } else {
-            cmd.image_number
-        };
-        if let Some(mut stored_data) = incomplete.remove(&image_key) {
-            // Combine stored data with final chunk
-            stored_data.extend_from_slice(&cmd.payload);
-            cmd.payload = stored_data;
+        if let Some(mut stored_cmd) = incomplete.remove(&image_key) {
+            // Final chunk: use metadata from stored command, append final payload
+            stored_cmd.payload.extend_from_slice(&cmd.payload);
+            cmd = stored_cmd; // Use stored metadata
+            debug!("Retrieved accumulated image key {}: total {} bytes", image_key, cmd.payload.len());
         }
     }
 
     // Convert to GraphicData based on action
+    debug!("Kitty graphics action: {:?}, format={:?}, width={}, height={}, image_id={}, payload_len={}",
+        cmd.action, cmd.format, cmd.width, cmd.height, cmd.image_id, cmd.payload.len());
     match cmd.action {
         Action::Transmit | Action::TransmitAndDisplay => {
+            debug!("Creating graphic data: format={:?}, medium={:?}, compression={:?}, width={}, height={}, payload_len={}",
+                cmd.format, cmd.medium, cmd.compression, cmd.width, cmd.height, cmd.payload.len());
             let graphic_data = create_graphic_data(&cmd)?;
+            debug!("Graphic data created successfully: {}x{}", graphic_data.width, graphic_data.height);
             let response = if cmd.quiet == 0 && (cmd.image_id > 0 || cmd.image_number > 0)
             {
                 let id_part = if cmd.image_id > 0 {
@@ -490,7 +511,17 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
     let raw_data = match cmd.medium {
         TransmissionMedium::Direct => {
             // Decode base64 payload
-            BASE64.decode(&cmd.payload).ok()?
+            debug!("Decoding base64 payload, length={}", cmd.payload.len());
+            match BASE64.decode(&cmd.payload) {
+                Ok(data) => {
+                    debug!("Base64 decoded successfully: {} bytes", data.len());
+                    data
+                }
+                Err(e) => {
+                    debug!("Base64 decode failed: {:?}", e);
+                    return None;
+                }
+            }
         }
         TransmissionMedium::File | TransmissionMedium::TempFile => {
             // Read from file
@@ -547,8 +578,104 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             data
         }
         TransmissionMedium::SharedMemory => {
-            // TODO: Implement shared memory support
-            return None;
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                use std::os::unix::io::RawFd;
+
+                // Payload contains the base64-encoded shared memory name
+                debug!("Decoding shared memory name from base64, payload length={}", cmd.payload.len());
+                let shm_name_bytes = match BASE64.decode(&cmd.payload) {
+                    Ok(bytes) => {
+                        debug!("Base64 decoded shm name: {} bytes", bytes.len());
+                        bytes
+                    }
+                    Err(e) => {
+                        debug!("Failed to decode shm name from base64: {:?}", e);
+                        return None;
+                    }
+                };
+                let shm_name_str = std::str::from_utf8(&shm_name_bytes).ok()?;
+                let shm_name = CString::new(shm_name_str).ok()?;
+
+                debug!(
+                    "Opening shared memory: {}, expected size: {}",
+                    shm_name_str,
+                    cmd.width as usize * cmd.height as usize * 3 // RGB24
+                );
+
+                unsafe {
+                    // Open shared memory
+                    let fd: RawFd = libc::shm_open(
+                        shm_name.as_ptr(),
+                        libc::O_RDONLY,
+                        0,
+                    );
+
+                    if fd < 0 {
+                        let err = std::io::Error::last_os_error();
+                        let errno = err.raw_os_error().unwrap_or(-1);
+                        debug!("Failed to open shared memory '{}': {} (errno: {})", shm_name_str, err, errno);
+                        return None;
+                    }
+
+                    // Get size of shared memory
+                    let mut stat: libc::stat = std::mem::zeroed();
+                    if libc::fstat(fd, &mut stat) < 0 {
+                        libc::close(fd);
+                        debug!("Failed to fstat shared memory");
+                        return None;
+                    }
+
+                    let shm_size = stat.st_size as usize;
+                    debug!("Shared memory size: {} bytes", shm_size);
+
+                    // Use cmd.size if specified, otherwise use the full shm size
+                    let data_size = if cmd.size > 0 {
+                        cmd.size as usize
+                    } else {
+                        shm_size
+                    };
+
+                    if data_size > shm_size {
+                        libc::close(fd);
+                        debug!("Requested size {} exceeds shared memory size {}", data_size, shm_size);
+                        return None;
+                    }
+
+                    // Map shared memory
+                    let ptr = libc::mmap(
+                        std::ptr::null_mut(),
+                        data_size,
+                        libc::PROT_READ,
+                        libc::MAP_SHARED,
+                        fd,
+                        cmd.offset as i64,
+                    );
+
+                    if ptr == libc::MAP_FAILED {
+                        libc::close(fd);
+                        debug!("Failed to mmap shared memory");
+                        return None;
+                    }
+
+                    // Copy data from shared memory
+                    let data = std::slice::from_raw_parts(ptr as *const u8, data_size).to_vec();
+
+                    // Cleanup
+                    libc::munmap(ptr, data_size);
+                    libc::close(fd);
+                    libc::shm_unlink(shm_name.as_ptr());
+
+                    debug!("Successfully read {} bytes from shared memory", data.len());
+                    data
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                debug!("SharedMemory transmission not supported on this platform");
+                return None;
+            }
         }
     };
 
@@ -572,9 +699,17 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             // Decode PNG data
             use image_rs::ImageFormat;
 
-            let img =
-                image_rs::load_from_memory_with_format(&pixel_data, ImageFormat::Png)
-                    .ok()?;
+            debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
+            let img = match image_rs::load_from_memory_with_format(&pixel_data, ImageFormat::Png) {
+                Ok(img) => {
+                    debug!("PNG decoded successfully: {}x{}", img.width(), img.height());
+                    img
+                }
+                Err(e) => {
+                    debug!("PNG decode failed: {:?}", e);
+                    return None;
+                }
+            };
             let rgba_img = img.to_rgba8();
             let (width, height) = (rgba_img.width() as usize, rgba_img.height() as usize);
             let pixels = rgba_img.into_raw();
@@ -612,9 +747,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             })
         }
         Format::Rgb24 | Format::Rgba32 => {
-            let (color_type, bytes_per_pixel) = match cmd.format {
-                Format::Rgb24 => (ColorType::Rgb, 3),
-                Format::Rgba32 => (ColorType::Rgba, 4),
+            let bytes_per_pixel = match cmd.format {
+                Format::Rgb24 => 3,
+                Format::Rgba32 => 4,
                 _ => unreachable!(),
             };
 
@@ -622,14 +757,26 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             let expected_size =
                 cmd.width as usize * cmd.height as usize * bytes_per_pixel;
             if pixel_data.len() != expected_size {
+                debug!("RGB/RGBA data size mismatch: got {} bytes, expected {}", pixel_data.len(), expected_size);
                 return None;
             }
 
-            // Check if image is opaque (for RGBA)
-            let is_opaque = if color_type == ColorType::Rgba {
-                pixel_data.chunks(4).all(|chunk| chunk[3] == 255)
+            // Convert RGB24 to RGBA32 if needed (sugarloaf only supports RGBA)
+            let (pixels, is_opaque) = if cmd.format == Format::Rgb24 {
+                // Convert RGB to RGBA by adding alpha=255
+                let mut rgba_pixels = Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                for chunk in pixel_data.chunks_exact(3) {
+                    rgba_pixels.push(chunk[0]); // R
+                    rgba_pixels.push(chunk[1]); // G
+                    rgba_pixels.push(chunk[2]); // B
+                    rgba_pixels.push(255);      // A (opaque)
+                }
+                debug!("Converted RGB24 to RGBA32: {} -> {} bytes", pixel_data.len(), rgba_pixels.len());
+                (rgba_pixels, true) // RGB is always opaque
             } else {
-                true
+                // Already RGBA
+                let is_opaque = pixel_data.chunks(4).all(|chunk| chunk[3] == 255);
+                (pixel_data, is_opaque)
             };
 
             // Create resize command if columns/rows specified
@@ -655,8 +802,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 id: GraphicId(cmd.image_id as u64),
                 width: cmd.width as usize,
                 height: cmd.height as usize,
-                color_type,
-                pixels: pixel_data,
+                color_type: ColorType::Rgba, // Always RGBA after conversion
+                pixels,
                 is_opaque,
                 resize,
             })

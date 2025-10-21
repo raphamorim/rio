@@ -476,9 +476,8 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 self.osc_num_params = 0;
                 self.state = State::Escape;
             }
-            0x2C | 0x3B => {
-                // Comma separates key-value pairs in control data
-                // Semicolon separate control data from payload
+            0x3B => {
+                // Semicolon separates control data from payload
                 #[cfg(not(feature = "std"))]
                 {
                     if self.osc_raw.is_full() {
@@ -487,6 +486,11 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
                 }
                 self.action_apc_put(performer, byte);
                 self.action_osc_put_param(); // Reuse existing method to track parameter boundaries
+            }
+            0x2C => {
+                // Comma is part of the control data (separates key-value pairs)
+                // Don't create a parameter boundary
+                self.action_apc_put(performer, byte);
             }
             0x20..=0xFF => {
                 // Collect valid APC content (control data or payload)
@@ -1860,6 +1864,26 @@ mod tests {
         ];
 
         assert_eq!(dispatcher.dispatched, expected)
+    }
+
+    #[test]
+    fn parse_kitty_apc_dispatch_params() {
+        // Test that commas in control data are NOT treated as param separators
+        // Only semicolons should separate control data from payload
+        const INPUT: &[u8] = b"\x1b_Gf=32,s=10,v=20;AQIDBA==\x1b\\";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        // Verify we got an APC dispatch
+        let apc_dispatch = dispatcher.dispatched.iter().find(|s| {
+            matches!(s, Sequence::OpaqueEnd(OpaqueSequenceKind::Apc))
+        });
+        assert!(apc_dispatch.is_some(), "Should have APC dispatch");
+
+        // The test in performer::handler verifies the actual param parsing
+        // Here we just ensure the sequence completes correctly
     }
 
     #[test]
