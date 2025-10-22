@@ -386,7 +386,7 @@ impl Screen<'_> {
                 padding_y_bottom,
             ));
 
-            context_grid.update_dimensions(&mut self.sugarloaf);
+            context_grid.update_dimensions(&self.sugarloaf);
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
@@ -441,7 +441,7 @@ impl Screen<'_> {
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&mut self.sugarloaf);
+            .update_dimensions(&self.sugarloaf);
 
         self.render();
         self.resize_all_contexts();
@@ -481,7 +481,7 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&mut self.sugarloaf);
+            .update_dimensions(&self.sugarloaf);
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
