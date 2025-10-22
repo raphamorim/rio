@@ -324,9 +324,10 @@ impl HintState {
 
     fn generate_labels(&mut self) {
         self.labels.clear();
-        let mut generator = LabelGenerator::new(&self.alphabet);
+        let n = self.matches.len();
+        let mut generator = LabelGenerator::new(&self.alphabet, n);
 
-        for _ in 0..self.matches.len() {
+        for _ in 0..n {
             self.labels.push(generator.next());
         }
     }
@@ -334,49 +335,75 @@ impl HintState {
 
 /// Generates hint labels using the specified alphabet
 struct LabelGenerator {
-    alphabet: Vec<char>,
-    indices: Vec<usize>,
+    labels: Vec<Vec<char>>,
+    index: usize,
 }
 
 impl LabelGenerator {
-    fn new(alphabet: &str) -> Self {
-        Self {
-            alphabet: alphabet.chars().collect(),
-            indices: vec![0],
-        }
-    }
+    fn new(alphabet: &str, n_labels: usize) -> Self {
+        let alphabet: Vec<char> = alphabet.chars().collect();
+        let alphabet_len = alphabet.len();
 
-    fn next(&mut self) -> Vec<char> {
-        let label = self.current_label();
-        self.increment();
-        label
-    }
-
-    fn current_label(&self) -> Vec<char> {
-        self.indices
-            .iter()
-            .rev()
-            .map(|&i| self.alphabet[i])
-            .collect()
-    }
-
-    fn increment(&mut self) {
-        let mut carry = true;
-        let mut pos = 0;
-
-        while carry && pos < self.indices.len() {
-            self.indices[pos] += 1;
-            if self.indices[pos] >= self.alphabet.len() {
-                self.indices[pos] = 0;
-                pos += 1;
+        // Initially just populate the labels with the alphabet.
+        // If the number of requested labels is smaller than the alphabet size, then
+        // these single-character labels will be sufficient.
+        let mut labels: Vec<Vec<char>> = Vec::with_capacity(alphabet_len.min(n_labels));
+        for c in alphabet.iter() {
+            if labels.len() >= n_labels {
+                break;
             } else {
-                carry = false;
+                labels.push(vec![*c]);
             }
         }
 
-        if carry {
-            self.indices.push(0);
+        // If the number of labels is larger than the alphabet size, then we need to
+        // widen the labels to more than just one character wide.
+        // We take care to make sure that when we add two-character labels, we remove
+        // the associated single-character label.  For example, if we add the two-character
+        // labels "ja" and "jb" and "jc" we make sure to first remove the single-character
+        // label "j" because if we don't remove "j" then the user will never be able to actually
+        // select the object with label "j" because the hint engine will still be
+        // trying to match against "ja" or "jb" etc.
+        // If necessary, we continue to three-character labels, and so on.
+        while labels.len() < n_labels {
+            for i in (0..labels.len()).rev() {
+                // Get the label that we are replacing
+                let parent_label = &(labels[i]);
+
+                // Create the list of labels that will be replacing the given label,
+                // where each new label is the same as the original label but with
+                // another character added
+                let mut children: Vec<Vec<char>> = Vec::with_capacity(alphabet_len);
+                for c in alphabet.iter() {
+                    let mut label = parent_label.clone();
+                    label.push(*c);
+                    children.push(label);
+                }
+
+                // Replace the label with the new labels we just generated
+                labels.splice(i..i + 1, children);
+
+                // Check whether we now have enough labels
+                if labels.len() >= n_labels {
+                    break;
+                }
+            }
         }
+
+        // Reverse the order of the labels so that the "simpler" ones (shorter labels and
+        // labels that use characters earlier in the alphabet) come first.  This is done because
+        // the user is probably more likely to want to select the label that is lower
+        // on the screen.
+        labels.truncate(n_labels);
+        labels.reverse();
+
+        Self { labels, index: 0 }
+    }
+
+    fn next(&mut self) -> Vec<char> {
+        let label = self.labels[self.index].clone();
+        self.index += 1;
+        label
     }
 }
 
@@ -438,14 +465,79 @@ mod tests {
 
     #[test]
     fn test_label_generator() {
-        let mut gen = LabelGenerator::new("abc");
-        assert_eq!(gen.next(), vec!['a']);
-        assert_eq!(gen.next(), vec!['b']);
-        assert_eq!(gen.next(), vec!['c']);
-        assert_eq!(gen.next(), vec!['a', 'a']);
-        assert_eq!(gen.next(), vec!['a', 'b']);
-        assert_eq!(gen.next(), vec!['a', 'c']);
-        assert_eq!(gen.next(), vec!['b', 'a']);
+        let mut gen_abc3 = LabelGenerator::new("abc", 3);
+        assert_eq!(gen_abc3.next(), vec!['c']);
+        assert_eq!(gen_abc3.next(), vec!['b']);
+        assert_eq!(gen_abc3.next(), vec!['a']);
+
+        let mut gen_abc4 = LabelGenerator::new("abc", 4);
+        assert_eq!(gen_abc4.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc4.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc4.next(), vec!['b']);
+        assert_eq!(gen_abc4.next(), vec!['a']);
+
+        let mut gen_abc6 = LabelGenerator::new("abc", 6);
+        assert_eq!(gen_abc6.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc6.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc6.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc6.next(), vec!['a']);
+
+        let mut gen_abc7 = LabelGenerator::new("abc", 7);
+        assert_eq!(gen_abc7.next(), vec!['c', 'c']);
+        assert_eq!(gen_abc7.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc7.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc7.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc7.next(), vec!['a']);
+
+        let mut gen_abc8 = LabelGenerator::new("abc", 8);
+        assert_eq!(gen_abc8.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc8.next(), vec!['a', 'a']);
+
+        let mut gen_abc11 = LabelGenerator::new("abc", 11);
+        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'c', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc11.next(), vec!['a', 'a']);
+
+        let mut gen_abc12 = LabelGenerator::new("abc", 12);
+        assert_eq!(gen_abc12.next(), vec!['c', 'c', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'c', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'b', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['c', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['b', 'a']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'c']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'b']);
+        assert_eq!(gen_abc12.next(), vec!['a', 'a']);
+
+        let mut gen_ab7 = LabelGenerator::new("ab", 7);
+        assert_eq!(gen_ab7.next(), vec!['b', 'b', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'b', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['b', 'a', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'b']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'b', 'a']);
+        assert_eq!(gen_ab7.next(), vec!['a', 'a']);
     }
 
     #[test]
