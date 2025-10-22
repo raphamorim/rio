@@ -33,7 +33,7 @@ const ISLAND_CORNER_RADIUS: f32 = 8.0;
 const TITLE_FONT_SIZE: f32 = 11.0;
 
 /// Font size for tab titles
-const RIO_INDICATOR_FONT_SIZE: f32 = 2.0;
+const RIO_INDICATOR_FONT_SIZE: f32 = 8.0;
 
 /// Maximum characters to display in a tab title
 const MAX_TITLE_CHARS: usize = 25;
@@ -333,7 +333,7 @@ impl Island {
             // Check if this character should be rendered as a drawable
             if let Some(character) = drawable_character('\u{1CC6D}') {
                 style.drawable_char = Some(character);
-                style.width = 1.0;
+                style.width = 2.0;
             }
 
             content
