@@ -416,17 +416,6 @@ impl RichTextBrush {
                 continue;
             }
 
-            // Skip if all lines are empty (no content)
-            if builder_state.lines.iter().all(|line| {
-                line.fragments.is_empty()
-                    || line
-                        .fragments
-                        .iter()
-                        .all(|frag| frag.content.trim().is_empty())
-            }) {
-                continue;
-            }
-
             let pos = (
                 builder_state.render_data.position[0] * state.style.scale_factor,
                 builder_state.render_data.position[1] * state.style.scale_factor,
