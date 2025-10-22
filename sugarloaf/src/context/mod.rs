@@ -146,15 +146,11 @@ impl Context<'_> {
 
         let (device, queue, supports_f16) = {
             let base_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
-            let f16_features = base_features | wgpu::Features::SHADER_F16;
-            let full_f16_features =
-                f16_features | wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
+            let base_f16_features = base_features
+                | wgpu::Features::SHADER_F16
+                | wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
 
-            let device_configs = [
-                (full_f16_features, true),
-                (f16_features, true),
-                (base_features, false),
-            ];
+            let device_configs = [(base_f16_features, true), (base_features, false)];
 
             let mut result = None;
             for (features, supports_f16_val) in device_configs {
