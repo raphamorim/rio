@@ -10,4 +10,7 @@ pub mod performer;
 pub mod selection;
 pub mod simd_utf8;
 
+#[cfg(test)]
+mod graphics;
+
 pub use sugarloaf;

@@ -364,7 +364,8 @@ pub trait Handler {
     fn sixel_graphic_finish(&mut self) {}
 
     /// Insert a new graphic item (displays immediately at cursor).
-    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
+    /// cursor_movement: None = Sixel (move to next line), Some(0) = Kitty stay on last row, Some(1) = don't move
+    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>, _cursor_movement: Option<u8>) {}
 
     /// Store a graphic without displaying (for a=t transmit-only).
     fn store_graphic(&mut self, _data: GraphicData) {}
@@ -816,6 +817,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     let has_graphic = response.graphic_data.is_some();
                     let has_placement = response.placement_request.is_some();
 
+                    // Get cursor_movement from placement if available
+                    let cursor_movement = response.placement_request.as_ref()
+                        .map(|p| p.cursor_movement)
+                        .unwrap_or(0);
+
                     if let Some(graphic_data) = response.graphic_data {
                         debug!(
                             "[apc_dispatch] Graphic data present: id={}, {}x{}",
@@ -823,8 +829,8 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                         );
 
                         if has_placement {
-                            // a=T: Transmit and display - use old behavior
-                            self.handler.insert_graphic(graphic_data, None);
+                            // a=T: Transmit and display - use cursor_movement from placement
+                            self.handler.insert_graphic(graphic_data, None, Some(cursor_movement));
                         } else {
                             // a=t: Transmit only - store without displaying
                             self.handler.store_graphic(graphic_data);
@@ -1071,7 +1077,8 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             // OSC 1337 is equal to xterm OSC 50
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    self.handler.insert_graphic(graphic, None);
+                    // iTerm2 protocol uses None (traditional behavior like Sixel)
+                    self.handler.insert_graphic(graphic, None, None);
                 }
             }
 

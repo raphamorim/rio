@@ -30,6 +30,7 @@ pub struct PlacementRequest {
     pub rows: u32,
     pub z_index: i32,
     pub unicode_placeholder: u32,
+    pub cursor_movement: u8, // 0 = move cursor to after image (default), 1 = don't move cursor
 }
 
 #[derive(Debug)]
@@ -296,6 +297,7 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
                     rows: cmd.rows,
                     z_index: cmd.z_index,
                     unicode_placeholder: cmd.unicode_placeholder,
+                    cursor_movement: cmd.cursor_movement,
                 })
             } else {
                 None
@@ -321,6 +323,7 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
                 rows: cmd.rows,
                 z_index: cmd.z_index,
                 unicode_placeholder: cmd.unicode_placeholder,
+                cursor_movement: cmd.cursor_movement,
             };
             let response = if cmd.quiet == 0 && cmd.image_id > 0 {
                 let id_part = if cmd.placement_id > 0 {

@@ -2880,7 +2880,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let parser = self.graphics.sixel_parser.take();
         if let Some(parser) = parser {
             match parser.finish() {
-                Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette)),
+                // Sixel uses None to indicate traditional Sixel cursor behavior
+                Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette), None),
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
         } else {
@@ -2889,10 +2890,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
+    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>, cursor_movement: Option<u8>) {
         debug!(
-            "insert_graphic called: id={}, {}x{}, format={:?}",
-            graphic.id.0, graphic.width, graphic.height, graphic.color_type
+            "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
+            graphic.id.0, graphic.width, graphic.height, graphic.color_type, cursor_movement
         );
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
@@ -3077,12 +3078,43 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
-        if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-            let graphic_columns = graphic.width.div_ceil(cell_width);
-            self.move_forward(Column(graphic_columns));
-        } else if scrolling {
-            self.linefeed();
-            self.carriage_return();
+        // Handle cursor movement based on cursor_movement parameter:
+        // - None: Sixel (traditional behavior - move to next line after image)
+        // - Some(0): Kitty C=0 (cursor stays on last row of image)
+        // - Some(1): Kitty C=1 (cursor doesn't move at all)
+        match cursor_movement {
+            None => {
+                // Sixel graphics - traditional behavior
+                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    // Move cursor to the right of the image
+                    let graphic_columns = graphic.width.div_ceil(cell_width);
+                    self.move_forward(Column(graphic_columns));
+                } else if scrolling {
+                    // Move cursor to next line AFTER the image (traditional Sixel)
+                    self.linefeed();
+                    self.carriage_return();
+                }
+            }
+            Some(0) => {
+                // Kitty C=0: Move cursor to start of current line (ON last row of image)
+                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    let graphic_columns = graphic.width.div_ceil(cell_width);
+                    self.move_forward(Column(graphic_columns));
+                } else if scrolling {
+                    // For Kitty: cursor stays ON the last row of the image
+                    // The loop already did all necessary linefeeds
+                    self.carriage_return();
+                }
+            }
+            Some(1) => {
+                // Kitty C=1: Don't move cursor at all
+            }
+            Some(_) => {
+                // Unknown cursor movement value, treat as C=0
+                if scrolling && !self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    self.carriage_return();
+                }
+            }
         }
 
         // Add the graphic data to the pending queue.
@@ -3170,11 +3202,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.grid.cursor.pos.row = row;
             }
 
-            // Display the graphic at the cursor position
-            self.insert_graphic(graphic_data, None);
+            // Display the graphic at the cursor position with cursor_movement from placement
+            self.insert_graphic(graphic_data, None, Some(placement.cursor_movement));
 
-            // Restore cursor position (optional - matches kitty behavior)
-            // self.grid.cursor.pos = saved_cursor;
+            // Note: cursor position handling is now controlled by cursor_movement parameter
         } else {
             warn!(
                 "Attempted to place non-existent kitty graphic: id={}",
