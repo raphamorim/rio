@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD}, Engine};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
@@ -532,7 +532,30 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             use std::io::Read;
             use std::path::Path;
 
-            let path_str = std::str::from_utf8(&cmd.payload).ok()?;
+            // Decode base64 payload to get file path
+            // Try with standard decoder first, then without padding if that fails
+            debug!("Decoding base64 file path, payload length={}", cmd.payload.len());
+            let path_bytes = match BASE64.decode(&cmd.payload) {
+                Ok(bytes) => {
+                    debug!("Base64 decoded file path with padding: {} bytes", bytes.len());
+                    bytes
+                }
+                Err(_) => {
+                    // Try without padding requirement
+                    match STANDARD_NO_PAD.decode(&cmd.payload) {
+                        Ok(bytes) => {
+                            debug!("Base64 decoded file path without padding: {} bytes", bytes.len());
+                            bytes
+                        }
+                        Err(e) => {
+                            debug!("Base64 decode failed (both with and without padding): {:?}", e);
+                            return None;
+                        }
+                    }
+                }
+            };
+            let path_str = std::str::from_utf8(&path_bytes).ok()?;
+            debug!("File path: {}", path_str);
             let path = Path::new(path_str);
 
             // Security checks
@@ -1139,7 +1162,9 @@ mod tests {
         file.write_all(&[255, 0, 0, 255]).unwrap(); // 1x1 red pixel
         drop(file);
 
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=1", temp_path);
+        // Encode the file path as base64 (as kitty does)
+        let encoded_path = BASE64.encode(temp_path.as_bytes());
+        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=1", &encoded_path);
         assert!(result.is_some());
 
         let response = result.unwrap();
@@ -1158,7 +1183,9 @@ mod tests {
         file.write_all(&[255, 0, 0, 255]).unwrap(); // 1x1 red pixel
         drop(file);
 
-        let result = parse_kitty_graphics_protocol("a=t,t=t,f=32,s=1,v=1,i=1", temp_path);
+        // Encode the file path as base64 (as kitty does)
+        let encoded_path = BASE64.encode(temp_path.as_bytes());
+        let result = parse_kitty_graphics_protocol("a=t,t=t,f=32,s=1,v=1,i=1", &encoded_path);
 
         // File should be deleted after reading
         assert!(!std::path::Path::new(temp_path).exists());
@@ -1170,16 +1197,19 @@ mod tests {
 
     #[test]
     fn test_security_checks() {
-        // Should reject sensitive paths
+        // Should reject sensitive paths - encode as base64
+        let proc_path = BASE64.encode("/proc/self/environ".as_bytes());
         let result =
-            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", "/proc/self/environ");
+            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &proc_path);
         assert!(result.is_none());
 
+        let sys_path = BASE64.encode("/sys/class/net".as_bytes());
         let result =
-            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", "/sys/class/net");
+            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &sys_path);
         assert!(result.is_none());
 
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", "/dev/null");
+        let dev_path = BASE64.encode("/dev/null".as_bytes());
+        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &dev_path);
         assert!(result.is_none());
     }
 
