@@ -3459,7 +3459,7 @@ impl<U: EventListener> Crosswords<U> {
             None
         };
 
-        // Convert IDs to colors (Ghostty/Kitty encoding)
+        // Convert IDs to colors
         let fg_color = kitty_virtual::id_to_rgb(image_id_low);
         let underline_color = if placement.placement_id > 0 {
             Some(kitty_virtual::id_to_rgb(placement.placement_id))
