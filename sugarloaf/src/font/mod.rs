@@ -121,19 +121,33 @@ pub struct FontLibrary {
 impl FontLibrary {
     pub fn new(spec: SugarloafFonts) -> (Self, Option<SugarloafErrors>) {
         let mut font_library = FontLibraryData::default();
+        font_library.load_fallbacks(&spec);
 
-        let mut sugarloaf_errors = None;
+        let font_library_arc = Arc::new(RwLock::new(font_library));
+        let spec_clone = spec.clone();
+        let inner_clone = Arc::clone(&font_library_arc);
 
-        let fonts_not_found = font_library.load(spec);
-        if !fonts_not_found.is_empty() {
-            sugarloaf_errors = Some(SugarloafErrors { fonts_not_found });
-        }
+        std::thread::spawn(move || {
+            let mut temp_library = FontLibraryData::default();
+            let fonts_not_found = temp_library.load(spec_clone);
+
+            let mut shared = inner_clone.write();
+            // Merge loaded fonts into shared library
+            for (k, v) in temp_library.inner {
+                shared.inner.insert(k, v);
+            }
+            shared.symbol_maps = temp_library.symbol_maps;
+
+            if !fonts_not_found.is_empty() {
+                tracing::warn!("Fonts not found: {:?}", fonts_not_found);
+            }
+        });
 
         (
             Self {
-                inner: Arc::new(RwLock::new(font_library)),
+                inner: font_library_arc,
             },
-            sugarloaf_errors,
+            None, // Errors reported later via logging
         )
     }
 }
@@ -516,6 +530,42 @@ impl FontLibraryData {
         } else {
             fonts_not_fount
         }
+    }
+
+    pub fn load_fallbacks(&mut self, spec: &SugarloafFonts) {
+        // Load fallback fonts for each variant
+        self.insert(load_fallback_from_memory(&spec.regular));
+        self.insert(load_fallback_from_memory(&spec.italic));
+        self.insert(load_fallback_from_memory(&spec.bold));
+        self.insert(load_fallback_from_memory(&spec.bold_italic));
+
+        // Load emoji fallback
+        if spec.emoji.is_some() {
+            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+        } else {
+            self.insert(FontData::from_slice(FONT_TWEMOJI_EMOJI, true).unwrap());
+        }
+
+        // Load additional fallbacks
+        for fallback in fallbacks::external_fallbacks() {
+            self.insert(load_fallback_from_memory(&SugarloafFont {
+                family: fallback,
+                ..SugarloafFont::default()
+            }));
+        }
+
+        // Load extras as fallbacks
+        for extra_font in &spec.extras {
+            self.insert(load_fallback_from_memory(&SugarloafFont {
+                family: extra_font.family.clone(),
+                style: extra_font.style.clone(),
+                weight: extra_font.weight,
+                width: extra_font.width.clone(),
+            }));
+        }
+
+        // Symbols
+        self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
     }
 
     #[cfg(target_arch = "wasm32")]
