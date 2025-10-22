@@ -322,11 +322,11 @@ This section documents the *[scroll]* table of the configuration file.
 
 This section documents the *[navigation]* table of the configuration file.
 
-*mode* = _"NativeTab"_ | _"TopTab"_ | _"BottomTab"_ | _"Breadcrumb"_ | _"Plain"_
+*mode* = _"NativeTab"_ | _"Composer"_ | _"Plain"_
 
-	Navigation display mode.
+Navigation display mode.
 
-	Default: _"NativeTab"_
+Default: _"Composer"_
 
 *clickable* = _true_ | _false_
 
