@@ -32,11 +32,11 @@ language: 'en'
 - Navigation modes simplified - if you use `TopTab`, `BottomTab`, or `Bookmark`, change to:
   ```toml
   [navigation]
-  mode = "Enabled"
+  mode = "Composer"
   ```
 - Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
 - Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
-- Available modes: `Plain`, `Enabled`, `NativeTab` (macOS only)
+- Available modes: `Plain`, `Composer`, `NativeTab` (macOS only)
 
 **Technical Details**
 

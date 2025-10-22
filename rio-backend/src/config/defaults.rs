@@ -407,22 +407,20 @@ pub fn default_config_file_content() -> String {
 #
 # "mode" - Define navigation mode
 #   • NativeTab (MacOS only)
-#   • Bookmark
-#   • BottomTab
-#   • TopTab
+#   • Composer
 #   • Plain
 #
 # "hide-if-single" - Hide navigation UI if is single.
 # "clickable" - Enable click on tabs to switch.
-# "use-current-path" - Use same path whenever a new tab is created (Note: requires `use-fork` to be set to false).
+# "current-working-directory" - Show current working directory in navigation.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 #
 # Example:
 # [navigation]
-# mode = "bookmark"
+# mode = "Composer"
 # clickable = false
 # hide-if-single = true
-# use-current-path = false
+# current-working-directory = true
 # color-automation = []
 
 # Shell

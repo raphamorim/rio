@@ -91,7 +91,7 @@ impl Renderer {
         }
 
         // Initialize island
-        // Enabled when using Enabled navigation mode for full GPU rendering
+        // Enabled when using Composer navigation mode for full GPU rendering
         let mut island = island::Island::new();
         if config.navigation.is_enabled() {
             island.set_enabled(true);
