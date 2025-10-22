@@ -120,17 +120,19 @@ pub enum CornerType {
 }
 
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
-    match character {
-        '\u{2500}'..='\u{259f}'
-        | '\u{1fb00}'..='\u{1fb3b}'
-        // Powerlines
-        | '\u{e0b0}'..='\u{e0bf}'
-        // Brailles
-        | '\u{2800}'..='\u{28FF}'
-        // Sextants
-        | '\u{1FB00}'..='\u{1FB3F}'
-        // Octants
-        | '\u{1CD00}'..='\u{1CDE5}' => {
+match character {
+'\u{2500}'..='\u{259f}'
+| '\u{1fb00}'..='\u{1fb3b}'
+// Powerlines
+| '\u{e0b0}'..='\u{e0bf}'
+// Brailles
+| '\u{2800}'..='\u{28FF}'
+// Sextants
+| '\u{1FB00}'..='\u{1FB3F}'
+// Octants
+| '\u{1CD00}'..='\u{1CDE5}'
+        // Legacy Computing Supplement
+        | '\u{1CC00}'..='\u{1CEBF}' => {
             if let Ok(character) = DrawableChar::try_from(character) {
                 return Some(character)
             }
@@ -273,6 +275,9 @@ pub enum DrawableChar {
     DiagonalRisingBar,  // ╱
     DiagonalFallingBar, // ╲
     DiagonalCross,      // ╳
+
+    // Legacy Computing Supplement
+    BlackLargeCircleMinusRightQuarterSection, // 𜱭
 
     Sextant(u8), // Represents any of the 64 possible sextant patterns
     Octant(u8),  // Represents any of the 256 possible octant patterns
@@ -695,6 +700,9 @@ impl TryFrom<char> for DrawableChar {
             '╱' => DrawableChar::DiagonalRisingBar,
             '╲' => DrawableChar::DiagonalFallingBar,
             '╳' => DrawableChar::DiagonalCross,
+
+            // Legacy Computing Supplement
+            '\u{1CC6D}' => DrawableChar::BlackLargeCircleMinusRightQuarterSection,
 
             // Quick test:
             // echo "\ue0b0 \ue0b1 \ue0b2 \ue0b3 \ue0b4 \ue0b5 \ue0b6 \ue0b7"

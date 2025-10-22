@@ -12,13 +12,13 @@ use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
 
 /// Height of the island in pixels
-pub const ISLAND_HEIGHT: f32 = 40.0;
+pub const ISLAND_HEIGHT: f32 = 28.0;
 
 /// Horizontal padding inside each tab island
 const ISLAND_PADDING_X: f32 = 16.0;
 
 /// Vertical padding inside each tab island
-const ISLAND_PADDING_Y: f32 = 8.0;
+const ISLAND_PADDING_Y: f32 = 6.0;
 
 /// Spacing between tab islands
 const ISLAND_SPACING: f32 = 8.0;
@@ -30,7 +30,10 @@ const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 const ISLAND_CORNER_RADIUS: f32 = 8.0;
 
 /// Font size for tab titles
-const TITLE_FONT_SIZE: f32 = 13.0;
+const TITLE_FONT_SIZE: f32 = 11.0;
+
+/// Font size for tab titles
+const RIO_INDICATOR_FONT_SIZE: f32 = 2.0;
 
 /// Maximum characters to display in a tab title
 const MAX_TITLE_CHARS: usize = 25;
@@ -72,6 +75,8 @@ pub struct Island {
     pub show_shadow: bool,
     /// Tab-specific data keyed by tab index
     tab_data: HashMap<usize, TabIslandData>,
+    /// Rich text ID for the single-tab indicator Unicode character
+    indicator_rich_text_id: Option<usize>,
 }
 
 impl Default for Island {
@@ -89,6 +94,7 @@ impl Default for Island {
             cursor_color: [0.97, 0.07, 1.0, 1.0],
             show_shadow: true,
             tab_data: HashMap::new(),
+            indicator_rich_text_id: None,
         }
     }
 }
@@ -144,9 +150,13 @@ impl Island {
         for tab_data in self.tab_data.values() {
             sugarloaf.hide_rich_text(tab_data.rich_text_id);
         }
+        // Hide indicator rich text if it exists
+        if let Some(rich_text_id) = self.indicator_rich_text_id {
+            sugarloaf.hide_rich_text(rich_text_id);
+        }
 
         // Always render the single-tab indicator (leftmost element)
-        let indicator_island_width = SINGLE_TAB_ISLAND_WIDTH;
+        let indicator_island_width = (Self::calculate_island_width(RIO_INDICATOR_FONT_SIZE)).0;
         let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
         let island_y = ISLAND_PADDING_Y;
 
@@ -304,32 +314,51 @@ impl Island {
             indicator_x = x_position;
         }
 
-        // Render indicator island background
-        sugarloaf.rounded_rect(
-            indicator_x,
-            island_y,
-            indicator_island_width,
-            island_height,
-            self.background_color,
-            0.1, // Behind terminal content (terminal is at 0.0)
-            ISLAND_CORNER_RADIUS,
-        );
+        // Create indicator rich text if it doesn't exist
+        if self.indicator_rich_text_id.is_none() {
+            use rio_backend::sugarloaf::layout::RichTextConfig;
+            // Text should be in front of everything (terminal at 0.0, island at 0.1)
+            let config = RichTextConfig::new().with_depth(-0.1);
+            let rich_text_id = sugarloaf.create_rich_text(Some(&config));
+            sugarloaf.set_rich_text_font_size(&rich_text_id, RIO_INDICATOR_FONT_SIZE);
+            self.indicator_rich_text_id = Some(rich_text_id);
+            use rio_backend::sugarloaf::{FragmentStyle, drawable_character};
+            let content = sugarloaf.content();
 
-        // Render small cursor-colored indicator centered inside
-        let indicator_inner_x =
-            indicator_x + (indicator_island_width - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
-        let indicator_inner_y =
-            island_y + (island_height - SINGLE_TAB_INDICATOR_HEIGHT) / 2.0;
+            let mut style = FragmentStyle {
+                color: self.title_color,
+                ..FragmentStyle::default()
+            };
 
-        sugarloaf.rounded_rect(
-            indicator_inner_x,
-            indicator_inner_y,
-            SINGLE_TAB_INDICATOR_WIDTH,
-            SINGLE_TAB_INDICATOR_HEIGHT,
-            self.cursor_color,
-            0.05, // In front of island background but behind terminal
-            2.0,   // Rounded corners
-        );
+            // Check if this character should be rendered as a drawable
+            if let Some(character) = drawable_character('\u{1CC6D}') {
+                style.drawable_char = Some(character);
+                style.width = 1.0;
+            }
+
+            content
+                .sel(rich_text_id)
+                .clear()
+                .new_line()
+                .add_text(
+                    "\u{1CC6D}",
+                    style,
+                )
+                .add_text(
+                    "\u{1CC6D}",
+                    style,
+                )
+                .build();
+        }
+
+        // Render indicator Unicode character
+        if let Some(rich_text_id) = self.indicator_rich_text_id {
+            // Position the indicator centered in the island
+            let indicator_x = indicator_x + (indicator_island_width / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
+            let indicator_y = island_y + (island_height / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
+
+            sugarloaf.show_rich_text(rich_text_id, indicator_x, indicator_y);
+        }
     }
 
     /// Get the title text for a specific tab index
@@ -509,13 +538,13 @@ mod tests {
     #[test]
     fn test_island_constants() {
         // Verify all constants are set correctly
-        assert_eq!(ISLAND_HEIGHT, 40.0);
+        assert_eq!(ISLAND_HEIGHT, 28.0);
         assert_eq!(ISLAND_PADDING_X, 16.0);
-        assert_eq!(ISLAND_PADDING_Y, 8.0);
+        assert_eq!(ISLAND_PADDING_Y, 6.0);
         assert_eq!(ISLAND_SPACING, 8.0);
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
         assert_eq!(ISLAND_CORNER_RADIUS, 8.0);
-        assert_eq!(TITLE_FONT_SIZE, 13.0);
+        assert_eq!(TITLE_FONT_SIZE, 11.0);
         assert_eq!(ISLAND_MIN_WIDTH, 60.0);
         assert_eq!(MAX_TITLE_CHARS, 25);
         assert_eq!(SINGLE_TAB_INDICATOR_WIDTH, 5.0);
@@ -601,7 +630,7 @@ mod tests {
     fn test_single_tab_indicator_fits_in_island() {
         // Verify the indicator fits within the island container
         assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
-        assert!(SINGLE_TAB_INDICATOR_HEIGHT < ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
+        assert!(SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
     }
 
     #[test]
@@ -616,7 +645,7 @@ mod tests {
 
         // Vertical centering
         let y_padding = (island_height - SINGLE_TAB_INDICATOR_HEIGHT) / 2.0;
-        assert_eq!(y_padding, (24.0 - 16.0) / 2.0); // 4.0px on top and bottom
+        assert_eq!(y_padding, (16.0 - 16.0) / 2.0); // 0.0px on top and bottom (fits exactly)
     }
 
     #[test]

@@ -3866,6 +3866,36 @@ impl BatchManager {
                     }
                 }
             }
+            DrawableChar::BlackLargeCircleMinusRightQuarterSection => {
+                println!("{:?}", line_height);
+                let radius = line_height.min(line_width) / 2.0;
+                let segments = 60;
+
+                // Create points for the filled 3/4 circle
+                let mut points = Vec::with_capacity(segments + 2);
+
+                // Start at center (the apex of the pac-man mouth)
+                points.push((center_x, center_y));
+
+                // Draw arc from 45° to 315° (clockwise around the circle)
+                // This leaves a 90° gap from 315° to 45° (the right side opening)
+                // 0° = right, 90° = bottom, 180° = left, 270° = top
+                for i in 0..=segments {
+                    let angle = 45.0 + (270.0 * i as f32 / segments as f32);
+                    let radians = angle * std::f32::consts::PI / 180.0;
+
+                    let px = center_x + radius * radians.cos();
+                    let py = center_y + radius * radians.sin();
+
+                    points.push((px, py));
+                }
+
+                // Close back to center
+                points.push((center_x, center_y));
+
+                // Draw the filled polygon
+                self.add_antialiased_polygon(&points, depth, color);
+            }
             DrawableChar::Sextant(pattern) => {
                 // Sextants are on a 2×3 grid:
                 // ╭───┬───╮
