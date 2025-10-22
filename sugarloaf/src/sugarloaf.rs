@@ -345,6 +345,7 @@ impl Sugarloaf<'_> {
         coords: [f32; 4],
         has_alpha: bool,
         depth: f32,
+        atlas_layer: i32,
     ) {
         let scaled_x = x * self.state.style.scale_factor;
         let scaled_y = y * self.state.style.scale_factor;
@@ -359,6 +360,7 @@ impl Sugarloaf<'_> {
             coords,
             has_alpha,
             depth,
+            atlas_layer,
         );
     }
 

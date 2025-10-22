@@ -284,16 +284,25 @@ impl MetalRichTextBrush {
         // Set sampler
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
 
-        // Set textures if available
-        if let Some((color_texture, mask_texture)) = images.get_metal_textures() {
-            render_encoder.set_fragment_texture(0, Some(color_texture));
-            render_encoder.set_fragment_texture(1, Some(mask_texture));
+        // For now, use the first color atlas and mask atlas
+        // TODO: Implement proper batching by atlas
+        let color_textures = images.get_metal_textures();
+        let mask_texture = images.get_mask_texture();
+
+        // Bind color texture (first atlas) and mask texture
+        if !color_textures.is_empty() {
+            render_encoder.set_fragment_texture(0, Some(color_textures[0]));
         } else {
-            // No textures available - vertices with layers=[0,0] will just use vertex colors
-            tracing::warn!("Metal: No textures available - using vertex colors only");
+            render_encoder.set_fragment_texture(0, None);
         }
 
-        // Draw vertices
+        if let Some(mask_tex) = mask_texture {
+            render_encoder.set_fragment_texture(1, Some(mask_tex));
+        } else {
+            render_encoder.set_fragment_texture(1, None);
+        }
+
+        // Draw all vertices (for now, until proper batching is implemented)
         render_encoder.draw_primitives(
             MTLPrimitiveType::Triangle,
             0,
@@ -307,6 +316,12 @@ struct CachedGraphic {
     width: f32,
     height: f32,
     last_used_frame: u64,
+    /// ImageId for looking up individual texture (if uses_individual_texture is true)
+    image_id: image_cache::ImageId,
+    /// True if this graphic uses an individual GPU texture instead of the atlas
+    uses_individual_texture: bool,
+    /// Atlas layer index (1-based, 0 = no texture)
+    atlas_layer: i32,
 }
 
 pub struct RichTextBrush {
@@ -531,6 +546,8 @@ impl RichTextBrush {
                                 has_alpha: true,
                                 data: image_cache::ImageData::Borrowed(pixels.as_ref()),
                                 content_type: image_cache::ContentType::Color,
+                                // Protocol graphics (Kitty/Sixel) get individual textures
+                                uses_individual_texture: true,
                             };
 
                             // Try to allocate, with eviction retry if needed
@@ -568,7 +585,12 @@ impl RichTextBrush {
 
                             if let Some(id) = image_id {
                                 if let Some(location) = self.images.get(&id) {
-                                    // Cache coords + dimensions + frame
+                                    // Get atlas layer for this image
+                                    let atlas_layer = self.images.get_atlas_index(id)
+                                        .map(|idx| (idx + 1) as i32)
+                                        .unwrap_or(1);
+
+                                    // Cache coords + dimensions + frame + atlas layer
                                     self.graphic_cache.insert(
                                         graphic.id,
                                         CachedGraphic {
@@ -576,6 +598,9 @@ impl RichTextBrush {
                                             width: entry.width,
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
+                                            image_id: id,
+                                            uses_individual_texture: true, // Protocol graphics use individual textures
+                                            atlas_layer,
                                         },
                                     );
                                 }
@@ -886,11 +911,12 @@ impl RichTextBrush {
                                 let gy = py - graphic.offset_y as f32;
 
                                 tracing::info!(
-                                    "Drawing graphic at ({}, {}), size={}x{}",
+                                    "Drawing graphic at ({}, {}), size={}x{}, atlas_layer={}",
                                     gx,
                                     gy,
                                     cached.width,
-                                    cached.height
+                                    cached.height,
+                                    cached.atlas_layer
                                 );
 
                                 comp.batches.add_image_rect(
@@ -904,6 +930,7 @@ impl RichTextBrush {
                                         cached.location.max.1,
                                     ],
                                     true,
+                                    cached.atlas_layer,
                                 );
                             } else {
                                 tracing::warn!("Graphic {} not in cache!", graphic.id.0);
@@ -1024,6 +1051,7 @@ impl RichTextBrush {
         coords: [f32; 4],
         has_alpha: bool,
         depth: f32,
+        atlas_layer: i32,
     ) {
         self.comp.batches.add_image_rect(
             &Rect {
@@ -1036,6 +1064,7 @@ impl RichTextBrush {
             &color,
             &coords,
             has_alpha,
+            atlas_layer,
         );
     }
 
@@ -1046,15 +1075,23 @@ impl RichTextBrush {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
-            // Update bind group with latest texture views if needed
-            if let Some((color_view, mask_view)) = self.images.get_texture_views() {
-                brush.update_bind_group(
-                    ctx,
-                    color_view,
-                    mask_view,
-                    self.images.entries.len(),
-                );
+            // Get all atlas textures
+            let color_views = self.images.get_texture_views();
+            let atlas_count = self.images.get_atlas_count();
+
+            if color_views.is_empty() || self.vertices.is_empty() {
+                return;
             }
+
+            // For now, just use the first atlas and render all vertices
+            // TODO: Implement proper batching without lifetime issues
+            let mask_view = self.images.get_mask_texture_view().unwrap_or(color_views[0]);
+            brush.update_bind_group(
+                ctx,
+                color_views[0],
+                mask_view,
+                self.images.entries.len(),
+            );
             brush.render(ctx, &self.vertices, rpass);
         }
     }
@@ -1411,6 +1448,48 @@ impl WgpuRichTextBrush {
         // println!("Time elapsed in rich_text::render is: {:?}", duration);
     }
 
+    #[inline]
+    pub fn render_range<'pass>(
+        &'pass mut self,
+        ctx: &mut WgpuContext,
+        vertices: &Vec<Vertex>,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        range: std::ops::Range<usize>,
+    ) {
+        if range.is_empty() {
+            return;
+        }
+
+        let queue = &mut ctx.queue;
+
+        // Ensure buffer is large enough
+        if vertices.len() > self.supported_vertex_buffer {
+            self.vertex_buffer.destroy();
+            self.supported_vertex_buffer = (vertices.len() as f32 * 1.25) as usize;
+            self.vertex_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sugarloaf::rich_text::Pipeline vertices"),
+                size: mem::size_of::<Vertex>() as u64
+                    * self.supported_vertex_buffer as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+
+        // Write all vertices to buffer (we need the full buffer for correct indexing)
+        let vertices_bytes: &[u8] = bytemuck::cast_slice(vertices);
+        if !vertices_bytes.is_empty() {
+            queue.write_buffer(&self.vertex_buffer, 0, vertices_bytes);
+        }
+
+        rpass.set_pipeline(&self.pipeline);
+        rpass.set_bind_group(0, &self.constant_bind_group, &[]);
+        rpass.set_bind_group(1, &self.layout_bind_group, &[]);
+        rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+
+        // Draw only the specified range
+        rpass.draw(range.start as u32..range.end as u32, 0..1);
+    }
+
     pub fn update_bind_group(
         &mut self,
         ctx: &WgpuContext,
@@ -1561,6 +1640,9 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 10,
+                image_id: super::image_cache::ImageId::empty(),
+                uses_individual_texture: false,
+                atlas_layer: 1,
             },
         );
 
@@ -1574,6 +1656,9 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 5, // Oldest
+                image_id: super::image_cache::ImageId::empty(),
+                uses_individual_texture: false,
+                atlas_layer: 1,
             },
         );
 
@@ -1587,6 +1672,9 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 15, // Newest
+                image_id: super::image_cache::ImageId::empty(),
+                uses_individual_texture: false,
+                atlas_layer: 1,
             },
         );
 
@@ -1619,6 +1707,9 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 50,
+                image_id: super::image_cache::ImageId::empty(),
+                uses_individual_texture: false,
+                atlas_layer: 1,
             },
         );
 

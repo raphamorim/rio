@@ -219,12 +219,17 @@ impl Compositor {
 
                         if entry.is_bitmap {
                             let bitmap_color = [1.0, 1.0, 1.0, 1.0];
+                            // Get atlas index for this image (0-based), add 1 for layer (0 = no texture)
+                            let atlas_layer = session.get_atlas_index(entry.image)
+                                .map(|idx| (idx + 1) as i32)
+                                .unwrap_or(1);
                             self.batches.add_image_rect(
                                 &glyph_rect,
                                 depth,
                                 &bitmap_color,
                                 &coords,
                                 entry.image.has_alpha(),
+                                atlas_layer,
                             );
                         } else {
                             self.batches.add_mask_rect(

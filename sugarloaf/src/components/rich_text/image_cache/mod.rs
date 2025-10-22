@@ -65,6 +65,9 @@ pub struct AddImage<'a> {
     pub data: ImageData<'a>,
     /// Content type for atlas selection
     pub content_type: ContentType,
+    /// True if this image should get an individual GPU texture (e.g., from Kitty/Sixel protocols)
+    /// False for glyphs which should use the atlas
+    pub uses_individual_texture: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -1477,8 +1477,8 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Cleanup unused kitty images from cache
-    fn cleanup_unused_kitty_images(&mut self) {
-        // Collect all currently used graphic IDs from the grid
+    /// Collect all graphic IDs currently in use (displayed in the grid)
+    fn collect_used_graphic_ids(&self) -> std::collections::HashSet<u64> {
         let mut used_ids = std::collections::HashSet::new();
         for line_idx in 0..self.grid.screen_lines() {
             let line = Line(line_idx as i32);
@@ -1488,16 +1488,26 @@ impl<U: EventListener> Crosswords<U> {
                 if cell.flags.contains(Flags::GRAPHICS) {
                     if let Some(graphics) = cell.graphics() {
                         for graphic in graphics {
-                            used_ids.insert(graphic.texture.id.0 as u32);
+                            used_ids.insert(graphic.texture.id.0);
                         }
                     }
                 }
             }
         }
+        used_ids
+    }
+
+    fn cleanup_unused_kitty_images(&mut self) {
+        // Collect all currently used graphic IDs from the grid
+        let used_ids = self.collect_used_graphic_ids();
+
+        // Convert to u32 for kitty_images map
+        let used_kitty_ids: std::collections::HashSet<u32> =
+            used_ids.iter().map(|&id| id as u32).collect();
 
         // Delete images not in use
         self.graphics
-            .delete_kitty_images(|id, _| !used_ids.contains(id));
+            .delete_kitty_images(|id, _| !used_kitty_ids.contains(id));
     }
 }
 
@@ -2938,7 +2948,27 @@ impl<U: EventListener> Handler for Crosswords<U> {
             return;
         }
 
+        // Calculate bytes for this graphic
+        let graphic_bytes = graphic.pixels.len();
+
+        debug!("insert_graphic: image needs {} bytes, current total: {}/{}",
+            graphic_bytes, self.graphics.total_bytes, self.graphics.total_limit);
+
+        // Check if we need to evict images to make space
+        let used_ids = self.collect_used_graphic_ids();
+        debug!("insert_graphic: {} images currently in use in grid", used_ids.len());
+
+        if !self.graphics.evict_images(graphic_bytes, &used_ids) {
+            warn!("Failed to evict enough images for {} bytes, image may not display", graphic_bytes);
+            // Continue anyway - let it fail gracefully rather than silently dropping
+        }
+
         let graphic_id = self.graphics.next_id();
+
+        debug!("insert_graphic: assigned new id {}", graphic_id.0);
+
+        // Track this graphic's memory usage
+        self.graphics.track_graphic(graphic_id, graphic_bytes);
 
         // If SIXEL_DISPLAY is disabled, the start of the graphic is the
         // cursor position, and the grid can be scrolled if the graphic is
