@@ -473,9 +473,7 @@ impl Renderer {
                         line, column, grapheme
                     );
                 }
-            }
-
-            if square.flags.contains(Flags::GRAPHICS) {
+            } else if square.flags.contains(Flags::GRAPHICS) {
                 let graphic = &square.graphics().unwrap()[0];
                 style.media = Some(Graphic {
                     id: graphic.texture.id,
