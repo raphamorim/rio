@@ -3867,7 +3867,6 @@ impl BatchManager {
                 }
             }
             DrawableChar::BlackLargeCircleMinusRightQuarterSection => {
-                println!("{:?}", line_height);
                 let radius = line_height.min(line_width) / 2.0;
                 let segments = 60;
 
