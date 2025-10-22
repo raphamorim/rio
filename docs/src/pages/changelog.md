@@ -10,11 +10,11 @@ language: 'en'
 **What's New**
 
 - **Kitty Graphics Protocol**: Display images directly in your terminal
-  - ✅ Direct placements (U=0) - works like Sixel
-  - ✅ Virtual placements (U=1) - full Ghostty-compatible encoding
-  - ✅ Diacritic-based row/column encoding (283 combining characters)
-  - ✅ RGB color encoding for image/placement IDs (24+8 bit support)
-  - ⚠️  Virtual placement rendering (infrastructure complete, rendering pending)
+  - Direct placements (U=0)
+  - Virtual placements (U=1)
+  - Diacritic-based row/column encoding (283 combining characters)
+  - RGB color encoding for image/placement IDs (24+8 bit support)
+  - Virtual placement rendering (infrastructure complete, rendering pending)
 - **Sixel Graphics**: Full support with proper scrolling and positioning
 - **Graphics Rendering Improvements**:
   - Fixed vertical positioning alignment

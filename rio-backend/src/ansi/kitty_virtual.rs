@@ -1,5 +1,4 @@
 // Kitty graphics protocol virtual placement encoding/decoding
-// Based on Ghostty's implementation
 
 use crate::config::colors::ColorRgb;
 
