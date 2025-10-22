@@ -284,30 +284,60 @@ impl MetalRichTextBrush {
         // Set sampler
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler));
 
-        // For now, use the first color atlas and mask atlas
-        // TODO: Implement proper batching by atlas
+        // Implement proper batching by atlas to avoid lifetime issues
         let color_textures = images.get_metal_textures();
         let mask_texture = images.get_mask_texture();
 
-        // Bind color texture (first atlas) and mask texture
-        if !color_textures.is_empty() {
-            render_encoder.set_fragment_texture(0, Some(color_textures[0]));
-        } else {
-            render_encoder.set_fragment_texture(0, None);
-        }
+        // Group vertices by their texture binding requirements
+        // layers[0] = color_layer (0 = no color texture, 1+ = color atlas index)
+        // layers[1] = mask_layer (0 = no mask texture, 1 = mask atlas)
 
-        if let Some(mask_tex) = mask_texture {
-            render_encoder.set_fragment_texture(1, Some(mask_tex));
-        } else {
-            render_encoder.set_fragment_texture(1, None);
-        }
+        let mut current_vertex = 0usize;
+        while current_vertex < vertices.len() {
+            let start = current_vertex;
+            let current_color_layer = vertices[start].layers[0];
+            let current_mask_layer = vertices[start].layers[1];
 
-        // Draw all vertices (for now, until proper batching is implemented)
-        render_encoder.draw_primitives(
-            MTLPrimitiveType::Triangle,
-            0,
-            vertices.len() as u64,
-        );
+            // Find the end of this batch (consecutive vertices with same layers)
+            let mut end = start;
+            while end < vertices.len()
+                && vertices[end].layers[0] == current_color_layer
+                && vertices[end].layers[1] == current_mask_layer {
+                end += 1;
+            }
+
+            // Bind appropriate textures for this batch
+            if current_color_layer > 0 {
+                // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
+                let atlas_index = (current_color_layer - 1) as usize;
+                if atlas_index < color_textures.len() {
+                    render_encoder.set_fragment_texture(0, Some(color_textures[atlas_index]));
+                } else {
+                    render_encoder.set_fragment_texture(0, None);
+                }
+            } else {
+                render_encoder.set_fragment_texture(0, None);
+            }
+
+            if current_mask_layer > 0 {
+                if let Some(mask_tex) = mask_texture {
+                    render_encoder.set_fragment_texture(1, Some(mask_tex));
+                } else {
+                    render_encoder.set_fragment_texture(1, None);
+                }
+            } else {
+                render_encoder.set_fragment_texture(1, None);
+            }
+
+            // Draw this batch
+            render_encoder.draw_primitives(
+                MTLPrimitiveType::Triangle,
+                start as u64,
+                (end - start) as u64,
+            );
+
+            current_vertex = end;
+        }
     }
 }
 
@@ -1077,22 +1107,58 @@ impl RichTextBrush {
         if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
             // Get all atlas textures
             let color_views = self.images.get_texture_views();
-            let atlas_count = self.images.get_atlas_count();
+            let mask_texture_view = self.images.get_mask_texture_view();
 
             if color_views.is_empty() || self.vertices.is_empty() {
                 return;
             }
 
-            // For now, just use the first atlas and render all vertices
-            // TODO: Implement proper batching without lifetime issues
-            let mask_view = self.images.get_mask_texture_view().unwrap_or(color_views[0]);
-            brush.update_bind_group(
-                ctx,
-                color_views[0],
-                mask_view,
-                self.images.entries.len(),
-            );
-            brush.render(ctx, &self.vertices, rpass);
+            // Implement proper batching by atlas
+            // Group vertices by their texture binding requirements
+            // layers[0] = color_layer (0 = no color texture, 1+ = color atlas index)
+            // layers[1] = mask_layer (0 = no mask texture, 1 = mask atlas)
+
+            let mut current_vertex = 0usize;
+            while current_vertex < self.vertices.len() {
+                let start = current_vertex;
+                let current_color_layer = self.vertices[start].layers[0];
+                let current_mask_layer = self.vertices[start].layers[1];
+
+                // Find the end of this batch (consecutive vertices with same layers)
+                let mut end = start;
+                while end < self.vertices.len()
+                    && self.vertices[end].layers[0] == current_color_layer
+                    && self.vertices[end].layers[1] == current_mask_layer {
+                    end += 1;
+                }
+
+                // Bind appropriate textures for this batch
+                let color_view = if current_color_layer > 0 {
+                    // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
+                    let atlas_index = (current_color_layer - 1) as usize;
+                    color_views.get(atlas_index).unwrap_or(&color_views[0])
+                } else {
+                    &color_views[0] // Doesn't matter, won't be used
+                };
+
+                let final_mask_view = if current_mask_layer > 0 {
+                    mask_texture_view.unwrap_or(color_views[0])
+                } else {
+                    color_views[0] // Doesn't matter, won't be used
+                };
+
+                brush.update_bind_group(
+                    ctx,
+                    *color_view,
+                    final_mask_view,
+                    self.images.entries.len(),
+                );
+
+                // Draw this batch
+                brush.render_range(ctx, &self.vertices, rpass, start..end);
+
+                current_vertex = end;
+            }
         }
     }
 
@@ -1449,11 +1515,11 @@ impl WgpuRichTextBrush {
     }
 
     #[inline]
-    pub fn render_range<'pass>(
-        &'pass mut self,
+    pub fn render_range(
+        &mut self,
         ctx: &mut WgpuContext,
         vertices: &Vec<Vertex>,
-        rpass: &mut wgpu::RenderPass<'pass>,
+        rpass: &mut wgpu::RenderPass,
         range: std::ops::Range<usize>,
     ) {
         if range.is_empty() {
