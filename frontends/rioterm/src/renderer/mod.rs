@@ -455,7 +455,6 @@ impl Renderer {
                                 offset_x: offset_x as u16,
                                 offset_y: offset_y as u16,
                             });
-                            style.background_color = None;
                         } else {
                             tracing::warn!(
                                 "Kitty virtual placement references missing image: image_id={:#X}",
@@ -483,7 +482,6 @@ impl Renderer {
                     offset_x: graphic.offset_x,
                     offset_y: graphic.offset_y,
                 });
-                style.background_color = None;
             }
 
             // Handle drawable characters
