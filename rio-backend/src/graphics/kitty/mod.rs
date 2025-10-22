@@ -83,6 +83,120 @@ fn test_direct_parse_transmit() {
 }
 
 #[test]
+fn test_parse_png_format() {
+    let mut handler = TestHandler::default();
+
+    // 1x1 red PNG image, base64 encoded
+    // This is a complete, valid PNG file
+    let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+
+    // Parse with f=100 (PNG format)
+    let params = vec![
+        b"G".as_ref(),
+        b"a=t,f=100,i=2".as_ref(),
+        png_base64.as_bytes(),
+    ];
+
+    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+        if let Some(graphic_data) = response.graphic_data {
+            handler.insert_graphic(graphic_data, None, Some(0));
+        }
+    }
+
+    // Verify PNG was decoded and captured
+    assert_eq!(handler.graphics.len(), 1, "Should capture one PNG graphic");
+
+    let graphic = &handler.graphics[0];
+    assert_eq!(graphic.width, 1, "PNG should be decoded to 1x1");
+    assert_eq!(graphic.height, 1, "PNG should be decoded to 1x1");
+    assert_eq!(graphic.id.0, 2);
+    // PNG should be decoded to RGBA pixels
+    assert!(
+        graphic.pixels.len() >= 4,
+        "PNG should decode to at least 4 bytes (RGBA)"
+    );
+}
+
+#[test]
+fn test_png_transmit_and_display() {
+    let event_listener = TestEventListener;
+    let window_id = unsafe { WindowId::dummy() };
+
+    let mut term: Crosswords<TestEventListener> = Crosswords::new(
+        crate::crosswords::CrosswordsSize::new(80, 24),
+        crate::ansi::CursorShape::Block,
+        event_listener,
+        window_id,
+        0,
+    );
+
+    // Set proper cell dimensions
+    term.graphics.cell_width = 10.0;
+    term.graphics.cell_height = 20.0;
+
+    // 1x1 red PNG image
+    let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+
+    // Test a=T (transmit and display) with PNG format
+    let params = vec![
+        b"G".as_ref(),
+        b"a=T,f=100,r=1,C=0,i=10".as_ref(),
+        png_base64.as_bytes(),
+    ];
+
+    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+        if let Some(graphic_data) = response.graphic_data {
+            if let Some(placement) = response.placement_request {
+                // Store and place the graphic
+                term.store_graphic(graphic_data.clone());
+                term.place_graphic(placement);
+            } else {
+                // Direct display without placement request
+                term.insert_graphic(graphic_data, None, Some(0));
+            }
+        }
+    }
+
+    let final_row = term.grid.cursor.pos.row.0;
+
+    // For 1-row PNG, cursor should stay on row 0 (last row of image)
+    assert_eq!(
+        final_row, 0,
+        "PNG with r=1 should place cursor on row 0, got row {}",
+        final_row
+    );
+}
+
+#[test]
+fn test_png_format_support() {
+    let mut handler = TestHandler::default();
+
+    // Test f=100 (PNG format) with a 1x1 PNG
+    let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+
+    let params = vec![
+        b"G".as_ref(),
+        b"a=t,f=100,i=100".as_ref(),
+        png_base64.as_bytes(),
+    ];
+
+    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+        if let Some(graphic_data) = response.graphic_data {
+            handler.insert_graphic(graphic_data, None, Some(0));
+
+            let graphic = &handler.graphics[0];
+            assert_eq!(graphic.width, 1, "PNG should decode to 1x1");
+            assert_eq!(graphic.height, 1, "PNG should decode to 1x1");
+            assert_eq!(graphic.id.0, 100);
+        } else {
+            panic!("PNG failed to decode");
+        }
+    } else {
+        panic!("PNG failed to parse");
+    }
+}
+
+#[test]
 fn test_placement_request() {
     let mut handler = TestHandler::default();
 
