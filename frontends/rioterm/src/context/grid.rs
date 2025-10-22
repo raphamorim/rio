@@ -582,7 +582,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
+    pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
         for context in self.inner.values_mut() {
             let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
             context.val.dimension.update_dimensions(layout.dimensions);
