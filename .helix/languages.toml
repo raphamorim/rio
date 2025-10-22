@@ -1,3 +1,0 @@
-[[language]]
-name = "nix"
-formatter = { command = "alejandra" }
