@@ -145,45 +145,44 @@ impl Context<'_> {
         );
 
         let (device, queue, supports_f16) = {
-            {
-                if let Ok(result) = futures::executor::block_on(adapter.request_device(
-                    // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
-                    // SHADER_F16 enables half precision floating point support
-                    &wgpu::DeviceDescriptor {
-                        required_features: wgpu::Features::empty()
-                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
-                            | wgpu::Features::SHADER_F16,
+            let base_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+            let f16_features = base_features | wgpu::Features::SHADER_F16;
+            let full_f16_features =
+                f16_features | wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
+
+            let device_configs = [
+                (full_f16_features, true),
+                (f16_features, true),
+                (base_features, false),
+            ];
+
+            let mut result = None;
+            for (features, supports_f16_val) in device_configs {
+                if let Ok(device_result) = futures::executor::block_on(
+                    adapter.request_device(&wgpu::DeviceDescriptor {
+                        required_features: features,
                         ..Default::default()
-                    },
-                )) {
-                    (result.0, result.1, true)
-                } else {
-                    // Fallback without f16 support for compatibility
-                    if let Ok(result) = futures::executor::block_on(
-                        adapter.request_device(&wgpu::DeviceDescriptor {
-                            required_features: wgpu::Features::empty()
-                                | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
-                            ..Default::default()
-                        }),
-                    ) {
-                        (result.0, result.1, false)
-                    } else {
-                        // These downlevel limits will allow the code to run on all possible hardware
-                        let result = futures::executor::block_on(adapter.request_device(
-                            &wgpu::DeviceDescriptor {
-                                memory_hints: wgpu::MemoryHints::Performance,
-                                label: None,
-                                required_features: wgpu::Features::empty(),
-                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
-                                ),
-                                ..Default::default()
-                            },
-                        ))
-                        .expect("Request device");
-                        (result.0, result.1, false)
-                    }
+                    }),
+                ) {
+                    result = Some((device_result.0, device_result.1, supports_f16_val));
+                    break;
                 }
             }
+
+            result.unwrap_or_else(|| {
+                // Last resort: downlevel limits with no features
+                let device_result = futures::executor::block_on(adapter.request_device(
+                    &wgpu::DeviceDescriptor {
+                        memory_hints: wgpu::MemoryHints::Performance,
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                        ..Default::default()
+                    },
+                ))
+                .expect("Request device");
+                (device_result.0, device_result.1, false)
+            })
         };
 
         let alpha_mode = if surface_caps
