@@ -2,7 +2,6 @@
 // Combined test suite for Kitty graphics functionality
 
 use crate::ansi::kitty_graphics_protocol::{self, DeleteRequest, PlacementRequest};
-use crate::crosswords::grid::Dimensions;
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;

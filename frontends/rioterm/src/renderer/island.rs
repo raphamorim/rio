@@ -268,9 +268,8 @@ impl Island {
         if num_tabs > 1 {
             let scaled_spacing = ISLAND_SPACING * scale_factor_width;
 
-            for tab_index in 0..num_tabs {
-                let base_island_width = island_widths[tab_index];
-                if base_island_width == 0.0 {
+            for (tab_index, base_island_width) in island_widths.iter().enumerate().take(num_tabs) {
+                if *base_island_width == 0.0 {
                     continue;
                 }
 
@@ -629,8 +628,10 @@ mod tests {
     #[test]
     fn test_single_tab_indicator_fits_in_island() {
         // Verify the indicator fits within the island container
-        assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
-        assert!(SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
+        const {
+            assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
+            assert!(SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
+        }
     }
 
     #[test]
@@ -702,19 +703,21 @@ mod tests {
         assert!(ISLAND_CORNER_RADIUS < max_reasonable_radius);
 
         // Should be a reasonable size for visibility
-        assert!(ISLAND_CORNER_RADIUS >= 4.0);
-        assert!(ISLAND_CORNER_RADIUS <= 12.0);
+        const {
+            assert!(ISLAND_CORNER_RADIUS >= 4.0);
+            assert!(ISLAND_CORNER_RADIUS <= 12.0);
+        }
     }
 
     #[test]
     fn test_indicator_proportions() {
         // Indicator should be taller than it is wide (vertical orientation)
-        assert!(SINGLE_TAB_INDICATOR_HEIGHT > SINGLE_TAB_INDICATOR_WIDTH);
+        const { assert!(SINGLE_TAB_INDICATOR_HEIGHT > SINGLE_TAB_INDICATOR_WIDTH) };
 
         // Height should be roughly 2-4x the width for good proportions
         let ratio = SINGLE_TAB_INDICATOR_HEIGHT / SINGLE_TAB_INDICATOR_WIDTH;
         assert!(
-            ratio >= 2.0 && ratio <= 4.0,
+            (2.0..=4.0).contains(&ratio),
             "Ratio {} should be between 2 and 4",
             ratio
         );
@@ -731,6 +734,6 @@ mod tests {
         );
 
         // But not be excessively wide
-        assert!(SINGLE_TAB_ISLAND_WIDTH <= 30.0);
+        const { assert!(SINGLE_TAB_ISLAND_WIDTH <= 30.0) }
     }
 }

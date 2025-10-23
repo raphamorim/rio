@@ -152,6 +152,7 @@ impl Screen<'_> {
             Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
             Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
             Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+            #[cfg(target_os = "macos")]
             Backend::Metal => SugarloafBackend::Metal,
             Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };

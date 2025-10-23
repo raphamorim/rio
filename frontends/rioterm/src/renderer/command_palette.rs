@@ -82,38 +82,37 @@ impl Default for CommandPalette {
 
 impl CommandPalette {
     pub fn new() -> Self {
-        let mut palette = Self::default();
-
-        // Add some default commands
-        palette.commands = vec![
-            CommandPaletteItem {
-                title: "New Tab".to_string(),
-                description: Some("Create a new terminal tab".to_string()),
-                action: "new_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Close Tab".to_string(),
-                description: Some("Close the current tab".to_string()),
-                action: "close_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Horizontal".to_string(),
-                description: Some("Split terminal horizontally".to_string()),
-                action: "split_horizontal".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Vertical".to_string(),
-                description: Some("Split terminal vertically".to_string()),
-                action: "split_vertical".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Settings".to_string(),
-                description: Some("Open settings".to_string()),
-                action: "settings".to_string(),
-            },
-        ];
-
-        palette
+        Self {
+            // Add some default commands
+            commands: vec![
+                CommandPaletteItem {
+                    title: "New Tab".to_string(),
+                    description: Some("Create a new terminal tab".to_string()),
+                    action: "new_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Close Tab".to_string(),
+                    description: Some("Close the current tab".to_string()),
+                    action: "close_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Horizontal".to_string(),
+                    description: Some("Split terminal horizontally".to_string()),
+                    action: "split_horizontal".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Vertical".to_string(),
+                    description: Some("Split terminal vertically".to_string()),
+                    action: "split_vertical".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Settings".to_string(),
+                    description: Some("Open settings".to_string()),
+                    action: "settings".to_string(),
+                },
+            ],
+            ..Self::default()
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -176,7 +175,7 @@ impl CommandPalette {
                 .iter()
                 .filter(|cmd| {
                     cmd.title.to_lowercase().contains(&query_lower)
-                        || cmd.description.as_ref().map_or(false, |d| {
+                        || cmd.description.as_ref().is_some_and(|d| {
                             d.to_lowercase().contains(&query_lower)
                         })
                 })
@@ -388,55 +387,56 @@ mod tests {
     use super::*;
 
     fn create_test_palette() -> CommandPalette {
-        let mut palette = CommandPalette::default();
-        palette.commands = vec![
-            CommandPaletteItem {
-                title: "New Tab".to_string(),
-                description: Some("Create a new tab".to_string()),
-                action: "new_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Close Tab".to_string(),
-                description: Some("Close current tab".to_string()),
-                action: "close_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Horizontal".to_string(),
-                description: Some("Split horizontally".to_string()),
-                action: "split_h".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Vertical".to_string(),
-                description: Some("Split vertically".to_string()),
-                action: "split_v".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Settings".to_string(),
-                description: Some("Open settings".to_string()),
-                action: "settings".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Theme".to_string(),
-                description: Some("Change theme".to_string()),
-                action: "theme".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Help".to_string(),
-                description: Some("Show help".to_string()),
-                action: "help".to_string(),
-            },
-            CommandPaletteItem {
-                title: "About".to_string(),
-                description: Some("About Rio".to_string()),
-                action: "about".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Quit".to_string(),
-                description: Some("Quit application".to_string()),
-                action: "quit".to_string(),
-            },
-        ];
-        palette
+        CommandPalette {
+            commands: vec![
+                CommandPaletteItem {
+                    title: "New Tab".to_string(),
+                    description: Some("Create a new tab".to_string()),
+                    action: "new_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Close Tab".to_string(),
+                    description: Some("Close current tab".to_string()),
+                    action: "close_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Horizontal".to_string(),
+                    description: Some("Split horizontally".to_string()),
+                    action: "split_h".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Vertical".to_string(),
+                    description: Some("Split vertically".to_string()),
+                    action: "split_v".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Settings".to_string(),
+                    description: Some("Open settings".to_string()),
+                    action: "settings".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Theme".to_string(),
+                    description: Some("Change theme".to_string()),
+                    action: "theme".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Help".to_string(),
+                    description: Some("Show help".to_string()),
+                    action: "help".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "About".to_string(),
+                    description: Some("About Rio".to_string()),
+                    action: "about".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Quit".to_string(),
+                    description: Some("Quit application".to_string()),
+                    action: "quit".to_string(),
+                },
+            ],
+            ..CommandPalette::default()
+        }
     }
 
     #[test]

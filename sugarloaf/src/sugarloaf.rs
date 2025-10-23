@@ -60,6 +60,7 @@ pub struct SugarloafWindow {
 
 pub enum SugarloafBackend {
     Wgpu(wgpu::Backends),
+    #[cfg(target_os = "macos")]
     Metal,
 }
 
@@ -235,6 +236,7 @@ impl Sugarloaf<'_> {
                     crate::context::ContextType::Wgpu(ctx) => {
                         brush.update_filters(ctx, filters);
                     }
+                    #[cfg(target_os = "macos")]
                     _ => {}
                 };
             }
@@ -445,6 +447,7 @@ impl Sugarloaf<'_> {
             crate::context::ContextType::Wgpu(_) => {
                 self.render_wgpu();
             }
+            #[cfg(target_os = "macos")]
             crate::context::ContextType::Metal(_) => {
                 self.render_metal();
             }
@@ -452,9 +455,8 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    #[cfg(target_os = "macos")]
     pub fn render_metal(&mut self) {
-        use metal::*;
-
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             crate::context::ContextType::Wgpu(_) => {
@@ -516,6 +518,7 @@ impl Sugarloaf<'_> {
     pub fn render_wgpu(&mut self) {
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Wgpu(wgpu) => wgpu,
+            #[cfg(target_os = "macos")]
             crate::context::ContextType::Metal(_) => {
                 return;
             }

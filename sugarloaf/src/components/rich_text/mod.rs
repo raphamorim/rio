@@ -9,22 +9,25 @@ mod text_run_manager;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
-use crate::context::metal::MetalContext;
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
-use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
+use crate::layout::{RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
-use metal::*;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
+
+#[cfg(target_os = "macos")]
+use crate::context::metal::MetalContext;
+#[cfg(target_os = "macos")]
+use metal::*;
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -42,6 +45,7 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 #[derive(Debug)]
 pub enum RichTextBrushType {
     Wgpu(WgpuRichTextBrush),
+    #[cfg(target_os = "macos")]
     Metal(MetalRichTextBrush),
 }
 
@@ -64,6 +68,7 @@ struct Globals {
     transform: [f32; 16],
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct MetalRichTextBrush {
     pipeline_state: RenderPipelineState,
@@ -74,6 +79,7 @@ pub struct MetalRichTextBrush {
     current_transform: [f32; 16],
 }
 
+#[cfg(target_os = "macos")]
 impl MetalRichTextBrush {
     pub fn new(context: &MetalContext) -> Self {
         let supported_vertex_buffer = 500;
@@ -371,6 +377,7 @@ impl RichTextBrush {
             ContextType::Wgpu(wgpu_context) => {
                 RichTextBrushType::Wgpu(WgpuRichTextBrush::new(wgpu_context))
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
                 RichTextBrushType::Metal(MetalRichTextBrush::new(metal_context))
             }
@@ -1093,6 +1100,7 @@ impl RichTextBrush {
         ctx: &mut WgpuContext,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
+        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
         if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
             // Get all atlas textures
             let color_views = self.images.get_texture_views();
@@ -1138,7 +1146,7 @@ impl RichTextBrush {
 
                 brush.update_bind_group(
                     ctx,
-                    *color_view,
+                    color_view,
                     final_mask_view,
                     self.images.entries.len(),
                 );
@@ -1151,6 +1159,7 @@ impl RichTextBrush {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub fn render_metal(
         &mut self,
         context: &MetalContext, // Add context parameter
@@ -1166,6 +1175,7 @@ impl RichTextBrush {
             ContextType::Wgpu(wgpu_ctx) => {
                 orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(metal_ctx) => {
                 orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
             }
@@ -1176,6 +1186,7 @@ impl RichTextBrush {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
                         ContextType::Wgpu(wgpu_ctx) => &wgpu_ctx.queue,
+                        #[cfg(target_os = "macos")]
                         _ => unreachable!(),
                     };
 
@@ -1187,6 +1198,7 @@ impl RichTextBrush {
                     wgpu_brush.current_transform = transform;
                 }
             }
+            #[cfg(target_os = "macos")]
             RichTextBrushType::Metal(metal_brush) => {
                 metal_brush.resize(transform);
             }
@@ -1391,52 +1403,51 @@ impl WgpuRichTextBrush {
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
             });
 
-        let pipeline =
-            context
-                .device
-                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                    cache: None,
-                    label: None,
-                    layout: Some(&pipeline_layout),
-                    vertex: wgpu::VertexState {
-                        compilation_options: wgpu::PipelineCompilationOptions::default(),
-                        module: &shader,
-                        entry_point: Some("vs_main"),
-                        buffers: &[wgpu::VertexBufferLayout {
-                            array_stride: mem::size_of::<Vertex>() as u64,
-                            // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array!(
-                                0 => Float32x3,
-                                1 => Float32x4,
-                                2 => Float32x2,
-                                3 => Sint32x2,
-                            ),
-                        }],
-                    },
-                    fragment: Some(wgpu::FragmentState {
-                        compilation_options: wgpu::PipelineCompilationOptions::default(),
-                        module: &shader,
-                        entry_point: Some("fs_main"),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format: context.format,
-                            blend: BLEND,
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    primitive: wgpu::PrimitiveState {
-                        topology: wgpu::PrimitiveTopology::TriangleList,
-                        strip_index_format: None,
-                        front_face: wgpu::FrontFace::Ccw,
-                        cull_mode: None,
-                        polygon_mode: wgpu::PolygonMode::Fill,
-                        unclipped_depth: false,
-                        conservative: false,
-                    },
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    multiview: None,
-                });
+        let pipeline = context
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                cache: None,
+                label: None,
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[wgpu::VertexBufferLayout {
+                        array_stride: mem::size_of::<Vertex>() as u64,
+                        // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array!(
+                            0 => Float32x3,
+                            1 => Float32x4,
+                            2 => Float32x2,
+                            3 => Sint32x2,
+                        ),
+                    }],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: context.format,
+                        blend: BLEND,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+            });
 
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Vertices Buffer"),

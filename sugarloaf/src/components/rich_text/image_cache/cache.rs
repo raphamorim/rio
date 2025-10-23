@@ -59,6 +59,7 @@ pub const SIZE: u16 = 4096;
 #[derive(Debug)]
 pub enum ImageCacheType {
     Wgpu(WgpuImageCache),
+    #[cfg(target_os = "macos")]
     Metal(MetalImageCache),
 }
 
@@ -72,6 +73,7 @@ pub struct WgpuImageCache {
     queue: std::sync::Arc<wgpu::Queue>,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct MetalImageCache {
     mask_texture: metal::Texture,
@@ -98,6 +100,7 @@ struct ColorAtlasWithTexture {
 
 enum ColorAtlasTexture {
     Wgpu(wgpu::Texture, wgpu::TextureView),
+    #[cfg(target_os = "macos")]
     Metal(metal::Texture),
 }
 
@@ -111,6 +114,7 @@ enum DeviceQueue {
         mask_texture: wgpu::Texture,
         mask_texture_view: wgpu::TextureView,
     },
+    #[cfg(target_os = "macos")]
     Metal {
         device: metal::Device,
         mask_texture: metal::Texture,
@@ -130,40 +134,40 @@ impl ImageCache {
         let max_texture_size = SIZE;
 
         match &context.inner {
-        ContextType::Wgpu(wgpu_context) => {
-        let device = std::sync::Arc::new(wgpu_context.device.clone());
-        let queue = std::sync::Arc::new(wgpu_context.queue.clone());
+            ContextType::Wgpu(wgpu_context) => {
+                let device = std::sync::Arc::new(wgpu_context.device.clone());
+                let queue = std::sync::Arc::new(wgpu_context.queue.clone());
 
-        // Create mask texture (R8 format for alpha masks)
-        let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("rich_text mask atlas"),
-        size: wgpu::Extent3d {
-        width: SIZE as u32,
-        height: SIZE as u32,
-        depth_or_array_layers: 1,
-        },
-        view_formats: &[],
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
-        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-        mip_level_count: 1,
-        sample_count: 1,
-        });
-        let mask_texture_view = mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        // Create first color atlas with texture
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("rich_text color atlas 0"),
-            size: wgpu::Extent3d {
+                // Create mask texture (R8 format for alpha masks)
+                let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("rich_text mask atlas"),
+                    size: wgpu::Extent3d {
                         width: SIZE as u32,
-                height: SIZE as u32,
-            depth_or_array_layers: 1,
-        },
-        view_formats: &[],
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                mip_level_count: 1,
+                        height: SIZE as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    view_formats: &[],
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::R8Unorm,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                });
+                let mask_texture_view = mask_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                // Create first color atlas with texture
+                let color_texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("rich_text color atlas 0"),
+                    size: wgpu::Extent3d {
+                        width: SIZE as u32,
+                        height: SIZE as u32,
+                        depth_or_array_layers: 1,
+                    },
+                    view_formats: &[],
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                    mip_level_count: 1,
                     sample_count: 1,
                 });
                 let color_texture_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -181,32 +185,33 @@ impl ImageCache {
                     device_queue: DeviceQueue::Wgpu { device, queue, mask_texture, mask_texture_view },
                 }
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
-            let device = metal_context.device.clone();
+                let device = metal_context.device.clone();
 
-            // Create mask texture (R8 format for alpha masks)
-            let mask_descriptor = metal::TextureDescriptor::new();
-            mask_descriptor.set_pixel_format(metal::MTLPixelFormat::R8Unorm);
-            mask_descriptor.set_width(max_texture_size as u64);
-            mask_descriptor.set_height(max_texture_size as u64);
-            mask_descriptor.set_usage(
-            metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
-            );
-            let mask_texture = device.new_texture(&mask_descriptor);
-            mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
+                // Create mask texture (R8 format for alpha masks)
+                let mask_descriptor = metal::TextureDescriptor::new();
+                mask_descriptor.set_pixel_format(metal::MTLPixelFormat::R8Unorm);
+                mask_descriptor.set_width(max_texture_size as u64);
+                mask_descriptor.set_height(max_texture_size as u64);
+                mask_descriptor.set_usage(
+                    metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
+                );
+                let mask_texture = device.new_texture(&mask_descriptor);
+                mask_texture.set_label("Sugarloaf Rich Text Mask Atlas");
 
-            // Create first color atlas with texture
-            let color_descriptor = metal::TextureDescriptor::new();
-            color_descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
-            color_descriptor.set_width(max_texture_size as u64);
+                // Create first color atlas with texture
+                let color_descriptor = metal::TextureDescriptor::new();
+                color_descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
+                color_descriptor.set_width(max_texture_size as u64);
                 color_descriptor.set_height(max_texture_size as u64);
-            color_descriptor.set_usage(
-            metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
-            );
-            let color_texture = device.new_texture(&color_descriptor);
-            color_texture.set_label("Sugarloaf Rich Text Color Atlas 0");
+                color_descriptor.set_usage(
+                    metal::MTLTextureUsage::ShaderRead | metal::MTLTextureUsage::ShaderWrite,
+                );
+                let color_texture = device.new_texture(&color_descriptor);
+                color_texture.set_label("Sugarloaf Rich Text Color Atlas 0");
 
-            let color_atlases = vec![ColorAtlasWithTexture {
+                let color_atlases = vec![ColorAtlasWithTexture {
                     atlas: Atlas::new(AtlasKind::Color, max_texture_size),
                     texture: ColorAtlasTexture::Metal(color_texture),
                 }];
@@ -397,6 +402,7 @@ impl ImageCache {
                 });
                 true
             }
+            #[cfg(target_os = "macos")]
             DeviceQueue::Metal { device, .. } => {
                 let descriptor = metal::TextureDescriptor::new();
                 descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
@@ -523,6 +529,7 @@ impl ImageCache {
             ContextType::Wgpu(wgpu_context) => {
                 // Process mask atlas
                 if self.mask_atlas.dirty {
+                    #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
                     if let DeviceQueue::Wgpu { mask_texture, queue, .. } = &self.device_queue {
                         let texture_size = wgpu::Extent3d {
                             width: self.max_texture_size as u32,
@@ -556,6 +563,7 @@ impl ImageCache {
                 // Process all color atlases
                 for atlas_with_texture in &mut self.color_atlases {
                     if atlas_with_texture.atlas.dirty {
+                        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
                         if let ColorAtlasTexture::Wgpu(texture, _) = &atlas_with_texture.texture {
                             let texture_size = wgpu::Extent3d {
                                 width: self.max_texture_size as u32,
@@ -588,6 +596,7 @@ impl ImageCache {
                     }
                 }
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(_metal_context) => {
                 // Process mask atlas
                 if self.mask_atlas.dirty {
@@ -616,6 +625,7 @@ impl ImageCache {
                 // Process all color atlases
                 for atlas_with_texture in &mut self.color_atlases {
                     if atlas_with_texture.atlas.dirty {
+                        #[cfg(target_os = "macos")]
                         if let ColorAtlasTexture::Metal(texture) = &atlas_with_texture.texture {
                             let region = metal::MTLRegion {
                                 origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
@@ -647,6 +657,7 @@ impl ImageCache {
         self.color_atlases
             .iter()
             .filter_map(|atlas_with_texture| {
+                #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
                 if let ColorAtlasTexture::Wgpu(_, view) = &atlas_with_texture.texture {
                     Some(view)
                 } else {
@@ -657,6 +668,7 @@ impl ImageCache {
     }
 
     /// Get all Metal textures for Metal rendering (for texture array)
+    #[cfg(target_os = "macos")]
     pub fn get_metal_textures(&self) -> Vec<&metal::Texture> {
         self.color_atlases
             .iter()
@@ -679,11 +691,13 @@ impl ImageCache {
     pub fn get_mask_texture_view(&self) -> Option<&wgpu::TextureView> {
         match &self.device_queue {
             DeviceQueue::Wgpu { mask_texture_view, .. } => Some(mask_texture_view),
+            #[cfg(target_os = "macos")]
             _ => None,
         }
     }
 
     /// Get the mask texture for Metal rendering
+    #[cfg(target_os = "macos")]
     pub fn get_mask_texture(&self) -> Option<&metal::Texture> {
         match &self.device_queue {
             DeviceQueue::Metal { mask_texture, .. } => Some(mask_texture),

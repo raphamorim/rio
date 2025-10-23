@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 pub mod metal;
 pub mod webgpu;
 
@@ -10,6 +11,7 @@ pub struct Context<'a> {
 
 pub enum ContextType<'a> {
     Wgpu(webgpu::WgpuContext<'a>),
+    #[cfg(target_os = "macos")]
     Metal(metal::MetalContext),
 }
 
@@ -22,6 +24,7 @@ impl Context<'_> {
             SugarloafBackend::Wgpu(backends) => ContextType::Wgpu(
                 webgpu::WgpuContext::new(sugarloaf_window, renderer_config, backends),
             ),
+            #[cfg(target_os = "macos")]
             SugarloafBackend::Metal => {
                 ContextType::Metal(metal::MetalContext::new(sugarloaf_window))
             }
@@ -34,6 +37,7 @@ impl Context<'_> {
     pub fn scale(&self) -> f32 {
         match &self.inner {
             ContextType::Wgpu(ctx) => ctx.scale,
+            #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.scale,
         }
     }
@@ -44,6 +48,7 @@ impl Context<'_> {
             ContextType::Wgpu(ctx) => {
                 ctx.set_scale(scale);
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => {
                 ctx.set_scale(scale);
             }
@@ -54,18 +59,16 @@ impl Context<'_> {
     pub fn size(&self) -> SugarloafWindowSize {
         match &self.inner {
             ContextType::Wgpu(ctx) => ctx.size,
+            #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.size,
         }
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
         match &mut self.inner {
-            ContextType::Wgpu(ctx) => {
-                ctx.resize(width, height);
-            }
-            ContextType::Metal(ctx) => {
-                ctx.resize(width, height);
-            }
+            ContextType::Wgpu(ctx) => ctx.resize(width, height),
+            #[cfg(target_os = "macos")]
+            ContextType::Metal(ctx) => ctx.resize(width, height)
         }
     }
 
@@ -73,6 +76,7 @@ impl Context<'_> {
     pub fn supports_f16(&self) -> bool {
         match &self.inner {
             ContextType::Wgpu(ctx) => ctx.supports_f16(),
+            #[cfg(target_os = "macos")]
             ContextType::Metal(ctx) => ctx.supports_f16(),
         }
     }

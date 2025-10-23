@@ -244,7 +244,7 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
         let stored_cmd = incomplete.entry(image_key).or_insert_with(|| cmd.clone());
 
         // If this isn't the first chunk for this image, just append payload
-        if stored_cmd.payload.len() > 0 && stored_cmd.payload != cmd.payload {
+        if !stored_cmd.payload.is_empty() && stored_cmd.payload != cmd.payload {
             stored_cmd.payload.extend_from_slice(&cmd.payload);
         } else {
             // First chunk - store entire command
@@ -457,7 +457,7 @@ fn parse_control_data(cmd: &mut KittyGraphicsCommand, control_data: &str) {
 
                 // Delete
                 "d" => {
-                    cmd.delete_action = value.as_bytes().get(0).copied().unwrap_or(b'a')
+                    cmd.delete_action = value.as_bytes().first().copied().unwrap_or(b'a')
                 }
 
                 // Placeholder
@@ -573,10 +573,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             }
 
             // For temp files, verify it contains "tty-graphics-protocol"
-            if cmd.medium == TransmissionMedium::TempFile {
-                if !path_str.contains("tty-graphics-protocol") {
-                    return None;
-                }
+            if cmd.medium == TransmissionMedium::TempFile && !path_str.contains("tty-graphics-protocol") {
+                return None;
             }
 
             let mut file = File::open(path).ok()?;

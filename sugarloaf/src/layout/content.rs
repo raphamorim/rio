@@ -5,7 +5,6 @@
 
 #![allow(clippy::uninlined_format_args)]
 
-use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
@@ -13,7 +12,6 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
-use crate::Graphics;
 use lru::LruCache;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
@@ -504,7 +502,7 @@ impl Content {
                         scale: layout.dimensions.scale,
                     };
 
-                    println!("  -> Returning dimensions (physical): width={}, height={}, scale={}", 
+                    println!("  -> Returning dimensions (physical): width={}, height={}, scale={}",
                         result.width, result.height, result.scale);
 
                     return result;
