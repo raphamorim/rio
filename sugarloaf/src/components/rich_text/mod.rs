@@ -1479,7 +1479,7 @@ impl WgpuRichTextBrush {
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
-        vertices: &Vec<Vertex>,
+        vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // let start = std::time::Instant::now();
@@ -1524,7 +1524,7 @@ impl WgpuRichTextBrush {
     pub fn render_range(
         &mut self,
         ctx: &mut WgpuContext,
-        vertices: &Vec<Vertex>,
+        vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass,
         range: std::ops::Range<usize>,
     ) {

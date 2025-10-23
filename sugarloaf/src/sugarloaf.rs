@@ -518,6 +518,10 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render_wgpu(&mut self) {
+        #[cfg_attr(
+            not(target_os = "macos"),
+            expect(clippy::infallible_destructuring_match)
+        )]
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Wgpu(wgpu) => wgpu,
             #[cfg(target_os = "macos")]

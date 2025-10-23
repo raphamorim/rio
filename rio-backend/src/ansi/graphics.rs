@@ -480,8 +480,10 @@ fn test_graphics_memory_tracking() {
 #[test]
 fn test_graphics_eviction_unused_first() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit for testing
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit for testing
+        ..Graphics::default()
+    };
 
     // Add 3 graphics (50KB each = 150KB total, will exceed limit)
     let mut used_ids = std::collections::HashSet::new();
@@ -533,8 +535,10 @@ fn test_graphics_eviction_unused_first() {
 #[test]
 fn test_graphics_eviction_oldest_first() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit
+        ..Graphics::default()
+    };
 
     let used_ids = std::collections::HashSet::new(); // No images used
 
@@ -582,8 +586,10 @@ fn test_graphics_eviction_oldest_first() {
 #[test]
 fn test_graphics_eviction_fails_when_not_enough_space() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit
+        ..Graphics::default()
+    };
 
     let mut used_ids = std::collections::HashSet::new();
 
@@ -618,8 +624,10 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
 #[test]
 fn test_graphics_no_eviction_when_under_limit() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 200_000; // 200KB limit
+    let mut graphics = Graphics {
+        total_limit: 200_000, // 200KB limit
+        ..Graphics::default()
+    };
 
     let used_ids = std::collections::HashSet::new();
 

@@ -76,6 +76,12 @@ impl CachedContent {
 
 pub struct RichTextCounter(AtomicUsize);
 
+impl Default for RichTextCounter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RichTextCounter {
     pub const fn new() -> Self {
         Self(AtomicUsize::new(1))
@@ -454,26 +460,25 @@ impl Content {
                     let font_metrics = font_ref.metrics(&[]);
 
                     // Calculate character cell width using space character
-                    let char_width = match font_ref.charmap().map(' ' as u32) {
-                        glyph_id => {
-                            // Get advance width for space character using GlyphMetrics
-                            let glyph_metrics =
-                                crate::font_introspector::GlyphMetrics::from_font(
-                                    &font_ref,
-                                    &[],
-                                );
-                            let advance = glyph_metrics.advance_width(glyph_id);
+                    let glyph_id = font_ref.charmap().map(' ' as u32);
+                    let char_width = {
+                        // Get advance width for space character using GlyphMetrics
+                        let glyph_metrics =
+                            crate::font_introspector::GlyphMetrics::from_font(
+                                &font_ref,
+                                &[],
+                            );
+                        let advance = glyph_metrics.advance_width(glyph_id);
 
-                            // Scale to font size
-                            let units_per_em = font_metrics.units_per_em as f32;
-                            let scale_factor = font_size / units_per_em;
+                        // Scale to font size
+                        let units_per_em = font_metrics.units_per_em as f32;
+                        let scale_factor = font_size / units_per_em;
 
-                            if advance > 0.0 {
-                                advance * scale_factor
-                            } else {
-                                // Fallback: approximate monospace character width
-                                font_size
-                            }
+                        if advance > 0.0 {
+                            advance * scale_factor
+                        } else {
+                            // Fallback: approximate monospace character width
+                            font_size
                         }
                     };
 
