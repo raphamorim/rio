@@ -82,38 +82,37 @@ impl Default for CommandPalette {
 
 impl CommandPalette {
     pub fn new() -> Self {
-        let mut palette = Self::default();
-
-        // Add some default commands
-        palette.commands = vec![
-            CommandPaletteItem {
-                title: "New Tab".to_string(),
-                description: Some("Create a new terminal tab".to_string()),
-                action: "new_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Close Tab".to_string(),
-                description: Some("Close the current tab".to_string()),
-                action: "close_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Horizontal".to_string(),
-                description: Some("Split terminal horizontally".to_string()),
-                action: "split_horizontal".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Vertical".to_string(),
-                description: Some("Split terminal vertically".to_string()),
-                action: "split_vertical".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Settings".to_string(),
-                description: Some("Open settings".to_string()),
-                action: "settings".to_string(),
-            },
-        ];
-
-        palette
+        Self {
+            // Add some default commands
+            commands: vec![
+                CommandPaletteItem {
+                    title: "New Tab".to_string(),
+                    description: Some("Create a new terminal tab".to_string()),
+                    action: "new_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Close Tab".to_string(),
+                    description: Some("Close the current tab".to_string()),
+                    action: "close_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Horizontal".to_string(),
+                    description: Some("Split terminal horizontally".to_string()),
+                    action: "split_horizontal".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Vertical".to_string(),
+                    description: Some("Split terminal vertically".to_string()),
+                    action: "split_vertical".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Settings".to_string(),
+                    description: Some("Open settings".to_string()),
+                    action: "settings".to_string(),
+                },
+            ],
+            ..Self::default()
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -146,7 +145,11 @@ impl CommandPalette {
             if self.selected_index < self.scroll_offset {
                 self.scroll_offset = self.selected_index;
             }
-            tracing::debug!("Selection moved up: index={}, scroll={}", self.selected_index, self.scroll_offset);
+            tracing::debug!(
+                "Selection moved up: index={}, scroll={}",
+                self.selected_index,
+                self.scroll_offset
+            );
         }
     }
 
@@ -158,13 +161,20 @@ impl CommandPalette {
             if self.selected_index >= self.scroll_offset + MAX_VISIBLE_RESULTS {
                 self.scroll_offset = self.selected_index - MAX_VISIBLE_RESULTS + 1;
             }
-            tracing::debug!("Selection moved down: index={}, scroll={}, filtered={}", self.selected_index, self.scroll_offset, filtered_count);
+            tracing::debug!(
+                "Selection moved down: index={}, scroll={}, filtered={}",
+                self.selected_index,
+                self.scroll_offset,
+                filtered_count
+            );
         }
     }
 
     pub fn get_selected_action(&self) -> Option<String> {
         let filtered = self.filtered_commands();
-        filtered.get(self.selected_index).map(|cmd| cmd.action.clone())
+        filtered
+            .get(self.selected_index)
+            .map(|cmd| cmd.action.clone())
     }
 
     fn filtered_commands(&self) -> Vec<&CommandPaletteItem> {
@@ -176,9 +186,10 @@ impl CommandPalette {
                 .iter()
                 .filter(|cmd| {
                     cmd.title.to_lowercase().contains(&query_lower)
-                        || cmd.description.as_ref().map_or(false, |d| {
-                            d.to_lowercase().contains(&query_lower)
-                        })
+                        || cmd
+                            .description
+                            .as_ref()
+                            .is_some_and(|d| d.to_lowercase().contains(&query_lower))
                 })
                 .collect()
         }
@@ -190,16 +201,17 @@ impl CommandPalette {
         }
 
         // Always use MAX_VISIBLE_RESULTS for consistent height
-        let results_height = (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
+        let results_height =
+            (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
 
-        PALETTE_PADDING + INPUT_HEIGHT + PALETTE_PADDING + results_height + PALETTE_PADDING
+        PALETTE_PADDING
+            + INPUT_HEIGHT
+            + PALETTE_PADDING
+            + results_height
+            + PALETTE_PADDING
     }
 
-    pub fn render(
-        &mut self,
-        sugarloaf: &mut Sugarloaf,
-        dimensions: (f32, f32, f32),
-    ) {
+    pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.enabled {
             return;
         }
@@ -298,13 +310,15 @@ impl CommandPalette {
         let total_filtered = filtered.len();
 
         // Render visible items starting from scroll_offset
-        for (display_i, cmd) in filtered.iter()
+        for (display_i, cmd) in filtered
+            .iter()
             .skip(self.scroll_offset)
             .take(visible_count)
             .enumerate()
         {
             let actual_index = self.scroll_offset + display_i;
-            let item_y = results_y + (RESULT_ITEM_HEIGHT + RESULT_SPACING) * display_i as f32;
+            let item_y =
+                results_y + (RESULT_ITEM_HEIGHT + RESULT_SPACING) * display_i as f32;
             let is_selected = actual_index == self.selected_index;
 
             // Render selection background
@@ -354,12 +368,17 @@ impl CommandPalette {
 
         // Render scrollbar if there are more items than visible
         if total_filtered > MAX_VISIBLE_RESULTS {
-            let scrollbar_x = palette_x + palette_width - SCROLLBAR_WIDTH - SCROLLBAR_MARGIN - PALETTE_PADDING;
-            let scrollbar_track_height = (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
+            let scrollbar_x = palette_x + palette_width
+                - SCROLLBAR_WIDTH
+                - SCROLLBAR_MARGIN
+                - PALETTE_PADDING;
+            let scrollbar_track_height =
+                (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
 
             // Calculate scrollbar thumb size and position
             let visible_ratio = MAX_VISIBLE_RESULTS as f32 / total_filtered as f32;
-            let thumb_height = (scrollbar_track_height * visible_ratio).max(SCROLLBAR_MIN_HEIGHT);
+            let thumb_height =
+                (scrollbar_track_height * visible_ratio).max(SCROLLBAR_MIN_HEIGHT);
 
             let max_scroll = total_filtered.saturating_sub(MAX_VISIBLE_RESULTS);
             let scroll_ratio = if max_scroll > 0 {
@@ -367,7 +386,8 @@ impl CommandPalette {
             } else {
                 0.0
             };
-            let thumb_y = results_y + scroll_ratio * (scrollbar_track_height - thumb_height);
+            let thumb_y =
+                results_y + scroll_ratio * (scrollbar_track_height - thumb_height);
 
             // Render scrollbar thumb
             sugarloaf.rounded_rect(
@@ -375,8 +395,8 @@ impl CommandPalette {
                 thumb_y,
                 SCROLLBAR_WIDTH,
                 thumb_height,
-                [0.5, 0.5, 0.5, 0.6], // Semi-transparent gray
-                -0.5, // In front of everything else
+                [0.5, 0.5, 0.5, 0.6],  // Semi-transparent gray
+                -0.5,                  // In front of everything else
                 SCROLLBAR_WIDTH / 2.0, // Fully rounded ends
             );
         }
@@ -388,55 +408,56 @@ mod tests {
     use super::*;
 
     fn create_test_palette() -> CommandPalette {
-        let mut palette = CommandPalette::default();
-        palette.commands = vec![
-            CommandPaletteItem {
-                title: "New Tab".to_string(),
-                description: Some("Create a new tab".to_string()),
-                action: "new_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Close Tab".to_string(),
-                description: Some("Close current tab".to_string()),
-                action: "close_tab".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Horizontal".to_string(),
-                description: Some("Split horizontally".to_string()),
-                action: "split_h".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Split Vertical".to_string(),
-                description: Some("Split vertically".to_string()),
-                action: "split_v".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Settings".to_string(),
-                description: Some("Open settings".to_string()),
-                action: "settings".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Theme".to_string(),
-                description: Some("Change theme".to_string()),
-                action: "theme".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Help".to_string(),
-                description: Some("Show help".to_string()),
-                action: "help".to_string(),
-            },
-            CommandPaletteItem {
-                title: "About".to_string(),
-                description: Some("About Rio".to_string()),
-                action: "about".to_string(),
-            },
-            CommandPaletteItem {
-                title: "Quit".to_string(),
-                description: Some("Quit application".to_string()),
-                action: "quit".to_string(),
-            },
-        ];
-        palette
+        CommandPalette {
+            commands: vec![
+                CommandPaletteItem {
+                    title: "New Tab".to_string(),
+                    description: Some("Create a new tab".to_string()),
+                    action: "new_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Close Tab".to_string(),
+                    description: Some("Close current tab".to_string()),
+                    action: "close_tab".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Horizontal".to_string(),
+                    description: Some("Split horizontally".to_string()),
+                    action: "split_h".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Split Vertical".to_string(),
+                    description: Some("Split vertically".to_string()),
+                    action: "split_v".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Settings".to_string(),
+                    description: Some("Open settings".to_string()),
+                    action: "settings".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Theme".to_string(),
+                    description: Some("Change theme".to_string()),
+                    action: "theme".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Help".to_string(),
+                    description: Some("Show help".to_string()),
+                    action: "help".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "About".to_string(),
+                    description: Some("About Rio".to_string()),
+                    action: "about".to_string(),
+                },
+                CommandPaletteItem {
+                    title: "Quit".to_string(),
+                    description: Some("Quit application".to_string()),
+                    action: "quit".to_string(),
+                },
+            ],
+            ..CommandPalette::default()
+        }
     }
 
     #[test]
@@ -630,7 +651,11 @@ mod tests {
         let height = palette.height();
         // Should be: PALETTE_PADDING + INPUT_HEIGHT + PALETTE_PADDING + (8 results * height) + PALETTE_PADDING
         let expected_results_height = (RESULT_ITEM_HEIGHT + RESULT_SPACING) * 8.0;
-        let expected = PALETTE_PADDING + INPUT_HEIGHT + PALETTE_PADDING + expected_results_height + PALETTE_PADDING;
+        let expected = PALETTE_PADDING
+            + INPUT_HEIGHT
+            + PALETTE_PADDING
+            + expected_results_height
+            + PALETTE_PADDING;
         assert_eq!(height, expected);
     }
 
@@ -642,8 +667,13 @@ mod tests {
 
         let height = palette.height();
         // Height should remain constant even with filtered results
-        let expected_results_height = (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
-        let expected = PALETTE_PADDING + INPUT_HEIGHT + PALETTE_PADDING + expected_results_height + PALETTE_PADDING;
+        let expected_results_height =
+            (RESULT_ITEM_HEIGHT + RESULT_SPACING) * MAX_VISIBLE_RESULTS as f32;
+        let expected = PALETTE_PADDING
+            + INPUT_HEIGHT
+            + PALETTE_PADDING
+            + expected_results_height
+            + PALETTE_PADDING;
         assert_eq!(height, expected);
     }
 }

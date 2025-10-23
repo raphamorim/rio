@@ -9,22 +9,25 @@ mod text_run_manager;
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
-use crate::context::metal::MetalContext;
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
-use crate::layout::{BuilderStateUpdate, RichTextLayout, SugarDimensions};
+use crate::layout::{RichTextLayout, SugarDimensions};
 use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use crate::RichTextLinesRange;
 use compositor::{Compositor, Rect, Vertex};
-use metal::*;
 use rustc_hash::FxHashMap;
 use std::collections::HashSet;
 use std::{borrow::Cow, mem};
 use text::{Glyph, TextRunStyle};
 use wgpu::util::DeviceExt;
+
+#[cfg(target_os = "macos")]
+use crate::context::metal::MetalContext;
+#[cfg(target_os = "macos")]
+use metal::*;
 
 pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
     color: wgpu::BlendComponent {
@@ -42,6 +45,7 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 #[derive(Debug)]
 pub enum RichTextBrushType {
     Wgpu(WgpuRichTextBrush),
+    #[cfg(target_os = "macos")]
     Metal(MetalRichTextBrush),
 }
 
@@ -64,6 +68,7 @@ struct Globals {
     transform: [f32; 16],
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug)]
 pub struct MetalRichTextBrush {
     pipeline_state: RenderPipelineState,
@@ -74,6 +79,7 @@ pub struct MetalRichTextBrush {
     current_transform: [f32; 16],
 }
 
+#[cfg(target_os = "macos")]
 impl MetalRichTextBrush {
     pub fn new(context: &MetalContext) -> Self {
         let supported_vertex_buffer = 500;
@@ -302,7 +308,8 @@ impl MetalRichTextBrush {
             let mut end = start;
             while end < vertices.len()
                 && vertices[end].layers[0] == current_color_layer
-                && vertices[end].layers[1] == current_mask_layer {
+                && vertices[end].layers[1] == current_mask_layer
+            {
                 end += 1;
             }
 
@@ -311,7 +318,8 @@ impl MetalRichTextBrush {
                 // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
                 let atlas_index = (current_color_layer - 1) as usize;
                 if atlas_index < color_textures.len() {
-                    render_encoder.set_fragment_texture(0, Some(color_textures[atlas_index]));
+                    render_encoder
+                        .set_fragment_texture(0, Some(color_textures[atlas_index]));
                 } else {
                     render_encoder.set_fragment_texture(0, None);
                 }
@@ -371,6 +379,7 @@ impl RichTextBrush {
             ContextType::Wgpu(wgpu_context) => {
                 RichTextBrushType::Wgpu(WgpuRichTextBrush::new(wgpu_context))
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
                 RichTextBrushType::Metal(MetalRichTextBrush::new(metal_context))
             }
@@ -605,7 +614,9 @@ impl RichTextBrush {
                             if let Some(id) = image_id {
                                 if let Some(location) = self.images.get(&id) {
                                     // Get atlas layer for this image
-                                    let atlas_layer = self.images.get_atlas_index(id)
+                                    let atlas_layer = self
+                                        .images
+                                        .get_atlas_index(id)
                                         .map(|idx| (idx + 1) as i32)
                                         .unwrap_or(1);
 
@@ -1093,6 +1104,7 @@ impl RichTextBrush {
         ctx: &mut WgpuContext,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
+        #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
         if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
             // Get all atlas textures
             let color_views = self.images.get_texture_views();
@@ -1117,7 +1129,8 @@ impl RichTextBrush {
                 let mut end = start;
                 while end < self.vertices.len()
                     && self.vertices[end].layers[0] == current_color_layer
-                    && self.vertices[end].layers[1] == current_mask_layer {
+                    && self.vertices[end].layers[1] == current_mask_layer
+                {
                     end += 1;
                 }
 
@@ -1138,7 +1151,7 @@ impl RichTextBrush {
 
                 brush.update_bind_group(
                     ctx,
-                    *color_view,
+                    color_view,
                     final_mask_view,
                     self.images.entries.len(),
                 );
@@ -1151,6 +1164,7 @@ impl RichTextBrush {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub fn render_metal(
         &mut self,
         context: &MetalContext, // Add context parameter
@@ -1166,6 +1180,7 @@ impl RichTextBrush {
             ContextType::Wgpu(wgpu_ctx) => {
                 orthographic_projection(wgpu_ctx.size.width, wgpu_ctx.size.height)
             }
+            #[cfg(target_os = "macos")]
             ContextType::Metal(metal_ctx) => {
                 orthographic_projection(metal_ctx.size.width, metal_ctx.size.height)
             }
@@ -1176,6 +1191,7 @@ impl RichTextBrush {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
                         ContextType::Wgpu(wgpu_ctx) => &wgpu_ctx.queue,
+                        #[cfg(target_os = "macos")]
                         _ => unreachable!(),
                     };
 
@@ -1187,6 +1203,7 @@ impl RichTextBrush {
                     wgpu_brush.current_transform = transform;
                 }
             }
+            #[cfg(target_os = "macos")]
             RichTextBrushType::Metal(metal_brush) => {
                 metal_brush.resize(transform);
             }
@@ -1462,7 +1479,7 @@ impl WgpuRichTextBrush {
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,
-        vertices: &Vec<Vertex>,
+        vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         // let start = std::time::Instant::now();
@@ -1507,7 +1524,7 @@ impl WgpuRichTextBrush {
     pub fn render_range(
         &mut self,
         ctx: &mut WgpuContext,
-        vertices: &Vec<Vertex>,
+        vertices: &[Vertex],
         rpass: &mut wgpu::RenderPass,
         range: std::ops::Range<usize>,
     ) {
@@ -1671,9 +1688,9 @@ mod rect_positioning_tests {
 
     #[test]
     fn test_find_oldest_graphic() {
+        use super::CachedGraphic;
         use crate::GraphicId;
         use rustc_hash::FxHashMap;
-        use super::CachedGraphic;
 
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
 
@@ -1744,9 +1761,9 @@ mod rect_positioning_tests {
 
     #[test]
     fn test_graphic_lru_update() {
+        use super::CachedGraphic;
         use crate::GraphicId;
         use rustc_hash::FxHashMap;
-        use super::CachedGraphic;
 
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
         let current_frame = 100;

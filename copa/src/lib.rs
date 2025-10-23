@@ -1877,9 +1877,10 @@ mod tests {
         parser.advance(&mut dispatcher, INPUT);
 
         // Verify we got an APC dispatch
-        let apc_dispatch = dispatcher.dispatched.iter().find(|s| {
-            matches!(s, Sequence::OpaqueEnd(OpaqueSequenceKind::Apc))
-        });
+        let apc_dispatch = dispatcher
+            .dispatched
+            .iter()
+            .find(|s| matches!(s, Sequence::OpaqueEnd(OpaqueSequenceKind::Apc)));
         assert!(apc_dispatch.is_some(), "Should have APC dispatch");
 
         // The test in performer::handler verifies the actual param parsing

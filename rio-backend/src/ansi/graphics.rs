@@ -2,7 +2,6 @@
 // Alacritty is licensed under Apache 2.0 license.
 // https://github.com/alacritty/alacritty/pull/4763/files
 
-use tracing::debug;
 use crate::ansi::sixel;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Dimensions;
@@ -12,6 +11,7 @@ use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 use std::mem;
 use std::sync::{Arc, Weak};
+use tracing::debug;
 
 #[derive(Debug, Clone)]
 pub struct UpdateQueues {
@@ -291,7 +291,11 @@ impl Graphics {
     /// Eviction priority (like Ghostty):
     /// 1. Unused images (no active placements/references)
     /// 2. Oldest images by timestamp
-    pub fn evict_images(&mut self, required_bytes: usize, used_ids: &std::collections::HashSet<u64>) -> bool {
+    pub fn evict_images(
+        &mut self,
+        required_bytes: usize,
+        used_ids: &std::collections::HashSet<u64>,
+    ) -> bool {
         use tracing::debug;
 
         if self.total_bytes + required_bytes <= self.total_limit {
@@ -303,7 +307,8 @@ impl Graphics {
             bytes_to_free, self.total_bytes, self.total_limit, required_bytes);
 
         // Collect eviction candidates: (GraphicId, timestamp, is_used, bytes)
-        let mut candidates: Vec<(GraphicId, std::time::Instant, bool, usize)> = Vec::new();
+        let mut candidates: Vec<(GraphicId, std::time::Instant, bool, usize)> =
+            Vec::new();
 
         // Check pending graphics
         for graphic in &self.pending {
@@ -330,9 +335,9 @@ impl Graphics {
         // Sort by priority: unused first, then oldest first
         candidates.sort_by(|a, b| {
             match (a.2, b.2) {
-                (false, true) => std::cmp::Ordering::Less,  // unused < used
+                (false, true) => std::cmp::Ordering::Less, // unused < used
                 (true, false) => std::cmp::Ordering::Greater, // used > unused
-                _ => a.1.cmp(&b.1), // same usage, oldest first
+                _ => a.1.cmp(&b.1),                        // same usage, oldest first
             }
         });
 
@@ -347,7 +352,10 @@ impl Graphics {
             evicted_ids.push(graphic_id);
             freed_bytes += bytes;
 
-            debug!("Evicting graphic id={}, bytes={}, used={}", graphic_id.0, bytes, is_used);
+            debug!(
+                "Evicting graphic id={}, bytes={}, used={}",
+                graphic_id.0, bytes, is_used
+            );
         }
 
         // Actually remove the evicted graphics
@@ -356,7 +364,8 @@ impl Graphics {
             self.pending.retain(|g| g.id != id);
 
             // Remove from kitty_images
-            self.kitty_images.retain(|&kitty_id, _| GraphicId(kitty_id as u64) != id);
+            self.kitty_images
+                .retain(|&kitty_id, _| GraphicId(kitty_id as u64) != id);
 
             // Remove timestamp
             self.image_timestamps.remove(&id);
@@ -368,22 +377,32 @@ impl Graphics {
         // Update total_bytes
         self.total_bytes = self.total_bytes.saturating_sub(freed_bytes);
 
-        debug!("Evicted {} bytes, new total: {}", freed_bytes, self.total_bytes);
+        debug!(
+            "Evicted {} bytes, new total: {}",
+            freed_bytes, self.total_bytes
+        );
         freed_bytes >= bytes_to_free
     }
 
     /// Track a new graphic's memory usage and timestamp
     pub fn track_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
-        self.image_timestamps.insert(graphic_id, std::time::Instant::now());
+        self.image_timestamps
+            .insert(graphic_id, std::time::Instant::now());
         self.total_bytes += bytes;
-        debug!("Tracked graphic id={}, bytes={}, total_bytes={}", graphic_id.0, bytes, self.total_bytes);
+        debug!(
+            "Tracked graphic id={}, bytes={}, total_bytes={}",
+            graphic_id.0, bytes, self.total_bytes
+        );
     }
 
     /// Update total_bytes when a graphic is removed
     pub fn untrack_graphic(&mut self, graphic_id: GraphicId, bytes: usize) {
         self.image_timestamps.remove(&graphic_id);
         self.total_bytes = self.total_bytes.saturating_sub(bytes);
-        debug!("Untracked graphic id={}, bytes={}, total_bytes={}", graphic_id.0, bytes, self.total_bytes);
+        debug!(
+            "Untracked graphic id={}, bytes={}, total_bytes={}",
+            graphic_id.0, bytes, self.total_bytes
+        );
     }
 }
 
@@ -461,8 +480,10 @@ fn test_graphics_memory_tracking() {
 #[test]
 fn test_graphics_eviction_unused_first() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit for testing
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit for testing
+        ..Graphics::default()
+    };
 
     // Add 3 graphics (50KB each = 150KB total, will exceed limit)
     let mut used_ids = std::collections::HashSet::new();
@@ -514,8 +535,10 @@ fn test_graphics_eviction_unused_first() {
 #[test]
 fn test_graphics_eviction_oldest_first() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit
+        ..Graphics::default()
+    };
 
     let used_ids = std::collections::HashSet::new(); // No images used
 
@@ -563,8 +586,10 @@ fn test_graphics_eviction_oldest_first() {
 #[test]
 fn test_graphics_eviction_fails_when_not_enough_space() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 100_000; // 100KB limit
+    let mut graphics = Graphics {
+        total_limit: 100_000, // 100KB limit
+        ..Graphics::default()
+    };
 
     let mut used_ids = std::collections::HashSet::new();
 
@@ -588,7 +613,10 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
     let pixels2_len = 90_000;
     let success = graphics.evict_images(pixels2_len, &used_ids);
 
-    assert!(success, "Eviction should succeed by evicting used images if necessary");
+    assert!(
+        success,
+        "Eviction should succeed by evicting used images if necessary"
+    );
     // The used image should be evicted
     assert_eq!(graphics.pending.len(), 0);
 }
@@ -596,8 +624,10 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
 #[test]
 fn test_graphics_no_eviction_when_under_limit() {
     use sugarloaf::ColorType;
-    let mut graphics = Graphics::default();
-    graphics.total_limit = 200_000; // 200KB limit
+    let mut graphics = Graphics {
+        total_limit: 200_000, // 200KB limit
+        ..Graphics::default()
+    };
 
     let used_ids = std::collections::HashSet::new();
 

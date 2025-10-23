@@ -152,6 +152,7 @@ impl Screen<'_> {
             Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
             Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
             Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+            #[cfg(target_os = "macos")]
             Backend::Metal => SugarloafBackend::Metal,
             Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };
@@ -208,8 +209,8 @@ impl Screen<'_> {
         };
 
         // Create rich text with initial position accounting for island
-        let rich_text_config = RichTextConfig::new()
-            .with_position(config.padding_x, padding_y_top);
+        let rich_text_config =
+            RichTextConfig::new().with_position(config.padding_x, padding_y_top);
         let rich_text_id = sugarloaf.create_rich_text(Some(&rich_text_config));
 
         let margin = Delta {
@@ -552,7 +553,10 @@ impl Screen<'_> {
 
         // Handle command palette toggle (Cmd+Shift+P on macOS, Ctrl+Shift+P elsewhere)
         if key.state == ElementState::Pressed {
-            let is_command_palette_key = matches!(key.logical_key.as_ref(), Key::Character("p") | Key::Character("P"));
+            let is_command_palette_key = matches!(
+                key.logical_key.as_ref(),
+                Key::Character("p") | Key::Character("P")
+            );
             #[cfg(target_os = "macos")]
             let has_correct_modifiers = mods.super_key() && mods.shift_key();
             #[cfg(not(target_os = "macos"))]

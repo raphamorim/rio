@@ -494,14 +494,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn grid_dimension(&self) -> ContextDimension {
         if let Some(current_item) = self.inner.get(&self.current) {
             let current_context_dimension = current_item.val.dimension;
-            let result = ContextDimension::build(
+            ContextDimension::build(
                 self.width,
                 self.height,
                 current_context_dimension.dimension,
                 current_context_dimension.line_height,
                 self.margin,
-            );
-            result
+            )
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             ContextDimension::default()
