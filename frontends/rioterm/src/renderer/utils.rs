@@ -15,6 +15,7 @@ pub fn padding_top_from_config(
 
     #[cfg(target_os = "macos")]
     {
+        use rio_backend::config::navigation::NavigationMode;
         if navigation.mode == NavigationMode::NativeTab {
             let additional = if macos_use_unified_titlebar {
                 constants::ADDITIONAL_PADDING_Y_ON_UNIFIED_TITLEBAR
