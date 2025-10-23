@@ -457,6 +457,8 @@ impl Sugarloaf<'_> {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn render_metal(&mut self) {
+        use metal::*;
+
         let ctx = match &mut self.ctx.inner {
             crate::context::ContextType::Metal(metal) => metal,
             crate::context::ContextType::Wgpu(_) => {
