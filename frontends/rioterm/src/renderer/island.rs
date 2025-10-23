@@ -156,7 +156,8 @@ impl Island {
         }
 
         // Always render the single-tab indicator (leftmost element)
-        let indicator_island_width = (Self::calculate_island_width(RIO_INDICATOR_FONT_SIZE)).0;
+        let indicator_island_width =
+            (Self::calculate_island_width(RIO_INDICATOR_FONT_SIZE)).0;
         let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
         let island_y = ISLAND_PADDING_Y;
 
@@ -268,7 +269,9 @@ impl Island {
         if num_tabs > 1 {
             let scaled_spacing = ISLAND_SPACING * scale_factor_width;
 
-            for (tab_index, base_island_width) in island_widths.iter().enumerate().take(num_tabs) {
+            for (tab_index, base_island_width) in
+                island_widths.iter().enumerate().take(num_tabs)
+            {
                 if *base_island_width == 0.0 {
                     continue;
                 }
@@ -321,7 +324,7 @@ impl Island {
             let rich_text_id = sugarloaf.create_rich_text(Some(&config));
             sugarloaf.set_rich_text_font_size(&rich_text_id, RIO_INDICATOR_FONT_SIZE);
             self.indicator_rich_text_id = Some(rich_text_id);
-            use rio_backend::sugarloaf::{FragmentStyle, drawable_character};
+            use rio_backend::sugarloaf::{drawable_character, FragmentStyle};
             let content = sugarloaf.content();
 
             let mut style = FragmentStyle {
@@ -339,22 +342,18 @@ impl Island {
                 .sel(rich_text_id)
                 .clear()
                 .new_line()
-                .add_text(
-                    "\u{1CC6D}",
-                    style,
-                )
-                .add_text(
-                    "\u{1CC6D}",
-                    style,
-                )
+                .add_text("\u{1CC6D}", style)
+                .add_text("\u{1CC6D}", style)
                 .build();
         }
 
         // Render indicator Unicode character
         if let Some(rich_text_id) = self.indicator_rich_text_id {
             // Position the indicator centered in the island
-            let indicator_x = indicator_x + (indicator_island_width / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
-            let indicator_y = island_y + (island_height / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
+            let indicator_x = indicator_x + (indicator_island_width / 2.0)
+                - (RIO_INDICATOR_FONT_SIZE / 2.0);
+            let indicator_y =
+                island_y + (island_height / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
 
             sugarloaf.show_rich_text(rich_text_id, indicator_x, indicator_y);
         }
@@ -630,7 +629,9 @@ mod tests {
         // Verify the indicator fits within the island container
         const {
             assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
-            assert!(SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0));
+            assert!(
+                SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0)
+            );
         }
     }
 

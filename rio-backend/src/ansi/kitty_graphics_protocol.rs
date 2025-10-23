@@ -1,4 +1,7 @@
-use base64::{engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD}, Engine};
+use base64::{
+    engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD},
+    Engine,
+};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
@@ -186,10 +189,18 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
         debug!("Kitty graphics parse failed: first param is not 'G'");
         return None;
     };
-    debug!("Kitty graphics parse: starting with {} params", params.len());
+    debug!(
+        "Kitty graphics parse: starting with {} params",
+        params.len()
+    );
     for (i, param) in params.iter().enumerate() {
-        debug!("  param[{}] length={}, preview={:?}", i, param.len(),
-            std::str::from_utf8(&param[..param.len().min(50)]).unwrap_or("(invalid utf8)"));
+        debug!(
+            "  param[{}] length={}, preview={:?}",
+            i,
+            param.len(),
+            std::str::from_utf8(&param[..param.len().min(50)])
+                .unwrap_or("(invalid utf8)")
+        );
     }
 
     let mut cmd = KittyGraphicsCommand::default();
@@ -251,7 +262,11 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
             *stored_cmd = cmd.clone();
         }
 
-        debug!("Stored chunk for image key {}: {} bytes accumulated", image_key, stored_cmd.payload.len());
+        debug!(
+            "Stored chunk for image key {}: {} bytes accumulated",
+            image_key,
+            stored_cmd.payload.len()
+        );
         return None;
     } else {
         // Check if we have incomplete data (even if image_id/number is 0)
@@ -260,7 +275,11 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
             // Final chunk: use metadata from stored command, append final payload
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
-            debug!("Retrieved accumulated image key {}: total {} bytes", image_key, cmd.payload.len());
+            debug!(
+                "Retrieved accumulated image key {}: total {} bytes",
+                image_key,
+                cmd.payload.len()
+            );
         }
     }
 
@@ -272,7 +291,10 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
             debug!("Creating graphic data: format={:?}, medium={:?}, compression={:?}, width={}, height={}, payload_len={}",
                 cmd.format, cmd.medium, cmd.compression, cmd.width, cmd.height, cmd.payload.len());
             let graphic_data = create_graphic_data(&cmd)?;
-            debug!("Graphic data created successfully: {}x{}", graphic_data.width, graphic_data.height);
+            debug!(
+                "Graphic data created successfully: {}x{}",
+                graphic_data.width, graphic_data.height
+            );
             let response = if cmd.quiet == 0 && (cmd.image_id > 0 || cmd.image_number > 0)
             {
                 let id_part = if cmd.image_id > 0 {
@@ -534,17 +556,26 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
 
             // Decode base64 payload to get file path
             // Try with standard decoder first, then without padding if that fails
-            debug!("Decoding base64 file path, payload length={}", cmd.payload.len());
+            debug!(
+                "Decoding base64 file path, payload length={}",
+                cmd.payload.len()
+            );
             let path_bytes = match BASE64.decode(&cmd.payload) {
                 Ok(bytes) => {
-                    debug!("Base64 decoded file path with padding: {} bytes", bytes.len());
+                    debug!(
+                        "Base64 decoded file path with padding: {} bytes",
+                        bytes.len()
+                    );
                     bytes
                 }
                 Err(_) => {
                     // Try without padding requirement
                     match STANDARD_NO_PAD.decode(&cmd.payload) {
                         Ok(bytes) => {
-                            debug!("Base64 decoded file path without padding: {} bytes", bytes.len());
+                            debug!(
+                                "Base64 decoded file path without padding: {} bytes",
+                                bytes.len()
+                            );
                             bytes
                         }
                         Err(e) => {
@@ -573,7 +604,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             }
 
             // For temp files, verify it contains "tty-graphics-protocol"
-            if cmd.medium == TransmissionMedium::TempFile && !path_str.contains("tty-graphics-protocol") {
+            if cmd.medium == TransmissionMedium::TempFile
+                && !path_str.contains("tty-graphics-protocol")
+            {
                 return None;
             }
 
@@ -608,7 +641,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 use std::os::unix::io::RawFd;
 
                 // Payload contains the base64-encoded shared memory name
-                debug!("Decoding shared memory name from base64, payload length={}", cmd.payload.len());
+                debug!(
+                    "Decoding shared memory name from base64, payload length={}",
+                    cmd.payload.len()
+                );
                 let shm_name_bytes = match BASE64.decode(&cmd.payload) {
                     Ok(bytes) => {
                         debug!("Base64 decoded shm name: {} bytes", bytes.len());
@@ -630,16 +666,15 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
 
                 unsafe {
                     // Open shared memory
-                    let fd: RawFd = libc::shm_open(
-                        shm_name.as_ptr(),
-                        libc::O_RDONLY,
-                        0,
-                    );
+                    let fd: RawFd = libc::shm_open(shm_name.as_ptr(), libc::O_RDONLY, 0);
 
                     if fd < 0 {
                         let err = std::io::Error::last_os_error();
                         let errno = err.raw_os_error().unwrap_or(-1);
-                        debug!("Failed to open shared memory '{}': {} (errno: {})", shm_name_str, err, errno);
+                        debug!(
+                            "Failed to open shared memory '{}': {} (errno: {})",
+                            shm_name_str, err, errno
+                        );
                         return None;
                     }
 
@@ -665,7 +700,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     if data_size > shm_size {
                         libc::close(fd);
                         libc::shm_unlink(shm_name.as_ptr());
-                        debug!("Requested size {} exceeds shared memory size {}", data_size, shm_size);
+                        debug!(
+                            "Requested size {} exceeds shared memory size {}",
+                            data_size, shm_size
+                        );
                         return None;
                     }
 
@@ -686,7 +724,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                     }
 
                     // Copy data from shared memory
-                    let data = std::slice::from_raw_parts(ptr as *const u8, data_size).to_vec();
+                    let data =
+                        std::slice::from_raw_parts(ptr as *const u8, data_size).to_vec();
 
                     // Cleanup
                     libc::munmap(ptr, data_size);
@@ -699,17 +738,20 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             }
             #[cfg(windows)]
             {
-                use std::os::windows::ffi::OsStrExt;
                 use std::ffi::OsStr;
-                use windows_sys::Win32::System::Memory::{
-                    MapViewOfFile, UnmapViewOfFile, VirtualQuery,
-                    FILE_MAP_READ, MEMORY_BASIC_INFORMATION,
-                };
+                use std::os::windows::ffi::OsStrExt;
                 use windows_sys::Win32::Foundation::CloseHandle;
                 use windows_sys::Win32::System::Memory::OpenFileMappingW;
+                use windows_sys::Win32::System::Memory::{
+                    MapViewOfFile, UnmapViewOfFile, VirtualQuery, FILE_MAP_READ,
+                    MEMORY_BASIC_INFORMATION,
+                };
 
                 // Payload contains the base64-encoded shared memory name
-                debug!("Decoding shared memory name from base64, payload length={}", cmd.payload.len());
+                debug!(
+                    "Decoding shared memory name from base64, payload length={}",
+                    cmd.payload.len()
+                );
                 let shm_name_bytes = match BASE64.decode(&cmd.payload) {
                     Ok(bytes) => {
                         debug!("Base64 decoded shm name: {} bytes", bytes.len());
@@ -732,26 +774,19 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         .collect();
 
                     // Open the file mapping
-                    let handle = OpenFileMappingW(
-                        FILE_MAP_READ,
-                        0,
-                        wide_name.as_ptr(),
-                    );
+                    let handle = OpenFileMappingW(FILE_MAP_READ, 0, wide_name.as_ptr());
 
                     if handle == 0 {
                         let err = std::io::Error::last_os_error();
-                        debug!("Failed to open shared memory '{}': {}", shm_name_str, err);
+                        debug!(
+                            "Failed to open shared memory '{}': {}",
+                            shm_name_str, err
+                        );
                         return None;
                     }
 
                     // Map view of file
-                    let base_ptr = MapViewOfFile(
-                        handle,
-                        FILE_MAP_READ,
-                        0,
-                        0,
-                        0,
-                    );
+                    let base_ptr = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
 
                     if base_ptr.is_null() {
                         let err = std::io::Error::last_os_error();
@@ -766,7 +801,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                         base_ptr,
                         &mut mem_info,
                         std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
-                    ) == 0 {
+                    ) == 0
+                    {
                         debug!("Failed to query memory information");
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
@@ -785,8 +821,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
 
                     // Validate offset and size
                     if cmd.offset as usize + data_size > shm_size {
-                        debug!("Requested offset {} + size {} exceeds shared memory size {}",
-                            cmd.offset, data_size, shm_size);
+                        debug!(
+                            "Requested offset {} + size {} exceeds shared memory size {}",
+                            cmd.offset, data_size, shm_size
+                        );
                         UnmapViewOfFile(base_ptr);
                         CloseHandle(handle);
                         return None;
@@ -833,7 +871,10 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             use image_rs::ImageFormat;
 
             debug!("Decoding PNG, pixel_data length: {}", pixel_data.len());
-            let img = match image_rs::load_from_memory_with_format(&pixel_data, ImageFormat::Png) {
+            let img = match image_rs::load_from_memory_with_format(
+                &pixel_data,
+                ImageFormat::Png,
+            ) {
                 Ok(img) => {
                     debug!("PNG decoded successfully: {}x{}", img.width(), img.height());
                     img
@@ -890,13 +931,21 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             let expected_size =
                 cmd.width as usize * cmd.height as usize * bytes_per_pixel;
             if pixel_data.len() < expected_size {
-                debug!("RGB/RGBA data size insufficient: got {} bytes, expected at least {}", pixel_data.len(), expected_size);
+                debug!(
+                    "RGB/RGBA data size insufficient: got {} bytes, expected at least {}",
+                    pixel_data.len(),
+                    expected_size
+                );
                 return None;
             }
 
             // Truncate to expected size if we have extra data (e.g., from shared memory padding)
             let pixel_data = if pixel_data.len() > expected_size {
-                debug!("RGB/RGBA data has padding: got {} bytes, using first {} bytes", pixel_data.len(), expected_size);
+                debug!(
+                    "RGB/RGBA data has padding: got {} bytes, using first {} bytes",
+                    pixel_data.len(),
+                    expected_size
+                );
                 pixel_data[..expected_size].to_vec()
             } else {
                 pixel_data
@@ -905,14 +954,19 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             // Convert RGB24 to RGBA32 if needed (sugarloaf only supports RGBA)
             let (pixels, is_opaque) = if cmd.format == Format::Rgb24 {
                 // Convert RGB to RGBA by adding alpha=255
-                let mut rgba_pixels = Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
+                let mut rgba_pixels =
+                    Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
                 for chunk in pixel_data.chunks_exact(3) {
                     rgba_pixels.push(chunk[0]); // R
                     rgba_pixels.push(chunk[1]); // G
                     rgba_pixels.push(chunk[2]); // B
-                    rgba_pixels.push(255);      // A (opaque)
+                    rgba_pixels.push(255); // A (opaque)
                 }
-                debug!("Converted RGB24 to RGBA32: {} -> {} bytes", pixel_data.len(), rgba_pixels.len());
+                debug!(
+                    "Converted RGB24 to RGBA32: {} -> {} bytes",
+                    pixel_data.len(),
+                    rgba_pixels.len()
+                );
                 (rgba_pixels, true) // RGB is always opaque
             } else {
                 // Already RGBA
@@ -1162,7 +1216,8 @@ mod tests {
 
         // Encode the file path as base64 (as kitty does)
         let encoded_path = BASE64.encode(temp_path.as_bytes());
-        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=1", &encoded_path);
+        let result =
+            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1,i=1", &encoded_path);
         assert!(result.is_some());
 
         let response = result.unwrap();
@@ -1183,7 +1238,8 @@ mod tests {
 
         // Encode the file path as base64 (as kitty does)
         let encoded_path = BASE64.encode(temp_path.as_bytes());
-        let result = parse_kitty_graphics_protocol("a=t,t=t,f=32,s=1,v=1,i=1", &encoded_path);
+        let result =
+            parse_kitty_graphics_protocol("a=t,t=t,f=32,s=1,v=1,i=1", &encoded_path);
 
         // File should be deleted after reading
         assert!(!std::path::Path::new(temp_path).exists());
@@ -1197,13 +1253,11 @@ mod tests {
     fn test_security_checks() {
         // Should reject sensitive paths - encode as base64
         let proc_path = BASE64.encode("/proc/self/environ".as_bytes());
-        let result =
-            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &proc_path);
+        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &proc_path);
         assert!(result.is_none());
 
         let sys_path = BASE64.encode("/sys/class/net".as_bytes());
-        let result =
-            parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &sys_path);
+        let result = parse_kitty_graphics_protocol("a=t,t=f,f=32,s=1,v=1", &sys_path);
         assert!(result.is_none());
 
         let dev_path = BASE64.encode("/dev/null".as_bytes());

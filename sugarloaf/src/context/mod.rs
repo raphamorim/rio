@@ -68,7 +68,7 @@ impl Context<'_> {
         match &mut self.inner {
             ContextType::Wgpu(ctx) => ctx.resize(width, height),
             #[cfg(target_os = "macos")]
-            ContextType::Metal(ctx) => ctx.resize(width, height)
+            ContextType::Metal(ctx) => ctx.resize(width, height),
         }
     }
 

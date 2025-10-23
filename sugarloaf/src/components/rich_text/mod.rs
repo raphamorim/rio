@@ -308,7 +308,8 @@ impl MetalRichTextBrush {
             let mut end = start;
             while end < vertices.len()
                 && vertices[end].layers[0] == current_color_layer
-                && vertices[end].layers[1] == current_mask_layer {
+                && vertices[end].layers[1] == current_mask_layer
+            {
                 end += 1;
             }
 
@@ -317,7 +318,8 @@ impl MetalRichTextBrush {
                 // Use color atlas (current_color_layer is 1-based, so subtract 1 for 0-based index)
                 let atlas_index = (current_color_layer - 1) as usize;
                 if atlas_index < color_textures.len() {
-                    render_encoder.set_fragment_texture(0, Some(color_textures[atlas_index]));
+                    render_encoder
+                        .set_fragment_texture(0, Some(color_textures[atlas_index]));
                 } else {
                     render_encoder.set_fragment_texture(0, None);
                 }
@@ -612,7 +614,9 @@ impl RichTextBrush {
                             if let Some(id) = image_id {
                                 if let Some(location) = self.images.get(&id) {
                                     // Get atlas layer for this image
-                                    let atlas_layer = self.images.get_atlas_index(id)
+                                    let atlas_layer = self
+                                        .images
+                                        .get_atlas_index(id)
                                         .map(|idx| (idx + 1) as i32)
                                         .unwrap_or(1);
 
@@ -1125,7 +1129,8 @@ impl RichTextBrush {
                 let mut end = start;
                 while end < self.vertices.len()
                     && self.vertices[end].layers[0] == current_color_layer
-                    && self.vertices[end].layers[1] == current_mask_layer {
+                    && self.vertices[end].layers[1] == current_mask_layer
+                {
                     end += 1;
                 }
 
@@ -1403,51 +1408,52 @@ impl WgpuRichTextBrush {
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(shader_source)),
             });
 
-        let pipeline = context
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                cache: None,
-                label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[wgpu::VertexBufferLayout {
-                        array_stride: mem::size_of::<Vertex>() as u64,
-                        // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array!(
-                            0 => Float32x3,
-                            1 => Float32x4,
-                            2 => Float32x2,
-                            3 => Sint32x2,
-                        ),
-                    }],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                    module: &shader,
-                    entry_point: Some("fs_main"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: context.format,
-                        blend: BLEND,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-            });
+        let pipeline =
+            context
+                .device
+                .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    cache: None,
+                    label: None,
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[wgpu::VertexBufferLayout {
+                            array_stride: mem::size_of::<Vertex>() as u64,
+                            // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array!(
+                                0 => Float32x3,
+                                1 => Float32x4,
+                                2 => Float32x2,
+                                3 => Sint32x2,
+                            ),
+                        }],
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        module: &shader,
+                        entry_point: Some("fs_main"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: context.format,
+                            blend: BLEND,
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        strip_index_format: None,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: None,
+                        polygon_mode: wgpu::PolygonMode::Fill,
+                        unclipped_depth: false,
+                        conservative: false,
+                    },
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    multiview: None,
+                });
 
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rich_text::Vertices Buffer"),
@@ -1682,9 +1688,9 @@ mod rect_positioning_tests {
 
     #[test]
     fn test_find_oldest_graphic() {
+        use super::CachedGraphic;
         use crate::GraphicId;
         use rustc_hash::FxHashMap;
-        use super::CachedGraphic;
 
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
 
@@ -1755,9 +1761,9 @@ mod rect_positioning_tests {
 
     #[test]
     fn test_graphic_lru_update() {
+        use super::CachedGraphic;
         use crate::GraphicId;
         use rustc_hash::FxHashMap;
-        use super::CachedGraphic;
 
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
         let current_frame = 100;
