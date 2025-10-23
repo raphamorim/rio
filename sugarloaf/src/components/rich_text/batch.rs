@@ -838,13 +838,29 @@ impl BatchManager {
         let transparent = has_alpha || color[3] != 1.0;
         if transparent {
             for batch in &mut self.transparent {
-                if batch.rect(rect, depth, color, Some(coords), Some(atlas_layer), None, false) {
+                if batch.rect(
+                    rect,
+                    depth,
+                    color,
+                    Some(coords),
+                    Some(atlas_layer),
+                    None,
+                    false,
+                ) {
                     return;
                 }
             }
         } else {
             for batch in &mut self.opaque {
-                if batch.rect(rect, depth, color, Some(coords), Some(atlas_layer), None, false) {
+                if batch.rect(
+                    rect,
+                    depth,
+                    color,
+                    Some(coords),
+                    Some(atlas_layer),
+                    None,
+                    false,
+                ) {
                     return;
                 }
             }

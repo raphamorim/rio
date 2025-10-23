@@ -387,7 +387,11 @@ impl Renderer {
 
             // Check for Kitty virtual placements (U=1)
             if square_content == '\u{10EEEE}' {
-                tracing::debug!("Found Kitty placeholder at line={:?}, col={}", line, column);
+                tracing::debug!(
+                    "Found Kitty placeholder at line={:?}, col={}",
+                    line,
+                    column
+                );
                 // Build the full grapheme cluster (base char + diacritics)
                 let mut grapheme = String::from(square_content);
                 if let Some(zerowidth_chars) = square.zerowidth() {
@@ -406,7 +410,9 @@ impl Renderer {
                             rio_backend::ansi::kitty_virtual::rgb_to_id(rgb)
                         }
                         rio_backend::config::colors::AnsiColor::Named(_) => 0,
-                        rio_backend::config::colors::AnsiColor::Indexed(idx) => idx as u32,
+                        rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                            idx as u32
+                        }
                     };
 
                     // Combine low and high parts of image_id
@@ -417,12 +423,15 @@ impl Renderer {
                     };
 
                     // Decode placement_id from underline color (if present)
-                    let placement_id = square.underline_color()
+                    let placement_id = square
+                        .underline_color()
                         .and_then(|color| match color {
                             rio_backend::config::colors::AnsiColor::Spec(rgb) => {
                                 Some(rio_backend::ansi::kitty_virtual::rgb_to_id(rgb))
                             }
-                            rio_backend::config::colors::AnsiColor::Indexed(idx) => Some(idx as u32),
+                            rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                                Some(idx as u32)
+                            }
                             _ => None,
                         })
                         .unwrap_or(0);
@@ -433,13 +442,20 @@ impl Renderer {
                     );
 
                     // Look up the virtual placement
-                    if let Some(placement) = terminal_snapshot.kitty_virtual_placements.get(&(image_id, placement_id)) {
+                    if let Some(placement) = terminal_snapshot
+                        .kitty_virtual_placements
+                        .get(&(image_id, placement_id))
+                    {
                         // Look up the stored image data
-                        if let Some(stored_image) = terminal_snapshot.kitty_images.get(&image_id) {
+                        if let Some(stored_image) =
+                            terminal_snapshot.kitty_images.get(&image_id)
+                        {
                             // Calculate the offset for this specific cell within the placement
                             // row_idx/col_idx tell us which cell in the placement grid this is
-                            let cell_width = stored_image.data.width as u32 / placement.columns;
-                            let cell_height = stored_image.data.height as u32 / placement.rows;
+                            let cell_width =
+                                stored_image.data.width as u32 / placement.columns;
+                            let cell_height =
+                                stored_image.data.height as u32 / placement.rows;
 
                             let offset_x = col_idx * cell_width;
                             let offset_y = row_idx * cell_height;
@@ -1019,7 +1035,10 @@ impl Renderer {
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
-                    kitty_virtual_placements: terminal.graphics.kitty_virtual_placements.clone(),
+                    kitty_virtual_placements: terminal
+                        .graphics
+                        .kitty_virtual_placements
+                        .clone(),
                     kitty_images: terminal.graphics.kitty_images.clone(),
                 };
                 terminal.reset_damage();

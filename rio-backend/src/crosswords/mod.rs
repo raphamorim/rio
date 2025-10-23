@@ -2891,7 +2891,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if let Some(parser) = parser {
             match parser.finish() {
                 // Sixel uses None to indicate traditional Sixel cursor behavior
-                Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette), None),
+                Ok((graphic, palette)) => {
+                    self.insert_graphic(graphic, Some(palette), None)
+                }
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
         } else {
@@ -2900,10 +2902,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>, cursor_movement: Option<u8>) {
+    fn insert_graphic(
+        &mut self,
+        graphic: GraphicData,
+        palette: Option<Vec<ColorRgb>>,
+        cursor_movement: Option<u8>,
+    ) {
         debug!(
             "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
-            graphic.id.0, graphic.width, graphic.height, graphic.color_type, cursor_movement
+            graphic.id.0,
+            graphic.width,
+            graphic.height,
+            graphic.color_type,
+            cursor_movement
         );
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
@@ -2915,7 +2926,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
-        debug!("insert_graphic: resizing with cell_width={}, cell_height={}", cell_width, cell_height);
+        debug!(
+            "insert_graphic: resizing with cell_width={}, cell_height={}",
+            cell_width, cell_height
+        );
         let graphic = match graphic.resized(
             cell_width,
             cell_height,
@@ -2923,7 +2937,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             cell_height * self.grid.screen_lines(),
         ) {
             Some(graphic) => {
-                debug!("insert_graphic: resized to {}x{}", graphic.width, graphic.height);
+                debug!(
+                    "insert_graphic: resized to {}x{}",
+                    graphic.width, graphic.height
+                );
                 graphic
             }
             None => {
@@ -2935,8 +2952,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
             || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]
         {
-            debug!("insert_graphic: dimensions too large {}x{}, max is {:?}",
-                graphic.width, graphic.height, MAX_GRAPHIC_DIMENSIONS);
+            debug!(
+                "insert_graphic: dimensions too large {}x{}, max is {:?}",
+                graphic.width, graphic.height, MAX_GRAPHIC_DIMENSIONS
+            );
             return;
         }
 
@@ -2951,15 +2970,23 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Calculate bytes for this graphic
         let graphic_bytes = graphic.pixels.len();
 
-        debug!("insert_graphic: image needs {} bytes, current total: {}/{}",
-            graphic_bytes, self.graphics.total_bytes, self.graphics.total_limit);
+        debug!(
+            "insert_graphic: image needs {} bytes, current total: {}/{}",
+            graphic_bytes, self.graphics.total_bytes, self.graphics.total_limit
+        );
 
         // Check if we need to evict images to make space
         let used_ids = self.collect_used_graphic_ids();
-        debug!("insert_graphic: {} images currently in use in grid", used_ids.len());
+        debug!(
+            "insert_graphic: {} images currently in use in grid",
+            used_ids.len()
+        );
 
         if !self.graphics.evict_images(graphic_bytes, &used_ids) {
-            warn!("Failed to evict enough images for {} bytes, image may not display", graphic_bytes);
+            warn!(
+                "Failed to evict enough images for {} bytes, image may not display",
+                graphic_bytes
+            );
             // Continue anyway - let it fail gracefully rather than silently dropping
         }
 
@@ -3463,10 +3490,9 @@ impl<U: EventListener> Crosswords<U> {
             x: placement.x,
             y: placement.y,
         };
-        self.graphics.kitty_virtual_placements.insert(
-            (placement.image_id, placement.placement_id),
-            vp,
-        );
+        self.graphics
+            .kitty_virtual_placements
+            .insert((placement.image_id, placement.placement_id), vp);
 
         // Calculate the grid dimensions needed
         let columns = if placement.columns > 0 {
@@ -3519,9 +3545,12 @@ impl<U: EventListener> Crosswords<U> {
 
             for col_idx in 0..columns {
                 // Set colors to encode image_id and placement_id
-                self.grid.cursor.template.fg = crate::config::colors::AnsiColor::Spec(fg_color);
+                self.grid.cursor.template.fg =
+                    crate::config::colors::AnsiColor::Spec(fg_color);
                 if let Some(ul_color) = underline_color {
-                    self.grid.cursor.template.set_underline_color(Some(crate::config::colors::AnsiColor::Spec(ul_color)));
+                    self.grid.cursor.template.set_underline_color(Some(
+                        crate::config::colors::AnsiColor::Spec(ul_color),
+                    ));
                 }
 
                 // Encode placeholder with diacritics for this cell's position

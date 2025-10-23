@@ -365,7 +365,13 @@ pub trait Handler {
 
     /// Insert a new graphic item (displays immediately at cursor).
     /// cursor_movement: None = Sixel (move to next line), Some(0) = Kitty stay on last row, Some(1) = don't move
-    fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>, _cursor_movement: Option<u8>) {}
+    fn insert_graphic(
+        &mut self,
+        _data: GraphicData,
+        _palette: Option<Vec<ColorRgb>>,
+        _cursor_movement: Option<u8>,
+    ) {
+    }
 
     /// Store a graphic without displaying (for a=t transmit-only).
     fn store_graphic(&mut self, _data: GraphicData) {}
@@ -743,9 +749,18 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
     }
 
     fn apc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        debug!("[apc_dispatch] params count={}, bell_terminated={}", params.len(), bell_terminated);
+        debug!(
+            "[apc_dispatch] params count={}, bell_terminated={}",
+            params.len(),
+            bell_terminated
+        );
         for (i, p) in params.iter().enumerate() {
-            debug!("  apc param[{}] len={}, first_bytes={:?}", i, p.len(), &p[..p.len().min(20)]);
+            debug!(
+                "  apc param[{}] len={}, first_bytes={:?}",
+                i,
+                p.len(),
+                &p[..p.len().min(20)]
+            );
         }
         let _terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
@@ -776,7 +791,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
                 // Remove escape character if present at end
                 let data = if full_data.last() == Some(&27) {
-                    &full_data[..full_data.len()-1]
+                    &full_data[..full_data.len() - 1]
                 } else {
                     *full_data
                 };
@@ -818,7 +833,9 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     let has_placement = response.placement_request.is_some();
 
                     // Get cursor_movement from placement if available
-                    let cursor_movement = response.placement_request.as_ref()
+                    let cursor_movement = response
+                        .placement_request
+                        .as_ref()
                         .map(|p| p.cursor_movement)
                         .unwrap_or(0);
 
@@ -830,7 +847,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
                         if has_placement {
                             // a=T: Transmit and display - use cursor_movement from placement
-                            self.handler.insert_graphic(graphic_data, None, Some(cursor_movement));
+                            self.handler.insert_graphic(
+                                graphic_data,
+                                None,
+                                Some(cursor_movement),
+                            );
                         } else {
                             // a=t: Transmit only - store without displaying
                             self.handler.store_graphic(graphic_data);

@@ -120,7 +120,7 @@ pub enum CornerType {
 }
 
 pub fn drawable_character(character: char) -> Option<DrawableChar> {
-match character {
+    match character {
 '\u{2500}'..='\u{259f}'
 | '\u{1fb00}'..='\u{1fb3b}'
 // Powerlines

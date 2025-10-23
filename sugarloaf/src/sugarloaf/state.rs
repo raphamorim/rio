@@ -56,7 +56,7 @@ impl SugarState {
     #[inline]
     pub fn get_state_layout(&self, id: &usize) -> RichTextLayout {
         if let Some(state) = self.content.get_state(id) {
-            state.layout.clone()
+            state.layout
         } else {
             RichTextLayout::from_default_layout(&self.style)
         }
@@ -184,12 +184,9 @@ impl SugarState {
         config: Option<&crate::layout::RichTextConfig>,
     ) -> usize {
         let layout = RichTextLayout::from_default_layout(&self.style);
-        let id = self.content.create_state(&layout, config);
-
         // Dimensions are now calculated eagerly during create_state
         // No need to mark for repaint since we have valid dimensions immediately
-
-        id
+        self.content.create_state(&layout, config)
     }
 
     #[inline]
