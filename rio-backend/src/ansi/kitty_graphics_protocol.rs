@@ -266,25 +266,41 @@ pub fn parse(
 
     if cmd.more {
         // Store chunk for later - preserve all metadata from first chunk
-        // Get existing command or create new one
-        let stored_cmd = state
-            .incomplete_images
-            .entry(image_key)
-            .or_insert_with(|| cmd.clone());
+        use std::collections::hash_map::Entry;
 
-        // If this isn't the first chunk for this image, just append payload
-        if !stored_cmd.payload.is_empty() && stored_cmd.payload != cmd.payload {
-            stored_cmd.payload.extend_from_slice(&cmd.payload);
-        } else {
-            // First chunk - store entire command
-            *stored_cmd = cmd.clone();
+        match state.incomplete_images.entry(image_key) {
+            Entry::Vacant(e) => {
+                // First chunk - move cmd into storage (no clone!)
+                // Pre-allocate capacity if size is known to avoid reallocations
+                let expected_size = cmd.size as usize;
+                if expected_size > 0 && cmd.payload.capacity() < expected_size {
+                    cmd.payload.reserve(expected_size.saturating_sub(cmd.payload.len()));
+                    debug!(
+                        "First chunk for image key {}: {} bytes, reserved {} bytes total",
+                        image_key,
+                        cmd.payload.len(),
+                        expected_size
+                    );
+                } else {
+                    debug!(
+                        "First chunk for image key {}: {} bytes",
+                        image_key,
+                        cmd.payload.len()
+                    );
+                }
+                e.insert(cmd);
+            }
+            Entry::Occupied(mut e) => {
+                // Subsequent chunk - just append payload
+                let stored_cmd = e.get_mut();
+                stored_cmd.payload.extend_from_slice(&cmd.payload);
+                debug!(
+                    "Appended chunk for image key {}: {} bytes accumulated",
+                    image_key,
+                    stored_cmd.payload.len()
+                );
+            }
         }
-
-        debug!(
-            "Stored chunk for image key {}: {} bytes accumulated",
-            image_key,
-            stored_cmd.payload.len()
-        );
         return None;
     } else {
         // Check if we have incomplete data (even if image_id/number is 0)
