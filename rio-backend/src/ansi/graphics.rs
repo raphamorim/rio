@@ -184,7 +184,8 @@ impl Default for Graphics {
             kitty_images: FxHashMap::default(),
             kitty_image_numbers: FxHashMap::default(),
             kitty_virtual_placements: FxHashMap::default(),
-            kitty_chunking_state: crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
+            kitty_chunking_state:
+                crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB like Ghostty
             image_timestamps: FxHashMap::default(),

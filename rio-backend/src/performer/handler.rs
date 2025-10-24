@@ -417,11 +417,14 @@ pub trait Handler {
 
     /// Get mutable access to the kitty graphics chunking state
     /// Used by the APC handler to accumulate chunked image transmissions
+    ///
+    /// Returns `None` if the handler does not support Kitty graphics protocol.
+    /// Terminal implementations that support Kitty graphics should override this
+    /// to return `Some(&mut state)`.
     fn kitty_chunking_state_mut(
         &mut self,
-    ) -> &mut kitty_graphics_protocol::KittyGraphicsState {
-        // Default implementation panics - should be overridden by terminal implementation
-        unimplemented!("kitty_chunking_state_mut must be implemented by the terminal")
+    ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
+        None
     }
 }
 
@@ -710,7 +713,10 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
         // APC sequences are terminated by ESC+\ (0x1b 0x5c), but the parser may include the ESC
         let data = if buffer.last() == Some(&0x1b) {
             &buffer[..buffer.len() - 1]
-        } else if buffer.len() >= 2 && buffer[buffer.len() - 2] == 0x1b && buffer[buffer.len() - 1] == 0x5c {
+        } else if buffer.len() >= 2
+            && buffer[buffer.len() - 2] == 0x1b
+            && buffer[buffer.len() - 1] == 0x5c
+        {
             &buffer[..buffer.len() - 2]
         } else {
             buffer.as_slice()
@@ -760,10 +766,15 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 payload.len()
             );
 
-            if let Some(response) = kitty_graphics_protocol::parse(
-                &kitty_params,
-                self.handler.kitty_chunking_state_mut(),
-            ) {
+            // Check if handler supports Kitty graphics protocol
+            let Some(chunking_state) = self.handler.kitty_chunking_state_mut() else {
+                debug!("[process_apc_buffer] Handler does not support Kitty graphics, ignoring");
+                return;
+            };
+
+            if let Some(response) =
+                kitty_graphics_protocol::parse(&kitty_params, chunking_state)
+            {
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
 
                 let has_graphic = response.graphic_data.is_some();
@@ -2111,8 +2122,10 @@ mod tests {
 
         let expected_len = header.len() + payload.len();
         assert_eq!(state.buffer.len(), expected_len);
-        assert!(state.buffer.len() > 1024,
-                "Should handle data larger than Copa's default OSC buffer (1024 bytes)");
+        assert!(
+            state.buffer.len() > 1024,
+            "Should handle data larger than Copa's default OSC buffer (1024 bytes)"
+        );
     }
 
     #[test]
@@ -2135,8 +2148,10 @@ mod tests {
         }
 
         assert_eq!(state.buffer.len(), header.len() + large_payload.len());
-        assert!(state.buffer.len() > 16000,
-                "Should handle very large payloads");
+        assert!(
+            state.buffer.len() > 16000,
+            "Should handle very large payloads"
+        );
     }
 
     #[test]
@@ -2152,8 +2167,11 @@ mod tests {
 
         // Second sequence (buffer should be cleared)
         state.buffer.clear();
-        assert_eq!(state.buffer.len(), 0,
-                   "Buffer should be cleared between sequences");
+        assert_eq!(
+            state.buffer.len(),
+            0,
+            "Buffer should be cleared between sequences"
+        );
 
         let data2 = b"Ga=T,f=32,s=20,v=20;BQYHCAk=";
         state.buffer.extend_from_slice(data2);
@@ -2190,8 +2208,10 @@ mod tests {
         state.buffer.clear();
         state.buffer.reserve(4096);
 
-        assert!(state.buffer.capacity() >= 4096,
-                "Buffer should pre-allocate at least 4KB for Kitty graphics");
+        assert!(
+            state.buffer.capacity() >= 4096,
+            "Buffer should pre-allocate at least 4KB for Kitty graphics"
+        );
     }
 
     #[test]
@@ -2234,8 +2254,10 @@ mod tests {
 
         // Verify payload size
         assert_eq!(payload_data.len(), 4096);
-        assert!(payload_data.len() > 1024,
-                "Payload should be larger than Copa's default OSC buffer");
+        assert!(
+            payload_data.len() > 1024,
+            "Payload should be larger than Copa's default OSC buffer"
+        );
     }
 
     #[test]
@@ -2281,7 +2303,9 @@ mod tests {
         // First chunk - includes image ID and metadata
         state.buffer.clear();
         state.buffer.reserve(4096);
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=1,m=1;");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=1,m=1;");
         // Add 4KB of base64 data (terminal-doom sends ~4KB chunks)
         state.buffer.extend(vec![b'A'; 4096]);
 
@@ -2321,7 +2345,9 @@ mod tests {
 
             if chunk_num == 0 {
                 // First chunk with metadata
-                state.buffer.extend_from_slice(b"Ga=T,f=24,s=640,v=400,i=10,m=1;");
+                state
+                    .buffer
+                    .extend_from_slice(b"Ga=T,f=24,s=640,v=400,i=10,m=1;");
             } else if chunk_num == (total_payload_size / chunk_size) - 1 {
                 // Last chunk
                 state.buffer.extend_from_slice(b"Gm=0;");
@@ -2357,7 +2383,11 @@ mod tests {
         let control = &control_data[1..]; // Skip 'G'
         assert_eq!(control, b"a=T,f=24,s=10,v=10");
         assert_eq!(payload_data, b"AQIDBA==");
-        assert_ne!(payload_data.last(), Some(&0x1b), "Terminator should be stripped");
+        assert_ne!(
+            payload_data.last(),
+            Some(&0x1b),
+            "Terminator should be stripped"
+        );
     }
 
     #[test]
@@ -2388,7 +2418,9 @@ mod tests {
 
         // Image 1: First chunk with i=5
         let mut state = ApcState::default();
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=5,m=1;AAAA");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=5,m=1;AAAA");
         let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
         assert!(buffer_str.contains("i=5"));
 
@@ -2406,7 +2438,9 @@ mod tests {
 
         // Image 2: New transmission with i=6
         state.buffer.clear();
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=6,m=1;DDDD");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=6,m=1;DDDD");
         let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
         assert!(buffer_str.contains("i=6"));
     }
@@ -2417,7 +2451,9 @@ mod tests {
 
         // First: Transmit and store (a=t)
         let mut state = ApcState::default();
-        state.buffer.extend_from_slice(b"Ga=t,f=24,s=100,v=100,i=7;/9j/4AAQ");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=t,f=24,s=100,v=100,i=7;/9j/4AAQ");
 
         let mut parts = state.buffer.splitn(2, |&b| b == b';');
         let control = std::str::from_utf8(parts.next().unwrap()).unwrap();
@@ -2455,11 +2491,16 @@ mod tests {
         state.buffer.clear();
         state.buffer.reserve(16384);
 
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=200,v=200,i=8;");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=200,v=200,i=8;");
         state.buffer.extend(vec![b'Z'; 16384]);
 
         assert!(state.buffer.len() > 16384);
-        assert!(state.buffer.len() > 1024, "Should exceed Copa's old 1024-byte limit");
+        assert!(
+            state.buffer.len() > 1024,
+            "Should exceed Copa's old 1024-byte limit"
+        );
     }
 
     #[test]
@@ -2468,7 +2509,9 @@ mod tests {
         let mut state = ApcState::default();
 
         // First transmission
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=9;FIRST");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=9;FIRST");
         let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
         assert!(buffer_str.contains("FIRST"));
         let first_len = state.buffer.len();
@@ -2478,7 +2521,9 @@ mod tests {
         assert_eq!(state.buffer.len(), 0);
 
         // Second transmission
-        state.buffer.extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=10;SECOND");
+        state
+            .buffer
+            .extend_from_slice(b"Ga=T,f=24,s=100,v=100,i=10;SECOND");
         let buffer_str = std::str::from_utf8(&state.buffer).unwrap();
         assert!(buffer_str.contains("SECOND"));
         assert!(!buffer_str.contains("FIRST"), "Old data should be cleared");

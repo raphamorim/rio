@@ -1145,11 +1145,7 @@ impl RichTextBrush {
                     color_views[0] // Doesn't matter, won't be used
                 };
 
-                brush.update_bind_group(
-                    ctx,
-                    color_view,
-                    final_mask_view,
-                );
+                brush.update_bind_group(ctx, color_view, final_mask_view);
 
                 // Draw this batch
                 brush.render_range(ctx, &self.vertices, rpass, start..end);
