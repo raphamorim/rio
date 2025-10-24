@@ -3382,8 +3382,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn kitty_chunking_state_mut(
         &mut self,
-    ) -> &mut crate::ansi::kitty_graphics_protocol::KittyGraphicsState {
-        &mut self.graphics.kitty_chunking_state
+    ) -> Option<&mut crate::ansi::kitty_graphics_protocol::KittyGraphicsState> {
+        Some(&mut self.graphics.kitty_chunking_state)
     }
 }
 
