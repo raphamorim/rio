@@ -454,7 +454,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (), // Ignore control bytes
             0x07 => {
                 // Bell-terminated APC
-                self.action_apc_dispatch(performer, true);
+                self.action_apc_end(performer);
                 self.osc_raw.clear();
                 self.osc_num_params = 0;
                 self.state = State::Ground;
@@ -462,7 +462,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             0x18 | 0x1A => {
                 // C0 termination (CAN or SUB)
                 self.action_apc_put(performer, byte);
-                self.action_apc_dispatch(performer, false);
+                self.action_apc_end(performer);
                 performer.execute(byte);
                 self.osc_raw.clear();
                 self.osc_num_params = 0;
@@ -470,8 +470,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             }
             0x1B => {
                 // Start of ST termination (\x1b\)
-                self.action_apc_put(performer, byte);
-                self.action_apc_dispatch(performer, false);
+                self.action_apc_end(performer);
                 self.osc_raw.clear();
                 self.osc_num_params = 0;
                 self.state = State::Escape;
@@ -512,48 +511,9 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
     }
 
     #[inline]
-    fn action_apc_dispatch<P: Perform>(&self, performer: &mut P, bell_terminated: bool) {
-        // Ensure the APC sequence starts with 'G'
-        if self.osc_raw.is_empty() || self.osc_raw[0] != b'G' {
-            performer.apc_end();
-            return;
-        }
-
-        // Parse control data and payload
-        let mut slices: [MaybeUninit<&[u8]>; MAX_OSC_PARAMS] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-
-        for (i, slice) in slices.iter_mut().enumerate().take(self.osc_num_params) {
-            let indices = self.osc_params[i];
-            *slice = MaybeUninit::new(&self.osc_raw[indices.0..indices.1]);
-        }
-
-        // Skip the 'G' character in the first parameter
-        let first_param = {
-            let indices = self.osc_params[0];
-            &self.osc_raw[indices.0..indices.1] // Skip 'G'
-        };
-
-        let params = if self.osc_num_params > 0 {
-            let mut params = Vec::with_capacity(self.osc_num_params);
-            params.push(first_param);
-            for i in 1..self.osc_num_params {
-                let indices = self.osc_params[i];
-                let param = &self.osc_raw[indices.0..indices.1];
-                params.push(param);
-            }
-            let indices = self.osc_params.last().unwrap_or(&(0, 0));
-            params.push(&self.osc_raw[indices.1 + 1..]);
-            params
-        } else {
-            vec![first_param]
-        };
-
-        unsafe {
-            let params_ptr = params.as_slice() as *const [&[u8]];
-            performer.apc_dispatch(&*params_ptr, bell_terminated);
-        }
-
+    fn action_apc_end<P: Perform>(&self, performer: &mut P) {
+        // APCs are handled through apc_start/apc_put/apc_end hooks which properly
+        // accumulate large payloads. This function just calls apc_end() to complete the sequence.
         performer.apc_end();
     }
 
@@ -1858,7 +1818,6 @@ mod tests {
             Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'm'),
             Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'9'),
             Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'v'),
-            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'\x1b'),
             Sequence::OpaqueEnd(OpaqueSequenceKind::Apc),
             Sequence::Esc(vec![], false, b'\\'),
         ];
