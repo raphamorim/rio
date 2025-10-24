@@ -11,6 +11,8 @@ use tracing::debug;
 // Stores the accumulated command state for chunked transmissions
 lazy_static::lazy_static! {
     static ref INCOMPLETE_IMAGES: Mutex<HashMap<u32, KittyGraphicsCommand>> = Mutex::new(HashMap::new());
+    // Track the current transmission key for chunks that don't specify an image ID
+    static ref CURRENT_TRANSMISSION_KEY: Mutex<u32> = Mutex::new(0);
 }
 
 #[derive(Debug)]
@@ -236,15 +238,22 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
     }
 
     // Handle chunked data
-    // Determine the key - use image_number if image_id is not set (0)
-    // For chunked images, kitty uses image_number=0 as a special "current transmission" key
-    let image_key = if cmd.image_id > 0 {
-        cmd.image_id
-    } else if cmd.image_number > 0 {
-        cmd.image_number
+    // Determine the key for this chunk:
+    // - If this chunk has an explicit image_id or image_number, use that and set it as current
+    // - If no ID in this chunk, use the current transmission key (for continuation chunks)
+    let image_key = if cmd.image_id > 0 || cmd.image_number > 0 {
+        // This chunk has an explicit ID - use it and set as current transmission
+        let key = if cmd.image_id > 0 {
+            cmd.image_id
+        } else {
+            cmd.image_number
+        };
+        *CURRENT_TRANSMISSION_KEY.lock().unwrap() = key;
+        key
     } else {
-        // Use 0 as the key for anonymous chunked transmissions
-        0
+        // No ID in this chunk - use the current transmission key
+        // This handles continuation chunks that only have m=1 or m=0
+        *CURRENT_TRANSMISSION_KEY.lock().unwrap()
     };
 
     if cmd.more {
@@ -280,6 +289,8 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
                 image_key,
                 cmd.payload.len()
             );
+            // Reset current transmission key after completing this transmission
+            *CURRENT_TRANSMISSION_KEY.lock().unwrap() = 0;
         }
     }
 
