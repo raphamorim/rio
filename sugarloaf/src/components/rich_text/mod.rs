@@ -59,7 +59,6 @@ pub struct WgpuRichTextBrush {
     pipeline: wgpu::RenderPipeline,
     current_transform: [f32; 16],
     supported_vertex_buffer: usize,
-    textures_version: usize,
 }
 
 #[repr(C)]
@@ -168,7 +167,6 @@ impl MetalRichTextBrush {
         pipeline_descriptor.set_fragment_function(Some(&fragment_function));
         pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
 
-        // Set up blending for text rendering - FIXED BLENDING
         let color_attachment = pipeline_descriptor
             .color_attachments()
             .object_at(0)
@@ -273,7 +271,6 @@ impl MetalRichTextBrush {
         render_encoder.set_render_pipeline_state(&self.pipeline_state);
         render_encoder.set_vertex_buffer(0, Some(&self.vertex_buffer), 0);
 
-        // FIXED: Update transform matrix with current context size
         let transform = orthographic_projection(context.size.width, context.size.height);
         if self.current_transform != transform {
             let globals = Globals { transform };
@@ -284,7 +281,6 @@ impl MetalRichTextBrush {
             self.current_transform = transform;
         }
 
-        // FIXED: Bind uniform buffer at correct index (buffer 1 in Metal shader)
         render_encoder.set_vertex_buffer(1, Some(&self.uniform_buffer), 0);
 
         // Set sampler
@@ -1153,7 +1149,6 @@ impl RichTextBrush {
                     ctx,
                     color_view,
                     final_mask_view,
-                    self.images.entries.len(),
                 );
 
                 // Draw this batch
@@ -1395,11 +1390,7 @@ impl WgpuRichTextBrush {
                     label: Some("rich_text::layout_bind_group"),
                 });
 
-        let shader_source = if context.supports_f16() {
-            include_str!("rich_text.wgsl")
-        } else {
-            include_str!("rich_text_f32.wgsl")
-        };
+        let shader_source = include_str!("rich_text.wgsl");
 
         let shader = context
             .device
@@ -1428,6 +1419,8 @@ impl WgpuRichTextBrush {
                                 1 => Float32x4,
                                 2 => Float32x2,
                                 3 => Sint32x2,
+                                4 => Float32,
+                                5 => Float32x2,
                             ),
                         }],
                     },
@@ -1466,7 +1459,6 @@ impl WgpuRichTextBrush {
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
-            textures_version: 0,
             transform,
             pipeline,
             vertex_buffer,
@@ -1567,26 +1559,23 @@ impl WgpuRichTextBrush {
         ctx: &WgpuContext,
         color_view: &wgpu::TextureView,
         mask_view: &wgpu::TextureView,
-        textures_version: usize,
     ) {
-        if textures_version != self.textures_version {
-            self.textures_version = textures_version;
-            self.layout_bind_group =
-                ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    layout: &self.layout_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(color_view),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: wgpu::BindingResource::TextureView(mask_view),
-                        },
-                    ],
-                    label: Some("rich_text::Pipeline uniforms"),
-                });
-        }
+        // Always update bind group since different batches need different textures
+        self.layout_bind_group =
+            ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                layout: &self.layout_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(color_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(mask_view),
+                    },
+                ],
+                label: Some("rich_text::Pipeline uniforms"),
+            });
     }
 }
 
