@@ -2,6 +2,7 @@ use base64::{
     engine::general_purpose::{STANDARD as BASE64, STANDARD_NO_PAD},
     Engine,
 };
+use smallvec::SmallVec;
 use std::collections::HashMap;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use tracing::debug;
@@ -141,8 +142,10 @@ pub struct KittyGraphicsCommand {
     // Placeholder
     unicode_placeholder: u32,
 
-    // Payload
-    payload: Vec<u8>,
+    // Payload - SmallVec for stack allocation of small payloads
+    // 64 bytes inline covers most control-only commands (query, delete, placement)
+    // while still handling large image data by spilling to heap
+    payload: SmallVec<[u8; 64]>,
 }
 
 impl Default for KittyGraphicsCommand {
@@ -186,7 +189,7 @@ impl Default for KittyGraphicsCommand {
             current_frame: 0,
             delete_action: b'a',
             unicode_placeholder: 0,
-            payload: Vec::new(),
+            payload: SmallVec::new(),
         }
     }
 }
@@ -226,7 +229,7 @@ pub fn parse(
     // Parse payload if present
     if let Some(payload) = params.get(2) {
         if !payload.is_empty() {
-            cmd.payload = payload.to_vec();
+            cmd.payload = SmallVec::from_slice(payload);
         }
     }
 
