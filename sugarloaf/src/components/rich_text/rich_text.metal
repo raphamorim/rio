@@ -46,7 +46,7 @@ vertex VertexOutput vs_main(
     return out;
 }
 
-// Signed distance field for rounded rectangle (from Zed's implementation)
+// Signed distance field for rounded rectangle
 float rounded_rect_sdf(float2 corner_center_to_point, float corner_radius) {
     if (corner_radius == 0.0) {
         // Fast path for unrounded corners
