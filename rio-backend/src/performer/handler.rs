@@ -414,6 +414,15 @@ pub trait Handler {
 
     /// Send a kitty graphics protocol response
     fn kitty_graphics_response(&mut self, _response: String) {}
+
+    /// Get mutable access to the kitty graphics chunking state
+    /// Used by the APC handler to accumulate chunked image transmissions
+    fn kitty_chunking_state_mut(
+        &mut self,
+    ) -> &mut kitty_graphics_protocol::KittyGraphicsState {
+        // Default implementation panics - should be overridden by terminal implementation
+        unimplemented!("kitty_chunking_state_mut must be implemented by the terminal")
+    }
 }
 
 pub trait Timeout: Default {
@@ -751,7 +760,10 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 payload.len()
             );
 
-            if let Some(response) = kitty_graphics_protocol::parse(&kitty_params) {
+            if let Some(response) = kitty_graphics_protocol::parse(
+                &kitty_params,
+                self.handler.kitty_chunking_state_mut(),
+            ) {
                 debug!("[process_apc_buffer] Kitty graphics parsed successfully");
 
                 let has_graphic = response.graphic_data.is_some();

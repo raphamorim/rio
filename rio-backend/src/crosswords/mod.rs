@@ -3378,6 +3378,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
+
+    #[inline]
+    fn kitty_chunking_state_mut(
+        &mut self,
+    ) -> &mut crate::ansi::kitty_graphics_protocol::KittyGraphicsState {
+        &mut self.graphics.kitty_chunking_state
+    }
 }
 
 pub struct CrosswordsSize {

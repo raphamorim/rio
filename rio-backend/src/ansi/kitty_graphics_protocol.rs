@@ -3,16 +3,21 @@ use base64::{
     Engine,
 };
 use std::collections::HashMap;
-use std::sync::Mutex;
 use sugarloaf::{ColorType, GraphicData, GraphicId, ResizeCommand, ResizeParameter};
 use tracing::debug;
 
-// Global storage for incomplete image transfers
-// Stores the accumulated command state for chunked transmissions
-lazy_static::lazy_static! {
-    static ref INCOMPLETE_IMAGES: Mutex<HashMap<u32, KittyGraphicsCommand>> = Mutex::new(HashMap::new());
-    // Track the current transmission key for chunks that don't specify an image ID
-    static ref CURRENT_TRANSMISSION_KEY: Mutex<u32> = Mutex::new(0);
+/// Per-terminal state for Kitty graphics protocol.
+/// This stores the accumulated command state for chunked transmissions.
+/// Each terminal instance should have its own state to prevent conflicts between tabs.
+#[derive(Debug, Default)]
+pub struct KittyGraphicsState {
+    /// Stores incomplete image transfers (chunked transmissions).
+    /// Key is the image_id or image_number from the first chunk.
+    incomplete_images: HashMap<u32, KittyGraphicsCommand>,
+
+    /// Tracks the current transmission key for chunks that don't specify an image ID.
+    /// This is used for continuation chunks that only have m=1 or m=0.
+    current_transmission_key: u32,
 }
 
 #[derive(Debug)]
@@ -186,7 +191,10 @@ impl Default for KittyGraphicsCommand {
     }
 }
 
-pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
+pub fn parse(
+    params: &[&[u8]],
+    state: &mut KittyGraphicsState,
+) -> Option<KittyGraphicsResponse> {
     let Some(&b"G") = params.first() else {
         debug!("Kitty graphics parse failed: first param is not 'G'");
         return None;
@@ -248,20 +256,21 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
         } else {
             cmd.image_number
         };
-        *CURRENT_TRANSMISSION_KEY.lock().unwrap() = key;
+        state.current_transmission_key = key;
         key
     } else {
         // No ID in this chunk - use the current transmission key
         // This handles continuation chunks that only have m=1 or m=0
-        *CURRENT_TRANSMISSION_KEY.lock().unwrap()
+        state.current_transmission_key
     };
 
     if cmd.more {
         // Store chunk for later - preserve all metadata from first chunk
-        let mut incomplete = INCOMPLETE_IMAGES.lock().unwrap();
-
         // Get existing command or create new one
-        let stored_cmd = incomplete.entry(image_key).or_insert_with(|| cmd.clone());
+        let stored_cmd = state
+            .incomplete_images
+            .entry(image_key)
+            .or_insert_with(|| cmd.clone());
 
         // If this isn't the first chunk for this image, just append payload
         if !stored_cmd.payload.is_empty() && stored_cmd.payload != cmd.payload {
@@ -279,8 +288,7 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
         return None;
     } else {
         // Check if we have incomplete data (even if image_id/number is 0)
-        let mut incomplete = INCOMPLETE_IMAGES.lock().unwrap();
-        if let Some(mut stored_cmd) = incomplete.remove(&image_key) {
+        if let Some(mut stored_cmd) = state.incomplete_images.remove(&image_key) {
             // Final chunk: use metadata from stored command, append final payload
             stored_cmd.payload.extend_from_slice(&cmd.payload);
             cmd = stored_cmd; // Use stored metadata
@@ -290,7 +298,7 @@ pub fn parse(params: &[&[u8]]) -> Option<KittyGraphicsResponse> {
                 cmd.payload.len()
             );
             // Reset current transmission key after completing this transmission
-            *CURRENT_TRANSMISSION_KEY.lock().unwrap() = 0;
+            state.current_transmission_key = 0;
         }
     }
 
@@ -1034,7 +1042,8 @@ mod tests {
             vec![b"G".as_ref(), keys.as_bytes(), payload.as_bytes()]
         };
 
-        parse(&params)
+        let mut state = KittyGraphicsState::default();
+        parse(&params, &mut state)
     }
 
     #[test]
@@ -1172,12 +1181,14 @@ mod tests {
 
     #[test]
     fn test_parse_empty_keys() {
+        let mut state = KittyGraphicsState::default();
+
         // Empty params should return None
-        let result = parse(&[]);
+        let result = parse(&[], &mut state);
         assert!(result.is_none());
 
         // Just "G" with no control data returns an empty graphic
-        let result = parse(&[b"G"]);
+        let result = parse(&[b"G"], &mut state);
         assert!(result.is_some());
         let response = result.unwrap();
         assert!(response.graphic_data.is_some());
@@ -1187,33 +1198,33 @@ mod tests {
         assert!(graphic.pixels.is_empty());
 
         // "G" with empty control data also returns an empty graphic
-        let result = parse(&[b"G", b""]);
+        let result = parse(&[b"G", b""], &mut state);
         assert!(result.is_some());
     }
 
     #[test]
     fn test_incomplete_image_accumulation() {
-        // Clear any previous state
-        INCOMPLETE_IMAGES.lock().unwrap().clear();
+        // Use a single state instance across all chunks
+        let mut state = KittyGraphicsState::default();
 
         // First chunk - 1x1 RGBA pixel split into chunks
         // Total base64 for [255, 0, 0, 255] is "/wAA/w=="
-        let result1 = parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,m=1,i=100", "/wA");
+        let params1 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=1,i=100", b"/wA"];
+        let result1 = parse(&params1, &mut state);
         assert!(result1.is_none()); // Should accumulate
 
         // Second chunk - need to specify action and image id
-        let result2 = parse_kitty_graphics_protocol("a=t,m=1,i=100", "A/");
+        let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100", b"A/"];
+        let result2 = parse(&params2, &mut state);
         assert!(result2.is_none()); // Should accumulate
 
         // Final chunk - need to specify action, image id, and dimensions
-        let result3 = parse_kitty_graphics_protocol("a=t,f=32,s=1,v=1,m=0,i=100", "w==");
+        let params3 = vec![b"G".as_ref(), b"a=t,f=32,s=1,v=1,m=0,i=100", b"w=="];
+        let result3 = parse(&params3, &mut state);
         assert!(result3.is_some()); // Should return complete image
 
         let response = result3.unwrap();
         assert!(response.graphic_data.is_some());
-
-        // Clean up
-        INCOMPLETE_IMAGES.lock().unwrap().clear();
     }
 
     #[test]
