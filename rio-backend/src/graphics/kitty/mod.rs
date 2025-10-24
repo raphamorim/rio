@@ -1,7 +1,9 @@
 // Kitty Graphics Protocol Tests
 // Combined test suite for Kitty graphics functionality
 
-use crate::ansi::kitty_graphics_protocol::{self, DeleteRequest, PlacementRequest};
+use crate::ansi::kitty_graphics_protocol::{
+    self, DeleteRequest, KittyGraphicsState, PlacementRequest,
+};
 use crate::crosswords::Crosswords;
 use crate::event::{EventListener, RioEvent, WindowId};
 use crate::performer::handler::Handler;
@@ -56,6 +58,7 @@ impl EventListener for TestEventListener {
 #[test]
 fn test_direct_parse_transmit() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Parse kitty graphics directly through the protocol parser
     // 1x1 RGBA pixel (4 bytes) - base64 encoded [255, 0, 0, 255] (red pixel)
@@ -65,7 +68,7 @@ fn test_direct_parse_transmit() {
         b"/wAA/w==".as_ref(),
     ];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
             handler.insert_graphic(graphic_data, None, Some(0));
         }
@@ -84,6 +87,7 @@ fn test_direct_parse_transmit() {
 #[test]
 fn test_parse_png_format() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // 1x1 red PNG image, base64 encoded
     // This is a complete, valid PNG file
@@ -96,7 +100,7 @@ fn test_parse_png_format() {
         png_base64.as_bytes(),
     ];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
             handler.insert_graphic(graphic_data, None, Some(0));
         }
@@ -143,7 +147,8 @@ fn test_png_transmit_and_display() {
         png_base64.as_bytes(),
     ];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    let mut state = KittyGraphicsState::default();
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
             if let Some(placement) = response.placement_request {
                 // Store and place the graphic
@@ -169,6 +174,7 @@ fn test_png_transmit_and_display() {
 #[test]
 fn test_png_format_support() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Test f=100 (PNG format) with a 1x1 PNG
     let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
@@ -179,7 +185,7 @@ fn test_png_format_support() {
         png_base64.as_bytes(),
     ];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
             handler.insert_graphic(graphic_data, None, Some(0));
 
@@ -198,11 +204,12 @@ fn test_png_format_support() {
 #[test]
 fn test_placement_request() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Parse placement request (a=p is Put action, x and y are source coordinates)
     let params = vec![b"G".as_ref(), b"a=p,i=1,x=5,y=10,c=3,r=2".as_ref()];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(placement) = response.placement_request {
             handler.place_graphic(placement);
         }
@@ -222,11 +229,12 @@ fn test_placement_request() {
 #[test]
 fn test_delete_request() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Parse delete request (a=d is Delete action, d=a means delete all)
     let params = vec![b"G".as_ref(), b"a=d,d=a".as_ref()];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(delete) = response.delete_request {
             handler.delete_graphics(delete);
         }
@@ -240,11 +248,12 @@ fn test_delete_request() {
 #[test]
 fn test_query_response() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Parse query request
     let params = vec![b"G".as_ref(), b"a=q,i=1".as_ref()];
 
-    if let Some(response) = kitty_graphics_protocol::parse(&params) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(response_str) = response.response {
             handler.kitty_graphics_response(response_str);
         }
@@ -258,6 +267,7 @@ fn test_query_response() {
 #[test]
 fn test_chunked_transfer() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Total base64 for 1x1 RGBA pixel [255, 0, 0, 255] is "/wAA/w=="
     // Split into 3 chunks: "/wA", "A/", "w=="
@@ -268,12 +278,12 @@ fn test_chunked_transfer() {
         b"a=t,f=32,s=1,v=1,m=1,i=100".as_ref(),
         b"/wA".as_ref(),
     ];
-    let result1 = kitty_graphics_protocol::parse(&params1);
+    let result1 = kitty_graphics_protocol::parse(&params1, &mut state);
     assert!(result1.is_none());
 
     // Send second chunk
     let params2 = vec![b"G".as_ref(), b"a=t,m=1,i=100".as_ref(), b"A/".as_ref()];
-    let result2 = kitty_graphics_protocol::parse(&params2);
+    let result2 = kitty_graphics_protocol::parse(&params2, &mut state);
     assert!(result2.is_none());
 
     // Send final chunk with complete image info (m=0 means last chunk)
@@ -282,7 +292,7 @@ fn test_chunked_transfer() {
         b"a=t,f=32,s=1,v=1,m=0,i=100".as_ref(),
         b"w==".as_ref(),
     ];
-    if let Some(response) = kitty_graphics_protocol::parse(&params3) {
+    if let Some(response) = kitty_graphics_protocol::parse(&params3, &mut state) {
         if let Some(graphic_data) = response.graphic_data {
             handler.insert_graphic(graphic_data, None, Some(0));
         }
@@ -298,6 +308,7 @@ fn test_chunked_transfer() {
 #[test]
 fn test_multiple_graphics_in_sequence() {
     let mut handler = TestHandler::default();
+    let mut state = KittyGraphicsState::default();
 
     // Send multiple graphics (1x1 RGBA pixels with different IDs)
     // Base64 for [255, 0, 0, 255] = "/wAA/w=="
@@ -329,7 +340,7 @@ fn test_multiple_graphics_in_sequence() {
     ];
 
     for (params, _) in &graphics_params {
-        if let Some(response) = kitty_graphics_protocol::parse(params) {
+        if let Some(response) = kitty_graphics_protocol::parse(params, &mut state) {
             if let Some(graphic_data) = response.graphic_data {
                 handler.insert_graphic(graphic_data, None, Some(0));
             }
@@ -476,8 +487,10 @@ fn test_cursor_movement_no_move() {
 
 #[test]
 fn test_protocol_parses_cursor_movement() {
+    let mut state = KittyGraphicsState::default();
+
     // Test that C=0 is parsed
-    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1,C=0", b""]);
+    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1,C=0", b""], &mut state);
     assert!(result.is_some());
     let response = result.unwrap();
     assert!(response.placement_request.is_some());
@@ -488,7 +501,7 @@ fn test_protocol_parses_cursor_movement() {
     );
 
     // Test that C=1 is parsed
-    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1,C=1", b""]);
+    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1,C=1", b""], &mut state);
     assert!(result.is_some());
     let response = result.unwrap();
     assert!(response.placement_request.is_some());
@@ -499,7 +512,7 @@ fn test_protocol_parses_cursor_movement() {
     );
 
     // Test default (no C key)
-    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1", b""]);
+    let result = kitty_graphics_protocol::parse(&[b"G", b"a=p,i=1", b""], &mut state);
     assert!(result.is_some());
     let response = result.unwrap();
     assert!(response.placement_request.is_some());

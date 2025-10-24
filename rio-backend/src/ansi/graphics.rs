@@ -154,6 +154,10 @@ pub struct Graphics {
     /// Key is (image_id, placement_id), value is placement metadata
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
 
+    /// Kitty graphics: State for chunked image transmissions
+    /// Stores incomplete transmissions and tracks current transmission key
+    pub kitty_chunking_state: crate::ansi::kitty_graphics_protocol::KittyGraphicsState,
+
     /// Total bytes of image data currently stored in memory
     /// Includes both pending graphics and stored Kitty images
     pub total_bytes: usize,
@@ -180,6 +184,7 @@ impl Default for Graphics {
             kitty_images: FxHashMap::default(),
             kitty_image_numbers: FxHashMap::default(),
             kitty_virtual_placements: FxHashMap::default(),
+            kitty_chunking_state: crate::ansi::kitty_graphics_protocol::KittyGraphicsState::default(),
             total_bytes: 0,
             total_limit: 320 * 1024 * 1024, // 320MB like Ghostty
             image_timestamps: FxHashMap::default(),
