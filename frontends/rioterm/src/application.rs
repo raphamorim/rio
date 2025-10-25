@@ -335,10 +335,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    tracing::info!(
+                        "UpdateGraphics: route_id={}, pending={}, remove={}",
+                        route_id,
+                        queues.pending.len(),
+                        queues.remove_queue.len()
+                    );
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
                     for graphic_data in queues.pending {
+                        tracing::info!(
+                            "Inserting graphic: id={}, width={}, height={}",
+                            graphic_data.id.0,
+                            graphic_data.width,
+                            graphic_data.height
+                        );
                         sugarloaf.graphics.insert(graphic_data);
                     }
 

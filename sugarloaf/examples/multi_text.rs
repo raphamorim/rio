@@ -10,8 +10,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, Quad, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -83,9 +82,9 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        self.rich_texts.push(sugarloaf.create_rich_text());
-        self.rich_texts.push(sugarloaf.create_rich_text());
-        self.rich_texts.push(sugarloaf.create_rich_text());
+        self.rich_texts.push(sugarloaf.create_rich_text(None));
+        self.rich_texts.push(sugarloaf.create_rich_text(None));
+        self.rich_texts.push(sugarloaf.create_rich_text(None));
 
         sugarloaf.set_rich_text_font_size(&1, 24.0);
         sugarloaf.set_rich_text_font_size(&2, 12.0);
@@ -109,57 +108,6 @@ impl ApplicationHandler for Application {
 
         let sugarloaf = self.sugarloaf.as_mut().unwrap();
         let window = self.window.as_mut().unwrap();
-
-        let objects = vec![
-            Object::Quad(Quad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                position: [5., 5.],
-                shadow_blur_radius: 2.0,
-                shadow_offset: [1.0, 1.0],
-                shadow_color: [1.0, 1.0, 0.0, 1.0],
-                border_color: [1.0, 0.0, 1.0, 1.0],
-                border_width: 2.0,
-                border_radius: [10.0, 10.0, 10.0, 10.0],
-                size: [200.0, 200.0],
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[0],
-                position: [5., 5.],
-                lines: None,
-            }),
-            Object::Quad(Quad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                position: [220., 5.],
-                shadow_blur_radius: 0.0,
-                shadow_offset: [0.0, 0.0],
-                shadow_color: [1.0, 1.0, 0.0, 1.0],
-                border_color: [1.0, 0.0, 1.0, 1.0],
-                border_width: 2.0,
-                border_radius: [0.0, 0.0, 0.0, 0.0],
-                size: [200.0, 150.0],
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[1],
-                position: [220., 5.],
-                lines: None,
-            }),
-            Object::Quad(Quad {
-                color: [1.0, 0.5, 0.5, 0.5],
-                position: [440., 5.],
-                shadow_blur_radius: 0.0,
-                shadow_offset: [0.0, 0.0],
-                shadow_color: [1.0, 1.0, 0.0, 1.0],
-                border_color: [1.0, 0.0, 1.0, 1.0],
-                border_width: 2.0,
-                border_radius: [0.0, 0.0, 0.0, 0.0],
-                size: [320.0, 150.0],
-            }),
-            Object::RichText(RichText {
-                id: self.rich_texts[2],
-                position: [440., 5.],
-                lines: None,
-            }),
-        ];
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
@@ -243,7 +191,15 @@ impl ApplicationHandler for Application {
                     }
                 }
 
-                sugarloaf.set_objects(objects);
+                sugarloaf.rect(5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+
+                // Show rich text
+                sugarloaf.show_rich_text(self.rich_texts[0], 5., 5.);
+                sugarloaf.show_rich_text(self.rich_texts[1], 220., 5.);
+                sugarloaf.show_rich_text(self.rich_texts[2], 440., 5.);
+
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

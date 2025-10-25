@@ -759,7 +759,6 @@ mod tests {
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
-        assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
         assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());

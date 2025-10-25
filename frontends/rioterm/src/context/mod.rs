@@ -668,7 +668,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.current_route = self.current().route_id;
     }
 
-    #[inline]
     pub fn extend_with_grid_objects(&self, target: &mut Vec<Object>) {
         self.contexts[self.current_index].extend_with_objects(target);
     }

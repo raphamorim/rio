@@ -7,8 +7,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -82,7 +81,7 @@ impl ApplicationHandler for Application {
         println!("F16 support enabled: {}", sugarloaf.ctx.supports_f16());
 
         sugarloaf.set_background_color(Some(wgpu::Color::BLACK));
-        self.rich_text = sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -186,11 +185,8 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: self.rich_text,
-                    position: [10., 0.],
-                    lines: None,
-                })]);
+                // Show rich text using new API
+                sugarloaf.show_rich_text(self.rich_text, 10., 0.);
                 sugarloaf.render();
             }
             _ => {}
