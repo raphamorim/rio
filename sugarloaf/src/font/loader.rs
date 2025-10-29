@@ -114,7 +114,7 @@ impl Database {
             // First try additional sources (user-specified directories have priority)
             for additional_source in &self.additional_sources {
                 if let Ok(handle) = additional_source
-                    .select_best_match(&[family_name.clone()], &properties)
+                    .select_best_match(std::slice::from_ref(&family_name), &properties)
                 {
                     return Some(ID::from_handle(handle));
                 }
@@ -244,23 +244,18 @@ impl Weight {
 }
 
 /// Font stretch/width
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
 pub enum Stretch {
     UltraCondensed,
     ExtraCondensed,
     Condensed,
     SemiCondensed,
+    #[default]
     Normal,
     SemiExpanded,
     Expanded,
     ExtraExpanded,
     UltraExpanded,
-}
-
-impl Default for Stretch {
-    fn default() -> Self {
-        Stretch::Normal
-    }
 }
 
 /// Font style
