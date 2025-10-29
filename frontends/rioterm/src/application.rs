@@ -37,8 +37,6 @@ pub struct Application<'a> {
     router: Router<'a>,
     scheduler: Scheduler,
     global_hotkey_manager: Option<GlobalHotkeyManager>,
-    #[allow(dead_code)]
-    previous_focused_app: Option<String>,
 }
 
 impl Application<'_> {
@@ -75,7 +73,6 @@ impl Application<'_> {
             router,
             scheduler,
             global_hotkey_manager: None,
-            previous_focused_app: None,
         }
     }
 
@@ -178,23 +175,40 @@ impl Application<'_> {
         result.map_err(Into::into)
     }
 
-    fn setup_global_hotkey(&mut self, window_id: WindowId) {
-        if let Some(hotkey_string) = &self.config.quake_global_hotkey {
-            tracing::info!("Setting up global hotkey: {}", hotkey_string);
-            let mut manager =
-                GlobalHotkeyManager::new(self.event_proxy.clone(), window_id);
-            if let Err(e) = manager.register_hotkey(hotkey_string) {
-                tracing::warn!(
-                    "Failed to register global hotkey '{}': {}",
-                    hotkey_string,
-                    e
-                );
-            } else {
-                tracing::info!("Registered global hotkey: {}", hotkey_string);
-                self.global_hotkey_manager = Some(manager);
+    fn setup_global_hotkeys_from_bindings(&mut self, window_id: WindowId) {
+        // Find all keybindings with action "togglequake" and register them as global hotkeys
+        for binding in &self.config.bindings.keys {
+            if binding.action.to_lowercase() == "togglequake" {
+                // Convert the keybinding to a hotkey string format
+                let mut hotkey_parts = Vec::new();
+
+                // Add modifiers
+                if !binding.with.is_empty() {
+                    let modifiers: Vec<&str> = binding.with.split('|').map(|s| s.trim()).collect();
+                    hotkey_parts.extend(modifiers);
+                }
+
+                // Add the key
+                hotkey_parts.push(&binding.key);
+
+                let hotkey_string = hotkey_parts.join("+");
+
+                tracing::info!("Setting up global hotkey from binding: {}", hotkey_string);
+                let mut manager = GlobalHotkeyManager::new(self.event_proxy.clone(), window_id);
+
+                if let Err(e) = manager.register_hotkey(&hotkey_string) {
+                    tracing::warn!(
+                        "Failed to register global hotkey '{}': {}",
+                        hotkey_string,
+                        e
+                    );
+                } else {
+                    tracing::info!("Registered global hotkey: {}", hotkey_string);
+                    self.global_hotkey_manager = Some(manager);
+                    // Only register the first ToggleQuake binding as a global hotkey
+                    break;
+                }
             }
-        } else {
-            tracing::info!("No global hotkey configured (quake-global-hotkey is None)");
         }
     }
 
@@ -263,45 +277,6 @@ impl Application<'_> {
         }
     }
 
-    fn handle_quake_global_hotkey(&mut self, window_id: WindowId) {
-        tracing::info!(
-            "handle_quake_global_hotkey called for window {:?}",
-            window_id
-        );
-        if let Some(route) = self.router.routes.get_mut(&window_id) {
-            let window = &route.window.winit_window;
-
-            if route.window.is_quake_mode {
-                // Window is in quake mode - toggle visibility
-                if route.window.is_quake_visible {
-                    // Window is visible - hide it (slide up like Quake console)
-                    tracing::info!("Quake window is visible - hiding it");
-                    window.set_visible(false);
-                    route.window.is_quake_visible = false;
-                } else {
-                    // Window is hidden - show it (slide down like Quake console)
-                    tracing::info!("Quake window is hidden - showing it");
-                    window.set_visible(true);
-                    window.focus_window();
-                    route.window.is_focused = true;
-                    route.window.is_quake_visible = true;
-
-                    #[cfg(target_os = "macos")]
-                    {
-                        // Ensure window stays on top in quake mode
-                        window.set_window_level(WindowLevel::AlwaysOnTop);
-                    }
-                }
-            } else {
-                // Window is not in quake mode - enter quake mode
-                tracing::info!("Window not in quake mode - entering quake mode");
-                self.enter_quake_mode(window_id);
-            }
-        } else {
-            tracing::warn!("No route found for window {:?}", window_id);
-        }
-    }
-
     fn enter_quake_mode(&mut self, window_id: WindowId) {
         if let Some(route) = self.router.routes.get_mut(&window_id) {
             let window = &route.window.winit_window;
@@ -325,75 +300,125 @@ impl Application<'_> {
             window.set_decorations(false);
             window.set_resizable(false);
 
-            // Get current window position and scale factor
-            let current_window_pos = window.outer_position().unwrap_or_default();
+            // WORKAROUND: There's a bug in objc2-foundation that causes a crash when
+            // enumerating monitors via winit APIs on macOS. We use the older objc crate
+            // to safely get the screen containing the mouse cursor.
+
             let scale_factor = window.scale_factor();
 
-            // AVOID ALL MONITOR DETECTION - use current window position directly
+            #[cfg(target_os = "macos")]
             let (quake_width, quake_height, quake_x, quake_y) = {
-                tracing::info!("Using direct position-based calculation");
-                tracing::info!(
-                    "Current window position: {}x{}",
-                    current_window_pos.x,
-                    current_window_pos.y
-                );
+                use objc::runtime::{Class, Object};
+                use objc::{class, msg_send, sel, sel_impl};
 
-                // Calculate quake dimensions based on config (assume Studio Display size for now)
-                let estimated_monitor_width = 5120u32;
-                let estimated_monitor_height = 2880u32;
+                unsafe {
+                    // Get NSEvent class and mouse location
+                    let ns_event: *const Class = msg_send![class!(NSEvent), class];
+                    let mouse_location: (f64, f64) = msg_send![ns_event, mouseLocation];
 
-                let quake_width = (estimated_monitor_width as f64
-                    * self.config.window.quake_width_percentage as f64)
-                    as u32;
-                let quake_height = (estimated_monitor_height as f64
-                    * self.config.window.quake_height_percentage as f64)
-                    as u32;
+                    tracing::info!("Mouse location: {:?}", mouse_location);
 
-                // Position quake window on the SAME monitor as current window
-                // Keep it on the same monitor but center it horizontally
-                let quake_x = if current_window_pos.x >= 2560 {
-                    // Window is on a large monitor, center within that monitor's bounds
-                    // Find the left edge of the current monitor and center within it
-                    let monitor_left = (current_window_pos.x
-                        / estimated_monitor_width as i32)
-                        * estimated_monitor_width as i32;
-                    monitor_left + (estimated_monitor_width as i32 / 2)
-                        - (quake_width as i32 / 2)
+                    // Get NSScreen class and all screens
+                    let ns_screen: *const Class = msg_send![class!(NSScreen), class];
+                    let screens: *mut Object = msg_send![ns_screen, screens];
+                    let screen_count: usize = msg_send![screens, count];
+
+                    tracing::info!("Found {} screens", screen_count);
+
+                    // Find the screen containing the mouse
+                    let mut target_screen: *mut Object = std::ptr::null_mut();
+                    for i in 0..screen_count {
+                        let screen: *mut Object = msg_send![screens, objectAtIndex: i];
+                        let frame: (f64, f64, f64, f64) = msg_send![screen, frame];
+                        let (x, y, width, height) = frame;
+
+                        // Check if mouse is within this screen's bounds
+                        if mouse_location.0 >= x && mouse_location.0 < x + width
+                            && mouse_location.1 >= y && mouse_location.1 < y + height {
+                            target_screen = screen;
+                            tracing::info!("Found screen at index {}: frame=({}, {}, {}, {})", i, x, y, width, height);
+                            break;
+                        }
+                    }
+
+                    // If not found, use main screen
+                    if target_screen.is_null() {
+                        target_screen = msg_send![ns_screen, mainScreen];
+                        tracing::info!("Using main screen as fallback");
+                    }
+
+                    // Get frame and visible frame of target screen
+                    let frame: (f64, f64, f64, f64) = msg_send![target_screen, frame];
+                    let visible_frame: (f64, f64, f64, f64) = msg_send![target_screen, visibleFrame];
+
+                    let (frame_x, frame_y, frame_width, frame_height) = frame;
+                    let (vf_x, vf_y, vf_width, vf_height) = visible_frame;
+
+                    // macOS uses bottom-left origin, we need top-left
+                    // Get main screen height for coordinate conversion
+                    let main_screen: *mut Object = msg_send![screens, objectAtIndex: 0usize];
+                    let main_frame: (f64, f64, f64, f64) = msg_send![main_screen, frame];
+                    let (_, _, _, max_height) = main_frame;
+
+                    // Convert to top-left origin
+                    let monitor_x = frame_x as i32;
+                    let monitor_y = (max_height - frame_y - frame_height) as i32;
+                    let monitor_width = frame_width as u32;
+                    let monitor_height = frame_height as u32;
+
+                    tracing::info!(
+                        "Screen geometry - frame: ({}, {}, {}, {}), visible: ({}, {}, {}, {})",
+                        frame_x, frame_y, frame_width, frame_height,
+                        vf_x, vf_y, vf_width, vf_height
+                    );
+
+                    tracing::info!(
+                        "Converted to top-left origin: {}x{} (size: {}x{})",
+                        monitor_x, monitor_y, monitor_width, monitor_height
+                    );
+
+                    // Calculate quake dimensions
+                    let quake_width = (monitor_width as f64
+                        * self.config.window.quake_width_percentage as f64) as u32;
+                    let quake_height = (monitor_height as f64
+                        * self.config.window.quake_height_percentage as f64) as u32;
+
+                    // Center horizontally on the monitor
+                    let quake_x = monitor_x + ((monitor_width as i32 - quake_width as i32) / 2);
+
+                    // Position at the top of the monitor
+                    let quake_y = monitor_y;
+
+                    tracing::info!(
+                        "Calculated quake position: {}x{} (size: {}x{})",
+                        quake_x, quake_y, quake_width, quake_height
+                    );
+
+                    (quake_width, quake_height, quake_x, quake_y)
+                }
+            };
+
+            #[cfg(not(target_os = "macos"))]
+            let (quake_width, quake_height, quake_x, quake_y) = {
+                // Fallback for non-macOS platforms
+                let reference_size = window.inner_size();
+                let estimated_width = if reference_size.width > 800 {
+                    (reference_size.width as f64 / 0.8) as u32
                 } else {
-                    // Window is on the primary/left monitor, center it there
-                    (estimated_monitor_width as i32 / 2) - (quake_width as i32 / 2)
+                    1920u32
+                };
+                let estimated_height = if reference_size.height > 600 {
+                    (reference_size.height as f64 / 0.8) as u32
+                } else {
+                    1080u32
                 };
 
-                // For Y, go to the actual top of the current monitor
-                let quake_y = if current_window_pos.y < 0 {
-                    // Window is above the primary monitor (Studio Display above MacBook)
-                    tracing::info!(
-                        "Window is above primary, calculating top of current monitor"
-                    );
-                    // Find the actual top by using the current Y position
-                    let monitor_top = (current_window_pos.y
-                        / estimated_monitor_height as i32)
-                        * estimated_monitor_height as i32;
-                    tracing::info!(
-                        "Calculated monitor top: {} (current Y: {})",
-                        monitor_top,
-                        current_window_pos.y
-                    );
-                    monitor_top
-                } else {
-                    // Window is on or below primary monitor
-                    tracing::info!("Window is on/below primary, using Y = 0");
-                    0
-                };
+                let width = (estimated_width as f64 * self.config.window.quake_width_percentage as f64) as u32;
+                let height = (estimated_height as f64 * self.config.window.quake_height_percentage as f64) as u32;
+                let x = 100i32;
+                let y = 0i32;
 
-                tracing::info!(
-                    "Calculated quake position: {}x{} (size: {}x{})",
-                    quake_x,
-                    quake_y,
-                    quake_width,
-                    quake_height
-                );
-                (quake_width, quake_height, quake_x, quake_y)
+                (width, height, x, y)
             };
 
             // Use physical coordinates directly
@@ -465,12 +490,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None,
         );
 
-        // Set up global hotkey for any window if configured
-        if let Some(_hotkey_string) = &self.config.quake_global_hotkey {
-            if let Some((window_id, _)) = self.router.routes.iter().last() {
-                let window_id = *window_id;
-                self.setup_global_hotkey(window_id);
-            }
+        // Set up global hotkeys from keybindings
+        if let Some((window_id, _)) = self.router.routes.iter().last() {
+            let window_id = *window_id;
+            self.setup_global_hotkeys_from_bindings(window_id);
         }
 
         // Schedule title updates every 2s
@@ -1066,7 +1089,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 self.toggle_quake_window(window_id);
             }
             RioEventType::Rio(RioEvent::QuakeGlobalHotkey) => {
-                self.handle_quake_global_hotkey(window_id);
+                self.toggle_quake_window(window_id);
             }
             _ => {}
         }

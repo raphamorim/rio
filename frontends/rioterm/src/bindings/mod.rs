@@ -1000,7 +1000,6 @@ pub fn platform_key_bindings(
         "v", ModifiersState::SUPER, ~BindingMode::VI; Action::Paste;
         "f", ModifiersState::CONTROL | ModifiersState::SUPER; Action::ToggleFullscreen;
         Key::Named(Escape), ModifiersState::SUPER; Action::ToggleQuake;
-        Key::Named(Escape), ModifiersState::SUPER | ModifiersState::SHIFT; Action::QuakeGlobalHotkey;
         "c", ModifiersState::SUPER; Action::Copy;
         "c", ModifiersState::SUPER, +BindingMode::VI; Action::ClearSelection;
         "h", ModifiersState::SUPER; Action::Hide;
