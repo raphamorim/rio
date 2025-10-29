@@ -74,8 +74,8 @@ twox-hash = { version = "2.1.1", default-features = false, features = [
 ] }
 memmap2 = { workspace = true }
 # font-kit: Lazy font loading for fast startup (replaces fontdb)
-font-kit = "0.14"
-walkdir = "2.5"
+font-kit = "0.14.3"
+walkdir = "2.5.0"
 ttf-parser = { version = "0.25.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names", "no-std-float"] }
 
 [dev-dependencies]
