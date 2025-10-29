@@ -15,6 +15,8 @@ language: 'en'
 
 ## 0.2.33 (unreleased)
 
+- Fix Noticeably slower startup compared to wezterm, foot [#1346](https://github.com/raphamorim/rio/issues/1346).
+- Fix Font loader taking a LOT of time to load fonts [#1339](https://github.com/raphamorim/rio/issues/1339).
 - Fix kitty keyboard protocol.
 - Support reporting terminal version via XTVERSION.
 
