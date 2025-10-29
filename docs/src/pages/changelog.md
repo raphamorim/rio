@@ -17,6 +17,7 @@ language: 'en'
 
 - Fix Noticeably slower startup compared to wezterm, foot [#1346](https://github.com/raphamorim/rio/issues/1346).
 - Fix Font loader taking a LOT of time to load fonts [#1339](https://github.com/raphamorim/rio/issues/1339).
+- Fix Rio panics on launch on a Raspberry Pi 5 [#1332](https://github.com/raphamorim/rio/issues/1332).
 - Fix kitty keyboard protocol.
 - Support reporting terminal version via XTVERSION.
 
