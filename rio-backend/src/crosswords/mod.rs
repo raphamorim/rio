@@ -3929,4 +3929,57 @@ mod tests {
         assert_eq!(term.keyboard_mode_idx, expected_idx);
         assert_eq!(term.keyboard_mode_stack[0], KeyboardModes::NO_MODE.bits()); // Should be cleared
     }
+
+    #[test]
+    fn test_xtversion_report() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Create a custom event listener that captures PtyWrite events
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let listener = TestListener {
+            events: events.clone(),
+        };
+        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+
+        // Call report_version using Handler trait
+        Handler::report_version(&mut term);
+
+        // Verify that a PtyWrite event was sent
+        let captured_events = events.borrow();
+        assert_eq!(captured_events.len(), 1, "Should have sent one event");
+
+        // Verify the event is PtyWrite with the correct format
+        match &captured_events[0] {
+            RioEvent::PtyWrite(text) => {
+                // Expected format: DCS > | Rio {version} ST
+                // DCS = \x1bP, ST = \x1b\\
+                assert!(text.starts_with("\x1bP>|Rio "), "Should start with DCS>|Rio");
+                assert!(text.ends_with("\x1b\\"), "Should end with ST");
+
+                // Extract version from the response
+                let version = env!("CARGO_PKG_VERSION");
+                let expected = format!("\x1bP>|Rio {}\x1b\\", version);
+                assert_eq!(text, &expected, "XTVERSION response should match expected format");
+            }
+            other => panic!("Expected PtyWrite event, got {:?}", other),
+        }
+    }
 }
