@@ -1117,24 +1117,103 @@ padding-y = [15, 10]
 
 ## platform
 
-Rio allows you to have different configurations per OS, you can write ovewrite `Shell`, `Navigation`, `Renderer` and `Window`.
+Rio allows you to have different configurations per OS. You can override `Shell`, `Navigation`, `Renderer`, `Window`, `env-vars`, and `theme` on a per-platform basis.
 
-Example:
+### Field-Level Merging
+
+Platform overrides use **field-level merging** for `Window`, `Navigation`, and `Renderer` configurations. This means you only need to specify the fields you want to override - other fields will be preserved from the global configuration.
+
+Example (only overriding window mode and opacity):
+
+```toml
+[window]
+width = 1024
+height = 768
+opacity = 0.75
+blur = true
+
+[platform]
+# On macOS, only override the mode - width, height, opacity, and blur are preserved
+macos.window.mode = "Maximized"
+```
+
+### Shell Configuration
+
+Shell configuration uses **complete replacement** - if you specify a platform-specific shell, you must provide the complete shell configuration:
 
 ```toml
 [shell]
-# default (in this case will be used only on MacOS)
 program = "/bin/fish"
 args = ["--login"]
 
 [platform]
-# Microsoft Windows overwrite
-windows.shell.program = "pwsh"
-windows.shell.args = ["-l"]
+# Shell is completely replaced on Windows
+windows.shell = { program = "pwsh", args = ["-l"] }
 
-# Linux overwrite
-linux.shell.program = "tmux"
-linux.shell.args = ["new-session", "-c", "/var/www"]
+# Shell is completely replaced on Linux
+linux.shell = { program = "tmux", args = ["new-session", "-c", "/var/www"] }
+```
+
+### Platform-Specific Environment Variables
+
+You can define platform-specific environment variables that are **appended** to your global env-vars:
+
+```toml
+env-vars = ["GLOBAL_VAR=value"]
+
+[platform]
+macos.env-vars = ["MACOS_SPECIFIC=yes"]
+linux.env-vars = ["LINUX_SPECIFIC=yes"]
+windows.env-vars = ["WINDOWS_SPECIFIC=yes"]
+```
+
+### Platform-Specific Themes
+
+Override the theme on specific platforms:
+
+```toml
+theme = "lucario"
+
+[platform]
+macos.theme = "dracula"
+linux.theme = "nord"
+```
+
+### Complete Example
+
+```toml
+# Global configuration
+theme = "default"
+env-vars = ["EDITOR=vim"]
+
+[window]
+width = 1024
+height = 768
+opacity = 0.9
+
+[renderer]
+performance = "High"
+
+[shell]
+program = "/bin/bash"
+args = ["--login"]
+
+[platform]
+# macOS: Override only specific fields
+macos.theme = "dracula"
+macos.env-vars = ["HOMEBREW_PREFIX=/opt/homebrew"]
+macos.window.opacity = 1.0  # Other window fields preserved
+macos.renderer.backend = "Metal"
+macos.shell = { program = "/bin/zsh", args = ["-l"] }
+
+# Linux: Different overrides
+linux.window.mode = "Maximized"
+linux.renderer.backend = "Vulkan"
+
+# Windows: Complete customization
+windows.theme = "nord"
+windows.env-vars = ["WINDOWS_VAR=value"]
+windows.shell = { program = "pwsh", args = ["-NoLogo"] }
 ```
 
 ## renderer.performance
