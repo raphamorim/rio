@@ -5,7 +5,106 @@ use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
 use font_kit::source::SystemSource;
 
-/// A font database using font-kit for lazy loading
+#[derive(Clone, Debug)]
+pub struct ID {
+    #[cfg(not(target_arch = "wasm32"))]
+    handle: Option<font_kit::handle::Handle>,
+    // TODO: Fix wasm32
+    #[cfg(target_arch = "wasm32")]
+    _dummy: u32,
+}
+
+impl ID {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn from_handle(handle: font_kit::handle::Handle) -> Self {
+        Self {
+            handle: Some(handle),
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn from_handle(_handle: ()) -> Self {
+        Self { _dummy: 0 }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn to_handle(&self) -> Option<font_kit::handle::Handle> {
+        self.handle.clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Source {
+    File(PathBuf),
+    Binary(std::sync::Arc<Vec<u8>>),
+}
+
+/// Font query parameters
+#[derive(Clone, Copy, Default, Debug)]
+pub struct Query<'a> {
+    pub families: &'a [Family<'a>],
+    pub weight: Weight,
+    pub stretch: Stretch,
+    pub style: Style,
+}
+
+/// Font family
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Family<'a> {
+    Name(&'a str),
+    Serif,
+    SansSerif,
+    Cursive,
+    Fantasy,
+    Monospace,
+}
+
+/// Font weight
+#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug, Hash)]
+pub struct Weight(pub u16);
+
+impl Default for Weight {
+    fn default() -> Weight {
+        Weight::NORMAL
+    }
+}
+
+impl Weight {
+    pub const THIN: Weight = Weight(100);
+    pub const EXTRA_LIGHT: Weight = Weight(200);
+    pub const LIGHT: Weight = Weight(300);
+    pub const NORMAL: Weight = Weight(400);
+    pub const MEDIUM: Weight = Weight(500);
+    pub const SEMIBOLD: Weight = Weight(600);
+    pub const BOLD: Weight = Weight(700);
+    pub const EXTRA_BOLD: Weight = Weight(800);
+    pub const BLACK: Weight = Weight(900);
+}
+
+/// Font stretch/width
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+pub enum Stretch {
+    UltraCondensed,
+    ExtraCondensed,
+    Condensed,
+    SemiCondensed,
+    #[default]
+    Normal,
+    SemiExpanded,
+    Expanded,
+    ExtraExpanded,
+    UltraExpanded,
+}
+
+/// Font style
+#[derive(Clone, Default, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Style {
+    #[default]
+    Normal,
+    Italic,
+    Oblique,
+}
+
 pub struct Database {
     #[cfg(not(target_arch = "wasm32"))]
     system_source: SystemSource,
@@ -14,7 +113,6 @@ pub struct Database {
 }
 
 impl Database {
-    /// Create a new database
     pub fn new() -> Self {
         Self {
             #[cfg(not(target_arch = "wasm32"))]
@@ -24,13 +122,12 @@ impl Database {
         }
     }
 
-    /// Load fonts from a directory - scans directory and adds to sources
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_fonts_dir<P: AsRef<std::path::Path>>(&mut self, path: P) {
         use font_kit::handle::Handle;
         use walkdir::WalkDir;
 
-        // Scan directory for font files (lazily - just gather paths)
+        // Scan directory for font files
         let mut fonts = Vec::new();
         for entry in WalkDir::new(path.as_ref())
             .into_iter()
@@ -164,105 +261,4 @@ impl Default for Database {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Font ID - wraps font-kit handle
-#[derive(Clone, Debug)]
-pub struct ID {
-    #[cfg(not(target_arch = "wasm32"))]
-    handle: Option<font_kit::handle::Handle>,
-    #[cfg(target_arch = "wasm32")]
-    _dummy: u32,
-}
-
-impl ID {
-    #[cfg(not(target_arch = "wasm32"))]
-    fn from_handle(handle: font_kit::handle::Handle) -> Self {
-        Self {
-            handle: Some(handle),
-        }
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn from_handle(_handle: ()) -> Self {
-        Self { _dummy: 0 }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn to_handle(&self) -> Option<font_kit::handle::Handle> {
-        self.handle.clone()
-    }
-}
-
-/// Font source (file or binary data)
-#[derive(Clone, Debug)]
-pub enum Source {
-    File(PathBuf),
-    Binary(std::sync::Arc<Vec<u8>>),
-}
-
-/// Font query parameters
-#[derive(Clone, Copy, Default, Debug)]
-pub struct Query<'a> {
-    pub families: &'a [Family<'a>],
-    pub weight: Weight,
-    pub stretch: Stretch,
-    pub style: Style,
-}
-
-/// Font family
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Family<'a> {
-    Name(&'a str),
-    Serif,
-    SansSerif,
-    Cursive,
-    Fantasy,
-    Monospace,
-}
-
-/// Font weight
-#[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Debug, Hash)]
-pub struct Weight(pub u16);
-
-impl Default for Weight {
-    fn default() -> Weight {
-        Weight::NORMAL
-    }
-}
-
-impl Weight {
-    pub const THIN: Weight = Weight(100);
-    pub const EXTRA_LIGHT: Weight = Weight(200);
-    pub const LIGHT: Weight = Weight(300);
-    pub const NORMAL: Weight = Weight(400);
-    pub const MEDIUM: Weight = Weight(500);
-    pub const SEMIBOLD: Weight = Weight(600);
-    pub const BOLD: Weight = Weight(700);
-    pub const EXTRA_BOLD: Weight = Weight(800);
-    pub const BLACK: Weight = Weight(900);
-}
-
-/// Font stretch/width
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
-pub enum Stretch {
-    UltraCondensed,
-    ExtraCondensed,
-    Condensed,
-    SemiCondensed,
-    #[default]
-    Normal,
-    SemiExpanded,
-    Expanded,
-    ExtraExpanded,
-    UltraExpanded,
-}
-
-/// Font style
-#[derive(Clone, Default, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum Style {
-    #[default]
-    Normal,
-    Italic,
-    Oblique,
 }
