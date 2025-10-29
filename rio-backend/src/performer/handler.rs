@@ -294,6 +294,9 @@ pub trait Handler {
     /// DECRPM - report private mode.
     fn report_private_mode(&mut self, _mode: PrivateMode) {}
 
+    /// XTVERSION - Report terminal version.
+    fn report_version(&mut self) {}
+
     /// DECSTBM - Set the terminal scrolling region.
     fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
 
@@ -1104,8 +1107,16 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 let mode = next_param_or(0);
                 handler.report_private_mode(PrivateMode::new(mode));
             }
+            ('q', [b'>']) => {
+                // XTVERSION (CSI > q) -- Query Terminal Version.
+                if next_param_or(0) != 0 {
+                    csi_unhandled!();
+                    return;
+                }
+                handler.report_version();
+            }
             ('q', [b' ']) => {
-                // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
+                // DECSCUSR (CSI SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);
                 let shape = match cursor_style_id {
                     0 => None,
