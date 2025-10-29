@@ -2220,6 +2220,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn report_version(&mut self) {
+        trace!("Reporting terminal version (XTVERSION)");
+        let version = env!("CARGO_PKG_VERSION");
+        let text = format!("\x1bP>|Rio {version}\x1b\\");
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
     fn report_keyboard_mode(&mut self) {
         let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
