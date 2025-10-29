@@ -39,7 +39,24 @@ fn find_best_texture_format(
 
     // not reproduce-able on mac
     #[cfg(not(windows))]
-    let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+    let unsupported_formats = [
+        wgpu::TextureFormat::Rgba8Snorm,
+        // Features::TEXTURE_FORMAT_16BIT_NORM must be enabled to use these texture format.
+        wgpu::TextureFormat::R16Unorm,
+        wgpu::TextureFormat::R16Snorm,
+    ];
+
+    // Bgra8Unorm is the most widely supported and guaranteed format in wgpu
+    // Prefer it explicitly if available
+    if formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
+        format = wgpu::TextureFormat::Bgra8Unorm;
+        tracing::info!(
+            "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",
+            formats,
+            colorspace
+        );
+        return format;
+    }
 
     let filtered_formats: Vec<wgpu::TextureFormat> = formats
         .iter()
@@ -146,9 +163,7 @@ impl Context<'_> {
 
         let (device, queue, supports_f16) = {
             let base_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
-            let base_f16_features = base_features
-                | wgpu::Features::SHADER_F16
-                | wgpu::Features::TEXTURE_FORMAT_16BIT_NORM;
+            let base_f16_features = base_features | wgpu::Features::SHADER_F16;
 
             let device_configs = [(base_f16_features, true), (base_features, false)];
 
