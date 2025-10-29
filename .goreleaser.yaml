@@ -157,11 +157,16 @@ nfpms:
     overrides:
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -175,11 +180,16 @@ nfpms:
     overrides:
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -193,11 +203,16 @@ nfpms:
     overrides:
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin
@@ -211,11 +226,16 @@ nfpms:
     overrides:
       rpm:
         dependencies: [glibc, libstdc++]
+        contents:
+          - src: ./misc/rio.desktop
+            dst: /usr/share/applications/rio.desktop
+          - src: ./misc/r/rio
+            dst: /usr/share/terminfo/r/rio
+          - src: ./misc/logo.svg
+            dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     contents:
       - src: ./misc/rio.desktop
         dst: /usr/share/applications/rio.desktop
-      - src: ./misc/r/rio
-        dst: /usr/share/terminfo/r/rio
       - src: ./misc/logo.svg
         dst: /usr/share/icons/hicolor/scalable/apps/rio.svg
     section: admin

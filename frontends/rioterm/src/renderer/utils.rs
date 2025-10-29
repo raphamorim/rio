@@ -75,6 +75,7 @@ pub fn terminal_dimensions(layout: &ContextDimension) -> teletypewriter::Winsize
     }
 }
 
+#[inline]
 pub fn update_colors_based_on_theme(config: &mut Config, theme_opt: Option<Theme>) {
     if let Some(theme) = theme_opt {
         if let Some(adaptive_colors) = &config.adaptive_colors {

@@ -252,6 +252,10 @@ Colors are specified using their hexadecimal values with a _#_ prefix: _#RRGGBB_
 
 	Navigation bar background color.
 
+*split* = _"<string>"_
+
+	Split separator color.
+
 *search-match-background* = _"<string>"_
 
 	Search match background color.

@@ -2,6 +2,8 @@
 //!
 //! Run with: cargo run --release --example rio_usage_benchmark
 
+#![allow(clippy::uninlined_format_args)]
+
 use copa::{Parser, Perform};
 use rio_backend::batched_parser::BatchedParser;
 use std::time::Instant;

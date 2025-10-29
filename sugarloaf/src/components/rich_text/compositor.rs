@@ -22,6 +22,89 @@ impl Compositor {
         }
     }
 
+    /// Creates an underline decoration based on the style and rect
+    pub fn create_underline_from_decoration(
+        &self,
+        style: &TextRunStyle,
+        rect: &Rect,
+    ) -> Option<RunUnderline> {
+        match style.decoration {
+            Some(FragmentStyleDecoration::Underline(info)) => {
+                // Use font metrics for thickness when available, otherwise fall back to shape-based defaults
+                let underline_thickness = if style.underline_thickness > 0.0 {
+                    style.underline_thickness
+                } else {
+                    // Fallback thickness based on font size
+                    // Use approximately 8% of font size for all underline types
+                    let base_thickness = style.font_size * 0.08;
+                    base_thickness.max(1.0)
+                };
+
+                // Use real font metrics for proper underline positioning
+                let underline_offset =
+                    self.calculate_underline_offset(style, underline_thickness);
+
+                Some(RunUnderline {
+                    enabled: true,
+                    offset: underline_offset,
+                    size: underline_thickness,
+                    color: style.decoration_color.unwrap_or(style.color),
+                    is_doubled: info.is_doubled,
+                    shape: info.shape,
+                })
+            }
+            Some(FragmentStyleDecoration::Strikethrough) => {
+                // Use font's built-in strikeout offset if available, otherwise use x-height/2
+                // This matches standard typographic positioning for strikethrough
+                let strikethrough_offset = if style.strikeout_offset != 0.0 {
+                    // Font provides explicit strikeout position (negative because it's above baseline)
+                    -style.strikeout_offset
+                } else if style.x_height > 0.0 {
+                    // Use half of x-height above baseline - this is the typographically correct position
+                    -(style.x_height / 2.0)
+                } else {
+                    // Final fallback: approximate x-height position
+                    -(rect.height * 0.3)
+                };
+
+                // Use font metrics for thickness when available
+                let strikethrough_thickness = if style.underline_thickness > 0.0 {
+                    style.underline_thickness
+                } else {
+                    1.5 // Slightly thinner than before for better appearance
+                };
+
+                Some(RunUnderline {
+                    enabled: true,
+                    offset: strikethrough_offset,
+                    size: strikethrough_thickness,
+                    color: style.decoration_color.unwrap_or(style.color),
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// Calculate underline offset using font metrics, with fallback
+    fn calculate_underline_offset(
+        &self,
+        style: &TextRunStyle,
+        underline_thickness: f32,
+    ) -> f32 {
+        // Use font's built-in underline position when available
+        if style.underline_offset != 0.0 {
+            // Font provides underline_offset as distance from baseline to underline top
+            // Negative values mean below baseline, which is what we want
+            // But Rio's renderer expects positive offset for below baseline
+            -style.underline_offset
+        } else {
+            // Fallback: place underline 1 thickness below baseline
+            underline_thickness
+        }
+    }
+
     pub fn begin(&mut self) {
         self.batches.reset();
     }
@@ -55,25 +138,7 @@ impl Compositor {
         glyphs: &[Glyph],
     ) {
         let rect = rect.into();
-        let underline = match style.decoration {
-            Some(FragmentStyleDecoration::Underline(info)) => Some(RunUnderline {
-                enabled: true,
-                offset: info.offset.round() as i32,
-                size: info.size,
-                color: style.decoration_color.unwrap_or(style.color),
-                is_doubled: info.is_doubled,
-                shape: info.shape,
-            }),
-            Some(FragmentStyleDecoration::Strikethrough) => Some(RunUnderline {
-                enabled: true,
-                offset: (style.line_height_without_mod / 3.5).round() as i32,
-                size: 2.0,
-                color: style.decoration_color.unwrap_or(style.color),
-                is_doubled: false,
-                shape: UnderlineShape::Regular,
-            }),
-            _ => None,
-        };
+        let underline = self.create_underline_from_decoration(style, &rect);
 
         let subpx_bias = (0.125, 0.);
         let color = style.color;
@@ -86,53 +151,34 @@ impl Compositor {
             }
 
             if let Some(cursor) = style.cursor {
+                // Calculate cursor dimensions based on font metrics, not line height
+                let font_height = style.ascent + style.descent;
+                let cursor_top = style.baseline - style.ascent;
+
                 match cursor {
                     crate::SugarCursor::Block(cursor_color) => {
-                        let cursor_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
+                        let cursor_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::HollowBlock(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {
                             let inner_rect = Rect::new(
                                 rect.x + 1.0,
-                                style.topline + 1.0,
+                                cursor_top + 1.0,
                                 rect.width - 2.0,
-                                style.line_height - 2.0,
+                                font_height - 2.0,
                             );
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
-                        self.batches.add_rect(&outer_rect, depth, &cursor_color);
-
-                        if let Some(bg_color) = style.background_color {
-                            let inner_rect = Rect::new(
-                                rect.x + 1.0,
-                                style.topline + 1.0,
-                                rect.width - 2.0,
-                                style.line_height - 2.0,
-                            );
-                            self.batches.add_rect(&inner_rect, depth, &bg_color);
-                        }
+                        let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
+                        self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::Underline(cursor_color) => {
                         let caret_rect =
@@ -203,53 +249,34 @@ impl Compositor {
             }
 
             if let Some(cursor) = style.cursor {
+                // Calculate cursor dimensions based on font metrics, not line height
+                let font_height = style.ascent + style.descent;
+                let cursor_top = style.baseline - style.ascent;
+
                 match cursor {
                     crate::SugarCursor::Block(cursor_color) => {
-                        let cursor_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
+                        let cursor_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&cursor_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::HollowBlock(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
+                        let outer_rect =
+                            Rect::new(rect.x, cursor_top, rect.width, font_height);
                         self.batches.add_rect(&outer_rect, depth, &cursor_color);
 
                         if let Some(bg_color) = style.background_color {
                             let inner_rect = Rect::new(
                                 rect.x + 1.0,
-                                style.topline + 1.0,
+                                cursor_top + 1.0,
                                 rect.width - 2.0,
-                                style.line_height - 2.0,
+                                font_height - 2.0,
                             );
                             self.batches.add_rect(&inner_rect, depth, &bg_color);
                         }
                     }
                     crate::SugarCursor::Caret(cursor_color) => {
-                        let outer_rect = Rect::new(
-                            rect.x,
-                            style.topline,
-                            rect.width,
-                            style.line_height,
-                        );
-                        self.batches.add_rect(&outer_rect, depth, &cursor_color);
-
-                        if let Some(bg_color) = style.background_color {
-                            let inner_rect = Rect::new(
-                                rect.x + 1.0,
-                                style.topline + 1.0,
-                                rect.width - 2.0,
-                                style.line_height - 2.0,
-                            );
-                            self.batches.add_rect(&inner_rect, depth, &bg_color);
-                        }
+                        let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
+                        self.batches.add_rect(&caret_rect, depth, &cursor_color);
                     }
                     crate::SugarCursor::Underline(cursor_color) => {
                         let caret_rect =

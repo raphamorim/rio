@@ -24,6 +24,7 @@ rio-backend = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+criterion = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 bitflags = { workspace = true }
@@ -31,9 +32,9 @@ futures = { workspace = true }
 corcovado = { workspace = true }
 regex = { workspace = true }
 raw-window-handle = { workspace = true }
-clap = { version = "4.5.27", features = ["derive"] }
+clap = { version = "4.5.42", features = ["derive"] }
 dirs = "6.0.0"
-notify = "8.0.0"
+notify = "8.2.0"
 rustc-hash = { workspace = true }
 image_rs = { workspace = true }
 libc = { workspace = true }
@@ -43,17 +44,22 @@ teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
 url = { workspace = true }
+smallvec = { workspace = true }
 rio-window = { workspace = true }
-lru = "0.13.0"
+lru = "0.16.0"
 global-hotkey = "0.6.0"
+
+[target.'cfg(all(not(target_os = "macos"), not(target_os = "windows")))'.dependencies]
+cpal = { version = "0.15", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.11", default-features = false, features = ["std"] }
+dunce = "1.0.5"
 tinyvec = { version = "1.8.1", features = ["alloc"] }
-windows-sys = { version = "0.59.0", features = [
+windows-sys = { version = "0.60.2", features = [
     "Win32_System_Console",
     "Win32_Foundation",
     "Win32_Security",
@@ -64,10 +70,12 @@ windows-sys = { version = "0.59.0", features = [
     "Win32_Graphics_Gdi",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Diagnostics_Debug",
 ]}
 
 [features]
 default = ["wayland", "x11"]
+audio = ["cpal"]
 x11 = [
     "rio-backend/x11",
     "rio-window/x11"
@@ -83,7 +91,7 @@ wayland = [
 [package.metadata.deb]
 name = "rioterm"
 maintainer = "Raphael Amorim <rapha850@gmail.com>"
-copyright = "2024, Raphael Amorim <rapha850@gmail.com>"
+copyright = "2022-present, Raphael Amorim <rapha850@gmail.com>"
 depends = "$auto"
 section = "admin"
 priority = "optional"
@@ -98,3 +106,7 @@ assets = [
 extended-description = """\
 Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers.
 The supported platforms currently consist of BSD, Linux, MacOS and Windows."""
+
+[[bench]]
+name = "renderer_bench"
+harness = false

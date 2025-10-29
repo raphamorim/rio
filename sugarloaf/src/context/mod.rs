@@ -13,6 +13,7 @@ pub struct Context<'a> {
     surface_caps: wgpu::SurfaceCapabilities,
     pub supports_f16: bool,
     pub colorspace: Colorspace,
+    pub max_texture_dimension_2d: u32,
 }
 
 #[inline]
@@ -38,7 +39,24 @@ fn find_best_texture_format(
 
     // not reproduce-able on mac
     #[cfg(not(windows))]
-    let unsupported_formats = [wgpu::TextureFormat::Rgba8Snorm];
+    let unsupported_formats = [
+        wgpu::TextureFormat::Rgba8Snorm,
+        // Features::TEXTURE_FORMAT_16BIT_NORM must be enabled to use these texture format.
+        wgpu::TextureFormat::R16Unorm,
+        wgpu::TextureFormat::R16Snorm,
+    ];
+
+    // Bgra8Unorm is the most widely supported and guaranteed format in wgpu
+    // Prefer it explicitly if available
+    if formats.contains(&wgpu::TextureFormat::Bgra8Unorm) {
+        format = wgpu::TextureFormat::Bgra8Unorm;
+        tracing::info!(
+            "Sugarloaf selected format: {format:?} from {:?} for colorspace {:?}",
+            formats,
+            colorspace
+        );
+        return format;
+    }
 
     let filtered_formats: Vec<wgpu::TextureFormat> = formats
         .iter()
@@ -144,45 +162,38 @@ impl Context<'_> {
         );
 
         let (device, queue, supports_f16) = {
-            {
-                if let Ok(result) = futures::executor::block_on(adapter.request_device(
-                    // ADDRESS_MODE_CLAMP_TO_BORDER is required for librashader
-                    // SHADER_F16 enables half precision floating point support
-                    &wgpu::DeviceDescriptor {
-                        required_features: wgpu::Features::empty()
-                            | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
-                            | wgpu::Features::SHADER_F16,
+            let base_features = wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER;
+            let base_f16_features = base_features | wgpu::Features::SHADER_F16;
+
+            let device_configs = [(base_f16_features, true), (base_features, false)];
+
+            let mut result = None;
+            for (features, supports_f16_val) in device_configs {
+                if let Ok(device_result) = futures::executor::block_on(
+                    adapter.request_device(&wgpu::DeviceDescriptor {
+                        required_features: features,
                         ..Default::default()
-                    },
-                )) {
-                    (result.0, result.1, true)
-                } else {
-                    // Fallback without f16 support for compatibility
-                    if let Ok(result) = futures::executor::block_on(
-                        adapter.request_device(&wgpu::DeviceDescriptor {
-                            required_features: wgpu::Features::empty()
-                                | wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
-                            ..Default::default()
-                        }),
-                    ) {
-                        (result.0, result.1, false)
-                    } else {
-                        // These downlevel limits will allow the code to run on all possible hardware
-                        let result = futures::executor::block_on(adapter.request_device(
-                            &wgpu::DeviceDescriptor {
-                                memory_hints: wgpu::MemoryHints::Performance,
-                                label: None,
-                                required_features: wgpu::Features::empty(),
-                                required_limits: wgpu::Limits::downlevel_webgl2_defaults(
-                                ),
-                                ..Default::default()
-                            },
-                        ))
-                        .expect("Request device");
-                        (result.0, result.1, false)
-                    }
+                    }),
+                ) {
+                    result = Some((device_result.0, device_result.1, supports_f16_val));
+                    break;
                 }
             }
+
+            result.unwrap_or_else(|| {
+                // Last resort: downlevel limits with no features
+                let device_result = futures::executor::block_on(adapter.request_device(
+                    &wgpu::DeviceDescriptor {
+                        memory_hints: wgpu::MemoryHints::Performance,
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                        ..Default::default()
+                    },
+                ))
+                .expect("Request device");
+                (device_result.0, device_result.1, false)
+            })
         };
 
         let alpha_mode = if surface_caps
@@ -225,9 +236,12 @@ impl Context<'_> {
             },
         );
 
+        let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+
         tracing::info!("F16 shader support: {}", supports_f16);
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);
+        tracing::info!("Max texture dimension 2D: {}", max_texture_dimension_2d);
 
         Context {
             device,
@@ -244,6 +258,7 @@ impl Context<'_> {
             surface_caps,
             supports_f16,
             colorspace: renderer_config.colorspace,
+            max_texture_dimension_2d,
         }
     }
 
@@ -295,6 +310,10 @@ impl Context<'_> {
         } else {
             wgpu::TextureFormat::Rgba8Unorm
         }
+    }
+
+    pub fn max_texture_dimension_2d(&self) -> u32 {
+        self.max_texture_dimension_2d
     }
 
     pub fn get_optimal_texture_sample_type(&self) -> wgpu::TextureSampleType {

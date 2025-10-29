@@ -11,27 +11,13 @@ use smallvec::SmallVec;
 use std::mem;
 use std::sync::{Arc, Weak};
 
-#[derive(Eq, PartialEq, Clone, Debug)]
-pub struct ClearSubregion {
-    /// Graphics identifier.
-    pub id: GraphicId,
-
-    /// X coordinate.
-    pub x: u16,
-
-    /// Y coordinate.
-    pub y: u16,
-}
-
+#[derive(Debug, Clone)]
 pub struct UpdateQueues {
     /// Graphics read from the PTY.
     pub pending: Vec<GraphicData>,
 
     /// Graphics removed from the grid.
     pub remove_queue: Vec<GraphicId>,
-
-    /// Subregions in a graphic to be clear.
-    pub clear_subregions: Vec<ClearSubregion>,
 }
 
 #[derive(Clone, Debug)]
@@ -48,8 +34,8 @@ pub struct TextureRef {
     /// Height, in pixels, of the cell when the graphic was inserted.
     pub cell_height: usize,
 
-    /// Queue to track removed references.
-    pub texture_operations: Weak<Mutex<Vec<TextureOperation>>>,
+    /// Queue to track removed textures.
+    pub texture_operations: Weak<Mutex<Vec<GraphicId>>>,
 }
 
 impl PartialEq for TextureRef {
@@ -64,9 +50,7 @@ impl Eq for TextureRef {}
 impl Drop for TextureRef {
     fn drop(&mut self) {
         if let Some(texture_operations) = self.texture_operations.upgrade() {
-            texture_operations
-                .lock()
-                .push(TextureOperation::Remove(self.id));
+            texture_operations.lock().push(self.id);
         }
     }
 }
@@ -86,8 +70,8 @@ pub struct GraphicCell {
     /// Offset in the y direction.
     pub offset_y: u16,
 
-    /// Queue to track empty subregions.
-    pub texture_operations: Weak<Mutex<Vec<TextureOperation>>>,
+    /// Queue to track removed textures.
+    pub texture_operations: Weak<Mutex<Vec<GraphicId>>>,
 }
 
 impl PartialEq for GraphicCell {
@@ -104,24 +88,9 @@ impl Eq for GraphicCell {}
 impl Drop for GraphicCell {
     fn drop(&mut self) {
         if let Some(texture_operations) = self.texture_operations.upgrade() {
-            let tex_op = TextureOperation::ClearSubregion(ClearSubregion {
-                id: self.texture.id,
-                x: self.offset_x,
-                y: self.offset_y,
-            });
-
-            texture_operations.lock().push(tex_op);
+            texture_operations.lock().push(self.texture.id);
         }
     }
-}
-
-#[derive(Debug)]
-pub enum TextureOperation {
-    /// Remove a texture from the GPU.
-    Remove(GraphicId),
-
-    /// Clear a subregion.
-    ClearSubregion(ClearSubregion),
 }
 
 /// Track changes in the grid to add or to remove graphics.
@@ -134,7 +103,7 @@ pub struct Graphics {
     pub pending: Vec<GraphicData>,
 
     /// Graphics removed from the grid.
-    pub texture_operations: Arc<Mutex<Vec<TextureOperation>>>,
+    pub texture_operations: Arc<Mutex<Vec<GraphicId>>>,
 
     /// Shared palette for Sixel graphics.
     pub sixel_shared_palette: Option<Vec<ColorRgb>>,
@@ -167,8 +136,12 @@ impl Graphics {
     /// Get queues to update graphics in the grid.
     ///
     /// If all queues are empty, it returns `None`.
+    pub fn has_pending_updates(&self) -> bool {
+        !self.pending.is_empty() || !self.texture_operations.lock().is_empty()
+    }
+
     pub fn take_queues(&mut self) -> Option<UpdateQueues> {
-        let texture_operations = {
+        let remove_queue = {
             let mut queue = self.texture_operations.lock();
             if queue.is_empty() {
                 Vec::new()
@@ -177,24 +150,13 @@ impl Graphics {
             }
         };
 
-        if texture_operations.is_empty() && self.pending.is_empty() {
+        if remove_queue.is_empty() && self.pending.is_empty() {
             return None;
-        }
-
-        let mut remove_queue = Vec::new();
-        let mut clear_subregions = Vec::new();
-
-        for operation in texture_operations {
-            match operation {
-                TextureOperation::Remove(id) => remove_queue.push(id),
-                TextureOperation::ClearSubregion(cs) => clear_subregions.push(cs),
-            }
         }
 
         Some(UpdateQueues {
             pending: mem::take(&mut self.pending),
             remove_queue,
-            clear_subregions,
         })
     }
 

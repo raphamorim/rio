@@ -33,6 +33,20 @@ program = "vi"
 args = []
 ```
 
+## adaptive-theme
+
+Rio supports adaptive themes that automatically switch between light and dark themes based on the system theme. This feature works on Web, MacOS, and Windows platforms.
+
+```toml
+[adaptive-theme]
+light = "belafonte-day"
+dark = "belafonte-night"
+```
+
+When configured, Rio will automatically switch between the specified light and dark themes based on your system's current theme setting.
+
+![Adaptive theme](/assets/features/adaptive-theme.gif)
+
 ## colors
 
 Defining colors in the configuration file will not have any effect if you're using a theme.
@@ -66,12 +80,17 @@ tabs-active = '#303030'
 tabs-active-highlight = '#ffa133'
 tabs-active-foreground = '#FFFFFF'
 bar = '#1b1a1a'
+split = '#292527'
 
 # Search
 search-match-background = '#44C9F0'
 search-match-foreground = '#FFFFFF'
 search-focused-match-background = '#E6A003'
 search-focused-match-foreground = '#FFFFFF'
+
+# Hints
+hint-foreground = '#181818'
+hint-background = '#f4bf75'
 
 # Selection`
 selection-foreground = '#0F0D0E'
@@ -142,6 +161,39 @@ Set cursor blinking interval (default: 800, only configurable from 350ms to 1200
 [cursor]
 blinking-interval = 800
 ```
+
+## bell
+
+Configure the terminal bell behavior. The bell can be triggered by applications using the BEL control character (ASCII 7).
+
+#### Visual
+
+Enable or disable the visual bell. When enabled, the screen will flash instead of playing a sound.
+
+Default is `false`.
+
+```toml
+[bell]
+visual = false
+```
+
+#### Audio
+
+Enable or disable the audio bell. When enabled, a sound will play when the bell is triggered.
+
+Default behavior:
+- **macOS**: `true` (uses system notification sound)
+- **Windows**: `true` (uses system notification sound)
+- **Linux/BSD**: `false` (requires `audio` feature during compilation)
+
+```toml
+[bell]
+audio = true
+```
+
+:::info
+On Linux and BSD systems, audio bell support requires Rio to be compiled with the `audio` feature flag. Distribution packages typically don't include this feature to minimize dependencies. See [Build from source](/docs/install/build-from-source) for compilation instructions with audio support.
+:::
 
 ## developer
 
@@ -731,6 +783,71 @@ fonts.use-drawable-chars = true
 </p>
 </details>
 
+## hints
+
+The hints system allows you to quickly interact with text patterns in your terminal by displaying keyboard shortcuts over matching content. When activated, Rio scans the visible terminal content for configured patterns and displays keyboard shortcuts over each match.
+
+For detailed information about the hints system, see the [Hints feature documentation](/docs/features/hints).
+
+### Basic Configuration
+
+```toml
+[hints]
+# Characters used for hint labels
+alphabet = "jfkdls;ahgurieowpq"
+
+# URL hint example
+[[hints.rules]]
+regex = "(https://|http://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+"
+hyperlinks = true
+post-processing = true
+persist = false
+
+[hints.rules.action]
+command = "xdg-open"  # Linux/BSD
+# command = "open"    # macOS
+# command = { program = "cmd", args = ["/c", "start", ""] }  # Windows
+
+[hints.rules.binding]
+key = "O"
+mods = ["Control", "Shift"]
+```
+
+### Configuration Options
+
+- **`alphabet`**: String of characters used for hint labels
+- **`regex`**: Regular expression pattern to match
+- **`hyperlinks`**: Whether to treat matches as hyperlinks
+- **`post-processing`**: Apply post-processing to clean up matched text
+- **`persist`**: Keep hint mode active after selection
+
+### Actions
+
+Built-in actions:
+- `"Copy"` - Copy to clipboard
+- `"Paste"` - Paste the matched text
+- `"Select"` - Select the matched text
+
+External commands:
+```toml
+[hints.rules.action]
+command = "xdg-open"  # Simple command
+# Or with arguments:
+command = { program = "code", args = ["--goto"] }
+```
+
+### Key Bindings and Mouse Support
+
+```toml
+[hints.rules.binding]
+key = "O"
+mods = ["Control", "Shift"]
+
+[hints.rules.mouse]
+enabled = true
+mods = ["Control"]  # Optional modifier keys
+```
+
 ## ignore-selection-foreground-color
 
 Default is `false`
@@ -966,7 +1083,7 @@ Default is `true`.
 hide-if-single = true
 ```
 
-## navigation.use-current-path
+## navigation.current-working-directory
 
 Use same path whenever a new tab is created (Note: requires use-fork to be set to false).
 
@@ -1056,6 +1173,19 @@ Default is false.
 ```toml
 [renderer]
 disable-unfocused-render = false
+```
+
+## renderer.disable-occluded-render
+
+This property disables renderer processes while Rio windows/tabs are occluded (completely hidden from view). This is different from unfocused rendering as it depends on whether the window is minimized, set invisible, or fully occluded by another window.
+
+When a window becomes visible again after being occluded, Rio will automatically render one frame to update the display.
+
+Default is true.
+
+```toml
+[renderer]
+disable-occluded-render = true
 ```
 
 ## renderer.target-fps
@@ -1203,7 +1333,7 @@ theme = "lucario"
 
 You can find more than 250 themes for Rio terminal in this repository: [mbadolato/iTerm2-Color-Schemes/tree/master/rio](https://github.com/mbadolato/iTerm2-Color-Schemes/tree/master/rio).
 
-## Building your own theme
+### Building your own theme
 
 Building your own theme for Rio is very straightforward.
 
@@ -1227,6 +1357,7 @@ tabs-active = ""
 tabs-active-foreground = ""
 tabs-active-highlight = ""
 bar = ""
+split = ""
 cursor = ""
 vi-cursor = ""
 

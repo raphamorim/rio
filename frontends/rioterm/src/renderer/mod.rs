@@ -1,9 +1,14 @@
+mod char_cache;
 mod font_cache;
 pub mod navigation;
 mod search;
 pub mod utils;
 
-use font_cache::FontCache;
+use crate::context::renderable::TerminalSnapshot;
+use crate::renderer::font_cache::FontCache;
+use char_cache::CharCache;
+use rio_backend::crosswords::LineDamage;
+use rio_backend::event::TerminalDamage;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -11,22 +16,19 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use crate::screen::hint::HintMatches;
 use navigation::ScreenNavigation;
-use rio_backend::ansi::graphics::UpdateQueues;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
 use rio_backend::config::Config;
-use rio_backend::crosswords::TermDamage;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -39,13 +41,14 @@ pub struct Search {
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
+    is_game_mode_enabled: bool,
     draw_bold_text_with_light_colors: bool,
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: ScreenNavigation,
     unfocused_split_opacity: f32,
-    last_active: usize,
+    last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -57,8 +60,12 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
+    // Visual bell state
+    visual_bell_active: bool,
+    visual_bell_start: Option<std::time::Instant>,
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
+    char_cache: CharCache,
 }
 
 impl Renderer {
@@ -91,7 +98,7 @@ impl Renderer {
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
-            last_active: 0,
+            last_active: None,
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
@@ -108,9 +115,13 @@ impl Renderer {
             ),
             named_colors,
             dynamic_background,
+            visual_bell_active: false,
+            visual_bell_start: None,
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
+            char_cache: CharCache::new(),
+            is_game_mode_enabled: config.renderer.strategy.is_game(),
         };
 
         // Pre-populate font cache with common characters for better performance
@@ -192,8 +203,6 @@ impl Renderer {
 
         if square.flags.contains(Flags::UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 1.0,
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
@@ -201,29 +210,21 @@ impl Renderer {
             decoration = Some(FragmentStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 1.0,
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
             decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                offset: -1.0,
-                size: 2.0,
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
@@ -241,6 +242,15 @@ impl Renderer {
 
     #[inline]
     #[allow(clippy::too_many_arguments)]
+    /// Check if a position is within any hint match
+    fn is_position_in_hint_matches(
+        matches: &[rio_backend::crosswords::search::Match],
+        pos: Pos,
+    ) -> bool {
+        matches.iter().any(|m| m.contains(&pos))
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn create_line(
         &mut self,
         builder: &mut Content,
@@ -249,14 +259,13 @@ impl Renderer {
         line_opt: Option<usize>,
         line: Line,
         renderable_content: &RenderableContent,
-        search_hints: &mut Option<HintMatches>,
+        hint_matches: Option<&[rio_backend::crosswords::search::Match]>,
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
         is_active: bool,
     ) {
         // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
-        let hyperlink_range = renderable_content.hyperlink_range;
         let selection_range = renderable_content.selection_range;
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
@@ -275,54 +284,94 @@ impl Renderer {
                 continue;
             }
 
-            let (mut style, square_content) =
+            let (mut style, mut square_content) =
                 if has_cursor && column == cursor.state.pos.col {
                     self.create_cursor_style(square, cursor, is_active, term_colors)
                 } else {
                     self.create_style(square, term_colors)
                 };
 
-            if hyperlink_range.is_some()
-                && square.hyperlink().is_some()
-                && hyperlink_range
-                    .unwrap()
-                    .contains(Pos::new(line, Column(column)))
-            {
+            // Apply underline for hyperlinks (OSC 8) or highlighted hints (hover)
+            let should_underline = square.hyperlink().is_some() || {
+                if let Some(highlighted_hint) = &renderable_content.highlighted_hint {
+                    let current_pos = Pos::new(line, Column(column));
+                    highlighted_hint.start <= current_pos
+                        && current_pos <= highlighted_hint.end
+                } else {
+                    false
+                }
+            };
+
+            if should_underline {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: -1.0,
-                        size: -1.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
-            } else if selection_range.is_some()
-                && selection_range
-                    .unwrap()
-                    .contains(Pos::new(line, Column(column)))
-            {
-                style.color = if self.ignore_selection_fg_color {
-                    self.compute_color(&square.fg, square.flags, term_colors)
-                } else {
-                    self.named_colors.selection_foreground
-                };
-                style.background_color = Some(self.named_colors.selection_background);
-            } else if search_hints.is_some()
-                && search_hints
-                    .as_mut()
-                    .is_some_and(|search| search.advance(Pos::new(line, Column(column))))
-            {
-                let is_focused = focused_match
-                    .as_ref()
-                    .is_some_and(|fm| fm.contains(&Pos::new(line, Column(column))));
-                if is_focused {
-                    style.color = self.named_colors.search_focused_match_foreground;
-                    style.background_color =
-                        Some(self.named_colors.search_focused_match_background);
-                } else {
-                    style.color = self.named_colors.search_match_foreground;
-                    style.background_color =
-                        Some(self.named_colors.search_match_background);
+            }
+
+            // Check selection more efficiently
+            if let Some(ref range) = selection_range {
+                let pos = Pos::new(line, Column(column));
+                if range.contains(pos) {
+                    style.color = if self.ignore_selection_fg_color {
+                        self.compute_color(&square.fg, square.flags, term_colors)
+                    } else {
+                        self.named_colors.selection_foreground
+                    };
+                    style.background_color = Some(self.named_colors.selection_background);
                 }
+            } else if let Some(matches) = hint_matches {
+                let pos = Pos::new(line, Column(column));
+                if Self::is_position_in_hint_matches(matches, pos) {
+                    let is_focused =
+                        focused_match.as_ref().is_some_and(|fm| fm.contains(&pos));
+                    if is_focused {
+                        style.color = self.named_colors.search_focused_match_foreground;
+                        style.background_color =
+                            Some(self.named_colors.search_focused_match_background);
+                    } else {
+                        style.color = self.named_colors.search_match_foreground;
+                        style.background_color =
+                            Some(self.named_colors.search_match_background);
+                    }
+                }
+            }
+
+            // Check for hint labels at this position
+            if let Some(hint_label) = self.find_hint_label_at_position(
+                renderable_content,
+                Pos::new(line, Column(column)),
+            ) {
+                // Override character with hint label character if available
+                if let Some(label_char) = hint_label.label.first() {
+                    square_content = *label_char;
+                }
+
+                // Apply hint label styling
+                if hint_label.is_first {
+                    // Use configurable hint colors
+                    style.color = self.named_colors.hint_foreground;
+                    style.background_color = Some(self.named_colors.hint_background);
+                } else {
+                    // End colors: use same foreground, slightly dimmed background
+                    style.color = self.named_colors.hint_foreground;
+                    let mut dimmed_bg = self.named_colors.hint_background;
+                    // Dim the background slightly for continuation labels
+                    dimmed_bg[0] *= 0.8;
+                    dimmed_bg[1] *= 0.8;
+                    dimmed_bg[2] *= 0.8;
+                    style.background_color = Some(dimmed_bg);
+                }
+
+                // Make hint labels bold for better visibility
+                use rio_backend::sugarloaf::font_introspector::{Attributes, Weight};
+                let current_attrs = style.font_attrs;
+                style.font_attrs = Attributes::new(
+                    current_attrs.stretch(),
+                    Weight::BOLD,
+                    current_attrs.style(),
+                );
             }
 
             if !is_active {
@@ -637,8 +686,6 @@ impl Renderer {
             CursorShape::Underline => {
                 style.decoration =
                     Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        offset: 0.0,
-                        size: 3.0,
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
@@ -664,6 +711,33 @@ impl Renderer {
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
+    }
+
+    /// Trigger the visual bell
+    #[inline]
+    pub fn trigger_visual_bell(&mut self) {
+        self.visual_bell_active = true;
+        self.visual_bell_start = Some(std::time::Instant::now());
+    }
+
+    /// Check if visual bell should be displayed and update its state
+    #[inline]
+    pub fn update_visual_bell(&mut self) -> bool {
+        if !self.visual_bell_active {
+            return false;
+        }
+
+        if let Some(start_time) = self.visual_bell_start {
+            if start_time.elapsed() >= crate::constants::BELL_DURATION {
+                self.visual_bell_active = false;
+                self.visual_bell_start = None;
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     // Get the RGB value for a color index.
@@ -743,7 +817,7 @@ impl Renderer {
                         line.add_text_on_line(
                             // Add on first line
                             1,
-                            &character.to_string(),
+                            self.char_cache.get_str(character),
                             char_style,
                         );
                     }
@@ -759,9 +833,10 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
-        hints: &mut Option<HintMatches>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) {
+        // let start = std::time::Instant::now();
+
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
@@ -770,19 +845,16 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
-        let mut graphic_queues: Option<Vec<UpdateQueues>> = None;
-
         let grid = context_manager.current_grid_mut();
-        let active_index = grid.current;
+        let active_key = grid.current;
         let mut has_active_changed = false;
-        if self.last_active != active_index {
+        if self.last_active != Some(active_key) {
             has_active_changed = true;
-
-            self.last_active = active_index;
+            self.last_active = Some(active_key);
         }
 
-        for (index, grid_context) in grid.contexts_mut().iter_mut().enumerate() {
-            let is_active = active_index == index;
+        for (key, grid_context) in grid.contexts_mut().iter_mut() {
+            let is_active = &active_key == key;
             let context = grid_context.context_mut();
 
             let mut has_ime = false;
@@ -800,70 +872,110 @@ impl Renderer {
                     context.renderable_content.cursor.content_ref;
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes is: {:?}", duration);
-            // let renderable_content = context.renderable_content();
-            let force_full_damage = has_active_changed
-                || context.renderable_content.has_pending_updates
-                || is_active
-                    && (context.renderable_content.selection_range.is_some()
-                        || hints.is_some());
+            let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
-            let mut specific_lines = None;
-            let (colors, display_offset, blinking_cursor, visible_rows) = {
+            // Check if we need to render
+            if !context.renderable_content.pending_update.is_dirty() && !force_full_damage
+            {
+                // No updates pending, skip rendering
+                continue;
+            }
+
+            // Get UI damage before resetting
+            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            context.renderable_content.pending_update.reset();
+
+            // Compute snapshot at render time
+            let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
-                let result = (
-                    terminal.colors,
-                    terminal.display_offset(),
-                    terminal.blinking_cursor,
-                    terminal.visible_rows(),
-                );
 
-                context.renderable_content.cursor.state = terminal.cursor();
+                // Get damage from terminal
+                let terminal_damage = if force_full_damage {
+                    Some(TerminalDamage::Full)
+                } else {
+                    terminal.peek_damage_event()
+                };
 
-                if let Some(queues_to_add) = terminal.graphics_take_queues() {
-                    if let Some(ref mut queues) = graphic_queues {
-                        queues.push(queues_to_add);
-                    } else {
-                        graphic_queues = Some(vec![queues_to_add]);
+                // Merge terminal damage with UI damage
+                let damage = match (terminal_damage, ui_damage) {
+                    (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
+                        TerminalDamage::Full
                     }
-                }
-
-                if !force_full_damage && !terminal.is_fully_damaged() {
-                    if let TermDamage::Partial(lines) = terminal.damage() {
-                        // Pre-allocate with estimated capacity to reduce allocations
-                        let capacity =
-                            lines.size_hint().1.unwrap_or(lines.size_hint().0).min(256);
-                        let mut own_lines =
-                            std::collections::HashSet::with_capacity(capacity);
-                        for line in lines {
-                            own_lines.insert(line.line);
+                    (Some(term), Some(ui)) => {
+                        // Merge partial damages
+                        match (term, ui) {
+                            (
+                                TerminalDamage::Partial(mut lines1),
+                                TerminalDamage::Partial(lines2),
+                            ) => {
+                                lines1.extend(lines2);
+                                TerminalDamage::Partial(lines1)
+                            }
+                            _ => TerminalDamage::Full,
                         }
-                        specific_lines = Some(own_lines);
-                    };
-                }
+                    }
+                    (Some(damage), None) => damage,
+                    (None, Some(damage)) => damage,
+                    (None, None) => TerminalDamage::Full,
+                };
+
+                let snapshot = TerminalSnapshot {
+                    colors: terminal.colors,
+                    display_offset: terminal.display_offset(),
+                    blinking_cursor: terminal.blinking_cursor,
+                    visible_rows: terminal.visible_rows(),
+                    cursor: terminal.cursor(),
+                    damage,
+                    columns: terminal.columns(),
+                    screen_lines: terminal.screen_lines(),
+                };
                 terminal.reset_damage();
-                result
+                drop(terminal);
+
+                snapshot
             };
 
-            // If the last line is bigger than the actual visible rows, then some resize
-            // has happened. In this case, request full draw.
-            if let Some(ref lines) = specific_lines {
-                if let Some(max_value) = lines.iter().max() {
-                    if max_value > &(visible_rows.len() - 1) {
-                        specific_lines = None;
+            // Get hint matches from renderable content
+            let hint_matches = context.renderable_content.hint_matches.as_deref();
+
+            // Update cursor state from snapshot
+            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+
+            let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
+
+            // Check for partial damage to optimize rendering
+            if !force_full_damage {
+                match terminal_snapshot.damage {
+                    TerminalDamage::Full => {
+                        // Full damage, render everything
+                    }
+                    TerminalDamage::Partial(lines) => {
+                        if !lines.is_empty() {
+                            specific_lines = Some(lines.clone());
+                        }
+                    }
+                    TerminalDamage::CursorOnly => {
+                        specific_lines = Some(
+                            [LineDamage {
+                                line: *context.renderable_content.cursor.state.pos.row
+                                    as usize,
+                                damaged: true,
+                            }]
+                            .into_iter()
+                            .collect(),
+                        );
                     }
                 }
             }
 
-            // let duration = start.elapsed();
-            // println!("Time elapsed in antes-antes is: {:?}", duration);
             let rich_text_id = context.rich_text_id;
 
             let mut is_cursor_visible =
                 context.renderable_content.cursor.state.is_visible();
-            context.renderable_content.has_blinking_enabled = blinking_cursor;
-            if blinking_cursor {
+            context.renderable_content.has_blinking_enabled =
+                terminal_snapshot.blinking_cursor;
+
+            if terminal_snapshot.blinking_cursor {
                 let has_selection = context.renderable_content.selection_range.is_some();
                 if !has_selection {
                     let mut should_blink = true;
@@ -876,17 +988,34 @@ impl Renderer {
                     }
 
                     if should_blink {
-                        context.renderable_content.is_blinking_cursor_visible =
-                            !context.renderable_content.is_blinking_cursor_visible;
-                        if let Some(ref mut lines) = specific_lines {
-                            lines.insert(
-                                context.renderable_content.cursor.state.pos.row.0
-                                    as usize,
-                            );
+                        let now = std::time::Instant::now();
+                        let should_toggle = if let Some(last_blink) =
+                            context.renderable_content.last_blink_toggle
+                        {
+                            now.duration_since(last_blink).as_millis()
+                                >= self.config_blinking_interval as u128
+                        } else {
+                            // First time: start with cursor visible and set initial timing
+                            context.renderable_content.is_blinking_cursor_visible = true;
+                            context.renderable_content.last_blink_toggle = Some(now);
+                            false // Don't toggle on first frame
+                        };
+
+                        if should_toggle {
+                            context.renderable_content.is_blinking_cursor_visible =
+                                !context.renderable_content.is_blinking_cursor_visible;
+                            context.renderable_content.last_blink_toggle = Some(now);
                         }
                     } else {
+                        // When not blinking (e.g., during typing), ensure cursor is visible
                         context.renderable_content.is_blinking_cursor_visible = true;
+                        // Reset blink timing when not blinking so it starts fresh when blinking resumes
+                        context.renderable_content.last_blink_toggle = None;
                     }
+                } else {
+                    // When there's a selection, keep cursor visible and reset blink timing
+                    context.renderable_content.is_blinking_cursor_visible = true;
+                    context.renderable_content.last_blink_toggle = None;
                 }
 
                 is_cursor_visible = context.renderable_content.is_blinking_cursor_visible;
@@ -896,14 +1025,12 @@ impl Renderer {
                 is_cursor_visible = true;
             }
 
-            context.renderable_content.has_pending_updates = false;
             let content = sugarloaf.content();
             match specific_lines {
                 None => {
-                    // let start = std::time::Instant::now();
                     content.sel(rich_text_id);
                     content.clear();
-                    for (i, row) in visible_rows.iter().enumerate() {
+                    for (i, row) in terminal_snapshot.visible_rows.iter().enumerate() {
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == i;
                         self.create_line(
@@ -911,51 +1038,46 @@ impl Renderer {
                             row,
                             has_cursor,
                             None,
-                            Line((i as i32) - display_offset as i32),
+                            Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
-                            hints,
+                            hint_matches,
                             focused_match,
-                            &colors,
+                            &terminal_snapshot.colors,
                             is_active,
                         );
                     }
                     content.build();
-                    // let duration = start.elapsed();
-                    // println!("Time elapsed in -renderer.TermDamage::Full is: {:?}", duration);
+                    // let _duration = start.elapsed();
                 }
                 Some(lines) => {
                     content.sel(rich_text_id);
                     for line in lines {
+                        let line = line.line;
                         let has_cursor = is_cursor_visible
                             && context.renderable_content.cursor.state.pos.row == line;
                         content.clear_line(line);
-                        if let Some(visible_row) = visible_rows.get(line) {
+                        if let Some(visible_row) =
+                            terminal_snapshot.visible_rows.get(line)
+                        {
                             self.create_line(
                                 content,
                                 visible_row,
                                 has_cursor,
                                 Some(line),
-                                Line(line as i32),
+                                Line(
+                                    (line as i32)
+                                        - terminal_snapshot.display_offset as i32,
+                                ),
                                 &context.renderable_content,
-                                hints,
+                                hint_matches,
                                 focused_match,
-                                &colors,
+                                &terminal_snapshot.colors,
                                 is_active,
                             );
                         }
                     }
-                }
-            };
-        }
 
-        if let Some(op) = graphic_queues.take() {
-            for queues in op {
-                for graphic_data in queues.pending {
-                    sugarloaf.graphics.insert(graphic_data);
-                }
-
-                for graphic_data in queues.remove_queue {
-                    sugarloaf.graphics.remove(&graphic_data);
+                    // let _duration = start.elapsed();
                 }
             }
         }
@@ -988,11 +1110,186 @@ impl Renderer {
             self.search.rich_text_id = None;
         }
 
+        // let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
+        // let _duration = start.elapsed();
+
+        // Update visual bell state and set overlay if needed
+        let visual_bell_active = self.update_visual_bell();
+
+        // Set visual bell overlay that renders on top of everything
+        let bell_overlay = if visual_bell_active {
+            Some(Quad {
+                position: [0.0, 0.0],
+                size: [window_size.width, window_size.height],
+                color: self.named_colors.foreground,
+                ..Quad::default()
+            })
+        } else {
+            None
+        };
+        sugarloaf.set_visual_bell_overlay(bell_overlay);
+
         sugarloaf.set_objects(objects);
 
         sugarloaf.render();
-        // let duration = start.elapsed();
-        // println!("Time elapsed in -renderer.update() is: {:?}", duration);
+
+        // let _duration = start.elapsed();
+    }
+
+    /// Find hint label at the specified position
+    fn find_hint_label_at_position<'a>(
+        &self,
+        renderable_content: &'a RenderableContent,
+        pos: Pos,
+    ) -> Option<&'a crate::context::renderable::HintLabel> {
+        renderable_content
+            .hint_labels
+            .iter()
+            .find(|label| label.position == pos)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rio_backend::crosswords::pos::{Column, Line, Pos};
+
+    #[test]
+    fn test_is_position_in_hint_matches() {
+        let matches = vec![
+            Pos::new(Line(0), Column(0))..=Pos::new(Line(0), Column(4)),
+            Pos::new(Line(1), Column(5))..=Pos::new(Line(1), Column(9)),
+            Pos::new(Line(5), Column(10))..=Pos::new(Line(5), Column(15)),
+        ];
+
+        // Test positions inside matches
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(0))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(2))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(4))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(5))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(7))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(9))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(10))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(15))
+        ));
+
+        // Test positions outside matches
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(5))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(4))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(1), Column(10))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(0))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(9))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(5), Column(16))
+        ));
+    }
+
+    #[test]
+    fn test_empty_hint_matches() {
+        let matches: Vec<rio_backend::crosswords::search::Match> = vec![];
+
+        // Any position should return false for empty matches
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(0), Column(0))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(10), Column(20))
+        ));
+    }
+
+    #[test]
+    fn test_single_character_match() {
+        let matches = vec![Pos::new(Line(3), Column(7))..=Pos::new(Line(3), Column(7))];
+
+        // Test the exact position
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(7))
+        ));
+
+        // Test adjacent positions
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(6))
+        ));
+        assert!(!Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(3), Column(8))
+        ));
+    }
+
+    #[test]
+    fn test_overlapping_matches() {
+        // In practice, matches shouldn't overlap, but let's test the behavior
+        let matches = vec![
+            Pos::new(Line(2), Column(5))..=Pos::new(Line(2), Column(10)),
+            Pos::new(Line(2), Column(8))..=Pos::new(Line(2), Column(12)),
+        ];
+
+        // Test positions in the overlap
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(8))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(9))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(10))
+        ));
+
+        // Test positions in non-overlapping parts
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(5))
+        ));
+        assert!(Renderer::is_position_in_hint_matches(
+            &matches,
+            Pos::new(Line(2), Column(12))
+        ));
     }
 }

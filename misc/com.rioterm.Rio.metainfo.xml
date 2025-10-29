@@ -62,6 +62,39 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.31" date="2025-09-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.31</url>
+    </release>
+    <release version="0.2.30" date="2025-09-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.30</url>
+    </release>
+    <release version="0.2.29" date="2025-08-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.29</url>
+    </release>
+    <release version="0.2.28" date="2025-08-10">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.28</url>
+    </release>
+    <release version="0.2.27" date="2025-08-07">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.27</url>
+    </release>
+    <release version="0.2.26" date="2025-08-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.26</url>
+    </release>
+    <release version="0.2.25" date="2025-08-03">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.25</url>
+    </release>
+    <release version="0.2.24" date="2025-08-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.24</url>
+    </release>
+    <release version="0.2.23" date="2025-07-23">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.23</url>
+    </release>
+    <release version="0.2.22" date="2025-07-18">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.22</url>
+    </release>
+    <release version="0.2.21" date="2025-07-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.21</url>
+    </release>
     <release version="0.2.20" date="2025-06-20">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.2.20</url>
     </release>

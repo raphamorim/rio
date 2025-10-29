@@ -142,7 +142,10 @@ impl FilterChain {
 
         // Wait for device
         let index = queue.submit([cmd]);
-        let _ = device.poll(wgpu::PollType::WaitForSubmissionIndex(index));
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: Some(index),
+            timeout: None,
+        });
 
         Ok(filter_chain)
     }
@@ -180,6 +183,9 @@ impl FilterChain {
         cmd: &mut wgpu::CommandEncoder,
         options: Option<&FilterChainOptionsWgpu>,
     ) -> Result<FilterChain, Box<FilterChainError>> {
+        // Create runtime parameters before preset is partially moved
+        let runtime_params = RuntimeParameters::new(&preset);
+
         let (passes, semantics) = match compile_passes(preset.passes, &preset.textures) {
             Ok((passes, semantics)) => (passes, semantics),
             Err(error) => return Err(error),
@@ -199,6 +205,7 @@ impl FilterChain {
 
         let samplers = SamplerSet::new(device);
         let mut mipmapper = MipmapGen::new(device);
+
         let luts = FilterChain::load_luts(
             device,
             queue,
@@ -242,10 +249,7 @@ impl FilterChain {
             common: FilterCommon {
                 luts,
                 samplers,
-                config: RuntimeParameters::new(
-                    preset.pass_count as usize,
-                    preset.parameters,
-                ),
+                config: runtime_params,
                 draw_quad,
                 output_textures,
                 feedback_textures,

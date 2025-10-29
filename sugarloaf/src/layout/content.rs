@@ -3,12 +3,13 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+#![allow(clippy::uninlined_format_args)]
+
 use crate::components::rich_text::RichTextBrush;
 use crate::font::FontLibrary;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::ShapeContext;
 use crate::font_introspector::text::Script;
-use crate::font_introspector::Metrics;
 use crate::font_introspector::{shape::cluster::GlyphCluster, FontRef};
 use crate::layout::render_data::RenderData;
 use crate::layout::RichTextLayout;
@@ -113,7 +114,6 @@ pub struct BuilderState {
     pub lines: Vec<BuilderLine>,
     pub vars: FontSettingCache<f32>,
     pub last_update: BuilderStateUpdate,
-    metrics_cache: MetricsCache,
     scaled_font_size: f32,
     pub layout: RichTextLayout,
 }
@@ -173,7 +173,6 @@ impl BuilderState {
     }
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) {
-        self.metrics_cache.inner.clear();
         self.scaled_font_size = self.layout.font_size * scale_factor;
         self.layout.rescale(scale_factor);
     }
@@ -185,12 +184,8 @@ impl BuilderState {
     pub fn update_font_size(&mut self) {
         let font_size = self.layout.font_size;
         let scale = self.layout.dimensions.scale;
-        let prev_font_size = self.scaled_font_size;
         self.scaled_font_size = font_size * scale;
 
-        if prev_font_size != self.scaled_font_size {
-            self.metrics_cache.inner.clear();
-        }
         self.last_update = BuilderStateUpdate::Full;
     }
 
@@ -282,8 +277,6 @@ pub enum UnderlineShape {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct UnderlineInfo {
-    pub offset: f32,
-    pub size: f32,
     pub is_doubled: bool,
     pub shape: UnderlineShape,
 }
@@ -388,9 +381,6 @@ impl Content {
     pub fn set_font_library(&mut self, font_library: &FontLibrary) {
         self.fonts = font_library.clone();
         self.word_cache = WordCache::new();
-        for line in self.states.values_mut() {
-            line.metrics_cache = MetricsCache::default();
-        }
     }
 
     #[inline]
@@ -639,7 +629,21 @@ impl Content {
             if let Some(cached_content) =
                 self.word_cache.get_cached_content(&font_id, content)
             {
-                if let Some(metrics) = state.metrics_cache.inner.get(&font_id) {
+                // Get metrics from FontLibraryData (with caching)
+                if let Some((ascent, descent, leading)) = self
+                    .fonts
+                    .inner
+                    .write()
+                    .get_font_metrics(&font_id, scaled_font_size)
+                {
+                    // Create a minimal font_introspector::Metrics for cached content
+                    let metrics = crate::font_introspector::Metrics {
+                        ascent,
+                        descent,
+                        leading,
+                        ..Default::default()
+                    };
+
                     // Handle different types of cached content
                     match cached_content {
                         CachedContent::Normal(clusters) => {
@@ -656,7 +660,7 @@ impl Content {
                                 scaled_font_size,
                                 line_number as u32,
                                 clusters,
-                                metrics,
+                                &metrics,
                             ) {
                                 continue;
                             }
@@ -677,14 +681,14 @@ impl Content {
                                 scaled_font_size,
                                 line_number as u32,
                                 &expanded_clusters,
-                                metrics,
+                                &metrics,
                             ) {
                                 continue;
                             }
                         }
                     }
                 } else {
-                    debug!("MetricsCache miss for font_id={}", font_id);
+                    debug!("Font metrics not available for font_id={}", font_id);
                 }
             }
 
@@ -726,15 +730,8 @@ impl Content {
 
                     shaper.add_str(&single_char_content);
 
-                    // Cache metrics if needed
-                    let metrics =
-                        state.metrics_cache.inner.entry(font_id).or_insert_with(|| {
-                            debug!(
-                                "MetricsCache storing new metrics for font_id={}",
-                                font_id
-                            );
-                            shaper.metrics()
-                        });
+                    // Get metrics before shaping (since shape_with consumes the shaper)
+                    let metrics = shaper.metrics();
 
                     // Shape the single character and store as optimized
                     let mut single_cluster = None;
@@ -770,7 +767,7 @@ impl Content {
                                 scaled_font_size,
                                 line_number as u32,
                                 &expanded_clusters,
-                                metrics,
+                                &metrics,
                             );
                         }
                     }
@@ -801,16 +798,6 @@ impl Content {
                         .build();
 
                     shaper.add_str(content);
-
-                    // Cache metrics if needed
-                    let _metrics =
-                        state.metrics_cache.inner.entry(font_id).or_insert_with(|| {
-                            debug!(
-                                "MetricsCache storing new metrics for font_id={}",
-                                font_id
-                            );
-                            shaper.metrics()
-                        });
 
                     // Push run to render data
                     line.render_data.push_run(
@@ -1351,11 +1338,6 @@ impl WordCache {
         self.content_hash = 0;
         self.current_content = None;
     }
-}
-
-#[derive(Default)]
-struct MetricsCache {
-    pub inner: FxHashMap<usize, Metrics>,
 }
 
 #[cfg(test)]

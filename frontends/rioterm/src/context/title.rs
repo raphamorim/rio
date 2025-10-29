@@ -24,7 +24,7 @@ impl ContextManagerTitles {
         content: String,
         extra: Option<ContextTitleExtra>,
     ) -> ContextManagerTitles {
-        let key = format!("{}{};", idx, content);
+        let key = format!("{idx}{content};");
         let mut map = FxHashMap::default();
         map.insert(idx, ContextTitle { content, extra });
         ContextManagerTitles {
@@ -242,11 +242,9 @@ pub mod test {
         assert_eq!(context_dimension.lines, 88);
 
         let rich_text_id = 0;
-        let route_id = 0;
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            route_id,
             rich_text_id,
             context_dimension,
         );
@@ -295,11 +293,9 @@ pub mod test {
         assert_eq!(context_dimension.lines, 88);
 
         let rich_text_id = 0;
-        let route_id = 0;
         let context = create_mock_context(
             VoidListener {},
             WindowId::from(0),
-            route_id,
             rich_text_id,
             context_dimension,
         );

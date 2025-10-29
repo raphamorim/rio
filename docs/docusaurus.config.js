@@ -104,7 +104,7 @@ const config = {
           { to: '/docs/install', label: 'Install', position: 'left' },
           { to: '/docs/config', label: 'Config', position: 'left', },
           { to: '/docs/features', label: 'Features', position: 'left' },
-          { to: '/docs/releases', label: 'Releases', position: 'left' },
+          { to: '/changelog', label: 'Changelog', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
@@ -187,7 +187,7 @@ const config = {
       announcementBar: {
         id: 'support_us',
         content:
-          'Support Rio terminal via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">github sponsors</a>',
+          'Support Rio Terminal via <a target="_blank" rel="noopener noreferrer" href="https://github.com/sponsors/raphamorim">GitHub Sponsors</a>',
         backgroundColor: '#f712ff',
         textColor: '#FFFFFF',
         isCloseable: true,

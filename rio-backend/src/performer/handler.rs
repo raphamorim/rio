@@ -294,6 +294,9 @@ pub trait Handler {
     /// DECRPM - report private mode.
     fn report_private_mode(&mut self, _mode: PrivateMode) {}
 
+    /// XTVERSION - Report terminal version.
+    fn report_version(&mut self) {}
+
     /// DECSTBM - Set the terminal scrolling region.
     fn set_scrolling_region(&mut self, _top: usize, _bottom: Option<usize>) {}
 
@@ -768,7 +771,7 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
 
             // Set color index.
             b"4" => {
-                if params.len() <= 1 || params.len() % 2 == 0 {
+                if params.len() <= 1 || params.len().is_multiple_of(2) {
                     unhandled(params);
                     return;
                 }
@@ -1104,8 +1107,16 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 let mode = next_param_or(0);
                 handler.report_private_mode(PrivateMode::new(mode));
             }
+            ('q', [b'>']) => {
+                // XTVERSION (CSI > q) -- Query Terminal Version.
+                if next_param_or(0) != 0 {
+                    csi_unhandled!();
+                    return;
+                }
+                handler.report_version();
+            }
             ('q', [b' ']) => {
-                // DECSCUSR (CSI Ps SP q) -- Set Cursor Style.
+                // DECSCUSR (CSI SP q) -- Set Cursor Style.
                 let cursor_style_id = next_param_or(0);
                 let shape = match cursor_style_id {
                     0 => None,
@@ -1330,7 +1341,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
         // Encode both name and value in hex
         let hex_name = encode_hex_string(&capability_name);
         let hex_value = encode_hex_string(&value);
-        format!("\x1bP1+r{}={}\x1b\\", hex_name, hex_value)
+        format!("\x1bP1+r{hex_name}={hex_value}\x1b\\")
     } else {
         // Invalid capability name - return error response
         "\x1bP0+r\x1b\\".to_string()
@@ -1339,7 +1350,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
 
 /// Decode hex-encoded string (2 hex digits per character).
 fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
-    if hex_bytes.len() % 2 != 0 {
+    if !hex_bytes.len().is_multiple_of(2) {
         return Err("Invalid hex string length");
     }
 
@@ -1355,7 +1366,7 @@ fn decode_hex_string(hex_bytes: &[u8]) -> Result<String, &'static str> {
 
 /// Encode string as hex (2 hex digits per character).
 fn encode_hex_string(s: &str) -> String {
-    s.bytes().map(|b| format!("{:02X}", b)).collect()
+    s.bytes().map(|b| format!("{b:02X}")).collect()
 }
 
 /// Get termcap/terminfo capability value for Rio terminal.
@@ -1588,7 +1599,7 @@ fn get_termcap_capability(name: &str) -> Option<String> {
         // Navigation keys
         "khome" | "kh" => Some("\\EOH".to_string()),
         "kend" => Some("\\EOF".to_string()),
-        "kbs" | "kb" => Some("^H".to_string()),
+        "kbs" | "kb" => Some("\x7f".to_string()),
         "kdch1" | "kD" => Some("\\E[3~".to_string()),
         "kich1" | "kI" => Some("\\E[2~".to_string()),
         "knp" | "kN" => Some("\\E[6~".to_string()),

@@ -33,6 +33,9 @@ wayland-csd-adwaita-notitle = ["sctk-adwaita"]
 [build-dependencies]
 cfg_aliases = "0.2.0"
 
+[target.'cfg(target_os = "macos")'.build-dependencies]
+bindgen = "0.70.1"
+
 [dependencies]
 bitflags = { workspace = true }
 cursor-icon = "1.1.0"
@@ -145,6 +148,9 @@ features = [
     "Win32_UI_TextServices",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.12"
 
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
 ahash = { version = "0.8.7", features = ["no-rng"], optional = true }

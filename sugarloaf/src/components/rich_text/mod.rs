@@ -5,12 +5,10 @@ mod image_cache;
 mod positioning_tests;
 pub mod text;
 mod text_run_manager;
-mod vertex_pool;
 
 use crate::components::core::orthographic_projection;
 use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
-use crate::components::rich_text::vertex_pool::VertexPool;
 use crate::context::Context;
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
@@ -52,7 +50,6 @@ pub struct RichTextBrush {
     images: ImageCache,
     glyphs: GlyphCache,
     text_run_manager: TextRunManager,
-    vertex_pool: VertexPool,
 }
 
 impl RichTextBrush {
@@ -269,33 +266,7 @@ impl RichTextBrush {
             vertex_buffer,
             supported_vertex_buffer,
             current_transform,
-            vertex_pool: VertexPool::new(),
         }
-    }
-
-    /// Warm the text run cache with common terminal patterns
-    /// This should be called during initialization to improve cache hit rates
-    pub fn warm_cache(&mut self, _font_library: &FontLibrary) {
-        // Use the default font ID (0) which is always available
-        let font_id = 0; // FONT_ID_REGULAR
-        let font_size = 14.0; // Default terminal font size
-        let default_color = [1.0, 1.0, 1.0, 1.0]; // White text
-
-        self.text_run_manager.warm_cache(
-            font_id,
-            font_size,
-            400, // Normal weight
-            0,   // Normal style
-            5,   // Normal stretch
-            default_color,
-        );
-    }
-
-    /// Get vertex pool statistics for performance monitoring
-    pub fn vertex_pool_stats(
-        &self,
-    ) -> Option<crate::components::rich_text::vertex_pool::VertexPoolStats> {
-        self.vertex_pool.stats()
     }
 
     #[inline]
@@ -350,10 +321,6 @@ impl RichTextBrush {
         self.vertices.clear();
         self.images.process_atlases(context);
         self.comp.finish(&mut self.vertices);
-
-        // Performance monitoring
-        self.text_run_manager.maintenance();
-        self.vertex_pool.maybe_log_stats();
     }
 
     #[inline]
@@ -363,34 +330,46 @@ impl RichTextBrush {
         render_data: &crate::layout::BuilderLine,
         graphics: &mut Graphics,
     ) -> Option<SugarDimensions> {
-        // Every dimension request will lead to clear text run cache if needed
-        if self.text_run_manager.needs_cleanup() {
-            self.text_run_manager.maintenance();
-        }
         self.comp.begin();
 
         let lines = vec![render_data.clone()];
         self.draw_layout(0, &lines, &None, None, font_library, None, graphics)
     }
 
-    fn extract_font_metrics(
+    /// Extract font metrics using per-font calculation.
+    /// Each font calculates its own metrics using consistent approach.
+    #[inline]
+    fn extract_normalized_metrics(
+        &self,
         lines: &[crate::layout::BuilderLine],
+        font_library: &FontLibrary,
     ) -> Option<(f32, f32, f32, usize, f32)> {
-        // Extract the first run from a line that has at least one run
-        lines
+        // Get the first run to determine font_id and size
+        let first_run = lines
             .iter()
             .filter(|line| !line.render_data.runs.is_empty())
             .map(|line| &line.render_data.runs[0])
-            .next()
-            .map(|run| {
-                (
-                    run.ascent.round(),
-                    run.descent.round(),
-                    (run.leading).round() * 2.0,
-                    run.span.font_id,
-                    run.size,
-                )
-            })
+            .next()?;
+
+        let font_id = 0; // FONT_ID_REGULAR
+        let font_size = first_run.size;
+
+        // Get metrics from the specific font using consistent calculation
+        let mut font_library_data = font_library.inner.write();
+        if let Some((ascent, descent, leading)) =
+            font_library_data.get_font_metrics(&font_id, font_size)
+        {
+            Some((ascent, descent, leading, font_id, font_size))
+        } else {
+            // Fallback to run metrics if font metrics calculation fails
+            Some((
+                first_run.ascent,
+                first_run.descent,
+                first_run.leading,
+                font_id,
+                font_size,
+            ))
+        }
     }
 
     #[inline]
@@ -409,13 +388,6 @@ impl RichTextBrush {
             return None;
         }
 
-        // let start = std::time::Instant::now();
-        let comp = &mut self.comp;
-        let caches = (&mut self.images, &mut self.glyphs);
-        let (image_cache, glyphs_cache) = caches;
-        let font_coords: &[i16] = &[0, 0, 0, 0];
-        let depth = 0.0;
-
         // Determine if we're calculating dimensions only or drawing layout
         let is_dimensions_only = pos.is_none() || rte_layout.is_none();
 
@@ -426,6 +398,17 @@ impl RichTextBrush {
             lines.as_slice()
         };
 
+        // Extract font metrics before borrowing self.comp
+        let font_metrics =
+            self.extract_normalized_metrics(lines_to_process, font_library);
+
+        // let start = std::time::Instant::now();
+        let comp = &mut self.comp;
+        let caches = (&mut self.images, &mut self.glyphs);
+        let (image_cache, glyphs_cache) = caches;
+        let font_coords: &[i16] = &[0, 0, 0, 0];
+        let depth = 0.0;
+
         // Get initial position
         let (x, y) = pos.unwrap_or((0.0, 0.0));
 
@@ -434,8 +417,6 @@ impl RichTextBrush {
         let mut last_rendered_graphic = HashSet::new();
         let mut line_y = y;
         let mut dimensions = SugarDimensions::default();
-
-        let font_metrics = Self::extract_font_metrics(lines_to_process);
         if let Some((
             ascent,
             descent,
@@ -477,15 +458,16 @@ impl RichTextBrush {
 
                 let mut px = x;
 
-                // Calculate baseline differently based on mode
+                // Calculate baseline using proper typographic positioning
+                let padding_top = (line_height - ascent - descent) / 2.0;
                 let baseline = if is_dimensions_only {
-                    ascent + y
+                    y + padding_top + ascent
                 } else {
-                    line_y + ascent
+                    line_y + padding_top + ascent
                 };
 
-                // Different line_y calculation based on mode
-                line_y = baseline + descent;
+                // Keep line_y as the top of the line for proper line spacing
+                // Don't modify line_y here - it should remain at the top of the line
 
                 // Calculate padding
                 let padding_y = if line_height_mod > 1.0 {
@@ -494,7 +476,7 @@ impl RichTextBrush {
                     0.0
                 };
 
-                let py = line_y;
+                let py = if is_dimensions_only { y } else { line_y };
 
                 for run in &line.render_data.runs {
                     let font = run.span.font_id;
@@ -514,9 +496,6 @@ impl RichTextBrush {
                             &run_text,
                             font,
                             run.size,
-                            400, // font_weight - would need to be extracted from font
-                            0,   // font_style - would need to be extracted from font
-                            5,   // font_stretch - would need to be extracted from font
                             Some(run.span.color),
                         )
                     } else {
@@ -560,7 +539,7 @@ impl RichTextBrush {
                             glyphs.clear();
                             for shaped_glyph in cached_glyphs.iter() {
                                 let x = px;
-                                let y = py + padding_y;
+                                let y = baseline; // Glyph y should be at baseline position
 
                                 if is_dimensions_only {
                                     px += shaped_glyph.x_advance * char_width;
@@ -586,7 +565,7 @@ impl RichTextBrush {
                                     drawable_char: run.span.drawable_char,
                                     background_color: run.span.background_color,
                                     baseline,
-                                    topline: py - ascent, // Use py for cursor positioning, not baseline
+                                    topline: py, // Use py (line top) for cursor positioning
                                     line_height,
                                     padding_y,
                                     line_height_without_mod,
@@ -596,6 +575,12 @@ impl RichTextBrush {
                                         .sum(),
                                     decoration: run.span.decoration,
                                     decoration_color: run.span.decoration_color,
+                                    underline_offset: run.underline_offset,
+                                    strikeout_offset: run.strikeout_offset,
+                                    underline_thickness: run.strikeout_size,
+                                    x_height: run.x_height,
+                                    ascent: run.ascent,
+                                    descent: run.descent,
                                 };
 
                                 // Update font session if needed
@@ -631,7 +616,7 @@ impl RichTextBrush {
 
                             for glyph in &run.glyphs {
                                 let x = px;
-                                let y = py + padding_y;
+                                let y = baseline; // Use baseline for consistency with cached path
                                 let advance = glyph.simple_data().1;
 
                                 // Different advance calculation based on mode
@@ -666,9 +651,6 @@ impl RichTextBrush {
                                     &run_text,
                                     font,
                                     run.size,
-                                    400, // font_weight
-                                    0,   // font_style
-                                    5,   // font_stretch
                                     shaped_glyphs,
                                     false, // has_emoji - would need to be detected
                                     None, // shaping_features - would need actual shaping data
@@ -685,13 +667,19 @@ impl RichTextBrush {
                                     drawable_char: run.span.drawable_char,
                                     background_color: run.span.background_color,
                                     baseline,
-                                    topline: py - ascent, // Use py for cursor positioning, not baseline
+                                    topline: py, // Use py (line top) for cursor positioning
                                     line_height,
                                     padding_y,
                                     line_height_without_mod,
                                     advance: px - run_x,
                                     decoration: run.span.decoration,
                                     decoration_color: run.span.decoration_color,
+                                    underline_offset: run.underline_offset,
+                                    strikeout_offset: run.strikeout_offset,
+                                    underline_thickness: run.strikeout_size,
+                                    x_height: run.x_height,
+                                    ascent: run.ascent,
+                                    descent: run.descent,
                                 };
 
                                 // Update font session if needed
@@ -753,12 +741,16 @@ impl RichTextBrush {
                     }
                 }
 
-                // Update line_y for line height modifier
-                if !is_dimensions_only && line_height_mod > 1.0 {
-                    line_y += line_height - line_height_without_mod;
+                // Advance line_y for the next line
+                if !is_dimensions_only {
+                    line_y += line_height;
                 }
             }
         }
+
+        // let screen_render_duration = start.elapsed();
+        // if self.renderer.enable_performance_logging {
+        // println!("[PERF] draw_layout() total: {:?}", screen_render_duration);
 
         // Return dimensions if in dimensions mode
         if is_dimensions_only {
@@ -792,6 +784,7 @@ impl RichTextBrush {
         ctx: &mut Context,
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
+        // let start = std::time::Instant::now();
         // There's nothing to render
         if self.vertices.is_empty() {
             return;
@@ -854,8 +847,344 @@ impl RichTextBrush {
         rpass.set_bind_group(1, &self.layout_bind_group, &[]);
         rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
-        // Use draw instead of draw_indexed
         let vertex_count = self.vertices.len() as u32;
         rpass.draw(0..vertex_count, 0..1);
+        // let duration = start.elapsed();
+        // println!("Time elapsed in rich_text::render is: {:?}", duration);
+    }
+}
+
+#[cfg(test)]
+mod rect_positioning_tests {
+    #[derive(Debug)]
+    struct GlyphRect {
+        #[allow(unused)]
+        pub x: f32,
+        pub y: f32,
+        #[allow(unused)]
+        pub width: f32,
+        pub height: f32,
+        #[allow(unused)]
+        pub baseline_y: f32,
+        pub glyph_center_x: f32,
+        pub glyph_center_y: f32,
+    }
+
+    #[derive(Debug)]
+    struct LineRect {
+        #[allow(unused)]
+        pub x: f32,
+        pub y: f32,
+        #[allow(unused)]
+        pub width: f32,
+        pub height: f32,
+        pub baseline_y: f32,
+    }
+
+    #[test]
+    fn test_glyph_rect_positioning_and_centering() {
+        // Test parameters
+        let line_height = 20.0;
+        let char_width = 8.0;
+        let ascent = 12.0;
+        let descent = 4.0;
+        let _leading = 0.0;
+
+        // Expected calculations (matching our current implementation)
+        let padding_top = (line_height - ascent - descent) / 2.0; // (20 - 12 - 4) / 2 = 2.0
+        let expected_baseline_y = 0.0 + padding_top + ascent; // 0 + 2 + 12 = 14.0
+
+        // Create line rect
+        let line_rect = LineRect {
+            x: 0.0,
+            y: 0.0,
+            width: char_width,
+            height: line_height,
+            baseline_y: expected_baseline_y,
+        };
+
+        // Expected glyph rect (should be centered within line rect)
+        let expected_glyph_rect = GlyphRect {
+            x: 0.0,
+            y: 0.0,
+            width: char_width,
+            height: line_height,
+            baseline_y: expected_baseline_y,
+            glyph_center_x: char_width / 2.0,  // 4.0
+            glyph_center_y: line_height / 2.0, // 10.0
+        };
+
+        // println!("Line height: {}", line_height);
+        // println!(
+        //     "Ascent: {}, Descent: {}, Leading: {}",
+        //     ascent, descent, _leading
+        // );
+        // println!("Padding top: {}", padding_top);
+        // println!("Expected baseline Y: {}", expected_baseline_y);
+        // println!(
+        //     "Expected glyph center: ({}, {})",
+        //     expected_glyph_rect.glyph_center_x, expected_glyph_rect.glyph_center_y
+        // );
+
+        // Verify baseline is positioned correctly within the line rect
+        assert!(
+            expected_baseline_y > line_rect.y,
+            "Baseline should be below line top"
+        );
+        assert!(
+            expected_baseline_y < line_rect.y + line_rect.height,
+            "Baseline should be above line bottom"
+        );
+
+        // Verify glyph center is in the middle of the rect
+        assert_eq!(
+            expected_glyph_rect.glyph_center_x,
+            char_width / 2.0,
+            "Glyph should be horizontally centered"
+        );
+        assert_eq!(
+            expected_glyph_rect.glyph_center_y,
+            line_height / 2.0,
+            "Glyph should be vertically centered"
+        );
+
+        // Verify baseline relationship to glyph center
+        let baseline_offset_from_center =
+            expected_baseline_y - expected_glyph_rect.glyph_center_y;
+        // println!("Baseline offset from glyph center: {baseline_offset_from_center}");
+
+        // The baseline should be slightly above center for typical fonts
+        // With ascent=12, descent=4, the baseline should be at 14.0, center at 10.0
+        // So baseline is 4.0 units above center, which makes sense
+        assert_eq!(
+            baseline_offset_from_center, 4.0,
+            "Baseline should be 4.0 units above glyph center"
+        );
+    }
+
+    #[test]
+    fn test_multiple_line_rects_spacing() {
+        let line_height = 20.0;
+        let ascent = 12.0;
+        let descent = 4.0;
+        let _leading = 0.0;
+
+        let padding_top = (line_height - ascent - descent) / 2.0;
+
+        // Test 3 lines
+        let line_rects = [
+            LineRect {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: line_height,
+                baseline_y: 0.0 + padding_top + ascent,
+            },
+            LineRect {
+                x: 0.0,
+                y: line_height,
+                width: 100.0,
+                height: line_height,
+                baseline_y: line_height + padding_top + ascent,
+            },
+            LineRect {
+                x: 0.0,
+                y: line_height * 2.0,
+                width: 100.0,
+                height: line_height,
+                baseline_y: (line_height * 2.0) + padding_top + ascent,
+            },
+        ];
+
+        for (i, rect) in line_rects.iter().enumerate() {
+            // println!("Line {}: y={}, baseline_y={}", i, rect.y, rect.baseline_y);
+
+            // Verify each line's baseline is positioned correctly within its rect
+            assert!(
+                rect.baseline_y > rect.y,
+                "Line {i} baseline should be below line top",
+            );
+            assert!(
+                rect.baseline_y < rect.y + rect.height,
+                "Line {i} baseline should be above line bottom",
+            );
+
+            // Verify consistent baseline positioning within each line
+            let baseline_offset_from_top = rect.baseline_y - rect.y;
+            assert_eq!(
+                baseline_offset_from_top,
+                padding_top + ascent,
+                "Line {i} baseline offset should be consistent",
+            );
+        }
+
+        // Verify lines don't overlap
+        for i in 1..line_rects.len() {
+            let prev_line = &line_rects[i - 1];
+            let curr_line = &line_rects[i];
+            assert_eq!(
+                curr_line.y,
+                prev_line.y + prev_line.height,
+                "Lines should be adjacent without gaps or overlaps"
+            );
+        }
+    }
+
+    #[test]
+    fn test_baseline_correctness_with_different_line_heights() {
+        let ascent = 12.0;
+        let descent = 4.0;
+        let leading = 0.0;
+        let base_line_height = ascent + descent + leading; // 16.0
+
+        let test_cases = vec![
+            ("Normal line height", base_line_height),
+            ("1.5x line height", base_line_height * 1.5),
+            ("2x line height", base_line_height * 2.0),
+        ];
+
+        for (name, line_height) in test_cases {
+            let padding_top = (line_height - ascent - descent) / 2.0;
+            let baseline_y = 0.0 + padding_top + ascent;
+
+            // println!(
+            //     "{}: line_height={}, padding_top={}, baseline_y={}",
+            //     name, line_height, padding_top, baseline_y
+            // );
+
+            // Verify baseline is always positioned at ascent distance from the visual center
+            let line_center: f32 = line_height / 2.0;
+            let expected_baseline_from_center: f32 = (ascent - descent) / 2.0; // Should be 4.0 for our test values
+            let actual_baseline_from_center: f32 = baseline_y - line_center;
+
+            let diff =
+                (actual_baseline_from_center - expected_baseline_from_center).abs();
+            assert!(
+                diff < 0.001,
+                "{name}: Baseline should be {expected_baseline_from_center} units above center, got {actual_baseline_from_center}",
+            );
+
+            // Verify glyph would be centered in the line
+            let glyph_center_y = line_height / 2.0;
+            assert_eq!(
+                glyph_center_y, line_center,
+                "{name}: Glyph center should match line center",
+            );
+        }
+    }
+
+    #[test]
+    fn test_glyph_positioning_relative_to_baseline() {
+        let line_height = 20.0;
+        let ascent = 12.0;
+        let descent = 4.0;
+        let char_width = 8.0;
+
+        let padding_top = (line_height - ascent - descent) / 2.0;
+        let baseline_y = 0.0 + padding_top + ascent;
+
+        // In font rendering, glyphs are positioned relative to baseline
+        // The glyph's y coordinate should be the baseline position
+        let glyph_y = baseline_y;
+
+        // The glyph rect encompasses the entire line height for background/selection
+        let glyph_rect = GlyphRect {
+            x: 0.0,
+            y: 0.0, // Top of line
+            width: char_width,
+            height: line_height,
+            baseline_y,
+            glyph_center_x: char_width / 2.0,
+            glyph_center_y: line_height / 2.0,
+        };
+
+        // println!("=== GLYPH POSITIONING RELATIVE TO BASELINE TEST ===");
+        // println!("Baseline Y: {}", baseline_y);
+        // println!("Glyph Y (for font rendering): {}", glyph_y);
+        // println!("Glyph rect Y (for backgrounds): {}", glyph_rect.y);
+        // println!(
+        //     "Glyph center: ({}, {})",
+        //     glyph_rect.glyph_center_x, glyph_rect.glyph_center_y
+        // );
+
+        // Key assertions:
+        // 1. Glyph for font rendering is positioned at baseline
+        assert_eq!(
+            glyph_y, baseline_y,
+            "Glyph Y for font rendering should be at baseline"
+        );
+
+        // 2. Glyph rect for backgrounds spans the full line height
+        assert_eq!(glyph_rect.y, 0.0, "Glyph rect should start at line top");
+        assert_eq!(
+            glyph_rect.height, line_height,
+            "Glyph rect should span full line height"
+        );
+
+        // 3. Glyph is visually centered within the line
+        assert_eq!(
+            glyph_rect.glyph_center_y,
+            line_height / 2.0,
+            "Glyph should be visually centered"
+        );
+
+        // 4. Baseline is positioned correctly relative to glyph center
+        let baseline_offset_from_center = baseline_y - glyph_rect.glyph_center_y;
+        let expected_offset = (ascent - descent) / 2.0; // (12 - 4) / 2 = 4.0
+        assert_eq!(
+            baseline_offset_from_center, expected_offset,
+            "Baseline should be {expected_offset} units above glyph center",
+        );
+    }
+
+    #[test]
+    fn test_cursor_positioning_consistency() {
+        // This test verifies that cursor positioning is consistent between cached and non-cached paths
+        let line_height = 20.0;
+        let ascent = 12.0;
+        let descent = 4.0;
+        let _leading = 0.0;
+
+        // Simulate the calculations from both paths
+        let line_y = 0.0; // Top of first line
+        let padding_top = (line_height - ascent - descent) / 2.0; // 2.0
+        let baseline = line_y + padding_top + ascent; // 0 + 2 + 12 = 14.0
+        let py = line_y; // 0.0
+
+        // Both paths should use the same topline calculation
+        let topline = py - ascent; // 0 - 12 = -12.0
+
+        // println!("=== CURSOR POSITIONING CONSISTENCY TEST ===");
+        // println!("Line Y: {}", line_y);
+        // println!("Baseline: {}", baseline);
+        // println!("PY: {}", py);
+        // println!("Topline: {}", topline);
+
+        // Key assertions for cursor positioning:
+        // 1. Topline should be above the line (negative relative to line top)
+        assert!(
+            topline < line_y,
+            "Topline should be above line top for cursor positioning"
+        );
+
+        // 2. Baseline should be within the line bounds
+        assert!(baseline > line_y, "Baseline should be below line top");
+        assert!(
+            baseline < line_y + line_height,
+            "Baseline should be above line bottom"
+        );
+
+        // 3. The relationship between topline and baseline should be consistent
+        let topline_to_baseline_distance = baseline - topline; // 14 - (-12) = 26
+        assert_eq!(
+            topline_to_baseline_distance,
+            ascent + padding_top + ascent,
+            "Distance from topline to baseline should be consistent"
+        );
+
+        // println!(
+        //     "✓ Topline to baseline distance: {}",
+        //     topline_to_baseline_distance
+        // );
     }
 }

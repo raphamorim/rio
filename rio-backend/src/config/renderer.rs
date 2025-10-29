@@ -10,12 +10,19 @@ pub struct Renderer {
     pub backend: Backend,
     #[serde(default = "bool::default", rename = "disable-unfocused-render")]
     pub disable_unfocused_render: bool,
-    #[serde(default = "Option::default", rename = "target-fps")]
-    pub target_fps: Option<u64>,
+    #[serde(
+        default = "default_disable_occluded_render",
+        rename = "disable-occluded-render"
+    )]
+    pub disable_occluded_render: bool,
     #[serde(default = "Vec::default")]
     pub filters: Vec<Filter>,
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
+}
+
+fn default_disable_occluded_render() -> bool {
+    false
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -46,7 +53,7 @@ impl Default for Renderer {
             performance: Performance::default(),
             backend: Backend::default(),
             disable_unfocused_render: false,
-            target_fps: None,
+            disable_occluded_render: default_disable_occluded_render(),
             filters: Vec::default(),
             strategy: RendererStategy::Events,
         }

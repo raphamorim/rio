@@ -67,8 +67,130 @@ impl Route<'_> {
     }
 
     #[inline]
+    pub fn schedule_redraw(
+        &mut self,
+        scheduler: &mut crate::scheduler::Scheduler,
+        route_id: usize,
+    ) {
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, use direct redraw as CVDisplayLink handles VSync
+            let _ = (scheduler, route_id); // Suppress warnings
+            self.request_redraw();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            use crate::event::{EventPayload, RioEvent, RioEventType};
+            use crate::scheduler::{TimerId, Topic};
+
+            // Windows and Linux use the frame scheduler with refresh rate timing
+            let timer_id = TimerId::new(Topic::Render, route_id);
+            let event = EventPayload::new(
+                RioEventType::Rio(RioEvent::Render),
+                self.window.winit_window.id(),
+            );
+
+            // Schedule a render if not already scheduled
+            // Use vblank_interval for proper frame timing
+            if !scheduler.scheduled(timer_id) {
+                scheduler.schedule(event, self.window.vblank_interval, false, timer_id);
+            }
+        }
+    }
+
+    #[inline]
     pub fn begin_render(&mut self) {
         self.window.render_timestamp = Instant::now();
+
+        // // Track frame count for performance monitoring
+        // use std::collections::HashMap;
+        // use std::sync::Mutex;
+
+        // static FRAME_COUNTERS: Mutex<
+        //     Option<HashMap<rio_window::window::WindowId, (u64, std::time::Instant)>>,
+        // > = Mutex::new(None);
+        // static LAST_LOG: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+        // let window_id = self.window.winit_window.id();
+
+        // {
+        //     // Use try_lock to avoid blocking other windows during performance logging
+        //     let mut counters = match FRAME_COUNTERS.try_lock() {
+        //         Ok(guard) => guard,
+        //         Err(_) => return, // Skip performance logging if another window is using it
+        //     };
+        //     if counters.is_none() {
+        //         *counters = Some(HashMap::new());
+        //     }
+
+        //     let mut last_log = match LAST_LOG.try_lock() {
+        //         Ok(guard) => guard,
+        //         Err(_) => return, // Skip performance logging if another window is using it
+        //     };
+        //     if last_log.is_none() {
+        //         *last_log = Some(std::time::Instant::now());
+        //     }
+
+        //     if let (Some(ref mut counters_map), Some(ref mut last_log_time)) =
+        //         (counters.as_mut(), last_log.as_mut())
+        //     {
+        //         let entry = counters_map
+        //             .entry(window_id)
+        //             .or_insert((0, std::time::Instant::now()));
+        //         entry.0 += 1;
+
+        //         // Log performance stats every 5 seconds
+        //         if last_log_time.elapsed().as_secs() >= 5 {
+        //             let total_windows = counters_map.len();
+        //             if total_windows > 1 {
+        //                 tracing::warn!(
+        //                     "[PERF] Multi-window performance stats ({} windows):",
+        //                     total_windows
+        //                 );
+        //                 let mut sorted_windows: Vec<_> = counters_map.iter().collect();
+        //                 sorted_windows.sort_by(|a, b| b.1 .0.cmp(&a.1 .0)); // Sort by frame count descending
+
+        //                 for (i, (id, (frames, start_time))) in
+        //                     sorted_windows.iter().enumerate()
+        //                 {
+        //                     let fps = *frames as f64 / start_time.elapsed().as_secs_f64();
+        //                     let priority = if i == 0 { "HIGH" } else { "LOW" };
+        //                     tracing::warn!(
+        //                         "[PERF]   Window {:?}: {:.1} FPS ({} frames) [{}]",
+        //                         id,
+        //                         fps,
+        //                         frames,
+        //                         priority
+        //                     );
+        //                 }
+
+        //                 // Check for significant FPS differences
+        //                 if sorted_windows.len() >= 2 {
+        //                     let highest_fps = sorted_windows[0].1 .0 as f64
+        //                         / sorted_windows[0].1 .1.elapsed().as_secs_f64();
+        //                     let lowest_fps = sorted_windows.last().unwrap().1 .0 as f64
+        //                         / sorted_windows
+        //                             .last()
+        //                             .unwrap()
+        //                             .1
+        //                              .1
+        //                             .elapsed()
+        //                             .as_secs_f64();
+        //                     if highest_fps > lowest_fps * 2.0 {
+        //                         tracing::error!("[PERF] SIGNIFICANT FPS DIFFERENCE: {:.1} vs {:.1} FPS - window prioritization detected!", highest_fps, lowest_fps);
+        //                     }
+        //                 }
+        //             }
+        //             **last_log_time = std::time::Instant::now();
+        //             // Reset counters
+        //             for (_, (frames, start_time)) in counters_map.iter_mut() {
+        //                 *frames = 0;
+        //                 *start_time = std::time::Instant::now();
+        //             }
+        //         }
+        //     }
+        // }
     }
 
     #[inline]
@@ -375,11 +497,13 @@ impl Router<'_> {
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
     pub is_occluded: bool,
-    has_fps_target: bool,
+    pub needs_render_after_occlusion: bool,
     pub render_timestamp: Instant,
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
+
     #[cfg(target_os = "macos")]
     pub is_macos_deadzone: bool,
     pub is_quake_mode: bool,
@@ -393,25 +517,40 @@ impl<'a> RouteWindow<'a> {
     }
 
     pub fn wait_until(&self) -> Option<Duration> {
-        let now = Instant::now();
-        let elapsed = now.duration_since(self.render_timestamp);
-        let vblank = self.vblank_interval;
+        // If we need to render after occlusion, render immediately
+        if self.needs_render_after_occlusion {
+            return None;
+        }
 
-        // Calculate how many complete frames have elapsed
-        let frames_elapsed = elapsed.as_nanos() / vblank.as_nanos();
-
-        // Calculate when the next frame should occur
-        let next_frame_time = self.render_timestamp
-            + Duration::from_nanos(
-                (frames_elapsed + 1) as u64 * vblank.as_nanos() as u64,
-            );
-
-        if next_frame_time > now {
-            // Return the time to wait until the next ideal frame time
-            Some(next_frame_time.duration_since(now))
-        } else {
-            // We've missed the target frame time, render immediately
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need software-based frame timing calculations
+        #[cfg(target_os = "macos")]
+        {
             None
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let now = Instant::now();
+            let elapsed = now.duration_since(self.render_timestamp);
+            let vblank = self.vblank_interval;
+
+            // Calculate how many complete frames have elapsed
+            let frames_elapsed = elapsed.as_nanos() / vblank.as_nanos();
+
+            // Calculate when the next frame should occur
+            let next_frame_time = self.render_timestamp
+                + Duration::from_nanos(
+                    (frames_elapsed + 1) as u64 * vblank.as_nanos() as u64,
+                );
+
+            if next_frame_time > now {
+                // Return the time to wait until the next ideal frame time
+                Some(next_frame_time.duration_since(now))
+            } else {
+                // We've missed the target frame time, render immediately
+                None
+            }
         }
     }
 
@@ -434,8 +573,13 @@ impl<'a> RouteWindow<'a> {
     //     }
     // }
 
+    #[inline]
     pub fn update_vblank_interval(&mut self) {
-        if !self.has_fps_target {
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need to calculate vblank intervals
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Always update vblank interval based on monitor refresh rate
             // Get the display refresh rate, default to 60Hz if unavailable
             let refresh_rate_hz = self
                 .winit_window
@@ -502,30 +646,31 @@ impl<'a> RouteWindow<'a> {
             winit_window.set_cloaked(false);
         }
 
-        // Get the display vblank interval.
-        let monitor_vblank_interval = 1_000_000.
-            / winit_window
+        // Get the display refresh rate and convert to frame interval
+        // On macOS, CVDisplayLink handles VSync synchronization automatically,
+        // so we don't need to calculate vblank intervals
+        #[cfg(target_os = "macos")]
+        let monitor_vblank_interval = Duration::from_micros(16667); // Placeholder value, not used
+
+        #[cfg(not(target_os = "macos"))]
+        let monitor_vblank_interval = {
+            let monitor_refresh_rate_hz = winit_window
                 .current_monitor()
                 .and_then(|monitor| monitor.refresh_rate_millihertz())
-                .unwrap_or(60_000) as f64;
+                .unwrap_or(60_000) as f64
+                / 1000.0;
 
-        // Now convert it to micro seconds.
-        let mut monitor_vblank_interval =
-            Duration::from_micros((1000. * monitor_vblank_interval) as u64);
-        let mut has_fps_target = false;
-
-        if let Some(target_fps) = config.renderer.target_fps {
-            monitor_vblank_interval =
-                Duration::from_millis(1000 / target_fps.clamp(1, 1000));
-            has_fps_target = true;
-        }
+            // Convert to microseconds for precise frame timing
+            let frame_time_us = (1_000_000.0 / monitor_refresh_rate_hz) as u64;
+            Duration::from_micros(frame_time_us)
+        };
 
         Self {
             vblank_interval: monitor_vblank_interval,
-            has_fps_target,
             render_timestamp: Instant::now(),
             is_focused: true,
             is_occluded: false,
+            needs_render_after_occlusion: false,
             winit_window,
             screen,
             #[cfg(target_os = "macos")]

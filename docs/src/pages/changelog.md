@@ -1,14 +1,148 @@
 ---
-title: 'Releases'
+title: 'Changelog'
 language: 'en'
 ---
 
-# Releases
+# Changelog
 
-## 0.2.21 (unreleased)
+## 0.3.0 (unreleased)
+
+- Native Metal Support.
+- Native Vulkan Support.
+- Quake window support.
+- Kitty image protocol.
+- Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
+
+## 0.2.33 (unreleased)
+
+- Fix Noticeably slower startup compared to wezterm, foot [#1346](https://github.com/raphamorim/rio/issues/1346).
+- Fix Font loader taking a LOT of time to load fonts [#1339](https://github.com/raphamorim/rio/issues/1339).
+- Fix Rio panics on launch on a Raspberry Pi 5 [#1332](https://github.com/raphamorim/rio/issues/1332).
+- Fix kitty keyboard protocol.
+- Support reporting terminal version via XTVERSION.
+
+## 0.2.32
+
+- Updated WGPU to v27.0.1.
+- Fix No backend are enabled on FreeBSD #1235.
+
+## 0.2.31
+
+- Update Rust to v1.90.
+- Fix kitty keyboard recognition.
+- **Breaking: Simplified key binding escape sequences**
+  - Replaced separate `text` and `bytes` fields with a single `esc` field
+  - Escape sequences are now sent directly to the PTY without text manipulation
+  - Migration: Replace `bytes = [27, 91, 72]` with `esc = "\u001b[H"`
+  - Migration: Replace `text = "some text"` with `esc = "some text"`
+  - Example: `{ key = "l", with = "control", esc = "\u001b[2J\u001b[H" }` to clear screen
+- **Fix key binding conflicts**: Resolved issues where keys like `PageUp`, `PageDown`, and `Alt+Enter` required explicit `"None"` bindings before they could be reassigned
+  - Simplified binding conflict resolution logic to automatically remove conflicting default bindings
+  - User-defined bindings now always take precedence without requiring placeholder "None" entries
+
+## 0.2.30
+
+- **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
+  - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
+  - Users on Ubuntu 22.04 and older need to manually install terminfo after package installation
+  - Debian 13+ and Ubuntu 24.04+ users get terminfo from system's ncurses-term package
+  - RPM packages continue to include terminfo as before
+- Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284).
+
+## 0.2.29
+
+- Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269).
+- Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows.
+- Add NSCameraUseContinuityCameraDeviceType to plist for macOS.
+
+## 0.2.28
+
+- **Optimized rendering pipeline for improved performance**: Implemented deferred damage checking and render coalescing
+  - Added Wakeup events to batch multiple rapid terminal updates into single render passes
+  - Deferred damage calculation until render time to reduce unnecessary computations
+  - Skip rendering for unfocused windows when `disable_unfocused_render` is enabled
+  - Skip rendering for occluded windows when `disable_occluded_render` is enabled
+  - Improved damage merging to always accumulate updates even when already marked dirty
+  - Enhanced performance for rapid terminal output by coalescing non-synchronized updates
+
+## 0.2.27
+
+- Breaking: If `xterm-rio` is installed we prioritized it over `rio` terminfo.
+- **Fix sixel/iterm2 graphics persistence issue**: Fixed graphics remaining visible when overwritten by text
+  - Graphics are now properly removed when cells containing them are overwritten
+  - Fixes issues with file managers like Yazi where images would persist incorrectly
+  - Simplified graphics cleanup logic by removing unused ClearSubregion functionality
+- **CJK Font Metrics**: Fixed CJK characters displaying "higher" than Latin characters [#1071](https://github.com/raphamorim/rio/issues/1071)
+  - Implemented comprehensive CJK font metrics handling with consistent baseline adjustment
+  - Fixed scrolling issues for mixed Latin and CJK text content
+  - Added CJK character width measurement using "水" (water ideograph) as reference
+  - Created consistent cell dimensions across different font types
+  - Developed extensive test suite with 40+ font-related tests to verify fixes
+
+## 0.2.26
+
+- **Fix frame dropping in release builds**: Fixed an issue where release builds would drop frames due to damage event timing
+  - Damage events are now emitted directly after parsing PTY data, ensuring proper batching
+  - Removed redundant Wakeup event mechanism that was causing multiple renders per update
+  - Synchronized update timeouts now properly emit damage events
+  - Significantly improves rendering smoothness in optimized builds
+
+## 0.2.25
+
+- Fix: Rio doesn't launch from context menu on Windows.
+- Fix: Rio lacks embedded icon on Windows 10 by [@christianjann](https://github.com/christianjann).
+- **Fix custom shells in /usr/local/bin not found on macOS**: Fixed an issue where custom shells installed in `/usr/local/bin` were not found when Rio was launched from Finder or other GUI applications
+  - On macOS, Rio now uses `/usr/bin/login` to spawn shells, ensuring proper login shell environment with full PATH
+  - Custom shells like Fish, Nushell, or custom Zsh installations in `/usr/local/bin` will now work correctly
+
+## 0.2.24
+
+- Fix game mode regression.
+- **Hint Label Damage Tracking**: Improved hint label rendering performance with proper damage tracking
+  - Hint label areas are now properly marked for re-rendering when cleared
+  - Eliminates visual artifacts when hint labels are removed
+  - Optimized rendering to only update affected screen regions
+- **Configurable Hyperlink Hover Keys**: Hyperlink hover modifier keys are now configurable
+  - Configure custom modifier keys through the hints system in `config.toml`
+  - Default behavior unchanged: Command on macOS, Alt on other platforms
+  - Supports any combination of Shift, Control, Alt, and Super/Command keys
+  - Example: `mouse = { enabled = true, mods = ["Shift"] }` to use Shift key
+- **Hints Configuration**: Renamed `hints.enabled` to `hints.rules` for better clarity
+  - Update your configuration: `[[hints.enabled]]` → `[[hints.rules]]`
+  - All hint configuration sections now use `hints.rules.*` instead of `hints.enabled.*`
+  - Functionality remains the same, only the configuration key names changed
+
+## 0.2.23
+
+- Fix some rendering regressions introduced by 0.2.21.
+- Improve performance by stopping locking on rendering run steps.
+- Fix: [X11: WM_CLASS has an empty string property](https://github.com/raphamorim/rio/issues/1155).
+
+## 0.2.22
+
+- Fix some regressions introduced by 0.2.21.
+
+## 0.2.21
+
+- Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
 
 ### Performance Optimizations
 
+- **Major**: Implemented efficient CVDisplayLink-based VSync synchronization for macOS
+  - Perfect frame timing aligned with display hardware refresh cycles
+  - Eliminates screen tearing and stuttering through hardware VSync synchronization
+  - Adaptive refresh rate support: automatically handles 60Hz, 120Hz, ProMotion displays
+  - Multi-display support: adapts when windows move between displays with different refresh rates
+  - Grand Central Dispatch (GCD) integration for thread-safe cross-thread communication
+  - **Smart rendering**: Only renders when content actually changes using dirty flag system
+  - Power efficient: skips unnecessary redraws when content is static, reducing CPU usage
+  - Professional rendering quality with smooth, tear-free visual updates
+  - CVDisplayLink runs on dedicated background thread, never blocking UI operations
+- **macOS VSync Optimization**: Disabled redundant software-based vsync calculations on macOS
+  - CVDisplayLink already provides hardware-synchronized VSync timing
+  - Eliminates unnecessary frame timing calculations and monitor refresh rate queries
+  - Reduces CPU overhead and improves rendering performance
+  - Software vsync logic remains active on other platforms for compatibility
 - **Major**: Implemented a new text run caching system replacing line-based caching
   - Up to 96% reduction in text shaping overhead for repeated content
   - Individual text runs (words, operators, keywords) cached and reused across frames
@@ -17,7 +151,7 @@ language: 'en'
   - Programming keywords: `const`, `let`, `function`, `class`, `import`, `export`, etc.
   - Indentation patterns: 4/8/12/16 spaces, single/double/triple tabs
   - Shell commands: `ls`, `cd`, `git`, `npm`, `cargo`, `sudo`, etc.
-  - Operators & punctuation: ` = `, ` == `, ` => `, `();`, `{}`, `[]`, etc.
+  - Operators & punctuation: `=`, `==`, `=>`, `();`, `{}`, `[]`, etc.
   - File extensions: `.js`, `.ts`, `.rs`, `.py`, `.json`, `.md`, etc.
   - Error/log patterns: `Error:`, `[INFO]`, `FAILED`, `SUCCESS`, etc.
   - Immediate cache hits eliminate cold start shaping delays
@@ -38,16 +172,54 @@ language: 'en'
   - Font data release and cleanup in dedicated background thread
   - System font scanning and preloading without blocking main thread
   - Prevents frame rate drops during font operations
+- **Occlusion-Based Rendering**: Skip rendering for occluded windows/tabs
+  - Automatically detects when windows are completely hidden by other windows
+  - Skips rendering for occluded windows to save GPU resources and improve performance
+  - Renders one frame when window becomes visible again to ensure display is updated
+  - Configurable via `[renderer] disable-occluded-render = true` (enabled by default)
+  - Significantly improves performance when running multiple tabs or windows
 
 ### Other Improvements
 
 - Optimize the character cluster cache for wide space characters.
 - New font atlas, more efficient.
 - Implemented around 75% Memory Reduction: Text glyphs now use R8 (1 byte) instead of RGBA (4 bytes).
+- **Hint Label Damage Tracking**: Improved hint label rendering performance with proper damage tracking
+  - Hint label areas are now properly marked for re-rendering when cleared
+  - Eliminates visual artifacts when hint labels are removed
+  - Optimized rendering to only update affected screen regions
 - **IME Cursor Positioning**: Added configurable IME cursor positioning based on terminal cell coordinates
   - IME input popups now appear precisely at the cursor position
   - Improves input experience for CJK languages (Chinese, Japanese, Korean)
   - Configurable via `[keyboard] ime-cursor-positioning = true` (enabled by default)
+- **Shift+Click Selection**: Added Shift+click support for expanding text selections
+  - Shift+clicking now extends the current selection to the clicked cell
+  - Provides standard terminal selection behavior expected by users
+  - Regular clicking without Shift still clears selection and starts new one as before
+- **CLI accepts relative paths for working directory CLI argument**: When invoking rio from other terminals using `rio --working-dir=<path>`, a relative path is now correctly processed
+
+### Bug Fixes
+
+- **Cursor Damage Tracking**: Fixed cursor rendering issues after `clear` command and during rapid typing
+  - Replaced complex point-based damage tracking with simplified line-based approach
+  - Eliminates edge cases where cursor updates were missed during fast typing sequences
+  - Improved reliability by always damaging entire lines instead of tracking column ranges
+  - Aligns with modern terminal design principles for more robust damage calculation
+- **Selection Rendering**: Fixed selection highlight not appearing on first render
+  - Selection changes now properly trigger damage tracking and rendering
+  - Optimized selection damage to only redraw affected lines for better performance
+  - Selection highlights now appear immediately when making selections
+- **Text Selection**: Fixed selection behavior during input and paste operations
+  - Selection properly clears when typing or pasting text (both bracketed and regular paste)
+  - Selection coordinates remain stable during viewport scrolling
+  - Prevents selection from being lost unexpectedly during normal terminal usage
+- **Auto-scroll on Input**: Fixed issue where typing after scrolling up wouldn't automatically scroll to bottom
+  - Now properly scrolls to bottom for both keyboard input and IME/paste operations
+  - Ensures cursor remains visible when typing new content
+- **Scroll Performance**: Improved scrolling performance by optimizing render event handling
+  - Moved scroll display offset update before mouse cursor dirty event
+  - Removed redundant render calls during scroll operations
+  - Implemented centralized damage-based rendering in event loop for better performance
 - **macOS IME Improvements**: Fixed emoji input and IME stability issues
   - Resolved `IMKCFRunLoopWakeUpReliable` errors when using emoji picker
   - Improved coordinate validation and error handling for IME positioning
@@ -58,15 +230,12 @@ language: 'en'
   - `man 5 rio` - Complete configuration file format documentation
   - `man 5 rio-bindings` - Key bindings reference and customization guide
   - Available in `extra/man/` directory with build instructions
-
-### Breaking Changes
-
-- **Backspace key behavior**: Changed from sending DEL (`^?`, ASCII 127) to backspace (`^H`, ASCII 8)
-  - Updated termcap/terminfo files: `kbs=^H` instead of `kbs=^?`
-  - Updated XTGETTCAP response to return `^H` for `kbs` capability
-  - Fixes vim delete key issue when `TERM=xterm-256color` [#1169](https://github.com/raphamorim/rio/issues/1169)
-  - Aligns with xterm standard behavior for better compatibility
-  - Applications expecting DEL for backspace may need adjustment
+- **Terminfo Compatibility**: Improved terminal compatibility by adding `xterm-rio` terminfo entry
+  - Added `xterm-rio` as primary terminfo entry with `rio` as alias for better application compatibility
+  - Applications that look for "xterm-" prefixed terminals (like termwiz-based apps) now work correctly
+  - Maintains `TERM=rio` environment variable for consistency with terminal identity
+  - Fixes crashes with applications like `gitu` and other termwiz-based terminal programs
+  - Follows same pattern as other modern terminals (Alacritty, Ghostty) for maximum compatibility
 
 ### Technical Details
 
@@ -79,10 +248,20 @@ The performance optimizations in this release represent a significant architectu
 - **Compatibility**: All optimizations maintain full backward compatibility with existing Rio APIs and configurations.
 
 These changes are particularly beneficial for:
+
 - Programming workflows with repetitive code patterns
 - Terminal sessions with heavy indentation (Python, nested JS/TS, YAML)
 - Long-running sessions where cache warming provides sustained performance benefits
 - Systems with limited memory where reduced allocation overhead improves overall responsiveness
+
+### Bug Fixes
+
+- **Backspace Key Compatibility**: Fixed backspace key not working properly in vim when `TERM=xterm-256color`
+  - Changed backspace key bindings to send BS (0x08) instead of DEL (0x7F)
+  - Updated Rio terminfo and termcap entries to match actual key behavior
+  - Updated XTGETTCAP response to return `^H` for `kbs` capability
+  - Ensures compatibility with applications expecting xterm-256color backspace behavior
+  - Fixes issue where vim would display `^?` instead of performing backspace operation
 
 ## 0.2.20
 
@@ -110,7 +289,7 @@ These changes are particularly beneficial for:
 
 ## 0.2.17
 
-- *Breaking:* Decorations as `Enabled` is default on MacOS (instead of `Transparent`).
+- _Breaking:_ Decorations as `Enabled` is default on MacOS (instead of `Transparent`).
 - F16 Texture supports whenever is available.
 - Clear font atlas whenever the font is changed.
 - Skip passing sandbox env in Flatpak, fixes user environment in spawned shell [#1116](https://github.com/raphamorim/rio/pull/1116) by [@ranisalt](https://github.com/ranisalt).
@@ -118,7 +297,7 @@ These changes are particularly beneficial for:
 
 ## 0.2.16
 
-- *Breaking*: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105) by [@ranisalt](https://github.com/ranisalt).
+- _Breaking_: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105) by [@ranisalt](https://github.com/ranisalt).
 - Fix: Crash on whenever attempting to clean an invalid line index.
 - Add metainfo and screenshots for appstream by [@ranisalt](https://github.com/ranisalt).
 
@@ -133,7 +312,7 @@ These changes are particularly beneficial for:
 
 ## 0.2.13
 
-- *Breaking change*: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
+- _Breaking change_: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
 - Fix dimension for whenever a new tab is created from a view with splits.
 - Drop subtables with empty coverage by [@xorgy](https://github.com/xorgy).
 - Fix font size affecting tabs size.
@@ -174,7 +353,7 @@ These changes are particularly beneficial for:
 - Fix dimension computation whenever resizing Rio.
 - Removed `fonts.ui` property, now Rio will always use primary font for UI.
 - Removed Text renderer mod by migrating to RichText renderer.
-- *Breaking:* `renderer.strategy = "Continuous"` was renamed to `renderer.strategy = "Game"`
+- _Breaking:_ `renderer.strategy = "Continuous"` was renamed to `renderer.strategy = "Game"`
 - Fix search bar can't show chinese [#844](https://github.com/raphamorim/rio/issues/844).
 
 ## 0.2.10
@@ -188,10 +367,12 @@ These changes are particularly beneficial for:
 ## 0.2.9
 
 - Support to symbol map configuration: `fonts.symbol-map`:
+
 ```toml
 # covers: '⊗','⊘','⊙'
 fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code NF" }]
 ```
+
 - Add Switch to Next/Prev Split or Tab command by [@vlabo](https://github.com/vlabo).
 - Fix issue whenever the first main font cannot be found.
 
@@ -202,7 +383,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Use [GoReleaser](https://goreleaser.com) to build & release Rio ([#921](https://github.com/raphamorim/rio/pull/921)), thanks [@caarlos0](https://github.com/caarlos0) and [@vedantmgoyal9](https://github.com/vedantmgoyal9)
 - Cache GSUB and GPOS features independently.
 - Updated `windows-sys` to `v0.59`.
-    - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
+  - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
 ## 0.2.7
 
@@ -243,13 +424,13 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 ## 0.2.3
 
 - Rio now allows you to configure window title through configuration via template. Possible options:
-    - `TITLE`: terminal title via OSC sequences for setting terminal title
-    - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-    - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-    <!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
-    - `COLUMNS`: current columns
-    - `LINES`: current lines
-        - So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
+  - `TITLE`: terminal title via OSC sequences for setting terminal title
+  - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
+  - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
+  <!-- - `CANONICAL_PATH`: (e.g `.../Documents/a/rio`, `~/Documents/a`) -->
+  - `COLUMNS`: current columns
+  - `LINES`: current lines
+    - So, for example if you have: `{{COLUMNS}}x{{LINES}}` would show something like `88x66`.
 - Perf improvement on text selection [#898](https://github.com/raphamorim/rio/pull/898) by [@marc2332](https://github.com/marc2332).
 - Window title is now updated regardless the Navigation Mode.
 - Performance: Background and foreground data are only retrieved if is asked (either color automation is enabled or `window.title` contains any request for it).
@@ -267,8 +448,8 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - On macOS, fixed undocumented cursors (e.g. zoom, resize, help) always appearing to be invalid and falling back to the default cursor.
 - Introduce `SwitchCurrentTabToPrev` and `SwitchCurrentTabToNext` actions [#854](https://github.com/raphamorim/rio/pull/854/files) by [@agjini](https://github.com/agjini).
 - On X11, Wayland, Windows and macOS, improved scancode conversions for more obscure key codes.
-    - On macOS, fixed the scancode conversion for audio volume keys.
-    - On macOS, fixed the scancode conversion for `IntlBackslash`.
+  - On macOS, fixed the scancode conversion for audio volume keys.
+  - On macOS, fixed the scancode conversion for `IntlBackslash`.
 - Kitty keyboard protocol is now enabled by default.
 - Allow `Renderer` to be configured cross-platform by `Platform` property.
 - Add `ToggleFullscreen` to configurable actions.
@@ -310,6 +491,7 @@ windows.shell.args = ["-l"]
 linux.shell.program = "tmux"
 linux.shell.args = ["new-session", "-c", "/var/www"]
 ```
+
 - Fix: Grey triangle in the titlebar [#778](https://github.com/raphamorim/rio/issues/778)
 - Update window title straight away ([#779](https://github.com/raphamorim/rio/pull/779) by [@hunger](https://github.com/hunger))
 - Always update the title on windows and MacOS ([#780](https://github.com/raphamorim/rio/pull/780) by [@hunger](https://github.com/hunger))
@@ -318,10 +500,10 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 
 - Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
-    - Sugarloaf: Major rewrite of font glyph logic.
-    - Sugarloaf: Removal of some unnecessary processing on shaping logic.
-    - Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
-- *Breaking:* Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
+  - Sugarloaf: Major rewrite of font glyph logic.
+  - Sugarloaf: Removal of some unnecessary processing on shaping logic.
+  - Sugarloaf: Rewrite/Change of render architecture, now sugarloaf does not have any reference to column/lines logic.
+- _Breaking:_ Minimum MacOS version went from El Captain to Big Sur on ARM64 and Catalina on Intel x86.
 - Microsoft Windows: [Rio terminal is now available on WinGet packages](https://github.com/microsoft/winget-pkgs/pull/184792).
 - Microsoft Windows: [Rio terminal is now available on MINGW packages](https://github.com/msys2/MINGW-packages/pull/22248).
 - Microsoft Windows: Rio support on ARM architecture by [@andreban](https://github.com/andreban).
@@ -348,7 +530,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Add DWMWA_CLOAK support on Microsoft Windows.
 - VI Mode now supports search by [@orhun](https://github.com/orhun).
 - Use max frame per seconds based on the current monitor refresh rate.
-- *breaking* `renderer.max-fps` has been changed to `renderer.target-fps`.
+- _breaking_ `renderer.max-fps` has been changed to `renderer.target-fps`.
 - Fix background color for underline and beam cursors when using transparent window.
 - Fix IME color for underline and beam cursors.
 - Add default for Style property on Sugarloaf font.
@@ -403,7 +585,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
 - Fix: Underline cursor not working.
-- Fix:  sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
+- Fix: sixel: Text doesn't overwrite sixels [#636](https://github.com/raphamorim/rio/issues/636).
 - Initial support to Sixel protocol.
 - Support to `fonts.emoji`. You can also specify which emoji font you would like to use, by default will be loaded a built-in Twemoji color by Mozilla.
 
@@ -453,7 +635,7 @@ blinking = false
 - Support CSI_t 16 (Report Cell Size in Pixels).
 - Support CSI_t 14 (Report Terminal Window Size in Pixels).
 - Fix on all the issues regarding whenever the font atlas reaches the limit.
-- *breaking change*: collapsed tabs use now `tabs-active-highlight` instead of `tabs-active`.
+- _breaking change_: collapsed tabs use now `tabs-active-highlight` instead of `tabs-active`.
 - Default font for UI has changed to [DepartureMono](https://departuremono.com/).
 - Performance: drop extra texture creation and manipulation.
 - Fix on windows: If editor is not found, the app panics [#641](https://github.com/raphamorim/rio/issues/641).
@@ -536,8 +718,8 @@ args = ["-w"]
 - Support custom colors on all underlines.
 - Support for advaned formatting (squiggly underline?) [#370](https://github.com/raphamorim/rio/issues/370)
 - Performance improvements!
-    - Cache strategy has improved to cover any line that have been previously rendered.
-    - Render backgrounds and cursors in one pass.
+  - Cache strategy has improved to cover any line that have been previously rendered.
+  - Render backgrounds and cursors in one pass.
 - Update tokio
 
 ## 0.1.5
@@ -618,10 +800,10 @@ opacity = 0.8
 ```
 
 - Major rewrite on sugarloaf.
-    - New rendering architecture.
-    - Sugarloaf now uses same render pass for each render.
-    - Ignore equal renderers.
-    - Compute layout updates only if layout is different.
+  - New rendering architecture.
+  - Sugarloaf now uses same render pass for each render.
+  - Ignore equal renderers.
+  - Compute layout updates only if layout is different.
 - `BottomTab` navigation is now default for Linux and Windows.
 - Support to font ligatures.
 - Support bluetooth access on MacOs.
@@ -660,8 +842,8 @@ opacity = 0.8
 
 ## 0.0.37
 
-- *Breaking change:* Reduced font size to `16.0`.
-- *Breaking change:* Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
+- _Breaking change:_ Reduced font size to `16.0`.
+- _Breaking change:_ Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
 - Update winit to 0.30.0.
 - Update rust version to 1.77.2.
 - Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
@@ -716,6 +898,7 @@ disable-ctlseqs-alt = false
 - Introduction of `keyboard.disable-ctlseqs-alt`: Disable ctlseqs with ALT keys. It is useful for example if you would like Rio to replicate Terminal.app, since it does not deal with ctlseqs with ALT keys
 
 - Introduction of new configuration property called `renderer`.
+
 ```toml
 [renderer]
 performance = "High"
@@ -730,6 +913,7 @@ backend = "Automatic"
 # DX11: Supported on Windows 7+
 # Metal: Supported on macOS/iOS
 ```
+
 - Fix: update padding top on config change [#378](https://github.com/raphamorim/rio/pull/378) by [@hougesen](https://github.com/hougesen)
 - Fixed bug where color automation did not work on Linux because of line ending character.
 - Fix: Control + Up/Down don't works as expected on neovim [#371](https://github.com/raphamorim/rio/issues/371)
@@ -1064,8 +1248,8 @@ clickable = false
 ```
 
 - Performance improvements with Sugarloaf de-duplication of input data.
-    - Before: `~253.5µs`.
-    - Now: `~51.5µs`.
+  - Before: `~253.5µs`.
+  - Now: `~51.5µs`.
 - Introduce `navigation.use-current-path` which sets if a tab/breacrumb should be open from the current context path.
 - Fix rendering unicode with 1 width glyphs (fix [#160](https://github.com/raphamorim/rio/issues/160)).
 - Increased max tabs from 9 to 20.
@@ -1110,10 +1294,10 @@ clickable = false
 ## 0.0.10
 
 - Major refactor of Sugarloaf.
-    - Performance improvements around 80-110%.
-    - Introduced CachedSugar.
-    - Usage of PixelScale.
-    - Line-height support.
+  - Performance improvements around 80-110%.
+  - Introduced CachedSugar.
+  - Usage of PixelScale.
+  - Line-height support.
 - Open new tab using the current tab directory.
 - Fix some symbols break the horizontal and vertical alignment of lines (ref [#148](https://github.com/raphamorim/rio/issues/148)).
 - Fix font size configuration is confusing (ref [#139](https://github.com/raphamorim/rio/issues/139)).
@@ -1188,6 +1372,7 @@ use-fork = true
 - Breaking changes for configuration file regarding `Style` property.
 
 before:
+
 ```toml
 performance = "High"
 [style]
@@ -1196,6 +1381,7 @@ theme = "lucario"
 ```
 
 now:
+
 ```toml
 performance = "High"
 theme = "lucario"

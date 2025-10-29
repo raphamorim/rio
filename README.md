@@ -13,11 +13,13 @@
     ·
     <a href="https://rioterm.com/docs/config">Config</a>
     ·
-    <a href="https://rioterm.com/docs/releases">Changelog</a>
+    <a href="https://rioterm.com/docs/changelog">Changelog</a>
     ·
     <a href="https://github.com/sponsors/raphamorim">Sponsor</a>
   </p>
 </p>
+
+> **⚠️ Development Notice**: We are currently in the process of releasing Rio 0.3.0, which includes major performance improvements and architectural changes. The main branch is under active development and may be unstable. For stable usage, please use [v0.2.20 or below](https://github.com/raphamorim/rio/releases).
 
 ## About
 
@@ -60,4 +62,4 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 ## Minimal stable rust version
 
-Rio's MSRV is 1.87.0.
+Rio's MSRV is 1.90.0.

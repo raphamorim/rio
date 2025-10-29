@@ -164,7 +164,7 @@ impl Colorspace {
     }
 
     #[cfg(not(target_os = "macos"))]
-    pub fn to_rio_window_colorspace(&self) -> () {
+    pub fn to_rio_window_colorspace(&self) {
         // No-op for non-macOS platforms
     }
 }

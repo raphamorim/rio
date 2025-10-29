@@ -6,6 +6,12 @@ use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
 use rio_backend::config::colors::ColorRgb;
@@ -92,6 +98,76 @@ impl Application<'_> {
                 | WindowEvent::HoveredFile(_)
                 | WindowEvent::Moved(_)
         )
+    }
+
+    fn handle_visual_bell(&mut self, window_id: WindowId) {
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            route.window.screen.renderer.trigger_visual_bell();
+
+            // Mark content as dirty to ensure render happens
+            route
+                .window
+                .screen
+                .ctx_mut()
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_dirty();
+
+            // Force immediate render to show the bell
+            route.request_redraw();
+
+            // Schedule a render after the bell duration to clear it
+            let timer_id =
+                TimerId::new(Topic::Render, route.window.screen.ctx().current_route());
+            let event = EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
+
+            // Schedule render to clear bell effect after visual bell duration
+            self.scheduler.schedule(
+                event,
+                crate::constants::BELL_DURATION,
+                false,
+                timer_id,
+            );
+        }
+    }
+
+    fn handle_audio_bell(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            // Use system bell sound on macOS
+            unsafe {
+                #[link(name = "AppKit", kind = "framework")]
+                extern "C" {
+                    fn NSBeep();
+                }
+                NSBeep();
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // Use MessageBeep on Windows with MB_OK (0x00000000) for default beep
+            unsafe {
+                windows_sys::Win32::System::Diagnostics::Debug::MessageBeep(0x00000000);
+            }
+        }
+
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        {
+            #[cfg(feature = "audio")]
+            {
+                std::thread::spawn(|| {
+                    if let Err(e) = play_bell_sound() {
+                        tracing::warn!("Failed to play bell sound: {}", e);
+                    }
+                });
+            }
+            #[cfg(not(feature = "audio"))]
+            {
+                tracing::debug!("Audio bell requested but audio feature is not enabled");
+            }
+        }
     }
 
     pub fn run(
@@ -365,20 +441,7 @@ impl Application<'_> {
 }
 
 impl ApplicationHandler<EventPayload> for Application<'_> {
-    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {
-        #[cfg(not(any(target_os = "macos", windows)))]
-        {
-            // This is a hacky solution to force an update to the window on linux
-            // Fix is only for windows with opacity that aren't being computed at all
-            if self.config.window.opacity < 1. || self.config.window.blur {
-                for (_id, route) in self.router.routes.iter_mut() {
-                    route.update_config(&self.config, &self.router.font_library, false);
-
-                    route.request_redraw();
-                }
-            }
-        }
-    }
+    fn resumed(&mut self, _active_event_loop: &ActiveEventLoop) {}
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, cause: StartCause) {
         if cause != StartCause::Init
@@ -410,14 +473,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
         }
 
-        // Schedule title updates every 1s
+        // Schedule title updates every 2s
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
         if !self.scheduler.scheduled(timer_id) {
             self.scheduler.schedule(
                 EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
                     rio_window::window::WindowId::dummy()
                 }),
-                Duration::from_secs(1),
+                Duration::from_secs(2),
                 true,
                 timer_id,
             );
@@ -431,10 +494,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         match event.payload {
             RioEventType::Rio(RioEvent::Render) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Skip rendering for unfocused windows if configured
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
                     {
                         return;
+                    }
+
+                    // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                    if self.config.renderer.disable_occluded_render
+                        && route.window.is_occluded
+                        && !route.window.needs_render_after_occlusion
+                    {
+                        return;
+                    }
+
+                    // Clear the one-time render flag if it was set
+                    if route.window.needs_render_after_occlusion {
+                        route.window.needs_render_after_occlusion = false;
                     }
 
                     route.request_redraw();
@@ -450,32 +527,103 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Check if this is the current route
-                        if route_id == route.window.screen.ctx().current_route() {
-                            // Check if we need to throttle based on timing
-                            if let Some(wait_duration) = route.window.wait_until() {
-                                // We need to wait before rendering again
-                                let timer_id = TimerId::new(Topic::RenderRoute, route_id);
-                                let event = EventPayload::new(
-                                    RioEventType::Rio(RioEvent::Render),
-                                    window_id,
-                                );
+                        // Skip rendering for occluded windows if configured, unless we need to render after occlusion
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            return;
+                        }
 
-                                // Only schedule if not already scheduled
-                                if !self.scheduler.scheduled(timer_id) {
-                                    self.scheduler.schedule(
-                                        event,
-                                        wait_duration,
-                                        false,
-                                        timer_id,
-                                    );
-                                }
-                            } else {
-                                // We can render immediately
-                                route.request_redraw();
+                        // Clear the one-time render flag if it was set
+                        if route.window.needs_render_after_occlusion {
+                            route.window.needs_render_after_occlusion = false;
+                        }
+
+                        // Mark the renderable content as needing to render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
+                        }
+
+                        // Check if we need to throttle based on timing
+                        if let Some(wait_duration) = route.window.wait_until() {
+                            // We need to wait before rendering again
+                            let timer_id = TimerId::new(Topic::RenderRoute, route_id);
+                            let event = EventPayload::new(
+                                RioEventType::Rio(RioEvent::Render),
+                                window_id,
+                            );
+
+                            // Only schedule if not already scheduled
+                            if !self.scheduler.scheduled(timer_id) {
+                                self.scheduler.schedule(
+                                    event,
+                                    wait_duration,
+                                    false,
+                                    timer_id,
+                                );
                             }
+                        } else {
+                            // We can render immediately
+                            route.request_redraw();
                         }
                     }
+                }
+            }
+
+            RioEventType::Rio(RioEvent::Wakeup(route_id)) => {
+                if self.config.renderer.strategy.is_event_based() {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        // Skip rendering for unfocused windows if configured
+                        if self.config.renderer.disable_unfocused_render
+                            && !route.window.is_focused
+                        {
+                            tracing::trace!("Wakeup: Skipping unfocused window");
+                            return;
+                        }
+
+                        // Skip rendering for occluded windows if configured
+                        if self.config.renderer.disable_occluded_render
+                            && route.window.is_occluded
+                            && !route.window.needs_render_after_occlusion
+                        {
+                            tracing::trace!("Wakeup: Skipping occluded window");
+                            return;
+                        }
+
+                        tracing::trace!(
+                            "Wakeup: Marking route {} for damage check",
+                            route_id
+                        );
+
+                        // Mark the renderable content as needing to check for damage
+                        // The actual damage retrieval will happen during render
+                        if let Some(ctx_item) =
+                            route.window.screen.ctx_mut().get_mut(route_id)
+                        {
+                            ctx_item.val.renderable_content.pending_update.set_dirty();
+                            route.schedule_redraw(&mut self.scheduler, route_id);
+                        }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // Process graphics directly in sugarloaf
+                    let sugarloaf = &mut route.window.screen.sugarloaf;
+
+                    for graphic_data in queues.pending {
+                        sugarloaf.graphics.insert(graphic_data);
+                    }
+
+                    for graphic_data in queues.remove_queue {
+                        sugarloaf.graphics.remove(&graphic_data);
+                    }
+
+                    // Request a redraw to display the updated graphics
+                    route.schedule_redraw(&mut self.scheduler, route_id);
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
@@ -519,7 +667,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
+
+                let mut has_checked_adaptive_colors = false;
                 for (_id, route) in self.router.routes.iter_mut() {
+                    // Apply system theme to ensure colors are consistent
+                    if !has_checked_adaptive_colors {
+                        let system_theme = route.window.winit_window.theme();
+                        update_colors_based_on_theme(&mut self.config, system_theme);
+                        has_checked_adaptive_colors = true;
+                    }
+
                     if has_font_updates {
                         if let Some(ref err) = font_library_errors {
                             route
@@ -586,8 +743,48 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::CursorBlinkingChangeOnRoute(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if route_id == route.window.screen.ctx().current_route() {
+                        // Get cursor position for damage
+                        let cursor_line = {
+                            let terminal = route
+                                .window
+                                .screen
+                                .ctx_mut()
+                                .current_mut()
+                                .terminal
+                                .lock();
+                            terminal.cursor().pos.row.0 as usize
+                        };
+
+                        // Set UI damage for cursor line
+                        route
+                            .window
+                            .screen
+                            .ctx_mut()
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Partial(
+                                [rio_backend::crosswords::LineDamage::new(
+                                    cursor_line,
+                                    true,
+                                )]
+                                .into_iter()
+                                .collect(),
+                            ));
+
                         route.request_redraw();
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::Bell) => {
+                // Handle visual bell
+                if self.config.bell.visual {
+                    self.handle_visual_bell(window_id);
+                }
+
+                // Handle audio bell
+                if self.config.bell.audio {
+                    self.handle_audio_bell();
                 }
             }
             RioEventType::Rio(RioEvent::PrepareRender(millis)) => {
@@ -957,15 +1154,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 route.window.screen.set_modifiers(modifiers);
-
-                if route.window.screen.search_nearest_hyperlink_from_pos() {
-                    if self.config.hide_cursor_when_typing {
-                        route.window.winit_window.set_cursor_visible(true);
-                    }
-
-                    route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.request_render();
-                }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
@@ -1087,6 +1275,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // Trigger hints highlighted by the mouse
+                        if button == MouseButton::Left
+                            && route.window.screen.trigger_hint()
+                        {
+                            return;
+                        }
+
                         if let MouseButton::Left | MouseButton::Right = button {
                             // Copy selection on release, to prevent flooding the display server.
                             route.window.screen.copy_selection(ClipboardType::Selection);
@@ -1161,7 +1356,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                if route.window.screen.search_nearest_hyperlink_from_pos() {
+                if route.window.screen.update_highlighted_hints() {
                     route.window.winit_window.set_cursor(CursorIcon::Pointer);
                     route.window.screen.context_manager.request_render();
                 } else {
@@ -1370,7 +1565,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Occluded(occluded) => {
+                let was_occluded = route.window.is_occluded;
                 route.window.is_occluded = occluded;
+
+                // If window was occluded and is now visible, mark for one-time render
+                if was_occluded && !occluded {
+                    route.window.needs_render_after_occlusion = true;
+                }
             }
 
             WindowEvent::ThemeChanged(new_theme) => {
@@ -1447,6 +1648,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
+                } else if route
+                    .window
+                    .screen
+                    .ctx()
+                    .current()
+                    .renderable_content
+                    .pending_update
+                    .is_dirty()
+                {
+                    route.schedule_redraw(
+                        &mut self.scheduler,
+                        route.window.screen.ctx().current_route(),
+                    );
                 }
 
                 event_loop.set_control_flow(ControlFlow::Wait);
@@ -1515,11 +1729,81 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         // SAFETY: The clipboard must be dropped before the event loop, so use the nop clipboard
         // as a safe placeholder.
-        std::mem::swap(
-            &mut self.router.clipboard,
-            &mut std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop())),
-        );
+        self.router.clipboard =
+            std::rc::Rc::new(std::cell::RefCell::new(Clipboard::new_nop()));
 
         std::process::exit(0);
     }
+}
+
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
+fn play_bell_sound() -> Result<(), Box<dyn Error>> {
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .ok_or("No output device available")?;
+
+    let config = device.default_output_config()?;
+
+    match config.sample_format() {
+        cpal::SampleFormat::F32 => run_bell::<f32>(&device, &config.into()),
+        cpal::SampleFormat::I16 => run_bell::<i16>(&device, &config.into()),
+        cpal::SampleFormat::U16 => run_bell::<u16>(&device, &config.into()),
+        _ => Err("Unsupported sample format".into()),
+    }
+}
+
+#[cfg(all(
+    feature = "audio",
+    not(target_os = "macos"),
+    not(target_os = "windows")
+))]
+fn run_bell<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+) -> Result<(), Box<dyn Error>>
+where
+    T: cpal::Sample + cpal::SizedSample + cpal::FromSample<f32>,
+{
+    let sample_rate = config.sample_rate.0 as f32;
+    let channels = config.channels as usize;
+    let duration_secs = crate::constants::BELL_DURATION.as_secs_f32();
+    let total_samples = (sample_rate * duration_secs) as usize;
+
+    let mut sample_clock = 0f32;
+    let mut samples_played = 0usize;
+
+    let stream = device.build_output_stream(
+        config,
+        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+            for frame in data.chunks_mut(channels) {
+                if samples_played >= total_samples {
+                    for sample in frame.iter_mut() {
+                        *sample = T::from_sample(0.0);
+                    }
+                } else {
+                    let value = (sample_clock * 440.0 * 2.0 * std::f32::consts::PI
+                        / sample_rate)
+                        .sin()
+                        * 0.2;
+                    for sample in frame.iter_mut() {
+                        *sample = T::from_sample(value);
+                    }
+                    sample_clock += 1.0;
+                    samples_played += 1;
+                }
+            }
+        },
+        |err| tracing::error!("Audio stream error: {}", err),
+        None,
+    )?;
+
+    stream.play()?;
+    std::thread::sleep(crate::constants::BELL_DURATION);
+
+    Ok(())
 }

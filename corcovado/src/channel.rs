@@ -397,7 +397,7 @@ impl<T> fmt::Display for TrySendError<T> {
 #[inline]
 fn format_send_error<T>(e: &SendError<T>, f: &mut fmt::Formatter) -> fmt::Result {
     match *e {
-        SendError::Io(ref io_err) => write!(f, "{}", io_err),
+        SendError::Io(ref io_err) => write!(f, "{io_err}"),
         SendError::Disconnected(..) => write!(f, "Disconnected"),
     }
 }
@@ -405,7 +405,7 @@ fn format_send_error<T>(e: &SendError<T>, f: &mut fmt::Formatter) -> fmt::Result
 #[inline]
 fn format_try_send_error<T>(e: &TrySendError<T>, f: &mut fmt::Formatter) -> fmt::Result {
     match *e {
-        TrySendError::Io(ref io_err) => write!(f, "{}", io_err),
+        TrySendError::Io(ref io_err) => write!(f, "{io_err}"),
         TrySendError::Full(..) => write!(f, "Full"),
         TrySendError::Disconnected(..) => write!(f, "Disconnected"),
     }

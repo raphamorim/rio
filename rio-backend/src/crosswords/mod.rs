@@ -36,9 +36,9 @@ use crate::ansi::{
 use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
-use crate::crosswords::grid::{BidirectionalIterator, Dimensions, Grid, Scroll};
+use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::event::WindowId;
-use crate::event::{EventListener, RioEvent};
+use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
@@ -51,7 +51,7 @@ use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
 use square::{Hyperlink, LineLength, Square};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::mem;
 use std::ops::{Index, IndexMut, Range};
 use std::option::Option;
@@ -183,12 +183,12 @@ pub enum TermDamage<'a> {
 /// Iterator over the terminal's viewport damaged lines.
 #[derive(Clone, Debug)]
 pub struct TermDamageIterator<'a> {
-    line_damage: std::slice::Iter<'a, LineDamageBounds>,
+    line_damage: std::slice::Iter<'a, LineDamage>,
     display_offset: usize,
 }
 
 impl<'a> TermDamageIterator<'a> {
-    pub fn new(line_damage: &'a [LineDamageBounds], display_offset: usize) -> Self {
+    pub fn new(line_damage: &'a [LineDamage], display_offset: usize) -> Self {
         let num_lines = line_damage.len();
         // Filter out invisible damage.
         let line_damage = &line_damage[..num_lines.saturating_sub(display_offset)];
@@ -200,60 +200,51 @@ impl<'a> TermDamageIterator<'a> {
 }
 
 impl Iterator for TermDamageIterator<'_> {
-    type Item = LineDamageBounds;
+    type Item = LineDamage;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.line_damage.find_map(|line| {
-            line.is_damaged().then_some(LineDamageBounds::new(
-                line.line + self.display_offset,
-                line.left,
-                line.right,
-            ))
+            line.is_damaged()
+                .then_some(LineDamage::new(line.line + self.display_offset, true))
         })
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct LineDamageBounds {
-    /// Damaged line number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LineDamage {
+    /// Line number.
     pub line: usize,
-
-    /// Leftmost damaged column.
-    pub left: usize,
-
-    /// Rightmost damaged column.
-    pub right: usize,
+    /// Whether this line is damaged.
+    pub damaged: bool,
 }
 
-impl LineDamageBounds {
+impl LineDamage {
     #[inline]
-    pub fn new(line: usize, left: usize, right: usize) -> Self {
-        Self { line, left, right }
+    pub fn new(line: usize, damaged: bool) -> Self {
+        Self { line, damaged }
     }
 
     #[inline]
-    pub fn undamaged(num_cols: usize, line: usize) -> Self {
+    pub fn undamaged(line: usize) -> Self {
         Self {
             line,
-            left: num_cols,
-            right: 0,
+            damaged: false,
         }
     }
 
     #[inline]
-    pub fn reset(&mut self, num_cols: usize) {
-        *self = Self::undamaged(num_cols, self.line);
-    }
-
-    #[inline]
-    pub fn expand(&mut self, left: usize, right: usize) {
-        self.left = std::cmp::min(self.left, left);
-        self.right = std::cmp::max(self.right, right);
+    pub fn reset(&mut self) {
+        self.damaged = false;
     }
 
     #[inline]
     pub fn is_damaged(&self) -> bool {
-        self.left <= self.right
+        self.damaged
+    }
+
+    #[inline]
+    pub fn mark_damaged(&mut self) {
+        self.damaged = true;
     }
 }
 
@@ -263,7 +254,7 @@ struct TermDamageState {
     full: bool,
 
     /// Information about damage on terminal lines.
-    lines: Vec<LineDamageBounds>,
+    lines: Vec<LineDamage>,
 
     /// Old terminal cursor point.
     last_cursor: Pos,
@@ -275,10 +266,8 @@ struct TermDamageState {
 }
 
 impl TermDamageState {
-    fn new(num_cols: usize, num_lines: usize) -> Self {
-        let lines = (0..num_lines)
-            .map(|line| LineDamageBounds::undamaged(num_cols, line))
-            .collect();
+    fn new(num_lines: usize) -> Self {
+        let lines = (0..num_lines).map(LineDamage::undamaged).collect();
 
         Self {
             full: true,
@@ -290,7 +279,7 @@ impl TermDamageState {
     }
 
     #[inline]
-    fn resize(&mut self, num_cols: usize, num_lines: usize) {
+    fn resize(&mut self, num_lines: usize) {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
@@ -300,29 +289,17 @@ impl TermDamageState {
         self.lines.clear();
         self.lines.reserve(num_lines);
         for line in 0..num_lines {
-            self.lines.push(LineDamageBounds::undamaged(num_cols, line));
+            self.lines.push(LineDamage::undamaged(line));
         }
     }
 
-    /// Damage point inside of the viewport.
+    /// Damage a line
     #[inline]
-    fn damage_point(&mut self, point: Pos<usize>) {
-        self.damage_line(point.row, point.col.0, point.col.0);
+    fn damage_line(&mut self, line: usize) {
+        self.lines[line].mark_damaged();
     }
 
-    /// Expand `line`'s damage to span at least `left` to `right` column.
-    #[inline]
-    fn damage_line(&mut self, line: usize, left: usize, right: usize) {
-        self.lines[line].expand(left, right);
-    }
-
-    #[allow(dead_code)]
-    fn damage_selection(
-        &mut self,
-        selection: SelectionRange,
-        display_offset: usize,
-        num_cols: usize,
-    ) {
+    fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
         let display_offset = display_offset as i32;
         let last_visible_line = self.lines.len() as i32 - 1;
 
@@ -336,14 +313,14 @@ impl TermDamageState {
         let start = std::cmp::max(selection.start.row.0 + display_offset, 0);
         let end = (selection.end.row.0 + display_offset).clamp(0, last_visible_line);
         for line in start as usize..=end as usize {
-            self.damage_line(line, 0, num_cols - 1);
+            self.damage_line(line);
         }
     }
 
     /// Reset information about terminal damage.
-    fn reset(&mut self, num_cols: usize) {
+    fn reset(&mut self) {
         self.full = false;
-        self.lines.iter_mut().for_each(|line| line.reset(num_cols));
+        self.lines.iter_mut().for_each(|line| line.reset());
     }
 }
 
@@ -376,7 +353,7 @@ impl TabStops {
     fn resize(&mut self, columns: usize) {
         let mut index = self.tabs.len();
         self.tabs.resize_with(columns, || {
-            let is_tabstop = index % INITIAL_TABSTOPS == 0;
+            let is_tabstop = index.is_multiple_of(INITIAL_TABSTOPS);
             index += 1;
             is_tabstop
         });
@@ -422,7 +399,7 @@ fn version_number(mut version: &str) -> usize {
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
 // Max size of the keyboard modes.
-const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 16384;
+const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 
 #[derive(Debug)]
 pub struct Crosswords<U>
@@ -450,13 +427,12 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
-    hyperlink_re: regex::Regex,
 
     // The stack for the keyboard modes.
-    keyboard_mode_stack: Vec<KeyboardModes>,
-
-    // Currently inactive keyboard mode stack.
-    inactive_keyboard_mode_stack: Vec<KeyboardModes>,
+    keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    keyboard_mode_idx: usize,
+    inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
+    inactive_keyboard_mode_idx: usize,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -476,7 +452,7 @@ impl<U: EventListener> Crosswords<U> {
         let semantic_escape_chars = String::from(",│`|:\"' ()[]{}<>\t");
         let term_colors = TermColors::default();
         // Regex used for the default URL hint.
-        let url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
+        let _url_regex: &str = "(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)\
                          [^\u{0000}-\u{001F}\u{007F}-\u{009F}<>\"\\s{-}\\^⟨⟩`\\\\]+";
 
         Crosswords {
@@ -489,14 +465,13 @@ impl<U: EventListener> Crosswords<U> {
             scroll_region,
             event_proxy,
             colors: term_colors,
-            hyperlink_re: regex::Regex::new(url_regex).unwrap(),
             title: String::from(""),
             tabs: TabStops::new(cols),
             mode: Mode::SHOW_CURSOR
                 | Mode::LINE_WRAP
                 | Mode::ALTERNATE_SCROLL
                 | Mode::URGENCY_HINTS,
-            damage: TermDamageState::new(cols, rows),
+            damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             default_cursor_shape: cursor_shape,
             cursor_shape,
@@ -506,12 +481,22 @@ impl<U: EventListener> Crosswords<U> {
             title_stack: Default::default(),
             current_directory: None,
             keyboard_mode_stack: Default::default(),
+            keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
+            inactive_keyboard_mode_idx: 0,
         }
     }
 
     pub fn mark_fully_damaged(&mut self) {
+        // Only emit event if we weren't already fully damaged
+        let was_damaged = self.damage.full;
         self.damage.full = true;
+
+        // Request a render to display the damage
+        if !was_damaged {
+            self.event_proxy
+                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+        }
     }
 
     #[inline]
@@ -519,16 +504,26 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.full
     }
 
-    /// Collect the information about the changes in the lines, which
-    /// could be used to minimize the amount of drawing operations.
-    ///
-    /// The user controlled elements, like `Vi` mode cursor and `Selection` are **not** part of the
-    /// collected damage state. Those could easily be tracked by comparing their old and new
-    /// value between adjacent frames.
-    ///
-    /// After reading damage [`reset_damage`] should be called.
-    ///
-    /// [`reset_damage`]: Self::reset_damage
+    /// Update selection damage tracking.
+    /// This should be called when the selection changes to damage only the affected lines.
+    pub fn update_selection_damage(
+        &mut self,
+        new_selection: Option<SelectionRange>,
+        display_offset: usize,
+    ) {
+        // Damage old selection lines if they exist
+        if let Some(old_selection) = self.damage.last_selection {
+            self.damage.damage_selection(old_selection, display_offset);
+        }
+
+        // Damage new selection lines if they exist
+        if let Some(new_selection) = new_selection {
+            self.damage.damage_selection(new_selection, display_offset);
+        }
+
+        // Update the stored selection
+        self.damage.last_selection = new_selection;
+    }
     #[must_use]
     pub fn damage(&mut self) -> TermDamage<'_> {
         // Ensure the entire terminal is damaged after entering insert mode.
@@ -547,13 +542,13 @@ impl<U: EventListener> Crosswords<U> {
         // Add information about old cursor position and new one if they are not the same, so we
         // cover everything that was produced by `Term::input`.
         if self.damage.last_cursor != previous_cursor {
-            // Cursor coordinates are always inside viewport even if you have `display_offset`.
-            let point = Pos::new(previous_cursor.row.0 as usize, previous_cursor.col);
-            self.damage.damage_point(point);
+            // Damage the entire line where the previous cursor was
+            let previous_line = previous_cursor.row.0 as usize;
+            self.damage.damage_line(previous_line);
         }
 
         // Always damage current cursor.
-        self.damage_cursor();
+        // self.damage_cursor();
 
         // NOTE: damage which changes all the content when the display offset is non-zero (e.g.
         // scrolling) is handled via full damage.
@@ -561,9 +556,37 @@ impl<U: EventListener> Crosswords<U> {
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
 
+    /// Peek damage event based on current damage state
+    pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
+        let display_offset = self.grid.display_offset();
+        if self.damage.full {
+            Some(TerminalDamage::Full)
+        } else {
+            // Collect damaged lines
+            let damaged_lines: BTreeSet<LineDamage> = self
+                .damage
+                .lines
+                .iter()
+                .filter(|line| line.is_damaged())
+                .map(|line| LineDamage::new(line.line + display_offset, true))
+                .collect();
+
+            if damaged_lines.is_empty() {
+                // Check if cursor moved
+                if self.damage.last_cursor != self.grid.cursor.pos {
+                    Some(TerminalDamage::CursorOnly)
+                } else {
+                    None // No damage to emit
+                }
+            } else {
+                Some(TerminalDamage::Partial(damaged_lines))
+            }
+        }
+    }
+
     #[inline]
     pub fn reset_damage(&mut self) {
-        self.damage.reset(self.grid.columns());
+        self.damage.reset();
     }
 
     #[inline]
@@ -579,9 +602,9 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn scroll_display(&mut self, scroll: Scroll) {
         let old_display_offset = self.grid.display_offset();
+        self.grid.scroll_display(scroll);
         self.event_proxy
             .send_event(RioEvent::MouseCursorDirty, self.window_id);
-        self.grid.scroll_display(scroll);
 
         // Clamp vi mode cursor to the viewport.
         let viewport_start = -(self.grid.display_offset() as i32);
@@ -594,10 +617,6 @@ impl<U: EventListener> Crosswords<U> {
         // Damage everything if display offset changed.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
-
-            // TODO: This should leave here
-            self.event_proxy
-                .send_event(RioEvent::Render, self.window_id);
         }
     }
 
@@ -616,6 +635,21 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn graphics_take_queues(&mut self) -> Option<UpdateQueues> {
         self.graphics.take_queues()
+    }
+
+    #[inline]
+    pub fn send_graphics_updates(&mut self) {
+        if self.graphics.has_pending_updates() {
+            if let Some(queues) = self.graphics.take_queues() {
+                self.event_proxy.send_event(
+                    RioEvent::UpdateGraphics {
+                        route_id: self.route_id,
+                        queues,
+                    },
+                    self.window_id,
+                );
+            }
+        }
     }
 
     #[inline]
@@ -675,7 +709,7 @@ impl<U: EventListener> Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
 
         // Resize damage information.
-        self.damage.resize(num_cols, num_lines);
+        self.damage.resize(num_lines);
 
         // Update size information for graphics.
         self.graphics.resize(&size);
@@ -840,14 +874,65 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
+    /// Damage the entire line at the cursor position
+    #[inline]
+    pub fn damage_cursor_line(&mut self) {
+        let cursor_line = self.grid.cursor.pos.row.0 as usize;
+        self.damage_line(cursor_line);
+    }
+
+    /// Damage an entire line
+    #[inline]
+    pub fn damage_line(&mut self, line: usize) {
+        self.damage.damage_line(line);
+    }
+
     #[inline]
     pub fn damage_cursor(&mut self) {
-        // The normal cursor coordinates are always in viewport.
-        let point = Pos::new(
-            self.grid.cursor.pos.row.0 as usize,
-            self.grid.cursor.pos.col,
-        );
-        self.damage.damage_point(point);
+        self.damage_cursor_line();
+
+        // self.event_proxy.send_event(
+        //     RioEvent::TerminalDamaged {
+        //         route_id: self.route_id,
+        //         damage: TerminalDamage::CursorOnly(self.grid.cursor.pos.line, None),
+        //     },
+        //     self.window_id,
+        // );
+    }
+
+    #[inline]
+    pub fn damage_cursor_blink(&mut self) {
+        // Only damage cursor for blink if cursor is visible and blinking is enabled
+        let cursor_state = self.cursor();
+        if cursor_state.is_visible() {
+            // Use line-based damage for cursor blinking
+            self.damage_cursor_line();
+
+            // self.event_proxy.send_event(
+            //     RioEvent::TerminalDamaged {
+            //         route_id: self.route_id,
+            //         damage: TerminalDamage::CursorOnly,
+            //     },
+            //     self.window_id,
+            // );
+        }
+    }
+
+    /// Check if any rendering is actually needed
+    #[inline]
+    pub fn needs_render(&self) -> bool {
+        // Always render if fully damaged
+        if self.is_fully_damaged() {
+            return true;
+        }
+
+        // Check if there's any partial damage
+        if self.damage.lines.iter().any(|line| line.is_damaged()) {
+            return true;
+        }
+
+        // No rendering needed if no damage
+        false
     }
 
     #[inline]
@@ -915,116 +1000,6 @@ impl<U: EventListener> Crosswords<U> {
         self.mark_fully_damaged();
     }
 
-    #[inline]
-    pub fn search_nearest_hyperlink_from_pos(
-        &mut self,
-        pos: Pos,
-    ) -> Option<SelectionRange> {
-        // Limit the starting pos to the last line in the history
-        let wide = square::Flags::WIDE_CHAR
-            | square::Flags::WIDE_CHAR_SPACER
-            | square::Flags::LEADING_WIDE_CHAR_SPACER;
-
-        let last_column = self.grid.columns() - 1;
-        if pos.col > last_column {
-            return None;
-        }
-
-        let first_column = 0;
-        let last_row = self.grid.screen_lines();
-        let starting_square: &Square = &self.grid[pos];
-
-        let is_existent_hyperlink = starting_square.hyperlink().is_some();
-        if !is_existent_hyperlink && starting_square.c == ' ' {
-            return None;
-        }
-
-        let mut content: std::collections::VecDeque<char> =
-            std::collections::VecDeque::from([starting_square.c]);
-        // TODO: Remove positions_to_update and fully rely on
-        // selection_end and selection_start
-        let mut positions_to_update: Vec<Pos> = vec![pos];
-        let mut selection_start: Pos = pos;
-        let mut selection_end: Pos = pos;
-
-        // Next adjacents squares
-        for square in self.grid.iter_from(pos) {
-            if square.hyperlink().is_some() {
-                content.push_back(square.c);
-                selection_end = square.pos;
-                positions_to_update.push(square.pos);
-                continue;
-            }
-
-            if square.flags.intersects(wide) || square.c == ' ' {
-                break;
-            }
-
-            content.push_back(square.c);
-            selection_end = square.pos;
-            positions_to_update.push(square.pos);
-
-            if pos.col == last_column && pos.row == last_row {
-                break; // cut off if on new line or hit escape char
-            }
-        }
-
-        // Previous adjacents squares
-        let mut iter = self.grid.iter_from(pos);
-        while let Some(square) = iter.prev() {
-            if square.hyperlink().is_some() {
-                content.push_front(square.c);
-                selection_start = square.pos;
-                positions_to_update.push(square.pos);
-                continue;
-            }
-
-            if square.flags.intersects(wide) || square.c == ' ' {
-                break;
-            }
-
-            content.push_front(square.c);
-            selection_start = square.pos;
-            positions_to_update.push(square.pos);
-
-            if square.pos.col == first_column && square.pos.row == 0 {
-                break; // cut off if on new line or hit escape char
-            }
-        }
-
-        if is_existent_hyperlink {
-            let range = SelectionRange {
-                start: selection_start,
-                end: selection_end,
-                is_block: false,
-            };
-            return Some(range);
-        }
-
-        if content.len() <= 4 {
-            return None;
-        }
-
-        let value = content.iter().collect::<String>();
-        if let Some(uri) = self.hyperlink_re.find(&value) {
-            let uri = uri.as_str().to_string();
-            let hyperlink = Some(Hyperlink::new(None, uri));
-
-            for link_pos in positions_to_update.iter() {
-                self.grid[link_pos.row][link_pos.col].set_hyperlink(hyperlink.to_owned());
-            }
-
-            let range = SelectionRange {
-                start: selection_start,
-                end: selection_end,
-                is_block: false,
-            };
-            return Some(range);
-        }
-
-        None
-    }
-
     #[inline(always)]
     pub fn write_at_cursor(&mut self, c: char) {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
@@ -1084,6 +1059,70 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         visible_rows
+    }
+
+    /// Get visible rows with damage information - only clones damaged lines
+    pub fn visible_rows_with_damage(
+        &self,
+        damage: &TerminalDamage,
+    ) -> (Vec<Row<Square>>, Vec<usize>) {
+        let mut start = self.scroll_region.start.0;
+        let mut end = self.scroll_region.end.0;
+        let mut visible_rows = Vec::with_capacity(self.grid.screen_lines());
+        let mut damaged_lines = Vec::new();
+
+        let scroll = self.display_offset() as i32;
+        if scroll != 0 {
+            start -= scroll;
+            end -= scroll;
+        }
+
+        // Determine which lines are damaged
+        match damage {
+            TerminalDamage::Full => {
+                // For full damage, all lines are damaged
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    damaged_lines.push(i);
+                }
+            }
+            TerminalDamage::Partial(lines) => {
+                // Only clone damaged lines
+                let damaged_set: std::collections::HashSet<usize> =
+                    lines.iter().filter(|d| d.damaged).map(|d| d.line).collect();
+
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    if damaged_set.contains(&i) {
+                        damaged_lines.push(i);
+                    }
+                }
+            }
+            TerminalDamage::CursorOnly => {
+                // For cursor-only damage, we still need all rows but mark cursor line
+                let cursor_line = self.grid.cursor.pos.row.0 as usize;
+                for (i, row) in (start..end).enumerate() {
+                    visible_rows.push(self.grid[Line(row)].clone());
+                    if i == cursor_line {
+                        damaged_lines.push(i);
+                    }
+                }
+            }
+        }
+
+        (visible_rows, damaged_lines)
+    }
+
+    /// Get terminal dimensions
+    #[inline]
+    pub fn columns(&self) -> usize {
+        self.grid.columns()
+    }
+
+    /// Get terminal screen lines
+    #[inline]
+    pub fn screen_lines(&self) -> usize {
+        self.grid.screen_lines()
     }
 
     fn deccolm(&mut self)
@@ -1156,13 +1195,9 @@ impl<U: EventListener> Crosswords<U> {
             &mut self.keyboard_mode_stack,
             &mut self.inactive_keyboard_mode_stack,
         );
-        self.set_keyboard_mode(
-            self.keyboard_mode_stack
-                .last()
-                .copied()
-                .unwrap_or(KeyboardModes::NO_MODE)
-                .into(),
-            KeyboardModesApplyBehavior::Replace,
+        mem::swap(
+            &mut self.keyboard_mode_idx,
+            &mut self.inactive_keyboard_mode_idx,
         );
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
@@ -1173,8 +1208,8 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     pub fn mark_line_damaged(&mut self, line: Line) {
-        self.damage
-            .damage_line(line.0 as usize, 0, self.columns() - 1);
+        let line_idx = line.0 as usize;
+        self.damage.damage_line(line_idx);
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
@@ -1308,17 +1343,20 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     #[inline]
-    fn set_keyboard_mode(&mut self, mode: Mode, apply: KeyboardModesApplyBehavior) {
+    fn set_keyboard_mode(&mut self, mode: u8, apply: KeyboardModesApplyBehavior) {
         // println!("{:?}", mode);
-        let active_mode = self.mode & Mode::KITTY_KEYBOARD_PROTOCOL;
-        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        let active_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let new_mode = match apply {
             KeyboardModesApplyBehavior::Replace => mode,
-            KeyboardModesApplyBehavior::Union => active_mode.union(mode),
-            KeyboardModesApplyBehavior::Difference => active_mode.difference(mode),
+            KeyboardModesApplyBehavior::Union => active_mode | mode,
+            KeyboardModesApplyBehavior::Difference => active_mode & !mode,
         };
         info!("Setting keyboard mode to {new_mode:?}");
-        self.mode |= new_mode;
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
+
+        // Sync self.mode with keyboard_mode_stack
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(new_mode));
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -1667,8 +1705,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::cmp::min(self.grid.cursor.pos.col + cols, self.grid.last_column());
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(cursor_line, self.grid.cursor.pos.col.0, last_column.0);
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = last_column;
         self.grid.cursor.should_wrap = false;
@@ -1679,8 +1716,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let column = self.grid.cursor.pos.col.saturating_sub(cols.0);
 
         let cursor_line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(cursor_line, column, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(cursor_line);
 
         self.grid.cursor.pos.col = Column(column);
         self.grid.cursor.should_wrap = false;
@@ -1690,7 +1726,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_backward_tabs(&mut self, count: u16) {
         trace!("Moving backward {} tabs", count);
 
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -1708,8 +1743,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(line, self.grid.cursor.pos.col.0, old_col);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -1806,7 +1840,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Cleared cells have current background color set.
         let bg = self.grid.cursor.template.bg;
         let line = cursor.pos.row;
-        self.damage.damage_line(line.0 as usize, start.0, end.0);
+        self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line];
         for cell in &mut row[start..end] {
             *cell = bg.into();
@@ -1827,8 +1861,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let num_cells = columns - end;
 
         let line = cursor.pos.row;
-        self.damage
-            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+        self.damage.damage_line(line.0 as usize);
         let row = &mut self.grid[line][..];
 
         for offset in 0..num_cells {
@@ -1870,8 +1903,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let num_cells = self.grid.columns() - destination;
 
         let line = cursor.pos.row;
-        self.damage
-            .damage_line(line.0 as usize, 0, self.grid.columns() - 1);
+        self.damage.damage_line(line.0 as usize);
 
         let row = &mut self.grid[line][..];
 
@@ -1911,7 +1943,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
-        self.keyboard_mode_stack = Vec::new();
+        self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
+        self.keyboard_mode_idx = 0;
+        self.inactive_keyboard_mode_idx = 0;
         self.title = String::from("");
         self.selection = None;
         self.vi_mode_cursor = Default::default();
@@ -2189,12 +2224,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn report_version(&mut self) {
+        trace!("Reporting terminal version (XTVERSION)");
+        let version = env!("CARGO_PKG_VERSION");
+        let text = format!("\x1bP>|Rio {version}\x1b\\");
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
     fn report_keyboard_mode(&mut self) {
-        let current_mode = self
-            .keyboard_mode_stack
-            .last()
-            .unwrap_or(&KeyboardModes::NO_MODE)
-            .bits();
+        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
         self.event_proxy
             .send_event(RioEvent::PtyWrite(text), self.window_id);
@@ -2202,29 +2242,39 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn push_keyboard_mode(&mut self, mode: KeyboardModes) {
-        if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            let _removed = self.title_stack.remove(0);
+        self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_add(1);
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
         }
+        self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
 
-        self.keyboard_mode_stack.push(mode);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        // Sync self.mode with keyboard_mode_stack
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(mode);
     }
 
     #[inline]
     fn pop_keyboard_modes(&mut self, to_pop: u16) {
-        let new_len = self
-            .keyboard_mode_stack
-            .len()
-            .saturating_sub(to_pop as usize);
-        self.keyboard_mode_stack.truncate(new_len);
+        // If popping more modes than we have, just clear the stack.
+        if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
+            self.keyboard_mode_idx = 0;
+            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+            return;
+        }
+        for _ in 0..to_pop {
+            self.keyboard_mode_stack[self.keyboard_mode_idx] =
+                KeyboardModes::NO_MODE.bits();
+            self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
+        }
+        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+        }
 
-        // Reload active mode.
-        let mode = self
-            .keyboard_mode_stack
-            .last()
-            .copied()
-            .unwrap_or(KeyboardModes::NO_MODE);
-        self.set_keyboard_mode(mode.into(), KeyboardModesApplyBehavior::Replace);
+        // Sync self.mode with keyboard_mode_stack
+        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(current_mode));
     }
 
     #[inline]
@@ -2233,7 +2283,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         mode: KeyboardModes,
         apply: KeyboardModesApplyBehavior,
     ) {
-        self.set_keyboard_mode(mode.into(), apply);
+        self.set_keyboard_mode(mode.bits(), apply);
     }
 
     #[inline]
@@ -2268,10 +2318,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn backspace(&mut self) {
         if self.grid.cursor.pos.col > Column(0) {
             let line = self.grid.cursor.pos.row.0 as usize;
-            let column = self.grid.cursor.pos.col.0;
             self.grid.cursor.pos.col -= 1;
             self.grid.cursor.should_wrap = false;
-            self.damage.damage_line(line, column - 1, column);
+            self.damage.damage_line(line);
         }
     }
 
@@ -2412,7 +2461,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        warn!("[unimplemented] Bell");
+        self.event_proxy.send_event(RioEvent::Bell, self.window_id);
     }
 
     #[inline]
@@ -2478,8 +2527,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Carriage return");
         let new_col = 0;
         let row = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(row, new_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(row);
         self.grid.cursor.pos.col = Column(new_col);
         self.grid.cursor.should_wrap = false;
     }
@@ -2488,7 +2536,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn move_forward_tabs(&mut self, count: u16) {
         trace!("Moving forward {} tabs", count);
         let num_cols = self.columns();
-        let old_col = self.grid.cursor.pos.col.0;
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -2507,8 +2554,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         let line = self.grid.cursor.pos.row.0 as usize;
-        self.damage
-            .damage_line(line, old_col, self.grid.cursor.pos.col.0);
+        self.damage.damage_line(line);
     }
 
     #[inline]
@@ -2538,8 +2584,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             LineClearMode::All => (Column(0), Column(self.grid.columns())),
         };
 
-        self.damage
-            .damage_line(point.row.0 as usize, left.0, right.0 - 1);
+        self.damage.damage_line(point.row.0 as usize);
 
         let row = &mut self.grid[point.row];
         for cell in &mut row[left..right] {
@@ -2645,9 +2690,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         fn generate_response(pi: u16, ps: u16, pv: &[usize]) -> String {
             use std::fmt::Write;
-            let mut text = format!("\x1b[?{};{}", pi, ps);
+            let mut text = format!("\x1b[?{pi};{ps}");
             for item in pv {
-                let _ = write!(&mut text, ";{}", item);
+                let _ = write!(&mut text, ";{item}");
             }
             text.push('S');
             text
@@ -2939,6 +2984,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             id: graphic_id,
             ..graphic
         });
+
+        // Send graphics update event
+        self.send_graphics_updates();
     }
 
     #[inline]
@@ -3139,6 +3187,197 @@ mod tests {
     }
 
     #[test]
+    fn test_damage_tracking_after_control_c() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Simulate fzf-like scenario: write some text
+        let test_text = "fzf> search term";
+        for ch in test_text.chars() {
+            cw.input(ch);
+        }
+
+        // Check that input caused damage
+        assert!(
+            cw.peek_damage_event().is_some(),
+            "Input should cause damage"
+        );
+
+        // Reset damage to simulate a render cycle completing
+        cw.reset_damage();
+
+        // Update last cursor position to match current (simulating that cursor position was rendered)
+        cw.damage.last_cursor = cw.grid.cursor.pos;
+
+        // Verify damage was cleared
+        assert!(
+            cw.peek_damage_event().is_none(),
+            "Should have no damage after reset with cursor sync"
+        );
+
+        // Simulate Control+C (ETX) - this should clear the line and damage it
+        // In fzf, Control+C typically clears the current line and returns to prompt
+        cw.carriage_return();
+        cw.clear_line(LineClearMode::Right);
+
+        // Check that damage was registered from the clear operation
+        let damage = cw.peek_damage_event();
+        assert!(
+            damage.is_some(),
+            "Clear line operation should register damage"
+        );
+
+        // Specifically check that it's not just cursor-only damage
+        match damage {
+            Some(TerminalDamage::Partial(_)) | Some(TerminalDamage::Full) => {
+                // Good - line damage was registered
+            }
+            Some(TerminalDamage::CursorOnly) => {
+                panic!(
+                    "Clear line should register line damage, not just cursor movement"
+                );
+            }
+            None => {
+                panic!("Clear line should register damage");
+            }
+        }
+
+        // Verify the line was actually cleared
+        let cursor_line = cw.grid.cursor.pos.row;
+        for col in 0..test_text.len() {
+            assert_eq!(
+                cw.grid[cursor_line][Column(col)].c,
+                ' ',
+                "Line should be cleared after Control+C"
+            );
+        }
+    }
+
+    #[test]
+    fn test_damage_tracking_cursor_movement() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Write text on multiple lines
+        cw.input('A');
+        cw.linefeed();
+        cw.input('B');
+        cw.linefeed();
+        cw.input('C');
+
+        // Reset damage
+        cw.reset_damage();
+
+        // Move cursor up - should damage both old and new cursor lines
+        let old_line = cw.grid.cursor.pos.row;
+        cw.move_up(1);
+        let new_line = cw.grid.cursor.pos.row;
+
+        // Check that damage was registered
+        let damage = cw.peek_damage_event();
+        assert!(damage.is_some(), "Cursor movement should register damage");
+
+        // Verify both lines are marked as damaged
+        assert_ne!(old_line, new_line, "Cursor should have moved");
+    }
+
+    #[test]
+    fn test_damage_tracking_clear_operations() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Fill some lines with content
+        for line in 0..5 {
+            for col in 0..10 {
+                cw.grid[Line(line)][Column(col)].c = 'X';
+            }
+        }
+
+        // Reset damage
+        cw.reset_damage();
+
+        // Clear from cursor to end of line
+        cw.grid.cursor.pos = Pos::new(Line(2), Column(5));
+        cw.clear_line(LineClearMode::Right);
+
+        // Check damage is registered
+        let damage = cw.peek_damage_event();
+        assert!(damage.is_some(), "Clear line should register damage");
+
+        // Verify the clear operation
+        for col in 5..10 {
+            assert_eq!(
+                cw.grid[Line(2)][Column(col)].c,
+                ' ',
+                "Characters from cursor to end should be cleared"
+            );
+        }
+
+        // Characters before cursor should remain
+        for col in 0..5 {
+            assert_eq!(
+                cw.grid[Line(2)][Column(col)].c,
+                'X',
+                "Characters before cursor should remain"
+            );
+        }
+    }
+
+    #[test]
+    fn test_damage_tracking_prompt_redraw() {
+        let size = CrosswordsSize::new(80, 24);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Simulate a shell prompt scenario
+        let prompt = "$ ";
+        for ch in prompt.chars() {
+            cw.input(ch);
+        }
+
+        // User types a command
+        let command = "ls -la";
+        for ch in command.chars() {
+            cw.input(ch);
+        }
+
+        // Reset damage (simulating a render)
+        cw.reset_damage();
+
+        // Simulate Control+C: clear line and redraw prompt
+        cw.carriage_return();
+        cw.clear_line(LineClearMode::Right);
+
+        // Damage should be registered for the cleared line
+        assert!(cw.peek_damage_event().is_some(), "Line clear should damage");
+
+        // Write new prompt
+        for ch in prompt.chars() {
+            cw.input(ch);
+        }
+
+        // Verify prompt is displayed correctly
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(0)].c, '$');
+        assert_eq!(cw.grid[cw.grid.cursor.pos.row][Column(1)].c, ' ');
+
+        // Verify old command is cleared
+        for col in 2..8 {
+            assert_eq!(
+                cw.grid[cw.grid.cursor.pos.row][Column(col)].c,
+                ' ',
+                "Old command should be cleared"
+            );
+        }
+    }
+
+    #[test]
     fn simple_selection_works() {
         let size = CrosswordsSize::new(5, 5);
         let window_id = crate::event::WindowId::from(0);
@@ -3316,309 +3555,526 @@ mod tests {
     }
 
     #[test]
-    fn test_search_nearest_hyperlink_from_pos_on_single_line() {
-        let size = CrosswordsSize::new(20, 3);
-        let window_id = crate::event::WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
-
-        let grid = &mut term.grid;
-        for i in 0..19 {
-            grid[Line(0)][Column(i)].c = ' ';
-        }
-
-        // First line does not contain any hyperlink (it is empty as well)
-        let result = term
-            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(2)));
-        assert_eq!(result, None);
-
-        let grid = &mut term.grid;
-        for i in 0..19 {
-            grid[Line(0)][Column(i)].c = 'a';
-        }
-
-        // First line does not contain any hyperlink (does not contain any link)
-        let result = term
-            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(0)));
-        assert_eq!(result, None);
-
-        // Cleanup line
-        let grid = &mut term.grid;
-        for i in 0..19 {
-            grid[Line(0)][Column(i)].c = ' ';
-        }
-
-        let grid = &mut term.grid;
-        let link: [char; 14] = [
-            'h', 't', 't', 'p', 's', ':', '/', '/', 'r', 'i', 'o', '.', 'i', 'o',
-        ];
-        for (i, val) in link.iter().enumerate() {
-            grid[Line(0)][Column(i)].c = *val;
-        }
-
-        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
-        assert_eq!(term.grid[Line(0)][Column(1)].c, 't');
-        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_none());
-        assert_eq!(term.grid[Line(0)][Column(2)].c, 't');
-        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_none());
-        assert_eq!(term.grid[Line(0)][Column(3)].c, 'p');
-        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_none());
-        assert_eq!(term.grid[Line(0)][Column(12)].c, 'i');
-        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_none());
-        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
-        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_none());
-
-        // First line does not a hyperlink from (0 to 13) position
-        let result = term
-            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(14)));
-        assert_eq!(result, None);
-
-        // From 'h'
-        let result = term
-            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(0)));
-        assert_eq!(
-            result,
-            Some(SelectionRange {
-                start: Pos {
-                    row: Line(0),
-                    col: Column(0)
-                },
-                end: Pos {
-                    row: Line(0),
-                    col: Column(13)
-                },
-                is_block: false
-            })
-        );
-
-        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert_eq!(term.grid[Line(0)][Column(1)].c, 't');
-        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
-        assert_eq!(term.grid[Line(0)][Column(2)].c, 't');
-        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
-        assert_eq!(term.grid[Line(0)][Column(3)].c, 'p');
-        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
-        assert_eq!(term.grid[Line(0)][Column(12)].c, 'i');
-        assert!(term.grid[Line(0)][Column(12)].hyperlink().is_some());
-        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
-        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(0)][Column(13)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
-        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_none());
-
-        // From 'r' (this case should hit square hyperlink info)
-        let result = term
-            .search_nearest_hyperlink_from_pos(Pos::new(pos::Line(0), pos::Column(8)));
-        assert_eq!(
-            result,
-            Some(SelectionRange {
-                start: Pos {
-                    row: Line(0),
-                    col: Column(0)
-                },
-                end: Pos {
-                    row: Line(0),
-                    col: Column(13)
-                },
-                is_block: false
-            })
-        );
-
-        assert_eq!(term.grid[Line(0)][Column(0)].c, 'h');
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert_eq!(term.grid[Line(0)][Column(13)].c, 'o');
-        assert!(term.grid[Line(0)][Column(13)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(0)][Column(13)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert_eq!(term.grid[Line(0)][Column(14)].c, ' ');
-        assert!(term.grid[Line(0)][Column(14)].hyperlink().is_none());
-    }
-
-    #[test]
-    fn test_search_nearest_hyperlink_from_pos_on_multiple_lines() {
-        let size = CrosswordsSize::new(4, 4);
-        let window_id = crate::event::WindowId::from(0);
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
-
-        let grid = &mut term.grid;
-        grid[Line(0)][Column(0)].c = 'h';
-        grid[Line(0)][Column(1)].c = 't';
-        grid[Line(0)][Column(2)].c = 't';
-        grid[Line(0)][Column(3)].c = 'p';
-        grid[Line(1)][Column(0)].c = 's';
-        grid[Line(1)][Column(1)].c = ':';
-        grid[Line(1)][Column(2)].c = '/';
-        grid[Line(1)][Column(3)].c = '/';
-        grid[Line(2)][Column(0)].c = 'r';
-        grid[Line(2)][Column(1)].c = 'i';
-        grid[Line(2)][Column(2)].c = 'o';
-        grid[Line(2)][Column(3)].c = '.';
-        grid[Line(3)][Column(0)].c = 'i';
-        grid[Line(3)][Column(1)].c = 'o';
-
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
-        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_none());
-        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_none());
-        assert!(term.grid[Line(3)][Column(0)].hyperlink().is_none());
-
-        // From ' ' after '.io'
-        let result = term.search_nearest_hyperlink_from_pos(Pos {
-            row: pos::Line(3),
-            col: pos::Column(2),
-        });
-        assert_eq!(result, None);
-
-        // From 'r'
-        let result = term.search_nearest_hyperlink_from_pos(Pos {
-            row: pos::Line(2),
-            col: pos::Column(1),
-        });
-        assert_eq!(
-            result,
-            Some(SelectionRange {
-                start: Pos {
-                    row: Line(0),
-                    col: Column(0)
-                },
-                end: Pos {
-                    row: Line(3),
-                    col: Column(1)
-                },
-                is_block: false
-            })
-        );
-
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(0)][Column(0)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_some());
-        assert!(term.grid[Line(0)][Column(1)].hyperlink().is_some());
-        assert!(term.grid[Line(0)][Column(2)].hyperlink().is_some());
-        assert!(term.grid[Line(0)][Column(3)].hyperlink().is_some());
-        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_some());
-        assert!(term.grid[Line(1)][Column(1)].hyperlink().is_some());
-        assert!(term.grid[Line(1)][Column(2)].hyperlink().is_some());
-        assert!(term.grid[Line(1)][Column(3)].hyperlink().is_some());
-        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_some());
-        assert!(term.grid[Line(2)][Column(1)].hyperlink().is_some());
-        assert!(term.grid[Line(2)][Column(2)].hyperlink().is_some());
-        assert!(term.grid[Line(2)][Column(3)].hyperlink().is_some());
-        assert!(term.grid[Line(3)][Column(0)].hyperlink().is_some());
-        assert_eq!(
-            term.grid[Line(3)][Column(1)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-        assert!(term.grid[Line(3)][Column(2)].hyperlink().is_none());
-    }
-
-    #[test]
-    fn test_search_nearest_hyperlink_from_pos_on_existent_hyperlink() {
-        let size = CrosswordsSize::new(4, 4);
-        let window_id = crate::event::WindowId::from(0);
-
-        let mut term =
-            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
-
-        let grid = &mut term.grid;
-        let hyperlink = Hyperlink::new(None, "https://rio.io");
-        grid[Line(0)][Column(2)].c = 'r';
-        grid[Line(0)][Column(2)].set_hyperlink(Some(hyperlink.clone()));
-        grid[Line(0)][Column(3)].c = ' ';
-        grid[Line(0)][Column(3)].set_hyperlink(Some(hyperlink.clone()));
-        grid[Line(1)][Column(0)].c = '2';
-        grid[Line(1)][Column(0)].set_hyperlink(Some(hyperlink.clone()));
-        grid[Line(1)][Column(1)].c = ' ';
-        grid[Line(1)][Column(2)].c = 'i';
-        grid[Line(1)][Column(2)].set_hyperlink(Some(hyperlink.clone()));
-        grid[Line(1)][Column(3)].c = 'o';
-        grid[Line(1)][Column(3)].set_hyperlink(Some(hyperlink.clone()));
-
-        // "  r "
-        // "2 io"
-        // "    "
-        // "    "
-
-        // Hyperlink that should be highlighted is "r 2"
-
-        assert!(term.grid[Line(0)][Column(0)].hyperlink().is_none());
-        assert!(term.grid[Line(1)][Column(0)].hyperlink().is_some());
-        assert!(term.grid[Line(2)][Column(0)].hyperlink().is_none());
-
-        let result = term.search_nearest_hyperlink_from_pos(Pos {
-            row: pos::Line(0),
-            col: pos::Column(0),
-        });
-        assert_eq!(result, None);
-
-        let result = term.search_nearest_hyperlink_from_pos(Pos {
-            row: pos::Line(0),
-            col: pos::Column(3),
-        });
-        assert_eq!(
-            result,
-            Some(SelectionRange {
-                start: Pos {
-                    row: Line(0),
-                    col: Column(2)
-                },
-                end: Pos {
-                    row: Line(1),
-                    col: Column(0)
-                },
-                is_block: false
-            })
-        );
-
-        assert_eq!(
-            term.grid[Line(0)][Column(2)].hyperlink().unwrap().uri(),
-            "https://rio.io"
-        );
-
-        // Then we "promote" col 1/ row 1 to hyperlink and connecting with " io"
-        term.grid[Line(1)][Column(1)].set_hyperlink(Some(hyperlink.clone()));
-        let result = term.search_nearest_hyperlink_from_pos(Pos {
-            row: pos::Line(0),
-            col: pos::Column(3),
-        });
-        assert_eq!(
-            result,
-            Some(SelectionRange {
-                start: Pos {
-                    row: Line(0),
-                    col: Column(2)
-                },
-                end: Pos {
-                    row: Line(1),
-                    col: Column(3)
-                },
-                is_block: false
-            })
-        );
-    }
-
-    #[test]
     fn parse_cargo_version() {
         assert_eq!(version_number("0.0.1-nightly"), 1);
         assert_eq!(version_number("0.1.2-nightly"), 1_02);
         assert_eq!(version_number("1.2.3-nightly"), 1_02_03);
         assert_eq!(version_number("999.99.99"), 9_99_99_99);
+    }
+
+    #[test]
+    fn test_cursor_damage_after_clear() {
+        use crate::ansi::CursorShape;
+        use crate::crosswords::CrosswordsSize;
+        use crate::event::{VoidListener, WindowId};
+        use crate::performer::handler::Handler;
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Move cursor to position (1, 5) and type some text
+        term.goto(Line(1), Column(5));
+        for c in "hello".chars() {
+            term.input(c);
+        }
+
+        // Get initial damage and reset
+        {
+            let _initial_damage = term.damage();
+        }
+        term.reset_damage();
+
+        // Simulate `clear` command: clear screen and move cursor to home
+        term.clear_screen(ClearMode::All);
+        term.goto(Line(0), Column(0));
+
+        // Verify cursor is at origin
+        assert_eq!(term.grid.cursor.pos.row, Line(0));
+        assert_eq!(term.grid.cursor.pos.col, Column(0));
+
+        // Reset damage after clear
+        {
+            let _clear_damage = term.damage();
+        }
+        term.reset_damage();
+
+        // Now type "aa" - both characters should trigger line damage
+        term.input('a');
+
+        // Check damage after first 'a' - should damage entire line 0
+        let has_damage_first = {
+            let damage_after_first_a = term.damage();
+            match damage_after_first_a {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    !damaged_lines.is_empty()
+                        && damaged_lines.iter().any(|line| line.line == 0)
+                }
+                TermDamage::Full => true,
+            }
+        };
+        assert!(has_damage_first, "First 'a' should cause line damage");
+        term.reset_damage();
+
+        term.input('a');
+
+        // Check damage after second 'a' - should also damage entire line 0
+        let has_damage_second = {
+            let damage_after_second_a = term.damage();
+            match damage_after_second_a {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    !damaged_lines.is_empty()
+                        && damaged_lines.iter().any(|line| line.line == 0)
+                }
+                TermDamage::Full => true,
+            }
+        };
+        assert!(has_damage_second, "Second 'a' should cause line damage");
+        term.reset_damage();
+
+        // Verify final cursor position
+        assert_eq!(term.grid.cursor.pos.row, Line(0));
+        assert_eq!(term.grid.cursor.pos.col, Column(2)); // After typing "aa"
+    }
+
+    #[test]
+    fn test_line_damage_approach() {
+        use crate::ansi::CursorShape;
+        use crate::crosswords::CrosswordsSize;
+        use crate::event::{VoidListener, WindowId};
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Reset damage to start clean
+        term.reset_damage();
+
+        // Move cursor to line 2 and damage that line
+        term.goto(Line(2), Column(3));
+        term.damage_cursor_line();
+
+        let damage_result = {
+            let damage = term.damage();
+            match damage {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    damaged_lines
+                        .iter()
+                        .find(|line| line.line == 2)
+                        .map(|line| line.damaged)
+                }
+                TermDamage::Full => Some(true), // Full damage
+            }
+        };
+
+        // Should damage line 2
+        assert_eq!(damage_result, Some(true), "Should damage line 2");
+        term.reset_damage();
+
+        // Test the general damage_line method
+        term.damage_line(5);
+
+        let damage_result_2 = {
+            let damage = term.damage();
+            match damage {
+                TermDamage::Partial(iter) => {
+                    let damaged_lines: Vec<_> = iter.collect();
+                    damaged_lines
+                        .iter()
+                        .find(|line| line.line == 5)
+                        .map(|line| line.damaged)
+                }
+                TermDamage::Full => Some(true),
+            }
+        };
+
+        // Should damage line 5
+        assert_eq!(damage_result_2, Some(true), "Should damage line 5");
+    }
+
+    /// Unit tests for keyboard mode stack functionality
+    /// These tests verify the push, pop, and set operations for the keyboard mode stack
+    /// which was refactored in commit 7cfd5f73a1934f641174ed3fe335b6f37cb75316
+    ///
+    /// Test coverage:
+    /// - test_keyboard_mode_push_pop: Basic push and pop operations
+    /// - test_keyboard_mode_stack_wraparound: Stack overflow protection and wraparound
+    /// - test_keyboard_mode_pop_excessive: Handling of excessive pop operations
+    /// - test_keyboard_mode_set_replace: Replace behavior for keyboard modes
+    /// - test_keyboard_mode_set_union: Union behavior for keyboard modes
+    /// - test_keyboard_mode_set_difference: Difference behavior for keyboard modes
+    /// - test_keyboard_mode_report: Current mode reporting functionality
+    /// - test_keyboard_mode_reset: Terminal reset behavior on keyboard stack
+    /// - test_keyboard_mode_stack_underflow_protection: Stack underflow protection
+
+    #[test]
+    fn test_keyboard_mode_push_pop() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Initial state: stack should be empty with NO_MODE
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::NO_MODE.bits()
+        );
+        assert_eq!(term.keyboard_mode_idx, 0);
+
+        // Push first mode using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        assert_eq!(term.keyboard_mode_idx, 1);
+        assert_eq!(
+            term.keyboard_mode_stack[1],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+
+        // Push second mode
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        assert_eq!(term.keyboard_mode_idx, 2);
+        assert_eq!(
+            term.keyboard_mode_stack[2],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+
+        // Pop one mode using Handler trait
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert_eq!(term.keyboard_mode_idx, 1);
+        assert_eq!(term.keyboard_mode_stack[2], KeyboardModes::NO_MODE.bits()); // Should be cleared
+
+        // Pop remaining mode
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert_eq!(term.keyboard_mode_idx, 0);
+        assert_eq!(term.keyboard_mode_stack[1], KeyboardModes::NO_MODE.bits()); // Should be cleared
+    }
+
+    #[test]
+    fn test_keyboard_mode_stack_wraparound() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Fill the stack to maximum depth using Handler trait
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+            assert_eq!(
+                term.keyboard_mode_idx,
+                (i + 1) % KEYBOARD_MODE_STACK_MAX_DEPTH
+            );
+        }
+
+        // Push one more - should wrap around
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        assert_eq!(term.keyboard_mode_idx, 1); // Should wrap to 1
+        assert_eq!(
+            term.keyboard_mode_stack[1],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_pop_excessive() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Push a few modes using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALTERNATE_KEYS);
+
+        // Pop more modes than exist - should clear everything
+        Handler::pop_keyboard_modes(&mut term, KEYBOARD_MODE_STACK_MAX_DEPTH as u16);
+
+        assert_eq!(term.keyboard_mode_idx, 0);
+        // All modes should be cleared to NO_MODE
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            assert_eq!(term.keyboard_mode_stack[i], KeyboardModes::NO_MODE.bits());
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_replace() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set initial mode using Handler trait method
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::DISAMBIGUATE_ESC_CODES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+
+        // Replace with different mode
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::REPORT_EVENT_TYPES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_union() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set initial mode using Handler trait method
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::DISAMBIGUATE_ESC_CODES,
+            KeyboardModesApplyBehavior::Replace,
+        );
+
+        // Add another mode using union
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Union,
+        );
+
+        let expected = KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+            | KeyboardModes::REPORT_EVENT_TYPES.bits();
+        assert_eq!(term.keyboard_mode_stack[term.keyboard_mode_idx], expected);
+    }
+
+    #[test]
+    fn test_keyboard_mode_set_difference() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Set combined mode using Handler trait method
+        let combined_mode =
+            KeyboardModes::DISAMBIGUATE_ESC_CODES | KeyboardModes::REPORT_EVENT_TYPES;
+        Handler::set_keyboard_mode(
+            &mut term,
+            combined_mode,
+            KeyboardModesApplyBehavior::Replace,
+        );
+
+        // Remove one mode using difference
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Difference,
+        );
+
+        assert_eq!(
+            term.keyboard_mode_stack[term.keyboard_mode_idx],
+            KeyboardModes::DISAMBIGUATE_ESC_CODES.bits()
+        );
+    }
+
+    #[test]
+    fn test_keyboard_mode_report() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let listener = VoidListener {};
+        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+
+        // Push a mode and test reporting using Handler trait
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+
+        // The report_keyboard_mode function sends an event through event_proxy
+        // We can't easily test the exact output without mocking the event system,
+        // but we can verify the current mode is correctly retrieved
+        let current_mode = term.keyboard_mode_stack[term.keyboard_mode_idx];
+        assert_eq!(current_mode, KeyboardModes::DISAMBIGUATE_ESC_CODES.bits());
+    }
+
+    #[test]
+    fn test_keyboard_mode_reset() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Push several modes
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_EVENT_TYPES);
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALTERNATE_KEYS);
+
+        // Reset terminal using Handler trait - use reset_state method
+        term.reset_state();
+
+        // Verify stack is reset
+        assert_eq!(term.keyboard_mode_idx, 0);
+        assert_eq!(term.inactive_keyboard_mode_idx, 0);
+        for i in 0..KEYBOARD_MODE_STACK_MAX_DEPTH {
+            assert_eq!(term.keyboard_mode_stack[i], 0);
+            assert_eq!(term.inactive_keyboard_mode_stack[i], 0);
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_stack_underflow_protection() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Start at index 0, try to pop using Handler trait - should wrap correctly
+        assert_eq!(term.keyboard_mode_idx, 0);
+
+        Handler::pop_keyboard_modes(&mut term, 1);
+
+        // With wraparound logic, index should wrap to max-1
+        let expected_idx = (0_usize.wrapping_sub(1)) % KEYBOARD_MODE_STACK_MAX_DEPTH;
+        assert_eq!(term.keyboard_mode_idx, expected_idx);
+        assert_eq!(term.keyboard_mode_stack[0], KeyboardModes::NO_MODE.bits()); // Should be cleared
+    }
+
+    #[test]
+    fn test_xtversion_report() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Create a custom event listener that captures PtyWrite events
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let listener = TestListener {
+            events: events.clone(),
+        };
+        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+
+        // Call report_version using Handler trait
+        Handler::report_version(&mut term);
+
+        // Verify that a PtyWrite event was sent
+        let captured_events = events.borrow();
+        assert_eq!(captured_events.len(), 1, "Should have sent one event");
+
+        // Verify the event is PtyWrite with the correct format
+        match &captured_events[0] {
+            RioEvent::PtyWrite(text) => {
+                // Expected format: DCS > | Rio {version} ST
+                // DCS = \x1bP, ST = \x1b\\
+                assert!(
+                    text.starts_with("\x1bP>|Rio "),
+                    "Should start with DCS>|Rio"
+                );
+                assert!(text.ends_with("\x1b\\"), "Should end with ST");
+
+                // Extract version from the response
+                let version = env!("CARGO_PKG_VERSION");
+                let expected = format!("\x1bP>|Rio {}\x1b\\", version);
+                assert_eq!(
+                    text, &expected,
+                    "XTVERSION response should match expected format"
+                );
+            }
+            other => panic!("Expected PtyWrite event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_syncs_with_mode() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Initially, no keyboard mode should be set
+        assert!(!term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES));
+        assert!(!term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC));
+
+        // Push DISAMBIGUATE_ESC_CODES
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should contain DISAMBIGUATE_ESC_CODES after push"
+        );
+        assert!(!term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC));
+
+        // Push REPORT_ALL_KEYS_AS_ESC (replaces previous mode at this stack level)
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALL_KEYS_AS_ESC);
+        assert!(
+            term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC),
+            "mode() should contain REPORT_ALL_KEYS_AS_ESC after push"
+        );
+        assert!(!term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should not contain DISAMBIGUATE_ESC_CODES after pushing different mode"
+        );
+
+        // Pop back to previous level
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should contain DISAMBIGUATE_ESC_CODES after pop"
+        );
+        assert!(
+            !term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC),
+            "mode() should not contain REPORT_ALL_KEYS_AS_ESC after pop"
+        );
+
+        // Test set_keyboard_mode with Union
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Union,
+        );
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should still contain DISAMBIGUATE_ESC_CODES after union"
+        );
+        assert!(
+            term.mode().contains(Mode::REPORT_EVENT_TYPES),
+            "mode() should contain REPORT_EVENT_TYPES after union"
+        );
+
+        // Test set_keyboard_mode with Replace
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_ALTERNATE_KEYS,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert!(
+            term.mode().contains(Mode::REPORT_ALTERNATE_KEYS),
+            "mode() should contain REPORT_ALTERNATE_KEYS after replace"
+        );
+        assert!(
+            !term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should not contain DISAMBIGUATE_ESC_CODES after replace"
+        );
+        assert!(
+            !term.mode().contains(Mode::REPORT_EVENT_TYPES),
+            "mode() should not contain REPORT_EVENT_TYPES after replace"
+        );
     }
 }

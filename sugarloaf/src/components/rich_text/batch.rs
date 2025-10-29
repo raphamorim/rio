@@ -17,7 +17,7 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Default, Clone, Copy)]
 pub struct RunUnderline {
     pub enabled: bool,
-    pub offset: i32,
+    pub offset: f32,
     pub size: f32,
     pub color: [f32; 4],
     pub is_doubled: bool,
@@ -829,10 +829,10 @@ impl BatchManager {
         line_height: f32,
     ) {
         let half_size = advance / 2.0;
-        let stroke = f32::clamp(line_height / 10., 1.0, 6.0).round();
         let center_x = x + half_size;
         let center_y = y + (line_height / 2.0);
         let line_width = advance;
+        let stroke = (line_height / 10.).max(1.0).round();
 
         match character {
             DrawableChar::Horizontal => {
@@ -1962,68 +1962,50 @@ impl BatchManager {
                 self.add_rect(&lower_left_rect, depth, &color);
             }
             DrawableChar::DiagonalRisingBar => {
-                // DiagonalRisingBar (╱) - diagonal line from bottom-left to top-right
-                // We'll approximate this with a rotated rectangle
-                // let diagonal_width =
-                // (line_width * line_width + line_height * line_height).sqrt();
-                // let diagonal_height = stroke;
-
-                // Calculate the angle of rotation in radians
-                // let angle = (line_height / line_width).atan();
-
-                // Calculate the offset to center the rotated rectangle
-                // let offset_x = (diagonal_width - line_width) / 2.0;
-                // let offset_y = (diagonal_height - line_height) / 2.0;
-
-                // Create a path for the diagonal line
-                let path = vec![
-                    (x, y + line_height),          // bottom-left
-                    (x + stroke, y + line_height), // bottom-left + stroke width
-                    (x + line_width, y),           // top-right
-                    (x + line_width - stroke, y),  // top-right - stroke width
-                ];
-
-                self.add_polygon(&path, depth, color);
+                self.add_line(
+                    x,
+                    y + line_height, // bottom-left corner
+                    x + line_width,
+                    y, // top-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::DiagonalFallingBar => {
-                // DiagonalFallingBar (╲) - diagonal line from top-left to bottom-right
-                // We'll approximate this with a rotated rectangle
-                // let diagonal_width =
-                //     (line_width * line_width + line_height * line_height).sqrt();
-                // let diagonal_height = stroke;
-
-                // // Calculate the angle of rotation in radians
-                // let angle = (line_height / line_width).atan();
-
-                // Create a path for the diagonal line
-                let path = vec![
-                    (x, y),                                     // top-left
-                    (x + stroke, y),                            // top-left + stroke width
-                    (x + line_width, y + line_height),          // bottom-right
-                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
-                ];
-
-                self.add_polygon(&path, depth, color);
+                self.add_line(
+                    x,
+                    y,
+                    x + line_width,
+                    y + line_height,
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::DiagonalCross => {
-                // DiagonalCross (╳) - combination of rising and falling diagonals
-                // Create paths for both diagonals
-                let rising_path = vec![
-                    (x, y + line_height),          // bottom-left
-                    (x + stroke, y + line_height), // bottom-left + stroke width
-                    (x + line_width, y),           // top-right
-                    (x + line_width - stroke, y),  // top-right - stroke width
-                ];
+                // DiagonalCross (╳) - combination of both diagonals using add_line
+                // Rising diagonal (╱)
+                self.add_line(
+                    x,
+                    y + line_height, // bottom-left corner
+                    x + line_width,
+                    y, // top-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
 
-                let falling_path = vec![
-                    (x, y),                                     // top-left
-                    (x + stroke, y),                            // top-left + stroke width
-                    (x + line_width, y + line_height),          // bottom-right
-                    (x + line_width - stroke, y + line_height), // bottom-right - stroke width
-                ];
-
-                self.add_polygon(&rising_path, depth, color);
-                self.add_polygon(&falling_path, depth, color);
+                // Falling diagonal (╲)
+                self.add_line(
+                    x,
+                    y, // top-left corner
+                    x + line_width,
+                    y + line_height, // bottom-right corner
+                    stroke,
+                    depth,
+                    color,
+                );
             }
             DrawableChar::LowerOneEighthBlock => {
                 // Lower One Eighth Block (▁) - fills bottom 1/8 of the cell
@@ -3803,7 +3785,10 @@ impl BatchManager {
     ) {
         if underline.enabled {
             let ux = x;
-            let uy = baseline - underline.offset as f32;
+            // Position underline below baseline by adding the calculated offset
+            // This ensures proper underline placement in the descent area
+            let uy = baseline + underline.offset;
+
             let end = x + advance;
             if ux < end {
                 match underline.shape {
@@ -3814,10 +3799,12 @@ impl BatchManager {
                             &underline.color,
                         );
                         if underline.is_doubled {
+                            // Position the second underline with a gap equal to thickness
+                            // First line is at uy, gap of underline.size, then second line
                             self.add_rect(
                                 &Rect::new(
                                     ux,
-                                    uy - (underline.size * 2.),
+                                    uy + (underline.size * 2.0),
                                     end - ux,
                                     underline.size,
                                 ),
@@ -3851,35 +3838,53 @@ impl BatchManager {
                         }
                     }
                     UnderlineShape::Curly => {
-                        let style_line_height = (line_height / 10.).clamp(2.0, 16.0);
-                        let size = (style_line_height / 1.5).clamp(1.0, 4.0);
-                        let offset = style_line_height * 1.6;
+                        // Create smooth curly underlines using triangles to form thick curved segments
+                        let wave_amplitude = (line_height / 12.).clamp(0.9, 1.8); // Slightly reduced amplitude
+                        let wave_frequency = 8.0; // pixels per complete wave cycle
+                        let thickness = (line_height / 16.).clamp(1.0, 2.0);
 
-                        let mut curly_width = ux;
-                        let mut rect_width = 1.0f32.min(end - curly_width);
+                        let mut x = ux;
+                        let step_size: f32 = 0.8; // Larger steps for triangle segments
 
-                        while curly_width < end {
-                            rect_width = rect_width.min(end - curly_width);
+                        while x < end - step_size {
+                            let progress1 = (x - ux) / wave_frequency;
+                            let progress2 = ((x + step_size) - ux) / wave_frequency;
 
-                            let dot_bottom_offset = match curly_width as u32 % 8 {
-                                3..=5 => offset + style_line_height,
-                                2 | 6 => offset + 2.0 * style_line_height / 3.0,
-                                1 | 7 => offset + 1.0 * style_line_height / 3.0,
-                                _ => offset,
-                            };
+                            let wave_phase1 = progress1 * std::f32::consts::PI * 2.0;
+                            let wave_phase2 = progress2 * std::f32::consts::PI * 2.0;
 
-                            self.add_rect(
-                                &Rect::new(
-                                    curly_width,
-                                    uy - (dot_bottom_offset - offset),
-                                    rect_width,
-                                    size,
-                                ),
+                            // Calculate Y positions for current and next points
+                            let y1 = uy + wave_phase1.sin() * wave_amplitude;
+                            let y2 = uy + wave_phase2.sin() * wave_amplitude;
+
+                            // Create thick line segment using two triangles (quad)
+                            let half_thickness = thickness * 0.5;
+
+                            // Top triangle of the quad
+                            self.add_triangle(
+                                x,
+                                y1 - half_thickness, // top-left
+                                x + step_size,
+                                y2 - half_thickness, // top-right
+                                x,
+                                y1 + half_thickness, // bottom-left
                                 depth,
-                                &underline.color,
+                                underline.color,
                             );
 
-                            curly_width += rect_width;
+                            // Bottom triangle of the quad
+                            self.add_triangle(
+                                x + step_size,
+                                y2 - half_thickness, // top-right
+                                x + step_size,
+                                y2 + half_thickness, // bottom-right
+                                x,
+                                y1 + half_thickness, // bottom-left
+                                depth,
+                                underline.color,
+                            );
+
+                            x += step_size;
                         }
                     }
                 }

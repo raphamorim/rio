@@ -1,6 +1,8 @@
+pub mod bell;
 pub mod bindings;
 pub mod colors;
 pub mod defaults;
+pub mod hints;
 pub mod keyboard;
 pub mod navigation;
 pub mod renderer;
@@ -9,8 +11,10 @@ pub mod title;
 pub mod window;
 
 use crate::ansi::CursorShape;
+use crate::config::bell::Bell;
 use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
+use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
 use crate::config::renderer::Renderer;
@@ -163,6 +167,10 @@ pub struct Config {
     pub quake_global_hotkey: Option<String>,
     #[serde(default = "Option::default", rename = "focus-global-hotkey")]
     pub focus_global_hotkey: Option<String>,
+    #[serde(default = "Hints::default")]
+    pub hints: Hints,
+    #[serde(default = "Bell::default")]
+    pub bell: Bell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -328,7 +336,7 @@ impl Config {
 
                     Ok(decoded)
                 }
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))
@@ -340,7 +348,7 @@ impl Config {
             let content = std::fs::read_to_string(path).unwrap();
             match toml::from_str::<Theme>(&content) {
                 Ok(decoded) => Ok(decoded),
-                Err(err_message) => Err(format!("error parsing: {:?}", err_message)),
+                Err(err_message) => Err(format!("error parsing: {err_message:?}")),
             }
         } else {
             Err(String::from("filepath does not exist"))
@@ -534,6 +542,8 @@ impl Default for Config {
             draw_bold_text_with_light_colors: false,
             quake_global_hotkey: None,
             focus_global_hotkey: None,
+            hints: Hints::default(),
+            bell: Bell::default(),
         }
     }
 }
@@ -695,6 +705,27 @@ mod tests {
     }
 
     #[test]
+    fn test_change_config_renderer_occlusion() {
+        let result = create_temporary_config(
+            "change-renderer-occlusion",
+            r#"
+            [renderer]
+            disable-occluded-render = false
+        "#,
+        );
+
+        assert!(!result.renderer.disable_occluded_render);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
+        assert_eq!(result.fonts, SugarloafFonts::default());
+        assert_eq!(result.theme, String::default());
+        // Colors
+        assert_eq!(result.colors.background, colors::defaults::background());
+        assert_eq!(result.colors.foreground, colors::defaults::foreground());
+        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
     fn test_change_config_environment_variables() {
         let result = create_temporary_config(
             "change-env-vars",
@@ -810,7 +841,7 @@ mod tests {
         assert_eq!(result.bindings.keys[0].key, "Q");
         assert_eq!(result.bindings.keys[0].with, "super");
         assert_eq!(result.bindings.keys[0].action.to_owned(), "Quit");
-        assert!(result.bindings.keys[0].text.to_owned().is_empty());
+        assert!(result.bindings.keys[0].esc.to_owned().is_empty());
     }
 
     #[test]

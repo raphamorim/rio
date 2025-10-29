@@ -448,9 +448,51 @@ pub fn create_pty_with_spawn(
     tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
-        let mut cmd = Command::new(shell_program);
-        cmd.args(args);
-        cmd
+        #[cfg(target_os = "macos")]
+        {
+            // On macOS, use /usr/bin/login to ensure proper login shell environment
+            // This ensures PATH includes directories like /usr/local/bin
+            let shell_name = shell_program.rsplit('/').next().unwrap_or(shell_program);
+            let mut login_cmd = Command::new("/usr/bin/login");
+
+            // Check for .hushlogin in home directory
+            let hushlogin_path = std::path::Path::new(&user.home).join(".hushlogin");
+            let flags = if hushlogin_path.exists() {
+                "-qflp"
+            } else {
+                "-flp"
+            };
+
+            // -f: Bypasses authentication for already-logged-in user
+            // -l: Skips changing directory to $HOME
+            // -p: Preserves environment
+            // -q: Act as if .hushlogin exists
+            login_cmd.args([flags, &user.user]);
+
+            // Build the exec command to replace the intermediate shell with our target shell
+            let exec_cmd = if args.is_empty() {
+                format!("exec -a -{shell_name} {shell_program}")
+            } else {
+                format!(
+                    "exec -a -{} {} {}",
+                    shell_name,
+                    shell_program,
+                    args.join(" ")
+                )
+            };
+
+            // Use /bin/zsh as intermediate shell because it supports 'exec -a'
+            login_cmd.args(["/bin/zsh", "-fc", &exec_cmd]);
+
+            login_cmd
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut cmd = Command::new(shell_program);
+            cmd.args(args);
+            cmd
+        }
     };
 
     #[cfg(target_os = "linux")]
@@ -617,8 +659,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
         0 => {
             default_shell_command(shell_program);
             Err(Error::other(format!(
-                "forkpty has reach unreachable with {}",
-                shell_program
+                "forkpty has reach unreachable with {shell_program}"
             )))
         }
         id if id > 0 => {
@@ -648,8 +689,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
             })
         }
         _ => Err(Error::other(format!(
-            "forkpty failed using {}",
-            shell_program
+            "forkpty failed using {shell_program}"
         ))),
     }
 }
@@ -877,9 +917,9 @@ pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-    let comm_path = format!("/proc/{}/comm", pid);
+    let comm_path = format!("/proc/{pid}/comm");
     #[cfg(target_os = "freebsd")]
-    let comm_path = format!("/compat/linux/proc/{}/comm", pid);
+    let comm_path = format!("/compat/linux/proc/{pid}/comm");
 
     #[cfg(not(target_os = "macos"))]
     let name = match std::fs::read(comm_path) {
@@ -906,9 +946,9 @@ pub fn foreground_process_path(
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
-    let link_path = format!("/proc/{}/cwd", pid);
+    let link_path = format!("/proc/{pid}/cwd");
     #[cfg(target_os = "freebsd")]
-    let link_path = format!("/compat/linux/proc/{}/cwd", pid);
+    let link_path = format!("/compat/linux/proc/{pid}/cwd");
 
     #[cfg(not(target_os = "macos"))]
     let cwd = std::fs::read_link(link_path)?;

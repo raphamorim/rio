@@ -4,6 +4,7 @@
 # required by nix
 .direnv/
 result/
+/result
 
 target/
 .DS_Store

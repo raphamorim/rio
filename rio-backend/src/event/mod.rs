@@ -1,14 +1,16 @@
 pub mod sync;
 
+use crate::ansi::graphics::UpdateQueues;
 use crate::clipboard::ClipboardType;
 use crate::config::colors::ColorRgb;
 use crate::crosswords::grid::Scroll;
 use crate::crosswords::pos::{Direction, Pos};
 use crate::crosswords::search::{Match, RegexSearch};
+use crate::crosswords::LineDamage;
 use crate::error::RioError;
 use rio_window::event::Event as RioWindowEvent;
 use std::borrow::Cow;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -44,6 +46,17 @@ pub enum ClickState {
     TripleClick,
 }
 
+/// Terminal damage information for efficient rendering
+#[derive(Debug, Clone, PartialEq)]
+pub enum TerminalDamage {
+    /// The entire terminal needs to be redrawn
+    Full,
+    /// Only specific lines need to be redrawn
+    Partial(BTreeSet<LineDamage>),
+    /// Only the cursor position has changed
+    CursorOnly,
+}
+
 #[derive(Clone)]
 pub enum RioEvent {
     PrepareRender(u64),
@@ -53,6 +66,13 @@ pub enum RioEvent {
     Render,
     /// New terminal content available per route.
     RenderRoute(usize),
+    /// Wake up and check for terminal updates.
+    Wakeup(usize),
+    /// Graphics update available from terminal.
+    UpdateGraphics {
+        route_id: usize,
+        queues: UpdateQueues,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -171,6 +191,9 @@ impl Debug for RioEvent {
             }
             RioEvent::Render => write!(f, "Render"),
             RioEvent::RenderRoute(route) => write!(f, "Render route {route}"),
+            RioEvent::Wakeup(route) => {
+                write!(f, "Wakeup route {route}")
+            }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell => write!(f, "Bell"),
             RioEvent::Exit => write!(f, "Exit"),
@@ -202,6 +225,9 @@ impl Debug for RioEvent {
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
+            RioEvent::UpdateGraphics { route_id, .. } => {
+                write!(f, "UpdateGraphics({route_id})")
+            }
         }
     }
 }

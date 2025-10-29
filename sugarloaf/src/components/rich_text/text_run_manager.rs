@@ -7,229 +7,22 @@
 
 use crate::font::text_run_cache::{
     create_cached_text_run, create_shaping_key, create_text_run_key, CacheHitType,
-    ShapedGlyph, TextDirection, TextRunCache,
+    ShapedGlyph, TextRunCache,
 };
 use std::sync::Arc;
 use tracing::debug;
 
-/// Common terminal patterns for cache warming
-/// These patterns are frequently seen in terminal applications and benefit from pre-caching
-const COMMON_TERMINAL_PATTERNS: &[&str] = &[
-    // Common indentation patterns (programming)
-    "    ",             // 4 spaces
-    "        ",         // 8 spaces
-    "            ",     // 12 spaces
-    "                ", // 16 spaces
-    "\t",               // Single tab
-    "\t\t",             // Double tab
-    "\t\t\t",           // Triple tab
-    // Programming keywords and symbols
-    "const ",
-    "let ",
-    "var ",
-    "function ",
-    "class ",
-    "import ",
-    "export ",
-    "return ",
-    "if ",
-    "else ",
-    "for ",
-    "while ",
-    "switch ",
-    "case ",
-    "break ",
-    "continue ",
-    "try ",
-    "catch ",
-    "finally ",
-    "async ",
-    "await ",
-    "public ",
-    "private ",
-    "protected ",
-    "static ",
-    "void ",
-    "int ",
-    "string ",
-    "bool ",
-    "true",
-    "false",
-    "null",
-    "undefined",
-    // Common operators and punctuation
-    " = ",
-    " == ",
-    " === ",
-    " != ",
-    " !== ",
-    " <= ",
-    " >= ",
-    " && ",
-    " || ",
-    " => ",
-    " -> ",
-    "();",
-    "{}",
-    "[]",
-    "();",
-    "{};",
-    "[];",
-    // Shell prompts and common commands
-    "$ ",
-    "# ",
-    "> ",
-    "~ ",
-    "├── ",
-    "└── ",
-    "│   ",
-    "ls ",
-    "cd ",
-    "pwd",
-    "cat ",
-    "grep ",
-    "find ",
-    "git ",
-    "npm ",
-    "cargo ",
-    "make ",
-    "sudo ",
-    // Common file extensions and paths
-    ".js",
-    ".ts",
-    ".rs",
-    ".py",
-    ".go",
-    ".cpp",
-    ".c",
-    ".h",
-    ".json",
-    ".xml",
-    ".html",
-    ".css",
-    ".md",
-    ".txt",
-    ".log",
-    "/usr/",
-    "/home/",
-    "/var/",
-    "/etc/",
-    "./",
-    "../",
-    // Common error/log patterns
-    "Error: ",
-    "Warning: ",
-    "Info: ",
-    "Debug: ",
-    "[ERROR]",
-    "[WARN]",
-    "[INFO]",
-    "[DEBUG]",
-    "FAILED",
-    "SUCCESS",
-    "OK",
-    // Numbers and common values
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "10",
-    "100",
-    "1000",
-    "0.0",
-    "1.0",
-    "-1",
-    // Common terminal output
-    "...",
-    "---",
-    "===",
-    "***",
-    "+++",
-    ">>>",
-    "<<<",
-];
-
 /// Unified text run manager that handles shaping, glyph, and vertex caching
-/// This replaces the previous separate TextRunManager and line cache approach
 pub struct TextRunManager {
     /// Unified cache for text runs (shaping + glyphs + vertices)
     unified_cache: TextRunCache,
-    /// Statistics
-    total_requests: u64,
-    full_render_hits: u64,
-    shaping_hits: u64,
-    glyph_hits: u64,
-    cache_misses: u64,
 }
 
 impl TextRunManager {
     pub fn new() -> Self {
         Self {
             unified_cache: TextRunCache::new(),
-            total_requests: 0,
-            full_render_hits: 0,
-            shaping_hits: 0,
-            glyph_hits: 0,
-            cache_misses: 0,
         }
-    }
-
-    /// Warm the cache with common terminal patterns for improved hit rates
-    /// This should be called during initialization with the primary font configuration
-    #[allow(clippy::too_many_arguments)]
-    pub fn warm_cache(
-        &mut self,
-        font_id: usize,
-        font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
-        default_color: [f32; 4],
-    ) {
-        debug!(
-            "Warming text run cache with {} common patterns",
-            COMMON_TERMINAL_PATTERNS.len()
-        );
-
-        let mut warmed_count = 0;
-
-        for &pattern in COMMON_TERMINAL_PATTERNS {
-            // Create cache key for this pattern
-            let key = create_text_run_key(
-                pattern,
-                font_weight,
-                font_style,
-                font_stretch,
-                font_size,
-                0, // script
-                TextDirection::LeftToRight,
-                Some(default_color),
-            );
-
-            // Create minimal cached text run for warming (shaping-only level)
-            // In a real implementation, this would be populated by actual shaping
-            let cached_run = create_cached_text_run(
-                vec![], // Empty glyphs - will be populated when actually used
-                font_id,
-                font_size,
-                false, // has_emoji
-                None,  // shaping_features - will be populated on first use
-                None,  // vertices - will be populated on first render
-                None,  // base_position
-                Some(default_color),
-            );
-
-            // Insert into cache for future hits
-            self.unified_cache.insert(key, cached_run);
-            warmed_count += 1;
-        }
-
-        debug!(
-            "Cache warming completed: {} patterns pre-cached",
-            warmed_count
-        );
     }
 
     /// Get cached data for a text run - returns the best available cache level
@@ -237,61 +30,35 @@ impl TextRunManager {
     pub fn get_cached_data(
         &mut self,
         text: &str,
-        _font_id: usize,
+        font_id: usize,
         font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
         color: Option<[f32; 4]>,
     ) -> CacheResult {
-        self.total_requests += 1;
-
-        let key = create_text_run_key(
-            text,
-            font_weight,
-            font_style,
-            font_stretch,
-            font_size,
-            0, // script
-            TextDirection::LeftToRight,
-            color,
-        );
+        let key = create_text_run_key(text, font_id, font_size, color);
 
         match self.unified_cache.get(&key) {
-            Some(CacheHitType::FullRender(cached_run)) => {
-                self.full_render_hits += 1;
-                CacheResult::FullRender {
-                    glyphs: cached_run.glyphs.clone(),
-                    vertices: cached_run.vertices.clone().unwrap(),
-                    base_position: cached_run.base_position.unwrap(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            Some(CacheHitType::ShapingOnly(cached_run)) => {
-                self.shaping_hits += 1;
-                CacheResult::ShapingOnly {
-                    glyphs: cached_run.glyphs.clone(),
-                    shaping_features: cached_run.shaping_features.clone(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            Some(CacheHitType::GlyphsOnly(cached_run)) => {
-                self.glyph_hits += 1;
-                CacheResult::GlyphsOnly {
-                    glyphs: cached_run.glyphs.clone(),
-                    advance_width: cached_run.advance_width,
-                    has_emoji: cached_run.has_emoji,
-                    font_id: cached_run.font_id,
-                }
-            }
-            None => {
-                self.cache_misses += 1;
-                CacheResult::Miss
-            }
+            Some(CacheHitType::FullRender(cached_run)) => CacheResult::FullRender {
+                glyphs: cached_run.glyphs.clone(),
+                vertices: cached_run.vertices.clone().unwrap(),
+                base_position: cached_run.base_position.unwrap(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            Some(CacheHitType::ShapingOnly(cached_run)) => CacheResult::ShapingOnly {
+                glyphs: cached_run.glyphs.clone(),
+                shaping_features: cached_run.shaping_features.clone(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            Some(CacheHitType::GlyphsOnly(cached_run)) => CacheResult::GlyphsOnly {
+                glyphs: cached_run.glyphs.clone(),
+                advance_width: cached_run.advance_width,
+                has_emoji: cached_run.has_emoji,
+                font_id: cached_run.font_id,
+            },
+            None => CacheResult::Miss,
         }
     }
 
@@ -302,22 +69,11 @@ impl TextRunManager {
         text: &str,
         font_id: usize,
         font_size: f32,
-        font_weight: u16,
-        font_style: u8,
-        font_stretch: u8,
         glyphs: Vec<ShapedGlyph>,
         has_emoji: bool,
         shaping_features: Option<Vec<u8>>,
     ) {
-        let key = create_shaping_key(
-            text,
-            font_weight,
-            font_style,
-            font_stretch,
-            font_size,
-            0, // script
-            TextDirection::LeftToRight,
-        );
+        let key = create_shaping_key(text, font_id, font_size);
 
         let cached_run = create_cached_text_run(
             glyphs,
@@ -340,16 +96,58 @@ impl TextRunManager {
         new_position: (f32, f32),
         output_vertices: &mut Vec<u8>,
     ) {
-        // For now, just copy the vertex data
-        // In a real implementation, you'd deserialize, adjust positions, and re-serialize
         let dx = new_position.0 - base_position.0;
         let dy = new_position.1 - base_position.1;
 
-        // This is a simplified implementation - in practice you'd need to properly
-        // deserialize the vertex data, adjust positions, and serialize back
-        output_vertices.extend_from_slice(vertices_data);
+        // If there's no position change, just copy the data
+        if dx == 0.0 && dy == 0.0 {
+            output_vertices.extend_from_slice(vertices_data);
+            return;
+        }
 
-        // TODO: Implement proper vertex position adjustment
+        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] = 11 * 4 bytes = 44 bytes
+        // pos: [f32; 3] = 12 bytes
+        // color: [f32; 4] = 16 bytes
+        // uv: [f32; 2] = 8 bytes
+        // layers: [i32; 2] = 8 bytes
+        const VERTEX_SIZE: usize = 44;
+
+        if !vertices_data.len().is_multiple_of(VERTEX_SIZE) {
+            debug!("Invalid vertex data size: {}", vertices_data.len());
+            output_vertices.extend_from_slice(vertices_data);
+            return;
+        }
+
+        // Reserve space for the adjusted vertices
+        output_vertices.reserve(vertices_data.len());
+
+        // Process vertices in chunks of 44 bytes
+        for chunk in vertices_data.chunks_exact(VERTEX_SIZE) {
+            // Deserialize position (first 12 bytes - 3 f32s)
+            let x_bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
+            let y_bytes = [chunk[4], chunk[5], chunk[6], chunk[7]];
+            let z_bytes = [chunk[8], chunk[9], chunk[10], chunk[11]];
+
+            let mut x = f32::from_le_bytes(x_bytes);
+            let mut y = f32::from_le_bytes(y_bytes);
+            let z = f32::from_le_bytes(z_bytes);
+
+            // Apply position offset (only to x and y, leave z unchanged)
+            x += dx;
+            y += dy;
+
+            // Write adjusted position
+            output_vertices.extend_from_slice(&x.to_le_bytes());
+            output_vertices.extend_from_slice(&y.to_le_bytes());
+            output_vertices.extend_from_slice(&z.to_le_bytes());
+
+            // Copy the rest of the vertex data unchanged (color + uv + layers)
+            // color: bytes 12-27 (16 bytes)
+            // uv: bytes 28-35 (8 bytes)
+            // layers: bytes 36-43 (8 bytes)
+            output_vertices.extend_from_slice(&chunk[12..]);
+        }
+
         debug!("Applied cached vertices with offset ({}, {})", dx, dy);
     }
 
@@ -358,63 +156,11 @@ impl TextRunManager {
         self.unified_cache.clear();
         debug!("TextRunManager: Cleared unified cache due to font change");
     }
-
-    /// Get comprehensive cache statistics
-    pub fn stats(&self) -> TextRunManagerStats {
-        let (
-            items,
-            total_hits,
-            total_misses,
-            hit_rate,
-            vertex_hits,
-            vertex_misses,
-            shaping_hits,
-            shaping_misses,
-        ) = self.unified_cache.stats();
-
-        TextRunManagerStats {
-            total_requests: self.total_requests,
-            cache_items: items,
-            total_hits,
-            total_misses,
-            overall_hit_rate: hit_rate,
-            full_render_hits: self.full_render_hits,
-            shaping_hits: self.shaping_hits,
-            glyph_hits: self.glyph_hits,
-            cache_misses: self.cache_misses,
-            vertex_cache_hits: vertex_hits,
-            vertex_cache_misses: vertex_misses,
-            shaping_cache_hits: shaping_hits,
-            shaping_cache_misses: shaping_misses,
-        }
-    }
-
-    /// Perform maintenance on the cache
-    pub fn maintenance(&mut self) {
-        if self.unified_cache.needs_cleanup() {
-            self.unified_cache.cleanup();
-        }
-
-        // Log statistics periodically
-        if self.total_requests % 1000 == 0 && self.total_requests > 0 {
-            let stats = self.stats();
-            debug!(
-                "UnifiedTextRunManager stats: {:.1}% hit rate ({} requests), Full: {}, Shaping: {}, Glyphs: {}, Miss: {}, {} items",
-                stats.overall_hit_rate, stats.total_requests, stats.full_render_hits,
-                stats.shaping_hits, stats.glyph_hits, stats.cache_misses, stats.cache_items
-            );
-        }
-    }
-
-    /// Check if cache needs cleanup
-    pub fn needs_cleanup(&self) -> bool {
-        self.unified_cache.needs_cleanup()
-    }
 }
 
 /// Result of a cache lookup - indicates what level of cached data is available
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(unused)]
 pub enum CacheResult {
     /// Full render data available (glyphs + vertices + shaping)
     FullRender {
@@ -444,44 +190,105 @@ pub enum CacheResult {
     Miss,
 }
 
-/// Comprehensive statistics for the unified text run manager
-#[derive(Debug)]
-#[allow(dead_code)]
-pub struct TextRunManagerStats {
-    pub total_requests: u64,
-    pub cache_items: usize,
-    pub total_hits: u64,
-    pub total_misses: u64,
-    pub overall_hit_rate: f64,
-    pub full_render_hits: u64,
-    pub shaping_hits: u64,
-    pub glyph_hits: u64,
-    pub cache_misses: u64,
-    pub vertex_cache_hits: u64,
-    pub vertex_cache_misses: u64,
-    pub shaping_cache_hits: u64,
-    pub shaping_cache_misses: u64,
-}
-
-impl Default for TextRunManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_vertex_positioning() {
-        let vertices = vec![1, 2, 3, 4]; // Mock vertex data
+        // Create mock vertex data for one complete vertex
+        let mut vertices = Vec::new();
+
+        // Position: (10.0, 20.0, 0.0)
+        vertices.extend_from_slice(&10.0f32.to_le_bytes()); // x
+        vertices.extend_from_slice(&20.0f32.to_le_bytes()); // y
+        vertices.extend_from_slice(&0.0f32.to_le_bytes()); // z
+
+        // Color: (1.0, 0.5, 0.0, 1.0)
+        vertices.extend_from_slice(&1.0f32.to_le_bytes());
+        vertices.extend_from_slice(&0.5f32.to_le_bytes());
+        vertices.extend_from_slice(&0.0f32.to_le_bytes());
+        vertices.extend_from_slice(&1.0f32.to_le_bytes());
+
+        // UV: (0.5, 0.7)
+        vertices.extend_from_slice(&0.5f32.to_le_bytes());
+        vertices.extend_from_slice(&0.7f32.to_le_bytes());
+
+        // Layers: (1, 2)
+        vertices.extend_from_slice(&1i32.to_le_bytes());
+        vertices.extend_from_slice(&2i32.to_le_bytes());
+
+        let mut output_vertices = Vec::new();
+
+        TextRunManager::apply_cached_vertices(
+            &vertices,
+            (100.0, 200.0), // base position
+            (150.0, 250.0), // new position (offset by +50, +50)
+            &mut output_vertices,
+        );
+
+        // Expected: only position should be offset by (+50, +50)
+        // So (10, 20, 0) becomes (60, 70, 0)
+        assert_eq!(output_vertices.len(), 44);
+
+        // Check adjusted position
+        let x = f32::from_le_bytes([
+            output_vertices[0],
+            output_vertices[1],
+            output_vertices[2],
+            output_vertices[3],
+        ]);
+        let y = f32::from_le_bytes([
+            output_vertices[4],
+            output_vertices[5],
+            output_vertices[6],
+            output_vertices[7],
+        ]);
+        let z = f32::from_le_bytes([
+            output_vertices[8],
+            output_vertices[9],
+            output_vertices[10],
+            output_vertices[11],
+        ]);
+
+        assert_eq!(x, 60.0);
+        assert_eq!(y, 70.0);
+        assert_eq!(z, 0.0);
+
+        // Check that color, uv, and layers are unchanged
+        let color_r = f32::from_le_bytes([
+            output_vertices[12],
+            output_vertices[13],
+            output_vertices[14],
+            output_vertices[15],
+        ]);
+        let uv_u = f32::from_le_bytes([
+            output_vertices[28],
+            output_vertices[29],
+            output_vertices[30],
+            output_vertices[31],
+        ]);
+        let layer_0 = i32::from_le_bytes([
+            output_vertices[36],
+            output_vertices[37],
+            output_vertices[38],
+            output_vertices[39],
+        ]);
+
+        assert_eq!(color_r, 1.0);
+        assert_eq!(uv_u, 0.5);
+        assert_eq!(layer_0, 1);
+    }
+
+    #[test]
+    fn test_vertex_positioning_no_offset() {
+        let vertices = vec![0u8; 44]; // Mock vertex data (44 bytes)
         let mut output_vertices = Vec::new();
 
         TextRunManager::apply_cached_vertices(
             &vertices,
             (100.0, 200.0),
-            (150.0, 250.0),
+            (100.0, 200.0), // Same position - no offset
             &mut output_vertices,
         );
 

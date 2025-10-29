@@ -3,13 +3,17 @@ mod fallbacks;
 pub mod fonts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod loader;
-pub mod ops;
+pub mod metrics;
 pub mod text_run_cache;
+
+#[cfg(test)]
+mod cjk_metrics_tests;
 
 pub const FONT_ID_REGULAR: usize = 0;
 
 use crate::font::constants::*;
 use crate::font::fonts::{parse_unicode, SugarloafFontStyle, SugarloafFontWidth};
+use crate::font::metrics::{FaceMetrics, Metrics};
 use crate::font_introspector::text::cluster::Parser;
 use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
@@ -18,13 +22,35 @@ use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
+use dashmap::DashMap;
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use crate::font_introspector::{Style, Weight};
+
+// Type alias for the font data cache to improve readability
+type FontDataCache = Arc<DashMap<PathBuf, SharedData>>;
+
+// Global font data cache to avoid reloading fonts from disk
+// This cache stores font file data indexed by path, so fonts are only loaded once
+// and shared across all font library instances. This significantly improves
+// performance when the same font is referenced multiple times.
+static FONT_DATA_CACHE: OnceLock<FontDataCache> = OnceLock::new();
+
+fn get_font_data_cache() -> &'static FontDataCache {
+    FONT_DATA_CACHE.get_or_init(|| Arc::new(DashMap::default()))
+}
+
+/// Clears the global font data cache, forcing fonts to be reloaded from disk
+/// on next access. This should be called when font configuration changes.
+pub fn clear_font_data_cache() {
+    if let Some(cache) = FONT_DATA_CACHE.get() {
+        cache.clear();
+    }
+}
 
 pub fn lookup_for_font_match(
     cluster: &mut CharCluster,
@@ -133,6 +159,8 @@ pub struct FontLibraryData {
     pub inner: FxHashMap<usize, FontData>,
     pub symbol_maps: Option<Vec<SymbolMap>>,
     pub hinting: bool,
+    // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
+    primary_metrics_cache: FxHashMap<u32, Metrics>,
 }
 
 impl Default for FontLibraryData {
@@ -141,6 +169,7 @@ impl Default for FontLibraryData {
             inner: FxHashMap::default(),
             hinting: true,
             symbol_maps: None,
+            primary_metrics_cache: FxHashMap::default(),
         }
     }
 }
@@ -217,10 +246,9 @@ impl FontLibraryData {
             if let Some(data) = &font.data {
                 return Some((data.clone(), font.offset, font.key));
             } else if let Some(path) = &font.path {
-                // Load font data directly from file when needed
+                // Load font data from cache or disk
                 if let Some(raw_data) = load_from_font_source(path) {
-                    let shared_data = SharedData::new(raw_data);
-                    return Some((shared_data, font.offset, font.key));
+                    return Some((raw_data, font.offset, font.key));
                 }
             }
         }
@@ -231,6 +259,54 @@ impl FontLibraryData {
     #[inline]
     pub fn get_mut(&mut self, font_id: &usize) -> Option<&mut FontData> {
         self.inner.get_mut(font_id)
+    }
+
+    /// Get font metrics for rich text rendering (consistent metrics approach)
+    ///
+    /// Primary font determines cell dimensions for all fonts to ensure consistent
+    /// baseline alignment across different scripts (Latin, CJK, emoji, etc.).
+    ///
+    /// # Arguments
+    /// * `font_id` - The font to get metrics for
+    /// * `font_size` - The font size in pixels
+    ///
+    /// # Returns
+    /// A tuple of (width, height, line_height) for the font, or None if the font
+    /// cannot be found or metrics cannot be calculated.
+    ///
+    /// # Implementation Notes
+    /// - Primary font metrics are cached for performance
+    /// - Secondary fonts inherit cell dimensions from primary font
+    /// - This ensures CJK characters don't appear "higher" than Latin text
+    pub fn get_font_metrics(
+        &mut self,
+        font_id: &usize,
+        font_size: f32,
+    ) -> Option<(f32, f32, f32)> {
+        let size_key = (font_size * 100.0) as u32;
+
+        // First, ensure we have primary font metrics
+        let primary_metrics =
+            if let Some(cached) = self.primary_metrics_cache.get(&size_key) {
+                *cached
+            } else {
+                let primary_font = self.inner.get_mut(&FONT_ID_REGULAR)?;
+                let primary_metrics = primary_font.get_metrics(font_size, None)?;
+                self.primary_metrics_cache.insert(size_key, primary_metrics);
+                primary_metrics
+            };
+
+        match font_id {
+            &FONT_ID_REGULAR => {
+                // Primary font uses its own metrics
+                Some(primary_metrics.for_rich_text())
+            }
+            _ => {
+                // Secondary fonts use primary font's cell dimensions
+                let font = self.inner.get_mut(font_id)?;
+                font.get_rich_text_metrics(font_size, Some(&primary_metrics))
+            }
+        }
     }
 
     #[inline]
@@ -259,7 +335,6 @@ impl FontLibraryData {
         }
 
         let mut db = loader::Database::new();
-        db.load_system_fonts();
 
         spec.additional_dirs
             .unwrap_or_default()
@@ -444,8 +519,7 @@ impl FontLibraryData {
 
     #[cfg(target_arch = "wasm32")]
     pub fn load(&mut self, _font_spec: SugarloafFonts) -> Vec<SugarloafFont> {
-        self.inner
-            .insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
+        self.insert(FontData::from_slice(FONT_CASCADIAMONO_REGULAR, false).unwrap());
 
         vec![]
     }
@@ -454,14 +528,14 @@ impl FontLibraryData {
 /// Atomically reference counted, heap allocated or memory mapped buffer.
 #[derive(Clone)]
 pub struct SharedData {
-    inner: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    inner: Arc<[u8]>,
 }
 
 impl SharedData {
     /// Creates shared data from the specified bytes.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            inner: Arc::new(data),
+            inner: Arc::from(data),
         }
     }
 }
@@ -496,6 +570,8 @@ pub struct FontData {
     pub should_embolden: bool,
     pub should_italicize: bool,
     pub is_emoji: bool,
+    // Cached metrics per font size (per-font caching)
+    metrics_cache: FxHashMap<u32, Metrics>,
 }
 
 impl PartialEq for FontData {
@@ -507,9 +583,75 @@ impl PartialEq for FontData {
 }
 
 impl FontData {
+    /// Get font data reference
+    pub fn data(&self) -> &Option<SharedData> {
+        &self.data
+    }
+
+    /// Get font offset
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    /// Get or calculate metrics for a given font size (consistent metrics approach)
+    /// For primary font: calculate natural metrics with CJK measurement
+    /// For secondary fonts: use primary font's cell dimensions with CJK measurement
+    pub fn get_metrics(
+        &mut self,
+        font_size: f32,
+        primary_metrics: Option<&Metrics>,
+    ) -> Option<Metrics> {
+        let size_key = (font_size * 100.0) as u32; // Use scaled int as key
+
+        if let Some(cached) = self.metrics_cache.get(&size_key) {
+            return Some(*cached);
+        }
+
+        // Calculate metrics if not cached
+        if let Some(ref data) = self.data {
+            let font_ref = crate::font_introspector::FontRef {
+                data: data.as_ref(),
+                offset: self.offset,
+                key: self.key,
+            };
+
+            let font_metrics =
+                crate::font_introspector::Metrics::from_font(&font_ref, &[]);
+            let scaled_metrics = font_metrics.scale(font_size);
+
+            // Use the unified method that always includes CJK measurement
+            let face_metrics = FaceMetrics::from_font(&font_ref, &scaled_metrics);
+
+            // Calculate metrics using consistent approach
+            let metrics = if let Some(primary) = primary_metrics {
+                // Secondary font: use primary font's cell dimensions
+                Metrics::calc_with_primary_cell_dimensions(face_metrics, primary)
+            } else {
+                // Primary font: calculate natural metrics
+                Metrics::calc(face_metrics)
+            };
+
+            // Cache the result
+            self.metrics_cache.insert(size_key, metrics);
+            Some(metrics)
+        } else {
+            None
+        }
+    }
+
+    /// Get metrics for rich text rendering
+    pub fn get_rich_text_metrics(
+        &mut self,
+        font_size: f32,
+        primary_metrics: Option<&Metrics>,
+    ) -> Option<(f32, f32, f32)> {
+        self.get_metrics(font_size, primary_metrics)
+            .map(|m| m.for_rich_text())
+    }
+
     #[inline]
     pub fn from_data(
-        data: Vec<u8>,
+        data: SharedData,
         path: PathBuf,
         evictable: bool,
         is_emoji: bool,
@@ -532,11 +674,7 @@ impl FontData {
         let stretch = attributes.stretch();
         let synth = attributes.synthesize(attributes);
 
-        let data = if evictable {
-            None
-        } else {
-            Some(SharedData::new(data))
-        };
+        let data = (!evictable).then_some(data);
 
         Ok(Self {
             data,
@@ -550,6 +688,7 @@ impl FontData {
             stretch,
             path: Some(path),
             is_emoji,
+            metrics_cache: FxHashMap::default(),
         })
     }
 
@@ -580,6 +719,7 @@ impl FontData {
             stretch,
             path: None,
             is_emoji,
+            metrics_cache: FxHashMap::default(),
         })
     }
 }
@@ -603,8 +743,6 @@ fn find_font(
     evictable: bool,
     is_emoji: bool,
 ) -> FindResult {
-    use std::io::Read;
-
     if !font_spec.is_default_family() {
         let family = font_spec.family.to_string();
         let mut query = crate::font::loader::Query {
@@ -654,30 +792,32 @@ fn find_font(
                 if let Some((crate::font::loader::Source::File(ref path), _index)) =
                     db.face_source(id)
                 {
-                    if let Ok(mut file) = std::fs::File::open(path) {
-                        let mut font_data = vec![];
-                        if file.read_to_end(&mut font_data).is_ok() {
-                            match FontData::from_data(
-                                font_data,
-                                path.to_path_buf(),
-                                evictable,
-                                is_emoji,
-                                &font_spec,
-                            ) {
-                                Ok(d) => {
-                                    tracing::info!(
-                                        "Font '{}' found in {}",
-                                        family,
-                                        path.display()
-                                    );
-                                    return FindResult::Found(d);
-                                }
-                                Err(err_message) => {
-                                    tracing::info!(
-                                        "Failed to load font '{query:?}', {err_message}"
-                                    );
-                                    return FindResult::NotFound(font_spec);
-                                }
+                    // Use the cached font loading function
+                    if let Some(font_data_arc) =
+                        load_from_font_source(&path.to_path_buf())
+                    {
+                        // Convert Arc<Vec<u8>> to Vec<u8> for FontData::from_data
+                        // We need to clone here because FontData::from_data expects ownership
+                        match FontData::from_data(
+                            font_data_arc,
+                            path.to_path_buf(),
+                            evictable,
+                            is_emoji,
+                            &font_spec,
+                        ) {
+                            Ok(d) => {
+                                tracing::info!(
+                                    "Font '{}' found in {}",
+                                    family,
+                                    path.display()
+                                );
+                                return FindResult::Found(d);
+                            }
+                            Err(err_message) => {
+                                tracing::info!(
+                                    "Failed to load font '{query:?}', {err_message}"
+                                );
+                                return FindResult::NotFound(font_spec);
                             }
                         }
                     }
@@ -754,13 +894,26 @@ fn find_font_path(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn load_from_font_source(path: &PathBuf) -> Option<Vec<u8>> {
+fn load_from_font_source(path: &PathBuf) -> Option<SharedData> {
     use std::io::Read;
 
+    let cache = get_font_data_cache();
+
+    // Check if already cached - DashMap handles concurrent access efficiently
+    if let Some(cached_data) = cache.get(path) {
+        return Some(cached_data.clone());
+    }
+
+    // Load from disk if not cached
     if let Ok(mut file) = std::fs::File::open(path) {
         let mut font_data = vec![];
         if file.read_to_end(&mut font_data).is_ok() {
-            return Some(font_data);
+            let shared_data = SharedData::new(font_data);
+            // Use entry API to handle concurrent inserts properly
+            let entry = cache
+                .entry(path.clone())
+                .or_insert_with(|| shared_data.clone());
+            return Some(entry.clone());
         }
     }
 

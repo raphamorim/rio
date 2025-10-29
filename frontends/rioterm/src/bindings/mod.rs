@@ -256,6 +256,10 @@ impl From<String> for Action {
             "selectprevsplit" => Some(Action::SelectPrevSplit),
             "selectnextsplitortab" => Some(Action::SelectNextSplitOrTab),
             "selectprevsplitortab" => Some(Action::SelectPrevSplitOrTab),
+            "movedividerup" => Some(Action::MoveDividerUp),
+            "movedividerdown" => Some(Action::MoveDividerDown),
+            "movedividerleft" => Some(Action::MoveDividerLeft),
+            "movedividerright" => Some(Action::MoveDividerRight),
             "togglevimode" => Some(Action::ToggleViMode),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
             "togglequake" => Some(Action::ToggleQuake),
@@ -325,8 +329,8 @@ pub enum Action {
     /// Scroll
     Scroll(i32),
 
-    // Regex keyboard hints.
-    // Hint(Hint),
+    /// Activate hint mode with the given hint index
+    Hint(std::rc::Rc<rio_backend::config::hints::Hint>),
 
     // Move vi mode cursor.
     ViMotion(ViMotion),
@@ -486,6 +490,18 @@ pub enum Action {
     /// Select previous split if available if not previous tab
     SelectPrevSplitOrTab,
 
+    /// Move divider up
+    MoveDividerUp,
+
+    /// Move divider down
+    MoveDividerDown,
+
+    /// Move divider left
+    MoveDividerLeft,
+
+    /// Move divider right
+    MoveDividerRight,
+
     /// Allow receiving char input.
     ReceiveChar,
 
@@ -595,12 +611,7 @@ pub fn default_mouse_bindings() -> Vec<MouseBinding> {
     )
 }
 
-pub fn default_key_bindings(
-    unprocessed_config_key_bindings: Vec<ConfigKeyBinding>,
-    use_navigation_key_bindings: bool,
-    use_splits: bool,
-    config_keyboard: ConfigKeyboard,
-) -> Vec<KeyBinding> {
+pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBinding> {
     let mut bindings = bindings!(
         KeyBinding;
         Key::Named(Copy);  Action::Copy;
@@ -703,9 +714,9 @@ pub fn default_key_bindings(
         Key::Named(Delete),     ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[3~".into());
         Key::Named(PageUp),     ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[5~".into());
         Key::Named(PageDown),   ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b[6~".into());
-        Key::Named(Backspace),  ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x08".into());
-        Key::Named(Backspace), ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b\x08".into());
-        Key::Named(Backspace), ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x08".into());
+        Key::Named(Backspace),  ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC; Action::Esc("\x7f".into());
+        Key::Named(Backspace), ModifiersState::ALT,     ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1b\x7f".into());
+        Key::Named(Backspace), ModifiersState::SHIFT,   ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x7f".into());
         Key::Named(F1), ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1bOP".into());
         Key::Named(F2), ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1bOQ".into());
         Key::Named(F3), ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS; Action::Esc("\x1bOR".into());
@@ -715,12 +726,15 @@ pub fn default_key_bindings(
     ));
 
     bindings.extend(platform_key_bindings(
-        use_navigation_key_bindings,
-        use_splits,
-        config_keyboard,
+        config.navigation.has_navigation_key_bindings(),
+        config.navigation.use_split,
+        config.keyboard,
     ));
 
-    config_key_bindings(unprocessed_config_key_bindings, bindings)
+    // Add hint bindings
+    bindings.extend(create_hint_bindings(&config.hints.rules));
+
+    config_key_bindings(config.bindings.keys.to_owned(), bindings)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -820,14 +834,8 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
     }
 
     let mut action: Action = config_key_binding.action.into();
-    if !config_key_binding.text.is_empty() {
-        action = Action::Esc(config_key_binding.text);
-    }
-
-    if !config_key_binding.bytes.is_empty() {
-        if let Ok(str_from_bytes) = std::str::from_utf8(&config_key_binding.bytes) {
-            action = Action::Esc(str_from_bytes.into());
-        }
+    if !config_key_binding.esc.is_empty() {
+        action = Action::Esc(config_key_binding.esc);
     }
 
     let mut res_mode = ModeWrapper {
@@ -871,33 +879,14 @@ pub fn config_key_bindings(
 
     for ckb in config_key_bindings {
         match convert(ckb) {
-            Ok(key_binding) => match key_binding.action {
-                Action::None | Action::ReceiveChar => {
-                    let mut found_idx = None;
-                    for (idx, binding) in bindings.iter().enumerate() {
-                        if binding.triggers_match(&key_binding) {
-                            found_idx = Some(idx);
-                            break;
-                        }
-                    }
+            Ok(key_binding) => {
+                // Remove any default binding that would conflict with this user binding
+                // This ensures user bindings always take precedence and prevents conflicts
+                bindings.retain(|b| !b.triggers_match(&key_binding));
 
-                    if let Some(idx) = found_idx {
-                        bindings.remove(idx);
-                        tracing::warn!(
-                            "overwritten a previous key_binding with new one: {:?}",
-                            key_binding
-                        );
-                    } else {
-                        tracing::info!("added a new key_binding: {:?}", key_binding);
-                    }
-
-                    bindings.push(key_binding)
-                }
-                _ => {
-                    tracing::info!("added a new key_binding: {:?}", key_binding);
-                    bindings.push(key_binding)
-                }
-            },
+                tracing::info!("added a new key_binding: {:?}", key_binding);
+                bindings.push(key_binding)
+            }
             Err(err_message) => {
                 tracing::error!("error loading a key binding: {:?}", err_message);
             }
@@ -905,6 +894,87 @@ pub fn config_key_bindings(
     }
 
     bindings
+}
+
+/// Create hint bindings from configuration
+pub fn create_hint_bindings(
+    hints_config: &[rio_backend::config::hints::Hint],
+) -> Vec<KeyBinding> {
+    let mut hint_bindings = Vec::new();
+
+    for hint_config in hints_config {
+        if let Some(binding_config) = &hint_config.binding {
+            // Parse key using the same logic as in convert()
+            let (key, location) = match binding_config.key.to_lowercase().as_str() {
+                // Letters
+                single_char if single_char.len() == 1 => {
+                    (Key::Character(single_char.into()), KeyLocation::Standard)
+                }
+                // Named keys
+                "space" => (Key::Named(Space), KeyLocation::Standard),
+                "enter" | "return" => (Key::Named(Enter), KeyLocation::Standard),
+                "escape" | "esc" => (Key::Named(Escape), KeyLocation::Standard),
+                "tab" => (Key::Named(Tab), KeyLocation::Standard),
+                "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
+                "delete" => (Key::Named(Delete), KeyLocation::Standard),
+                "insert" => (Key::Named(Insert), KeyLocation::Standard),
+                "home" => (Key::Named(Home), KeyLocation::Standard),
+                "end" => (Key::Named(End), KeyLocation::Standard),
+                "pageup" => (Key::Named(PageUp), KeyLocation::Standard),
+                "pagedown" => (Key::Named(PageDown), KeyLocation::Standard),
+                "up" => (Key::Named(ArrowUp), KeyLocation::Standard),
+                "down" => (Key::Named(ArrowDown), KeyLocation::Standard),
+                "left" => (Key::Named(ArrowLeft), KeyLocation::Standard),
+                "right" => (Key::Named(ArrowRight), KeyLocation::Standard),
+                // Function keys
+                "f1" => (Key::Named(F1), KeyLocation::Standard),
+                "f2" => (Key::Named(F2), KeyLocation::Standard),
+                "f3" => (Key::Named(F3), KeyLocation::Standard),
+                "f4" => (Key::Named(F4), KeyLocation::Standard),
+                "f5" => (Key::Named(F5), KeyLocation::Standard),
+                "f6" => (Key::Named(F6), KeyLocation::Standard),
+                "f7" => (Key::Named(F7), KeyLocation::Standard),
+                "f8" => (Key::Named(F8), KeyLocation::Standard),
+                "f9" => (Key::Named(F9), KeyLocation::Standard),
+                "f10" => (Key::Named(F10), KeyLocation::Standard),
+                "f11" => (Key::Named(F11), KeyLocation::Standard),
+                "f12" => (Key::Named(F12), KeyLocation::Standard),
+                _ => {
+                    tracing::warn!(
+                        "Unknown key '{}' in hint binding",
+                        binding_config.key
+                    );
+                    continue;
+                }
+            };
+
+            // Parse modifiers
+            let mut mods = ModifiersState::empty();
+            for mod_str in &binding_config.mods {
+                match mod_str.to_lowercase().as_str() {
+                    "control" | "ctrl" => mods |= ModifiersState::CONTROL,
+                    "shift" => mods |= ModifiersState::SHIFT,
+                    "alt" | "option" => mods |= ModifiersState::ALT,
+                    "super" | "cmd" | "command" => mods |= ModifiersState::SUPER,
+                    _ => {
+                        tracing::warn!("Unknown modifier '{}' in hint binding", mod_str);
+                    }
+                }
+            }
+
+            let hint_binding = KeyBinding {
+                trigger: BindingKey::Keycode { key, location },
+                mods,
+                mode: BindingMode::empty(),
+                notmode: BindingMode::SEARCH | BindingMode::VI,
+                action: Action::Hint(std::rc::Rc::new(hint_config.clone())),
+            };
+
+            hint_bindings.push(hint_binding);
+        }
+    }
+
+    hint_bindings
 }
 
 // Macos
@@ -990,6 +1060,10 @@ pub fn platform_key_bindings(
             "d", ModifiersState::SUPER | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
             "]", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
             "[", ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
+            Key::Named(ArrowUp), ModifiersState::CONTROL | ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerUp;
+            Key::Named(ArrowDown), ModifiersState::CONTROL | ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerDown;
+            Key::Named(ArrowLeft), ModifiersState::CONTROL | ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerLeft;
+            Key::Named(ArrowRight), ModifiersState::CONTROL | ModifiersState::SUPER, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerRight;
         ));
     }
 
@@ -1050,6 +1124,10 @@ pub fn platform_key_bindings(
             "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
+            Key::Named(ArrowUp), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerUp;
+            Key::Named(ArrowDown), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerDown;
+            Key::Named(ArrowLeft), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerLeft;
+            Key::Named(ArrowRight), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerRight;
         ));
     }
 
@@ -1115,8 +1193,14 @@ pub fn platform_key_bindings(
             "d", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SplitDown;
             "]", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectNextSplit;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::SelectPrevSplit;
+            Key::Named(ArrowUp), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerUp;
+            Key::Named(ArrowDown), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerDown;
+            Key::Named(ArrowLeft), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerLeft;
+            Key::Named(ArrowRight), ModifiersState::CONTROL | ModifiersState::SHIFT | ModifiersState::ALT, ~BindingMode::SEARCH, ~BindingMode::VI; Action::MoveDividerRight;
         ));
     }
+
+    // Note: Hint bindings are added separately in Screen::new() based on config
 
     key_bindings
 }
@@ -1392,8 +1476,7 @@ mod tests {
             key: String::from("q"),
             action: String::from("receivechar"),
             with: String::from("super"),
-            bytes: vec![],
-            text: String::from(""),
+            esc: String::from(""),
             mode: String::from(""),
         }];
 
@@ -1401,5 +1484,69 @@ mod tests {
 
         assert_eq!(new_bindings.len(), 2);
         assert_eq!(new_bindings[1].action, Action::ReceiveChar);
+    }
+
+    #[test]
+    fn bindings_conflict_resolution() {
+        // Test that conflicting bindings are properly replaced
+        let bindings = bindings!(
+            KeyBinding;
+            Key::Named(PageUp), ModifiersState::empty(); Action::Esc("\x1b[5~".into());
+            Key::Named(PageDown), ModifiersState::empty(); Action::Esc("\x1b[6~".into());
+        );
+
+        // User wants to use PageUp/PageDown for scrolling
+        let config_bindings = vec![
+            ConfigKeyBinding {
+                key: String::from("pageup"),
+                action: String::from("scroll(1)"),
+                with: String::from(""),
+                esc: String::from(""),
+                mode: String::from(""),
+            },
+            ConfigKeyBinding {
+                key: String::from("pagedown"),
+                action: String::from("scroll(-1)"),
+                with: String::from(""),
+                esc: String::from(""),
+                mode: String::from(""),
+            },
+        ];
+
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+
+        // Should have 2 bindings (the original defaults should be replaced)
+        assert_eq!(new_bindings.len(), 2);
+
+        // Check that the actions were updated to scroll actions
+        let has_scroll_actions = new_bindings
+            .iter()
+            .any(|b| matches!(b.action, Action::Scroll(_)));
+        assert!(has_scroll_actions);
+    }
+
+    #[test]
+    fn bindings_alt_enter_conflict_resolution() {
+        // Test Windows Alt+Enter conflict resolution
+        let bindings = bindings!(
+            KeyBinding;
+            Key::Named(Enter), ModifiersState::ALT; Action::ToggleFullscreen;
+        );
+
+        // User wants to use Alt+Enter for a custom action
+        let config_bindings = vec![ConfigKeyBinding {
+            key: String::from("return"),
+            action: String::from("scroll(1)"),
+            with: String::from("alt"),
+            esc: String::from(""),
+            mode: String::from(""),
+        }];
+
+        let new_bindings = config_key_bindings(config_bindings, bindings);
+
+        // Should have 1 binding (the original Alt+Enter should be replaced)
+        assert_eq!(new_bindings.len(), 1);
+
+        assert_eq!(&new_bindings[0].action, &Action::Scroll(1));
     }
 }

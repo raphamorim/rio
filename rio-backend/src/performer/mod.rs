@@ -33,9 +33,36 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
+struct PeekableReceiver<T> {
+    rx: channel::Receiver<T>,
+    peeked: Option<T>,
+}
+
+impl<T> PeekableReceiver<T> {
+    fn new(rx: channel::Receiver<T>) -> Self {
+        Self { rx, peeked: None }
+    }
+
+    fn peek(&mut self) -> Option<&T> {
+        if self.peeked.is_none() {
+            self.peeked = self.rx.try_recv().ok();
+        }
+
+        self.peeked.as_ref()
+    }
+
+    fn recv(&mut self) -> Option<T> {
+        if self.peeked.is_some() {
+            self.peeked.take()
+        } else {
+            self.rx.try_recv().ok()
+        }
+    }
+}
+
 pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     sender: channel::Sender<Msg>,
-    receiver: channel::Receiver<Msg>,
+    receiver: PeekableReceiver<Msg>,
     pty: T,
     poll: corcovado::Poll,
     terminal: Arc<FairMutex<Crosswords<U>>>,
@@ -127,7 +154,7 @@ where
 
         Ok(Machine {
             sender,
-            receiver,
+            receiver: PeekableReceiver::new(receiver),
             poll,
             pty,
             terminal,
@@ -188,21 +215,30 @@ where
             }
         }
 
-        // Queue terminal redraw unless all processed bytes were synchronized.
+        // Queue terminal update processing unless all processed bytes were synchronized.
+        // For non-synchronized updates, we send a Wakeup event which will coalesce
+        // multiple rapid updates into a single render pass.
         if state.parser.sync_bytes_count() < processed && processed > 0 {
+            tracing::trace!(
+                "PTY read: Sending Wakeup event for {} bytes of non-sync data",
+                processed
+            );
+            // Send a Wakeup event to coalesce renders
             self.event_proxy
-                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+                .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
+            // }
         }
 
         Ok(())
     }
 
-    fn should_keep_alive(&mut self, state: &mut State) -> bool {
-        while let Ok(msg) = self.receiver.try_recv() {
+    /// Drain the channel.
+    ///
+    /// Returns `false` when a shutdown message was received.
+    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
+        while let Some(msg) = self.receiver.recv() {
             match msg {
-                Msg::Input(input) => {
-                    state.write_list.push_back(input);
-                }
+                Msg::Input(input) => state.write_list.push_back(input),
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size);
                 }
@@ -216,13 +252,13 @@ where
     /// Returns a `bool` indicating whether or not the event loop should continue running.
     #[inline]
     fn channel_event(&mut self, token: corcovado::Token, state: &mut State) -> bool {
-        if !self.should_keep_alive(state) {
+        if !self.drain_recv_channel(state) {
             return false;
         }
 
         self.poll
             .reregister(
-                &self.receiver,
+                &self.receiver.rx,
                 token,
                 Ready::readable(),
                 PollOpt::edge() | PollOpt::oneshot(),
@@ -269,7 +305,7 @@ where
         self.sender.clone()
     }
 
-    pub fn spawn(mut self) {
+    pub fn spawn(mut self) -> JoinHandle<(Self, State)> {
         spawn_named("PTY reader", move || {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
@@ -280,7 +316,12 @@ where
 
             let channel_token = tokens.next().unwrap();
             self.poll
-                .register(&self.receiver, channel_token, Ready::readable(), poll_opts)
+                .register(
+                    &self.receiver.rx,
+                    channel_token,
+                    Ready::readable(),
+                    poll_opts,
+                )
                 .unwrap();
 
             // Register TTY through EventedRW interface.
@@ -301,17 +342,28 @@ where
                 if let Err(err) = self.poll.poll(&mut events, timeout) {
                     match err.kind() {
                         ErrorKind::Interrupted => continue,
-                        _ => panic!("EventLoop polling error: {err:?}"),
+                        _ => {
+                            error!("Event loop polling error: {err}");
+                            break 'event_loop;
+                        }
                     }
                 }
 
                 // Handle synchronized update timeout.
-                if events.is_empty() {
-                    state.parser.stop_sync(&mut *self.terminal.lock());
+                if events.is_empty() && self.receiver.peek().is_none() {
+                    let mut terminal = self.terminal.lock();
+                    state.parser.stop_sync(&mut *terminal);
+
+                    // Emit damage event if there's any damage after processing sync buffer
                     self.event_proxy
-                        .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+                        .send_event(RioEvent::Wakeup(self.route_id), self.window_id);
 
                     continue;
+                }
+
+                // Handle channel events, if there are any.
+                if !self.drain_recv_channel(&mut state) {
+                    break;
                 }
 
                 for event in events.iter() {
@@ -394,10 +446,10 @@ where
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.deregister(&self.receiver);
+            let _ = self.poll.deregister(&self.receiver.rx);
             let _ = self.pty.deregister(&self.poll);
 
             (self, state)
-        });
+        })
     }
 }

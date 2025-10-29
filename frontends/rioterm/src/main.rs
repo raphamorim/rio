@@ -10,6 +10,7 @@ mod cli;
 mod constants;
 mod context;
 mod global_hotkey;
+mod hints;
 mod ime;
 mod messenger;
 mod mouse;
@@ -42,14 +43,19 @@ const LOG_LEVEL_ENV: &str = "RIO_LOG_LEVEL";
 
 pub fn setup_environment_variables(config: &rio_backend::config::Config) {
     #[cfg(unix)]
-    let terminfo = if teletypewriter::terminfo_exists("rio") {
-        "rio"
-    } else {
-        "xterm-256color"
-    };
-
-    #[cfg(unix)]
     {
+        let terminfo = match (
+            teletypewriter::terminfo_exists("xterm-rio"),
+            teletypewriter::terminfo_exists("rio"),
+        ) {
+            // In case `xterm-rio` exists we prioritize it
+            (true, _) => "xterm-rio",
+            // If is only `rio` installed (which was the default for versions under 0.2.27)
+            (false, true) => "rio",
+            // If none, then fallback to `xterm-256color`
+            (false, false) => "xterm-256color",
+        };
+
         let span = tracing::span!(tracing::Level::INFO, "setup_environment_variables");
         let _guard = span.enter();
         tracing::info!("terminfo: {terminfo}");
@@ -180,7 +186,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
-            config.working_dir = Some(working_dir_cli);
+            // Use dunce::canonicalize on Windows to avoid UNC paths (\\?\)
+            // which break many tools like Neovim and Bun
+            #[cfg(target_os = "windows")]
+            let canonicalize_fn = dunce::canonicalize;
+            #[cfg(not(target_os = "windows"))]
+            let canonicalize_fn = std::fs::canonicalize;
+
+            config.working_dir = match canonicalize_fn(&working_dir_cli).and_then(
+                |path| {
+                    if path.is_dir() {
+                        path.into_os_string().into_string().map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid UTF-8 in path",
+                            )
+                        })
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::NotADirectory,
+                            "Path is not a directory",
+                        ))
+                    }
+                },
+            ) {
+                Ok(canonical_path) => Some(canonical_path),
+                Err(e) => {
+                    tracing::warn!("Failed to set working directory '{}': {}. Using default instead.", working_dir_cli, e);
+                    None
+                }
+            };
         }
 
         config.title.placeholder = args.window_options.terminal_options.title_placeholder;

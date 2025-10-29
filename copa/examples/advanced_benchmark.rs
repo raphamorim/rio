@@ -129,11 +129,8 @@ impl BenchmarkSuite {
         let mut ls_output = Vec::new();
         for i in 0..100 {
             ls_output.extend_from_slice(
-                format!(
-                    "drwxr-xr-x  2 user group  4096 Jan  1 12:00 📁folder_{}\n",
-                    i
-                )
-                .as_bytes(),
+                format!("drwxr-xr-x  2 user group  4096 Jan  1 12:00 📁folder_{i}\n")
+                    .as_bytes(),
             );
             ls_output.extend_from_slice(
                 format!(
@@ -149,8 +146,7 @@ impl BenchmarkSuite {
         let mut git_log = Vec::new();
         for i in 0..50 {
             git_log.extend_from_slice(format!(
-                "\x1b[33mcommit abc123{}\x1b[0m\nAuthor: Dev 👨‍💻 <dev@example.com>\nDate: Mon Jan 1 12:00:00 2024\n\n    🚀 Feature {} with 中文 support\n\n",
-                i, i
+                "\x1b[33mcommit abc123{i}\x1b[0m\nAuthor: Dev 👨‍💻 <dev@example.com>\nDate: Mon Jan 1 12:00:00 2024\n\n    🚀 Feature {i} with 中文 support\n\n"
             ).as_bytes());
         }
         self.add_test("Git Log", &git_log, 1000);
@@ -159,8 +155,7 @@ impl BenchmarkSuite {
         let mut source_code = Vec::new();
         for i in 0..100 {
             source_code.extend_from_slice(format!(
-                "// Comment with UTF-8: 🦀 Rust line {}\nfn function_{}() -> Result<(), Error> {{\n    println!(\"Hello, 世界! 🌍\");\n    Ok(())\n}}\n\n",
-                i, i
+                "// Comment with UTF-8: 🦀 Rust line {i}\nfn function_{i}() -> Result<(), Error> {{\n    println!(\"Hello, 世界! 🌍\");\n    Ok(())\n}}\n\n"
             ).as_bytes());
         }
         self.add_test("Source Code", &source_code, 1000);
@@ -240,9 +235,9 @@ impl BenchmarkSuite {
 
         println!();
         println!("Summary Statistics:");
-        println!("  Average throughput: {:.2} MB/s", avg_throughput);
-        println!("  Maximum throughput: {:.2} MB/s", max_throughput);
-        println!("  Minimum throughput: {:.2} MB/s", min_throughput);
+        println!("  Average throughput: {avg_throughput:.2} MB/s");
+        println!("  Maximum throughput: {max_throughput:.2} MB/s");
+        println!("  Minimum throughput: {min_throughput:.2} MB/s");
         println!("  Total test cases: {}", self.results.len());
 
         // Category analysis
@@ -369,7 +364,7 @@ fn print_system_info() {
     println!();
 
     let implementation = detect_implementation();
-    println!("Implementation: {}", implementation);
+    println!("Implementation: {implementation}");
     println!(
         "Rust version: {}",
         std::env::var("RUSTC_VERSION").unwrap_or_else(|_| "unknown".to_string())
@@ -422,10 +417,10 @@ fn main() {
     let filename = format!("copa_benchmark_{}.json", detect_implementation());
 
     if let Err(e) = std::fs::write(&filename, json_output) {
-        eprintln!("Warning: Could not write results to {}: {}", filename, e);
+        eprintln!("Warning: Could not write results to {filename}: {e}");
     } else {
         println!();
-        println!("Results exported to: {}", filename);
+        println!("Results exported to: {filename}");
     }
 
     println!();

@@ -181,9 +181,13 @@ pub enum DeviceId {
 impl DeviceId {
     pub const unsafe fn dummy() -> Self {
         #[cfg(wayland_platform)]
-        return DeviceId::Wayland(unsafe { wayland::DeviceId::dummy() });
+        {
+            DeviceId::Wayland(unsafe { wayland::DeviceId::dummy() })
+        }
         #[cfg(all(not(wayland_platform), x11_platform))]
-        return DeviceId::X(unsafe { x11::DeviceId::dummy() });
+        {
+            DeviceId::X(unsafe { x11::DeviceId::dummy() })
+        }
     }
 }
 
@@ -649,8 +653,7 @@ pub(crate) enum PlatformCustomCursor {
 
 /// Hooks for X11 errors.
 #[cfg(x11_platform)]
-pub(crate) static mut XLIB_ERROR_HOOKS: Mutex<Vec<XlibErrorHook>> =
-    Mutex::new(Vec::new());
+pub(crate) static XLIB_ERROR_HOOKS: Mutex<Vec<XlibErrorHook>> = Mutex::new(Vec::new());
 
 #[cfg(x11_platform)]
 unsafe extern "C" fn x_error_callback(
@@ -661,7 +664,7 @@ unsafe extern "C" fn x_error_callback(
     if let Ok(ref xconn) = *xconn_lock {
         // Call all the hooks.
         let mut error_handled = false;
-        for hook in unsafe { XLIB_ERROR_HOOKS.lock() }.unwrap().iter() {
+        for hook in XLIB_ERROR_HOOKS.lock().unwrap().iter() {
             error_handled |= hook(display as *mut _, event as *mut _);
         }
 
@@ -704,7 +707,7 @@ pub enum EventLoop<T: 'static> {
     #[cfg(wayland_platform)]
     Wayland(Box<wayland::EventLoop<T>>),
     #[cfg(x11_platform)]
-    X(x11::EventLoop<T>),
+    X(Box<x11::EventLoop<T>>),
 }
 
 pub enum EventLoopProxy<T: 'static> {
@@ -774,9 +777,9 @@ impl<T: 'static> EventLoop<T> {
         // Create the display based on the backend.
         match backend {
             #[cfg(wayland_platform)]
-            Backend::Wayland => EventLoop::new_wayland_any_thread().map_err(Into::into),
+            Backend::Wayland => EventLoop::new_wayland_any_thread(),
             #[cfg(x11_platform)]
-            Backend::X => EventLoop::new_x11_any_thread().map_err(Into::into),
+            Backend::X => EventLoop::new_x11_any_thread(),
         }
     }
 
@@ -800,7 +803,7 @@ impl<T: 'static> EventLoop<T> {
             }
         };
 
-        Ok(EventLoop::X(x11::EventLoop::new(xconn)))
+        Ok(EventLoop::X(Box::new(x11::EventLoop::new(xconn))))
     }
 
     pub fn create_proxy(&self) -> EventLoopProxy<T> {
@@ -853,7 +856,7 @@ impl<T: 'static> EventLoopProxy<T> {
 
 pub enum ActiveEventLoop {
     #[cfg(wayland_platform)]
-    Wayland(wayland::ActiveEventLoop),
+    Wayland(Box<wayland::ActiveEventLoop>),
     #[cfg(x11_platform)]
     X(x11::ActiveEventLoop),
 }

@@ -13,7 +13,7 @@ use crate::sugarloaf::graphics::{BottomLayer, Graphics};
 use crate::sugarloaf::layer::types;
 use crate::Content;
 use crate::SugarDimensions;
-use crate::{context::Context, Object};
+use crate::{context::Context, Object, Quad};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -30,7 +30,7 @@ pub struct Sugarloaf<'a> {
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
     pub graphics: Graphics,
-    filters_brush: FiltersBrush,
+    filters_brush: Option<FiltersBrush>,
 }
 
 #[derive(Debug)]
@@ -119,14 +119,14 @@ impl SugarloafWindow {
 }
 
 impl HasWindowHandle for SugarloafWindow {
-    fn window_handle(&self) -> std::result::Result<WindowHandle, HandleError> {
+    fn window_handle(&self) -> std::result::Result<WindowHandle<'_>, HandleError> {
         let raw = self.raw_window_handle();
         Ok(unsafe { WindowHandle::borrow_raw(raw) })
     }
 }
 
 impl HasDisplayHandle for SugarloafWindow {
-    fn display_handle(&self) -> Result<DisplayHandle, HandleError> {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
         let raw = self.raw_display_handle();
         Ok(unsafe { DisplayHandle::borrow_raw(raw) })
     }
@@ -149,7 +149,6 @@ impl Sugarloaf<'_> {
         let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
-        let filters_brush = FiltersBrush::default();
 
         let instance = Sugarloaf {
             state,
@@ -160,7 +159,7 @@ impl Sugarloaf<'_> {
             background_image: None,
             rich_text_brush,
             graphics: Graphics::default(),
-            filters_brush,
+            filters_brush: None,
         };
 
         Ok(instance)
@@ -169,6 +168,9 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn update_font(&mut self, font_library: &FontLibrary) {
         tracing::info!("requested a font change");
+
+        // Clear the global font data cache to ensure fonts are reloaded
+        crate::font::clear_font_data_cache();
 
         // Clear the atlas to remove old font glyphs
         self.rich_text_brush.clear_atlas();
@@ -186,7 +188,7 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn get_context(&self) -> &Context {
+    pub fn get_context(&self) -> &Context<'_> {
         &self.ctx
     }
 
@@ -231,7 +233,16 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn update_filters(&mut self, filters: &[Filter]) {
-        self.filters_brush.update_filters(&self.ctx, filters);
+        if filters.is_empty() {
+            self.filters_brush = None;
+        } else {
+            if self.filters_brush.is_none() {
+                self.filters_brush = Some(FiltersBrush::default());
+            }
+            if let Some(ref mut brush) = self.filters_brush {
+                brush.update_filters(&self.ctx, filters);
+            }
+        }
     }
 
     #[inline]
@@ -367,7 +378,6 @@ impl Sugarloaf<'_> {
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-
                 if let Some(layer) = &self.graphics.bottom_layer {
                     self.layer_brush
                         .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
@@ -406,6 +416,7 @@ impl Sugarloaf<'_> {
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view: &view,
                                 resolve_target: None,
+                                depth_slice: None,
                                 ops: wgpu::Operations {
                                     load,
                                     store: wgpu::StoreOp::Store,
@@ -428,11 +439,36 @@ impl Sugarloaf<'_> {
                             self.layer_brush.render(request, &mut rpass, None);
                         }
                     }
-
                     self.quad_brush
                         .render(&mut self.ctx, &self.state, &mut rpass);
-
                     self.rich_text_brush.render(&mut self.ctx, &mut rpass);
+                }
+
+                // Visual bell overlay requires separate render pass to appear on top of rich text
+                if let Some(bell_overlay) = self.state.visual_bell_overlay {
+                    let mut overlay_pass =
+                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                            timestamp_writes: None,
+                            occlusion_query_set: None,
+                            label: Some("visual_bell"),
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                depth_slice: None,
+                                view: &view,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load, // Load existing content
+                                    store: wgpu::StoreOp::Store,
+                                },
+                            })],
+                            depth_stencil_attachment: None,
+                        });
+
+                    // Render just the overlay quad directly
+                    self.quad_brush.render_single(
+                        &mut self.ctx,
+                        &bell_overlay,
+                        &mut overlay_pass,
+                    );
                 }
 
                 if self.graphics.bottom_layer.is_some()
@@ -442,13 +478,14 @@ impl Sugarloaf<'_> {
                     self.graphics.clear_top_layer();
                 }
 
-                self.filters_brush.render(
-                    &self.ctx,
-                    &mut encoder,
-                    &frame.texture,
-                    &frame.texture,
-                );
-
+                if let Some(ref mut filters_brush) = self.filters_brush {
+                    filters_brush.render(
+                        &self.ctx,
+                        &mut encoder,
+                        &frame.texture,
+                        &frame.texture,
+                    );
+                }
                 self.ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
@@ -459,5 +496,10 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
+    }
+
+    #[inline]
+    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
+        self.state.set_visual_bell_overlay(overlay);
     }
 }
