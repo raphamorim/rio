@@ -15,6 +15,13 @@ language: 'en'
 
 ## 0.2.33 (unreleased)
 
+- **Platform-specific configuration improvements** [#1341](https://github.com/raphamorim/rio/issues/1341):
+  - Added support for platform-specific environment variables via `env-vars` field in platform config
+  - Platform-specific env-vars are now appended to global env-vars instead of replacing them
+  - Fixed configuration inheritance: platform overrides now use field-level merging instead of replacing entire sections
+  - Window, Navigation, and Renderer settings can now be partially overridden per platform without duplicating all fields
+  - Added `theme` field to platform config for per-platform theme selection
+  - Shell configuration continues to use complete replacement for simplicity
 - Fix Noticeably slower startup compared to wezterm, foot [#1346](https://github.com/raphamorim/rio/issues/1346).
 - Fix Font loader taking a LOT of time to load fonts [#1339](https://github.com/raphamorim/rio/issues/1339).
 - Fix Rio panics on launch on a Raspberry Pi 5 [#1332](https://github.com/raphamorim/rio/issues/1332).
