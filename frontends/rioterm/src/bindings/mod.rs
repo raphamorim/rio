@@ -246,6 +246,8 @@ impl From<String> for Action {
             "selectnexttab" => Some(Action::SelectNextTab),
             "selectlasttab" => Some(Action::SelectLastTab),
             "receivechar" => Some(Action::ReceiveChar),
+            "scrollpageup" => Some(Action::ScrollPageUp),
+            "scrollpagedown" => Some(Action::ScrollPageDown),
             "scrollhalfpageup" => Some(Action::ScrollHalfPageUp),
             "scrollhalfpagedown" => Some(Action::ScrollHalfPageDown),
             "scrolltotop" => Some(Action::ScrollToTop),
