@@ -15,6 +15,7 @@ language: 'en'
 
 ## 0.2.33 (unreleased)
 
+- Fix kitty keyboard protocol.
 - Support reporting terminal version via XTVERSION.
 
 ## 0.2.32
