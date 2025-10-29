@@ -73,12 +73,10 @@ twox-hash = { version = "2.1.1", default-features = false, features = [
     "xxhash64",
 ] }
 memmap2 = { workspace = true }
-slotmap = { version = "1.0.7", default-features = false }
-tinyvec = { version = "1.9.0", features = ["alloc"] }
+# font-kit: Lazy font loading for fast startup (replaces fontdb)
+font-kit = "0.14"
+walkdir = "2.5"
 ttf-parser = { version = "0.25.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names", "no-std-float"] }
-
-[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
-fontconfig-parser = { version = "0.5.8", default-features = false }
 
 [dev-dependencies]
 rio-window = { workspace = true }
