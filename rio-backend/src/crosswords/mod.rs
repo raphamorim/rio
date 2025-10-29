@@ -3971,13 +3971,19 @@ mod tests {
             RioEvent::PtyWrite(text) => {
                 // Expected format: DCS > | Rio {version} ST
                 // DCS = \x1bP, ST = \x1b\\
-                assert!(text.starts_with("\x1bP>|Rio "), "Should start with DCS>|Rio");
+                assert!(
+                    text.starts_with("\x1bP>|Rio "),
+                    "Should start with DCS>|Rio"
+                );
                 assert!(text.ends_with("\x1b\\"), "Should end with ST");
 
                 // Extract version from the response
                 let version = env!("CARGO_PKG_VERSION");
                 let expected = format!("\x1bP>|Rio {}\x1b\\", version);
-                assert_eq!(text, &expected, "XTVERSION response should match expected format");
+                assert_eq!(
+                    text, &expected,
+                    "XTVERSION response should match expected format"
+                );
             }
             other => panic!("Expected PtyWrite event, got {:?}", other),
         }
