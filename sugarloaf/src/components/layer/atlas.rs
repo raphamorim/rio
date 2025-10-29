@@ -72,9 +72,22 @@ impl Atlas {
 
     fn get_bytes_per_pixel(&self) -> u32 {
         match self.texture.format() {
+            // 16-bit float formats (F16)
+            wgpu::TextureFormat::R16Float => 2,
+            wgpu::TextureFormat::Rg16Float => 4,
             wgpu::TextureFormat::Rgba16Float => 8,
+            // 8-bit unorm formats
+            wgpu::TextureFormat::R8Unorm => 1,
+            wgpu::TextureFormat::Rg8Unorm => 2,
             wgpu::TextureFormat::Rgba8Unorm => 4,
-            _ => 4,
+            // Fallback for any unexpected format
+            _ => {
+                tracing::warn!(
+                    "Unexpected texture format in atlas: {:?}, assuming 4 bytes per pixel",
+                    self.texture.format()
+                );
+                4
+            }
         }
     }
 
