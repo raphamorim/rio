@@ -59,7 +59,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev pkg-config
+          sudo apt-get install -y libwayland-dev pkg-config libfontconfig1-dev
       - if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
       - if: matrix.os == 'windows-latest'
