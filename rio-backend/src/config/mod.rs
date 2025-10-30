@@ -550,7 +550,8 @@ impl Config {
             if let Some(open_cfg_split) = navigation_overwrite.open_config_with_split {
                 self.navigation.open_config_with_split = open_cfg_split;
             }
-            if let Some(unfocused_opacity) = navigation_overwrite.unfocused_split_opacity {
+            if let Some(unfocused_opacity) = navigation_overwrite.unfocused_split_opacity
+            {
                 self.navigation.unfocused_split_opacity = unfocused_opacity;
             }
         }
@@ -1261,7 +1262,9 @@ mod tests {
         assert!(result.env_vars.contains(&String::from("GLOBAL=value")));
         assert!(result.env_vars.contains(&String::from("FOO=bar")));
         assert!(result.env_vars.contains(&String::from("MACOS_ONLY=yes")));
-        assert!(result.env_vars.contains(&String::from("PLATFORM_VAR=macos")));
+        assert!(result
+            .env_vars
+            .contains(&String::from("PLATFORM_VAR=macos")));
     }
 
     #[test]
@@ -1394,7 +1397,10 @@ mod tests {
         result.overwrite_based_on_platform();
 
         // Mode should be overridden
-        assert_eq!(result.navigation.mode, navigation::NavigationMode::NativeTab);
+        assert_eq!(
+            result.navigation.mode,
+            navigation::NavigationMode::NativeTab
+        );
         // Clickable should be preserved
         assert!(result.navigation.clickable);
     }
@@ -1475,7 +1481,10 @@ mod tests {
 
         // Navigation: clickable overridden, mode preserved
         assert!(result.navigation.clickable);
-        assert_eq!(result.navigation.mode, navigation::NavigationMode::BottomTab);
+        assert_eq!(
+            result.navigation.mode,
+            navigation::NavigationMode::BottomTab
+        );
 
         // Shell: completely replaced
         assert_eq!(result.shell.program, "/bin/zsh");
