@@ -13,7 +13,7 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
-## 0.2.33 (unreleased)
+## 0.2.33
 
 - **Platform-specific configuration improvements** [#1341](https://github.com/raphamorim/rio/issues/1341):
   - Added support for platform-specific environment variables via `env-vars` field in platform config
