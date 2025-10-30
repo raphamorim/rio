@@ -45,7 +45,11 @@ pub struct PlatformWindow {
     pub opacity: Option<f32>,
     #[serde(default = "Option::default")]
     pub blur: Option<bool>,
-    #[serde(default = "Option::default", rename = "background-image", skip_serializing)]
+    #[serde(
+        default = "Option::default",
+        rename = "background-image",
+        skip_serializing
+    )]
     pub background_image: Option<sugarloaf::ImageProperties>,
     #[serde(default = "Option::default")]
     pub decorations: Option<window::Decorations>,
@@ -57,7 +61,10 @@ pub struct PlatformWindow {
     pub initial_title: Option<String>,
     #[serde(default = "Option::default", rename = "windows-use-undecorated-shadow")]
     pub windows_use_undecorated_shadow: Option<bool>,
-    #[serde(default = "Option::default", rename = "windows-use-no-redirection-bitmap")]
+    #[serde(
+        default = "Option::default",
+        rename = "windows-use-no-redirection-bitmap"
+    )]
     pub windows_use_no_redirection_bitmap: Option<bool>,
     #[serde(default = "Option::default", rename = "windows-corner-preference")]
     pub windows_corner_preference: Option<window::WindowsCornerPreference>,
