@@ -335,6 +335,7 @@ impl FontLibraryData {
         }
 
         let mut db = loader::Database::new();
+        db.load_system_fonts();
 
         spec.additional_dirs
             .unwrap_or_default()
