@@ -335,8 +335,6 @@ impl FontLibraryData {
         }
 
         let mut db = loader::Database::new();
-        db.load_system_fonts();
-
         spec.additional_dirs
             .unwrap_or_default()
             .into_iter()
@@ -527,7 +525,7 @@ impl FontLibraryData {
 }
 
 /// Atomically reference counted, heap allocated or memory mapped buffer.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedData {
     inner: Arc<[u8]>,
 }
@@ -790,37 +788,64 @@ fn find_font(
 
         match db.query(&query) {
             Some(id) => {
-                if let Some((crate::font::loader::Source::File(ref path), _index)) =
-                    db.face_source(id)
-                {
-                    // Use the cached font loading function
-                    if let Some(font_data_arc) =
-                        load_from_font_source(&path.to_path_buf())
-                    {
-                        // Convert Arc<Vec<u8>> to Vec<u8> for FontData::from_data
-                        // We need to clone here because FontData::from_data expects ownership
+                match db.face_source(id) {
+                    Some((crate::font::loader::Source::File(ref path), _index)) => {
+                        // File source - load from path
+                        if let Some(font_data_arc) =
+                            load_from_font_source(&path.to_path_buf())
+                        {
+                            match FontData::from_data(
+                                font_data_arc,
+                                path.to_path_buf(),
+                                evictable,
+                                is_emoji,
+                                &font_spec,
+                            ) {
+                                Ok(d) => {
+                                    tracing::info!(
+                                        "Font '{}' found in {}",
+                                        family,
+                                        path.display()
+                                    );
+                                    return FindResult::Found(d);
+                                }
+                                Err(err_message) => {
+                                    tracing::info!(
+                                        "Failed to load font '{query:?}', {err_message}"
+                                    );
+                                    return FindResult::NotFound(font_spec);
+                                }
+                            }
+                        }
+                    }
+                    Some((crate::font::loader::Source::Binary(font_data), _index)) => {
+                        // Binary source - use data directly
+                        tracing::debug!(
+                            "Using binary font data, {} bytes",
+                            font_data.len()
+                        );
+                        // Convert Arc<Vec<u8>> to SharedData
                         match FontData::from_data(
-                            font_data_arc,
-                            path.to_path_buf(),
+                            font_data,
+                            std::path::PathBuf::from(&family),
                             evictable,
                             is_emoji,
                             &font_spec,
                         ) {
                             Ok(d) => {
-                                tracing::info!(
-                                    "Font '{}' found in {}",
-                                    family,
-                                    path.display()
-                                );
+                                tracing::info!("Font '{}' loaded from memory", family);
                                 return FindResult::Found(d);
                             }
                             Err(err_message) => {
                                 tracing::info!(
-                                    "Failed to load font '{query:?}', {err_message}"
+                                    "Failed to load font '{query:?}' from memory, {err_message}"
                                 );
                                 return FindResult::NotFound(font_spec);
                             }
                         }
+                    }
+                    None => {
+                        tracing::warn!("face_source returned None for font ID");
                     }
                 }
             }
