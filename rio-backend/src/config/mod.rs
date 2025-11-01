@@ -5,6 +5,7 @@ pub mod defaults;
 pub mod hints;
 pub mod keyboard;
 pub mod navigation;
+pub mod platform;
 pub mod renderer;
 pub mod theme;
 pub mod title;
@@ -17,6 +18,7 @@ use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
 use crate::config::navigation::Navigation;
+use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
 use crate::config::title::Title;
 use crate::config::window::Window;
@@ -41,22 +43,6 @@ pub struct Shell {
     pub program: String,
     #[serde(default)]
     pub args: Vec<String>,
-}
-
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct Platform {
-    pub linux: Option<PlatformConfig>,
-    pub windows: Option<PlatformConfig>,
-    pub macos: Option<PlatformConfig>,
-}
-
-/// Other platform specific configuration options can be added here.
-#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct PlatformConfig {
-    shell: Option<Shell>,
-    navigation: Option<Navigation>,
-    window: Option<Window>,
-    renderer: Option<Renderer>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -487,20 +473,119 @@ impl Config {
     }
 
     fn overwrite_with_platform_config(&mut self, platform_config: PlatformConfig) {
+        // Replace shell entirely if specified
         if let Some(shell_overwrite) = &platform_config.shell {
             self.shell = shell_overwrite.clone();
         }
 
+        // Merge window fields individually
         if let Some(window_overwrite) = &platform_config.window {
-            self.window = window_overwrite.clone();
+            if let Some(width) = window_overwrite.width {
+                self.window.width = width;
+            }
+            if let Some(height) = window_overwrite.height {
+                self.window.height = height;
+            }
+            if let Some(mode) = window_overwrite.mode {
+                self.window.mode = mode;
+            }
+            if let Some(opacity) = window_overwrite.opacity {
+                self.window.opacity = opacity;
+            }
+            if let Some(blur) = window_overwrite.blur {
+                self.window.blur = blur;
+            }
+            if let Some(bg_image) = &window_overwrite.background_image {
+                self.window.background_image = Some(bg_image.clone());
+            }
+            if let Some(decorations) = window_overwrite.decorations {
+                self.window.decorations = decorations;
+            }
+            if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
+                self.window.macos_use_unified_titlebar = macos_unified;
+            }
+            if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
+                self.window.macos_use_shadow = macos_shadow;
+            }
+            if let Some(initial_title) = &window_overwrite.initial_title {
+                self.window.initial_title = Some(initial_title.clone());
+            }
+            if let Some(win_shadow) = window_overwrite.windows_use_undecorated_shadow {
+                self.window.windows_use_undecorated_shadow = Some(win_shadow);
+            }
+            if let Some(win_bitmap) = window_overwrite.windows_use_no_redirection_bitmap {
+                self.window.windows_use_no_redirection_bitmap = Some(win_bitmap);
+            }
+            if let Some(win_corner) = &window_overwrite.windows_corner_preference {
+                self.window.windows_corner_preference = Some(win_corner.clone());
+            }
+            if let Some(colorspace) = window_overwrite.colorspace {
+                self.window.colorspace = colorspace;
+            }
         }
 
+        // Merge navigation fields individually
         if let Some(navigation_overwrite) = &platform_config.navigation {
-            self.navigation = navigation_overwrite.clone();
+            if let Some(mode) = navigation_overwrite.mode {
+                self.navigation.mode = mode;
+            }
+            if let Some(color_automation) = &navigation_overwrite.color_automation {
+                self.navigation.color_automation = color_automation.clone();
+            }
+            if let Some(clickable) = navigation_overwrite.clickable {
+                self.navigation.clickable = clickable;
+            }
+            if let Some(cwd) = navigation_overwrite.current_working_directory {
+                self.navigation.current_working_directory = cwd;
+            }
+            if let Some(use_term_title) = navigation_overwrite.use_terminal_title {
+                self.navigation.use_terminal_title = use_term_title;
+            }
+            if let Some(hide_if_single) = navigation_overwrite.hide_if_single {
+                self.navigation.hide_if_single = hide_if_single;
+            }
+            if let Some(use_split) = navigation_overwrite.use_split {
+                self.navigation.use_split = use_split;
+            }
+            if let Some(open_cfg_split) = navigation_overwrite.open_config_with_split {
+                self.navigation.open_config_with_split = open_cfg_split;
+            }
+            if let Some(unfocused_opacity) = navigation_overwrite.unfocused_split_opacity
+            {
+                self.navigation.unfocused_split_opacity = unfocused_opacity;
+            }
         }
 
+        // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
-            self.renderer = renderer_overwrite.clone();
+            if let Some(performance) = renderer_overwrite.performance {
+                self.renderer.performance = performance;
+            }
+            if let Some(backend) = &renderer_overwrite.backend {
+                self.renderer.backend = backend.clone();
+            }
+            if let Some(disable_unfocused) = renderer_overwrite.disable_unfocused_render {
+                self.renderer.disable_unfocused_render = disable_unfocused;
+            }
+            if let Some(disable_occluded) = renderer_overwrite.disable_occluded_render {
+                self.renderer.disable_occluded_render = disable_occluded;
+            }
+            if let Some(filters) = &renderer_overwrite.filters {
+                self.renderer.filters = filters.clone();
+            }
+            if let Some(strategy) = &renderer_overwrite.strategy {
+                self.renderer.strategy = strategy.clone();
+            }
+        }
+
+        // Append platform-specific env vars to the global ones
+        if let Some(env_vars_overwrite) = &platform_config.env_vars {
+            self.env_vars.extend(env_vars_overwrite.clone());
+        }
+
+        // Override theme
+        if let Some(theme_overwrite) = &platform_config.theme {
+            self.theme = theme_overwrite.clone();
         }
     }
 }
@@ -1153,5 +1238,274 @@ mod tests {
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
         #[cfg(not(target_os = "macos"))]
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_specific_env_vars() {
+        let mut result = create_temporary_config(
+            "platform-env-vars",
+            r#"
+            env-vars = ["GLOBAL=value", "FOO=bar"]
+
+            [platform]
+            macos.env-vars = ["MACOS_ONLY=yes", "PLATFORM_VAR=macos"]
+        "#,
+        );
+
+        // Apply platform overrides
+        result.overwrite_based_on_platform();
+
+        // Should have both global and platform-specific env vars
+        assert_eq!(result.env_vars.len(), 4);
+        assert!(result.env_vars.contains(&String::from("GLOBAL=value")));
+        assert!(result.env_vars.contains(&String::from("FOO=bar")));
+        assert!(result.env_vars.contains(&String::from("MACOS_ONLY=yes")));
+        assert!(result
+            .env_vars
+            .contains(&String::from("PLATFORM_VAR=macos")));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_platform_specific_env_vars_linux() {
+        let mut result = create_temporary_config(
+            "platform-env-vars-linux",
+            r#"
+            env-vars = ["GLOBAL=value"]
+
+            [platform]
+            linux.env-vars = ["LINUX_ONLY=yes"]
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        assert_eq!(result.env_vars.len(), 2);
+        assert!(result.env_vars.contains(&String::from("GLOBAL=value")));
+        assert!(result.env_vars.contains(&String::from("LINUX_ONLY=yes")));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_platform_specific_env_vars_windows() {
+        let mut result = create_temporary_config(
+            "platform-env-vars-windows",
+            r#"
+            env-vars = ["GLOBAL=value"]
+
+            [platform]
+            windows.env-vars = ["WINDOWS_ONLY=yes"]
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        assert_eq!(result.env_vars.len(), 2);
+        assert!(result.env_vars.contains(&String::from("GLOBAL=value")));
+        assert!(result.env_vars.contains(&String::from("WINDOWS_ONLY=yes")));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_window_field_level_merge() {
+        let mut result = create_temporary_config(
+            "platform-window-merge",
+            r#"
+            [window]
+            width = 800
+            height = 600
+            opacity = 0.75
+            blur = true
+
+            [platform]
+            macos.window.mode = "Maximized"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Mode should be overridden
+        assert_eq!(result.window.mode, window::WindowMode::Maximized);
+        // But other fields should be preserved
+        assert_eq!(result.window.width, 800);
+        assert_eq!(result.window.height, 600);
+        assert_eq!(result.window.opacity, 0.75);
+        assert!(result.window.blur);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_shell_replace() {
+        let mut result = create_temporary_config(
+            "platform-shell-replace",
+            r#"
+            shell = { program = "/bin/bash", args = ["--login"] }
+
+            [platform]
+            macos.shell = { program = "/bin/zsh", args = ["-l"] }
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Shell should be completely replaced
+        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.args, vec!["-l"]);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_renderer_merge() {
+        let mut result = create_temporary_config(
+            "platform-renderer-merge",
+            r#"
+            [renderer]
+            performance = "High"
+            disable-unfocused-render = true
+
+            [platform]
+            macos.renderer.backend = "Metal"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Backend should be set
+        assert_eq!(result.renderer.backend, renderer::Backend::Metal);
+        // Other fields should be preserved
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
+        assert!(result.renderer.disable_unfocused_render);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_navigation_merge() {
+        let mut result = create_temporary_config(
+            "platform-navigation-merge",
+            r#"
+            [navigation]
+            mode = "TopTab"
+            clickable = true
+
+            [platform]
+            macos.navigation.mode = "NativeTab"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Mode should be overridden
+        assert_eq!(
+            result.navigation.mode,
+            navigation::NavigationMode::NativeTab
+        );
+        // Clickable should be preserved
+        assert!(result.navigation.clickable);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_theme_override() {
+        let mut result = create_temporary_config(
+            "platform-theme-override",
+            r#"
+            theme = "default-theme"
+
+            [platform]
+            macos.theme = "macos-specific-theme"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Theme should be overridden
+        assert_eq!(result.theme, "macos-specific-theme");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_platform_complex_merge() {
+        let mut result = create_temporary_config(
+            "platform-complex-merge",
+            r#"
+            env-vars = ["GLOBAL=1"]
+            theme = "default"
+
+            [window]
+            width = 1024
+            height = 768
+            opacity = 0.9
+            blur = false
+
+            [renderer]
+            performance = "Low"
+            disable-unfocused-render = false
+
+            [navigation]
+            mode = "BottomTab"
+            clickable = false
+
+            shell = { program = "/bin/sh", args = ["-c"] }
+
+            [platform]
+            macos.env-vars = ["MACOS=1"]
+            macos.theme = "macos-theme"
+            macos.window.opacity = 1.0
+            macos.window.blur = true
+            macos.renderer.performance = "High"
+            macos.navigation.clickable = true
+            macos.shell = { program = "/bin/zsh", args = ["--login"] }
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        // Env vars should be merged
+        assert!(result.env_vars.contains(&String::from("GLOBAL=1")));
+        assert!(result.env_vars.contains(&String::from("MACOS=1")));
+
+        // Theme overridden
+        assert_eq!(result.theme, "macos-theme");
+
+        // Window: opacity and blur overridden, others preserved
+        assert_eq!(result.window.opacity, 1.0);
+        assert!(result.window.blur);
+        assert_eq!(result.window.width, 1024);
+        assert_eq!(result.window.height, 768);
+
+        // Renderer: performance overridden, disable_unfocused_render preserved
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
+        assert!(!result.renderer.disable_unfocused_render);
+
+        // Navigation: clickable overridden, mode preserved
+        assert!(result.navigation.clickable);
+        assert_eq!(
+            result.navigation.mode,
+            navigation::NavigationMode::BottomTab
+        );
+
+        // Shell: completely replaced
+        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.args, vec!["--login"]);
+    }
+
+    #[test]
+    fn test_multiple_platform_configs_dont_interfere() {
+        let result = create_temporary_config(
+            "multi-platform",
+            r#"
+            env-vars = ["GLOBAL=1"]
+
+            [platform]
+            linux.env-vars = ["LINUX=1"]
+            windows.env-vars = ["WINDOWS=1"]
+            macos.env-vars = ["MACOS=1"]
+        "#,
+        );
+
+        // Before applying platform overrides, should only have global env vars
+        assert_eq!(result.env_vars.len(), 1);
+        assert!(result.env_vars.contains(&String::from("GLOBAL=1")));
     }
 }
