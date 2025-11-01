@@ -803,7 +803,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn remove_current(&mut self) {
+    pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
             return;
@@ -861,6 +861,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 to_be_removed_width,
                 to_be_removed_height,
                 self.scaled_padding,
+                sugarloaf,
             );
             self.calculate_positions_for_affected_nodes(&[parent_key]);
             return;
@@ -871,6 +872,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             to_be_removed,
             to_be_removed_height,
             self.scaled_padding,
+            sugarloaf,
         );
         if let Some(root) = self.root {
             self.calculate_positions_for_affected_nodes(&[root]);
@@ -885,6 +887,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         to_be_removed_width: f32,
         to_be_removed_height: f32,
         scaled_padding: f32,
+        sugarloaf: &mut Sugarloaf,
     ) {
         if !self.inner.contains_key(&parent_key) {
             tracing::error!("Parent key {:?} not found in grid", parent_key);
@@ -907,7 +910,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     let to_be_remove_right =
                         self.inner.get(&to_be_removed).and_then(|item| item.right);
                     self.request_resize(current_down);
-                    self.remove_key(to_be_removed);
+                    self.remove_key(to_be_removed, sugarloaf);
 
                     next_current = current_down;
 
@@ -1014,7 +1017,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        self.remove_key(to_be_removed);
+        self.remove_key(to_be_removed, sugarloaf);
         self.current = next_current;
     }
 
@@ -1023,6 +1026,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         to_be_removed: usize,
         to_be_removed_height: f32,
         scaled_padding: f32,
+        sugarloaf: &mut Sugarloaf,
     ) {
         // Priority: down items first, then right items
         let down_val = self.inner.get(&to_be_removed).and_then(|item| item.down);
@@ -1038,11 +1042,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 let to_be_removed_right_item =
                     self.inner.get(&to_be_removed).and_then(|item| item.right);
 
+                // Get rich_text_id before removing
+                let rich_text_id = if let Some(item) = self.inner.get(&to_be_removed) {
+                    item.val.rich_text_id
+                } else {
+                    return;
+                };
+
                 // Move down item to root position by swapping the data
                 if let (Some(_to_be_removed_item), Some(mut down_item)) = (
                     self.inner.remove(&to_be_removed),
                     self.inner.remove(&down_val),
                 ) {
+                    // Cleanup rich text from sugarloaf
+                    sugarloaf.remove_rich_text(rich_text_id);
                     // Clear parent reference since this becomes the new root
                     down_item.parent = None;
 
@@ -1087,11 +1100,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         .update_width(right_width + to_be_removed_width + scaled_padding);
                 }
 
+                // Get rich_text_id before removing
+                let rich_text_id = if let Some(item) = self.inner.get(&to_be_removed) {
+                    item.val.rich_text_id
+                } else {
+                    return;
+                };
+
                 // Move right item to root position
                 if let (Some(_to_be_removed_item), Some(right_item)) = (
                     self.inner.remove(&to_be_removed),
                     self.inner.remove(&right_val),
                 ) {
+                    // Cleanup rich text from sugarloaf
+                    sugarloaf.remove_rich_text(rich_text_id);
+
                     let new_root = right_item.val.route_id;
                     self.inner.insert(new_root, right_item);
                     self.root = Some(new_root);
@@ -1104,7 +1127,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Fallback: just remove the item
-        self.inner.remove(&to_be_removed);
+        // Get rich_text_id before removing
+        if let Some(item) = self.inner.get(&to_be_removed) {
+            let rich_text_id = item.val.rich_text_id;
+            self.inner.remove(&to_be_removed);
+            sugarloaf.remove_rich_text(rich_text_id);
+        }
         if let Some(first_key) = self.inner.keys().next() {
             self.current = *first_key;
             self.root = Some(*first_key);
@@ -1152,11 +1180,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    fn remove_key(&mut self, key: usize) {
+    fn remove_key(&mut self, key: usize, sugarloaf: &mut Sugarloaf) {
         if !self.inner.contains_key(&key) {
             tracing::error!("Attempted to remove key {:?} which doesn't exist", key);
             return;
         }
+
+        // Get rich_text_id before removing
+        let rich_text_id = if let Some(item) = self.inner.get(&key) {
+            item.val.rich_text_id
+        } else {
+            return;
+        };
 
         // Update all references to this key
         let keys_to_update: Vec<usize> = self.inner.keys().cloned().collect();
@@ -1184,6 +1219,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         self.inner.remove(&key);
 
+        // Cleanup rich text from sugarloaf
+        sugarloaf.remove_rich_text(rich_text_id);
+
         // Update root if necessary
         if Some(key) == self.root {
             self.root = self.inner.keys().next().copied();
@@ -1199,7 +1237,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn split_right(&mut self, context: Context<T>) {
+    pub fn split_right(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
         let current_item = if let Some(item) = self.inner.get(&self.current) {
             item
         } else {
@@ -1210,6 +1248,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_height = current_item.val.dimension.height;
         let old_grid_item_width = current_item.val.dimension.width - self.margin.x;
         let new_grid_item_width = old_grid_item_width / 2.0;
+        let current_key = self.current;
 
         // Update current item width
         if let Some(current_item) = self.inner.get_mut(&self.current) {
@@ -1269,10 +1308,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         self.request_resize(new_key);
-        self.calculate_positions_for_affected_nodes(&[self.current, new_key]);
+        self.calculate_positions_for_affected_nodes(&[current_key, new_key]);
+
+        // Update sugarloaf positions for affected contexts
+        if let Some(current_item) = self.inner.get(&current_key) {
+            let pos = current_item.position();
+            sugarloaf.show_rich_text(current_item.val.rich_text_id, pos[0], pos[1]);
+        }
+        if let Some(new_item) = self.inner.get(&new_key) {
+            let pos = new_item.position();
+            sugarloaf.show_rich_text(new_item.val.rich_text_id, pos[0], pos[1]);
+        }
     }
 
-    pub fn split_down(&mut self, context: Context<T>) {
+    pub fn split_down(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
         let current_item = if let Some(item) = self.inner.get(&self.current) {
             item
         } else {
@@ -1283,6 +1332,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let old_grid_item_height = current_item.val.dimension.height;
         let old_grid_item_width = current_item.val.dimension.width;
         let new_grid_item_height = old_grid_item_height / 2.0;
+        let current_key = self.current;
 
         // Update current item
         if let Some(current_item) = self.inner.get_mut(&self.current) {
@@ -1343,7 +1393,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         self.request_resize(new_key);
-        self.calculate_positions_for_affected_nodes(&[self.current, new_key]);
+        self.calculate_positions_for_affected_nodes(&[current_key, new_key]);
+
+        // Update sugarloaf positions for affected contexts
+        if let Some(current_item) = self.inner.get(&current_key) {
+            let pos = current_item.position();
+            sugarloaf.show_rich_text(current_item.val.rich_text_id, pos[0], pos[1]);
+        }
+        if let Some(new_item) = self.inner.get(&new_key) {
+            let pos = new_item.position();
+            sugarloaf.show_rich_text(new_item.val.rich_text_id, pos[0], pos[1]);
+        }
     }
 
     /// Move divider up - decreases height of current split and increases height of split above

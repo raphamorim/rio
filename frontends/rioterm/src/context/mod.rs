@@ -22,7 +22,7 @@ use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
 use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
-use rio_backend::sugarloaf::{font::SugarloafFont, Object, SugarloafErrors};
+use rio_backend::sugarloaf::{font::SugarloafFont, Object, Sugarloaf, SugarloafErrors};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -442,7 +442,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn should_close_context_manager(&mut self, route_id: usize) -> bool {
+    pub fn should_close_context_manager(
+        &mut self,
+        route_id: usize,
+        sugarloaf: &mut Sugarloaf,
+    ) -> bool {
         let requires_change_route = self.current_route == route_id;
 
         // should_close_context_manager is only called when terminal.exit()
@@ -459,7 +463,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // In case Grid has more than one item
             if self.current_grid().len() > 1 {
                 if self.current().route_id == route_id {
-                    self.remove_current_grid();
+                    self.remove_current_grid(sugarloaf);
                 }
 
                 return false;
@@ -728,8 +732,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn remove_current_grid(&mut self) {
-        self.contexts[self.current_index].remove_current();
+    pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
+        self.contexts[self.current_index].remove_current(sugarloaf);
         self.current_route = self.contexts[self.current_index].current().route_id;
     }
 
@@ -865,7 +869,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.select_tab(target_index);
     }
 
-    pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
+    pub fn split(
+        &mut self,
+        rich_text_id: usize,
+        split_down: bool,
+        sugarloaf: &mut Sugarloaf,
+    ) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
@@ -908,9 +917,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Ok(new_context) => {
                 let new_route_id = new_context.route_id;
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context);
+                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context);
+                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
                 self.current_route = new_route_id;
@@ -926,6 +935,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         split_down: bool,
         config: rio_backend::config::Config,
+        sugarloaf: &mut Sugarloaf,
     ) {
         let (shell, working_dir) = process_open_url(
             config.shell.to_owned(),
@@ -964,9 +974,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Ok(new_context) => {
                 let new_route_id = new_context.route_id;
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context);
+                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context);
+                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
                 self.current_route = new_route_id;

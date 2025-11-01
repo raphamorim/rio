@@ -456,7 +456,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .window
                         .screen
                         .context_manager
-                        .should_close_context_manager(route_id)
+                        .should_close_context_manager(
+                            route_id,
+                            &mut route.window.screen.sugarloaf,
+                        )
                     {
                         self.router.routes.remove(&window_id);
 
