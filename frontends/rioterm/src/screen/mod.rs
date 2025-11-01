@@ -1157,8 +1157,12 @@ impl Screen<'_> {
         let rich_text_config =
             RichTextConfig::new().with_position(config.padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
-        self.context_manager
-            .split_from_config(rich_text_id, false, config);
+        self.context_manager.split_from_config(
+            rich_text_id,
+            false,
+            config,
+            &mut self.sugarloaf,
+        );
 
         self.render();
     }
@@ -1172,7 +1176,8 @@ impl Screen<'_> {
         let rich_text_config =
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
-        self.context_manager.split(rich_text_id, false);
+        self.context_manager
+            .split(rich_text_id, false, &mut self.sugarloaf);
 
         self.render();
     }
@@ -1186,7 +1191,8 @@ impl Screen<'_> {
         let rich_text_config =
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
-        self.context_manager.split(rich_text_id, true);
+        self.context_manager
+            .split(rich_text_id, true, &mut self.sugarloaf);
 
         self.render();
     }
@@ -1244,7 +1250,8 @@ impl Screen<'_> {
     pub fn close_split_or_tab(&mut self) {
         if self.context_manager.current_grid_len() > 1 {
             self.clear_selection();
-            self.context_manager.remove_current_grid();
+            self.context_manager
+                .remove_current_grid(&mut self.sugarloaf);
             self.render();
         } else {
             self.close_tab();

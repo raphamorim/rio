@@ -277,7 +277,8 @@ pub fn parse(
                 // Pre-allocate capacity if size is known to avoid reallocations
                 let expected_size = cmd.size as usize;
                 if expected_size > 0 && cmd.payload.capacity() < expected_size {
-                    cmd.payload.reserve(expected_size.saturating_sub(cmd.payload.len()));
+                    cmd.payload
+                        .reserve(expected_size.saturating_sub(cmd.payload.len()));
                     debug!(
                         "First chunk for image key {}: {} bytes, reserved {} bytes total",
                         image_key,
