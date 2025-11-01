@@ -13,6 +13,7 @@ pub struct WgpuContext<'a> {
     pub scale: f32,
     pub supports_f16: bool,
     pub colorspace: Colorspace,
+    pub max_texture_dimension_2d: u32,
 }
 
 impl<'a> WgpuContext<'a> {
@@ -158,6 +159,8 @@ impl<'a> WgpuContext<'a> {
             },
         );
 
+        let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+
         tracing::info!("F16 shader support: {}", supports_f16);
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);
@@ -177,6 +180,7 @@ impl<'a> WgpuContext<'a> {
             surface_caps,
             supports_f16,
             colorspace: renderer_config.colorspace,
+            max_texture_dimension_2d,
         }
     }
 
@@ -196,6 +200,10 @@ impl<'a> WgpuContext<'a> {
         }
 
         usage
+    }
+
+    pub fn max_texture_dimension_2d(&self) -> u32 {
+        self.max_texture_dimension_2d
     }
 
     #[inline]

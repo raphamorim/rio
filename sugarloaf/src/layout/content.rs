@@ -490,11 +490,11 @@ impl Content {
                     let leading = font_metrics.leading * scale_factor;
                     let line_height = (ascent + descent + leading) * layout.line_height;
 
-                    println!("calculate_character_cell_dimensions:");
-                    println!("  font_size: {}", font_size);
-                    println!("  char_width (logical): {}", char_width);
-                    println!("  line_height (logical): {}", line_height);
-                    println!("  layout.dimensions.scale: {}", layout.dimensions.scale);
+                    // println!("calculate_character_cell_dimensions:");
+                    // println!("  font_size: {}", font_size);
+                    // println!("  char_width (logical): {}", char_width);
+                    // println!("  line_height (logical): {}", line_height);
+                    // println!("  layout.dimensions.scale: {}", layout.dimensions.scale);
 
                     // Scale to physical pixels to match what the brush returns
                     let char_width_physical = char_width * layout.dimensions.scale;
@@ -507,15 +507,14 @@ impl Content {
                         scale: layout.dimensions.scale,
                     };
 
-                    println!("  -> Returning dimensions (physical): width={}, height={}, scale={}",
-                        result.width, result.height, result.scale);
+                    // println!("  -> Returning dimensions (physical): width={}, height={}, scale={}",
+                    //     result.width, result.height, result.scale);
 
                     return result;
                 }
             }
         }
 
-        println!("calculate_character_cell_dimensions: Using fallback");
         // Fallback to reasonable defaults if font metrics unavailable
         // Return in physical pixels to match brush behavior
         let fallback_width = layout.font_size;
