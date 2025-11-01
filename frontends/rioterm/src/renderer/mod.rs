@@ -1,6 +1,7 @@
 mod char_cache;
+pub mod command_palette;
 mod font_cache;
-pub mod navigation;
+pub mod island;
 mod search;
 pub mod utils;
 
@@ -16,19 +17,19 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use navigation::ScreenNavigation;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
+    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -46,7 +47,10 @@ pub struct Renderer {
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
-    pub navigation: ScreenNavigation,
+    pub navigation: Navigation,
+    pub padding_y: [f32; 2],
+    pub island: island::Island,
+    pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
     pub config_has_blinking_enabled: bool,
@@ -86,14 +90,14 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
-            HashMap::new();
-
-        for rule in &config.navigation.color_automation {
-            color_automation
-                .entry(rule.program.clone())
-                .or_default()
-                .insert(rule.path.clone(), rule.color);
+        // Initialize island
+        // Enabled when using Composer navigation mode for full GPU rendering
+        let mut island = island::Island::new();
+        if config.navigation.is_enabled() {
+            island.set_enabled(true);
+            island.set_background_color(named_colors.tabs);
+            island.set_active_background_color(named_colors.tabs_active);
+            island.set_cursor_color(named_colors.cursor);
         }
 
         let mut renderer = Renderer {
@@ -108,11 +112,10 @@ impl Renderer {
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
-            navigation: ScreenNavigation::new(
-                config.navigation.clone(),
-                color_automation,
-                config.padding_y,
-            ),
+            navigation: config.navigation.clone(),
+            padding_y: config.padding_y,
+            island,
+            command_palette: command_palette::CommandPalette::new(),
             named_colors,
             dynamic_background,
             visual_bell_active: false,
@@ -263,6 +266,7 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
         is_active: bool,
+        terminal_snapshot: &TerminalSnapshot,
     ) {
         // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
@@ -381,14 +385,117 @@ impl Renderer {
                 }
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
+            // Check for Kitty virtual placements (U=1)
+            if square_content == '\u{10EEEE}' {
+                tracing::debug!(
+                    "Found Kitty placeholder at line={:?}, col={}",
+                    line,
+                    column
+                );
+                // Build the full grapheme cluster (base char + diacritics)
+                let mut grapheme = String::from(square_content);
+                if let Some(zerowidth_chars) = square.zerowidth() {
+                    for ch in zerowidth_chars {
+                        grapheme.push(*ch);
+                    }
+                }
+
+                // Decode the placeholder to extract row/col/image_id_high
+                if let Some((row_idx, col_idx, image_id_high)) =
+                    rio_backend::ansi::kitty_virtual::decode_placeholder(&grapheme)
+                {
+                    // Decode image_id from foreground color
+                    let image_id_low = match square.fg {
+                        rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                            rio_backend::ansi::kitty_virtual::rgb_to_id(rgb)
+                        }
+                        rio_backend::config::colors::AnsiColor::Named(_) => 0,
+                        rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                            idx as u32
+                        }
+                    };
+
+                    // Combine low and high parts of image_id
+                    let image_id = if let Some(high) = image_id_high {
+                        image_id_low | ((high as u32) << 24)
+                    } else {
+                        image_id_low
+                    };
+
+                    // Decode placement_id from underline color (if present)
+                    let placement_id = square
+                        .underline_color()
+                        .and_then(|color| match color {
+                            rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                                Some(rio_backend::ansi::kitty_virtual::rgb_to_id(rgb))
+                            }
+                            rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                                Some(idx as u32)
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+
+                    tracing::debug!(
+                        "Decoded Kitty virtual placeholder: line={:?}, col={}, row_idx={}, col_idx={}, image_id={:#X}, placement_id={}",
+                        line, column, row_idx, col_idx, image_id, placement_id
+                    );
+
+                    // Look up the virtual placement
+                    if let Some(placement) = terminal_snapshot
+                        .kitty_virtual_placements
+                        .get(&(image_id, placement_id))
+                    {
+                        // Look up the stored image data
+                        if let Some(stored_image) =
+                            terminal_snapshot.kitty_images.get(&image_id)
+                        {
+                            // Calculate the offset for this specific cell within the placement
+                            // row_idx/col_idx tell us which cell in the placement grid this is
+                            let cell_width =
+                                stored_image.data.width as u32 / placement.columns;
+                            let cell_height =
+                                stored_image.data.height as u32 / placement.rows;
+
+                            let offset_x = col_idx * cell_width;
+                            let offset_y = row_idx * cell_height;
+
+                            tracing::debug!(
+                                "Rendering Kitty virtual placement: image_id={:#X}, placement_id={}, cell=({},{}), offset=({},{})",
+                                image_id, placement_id, col_idx, row_idx, offset_x, offset_y
+                            );
+
+                            // Render the image fragment at this position
+                            style.media = Some(Graphic {
+                                id: stored_image.data.id,
+                                offset_x: offset_x as u16,
+                                offset_y: offset_y as u16,
+                            });
+                        } else {
+                            tracing::warn!(
+                                "Kitty virtual placement references missing image: image_id={:#X}",
+                                image_id
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "No virtual placement found for image_id={:#X}, placement_id={}",
+                            image_id, placement_id
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "Failed to decode Kitty placeholder at line={:?}, col={}, grapheme={:?}",
+                        line, column, grapheme
+                    );
+                }
+            } else if square.flags.contains(Flags::GRAPHICS) {
                 let graphic = &square.graphics().unwrap()[0];
                 style.media = Some(Graphic {
                     id: graphic.texture.id,
                     offset_x: graphic.offset_x,
                     offset_y: graphic.offset_y,
                 });
-                style.background_color = None;
             }
 
             // Handle drawable characters
@@ -840,7 +947,7 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text();
+            let search_rich_text = sugarloaf.create_temp_rich_text(None);
             sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }
@@ -928,6 +1035,11 @@ impl Renderer {
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
+                    kitty_virtual_placements: terminal
+                        .graphics
+                        .kitty_virtual_placements
+                        .clone(),
+                    kitty_images: terminal.graphics.kitty_images.clone(),
                 };
                 terminal.reset_damage();
                 drop(terminal);
@@ -939,13 +1051,13 @@ impl Renderer {
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
             // Update cursor state from snapshot
-            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+            context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
             // Check for partial damage to optimize rendering
             if !force_full_damage {
-                match terminal_snapshot.damage {
+                match &terminal_snapshot.damage {
                     TerminalDamage::Full => {
                         // Full damage, render everything
                     }
@@ -1044,6 +1156,7 @@ impl Renderer {
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
+                            &terminal_snapshot,
                         );
                     }
                     content.build();
@@ -1073,6 +1186,7 @@ impl Renderer {
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
+                                &terminal_snapshot,
                             );
                         }
                     }
@@ -1086,52 +1200,29 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(15);
-        self.navigation.build_objects(
+
+        self.island.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
-            &self.named_colors,
             context_manager,
-            self.search.active_search.is_some(),
-            &mut objects,
         );
 
-        if has_search {
-            if let Some(rich_text_id) = self.search.rich_text_id {
-                search::draw_search_bar(
-                    &mut objects,
-                    rich_text_id,
-                    &self.named_colors,
-                    (window_size.width, window_size.height, scale_factor),
-                );
-            }
+        // Render command palette (above everything else)
+        self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
-            self.search.active_search = None;
-            self.search.rich_text_id = None;
-        }
+        // Render navigation rectangles directly
+        // self.navigation.render_directly(
+        //     sugarloaf,
+        //     (window_size.width, window_size.height, scale_factor),
+        //     &self.named_colors,
+        //     context_manager,
+        // );
 
-        // let _duration = start.elapsed();
-        context_manager.extend_with_grid_objects(&mut objects);
-        // let _duration = start.elapsed();
-
-        // Update visual bell state and set overlay if needed
-        let visual_bell_active = self.update_visual_bell();
-
-        // Set visual bell overlay that renders on top of everything
-        let bell_overlay = if visual_bell_active {
-            Some(Quad {
-                position: [0.0, 0.0],
-                size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground,
-                ..Quad::default()
-            })
-        } else {
-            None
-        };
-        sugarloaf.set_visual_bell_overlay(bell_overlay);
-
-        sugarloaf.set_objects(objects);
-
+        // Search bar disabled for now - TODO: Implement direct rendering
+        // if has_search { ... }
         sugarloaf.render();
 
         // let _duration = start.elapsed();

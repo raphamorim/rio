@@ -11,8 +11,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, RichText, SugarCursor, Sugarloaf,
-    SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, SugarCursor, Sugarloaf, SugarloafWindow,
+    SugarloafWindowSize,
 };
 
 fn main() {
@@ -84,7 +84,7 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::BLUE));
-        sugarloaf.create_rich_text();
+        sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -195,11 +195,8 @@ impl ApplicationHandler for Application {
                     )
                     .build();
 
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: 0,
-                    position: [10., 0.],
-                    lines: None,
-                })]);
+                // Show rich text using new API
+                sugarloaf.show_rich_text(0, 10., 0.);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

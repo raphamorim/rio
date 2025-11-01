@@ -7,11 +7,46 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-- Native Metal Support.
-- Native Vulkan Support.
-- Quake window support.
-- Kitty image protocol.
-- Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
+**What's New**
+
+- **Kitty Graphics Protocol**: Display images directly in your terminal
+  - Direct placements (U=0)
+  - Virtual placements (U=1)
+  - Diacritic-based row/column encoding (283 combining characters)
+  - RGB color encoding for image/placement IDs (24+8 bit support)
+  - Virtual placement rendering (infrastructure complete, rendering pending)
+- **Sixel Graphics**: Full support with proper scrolling and positioning
+- **Graphics Rendering Improvements**:
+  - Fixed vertical positioning alignment
+  - Fixed scrolling (images persist when origin scrolls off-screen)
+  - Fixed duplicate rendering with per-frame deduplication
+  - LRU cache with automatic eviction
+- **Native Metal Support** (macOS): Hardware-accelerated rendering with Metal
+- **Native Vulkan Support** (Linux/Windows): Hardware-accelerated rendering with Vulkan
+- **New GPU-Rendered Navigation**: Faster, smoother tab interface
+- **Command Palette**: Quick access to terminal functions
+- **Quake Window Mode**: Drop-down terminal from top of screen
+
+**Breaking Changes**
+
+- Navigation modes simplified - if you use `TopTab`, `BottomTab`, or `Bookmark`, change to:
+  ```toml
+  [navigation]
+  mode = "Composer"
+  ```
+- Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
+- Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
+- Available modes: `Plain`, `Composer`, `NativeTab` (macOS only)
+
+**Technical Details**
+
+- Complete rendering architecture rewrite for GPU-based UI
+- Parser now supports APC sequences for Kitty graphics protocol
+- Removed legacy layer/quad rendering system
+- Added Metal backend for macOS, split WebGPU backend for cross-platform
+- New `kitty_virtual` module for Ghostty-compatible placeholder encoding
+- Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
+- Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
 ## 0.2.33
 

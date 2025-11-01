@@ -8,8 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Object, Quad, RichText, Sugarloaf, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -82,8 +81,8 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        self.rich_text = sugarloaf.create_rich_text();
-        self.second_rich_text = sugarloaf.create_rich_text();
+        self.rich_text = sugarloaf.create_rich_text(None);
+        self.second_rich_text = sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         // we will add three layers
@@ -153,41 +152,16 @@ impl ApplicationHandler for Application {
                     .new_line()
                     .build();
 
-                sugarloaf.set_objects(vec![
-                    Object::RichText(RichText {
-                        id: self.rich_text,
-                        position: [10., 10.],
-                        lines: None,
-                    }),
-                    Object::Quad(Quad {
-                        position: [10., 10.],
-                        color: [1.0, 0.3, 0.5, 1.0],
-                        size: [120., 100.],
-                        ..Quad::default()
-                    }),
-                    Object::RichText(RichText {
-                        id: self.second_rich_text,
-                        position: [10., 60.],
-                        lines: None,
-                    }),
-                    Object::Quad(Quad {
-                        position: [10., 80.],
-                        color: [0.0, 0.3, 0.5, 1.0],
-                        size: [120., 100.],
-                        ..Quad::default()
-                    }),
-                    Object::Quad(Quad {
-                        position: [95., 30.],
-                        color: [1.0, 1.0, 0.5, 1.0],
-                        size: [20., 100.],
-                        ..Quad::default()
-                    }),
-                    Object::RichText(RichText {
-                        id: self.rich_text,
-                        position: [100., 100.],
-                        lines: None,
-                    }),
-                ]);
+                // Add rectangles directly
+                sugarloaf.rect(10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
+                sugarloaf.rect(10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0], 0.0);
+                sugarloaf.rect(95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
+
+                // Show rich text
+                sugarloaf.show_rich_text(self.rich_text, 10., 10.);
+                sugarloaf.show_rich_text(self.second_rich_text, 10., 60.);
+                sugarloaf.show_rich_text(self.rich_text, 100., 100.);
+
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

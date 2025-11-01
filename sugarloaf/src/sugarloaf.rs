@@ -2,18 +2,16 @@ pub mod graphics;
 pub mod primitives;
 pub mod state;
 
-use crate::components::core::{image::Handle, shapes::Rectangle};
+use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
-use crate::components::layer::{self, LayerBrush};
-use crate::components::quad::QuadBrush;
 use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{RichTextLayout, RootStyle};
-use crate::sugarloaf::graphics::{BottomLayer, Graphics};
-use crate::sugarloaf::layer::types;
+use crate::layout::{RichTextConfig, RichTextLayout, RootStyle};
+use crate::sugarloaf::graphics::Graphics;
+
+use crate::context::Context;
 use crate::Content;
 use crate::SugarDimensions;
-use crate::{context::Context, Object, Quad};
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -23,9 +21,7 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    quad_brush: QuadBrush,
     rich_text_brush: RichTextBrush,
-    layer_brush: LayerBrush,
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
@@ -62,9 +58,15 @@ pub struct SugarloafWindow {
     pub scale: f32,
 }
 
+pub enum SugarloafBackend {
+    Wgpu(wgpu::Backends),
+    #[cfg(target_os = "macos")]
+    Metal,
+}
+
 pub struct SugarloafRenderer {
     pub power_preference: wgpu::PowerPreference,
-    pub backend: wgpu::Backends,
+    pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
 }
@@ -95,9 +97,14 @@ impl Default for Colorspace {
 impl Default for SugarloafRenderer {
     fn default() -> SugarloafRenderer {
         #[cfg(target_arch = "wasm32")]
-        let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
-        #[cfg(not(target_arch = "wasm32"))]
-        let default_backend = wgpu::Backends::all();
+        let default_backend =
+            SugarloafBackend::Wgpu(wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL);
+
+        #[cfg(not(any(target_arch = "wasm32", target_os = "macos")))]
+        let default_backend = SugarloafBackend::Wgpu(wgpu::Backends::all());
+
+        #[cfg(all(target_os = "macos", not(target_arch = "wasm32")))]
+        let default_backend = SugarloafBackend::Metal;
 
         SugarloafRenderer {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -145,15 +152,11 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let layer_brush = LayerBrush::new(&ctx);
-        let quad_brush = QuadBrush::new(&ctx);
         let rich_text_brush = RichTextBrush::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
             state,
-            layer_brush,
-            quad_brush,
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
@@ -175,13 +178,6 @@ impl Sugarloaf<'_> {
         // Clear the atlas to remove old font glyphs
         self.rich_text_brush.clear_atlas();
 
-        // Clear the layer atlas to remove old cached images
-        self.layer_brush.clear_atlas(
-            &self.ctx.device,
-            self.ctx.adapter_info.backend,
-            &self.ctx,
-        );
-
         self.state.reset();
         self.state
             .set_fonts(font_library, &mut self.rich_text_brush);
@@ -194,7 +190,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn get_scale(&self) -> f32 {
-        self.ctx.scale
+        self.ctx.scale()
     }
 
     #[inline]
@@ -213,17 +209,13 @@ impl Sugarloaf<'_> {
         rt_id: &usize,
         operation: u8,
     ) {
-        self.state.set_rich_text_font_size_based_on_action(
-            rt_id,
-            operation,
-            &mut self.rich_text_brush,
-        );
+        self.state
+            .set_rich_text_font_size_based_on_action(rt_id, operation);
     }
 
     #[inline]
     pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state
-            .set_rich_text_font_size(rt_id, font_size, &mut self.rich_text_brush);
+        self.state.set_rich_text_font_size(rt_id, font_size);
     }
 
     #[inline]
@@ -240,7 +232,13 @@ impl Sugarloaf<'_> {
                 self.filters_brush = Some(FiltersBrush::default());
             }
             if let Some(ref mut brush) = self.filters_brush {
-                brush.update_filters(&self.ctx, filters);
+                match &self.ctx.inner {
+                    crate::context::ContextType::Wgpu(ctx) => {
+                        brush.update_filters(ctx, filters);
+                    }
+                    #[cfg(target_os = "macos")]
+                    _ => {}
+                };
             }
         }
     }
@@ -252,26 +250,14 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn set_background_image(&mut self, image: &ImageProperties) -> &mut Self {
-        let handle = Handle::from_path(image.path.to_owned());
-        self.graphics.bottom_layer = Some(BottomLayer {
-            should_fit: image.width.is_none() && image.height.is_none(),
-            data: types::Raster {
-                handle,
-                bounds: Rectangle {
-                    width: image.width.unwrap_or(self.ctx.size.width),
-                    height: image.height.unwrap_or(self.ctx.size.height),
-                    x: image.x,
-                    y: image.y,
-                },
-            },
-        });
+    pub fn set_background_image(&mut self, _image: &ImageProperties) -> &mut Self {
+        // TODO: Background images are not yet implemented with the new rendering system
         self
     }
 
     #[inline]
-    pub fn create_rich_text(&mut self) -> usize {
-        self.state.create_rich_text()
+    pub fn create_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
+        self.state.create_rich_text(config)
     }
 
     #[inline]
@@ -283,8 +269,8 @@ impl Sugarloaf<'_> {
     // it will be removed after the render and doesn't
     // offer any type of optimization (e.g: cache) per render.
     #[inline]
-    pub fn create_temp_rich_text(&mut self) -> usize {
-        self.state.create_temp_rich_text()
+    pub fn create_temp_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
+        self.state.create_temp_rich_text(config)
     }
 
     #[inline]
@@ -296,9 +282,107 @@ impl Sugarloaf<'_> {
         self.state.content()
     }
 
+    /// Add a rectangle directly to the rendering pipeline
     #[inline]
-    pub fn set_objects(&mut self, objects: Vec<Object>) {
-        self.state.compute_objects(objects);
+    pub fn rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        self.rich_text_brush.rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+        );
+    }
+
+    /// Add a rounded rectangle directly to the rendering pipeline
+    #[inline]
+    pub fn rounded_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        let scaled_border_radius = border_radius * self.state.style.scale_factor;
+        self.rich_text_brush.rounded_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            depth,
+            scaled_border_radius,
+        );
+    }
+
+    /// Add an image rectangle directly to the rendering pipeline
+    #[inline]
+    pub fn add_image_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        coords: [f32; 4],
+        has_alpha: bool,
+        depth: f32,
+        atlas_layer: i32,
+    ) {
+        let scaled_x = x * self.state.style.scale_factor;
+        let scaled_y = y * self.state.style.scale_factor;
+        let scaled_width = width * self.state.style.scale_factor;
+        let scaled_height = height * self.state.style.scale_factor;
+        self.rich_text_brush.add_image_rect(
+            scaled_x,
+            scaled_y,
+            scaled_width,
+            scaled_height,
+            color,
+            coords,
+            has_alpha,
+            depth,
+            atlas_layer,
+        );
+    }
+
+    /// Show a rich text at a specific position
+    #[inline]
+    pub fn show_rich_text(&mut self, id: usize, x: f32, y: f32) {
+        self.state
+            .set_rich_text_visibility_and_position(id, x, y, false);
+    }
+
+    /// Hide a rich text
+    #[inline]
+    pub fn hide_rich_text(&mut self, id: usize) {
+        self.state.set_rich_text_hidden(id, true);
+    }
+
+    /// Show/hide a rich text
+    #[inline]
+    pub fn set_rich_text_visibility(&mut self, id: usize, hidden: bool) {
+        self.state.set_rich_text_hidden(id, hidden);
     }
 
     #[inline]
@@ -307,9 +391,13 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    pub fn force_update_dimensions(&mut self, id: &usize) {
+        self.state.content.update_dimensions(id);
+    }
+
+    #[inline]
     pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
-        self.state
-            .get_rich_text_dimensions(id, &mut self.rich_text_brush)
+        self.state.get_rich_text_dimensions(id)
     }
 
     #[inline]
@@ -319,7 +407,7 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn window_size(&self) -> SugarloafWindowSize {
-        self.ctx.size
+        self.ctx.size()
     }
 
     #[inline]
@@ -330,25 +418,12 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
     }
 
     #[inline]
     pub fn rescale(&mut self, scale: f32) {
-        self.ctx.scale = scale;
-        self.state
-            .compute_layout_rescale(scale, &mut self.rich_text_brush);
-        if let Some(bottom_layer) = &mut self.graphics.bottom_layer {
-            if bottom_layer.should_fit {
-                bottom_layer.data.bounds.width = self.ctx.size.width;
-                bottom_layer.data.bounds.height = self.ctx.size.height;
-            }
-        }
+        self.ctx.set_scale(scale);
+        self.state.compute_layout_rescale(scale);
     }
 
     #[inline]
@@ -361,45 +436,111 @@ impl Sugarloaf<'_> {
 
     #[inline]
     pub fn render(&mut self) {
-        self.state.compute_dimensions(&mut self.rich_text_brush);
+        self.state.compute_dimensions();
         self.state.compute_updates(
             &mut self.rich_text_brush,
-            &mut self.quad_brush,
             &mut self.ctx,
             &mut self.graphics,
         );
 
-        match self.ctx.surface.get_current_texture() {
+        match self.ctx.inner {
+            crate::context::ContextType::Wgpu(_) => {
+                self.render_wgpu();
+            }
+            #[cfg(target_os = "macos")]
+            crate::context::ContextType::Metal(_) => {
+                self.render_metal();
+            }
+        }
+    }
+
+    #[inline]
+    #[cfg(target_os = "macos")]
+    pub fn render_metal(&mut self) {
+        use metal::*;
+
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Metal(metal) => metal,
+            crate::context::ContextType::Wgpu(_) => {
+                return;
+            }
+        };
+
+        match ctx.get_current_texture() {
+            Ok(surface_texture) => {
+                // Create command buffer
+                let command_buffer = ctx.command_queue.new_command_buffer();
+                command_buffer.set_label("Sugarloaf Metal Render");
+
+                // Create render pass descriptor
+                let render_pass_descriptor = RenderPassDescriptor::new();
+                let color_attachment = render_pass_descriptor
+                    .color_attachments()
+                    .object_at(0)
+                    .unwrap();
+
+                color_attachment.set_texture(Some(&surface_texture.texture));
+                color_attachment.set_store_action(MTLStoreAction::Store);
+                color_attachment.set_load_action(MTLLoadAction::Clear);
+
+                // Set background color
+                let clear_color = if let Some(background_color) = self.background_color {
+                    MTLClearColor::new(
+                        background_color.r,
+                        background_color.g,
+                        background_color.b,
+                        background_color.a,
+                    )
+                } else {
+                    // Default to transparent black if no background color set
+                    MTLClearColor::new(0.0, 0.0, 0.0, 0.0)
+                };
+                color_attachment.set_clear_color(clear_color);
+
+                // Create render command encoder
+                let render_encoder =
+                    command_buffer.new_render_command_encoder(&render_pass_descriptor);
+                render_encoder.set_label("Sugarloaf Metal Render Pass");
+
+                self.rich_text_brush.render_metal(ctx, &render_encoder);
+
+                render_encoder.end_encoding();
+                command_buffer.present_drawable(&surface_texture.drawable);
+                command_buffer.commit();
+            }
+            Err(error) => {
+                tracing::error!("Metal surface error: {}", error);
+            }
+        }
+
+        self.reset();
+    }
+
+    #[inline]
+    pub fn render_wgpu(&mut self) {
+        #[cfg_attr(
+            not(target_os = "macos"),
+            expect(clippy::infallible_destructuring_match)
+        )]
+        let ctx = match &mut self.ctx.inner {
+            crate::context::ContextType::Wgpu(wgpu) => wgpu,
+            #[cfg(target_os = "macos")]
+            crate::context::ContextType::Metal(_) => {
+                return;
+            }
+        };
+
+        match ctx.surface.get_current_texture() {
             Ok(frame) => {
-                let mut encoder = self.ctx.device.create_command_encoder(
-                    &wgpu::CommandEncoderDescriptor { label: None },
-                );
+                let mut encoder =
+                    ctx.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: None,
+                        });
 
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
-                if let Some(layer) = &self.graphics.bottom_layer {
-                    self.layer_brush
-                        .prepare(&mut encoder, &mut self.ctx, &[&layer.data]);
-                }
-
-                if self.graphics.has_graphics_on_top_layer() {
-                    for request in &self.graphics.top_layer {
-                        if let Some(entry) = self.graphics.get(&request.id) {
-                            self.layer_brush.prepare_with_handle(
-                                &mut encoder,
-                                &mut self.ctx,
-                                &entry.handle,
-                                &Rectangle {
-                                    width: request.width.unwrap_or(entry.width),
-                                    height: request.height.unwrap_or(entry.height),
-                                    x: request.pos_x,
-                                    y: request.pos_y,
-                                },
-                            );
-                        }
-                    }
-                }
 
                 {
                     let load = if let Some(background_color) = self.background_color {
@@ -425,68 +566,18 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    if self.graphics.bottom_layer.is_some() {
-                        self.layer_brush.render(0, &mut rpass, None);
-                    }
-
-                    if self.graphics.has_graphics_on_top_layer() {
-                        let range_request = if self.graphics.bottom_layer.is_some() {
-                            1..(self.graphics.top_layer.len() + 1)
-                        } else {
-                            0..self.graphics.top_layer.len()
-                        };
-                        for request in range_request {
-                            self.layer_brush.render(request, &mut rpass, None);
-                        }
-                    }
-                    self.quad_brush
-                        .render(&mut self.ctx, &self.state, &mut rpass);
-                    self.rich_text_brush.render(&mut self.ctx, &mut rpass);
-                }
-
-                // Visual bell overlay requires separate render pass to appear on top of rich text
-                if let Some(bell_overlay) = self.state.visual_bell_overlay {
-                    let mut overlay_pass =
-                        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                            label: Some("visual_bell"),
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                depth_slice: None,
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load, // Load existing content
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                        });
-
-                    // Render just the overlay quad directly
-                    self.quad_brush.render_single(
-                        &mut self.ctx,
-                        &bell_overlay,
-                        &mut overlay_pass,
-                    );
-                }
-
-                if self.graphics.bottom_layer.is_some()
-                    || self.graphics.has_graphics_on_top_layer()
-                {
-                    self.layer_brush.end_frame();
-                    self.graphics.clear_top_layer();
+                    self.rich_text_brush.render(ctx, &mut rpass);
                 }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {
                     filters_brush.render(
-                        &self.ctx,
+                        ctx,
                         &mut encoder,
                         &frame.texture,
                         &frame.texture,
                     );
                 }
-                self.ctx.queue.submit(Some(encoder.finish()));
+                ctx.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
             Err(error) => {
@@ -496,10 +587,5 @@ impl Sugarloaf<'_> {
             }
         }
         self.reset();
-    }
-
-    #[inline]
-    pub fn set_visual_bell_overlay(&mut self, overlay: Option<Quad>) {
-        self.state.set_visual_bell_overlay(overlay);
     }
 }
