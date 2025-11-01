@@ -1354,6 +1354,10 @@ impl<U: EventListener> Crosswords<U> {
         };
         info!("Setting keyboard mode to {new_mode:?}");
         self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
+
+        // Sync self.mode with keyboard_mode_stack
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(new_mode));
     }
 
     /// Find the beginning of the current line across linewraps.
@@ -2345,6 +2349,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
+    fn report_version(&mut self) {
+        trace!("Reporting terminal version (XTVERSION)");
+        let version = env!("CARGO_PKG_VERSION");
+        let text = format!("\x1bP>|Rio {version}\x1b\\");
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(text), self.window_id);
+    }
+
+    #[inline]
     fn report_keyboard_mode(&mut self) {
         let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
@@ -2359,6 +2372,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
         }
         self.keyboard_mode_stack[self.keyboard_mode_idx] = mode.bits();
+
+        // Sync self.mode with keyboard_mode_stack
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(mode);
     }
 
     #[inline]
@@ -2367,6 +2384,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if usize::from(to_pop) >= KEYBOARD_MODE_STACK_MAX_DEPTH {
             self.keyboard_mode_stack.fill(KeyboardModes::NO_MODE.bits());
             self.keyboard_mode_idx = 0;
+            self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
             return;
         }
         for _ in 0..to_pop {
@@ -2377,6 +2395,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
             self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
         }
+
+        // Sync self.mode with keyboard_mode_stack
+        let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(current_mode));
     }
 
     #[inline]
@@ -4448,5 +4471,139 @@ mod tests {
         let expected_idx = (0_usize.wrapping_sub(1)) % KEYBOARD_MODE_STACK_MAX_DEPTH;
         assert_eq!(term.keyboard_mode_idx, expected_idx);
         assert_eq!(term.keyboard_mode_stack[0], KeyboardModes::NO_MODE.bits()); // Should be cleared
+    }
+
+    #[test]
+    fn test_xtversion_report() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        // Create a custom event listener that captures PtyWrite events
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn event(&self) -> (Option<RioEvent>, bool) {
+                (None, false)
+            }
+
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let listener = TestListener {
+            events: events.clone(),
+        };
+        let mut term = Crosswords::new(size, CursorShape::Block, listener, window_id, 0);
+
+        // Call report_version using Handler trait
+        Handler::report_version(&mut term);
+
+        // Verify that a PtyWrite event was sent
+        let captured_events = events.borrow();
+        assert_eq!(captured_events.len(), 1, "Should have sent one event");
+
+        // Verify the event is PtyWrite with the correct format
+        match &captured_events[0] {
+            RioEvent::PtyWrite(text) => {
+                // Expected format: DCS > | Rio {version} ST
+                // DCS = \x1bP, ST = \x1b\\
+                assert!(
+                    text.starts_with("\x1bP>|Rio "),
+                    "Should start with DCS>|Rio"
+                );
+                assert!(text.ends_with("\x1b\\"), "Should end with ST");
+
+                // Extract version from the response
+                let version = env!("CARGO_PKG_VERSION");
+                let expected = format!("\x1bP>|Rio {}\x1b\\", version);
+                assert_eq!(
+                    text, &expected,
+                    "XTVERSION response should match expected format"
+                );
+            }
+            other => panic!("Expected PtyWrite event, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_keyboard_mode_syncs_with_mode() {
+        let size = CrosswordsSize::new(10, 10);
+        let window_id = WindowId::from(0);
+        let mut term =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0);
+
+        // Initially, no keyboard mode should be set
+        assert!(!term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES));
+        assert!(!term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC));
+
+        // Push DISAMBIGUATE_ESC_CODES
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should contain DISAMBIGUATE_ESC_CODES after push"
+        );
+        assert!(!term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC));
+
+        // Push REPORT_ALL_KEYS_AS_ESC (replaces previous mode at this stack level)
+        Handler::push_keyboard_mode(&mut term, KeyboardModes::REPORT_ALL_KEYS_AS_ESC);
+        assert!(
+            term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC),
+            "mode() should contain REPORT_ALL_KEYS_AS_ESC after push"
+        );
+        assert!(!term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should not contain DISAMBIGUATE_ESC_CODES after pushing different mode"
+        );
+
+        // Pop back to previous level
+        Handler::pop_keyboard_modes(&mut term, 1);
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should contain DISAMBIGUATE_ESC_CODES after pop"
+        );
+        assert!(
+            !term.mode().contains(Mode::REPORT_ALL_KEYS_AS_ESC),
+            "mode() should not contain REPORT_ALL_KEYS_AS_ESC after pop"
+        );
+
+        // Test set_keyboard_mode with Union
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_EVENT_TYPES,
+            KeyboardModesApplyBehavior::Union,
+        );
+        assert!(
+            term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should still contain DISAMBIGUATE_ESC_CODES after union"
+        );
+        assert!(
+            term.mode().contains(Mode::REPORT_EVENT_TYPES),
+            "mode() should contain REPORT_EVENT_TYPES after union"
+        );
+
+        // Test set_keyboard_mode with Replace
+        Handler::set_keyboard_mode(
+            &mut term,
+            KeyboardModes::REPORT_ALTERNATE_KEYS,
+            KeyboardModesApplyBehavior::Replace,
+        );
+        assert!(
+            term.mode().contains(Mode::REPORT_ALTERNATE_KEYS),
+            "mode() should contain REPORT_ALTERNATE_KEYS after replace"
+        );
+        assert!(
+            !term.mode().contains(Mode::DISAMBIGUATE_ESC_CODES),
+            "mode() should not contain DISAMBIGUATE_ESC_CODES after replace"
+        );
+        assert!(
+            !term.mode().contains(Mode::REPORT_EVENT_TYPES),
+            "mode() should not contain REPORT_EVENT_TYPES after replace"
+        );
     }
 }
