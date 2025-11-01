@@ -350,10 +350,6 @@ struct CachedGraphic {
     width: f32,
     height: f32,
     last_used_frame: u64,
-    /// ImageId for looking up individual texture (if uses_individual_texture is true)
-    image_id: image_cache::ImageId,
-    /// True if this graphic uses an individual GPU texture instead of the atlas
-    uses_individual_texture: bool,
     /// Atlas layer index (1-based, 0 = no texture)
     atlas_layer: i32,
 }
@@ -624,8 +620,6 @@ impl RichTextBrush {
                                             width: entry.width,
                                             height: entry.height,
                                             last_used_frame: self.current_frame,
-                                            image_id: id,
-                                            uses_individual_texture: true, // Protocol graphics use individual textures
                                             atlas_layer,
                                         },
                                     );
@@ -1697,8 +1691,6 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 10,
-                image_id: super::image_cache::ImageId::empty(),
-                uses_individual_texture: false,
                 atlas_layer: 1,
             },
         );
@@ -1713,8 +1705,6 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 5, // Oldest
-                image_id: super::image_cache::ImageId::empty(),
-                uses_individual_texture: false,
                 atlas_layer: 1,
             },
         );
@@ -1729,8 +1719,6 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 15, // Newest
-                image_id: super::image_cache::ImageId::empty(),
-                uses_individual_texture: false,
                 atlas_layer: 1,
             },
         );
@@ -1764,8 +1752,6 @@ mod rect_positioning_tests {
                 width: 100.0,
                 height: 100.0,
                 last_used_frame: 50,
-                image_id: super::image_cache::ImageId::empty(),
-                uses_individual_texture: false,
                 atlas_layer: 1,
             },
         );

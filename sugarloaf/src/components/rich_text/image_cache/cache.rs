@@ -56,31 +56,6 @@ impl Atlas {
 
 pub const SIZE: u16 = 4096;
 
-#[derive(Debug)]
-pub enum ImageCacheType {
-    Wgpu(WgpuImageCache),
-    #[cfg(target_os = "macos")]
-    Metal(MetalImageCache),
-}
-
-#[derive(Debug)]
-pub struct WgpuImageCache {
-    mask_texture: wgpu::Texture,
-    color_texture: wgpu::Texture,
-    pub mask_texture_view: wgpu::TextureView,
-    pub color_texture_view: wgpu::TextureView,
-    device: std::sync::Arc<wgpu::Device>,
-    queue: std::sync::Arc<wgpu::Queue>,
-}
-
-#[cfg(target_os = "macos")]
-#[derive(Debug)]
-pub struct MetalImageCache {
-    mask_texture: metal::Texture,
-    color_texture: metal::Texture,
-    device: metal::Device,
-}
-
 pub struct ImageCache {
     pub entries: Vec<Entry>,
     /// One atlas for mask/glyph data
@@ -103,9 +78,6 @@ enum ColorAtlasTexture {
     #[cfg(target_os = "macos")]
     Metal(metal::Texture),
 }
-
-// Maximum number of texture array layers we support
-const MAX_ATLAS_LAYERS: usize = 16;
 
 enum DeviceQueue {
     Wgpu {
@@ -131,10 +103,11 @@ pub fn buffer_size(width: u32, height: u32) -> Option<usize> {
 impl ImageCache {
     /// Creates a new image cache with mask atlas + initial color atlas
     pub fn new(context: &Context) -> Self {
-        let max_texture_size = SIZE;
-
         match &context.inner {
             ContextType::Wgpu(wgpu_context) => {
+                let max_size = wgpu_context.max_texture_dimension_2d();
+                let max_texture_size = std::cmp::min(4096, max_size) as u16;
+
                 let device = std::sync::Arc::new(wgpu_context.device.clone());
                 let queue = std::sync::Arc::new(wgpu_context.queue.clone());
 
@@ -197,6 +170,7 @@ impl ImageCache {
             #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
                 let device = metal_context.device.clone();
+                let max_texture_size = 4096;
 
                 // Create mask texture (R8 format for alpha masks)
                 let mask_descriptor = metal::TextureDescriptor::new();
