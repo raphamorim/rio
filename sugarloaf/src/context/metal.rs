@@ -83,8 +83,6 @@ impl MetalContext {
         let supports_f16 = device.supports_family(MTLGPUFamily::Apple1);
 
         tracing::info!("Metal device created: {:?}", device.name());
-        tracing::info!("Metal F16 support: {}", supports_f16);
-        tracing::info!("SIMD shaders enabled by default");
 
         MetalContext {
             device,
