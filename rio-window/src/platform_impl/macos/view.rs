@@ -468,6 +468,9 @@ declare_class!(
         fn key_down(&self, event: &NSEvent) {
             trace_scope!("keyDown:");
 
+            // Mark input received for 1-second presentation window
+            self.mark_input_received();
+
             // Set flag to indicate we're in a key event
             self.ivars().in_key_event.set(true);
 
@@ -620,6 +623,7 @@ declare_class!(
         #[method(mouseDown:)]
         fn mouse_down(&self, event: &NSEvent) {
             trace_scope!("mouseDown:");
+            self.mark_input_received();
             self.mouse_motion(event);
             self.mouse_click(event, ElementState::Pressed);
         }
@@ -634,6 +638,7 @@ declare_class!(
         #[method(rightMouseDown:)]
         fn right_mouse_down(&self, event: &NSEvent) {
             trace_scope!("rightMouseDown:");
+            self.mark_input_received();
             self.mouse_motion(event);
             self.mouse_click(event, ElementState::Pressed);
         }
@@ -648,6 +653,7 @@ declare_class!(
         #[method(otherMouseDown:)]
         fn other_mouse_down(&self, event: &NSEvent) {
             trace_scope!("otherMouseDown:");
+            self.mark_input_received();
             self.mouse_motion(event);
             self.mouse_click(event, ElementState::Pressed);
         }
@@ -663,6 +669,7 @@ declare_class!(
 
         #[method(mouseMoved:)]
         fn mouse_moved(&self, event: &NSEvent) {
+            self.mark_input_received();
             self.mouse_motion(event);
         }
 
@@ -702,6 +709,7 @@ declare_class!(
         fn scroll_wheel(&self, event: &NSEvent) {
             trace_scope!("scrollWheel:");
 
+            self.mark_input_received();
             self.mouse_motion(event);
 
             let delta = {
@@ -886,6 +894,17 @@ impl WinitView {
 
     fn queue_device_event(&self, event: DeviceEvent) {
         self.ivars().app_delegate.queue_device_event(event);
+    }
+
+    /// Mark that input was received for 1-second presentation window
+    #[inline]
+    fn mark_input_received(&self) {
+        unsafe {
+            if let Some(delegate) = self.window().delegate() {
+                let delegate_ptr = Retained::as_ptr(&delegate) as *const WindowDelegate;
+                (*delegate_ptr).mark_input_received();
+            }
+        }
     }
 
     fn scale_factor(&self) -> f64 {
