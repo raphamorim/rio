@@ -131,6 +131,8 @@ pub(crate) struct State {
     display_link: RefCell<Option<super::display_link::DisplayLink>>,
     // Track when rendering is needed (dirty state)
     needs_redraw: Cell<bool>,
+    // Track last input timestamp for 1-second presentation window
+    last_input_timestamp: Cell<std::time::Instant>,
 }
 
 declare_class!(
@@ -750,6 +752,7 @@ impl WindowDelegate {
             background_color: unsafe { NSColor::blackColor().into() },
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
+            last_input_timestamp: Cell::new(std::time::Instant::now()),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -952,6 +955,27 @@ impl WindowDelegate {
 
     #[inline]
     pub fn pre_present_notify(&self) {}
+
+    /// Mark that input was received.
+    ///
+    /// This updates the timestamp used for the 1-second presentation window
+    /// to prevent display downclocking.
+    #[inline]
+    pub(crate) fn mark_input_received(&self) {
+        self.ivars()
+            .last_input_timestamp
+            .set(std::time::Instant::now());
+    }
+
+    /// Check if we should keep presenting frames after input.
+    ///
+    /// After ANY input, keeps presenting frames for 1 second to prevent
+    /// the display from downclocking the refresh rate.
+    #[inline]
+    pub fn should_present_after_input(&self) -> bool {
+        self.ivars().last_input_timestamp.get().elapsed()
+            < std::time::Duration::from_secs(1)
+    }
 
     pub fn outer_position(&self) -> Result<PhysicalPosition<i32>, NotSupportedError> {
         let position = flip_window_screen_coordinates(self.window().frame());
@@ -2070,17 +2094,24 @@ impl DisplayLinkSupport for WindowDelegate {
                 // Get window delegate from the view (similar to Zed's approach)
                 use super::view::get_window_delegate;
                 if let Some(window_delegate) = get_window_delegate(view) {
-                    // Check if window needs redraw (dirty state)
-                    if window_delegate.ivars().needs_redraw.get() {
+                    // Check if window needs redraw (dirty state) OR if we're within
+                    // the 1-second presentation window after input to prevent display downclocking
+                    let needs_redraw = window_delegate.ivars().needs_redraw.get();
+                    let present_after_input =
+                        window_delegate.should_present_after_input();
+
+                    if needs_redraw || present_after_input {
                         // Clear dirty flag and trigger redraw
                         window_delegate.ivars().needs_redraw.set(false);
                         window_delegate
                             .ivars()
                             .app_delegate
-                            .queue_redraw(user_data.window_id);
+                            .handle_redraw(user_data.window_id);
+
                         tracing::trace!(
-                            "VSync redraw triggered for dirty window {:?}",
-                            user_data.window_id
+                            "VSync redraw triggered {:?} - needs_redraw {:?}",
+                            user_data.window_id,
+                            needs_redraw
                         );
                     } else {
                         tracing::trace!(
