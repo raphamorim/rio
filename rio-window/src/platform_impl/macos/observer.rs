@@ -94,6 +94,7 @@ impl RunLoop {
         RunLoop(unsafe { CFRunLoopGetMain() })
     }
 
+    #[allow(unused)]
     pub fn wakeup(&self) {
         unsafe { CFRunLoopWakeUp(self.0) }
     }

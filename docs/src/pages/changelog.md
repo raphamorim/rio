@@ -48,6 +48,15 @@ language: 'en'
 - Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
 - Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
+## 0.2.35
+
+- GPU memory usage drop 83%.
+- Sync input render logic (macos).
+
+## 0.2.34
+
+- Fix issue for finding fonts introduced with the v0.2.33 new font loader.
+
 ## 0.2.33
 
 - **Platform-specific configuration improvements** [#1341](https://github.com/raphamorim/rio/issues/1341):

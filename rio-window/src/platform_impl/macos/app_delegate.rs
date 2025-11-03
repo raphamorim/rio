@@ -561,6 +561,7 @@ impl ApplicationDelegate {
         }
     }
 
+    #[allow(unused)]
     pub fn queue_redraw(&self, window_id: WindowId) {
         let mut pending_redraw = self.ivars().pending_redraw.borrow_mut();
         if !pending_redraw.contains(&window_id) {

@@ -656,7 +656,8 @@ impl FontData {
         is_emoji: bool,
         font_spec: &SugarloafFont,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let font = FontRef::from_index(&data, 0).unwrap();
+        let font = FontRef::from_index(&data, 0)
+            .ok_or_else(|| format!("Failed to load font from path: {:?}", path))?;
         let (offset, key) = (font.offset, font.key);
 
         // Return our struct with the original file data and copies of the
