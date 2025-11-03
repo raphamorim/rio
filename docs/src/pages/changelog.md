@@ -15,7 +15,7 @@ language: 'en'
 
 ## 0.2.35
 
-- GPU memory usage drop >50%.
+- GPU memory usage drop 83%.
 - Sync input render logic.
 
 ## 0.2.34
