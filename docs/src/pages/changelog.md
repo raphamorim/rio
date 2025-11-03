@@ -13,6 +13,10 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
+## 0.2.34
+
+- Fix issue for finding fonts introduced with the v0.2.33 new font loader.
+
 ## 0.2.33
 
 - **Platform-specific configuration improvements** [#1341](https://github.com/raphamorim/rio/issues/1341):
