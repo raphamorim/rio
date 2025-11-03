@@ -165,7 +165,7 @@ impl MetalRichTextBrush {
         let pipeline_descriptor = RenderPipelineDescriptor::new();
         pipeline_descriptor.set_vertex_function(Some(&vertex_function));
         pipeline_descriptor.set_fragment_function(Some(&fragment_function));
-        pipeline_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
+        pipeline_descriptor.set_vertex_descriptor(Some(vertex_descriptor));
 
         let color_attachment = pipeline_descriptor
             .color_attachments()

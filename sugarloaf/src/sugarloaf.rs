@@ -499,10 +499,10 @@ impl Sugarloaf<'_> {
 
                 // Create render command encoder
                 let render_encoder =
-                    command_buffer.new_render_command_encoder(&render_pass_descriptor);
+                    command_buffer.new_render_command_encoder(render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
-                self.rich_text_brush.render_metal(ctx, &render_encoder);
+                self.rich_text_brush.render_metal(ctx, render_encoder);
 
                 render_encoder.end_encoding();
                 command_buffer.present_drawable(&surface_texture.drawable);

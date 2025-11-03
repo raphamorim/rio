@@ -1,4 +1,5 @@
 /// Improved shelf-based atlas allocator for better space utilization
+#[derive(Clone)]
 pub struct AtlasAllocator {
     width: u16,
     height: u16,
