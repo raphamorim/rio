@@ -375,11 +375,10 @@ impl Content {
         self.selector = Some(state_id);
 
         // Ensure the state exists - create it with default layout if missing
-        if !self.states.contains_key(&state_id) {
+        self.states.entry(state_id).or_insert_with(|| {
             let default_layout = RichTextLayout::default();
-            self.states
-                .insert(state_id, BuilderState::from_layout(&default_layout));
-        }
+            BuilderState::from_layout(&default_layout)
+        });
 
         self
     }
