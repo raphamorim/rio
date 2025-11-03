@@ -27,9 +27,9 @@ impl Atlas {
         context: &crate::context::Context,
     ) -> Self {
         let max_size = context.max_texture_dimension_2d();
-        let size = std::cmp::min(4096, max_size);
+        let size = std::cmp::min(2048, max_size);
 
-        tracing::info!("Creating layer atlas with size: {}x{}", size, size);
+        tracing::info!("Creating layer atlas with size: {}x{} (reduced from 4096 for memory efficiency)", size, size);
 
         let layers = match backend {
             wgpu::Backend::Gl => vec![Layer::Empty, Layer::Empty],
@@ -42,8 +42,7 @@ impl Atlas {
             depth_or_array_layers: layers.len() as u32,
         };
 
-        let texture_format = context.get_optimal_texture_format(4);
-
+        let texture_format = wgpu::TextureFormat::Rgba8Unorm;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("image texture atlas"),
             size: extent,
@@ -107,7 +106,7 @@ impl Atlas {
         &mut self,
         device: &wgpu::Device,
         backend: wgpu::Backend,
-        context: &crate::context::Context,
+        _context: &crate::context::Context,
     ) {
         self.layers = match backend {
             wgpu::Backend::Gl => vec![Layer::Empty, Layer::Empty],
@@ -120,8 +119,7 @@ impl Atlas {
             depth_or_array_layers: self.layers.len() as u32,
         };
 
-        let texture_format = context.get_optimal_texture_format(4);
-
+        let texture_format = wgpu::TextureFormat::Rgba8Unorm;
         self.texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("image texture atlas"),
             size: extent,
@@ -150,7 +148,7 @@ impl Atlas {
         width: u32,
         height: u32,
         data: &[u8],
-        context: &crate::context::Context,
+        _context: &crate::context::Context,
     ) -> Option<Entry> {
         let entry = {
             let current_size = self.layers.len();
@@ -164,9 +162,7 @@ impl Atlas {
 
         tracing::info!("Allocated atlas entry: {:?}", entry);
 
-        let converted_data = context.convert_rgba8_to_optimal_format(data);
         let bytes_per_pixel = self.get_bytes_per_pixel();
-
         let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let row_bytes = bytes_per_pixel * width;
         let padding = (align - row_bytes % align) % align;
@@ -180,7 +176,7 @@ impl Atlas {
             let src_row_bytes = (bytes_per_pixel * width) as usize;
 
             padded_data[offset..offset + src_row_bytes].copy_from_slice(
-                &converted_data[row * src_row_bytes..(row + 1) * src_row_bytes],
+                &data[row * src_row_bytes..(row + 1) * src_row_bytes],
             )
         }
 
