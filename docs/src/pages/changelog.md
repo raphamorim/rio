@@ -13,6 +13,11 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
+## 0.2.35
+
+- GPU memory usage drop >50%.
+- Sync input render logic.
+
 ## 0.2.34
 
 - Fix issue for finding fonts introduced with the v0.2.33 new font loader.

@@ -75,7 +75,7 @@ impl ImageCache {
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
         let max_size = context.max_texture_dimension_2d();
-        let max_texture_size = std::cmp::min(4096, max_size) as u16;
+        let max_texture_size = std::cmp::min(2048, max_size) as u16;
 
         tracing::info!(
             "Creating rich_text image cache with size: {}x{}",
