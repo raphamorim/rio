@@ -13,6 +13,10 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
+## 0.2.36
+
+- Fix DECSCUSR.
+
 ## 0.2.35
 
 - GPU memory usage drop 83%.
