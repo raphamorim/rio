@@ -360,7 +360,6 @@ fn detect_implementation() -> &'static str {
 
 fn print_system_info() {
     println!("Copa Parser Advanced Benchmark Suite");
-    println!("====================================");
     println!();
 
     let implementation = detect_implementation();
@@ -422,19 +421,4 @@ fn main() {
         println!();
         println!("Results exported to: {filename}");
     }
-
-    println!();
-    println!("Usage Instructions:");
-    println!("==================");
-    println!();
-    println!("To compare performance between implementations:");
-    println!("1. Run on main branch:      git checkout main && cargo run --example advanced_benchmark --release");
-    println!("2. Run on simd-utf8 branch: git checkout simd-utf8 && cargo run --example advanced_benchmark --release");
-    println!("3. Compare the generated JSON files or console output");
-    println!();
-    println!("For statistical analysis with criterion:");
-    println!("  cargo bench --bench parser_benchmark");
-    println!();
-    println!("For HTML reports:");
-    println!("  cargo bench && open target/criterion/report/index.html");
 }

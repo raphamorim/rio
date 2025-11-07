@@ -147,8 +147,6 @@ fn run_chunked_test() -> BenchmarkResult {
 
 fn print_system_info() {
     println!("Copa Parser Performance Benchmark");
-    println!("=================================");
-    println!();
 
     // Try to detect if we're using simdutf8 or std
     let implementation =
@@ -287,19 +285,4 @@ fn main() {
             / real_world_tests.len() as f64;
         println!("  Real-world scenarios: {real_world_avg:.2} MB/s average");
     }
-
-    println!();
-    println!("Usage Instructions:");
-    println!("==================");
-    println!();
-    println!("To compare performance between implementations:");
-    println!("1. Run on main branch:     git checkout main && cargo run --example benchmark_comparison --release");
-    println!("2. Run on simd-utf8 branch: git checkout simd-utf8 && cargo run --example benchmark_comparison --release");
-    println!("3. Compare the results manually or save outputs to files for analysis");
-    println!();
-    println!("For detailed statistical analysis:");
-    println!("  cargo bench --bench parser_benchmark");
-    println!();
-    println!("For HTML reports with graphs:");
-    println!("  cargo bench --bench parser_benchmark && open target/criterion/report/index.html");
 }
