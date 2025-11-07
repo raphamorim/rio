@@ -19,13 +19,7 @@
   </p>
 </p>
 
-> **⚠️ Development Notice**: We are currently in the process of releasing Rio 0.3.0, which includes major performance improvements and architectural changes. The main branch is under active development and may be unstable. For stable usage, please use [v0.2.20 or below](https://github.com/raphamorim/rio/releases).
-
-## About
-
-Documentation: https://rioterm.com
-
-If you are using or want to help in any way please consider to donate via [Github Sponsors](https://github.com/sponsors/raphamorim).
+Documentation: [rioterm.com](https://rioterm.com).
 
 ## Supporting the Project
 
