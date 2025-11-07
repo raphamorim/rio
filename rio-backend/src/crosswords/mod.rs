@@ -1172,11 +1172,6 @@ impl<U: EventListener> Crosswords<U> {
             content = CursorShape::Hidden;
         }
 
-        // If is not using app cursor then use default
-        if content != CursorShape::Hidden && !self.mode.contains(Mode::ALT_SCREEN) {
-            content = self.default_cursor_shape;
-        }
-
         CursorState { pos, content }
     }
 

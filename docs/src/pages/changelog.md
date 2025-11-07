@@ -48,6 +48,10 @@ language: 'en'
 - Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
 - Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
+## 0.2.36
+
+- Fix DECSCUSR.
+
 ## 0.2.35
 
 - GPU memory usage drop 83%.
