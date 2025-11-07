@@ -52,6 +52,10 @@ language: 'en'
 
 - Fix DECSCUSR.
 
+## 0.2.36
+
+- Fix DECSCUSR.
+
 ## 0.2.35
 
 - GPU memory usage drop 83%.
