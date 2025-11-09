@@ -873,6 +873,7 @@ impl Screen<'_> {
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::ViMotion(motion) => {
@@ -887,6 +888,7 @@ impl Screen<'_> {
                                 selection.to_range(&terminal);
                         };
                         drop(terminal);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
@@ -903,18 +905,22 @@ impl Screen<'_> {
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::SplitRight => {
@@ -2060,8 +2066,8 @@ impl Screen<'_> {
         }
 
         self.search_state.dfas = None;
-
         self.exit_search();
+        self.update_hint_state();
     }
 
     /// Cleanup the search state.
@@ -2509,6 +2515,15 @@ impl Screen<'_> {
             close,
         );
         self.sugarloaf.render();
+    }
+
+    fn trigger_full_damage(&mut self) {
+        let current = self.context_manager.current_mut();
+        current
+            .renderable_content
+            .pending_update
+            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+        current.renderable_content.pending_update.set_dirty();
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
