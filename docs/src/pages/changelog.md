@@ -26,6 +26,7 @@ language: 'en'
 - **New GPU-Rendered Navigation**: Faster, smoother tab interface
 - **Command Palette**: Quick access to terminal functions
 - **Quake Window Mode**: Drop-down terminal from top of screen
+- Wgpu now is always f32.
 
 **Breaking Changes**
 
