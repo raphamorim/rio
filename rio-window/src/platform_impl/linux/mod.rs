@@ -41,7 +41,7 @@ pub(crate) use crate::cursor::OnlyCursorImageSource as PlatformCustomCursorSourc
 pub(crate) use crate::icon::RgbaIcon as PlatformIcon;
 pub(crate) use crate::platform_impl::Fullscreen;
 
-pub(crate) mod common;
+pub mod common;
 #[cfg(wayland_platform)]
 pub(crate) mod wayland;
 #[cfg(x11_platform)]
