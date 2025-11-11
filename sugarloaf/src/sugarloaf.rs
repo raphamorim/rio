@@ -379,10 +379,9 @@ impl Sugarloaf<'_> {
         self.state.set_rich_text_hidden(id, true);
     }
 
-    /// Show/hide a rich text
     #[inline]
     pub fn set_rich_text_visibility(&mut self, id: usize, hidden: bool) {
-        self.state.set_rich_text_hidden(id, hidden);
+        self.state.set_rich_text_hidden(id, !hidden);
     }
 
     #[inline]

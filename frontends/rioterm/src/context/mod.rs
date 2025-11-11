@@ -761,7 +761,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_current_context(&mut self) {
+    pub fn close_current_context(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.contexts.len() == 1 {
             // MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background.
@@ -781,12 +781,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_set_current = true;
         }
 
+        // Remove all rich text from the grid before removing the context
+        self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
         self.titles.titles.remove(&index_to_remove);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {
             self.set_current(0);
         }
+
+        self.keep_only_active_context_visible(sugarloaf);
     }
 
     #[inline]
@@ -1060,6 +1064,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     tracing::error!("not able to create a new context");
                 }
             }
+        }
+    }
+
+    /// Hide all rich text components except for the current tab
+    #[inline]
+    pub fn keep_only_active_context_visible(&self, sugarloaf: &mut Sugarloaf) {
+        for (idx, context) in self.contexts.iter().enumerate() {
+            // Skip the current tab
+            if idx == self.current_index {
+                context.set_all_rich_text_visibility(sugarloaf, true);
+                continue;
+            }
+
+            context.set_all_rich_text_visibility(sugarloaf, false);
         }
     }
 }

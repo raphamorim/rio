@@ -1242,6 +1242,7 @@ impl Screen<'_> {
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
         self.context_manager.add_context(redirect, rich_text_id);
+        self.context_manager.keep_only_active_context_visible(&mut self.sugarloaf);
 
         self.cancel_search();
         self.render();
@@ -1260,7 +1261,7 @@ impl Screen<'_> {
 
     pub fn close_tab(&mut self) {
         self.clear_selection();
-        self.context_manager.close_current_context();
+        self.context_manager.close_current_context(&mut self.sugarloaf);
 
         self.cancel_search();
         if self.ctx().len() <= 1 {
