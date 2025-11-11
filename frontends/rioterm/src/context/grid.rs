@@ -1896,6 +1896,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
     }
+
+    #[inline]
+    pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, hidden: bool) {
+        for item in self.inner.values() {
+            sugarloaf.set_rich_text_visibility(item.val.rich_text_id, hidden);
+        }
+    }
+
+    #[inline]
+    pub fn remove_all_rich_text(&self, sugarloaf: &mut Sugarloaf) {
+        for item in self.inner.values() {
+            sugarloaf.remove_rich_text(item.val.rich_text_id);
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]

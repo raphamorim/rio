@@ -1207,7 +1207,6 @@ impl Renderer {
             context_manager,
         );
 
-        // Render command palette (above everything else)
         self.command_palette.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),

@@ -148,11 +148,11 @@ impl Island {
 
         // Hide all existing island rich texts first
         for tab_data in self.tab_data.values() {
-            sugarloaf.hide_rich_text(tab_data.rich_text_id);
+            sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
         }
         // Hide indicator rich text if it exists
         if let Some(rich_text_id) = self.indicator_rich_text_id {
-            sugarloaf.hide_rich_text(rich_text_id);
+            sugarloaf.set_rich_text_visibility(rich_text_id, false);
         }
 
         // Always render the single-tab indicator (leftmost element)
@@ -332,6 +332,7 @@ impl Island {
                 ..FragmentStyle::default()
             };
 
+            // TODO: This will be remove from it and used in welcome page instead
             // Check if this character should be rendered as a drawable
             if let Some(character) = drawable_character('\u{1CC6D}') {
                 style.drawable_char = Some(character);
