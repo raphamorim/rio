@@ -1080,6 +1080,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             context.set_all_rich_text_visibility(sugarloaf, false);
         }
     }
+
+    /// Switch visibility between two contexts (hide old, show new)
+    #[inline]
+    pub fn switch_context_visibility(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        old_index: usize,
+        new_index: usize,
+    ) {
+        if let Some(old_context) = self.contexts.get(old_index) {
+            old_context.set_all_rich_text_visibility(sugarloaf, false);
+        }
+        if let Some(new_context) = self.contexts.get(new_index) {
+            new_context.set_all_rich_text_visibility(sugarloaf, true);
+        }
+    }
 }
 
 pub fn process_open_url(
