@@ -19,7 +19,7 @@ use crate::font_introspector::text::cluster::Token;
 use crate::font_introspector::text::cluster::{CharCluster, Status};
 use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
-use crate::font_introspector::{CacheKey, FontRef, Synthesis};
+use crate::font_introspector::{Attributes, CacheKey, FontRef, Synthesis};
 use crate::layout::FragmentStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
@@ -672,7 +672,14 @@ impl FontData {
         let should_embolden = font_spec.weight >= Some(700) && weight < Weight(700);
 
         let stretch = attributes.stretch();
-        let synth = attributes.synthesize(attributes);
+
+        let requested_weight = font_spec.weight.map(Weight).unwrap_or(Weight::NORMAL);
+        let requested_style = match font_spec.style {
+            SugarloafFontStyle::Italic => Style::Italic,
+            SugarloafFontStyle::Normal => Style::Normal,
+        };
+        let requested_attrs = Attributes::new(stretch, requested_weight, requested_style);
+        let synth = attributes.synthesize(requested_attrs);
 
         let data = (!evictable).then_some(data);
 

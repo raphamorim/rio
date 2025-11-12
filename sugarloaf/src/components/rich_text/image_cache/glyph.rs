@@ -135,6 +135,7 @@ impl GlyphCacheSession<'_> {
         let font_data = font_library_data.get(&self.font);
         let should_embolden = font_data.should_embolden;
         let should_italicize = font_data.should_italicize;
+        let synth = font_data.synth;
 
         if let Some((shared_data, offset, cache_key)) =
             font_library_data.get_data(&self.font)
@@ -144,6 +145,12 @@ impl GlyphCacheSession<'_> {
                 offset,
                 key: cache_key,
             };
+
+            let coords: Vec<_> = font_ref
+                .variations()
+                .normalized_coords(synth.variations().iter().copied())
+                .collect();
+
             let mut scaler = self
                 .scale_context
                 .builder(font_ref)
@@ -155,7 +162,7 @@ impl GlyphCacheSession<'_> {
                 // .hint(!IS_MACOS)
                 .hint(enable_hint)
                 .size(self.quant_size.into())
-                // .normalized_coords(coords)
+                .normalized_coords(&coords)
                 .build();
 
             // let embolden = if IS_MACOS { 0.25 } else { 0. };
