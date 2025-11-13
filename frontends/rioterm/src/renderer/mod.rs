@@ -95,7 +95,8 @@ impl Renderer {
         let mut island = island::Island::new();
         if config.navigation.is_enabled() {
             island.set_enabled(true);
-            // Map old background colors to new text colors for Hyper-style design
+            island.set_hide_if_single(config.navigation.hide_if_single);
+            // Map old background colors to new text colors
             island.set_inactive_text_color(named_colors.tabs);
             island.set_active_text_color(named_colors.tabs_active);
             island.set_border_color(named_colors.tabs);
