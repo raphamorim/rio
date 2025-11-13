@@ -1703,6 +1703,32 @@ You can enable window shadow on MacOS by config, it's disabled by default.
 macos-use-shadow = true
 ```
 
+## window.macos-traffic-light-position-x
+
+Customize the horizontal position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the left edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Composer" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-x = 9.0
+```
+
+## window.macos-traffic-light-position-y
+
+Customize the vertical position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the top edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Composer" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-y = 9.0
+```
+
+Both x and y positions must be set together to take effect. Common values:
+- `9.0, 9.0` - Compact positioning (similar to Zed)
+- `11.4, 16.1` - Standard macOS spacing
+
 ## window.windows-corner-preference
 
 Describes how the corners of a Microsoft Windows window should look like.

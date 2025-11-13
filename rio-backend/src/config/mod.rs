@@ -507,6 +507,12 @@ impl Config {
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
+            if let Some(x) = window_overwrite.macos_traffic_light_position_x {
+                self.window.macos_traffic_light_position_x = Some(x);
+            }
+            if let Some(y) = window_overwrite.macos_traffic_light_position_y {
+                self.window.macos_traffic_light_position_y = Some(y);
+            }
             if let Some(initial_title) = &window_overwrite.initial_title {
                 self.window.initial_title = Some(initial_title.clone());
             }

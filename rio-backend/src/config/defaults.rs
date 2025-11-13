@@ -278,6 +278,16 @@ pub fn default_config_file_content() -> String {
 #     - "display-p3" (default on macOS)
 #     - "rec2020"
 #
+# • macos-traffic-light-position-x - Set the x position of the macOS traffic light buttons
+#     Position is in points from the left edge of the window
+#     Note: This setting is ignored when navigation mode is "Composer"
+#     Default: Not set (uses macOS default positioning)
+#
+# • macos-traffic-light-position-y - Set the y position of the macOS traffic light buttons
+#     Position is in points from the top edge of the window
+#     Note: This setting is ignored when navigation mode is "Composer"
+#     Default: Not set (uses macOS default positioning)
+#
 # Example:
 # [window]
 # width = 600
@@ -287,6 +297,8 @@ pub fn default_config_file_content() -> String {
 # blur = false
 # decorations = "enabled"
 # colorspace = "display-p3"
+# macos-traffic-light-position-x = 9.0
+# macos-traffic-light-position-y = 9.0
 
 # Renderer
 #
