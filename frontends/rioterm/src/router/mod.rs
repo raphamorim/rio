@@ -581,9 +581,6 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
-
-    #[cfg(target_os = "macos")]
-    pub is_macos_deadzone: bool,
 }
 
 impl<'a> RouteWindow<'a> {
@@ -748,8 +745,6 @@ impl<'a> RouteWindow<'a> {
             needs_render_after_occlusion: false,
             winit_window,
             screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
         }
     }
 }

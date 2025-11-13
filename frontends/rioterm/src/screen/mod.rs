@@ -2016,6 +2016,66 @@ impl Screen<'_> {
             .is_none()
     }
 
+    // return true if the click was handled by the island
+    #[inline]
+    pub fn handle_island_click(&mut self) -> bool {
+        // Only handle if navigation is enabled
+        if !self.renderer.navigation.is_enabled() {
+            return false;
+        }
+
+        let mouse_x = self.mouse.x;
+        let mouse_y = self.mouse.y;
+
+        use crate::renderer::island::ISLAND_HEIGHT;
+        let scale_factor = self.sugarloaf.scale_factor();
+        let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+
+        // Check if click is within island height
+        if mouse_y > island_height_px {
+            return false;
+        }
+
+        // Calculate tab width and left margin
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let num_tabs = self.context_manager.len();
+
+        #[cfg(target_os = "macos")]
+        let left_margin = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let margin_right = 8.0;
+        let available_width = (window_width / scale_factor) - margin_right - left_margin;
+        let tab_width = available_width / num_tabs as f32;
+
+        // Convert mouse X to unscaled coordinates
+        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+
+        // Check if click is in the left margin (traffic light area)
+        if mouse_x_unscaled < left_margin {
+            return true; // Consume click but don't switch tabs
+        }
+
+        // Calculate which tab was clicked
+        let x_in_tabs = mouse_x_unscaled - left_margin;
+        let clicked_tab = (x_in_tabs / tab_width) as usize;
+
+        // Only switch if it's a valid tab index and not already current
+        if clicked_tab < num_tabs && clicked_tab != self.context_manager.current_index() {
+            self.cancel_search();
+            self.clear_selection();
+            let old_index = self.context_manager.current_index();
+            self.context_manager.set_current(clicked_tab);
+            let new_index = self.context_manager.current_index();
+            self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+
+            self.render();
+        }
+
+        true // Click was in island area, consumed
+    }
+
     #[inline]
     pub fn on_left_click(&mut self, point: Pos) {
         let side = self.mouse.square_side;
