@@ -110,18 +110,6 @@ pub struct Colors {
         rename = "tabs-active"
     )]
     pub tabs_active: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "defaults::tabs_active_foreground",
-        rename = "tabs-active-foreground"
-    )]
-    pub tabs_active_foreground: ColorArray,
-    #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "defaults::tabs_foreground",
-        rename = "tabs-foreground"
-    )]
-    pub tabs_foreground: ColorArray,
     #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub cursor: ColorArray,
     #[serde(
@@ -140,12 +128,6 @@ pub struct Colors {
     pub tabs: ColorArray,
     #[serde(default = "defaults::bar", deserialize_with = "deserialize_to_arr")]
     pub bar: ColorArray,
-    #[serde(
-        default = "defaults::tabs_active_highlight",
-        rename = "tabs-active-highlight",
-        deserialize_with = "deserialize_to_arr"
-    )]
-    pub tabs_active_highlight: ColorArray,
     #[serde(default = "defaults::white", deserialize_with = "deserialize_to_arr")]
     pub white: ColorArray,
     #[serde(
@@ -319,10 +301,7 @@ impl Default for Colors {
             yellow: defaults::yellow(),
             bar: defaults::bar(),
             tabs: defaults::tabs(),
-            tabs_active_highlight: defaults::tabs_active_highlight(),
             tabs_active: defaults::tabs_active(),
-            tabs_active_foreground: defaults::tabs_active_foreground(),
-            tabs_foreground: defaults::tabs_foreground(),
             cursor: defaults::cursor(),
             split: defaults::split(),
             vi_cursor: defaults::vi_cursor(),

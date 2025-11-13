@@ -74,11 +74,8 @@ cursor = '#F712FF'
 vi-cursor = '#12d0ff'
 
 # Navigation
-tabs = '#12B5E5'
-tabs-foreground = '#7d7d7d'
-tabs-active = '#303030'
-tabs-active-highlight = '#ffa133'
-tabs-active-foreground = '#FFFFFF'
+tabs = '#cccccc'  # Inactive tab text and border color
+tabs-active = '#ffffff'  # Active tab text color
 bar = '#1b1a1a'
 split = '#292527'
 
@@ -1432,9 +1429,8 @@ selection-background = ""
 selection-foreground = ""
 
 # Navigation
+tabs = ""
 tabs-active = ""
-tabs-active-foreground = ""
-tabs-active-highlight = ""
 bar = ""
 split = ""
 cursor = ""

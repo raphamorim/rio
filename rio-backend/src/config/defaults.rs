@@ -27,12 +27,12 @@ pub fn default_title_content() -> String {
 
 #[inline]
 pub fn default_padding_y() -> [f32; 2] {
-    [0., 0.]
+    [8., 0.]
 }
 
 #[inline]
 pub fn default_padding_x() -> f32 {
-    10.
+    8.
 }
 
 #[inline]
@@ -484,8 +484,8 @@ pub fn default_config_file_content() -> String {
 # background = '#0F0D0E'
 # foreground = '#F9F4DA'
 # cursor = '#F38BA3'
-# tabs = '#443d40'
-# tabs-active = '#F38BA3'
+# tabs = '#cccccc'  # Inactive tab text and border color (matches Hyper)
+# tabs-active = '#ffffff'  # Active tab text color (matches Hyper)
 # green = '#0BA95B'
 # red = '#ED203D'
 # blue = '#12B5E5'
