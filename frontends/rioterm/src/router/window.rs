@@ -103,6 +103,10 @@ pub fn create_window_builder(
         window_builder = window_builder
             .with_colorspace(config.window.colorspace.to_rio_window_colorspace());
 
+        if let (Some(x), Some(y)) = (config.window.macos_traffic_light_position_x, config.window.macos_traffic_light_position_y) {
+            window_builder = window_builder.with_traffic_light_position(x, y);
+        }
+
         if config.navigation.is_native() {
             if let Some(identifier) = tab_id {
                 window_builder = window_builder
@@ -110,10 +114,16 @@ pub fn create_window_builder(
                     .with_unified_titlebar(config.window.macos_use_unified_titlebar);
             }
         } else {
+            use crate::constants::TRAFFIC_LIGHT_PADDING;
             window_builder = window_builder
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true);
+
+            if config.navigation.is_composer() {
+                window_builder = window_builder
+                    .with_traffic_light_position(TRAFFIC_LIGHT_PADDING, TRAFFIC_LIGHT_PADDING);
+            }
         }
     }
 

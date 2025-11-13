@@ -57,6 +57,10 @@ pub struct PlatformWindow {
     pub macos_use_unified_titlebar: Option<bool>,
     #[serde(default = "Option::default", rename = "macos-use-shadow")]
     pub macos_use_shadow: Option<bool>,
+    #[serde(default = "Option::default", rename = "macos-traffic-light-position-x")]
+    pub macos_traffic_light_position_x: Option<f64>,
+    #[serde(default = "Option::default", rename = "macos-traffic-light-position-y")]
+    pub macos_traffic_light_position_y: Option<f64>,
     #[serde(default = "Option::default", rename = "initial-title")]
     pub initial_title: Option<String>,
     #[serde(default = "Option::default", rename = "windows-use-undecorated-shadow")]

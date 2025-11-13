@@ -161,6 +161,11 @@ impl Navigation {
     }
 
     #[inline]
+    pub fn is_composer(&self) -> bool {
+        self.mode == NavigationMode::Composer
+    }
+
+    #[inline]
     pub fn has_navigation_key_bindings(&self) -> bool {
         self.mode != NavigationMode::Plain
     }
