@@ -195,8 +195,9 @@ impl Island {
             let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.0);
             sugarloaf.show_rich_text(tab_data.rich_text_id, text_x, text_y);
 
-            // Draw vertical left border (separator between tabs) - skip for first tab
-            if tab_index > 0 {
+            // Draw vertical left border (separator between tabs)
+            // Skip for first tab UNLESS it's active (then draw to separate from traffic lights)
+            if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
                 sugarloaf.rect(
                     x_position,
                     0.0, // Start from top
