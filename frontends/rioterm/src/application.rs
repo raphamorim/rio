@@ -912,15 +912,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     _ => (),
                 }
 
-                #[cfg(target_os = "macos")]
-                {
-                    if route.window.is_macos_deadzone {
-                        return;
-                    }
-                }
-
                 match state {
                     ElementState::Pressed => {
+                        // Check if click is on island tab bar first (before any other processing)
+                        if let MouseButton::Left = button {
+                            let handled_by_island = route.window.screen.handle_island_click();
+
+                            if handled_by_island {
+                                // Island handled the click, don't process further
+                                route.request_redraw();
+                                return;
+                            }
+                        }
+
                         // In case need to switch grid current
                         route.window.screen.select_current_based_on_mouse();
 
@@ -1037,43 +1041,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let x = position.x;
                 let y = position.y;
 
-                let lmb_pressed =
-                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
-                let rmb_pressed =
-                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
-
-                let has_selection = !route.window.screen.selection_is_empty();
-
-                #[cfg(target_os = "macos")]
-                {
-                    // Dead zone for MacOS only
-                    // e.g: Dragging the terminal
-                    if !has_selection
-                        && !route.window.screen.context_manager.config.is_native
-                        && route.window.screen.is_macos_deadzone(y)
-                    {
-                        route.window.winit_window.set_cursor(CursorIcon::Default);
-
-                        route.window.is_macos_deadzone = true;
-                        return;
-                    }
-
-                    route.window.is_macos_deadzone = false;
-                }
-
-                if has_selection && (lmb_pressed || rmb_pressed) {
-                    route.window.screen.update_selection_scrolling(y);
-                }
-
-                let display_offset = route.window.screen.display_offset();
-                let old_point = route.window.screen.mouse_position(display_offset);
-
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                let lmb_pressed =
+                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
+                let rmb_pressed =
+                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
+
+                let has_selection = !route.window.screen.selection_is_empty();
+                if has_selection && (lmb_pressed || rmb_pressed) {
+                    route.window.screen.update_selection_scrolling(position.y);
+                }
+
+                let display_offset = route.window.screen.display_offset();
+                let old_point = route.window.screen.mouse_position(display_offset);
 
                 let point = route.window.screen.mouse_position(display_offset);
 
