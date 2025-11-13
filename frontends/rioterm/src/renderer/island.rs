@@ -53,6 +53,15 @@ const MAX_TITLE_CHARS: usize = 25;
 /// Minimum width for a single island
 const ISLAND_MIN_WIDTH: f32 = 60.0;
 
+/// Minimum number of tabs before fade effect is enabled
+const FADE_EFFECT_MIN_TABS: usize = 5;
+
+/// Maximum distance from active tab before full fade (0 = active, 1 = adjacent, 2 = two away, 3 = three away)
+const FADE_EFFECT_MAX_DISTANCE: usize = 3;
+
+/// Opacity reduction per distance step (e.g., 0.25 means 25% reduction per step)
+const FADE_OPACITY_STEP: f32 = 0.25;
+
 /// Data for each individual tab island
 struct TabIslandData {
     /// Rich text ID for this tab's title
@@ -136,6 +145,33 @@ impl Island {
         total_width.max(ISLAND_MIN_WIDTH)
     }
 
+    /// Calculate opacity multiplier for a tab based on its distance from the active tab
+    /// Returns 1.0 (fully opaque) for active tab, progressively lower for tabs farther away
+    fn calculate_tab_opacity(
+        tab_index: usize,
+        active_tab_index: usize,
+        _total_tabs: usize,
+    ) -> f32 {
+        // Calculate distance from active tab
+        let distance = if tab_index > active_tab_index {
+            tab_index - active_tab_index
+        } else {
+            active_tab_index - tab_index
+        };
+
+        // No fade for active tab
+        if distance == 0 {
+            return 1.0;
+        }
+
+        // Calculate opacity based on distance
+        // distance 1: 1.0 - 0.25 = 0.75
+        // distance 2: 1.0 - 0.50 = 0.50
+        // distance 3: 1.0 - 0.75 = 0.25
+        let opacity = 1.0 - (distance.min(FADE_EFFECT_MAX_DISTANCE) as f32 * FADE_OPACITY_STEP);
+        opacity.max(0.1) // Ensure minimum visibility
+    }
+
     /// Render individual tab islands like Opera One
     #[inline]
     pub fn render(
@@ -212,8 +248,9 @@ impl Island {
                 title = title.chars().take(MAX_TITLE_CHARS).collect();
             }
 
-            // Update text if title changed
+            // Update text if title changed (color will be applied during render with opacity)
             if tab_data.last_title != title {
+                // Measure text width first by setting temporary text
                 use rio_backend::sugarloaf::FragmentStyle;
                 let content = sugarloaf.content();
                 content
@@ -235,7 +272,7 @@ impl Island {
                 tab_data.last_title = title.clone();
             }
 
-            // Update shortcut text (always set to tab index)
+            // Update shortcut text (only once to measure width)
             if tab_data.shortcut_width == 0.0 {
                 use rio_backend::sugarloaf::FragmentStyle;
                 let shortcut_text = format!("{}", tab_index);
@@ -296,6 +333,9 @@ impl Island {
             let island_width = base_island_width * scale_factor_width;
             let tab_data = &self.tab_data[&tab_index];
 
+            // Calculate opacity based on distance from active tab
+            let opacity = Self::calculate_tab_opacity(tab_index, current_tab_index, num_tabs);
+
             // Layout: [left_pad][title][spacing][shortcut_bg][right_pad]
             // Calculate positions for title and shortcut
             let title_x = x_position + ISLAND_PADDING_X;
@@ -307,12 +347,18 @@ impl Island {
             let shortcut_bg_x = title_x + tab_data.text_width + TITLE_SHORTCUT_SPACING;
             let shortcut_bg_y = island_y + (island_height - shortcut_bg_height) / 2.0;
 
-            // Choose shortcut background color based on active state
-            let shortcut_bg_color = if tab_index == current_tab_index {
+            // Choose shortcut background color based on active state and apply opacity
+            let mut shortcut_bg_color = if tab_index == current_tab_index {
                 self.active_background_color
             } else {
                 self.background_color
             };
+            // Apply opacity to background alpha channel
+            shortcut_bg_color[3] *= opacity;
+
+            // Apply opacity to title color
+            let mut title_color = self.title_color;
+            title_color[3] *= opacity;
 
             // Render shortcut background (small rounded rectangle)
             sugarloaf.rounded_rect(
@@ -325,10 +371,38 @@ impl Island {
                 SHORTCUT_CORNER_RADIUS,
             );
 
-            // Position and show title text
+            // Update title text color with opacity and show
+            use rio_backend::sugarloaf::FragmentStyle;
+            let content = sugarloaf.content();
+            content
+                .sel(tab_data.rich_text_id)
+                .clear()
+                .new_line()
+                .add_text(
+                    &tab_data.last_title,
+                    FragmentStyle {
+                        color: title_color,
+                        ..FragmentStyle::default()
+                    },
+                )
+                .build();
             sugarloaf.show_rich_text(tab_data.rich_text_id, title_x, title_y);
 
-            // Position and show shortcut text (centered in its background)
+            // Update shortcut text color with opacity and show
+            let shortcut_text = format!("{}", tab_index);
+            let content = sugarloaf.content();
+            content
+                .sel(tab_data.shortcut_rich_text_id)
+                .clear()
+                .new_line()
+                .add_text(
+                    &shortcut_text,
+                    FragmentStyle {
+                        color: title_color,
+                        ..FragmentStyle::default()
+                    },
+                )
+                .build();
             let shortcut_text_x = shortcut_bg_x + SHORTCUT_PADDING_X;
             let shortcut_text_y = shortcut_bg_y + SHORTCUT_PADDING_Y;
             sugarloaf.show_rich_text(tab_data.shortcut_rich_text_id, shortcut_text_x, shortcut_text_y);
@@ -615,6 +689,58 @@ mod tests {
             assert!(ISLAND_CORNER_RADIUS >= 4.0);
             assert!(ISLAND_CORNER_RADIUS <= 12.0);
         }
+    }
+
+    #[test]
+    fn test_opacity_calculation_active_tab() {
+        // Active tab should always be fully opaque
+        let opacity = Island::calculate_tab_opacity(2, 2, 10);
+        assert_eq!(opacity, 1.0);
+    }
+
+    #[test]
+    fn test_opacity_calculation_adjacent_tab() {
+        // Adjacent tab (distance 1) should have 0.75 opacity
+        let opacity = Island::calculate_tab_opacity(3, 2, 10);
+        assert_eq!(opacity, 0.75);
+
+        let opacity = Island::calculate_tab_opacity(1, 2, 10);
+        assert_eq!(opacity, 0.75);
+    }
+
+    #[test]
+    fn test_opacity_calculation_far_tabs() {
+        // Distance 2: 0.50 opacity
+        let opacity = Island::calculate_tab_opacity(4, 2, 10);
+        assert_eq!(opacity, 0.50);
+
+        // Distance 3: 0.25 opacity
+        let opacity = Island::calculate_tab_opacity(5, 2, 10);
+        assert_eq!(opacity, 0.25);
+
+        // Distance 4+: still 0.25 (capped at max distance)
+        let opacity = Island::calculate_tab_opacity(8, 2, 10);
+        assert_eq!(opacity, 0.25);
+    }
+
+    #[test]
+    fn test_opacity_with_few_tabs() {
+        // Fade effect now works with any number of tabs
+        // Tab at distance 2 from active should have 0.5 opacity
+        let opacity = Island::calculate_tab_opacity(3, 1, 4);
+        assert_eq!(opacity, 0.50);
+
+        // Tab at distance 1 from active should have 0.75 opacity
+        let opacity = Island::calculate_tab_opacity(0, 1, 3);
+        assert_eq!(opacity, 0.75);
+    }
+
+    #[test]
+    fn test_opacity_minimum_visibility() {
+        // Even at maximum distance, ensure minimum visibility of 0.1
+        // This is enforced by the max(0.1) in the function
+        let opacity = Island::calculate_tab_opacity(10, 0, 15);
+        assert!(opacity >= 0.1);
     }
 
 }
