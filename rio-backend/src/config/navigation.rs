@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum NavigationMode {
     #[serde(alias = "plain")]
     Plain,
-    #[serde(alias = "enabled", alias = "composer")]
-    Composer,
+    #[serde(alias = "tab")]
+    Tab,
     #[cfg(target_os = "macos")]
     #[serde(alias = "nativetab")]
     NativeTab,
@@ -18,25 +18,25 @@ impl Default for NavigationMode {
     fn default() -> NavigationMode {
         #[cfg(target_os = "macos")]
         {
-            // Use Composer for full GPU rendering
-            NavigationMode::Composer
+            // Use Tab for full GPU rendering
+            NavigationMode::Tab
         }
 
         #[cfg(not(target_os = "macos"))]
-        NavigationMode::Composer
+        NavigationMode::Tab
     }
 }
 
 impl NavigationMode {
     const PLAIN_STR: &'static str = "Plain";
-    const COMPOSER_STR: &'static str = "Composer";
+    const TAB_STR: &'static str = "Tab";
     #[cfg(target_os = "macos")]
     const NATIVE_TAB_STR: &'static str = "NativeTab";
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Plain => Self::PLAIN_STR,
-            Self::Composer => Self::COMPOSER_STR,
+            Self::Tab => Self::TAB_STR,
             #[cfg(target_os = "macos")]
             Self::NativeTab => Self::NATIVE_TAB_STR,
         }
@@ -47,7 +47,7 @@ impl NavigationMode {
 pub fn modes_as_vec_string() -> Vec<String> {
     [
         NavigationMode::Plain,
-        NavigationMode::Composer,
+        NavigationMode::Tab,
         #[cfg(target_os = "macos")]
         NavigationMode::NativeTab,
     ]
@@ -71,7 +71,7 @@ impl std::str::FromStr for NavigationMode {
     fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
         match s {
             Self::PLAIN_STR => Ok(NavigationMode::Plain),
-            Self::COMPOSER_STR => Ok(NavigationMode::Composer),
+            Self::TAB_STR => Ok(NavigationMode::Tab),
             #[cfg(target_os = "macos")]
             Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
             _ => Ok(NavigationMode::default()),
@@ -161,18 +161,13 @@ impl Navigation {
     }
 
     #[inline]
-    pub fn is_composer(&self) -> bool {
-        self.mode == NavigationMode::Composer
-    }
-
-    #[inline]
     pub fn has_navigation_key_bindings(&self) -> bool {
         self.mode != NavigationMode::Plain
     }
 
     #[inline]
     pub fn is_enabled(&self) -> bool {
-        self.mode == NavigationMode::Composer
+        self.mode == NavigationMode::Tab
     }
 }
 
@@ -202,14 +197,14 @@ mod tests {
     }
 
     #[test]
-    fn test_composer() {
+    fn test_tab() {
         let content = r#"
             [navigation]
-            mode = 'Composer'
+            mode = 'Tab'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Composer);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_automation.is_empty());
     }
@@ -218,14 +213,14 @@ mod tests {
     fn test_color_automation() {
         let content = r#"
             [navigation]
-            mode = 'Composer'
+            mode = 'Tab'
             color-automation = [
                 { program = 'vim', color = '#333333' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Composer);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
@@ -243,7 +238,7 @@ mod tests {
     fn test_color_automation_arr() {
         let content = r#"
             [navigation]
-            mode = 'Composer'
+            mode = 'Tab'
             color-automation = [
                 { program = 'ssh', color = '#F1F1F1' },
                 { program = 'tmux', color = '#333333' },
@@ -253,7 +248,7 @@ mod tests {
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Composer);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.color_automation.is_empty());
 

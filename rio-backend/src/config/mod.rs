@@ -1449,7 +1449,7 @@ mod tests {
             disable-unfocused-render = false
 
             [navigation]
-            mode = "BottomTab"
+            mode = "Tab"
             clickable = false
 
             shell = { program = "/bin/sh", args = ["-c"] }
@@ -1488,7 +1488,7 @@ mod tests {
         assert!(result.navigation.clickable);
         assert_eq!(
             result.navigation.mode,
-            navigation::NavigationMode::BottomTab
+            navigation::NavigationMode::Tab
         );
 
         // Shell: completely replaced

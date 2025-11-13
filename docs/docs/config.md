@@ -1703,7 +1703,7 @@ macos-use-shadow = true
 
 Customize the horizontal position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the left edge of the window.
 
-**Note:** This setting is ignored when navigation mode is set to "Composer" as the traffic lights are positioned automatically for that mode.
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
 
 ```toml
 [window]
@@ -1714,7 +1714,7 @@ macos-traffic-light-position-x = 9.0
 
 Customize the vertical position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the top edge of the window.
 
-**Note:** This setting is ignored when navigation mode is set to "Composer" as the traffic lights are positioned automatically for that mode.
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
 
 ```toml
 [window]

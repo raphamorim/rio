@@ -280,12 +280,12 @@ pub fn default_config_file_content() -> String {
 #
 # • macos-traffic-light-position-x - Set the x position of the macOS traffic light buttons
 #     Position is in points from the left edge of the window
-#     Note: This setting is ignored when navigation mode is "Composer"
+#     Note: This setting is ignored when navigation mode is "Tab"
 #     Default: Not set (uses macOS default positioning)
 #
 # • macos-traffic-light-position-y - Set the y position of the macOS traffic light buttons
 #     Position is in points from the top edge of the window
-#     Note: This setting is ignored when navigation mode is "Composer"
+#     Note: This setting is ignored when navigation mode is "Tab"
 #     Default: Not set (uses macOS default positioning)
 #
 # Example:
@@ -424,7 +424,7 @@ pub fn default_config_file_content() -> String {
 #
 # "mode" - Define navigation mode
 #   • NativeTab (MacOS only)
-#   • Composer
+#   • Tab
 #   • Plain
 #
 # "hide-if-single" - Hide navigation UI if is single.
@@ -434,7 +434,7 @@ pub fn default_config_file_content() -> String {
 #
 # Example:
 # [navigation]
-# mode = "Composer"
+# mode = "Tab"
 # clickable = false
 # hide-if-single = true
 # current-working-directory = true

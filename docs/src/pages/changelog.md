@@ -29,7 +29,7 @@ language: 'en'
 - **macOS Traffic Light Positioning**: Customize position of window control buttons
   - Configure via `macos-traffic-light-position-x` and `macos-traffic-light-position-y`
   - Defaults to standard macOS positioning (11.4, 16.1)
-  - Not available in Composer navigation mode
+  - Not available in Tab navigation mode
 - Wgpu now is always f32.
 
 **Breaking Changes**
@@ -37,11 +37,11 @@ language: 'en'
 - Navigation modes simplified - if you use `TopTab`, `BottomTab`, or `Bookmark`, change to:
   ```toml
   [navigation]
-  mode = "Composer"
+  mode = "Tab"
   ```
 - Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
 - Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
-- Available modes: `Plain`, `Composer`, `NativeTab` (macOS only)
+- Available modes: `Plain`, `Tab`, `NativeTab` (macOS only)
 - padding-x is now 10.0
 - **Tab color configuration simplified**: Removed `tabs-foreground`, `tabs-active-foreground`, and `tabs-active-highlight`
   - Use `tabs` for inactive tab text and border color (default: `#cccccc`)

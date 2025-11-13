@@ -120,7 +120,7 @@ pub fn create_window_builder(
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true);
 
-            if config.navigation.is_composer() {
+            if config.navigation.is_enabled() {
                 window_builder = window_builder
                     .with_traffic_light_position(TRAFFIC_LIGHT_PADDING, TRAFFIC_LIGHT_PADDING);
             }
