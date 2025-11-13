@@ -31,6 +31,11 @@ pub fn default_padding_y() -> [f32; 2] {
 }
 
 #[inline]
+pub fn default_padding_x() -> f32 {
+    10.
+}
+
+#[inline]
 pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {
@@ -166,7 +171,7 @@ pub fn default_config_file_content() -> String {
 
 # Padding-x
 #
-# define x axis padding (default is 0)
+# define x axis padding (default is 10)
 #
 # Example:
 # padding-x = 10

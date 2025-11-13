@@ -38,6 +38,7 @@ language: 'en'
 - Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
 - Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
 - Available modes: `Plain`, `Composer`, `NativeTab` (macOS only)
+- padding-x is now 10.0
 
 **Technical Details**
 
