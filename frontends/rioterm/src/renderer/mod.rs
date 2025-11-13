@@ -95,9 +95,10 @@ impl Renderer {
         let mut island = island::Island::new();
         if config.navigation.is_enabled() {
             island.set_enabled(true);
-            island.set_background_color(named_colors.tabs);
-            island.set_active_background_color(named_colors.tabs_active);
-            island.set_cursor_color(named_colors.cursor);
+            // Map old background colors to new text colors for Hyper-style design
+            island.set_inactive_text_color(named_colors.tabs);
+            island.set_active_text_color(named_colors.tabs_active);
+            island.set_border_color(named_colors.tabs);
         }
 
         let mut renderer = Renderer {
