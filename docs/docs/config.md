@@ -1721,10 +1721,6 @@ Customize the vertical position of macOS traffic light buttons (close, minimize,
 macos-traffic-light-position-y = 9.0
 ```
 
-Both x and y positions must be set together to take effect. Common values:
-- `9.0, 9.0` - Compact positioning (similar to Zed)
-- `11.4, 16.1` - Standard macOS spacing
-
 ## window.windows-corner-preference
 
 Describes how the corners of a Microsoft Windows window should look like.
