@@ -90,13 +90,12 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        // Initialize island
-        // Enabled when using Composer navigation mode for full GPU rendering
         let mut island = island::Island::new();
         if config.navigation.is_enabled() {
             island.set_enabled(true);
             island.set_hide_if_single(config.navigation.hide_if_single);
-            // Map old background colors to new text colors
+            // tabs = inactive text and border color
+            // tabs_active = active text color
             island.set_inactive_text_color(named_colors.tabs);
             island.set_active_text_color(named_colors.tabs_active);
             island.set_border_color(named_colors.tabs);

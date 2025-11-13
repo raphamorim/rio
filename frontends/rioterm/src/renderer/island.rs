@@ -23,6 +23,10 @@ const TAB_PADDING_X: f32 = 24.0;
 /// Right margin after last tab
 const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 
+/// Left margin on macOS to account for traffic light buttons
+#[cfg(target_os = "macos")]
+const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
+
 /// Data for each individual tab
 struct TabIslandData {
     /// Rich text ID for this tab's title
@@ -109,12 +113,30 @@ impl Island {
             sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
         }
 
+        // Calculate left margin (macOS needs space for traffic light buttons)
+        #[cfg(target_os = "macos")]
+        let left_margin = ISLAND_MARGIN_LEFT_MACOS;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
         // Calculate equal width for all tabs
-        let available_width = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT;
+        let available_width = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
         let tab_width = available_width / num_tabs as f32;
 
-        // Starting from left edge
-        let mut x_position = 0.0;
+        // Starting from left edge (with margin on macOS for traffic lights)
+        let mut x_position = left_margin;
+
+        // Draw bottom border for the left margin area (traffic light space on macOS)
+        if left_margin > 0.0 {
+            sugarloaf.rect(
+                0.0,
+                ISLAND_HEIGHT - 1.0,
+                left_margin,
+                1.0,
+                self.border_color,
+                0.1,
+            );
+        }
 
         // Render each tab
         for tab_index in 0..num_tabs {
@@ -262,6 +284,8 @@ mod tests {
         assert_eq!(TITLE_FONT_SIZE, 12.0);
         assert_eq!(TAB_PADDING_X, 24.0);
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
+        #[cfg(target_os = "macos")]
+        assert_eq!(ISLAND_MARGIN_LEFT_MACOS, 76.0);
     }
 
     #[test]

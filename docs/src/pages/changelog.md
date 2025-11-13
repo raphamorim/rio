@@ -26,6 +26,10 @@ language: 'en'
 - **New GPU-Rendered Navigation**: Faster, smoother tab interface
 - **Command Palette**: Quick access to terminal functions
 - **Quake Window Mode**: Drop-down terminal from top of screen
+- **macOS Traffic Light Positioning**: Customize position of window control buttons
+  - Configure via `macos-traffic-light-position-x` and `macos-traffic-light-position-y`
+  - Defaults to standard macOS positioning (11.4, 16.1)
+  - Not available in Composer navigation mode
 - Wgpu now is always f32.
 
 **Breaking Changes**
@@ -39,6 +43,9 @@ language: 'en'
 - Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
 - Available modes: `Plain`, `Composer`, `NativeTab` (macOS only)
 - padding-x is now 10.0
+- **Tab color configuration simplified**: Removed `tabs-foreground`, `tabs-active-foreground`, and `tabs-active-highlight`
+  - Use `tabs` for inactive tab text and border color (default: `#cccccc`)
+  - Use `tabs-active` for active tab text color (default: `#ffffff`)
 
 **Technical Details**
 
