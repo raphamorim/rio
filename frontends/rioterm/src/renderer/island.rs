@@ -32,8 +32,20 @@ const ISLAND_CORNER_RADIUS: f32 = 8.0;
 /// Font size for tab titles
 const TITLE_FONT_SIZE: f32 = 11.0;
 
-/// Font size for tab titles
-const RIO_INDICATOR_FONT_SIZE: f32 = 8.0;
+/// Font size for shortcut numbers
+const SHORTCUT_FONT_SIZE: f32 = 7.0;
+
+/// Spacing between title and shortcut
+const TITLE_SHORTCUT_SPACING: f32 = 8.0;
+
+/// Horizontal padding inside shortcut background
+const SHORTCUT_PADDING_X: f32 = 4.0;
+
+/// Vertical padding inside shortcut background
+const SHORTCUT_PADDING_Y: f32 = 2.0;
+
+/// Corner radius for shortcut background
+const SHORTCUT_CORNER_RADIUS: f32 = 4.0;
 
 /// Maximum characters to display in a tab title
 const MAX_TITLE_CHARS: usize = 25;
@@ -41,28 +53,25 @@ const MAX_TITLE_CHARS: usize = 25;
 /// Minimum width for a single island
 const ISLAND_MIN_WIDTH: f32 = 60.0;
 
-/// Width of the small indicator inside single tab
-const SINGLE_TAB_INDICATOR_WIDTH: f32 = 5.0;
-
-/// Height of the small indicator inside single tab
-const SINGLE_TAB_INDICATOR_HEIGHT: f32 = 16.0;
-
-/// Width of the island container when showing single tab indicator
-const SINGLE_TAB_ISLAND_WIDTH: f32 = 18.0;
-
 /// Data for each individual tab island
 struct TabIslandData {
     /// Rich text ID for this tab's title
     rich_text_id: usize,
+    /// Rich text ID for this tab's shortcut number
+    shortcut_rich_text_id: usize,
     /// Last rendered title (for change detection)
     last_title: String,
     /// Cached text width from last measurement
     text_width: f32,
+    /// Cached shortcut text width from last measurement
+    shortcut_width: f32,
 }
 
 pub struct Island {
     /// Whether the island is enabled
     pub enabled: bool,
+    /// Hide island when only a single tab exists
+    pub hide_if_single: bool,
     /// Background color for inactive tabs (RGBA)
     pub background_color: [f32; 4],
     /// Background color for active tab (RGBA)
@@ -75,8 +84,6 @@ pub struct Island {
     pub show_shadow: bool,
     /// Tab-specific data keyed by tab index
     tab_data: HashMap<usize, TabIslandData>,
-    /// Rich text ID for the single-tab indicator Unicode character
-    indicator_rich_text_id: Option<usize>,
 }
 
 impl Default for Island {
@@ -84,6 +91,8 @@ impl Default for Island {
         Self {
             // Disabled by default - can be enabled via configuration
             enabled: false,
+            // Don't hide single tab by default
+            hide_if_single: false,
             // Subtle dark background for inactive tabs
             background_color: [0.15, 0.15, 0.15, 0.9],
             // Slightly lighter background for active tab
@@ -94,7 +103,6 @@ impl Default for Island {
             cursor_color: [0.97, 0.07, 1.0, 1.0],
             show_shadow: true,
             tab_data: HashMap::new(),
-            indicator_rich_text_id: None,
         }
     }
 }
@@ -115,19 +123,17 @@ impl Island {
     }
 
     /// Calculate island width with minimum constraint
-    /// Returns (island_width, actual_padding_x)
-    fn calculate_island_width(text_width: f32) -> (f32, f32) {
-        let natural_width = text_width + (ISLAND_PADDING_X * 2.0);
+    /// Returns the total width needed for title + spacing + shortcut + right padding
+    fn calculate_island_width(title_width: f32, shortcut_width: f32) -> f32 {
+        // Layout: [left_pad][title][spacing][shortcut_bg][right_pad]
+        let shortcut_bg_width = shortcut_width + (SHORTCUT_PADDING_X * 2.0);
 
-        if natural_width >= ISLAND_MIN_WIDTH {
-            // Text is long enough, use standard padding
-            (natural_width, ISLAND_PADDING_X)
-        } else {
-            // Text is short, increase padding to meet minimum width
-            let extra_space = ISLAND_MIN_WIDTH - text_width;
-            let padding = extra_space / 2.0;
-            (ISLAND_MIN_WIDTH, padding)
-        }
+        // Total width with padding on both sides
+        let total_width = ISLAND_PADDING_X + title_width + TITLE_SHORTCUT_SPACING
+            + shortcut_bg_width + ISLAND_PADDING_X;
+
+        // Ensure minimum width
+        total_width.max(ISLAND_MIN_WIDTH)
     }
 
     /// Render individual tab islands like Opera One
@@ -146,102 +152,121 @@ impl Island {
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
 
+        // Hide island if only single tab and hide_if_single is enabled
+        if self.hide_if_single && num_tabs == 1 {
+            // Hide all existing island rich texts
+            for tab_data in self.tab_data.values() {
+                sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
+                sugarloaf.set_rich_text_visibility(tab_data.shortcut_rich_text_id, false);
+            }
+            return;
+        }
+
         // Hide all existing island rich texts first
         for tab_data in self.tab_data.values() {
             sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
-        }
-        // Hide indicator rich text if it exists
-        if let Some(rich_text_id) = self.indicator_rich_text_id {
-            sugarloaf.set_rich_text_visibility(rich_text_id, false);
+            sugarloaf.set_rich_text_visibility(tab_data.shortcut_rich_text_id, false);
         }
 
-        // Always render the single-tab indicator (leftmost element)
-        let indicator_island_width =
-            (Self::calculate_island_width(RIO_INDICATOR_FONT_SIZE)).0;
-        let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
-        let island_y = ISLAND_PADDING_Y;
-
-        // Calculate starting position (will be adjusted based on total width)
-        let mut indicator_x =
-            (window_width / scale_factor) - indicator_island_width - ISLAND_MARGIN_RIGHT;
-
-        // If we have multiple tabs, we need to account for their width too
-        let available_width = if num_tabs > 1 {
-            (window_width / scale_factor)
-                - indicator_island_width
-                - ISLAND_SPACING
-                - ISLAND_MARGIN_RIGHT
-        } else {
-            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT
-        };
+        let available_width = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT;
 
         // First pass: prepare all tab data and calculate total width
-        // Skip this if we only have 1 tab (we'll just show the indicator)
         let mut island_widths = Vec::with_capacity(num_tabs);
         let mut display_titles = Vec::with_capacity(num_tabs);
         let mut total_width = 0.0;
 
-        if num_tabs > 1 {
-            for tab_index in 0..num_tabs {
-                // Get title for this tab
-                let mut title = self.get_title_for_tab(context_manager, tab_index);
-                if title.is_empty() {
-                    island_widths.push(0.0);
-                    display_titles.push(String::new());
-                    continue;
-                }
-
-                // Get or create tab data
-                let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
-                    use rio_backend::sugarloaf::layout::RichTextConfig;
-                    // Text should be in front of everything (terminal at 0.0, island at 0.1)
-                    let config = RichTextConfig::new().with_depth(-0.1);
-                    let rich_text_id = sugarloaf.create_rich_text(Some(&config));
-                    sugarloaf.set_rich_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
-                    TabIslandData {
-                        rich_text_id,
-                        last_title: String::new(),
-                        text_width: 0.0,
-                    }
-                });
-
-                // Limit title to max characters
-                if title.len() > MAX_TITLE_CHARS {
-                    title = title.chars().take(MAX_TITLE_CHARS).collect();
-                }
-
-                // Update text if title changed
-                if tab_data.last_title != title {
-                    use rio_backend::sugarloaf::FragmentStyle;
-                    let content = sugarloaf.content();
-                    content
-                        .sel(tab_data.rich_text_id)
-                        .clear()
-                        .new_line()
-                        .add_text(
-                            &title,
-                            FragmentStyle {
-                                color: self.title_color,
-                                ..FragmentStyle::default()
-                            },
-                        )
-                        .build();
-
-                    // Measure text width
-                    let dims = sugarloaf.get_rich_text_dimensions(&tab_data.rich_text_id);
-                    tab_data.text_width = dims.width;
-                    tab_data.last_title = title.clone();
-                }
-
-                // Calculate and constrain island width
-                let (island_width, _padding_x) =
-                    Self::calculate_island_width(tab_data.text_width);
-                island_widths.push(island_width);
-                display_titles.push(title);
-                total_width += island_width;
+        for tab_index in 0..num_tabs {
+            // Get title for this tab
+            let mut title = self.get_title_for_tab(context_manager, tab_index);
+            if title.is_empty() {
+                island_widths.push(0.0);
+                display_titles.push(String::new());
+                continue;
             }
 
-            // Add spacing between islands
+            // Get or create tab data
+            let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
+                use rio_backend::sugarloaf::layout::RichTextConfig;
+                // Text should be in front of everything (terminal at 0.0, island at 0.1)
+                let config = RichTextConfig::new().with_depth(-0.1);
+
+                // Create rich text for title
+                let rich_text_id = sugarloaf.create_rich_text(Some(&config));
+                sugarloaf.set_rich_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
+
+                // Create rich text for shortcut number
+                let shortcut_rich_text_id = sugarloaf.create_rich_text(Some(&config));
+                sugarloaf.set_rich_text_font_size(&shortcut_rich_text_id, SHORTCUT_FONT_SIZE);
+
+                TabIslandData {
+                    rich_text_id,
+                    shortcut_rich_text_id,
+                    last_title: String::new(),
+                    text_width: 0.0,
+                    shortcut_width: 0.0,
+                }
+            });
+
+            // Limit title to max characters
+            if title.len() > MAX_TITLE_CHARS {
+                title = title.chars().take(MAX_TITLE_CHARS).collect();
+            }
+
+            // Update text if title changed
+            if tab_data.last_title != title {
+                use rio_backend::sugarloaf::FragmentStyle;
+                let content = sugarloaf.content();
+                content
+                    .sel(tab_data.rich_text_id)
+                    .clear()
+                    .new_line()
+                    .add_text(
+                        &title,
+                        FragmentStyle {
+                            color: self.title_color,
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .build();
+
+                // Measure text width
+                let dims = sugarloaf.get_rich_text_dimensions(&tab_data.rich_text_id);
+                tab_data.text_width = dims.width;
+                tab_data.last_title = title.clone();
+            }
+
+            // Update shortcut text (always set to tab index)
+            if tab_data.shortcut_width == 0.0 {
+                use rio_backend::sugarloaf::FragmentStyle;
+                let shortcut_text = format!("{}", tab_index);
+                let content = sugarloaf.content();
+                content
+                    .sel(tab_data.shortcut_rich_text_id)
+                    .clear()
+                    .new_line()
+                    .add_text(
+                        &shortcut_text,
+                        FragmentStyle {
+                            color: self.title_color,
+                            ..FragmentStyle::default()
+                        },
+                    )
+                    .build();
+
+                // Measure shortcut width
+                let dims = sugarloaf.get_rich_text_dimensions(&tab_data.shortcut_rich_text_id);
+                tab_data.shortcut_width = dims.width;
+            }
+
+            // Calculate and constrain island width
+            let island_width = Self::calculate_island_width(tab_data.text_width, tab_data.shortcut_width);
+            island_widths.push(island_width);
+            display_titles.push(title);
+            total_width += island_width;
+        }
+
+        // Add spacing between islands
+        if num_tabs > 1 {
             total_width += ISLAND_SPACING * (num_tabs - 1) as f32;
         }
 
@@ -253,110 +278,63 @@ impl Island {
         };
 
         // Calculate starting x position from right edge
-        // If we have tabs, leave space for indicator on the right
         let final_total_width = total_width * scale_factor_width;
-        let mut x_position = if num_tabs > 1 {
-            (window_width / scale_factor)
-                - final_total_width
-                - indicator_island_width
-                - ISLAND_SPACING
-                - ISLAND_MARGIN_RIGHT
-        } else {
-            (window_width / scale_factor) - final_total_width - ISLAND_MARGIN_RIGHT
-        };
+        let mut x_position =
+            (window_width / scale_factor) - final_total_width - ISLAND_MARGIN_RIGHT;
 
-        // Second pass: render all islands with scaled widths (only if num_tabs > 1)
-        if num_tabs > 1 {
-            let scaled_spacing = ISLAND_SPACING * scale_factor_width;
+        // Second pass: render all islands with scaled widths
+        let scaled_spacing = ISLAND_SPACING * scale_factor_width;
+        let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
+        let island_y = ISLAND_PADDING_Y;
 
-            for (tab_index, base_island_width) in
-                island_widths.iter().enumerate().take(num_tabs)
-            {
-                if *base_island_width == 0.0 {
-                    continue;
-                }
-
-                // Apply scaling to island width
-                let island_width = base_island_width * scale_factor_width;
-                let is_active = tab_index == current_tab_index;
-                let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
-                let island_y = ISLAND_PADDING_Y;
-
-                // Choose background color based on active state
-                let bg_color = if is_active {
-                    self.active_background_color
-                } else {
-                    self.background_color
-                };
-
-                // Render island background (rounded rectangle)
-                sugarloaf.rounded_rect(
-                    x_position,
-                    island_y,
-                    island_width,
-                    island_height,
-                    bg_color,
-                    0.1, // Render behind terminal content (terminal is at 0.0)
-                    ISLAND_CORNER_RADIUS,
-                );
-
-                // Position and show title text
-                let tab_data = &self.tab_data[&tab_index];
-                // Recalculate padding for the scaled island width to keep text centered
-                let text_padding = (island_width - tab_data.text_width) / 2.0;
-                let text_x = x_position + text_padding;
-                let text_y = island_y + (island_height / 2.0) - (TITLE_FONT_SIZE / 2.0);
-                sugarloaf.show_rich_text(tab_data.rich_text_id, text_x, text_y);
-
-                // Move to next island position
-                x_position += island_width + scaled_spacing;
+        for (tab_index, base_island_width) in island_widths.iter().enumerate().take(num_tabs) {
+            if *base_island_width == 0.0 {
+                continue;
             }
 
-            // Position indicator after all tabs with spacing
-            indicator_x = x_position;
-        }
+            // Apply scaling to island width
+            let island_width = base_island_width * scale_factor_width;
+            let tab_data = &self.tab_data[&tab_index];
 
-        // Create indicator rich text if it doesn't exist
-        if self.indicator_rich_text_id.is_none() {
-            use rio_backend::sugarloaf::layout::RichTextConfig;
-            // Text should be in front of everything (terminal at 0.0, island at 0.1)
-            let config = RichTextConfig::new().with_depth(-0.1);
-            let rich_text_id = sugarloaf.create_rich_text(Some(&config));
-            sugarloaf.set_rich_text_font_size(&rich_text_id, RIO_INDICATOR_FONT_SIZE);
-            self.indicator_rich_text_id = Some(rich_text_id);
-            use rio_backend::sugarloaf::{drawable_character, FragmentStyle};
-            let content = sugarloaf.content();
+            // Layout: [left_pad][title][spacing][shortcut_bg][right_pad]
+            // Calculate positions for title and shortcut
+            let title_x = x_position + ISLAND_PADDING_X;
+            let title_y = island_y + (island_height / 2.0) - (TITLE_FONT_SIZE / 2.0);
 
-            let mut style = FragmentStyle {
-                color: self.title_color,
-                ..FragmentStyle::default()
+            // Shortcut background positioned after title with spacing
+            let shortcut_bg_width = tab_data.shortcut_width + (SHORTCUT_PADDING_X * 2.0);
+            let shortcut_bg_height = SHORTCUT_FONT_SIZE + (SHORTCUT_PADDING_Y * 2.0);
+            let shortcut_bg_x = title_x + tab_data.text_width + TITLE_SHORTCUT_SPACING;
+            let shortcut_bg_y = island_y + (island_height - shortcut_bg_height) / 2.0;
+
+            // Choose shortcut background color based on active state
+            let shortcut_bg_color = if tab_index == current_tab_index {
+                self.active_background_color
+            } else {
+                self.background_color
             };
 
-            // TODO: This will be remove from it and used in welcome page instead
-            // Check if this character should be rendered as a drawable
-            if let Some(character) = drawable_character('\u{1CC6D}') {
-                style.drawable_char = Some(character);
-                style.width = 2.0;
-            }
+            // Render shortcut background (small rounded rectangle)
+            sugarloaf.rounded_rect(
+                shortcut_bg_x,
+                shortcut_bg_y,
+                shortcut_bg_width,
+                shortcut_bg_height,
+                shortcut_bg_color,
+                0.1, // Render behind terminal content (terminal is at 0.0)
+                SHORTCUT_CORNER_RADIUS,
+            );
 
-            content
-                .sel(rich_text_id)
-                .clear()
-                .new_line()
-                .add_text("\u{1CC6D}", style)
-                .add_text("\u{1CC6D}", style)
-                .build();
-        }
+            // Position and show title text
+            sugarloaf.show_rich_text(tab_data.rich_text_id, title_x, title_y);
 
-        // Render indicator Unicode character
-        if let Some(rich_text_id) = self.indicator_rich_text_id {
-            // Position the indicator centered in the island
-            let indicator_x = indicator_x + (indicator_island_width / 2.0)
-                - (RIO_INDICATOR_FONT_SIZE / 2.0);
-            let indicator_y =
-                island_y + (island_height / 2.0) - (RIO_INDICATOR_FONT_SIZE / 2.0);
+            // Position and show shortcut text (centered in its background)
+            let shortcut_text_x = shortcut_bg_x + SHORTCUT_PADDING_X;
+            let shortcut_text_y = shortcut_bg_y + SHORTCUT_PADDING_Y;
+            sugarloaf.show_rich_text(tab_data.shortcut_rich_text_id, shortcut_text_x, shortcut_text_y);
 
-            sugarloaf.show_rich_text(rich_text_id, indicator_x, indicator_y);
+            // Move to next island position
+            x_position += island_width + scaled_spacing;
         }
     }
 
@@ -386,6 +364,11 @@ impl Island {
     /// Set whether the island is enabled
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
+    }
+
+    /// Set whether to hide island when only single tab exists
+    pub fn set_hide_if_single(&mut self, hide: bool) {
+        self.hide_if_single = hide;
     }
 
     /// Set the background color of the island
@@ -420,27 +403,25 @@ mod tests {
 
     #[test]
     fn test_calculate_island_width_respects_minimum() {
-        // Width below minimum should return minimum width with adjusted padding
-        let (width, padding) = Island::calculate_island_width(10.0);
-        assert_eq!(width, ISLAND_MIN_WIDTH);
-        // Padding should be increased to center the text: (60 - 10) / 2 = 25
-        assert_eq!(padding, 25.0);
-
-        // Width above minimum should return calculated width with standard padding
-        let text_width = 100.0;
-        let expected = text_width + (ISLAND_PADDING_X * 2.0);
-        let (width, padding) = Island::calculate_island_width(text_width);
-        assert_eq!(width, expected);
-        assert_eq!(padding, ISLAND_PADDING_X);
+        // Small title and shortcut should still meet minimum width
+        let title_width = 10.0;
+        let shortcut_width = 5.0;
+        let width = Island::calculate_island_width(title_width, shortcut_width);
+        assert!(width >= ISLAND_MIN_WIDTH);
     }
 
     #[test]
-    fn test_calculate_island_width_adds_padding() {
-        let text_width = 100.0;
-        let expected = text_width + (ISLAND_PADDING_X * 2.0); // 100 + 32 = 132
-        let (width, padding) = Island::calculate_island_width(text_width);
+    fn test_calculate_island_width_includes_all_components() {
+        let title_width = 100.0;
+        let shortcut_width = 10.0;
+
+        // Expected: title + spacing + (shortcut + padding*2) + outer_padding*2
+        let shortcut_bg = shortcut_width + (SHORTCUT_PADDING_X * 2.0);
+        let content = title_width + TITLE_SHORTCUT_SPACING + shortcut_bg;
+        let expected = content + (ISLAND_PADDING_X * 2.0);
+
+        let width = Island::calculate_island_width(title_width, shortcut_width);
         assert_eq!(width, expected);
-        assert_eq!(padding, ISLAND_PADDING_X);
     }
 
     #[test]
@@ -544,111 +525,35 @@ mod tests {
         assert_eq!(ISLAND_MARGIN_RIGHT, 8.0);
         assert_eq!(ISLAND_CORNER_RADIUS, 8.0);
         assert_eq!(TITLE_FONT_SIZE, 11.0);
+        assert_eq!(SHORTCUT_FONT_SIZE, 7.0);
+        assert_eq!(TITLE_SHORTCUT_SPACING, 8.0);
+        assert_eq!(SHORTCUT_PADDING_X, 4.0);
+        assert_eq!(SHORTCUT_PADDING_Y, 2.0);
+        assert_eq!(SHORTCUT_CORNER_RADIUS, 4.0);
         assert_eq!(ISLAND_MIN_WIDTH, 60.0);
         assert_eq!(MAX_TITLE_CHARS, 25);
-        assert_eq!(SINGLE_TAB_INDICATOR_WIDTH, 5.0);
-        assert_eq!(SINGLE_TAB_INDICATOR_HEIGHT, 16.0);
-        assert_eq!(SINGLE_TAB_ISLAND_WIDTH, 18.0);
     }
 
     #[test]
-    fn test_padding_centers_short_text() {
-        // For very short text like "Tab 3" (assume ~20px width)
-        let short_text_width = 20.0;
-        let (width, padding) = Island::calculate_island_width(short_text_width);
-
-        assert_eq!(width, ISLAND_MIN_WIDTH);
-        // Padding should be: (60 - 20) / 2 = 20.0
-        assert_eq!(padding, 20.0);
-
-        // Verify text is centered: padding + text_width + padding = island_width
-        assert_eq!(padding * 2.0 + short_text_width, width);
+    fn test_shortcut_background_sizing() {
+        // Verify shortcut background includes padding
+        let shortcut_width = 8.0; // Width of "0"
+        let expected_bg_width = shortcut_width + (SHORTCUT_PADDING_X * 2.0);
+        assert_eq!(expected_bg_width, 8.0 + 8.0); // 16.0
     }
 
     #[test]
-    fn test_padding_for_medium_text() {
-        // For medium text like "zsh" (assume ~35px width)
-        // With standard padding (16px each side), natural width = 35 + 32 = 67px
-        // This exceeds minimum (60px), so use natural width with standard padding
-        let medium_text_width = 35.0;
-        let (width, padding) = Island::calculate_island_width(medium_text_width);
+    fn test_island_width_calculation_components() {
+        // Test that all components are accounted for in width calculation
+        let title_width = 50.0;
+        let shortcut_width = 8.0;
 
-        // Natural width with standard padding
-        let expected_width = medium_text_width + (ISLAND_PADDING_X * 2.0);
-        assert_eq!(width, expected_width); // 67.0
-        assert_eq!(padding, ISLAND_PADDING_X); // 16.0
+        let shortcut_bg_width = shortcut_width + (SHORTCUT_PADDING_X * 2.0);
+        let content_width = title_width + TITLE_SHORTCUT_SPACING + shortcut_bg_width;
+        let total_width = content_width + (ISLAND_PADDING_X * 2.0);
 
-        // Verify text is centered
-        assert_eq!(padding * 2.0 + medium_text_width, width);
-    }
-
-    #[test]
-    fn test_padding_at_minimum_threshold() {
-        // When natural width exactly equals minimum
-        let text_width = ISLAND_MIN_WIDTH - (ISLAND_PADDING_X * 2.0); // 60 - 32 = 28
-        let (width, padding) = Island::calculate_island_width(text_width);
-
-        // Should return minimum width with standard padding
-        assert_eq!(width, ISLAND_MIN_WIDTH);
-        assert_eq!(padding, ISLAND_PADDING_X);
-    }
-
-    #[test]
-    fn test_padding_just_above_minimum() {
-        // When text is just slightly larger than minimum threshold
-        let text_width = ISLAND_MIN_WIDTH - (ISLAND_PADDING_X * 2.0) + 0.1; // Just above threshold
-        let (width, padding) = Island::calculate_island_width(text_width);
-
-        // Should return calculated width with standard padding
-        let expected_width = text_width + (ISLAND_PADDING_X * 2.0);
-        assert_eq!(width, expected_width);
-        assert_eq!(padding, ISLAND_PADDING_X);
-    }
-
-    #[test]
-    fn test_padding_consistency() {
-        // Test that padding always results in centered text
-        let test_cases = vec![5.0, 10.0, 15.0, 20.0, 25.0];
-
-        for text_width in test_cases {
-            let (island_width, padding) = Island::calculate_island_width(text_width);
-
-            // For all short text, padding * 2 + text_width should equal island_width
-            if island_width == ISLAND_MIN_WIDTH {
-                let total = padding * 2.0 + text_width;
-                assert_eq!(
-                    total, island_width,
-                    "Text width {} should be centered with padding {}",
-                    text_width, padding
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_single_tab_indicator_fits_in_island() {
-        // Verify the indicator fits within the island container
-        const {
-            assert!(SINGLE_TAB_INDICATOR_WIDTH < SINGLE_TAB_ISLAND_WIDTH);
-            assert!(
-                SINGLE_TAB_INDICATOR_HEIGHT <= ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0)
-            );
-        }
-    }
-
-    #[test]
-    fn test_single_tab_indicator_centering() {
-        // Calculate centering for indicator
-        let island_width = SINGLE_TAB_ISLAND_WIDTH;
-        let island_height = ISLAND_HEIGHT - (ISLAND_PADDING_Y * 2.0);
-
-        // Horizontal centering
-        let x_padding = (island_width - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
-        assert_eq!(x_padding, (18.0 - 5.0) / 2.0); // 6.5px on each side
-
-        // Vertical centering
-        let y_padding = (island_height - SINGLE_TAB_INDICATOR_HEIGHT) / 2.0;
-        assert_eq!(y_padding, (16.0 - 16.0) / 2.0); // 0.0px on top and bottom (fits exactly)
+        let calculated = Island::calculate_island_width(title_width, shortcut_width);
+        assert_eq!(calculated, total_width);
     }
 
     #[test]
@@ -661,6 +566,7 @@ mod tests {
         assert_eq!(island.title_color, [0.85, 0.85, 0.85, 1.0]);
         assert_eq!(island.cursor_color, [0.97, 0.07, 1.0, 1.0]);
         assert!(!island.enabled);
+        assert!(!island.hide_if_single);
         assert!(island.show_shadow);
     }
 
@@ -711,31 +617,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_indicator_proportions() {
-        // Indicator should be taller than it is wide (vertical orientation)
-        const { assert!(SINGLE_TAB_INDICATOR_HEIGHT > SINGLE_TAB_INDICATOR_WIDTH) };
-
-        // Height should be roughly 2-4x the width for good proportions
-        let ratio = SINGLE_TAB_INDICATOR_HEIGHT / SINGLE_TAB_INDICATOR_WIDTH;
-        assert!(
-            (2.0..=4.0).contains(&ratio),
-            "Ratio {} should be between 2 and 4",
-            ratio
-        );
-    }
-
-    #[test]
-    fn test_single_tab_island_width_reasonable() {
-        // Island width should provide adequate padding around indicator
-        let min_padding = (SINGLE_TAB_ISLAND_WIDTH - SINGLE_TAB_INDICATOR_WIDTH) / 2.0;
-        assert!(
-            min_padding >= 4.0,
-            "Padding {} should be at least 4px",
-            min_padding
-        );
-
-        // But not be excessively wide
-        const { assert!(SINGLE_TAB_ISLAND_WIDTH <= 30.0) }
-    }
 }
