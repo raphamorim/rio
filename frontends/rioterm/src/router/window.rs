@@ -19,6 +19,7 @@ pub fn create_window_builder(
     title: &str,
     config: &Config,
     #[allow(unused_variables)] tab_id: Option<&str>,
+    #[allow(unused_variables)] app_id: Option<&str>,
 ) -> WindowAttributes {
     let image_icon = image_rs::load_from_memory(LOGO_ICON).unwrap();
     let icon = Icon::from_rgba(
@@ -64,15 +65,15 @@ pub fn create_window_builder(
     #[cfg(all(feature = "x11", not(any(target_os = "macos", windows))))]
     {
         use rio_window::platform::x11::WindowAttributesExtX11;
-        window_builder =
-            window_builder.with_name(APPLICATION_ID.to_lowercase(), APPLICATION_ID);
+        let app_name = app_id.unwrap_or(APPLICATION_ID);
+        window_builder = window_builder.with_name(app_name.to_lowercase(), app_name);
     }
 
     #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
     {
         use rio_window::platform::wayland::WindowAttributesExtWayland;
-        window_builder =
-            window_builder.with_name(APPLICATION_ID.to_lowercase(), APPLICATION_ID);
+        let app_name = app_id.unwrap_or(APPLICATION_ID);
+        window_builder = window_builder.with_name(app_name.to_lowercase(), app_name);
     }
 
     #[cfg(target_os = "windows")]
