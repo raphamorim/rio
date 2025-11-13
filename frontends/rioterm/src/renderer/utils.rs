@@ -11,6 +11,12 @@ pub fn padding_top_from_config(
     _num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
+    // When navigation is enabled (Tab mode), start content below island
+    if navigation.is_enabled() {
+        use crate::renderer::island::ISLAND_HEIGHT;
+        return ISLAND_HEIGHT + padding_y_top;
+    }
+
     let default_padding = constants::PADDING_Y + padding_y_top;
 
     #[cfg(target_os = "macos")]
