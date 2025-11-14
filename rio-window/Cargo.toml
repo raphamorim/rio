@@ -154,7 +154,10 @@ winres = "0.1.12"
 
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
 ahash = { version = "0.8.7", features = ["no-rng"], optional = true }
+ashpd = { version = "0.9", default-features = false, features = ["tokio"] }
 bytemuck = { version = "1.13.1", default-features = false, optional = true }
+futures-util = "0.3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 calloop = "0.13.0"
 libc = { workspace = true }
 memmap2 = { workspace = true, optional = true }

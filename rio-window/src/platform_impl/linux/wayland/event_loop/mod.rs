@@ -721,7 +721,7 @@ impl ActiveEventLoop {
     }
 
     pub(crate) fn system_theme(&self) -> Option<Theme> {
-        None
+        super::super::common::xdg_desktop_portal::get_color_scheme()
     }
 
     #[inline]
