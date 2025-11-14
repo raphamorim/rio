@@ -971,7 +971,10 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             }};
         }
 
-        if should_ignore || intermediates.len() > 1 {
+        if should_ignore || intermediates.len() > 2 {
+            // We only handle up to two intermediate bytes. I haven't seen any sequences that use
+            // more than that.
+            csi_unhandled!();
             return;
         }
 
