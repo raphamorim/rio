@@ -103,7 +103,10 @@ pub fn create_window_builder(
         window_builder = window_builder
             .with_colorspace(config.window.colorspace.to_rio_window_colorspace());
 
-        if let (Some(x), Some(y)) = (config.window.macos_traffic_light_position_x, config.window.macos_traffic_light_position_y) {
+        if let (Some(x), Some(y)) = (
+            config.window.macos_traffic_light_position_x,
+            config.window.macos_traffic_light_position_y,
+        ) {
             window_builder = window_builder.with_traffic_light_position(x, y);
         }
 
@@ -121,8 +124,10 @@ pub fn create_window_builder(
                 .with_fullsize_content_view(true);
 
             if config.navigation.is_enabled() {
-                window_builder = window_builder
-                    .with_traffic_light_position(TRAFFIC_LIGHT_PADDING, TRAFFIC_LIGHT_PADDING);
+                window_builder = window_builder.with_traffic_light_position(
+                    TRAFFIC_LIGHT_PADDING,
+                    TRAFFIC_LIGHT_PADDING,
+                );
             }
         }
     }

@@ -6,7 +6,9 @@ use core_graphics::display::{CGDisplay, CGPoint};
 use monitor::VideoModeHandle;
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+use objc2::{
+    declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
+};
 use objc2_app_kit::{
     NSAppKitVersionNumber, NSAppKitVersionNumber10_12, NSAppearance, NSApplication,
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSDraggingDestination,
@@ -764,7 +766,9 @@ impl WindowDelegate {
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
             last_input_timestamp: Cell::new(std::time::Instant::now()),
-            traffic_light_position: Cell::new(attrs.platform_specific.traffic_light_position),
+            traffic_light_position: Cell::new(
+                attrs.platform_specific.traffic_light_position,
+            ),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -1794,19 +1798,26 @@ impl WindowDelegate {
         // Get titlebar height for coordinate conversion
         // macOS uses bottom-left origin, but users specify top-left coordinates
         let window_frame = window.frame();
-        let content_layout_rect: NSRect = unsafe {
-            msg_send![window, contentLayoutRect]
-        };
+        let content_layout_rect: NSRect = unsafe { msg_send![window, contentLayoutRect] };
         let titlebar_height = window_frame.size.height - content_layout_rect.size.height;
 
         unsafe {
-            let close_button = window.standardWindowButton(NSWindowButton::NSWindowCloseButton);
-            let miniaturize_button = window.standardWindowButton(NSWindowButton::NSWindowMiniaturizeButton);
-            let zoom_button = window.standardWindowButton(NSWindowButton::NSWindowZoomButton);
+            let close_button =
+                window.standardWindowButton(NSWindowButton::NSWindowCloseButton);
+            let miniaturize_button =
+                window.standardWindowButton(NSWindowButton::NSWindowMiniaturizeButton);
+            let zoom_button =
+                window.standardWindowButton(NSWindowButton::NSWindowZoomButton);
 
-            let Some(close_btn) = close_button else { return; };
-            let Some(min_btn) = miniaturize_button else { return; };
-            let Some(zoom_btn) = zoom_button else { return; };
+            let Some(close_btn) = close_button else {
+                return;
+            };
+            let Some(min_btn) = miniaturize_button else {
+                return;
+            };
+            let Some(zoom_btn) = zoom_button else {
+                return;
+            };
 
             // Read all button frames before modifying any
             let mut close_frame = close_btn.frame();

@@ -103,7 +103,8 @@ impl Island {
         let left_margin = 0.0;
 
         // Calculate equal width for all tabs
-        let available_width = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
+        let available_width =
+            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
         let tab_width = available_width / num_tabs as f32;
 
         // Starting from left edge (with margin on macOS for traffic lights)
@@ -263,7 +264,12 @@ mod tests {
 
     #[test]
     fn test_island_height() {
-        let island = Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], [0.8, 0.8, 0.8, 1.0], false);
+        let island = Island::new(
+            [0.8, 0.8, 0.8, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [0.8, 0.8, 0.8, 1.0],
+            false,
+        );
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
 }
