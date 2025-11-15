@@ -917,7 +917,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Calculate time since the last click to handle double/triple clicks.
                         // Do this early so island clicks can use the click state
                         let now = Instant::now();
-                        let elapsed = now - route.window.screen.mouse.last_click_timestamp;
+                        let elapsed =
+                            now - route.window.screen.mouse.last_click_timestamp;
                         route.window.screen.mouse.last_click_timestamp = now;
 
                         let threshold = Duration::from_millis(300);
@@ -938,7 +939,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         };
 
                         if let MouseButton::Left = button {
-                            let handled_by_island = route.window.screen.handle_island_click(&route.window.winit_window);
+                            let handled_by_island = route
+                                .window
+                                .screen
+                                .handle_island_click(&route.window.winit_window);
 
                             if handled_by_island {
                                 // Island handled the click, don't process further
@@ -1049,7 +1053,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
-                if route.window.screen.renderer.navigation.is_enabled() && y <= island_height_px {
+                if route.window.screen.renderer.navigation.is_enabled()
+                    && y <= island_height_px
+                {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }

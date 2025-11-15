@@ -1486,10 +1486,7 @@ mod tests {
 
         // Navigation: clickable overridden, mode preserved
         assert!(result.navigation.clickable);
-        assert_eq!(
-            result.navigation.mode,
-            navigation::NavigationMode::Tab
-        );
+        assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
         assert_eq!(result.shell.program, "/bin/zsh");

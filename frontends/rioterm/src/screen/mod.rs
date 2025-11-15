@@ -1102,7 +1102,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevSplitOrTab => {
@@ -1111,14 +1115,22 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectTab(tab_index) => {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.select_tab(*tab_index);
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.cancel_search();
                         self.render();
                     }
@@ -1127,7 +1139,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.select_last_tab();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectNextTab => {
@@ -1136,7 +1152,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToPrev => {
@@ -1145,7 +1165,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_prev();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToNext => {
@@ -1154,7 +1178,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_next();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevTab => {
@@ -1163,7 +1191,11 @@ impl Screen<'_> {
                         let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev();
                         let new_index = self.context_manager.current_index();
-                        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
@@ -1272,7 +1304,11 @@ impl Screen<'_> {
         let old_index = self.context_manager.current_index();
         self.context_manager.add_context(redirect, rich_text_id);
         let new_index = self.context_manager.current_index();
-        self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+        self.context_manager.switch_context_visibility(
+            &mut self.sugarloaf,
+            old_index,
+            new_index,
+        );
 
         self.cancel_search();
         self.render();
@@ -1291,7 +1327,8 @@ impl Screen<'_> {
 
     pub fn close_tab(&mut self) {
         self.clear_selection();
-        self.context_manager.close_current_context(&mut self.sugarloaf);
+        self.context_manager
+            .close_current_context(&mut self.sugarloaf);
 
         self.cancel_search();
         if self.ctx().len() <= 1 {
@@ -2080,7 +2117,11 @@ impl Screen<'_> {
             let old_index = self.context_manager.current_index();
             self.context_manager.set_current(clicked_tab);
             let new_index = self.context_manager.current_index();
-            self.context_manager.switch_context_visibility(&mut self.sugarloaf, old_index, new_index);
+            self.context_manager.switch_context_visibility(
+                &mut self.sugarloaf,
+                old_index,
+                new_index,
+            );
 
             self.render();
         }
