@@ -914,24 +914,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match state {
                     ElementState::Pressed => {
-                        // Check if click is on island tab bar first (before any other processing)
-                        if let MouseButton::Left = button {
-                            let handled_by_island = route.window.screen.handle_island_click();
-
-                            if handled_by_island {
-                                // Island handled the click, don't process further
-                                route.request_redraw();
-                                return;
-                            }
-                        }
-
-                        // In case need to switch grid current
-                        route.window.screen.select_current_based_on_mouse();
-
-                        if route.window.screen.trigger_hyperlink() {
-                            return;
-                        }
-
                         // Process mouse press before bindings to update the `click_state`.
                         if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
@@ -979,6 +961,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 }
                                 _ => ClickState::Click,
                             };
+
+                            // Check if click is on island tab bar first (before any other processing)
+                            if let MouseButton::Left = button {
+                                let handled_by_island = route.window.screen.handle_island_click(&route.window.winit_window);
+
+                                if handled_by_island {
+                                    // Island handled the click, don't process further
+                                    route.request_redraw();
+                                    return;
+                                }
+                            }
+
+                            // In case need to switch grid current
+                            route.window.screen.select_current_based_on_mouse();
+
+                            if route.window.screen.trigger_hyperlink() {
+                                return;
+                            }
 
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
@@ -1047,6 +1047,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                // Check if mouse is over island and set cursor to default
+                use crate::renderer::island::ISLAND_HEIGHT;
+                let scale_factor = route.window.screen.sugarloaf.scale_factor();
+                let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+                if route.window.screen.renderer.navigation.is_enabled() && y <= island_height_px {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
 
                 let lmb_pressed =
                     route.window.screen.mouse.left_button_state == ElementState::Pressed;

@@ -2022,7 +2022,7 @@ impl Screen<'_> {
 
     // return true if the click was handled by the island
     #[inline]
-    pub fn handle_island_click(&mut self) -> bool {
+    pub fn handle_island_click(&mut self, window: &rio_window::window::Window) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
             return false;
@@ -2038,6 +2038,14 @@ impl Screen<'_> {
         // Check if click is within island height
         if mouse_y > island_height_px {
             return false;
+        }
+
+        // Handle double-click: toggle window maximization
+        if let ClickState::DoubleClick = self.mouse.click_state {
+            // Toggle maximization state
+            let is_maximized = window.is_maximized();
+            window.set_maximized(!is_maximized);
+            return true; // Consume the double-click
         }
 
         // Calculate tab width and left margin
