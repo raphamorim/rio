@@ -3171,7 +3171,9 @@ dependencies = [
  "corcovado",
  "cursor-icon",
  "dirs",
+ "flate2",
  "image",
+ "lazy_static",
  "libc",
  "memchr",
  "parking_lot",
@@ -3190,6 +3192,7 @@ dependencies = [
  "unicode-width-16",
  "url",
  "wgpu",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3731,6 +3734,7 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
+ "core-graphics-types 0.2.0",
  "criterion",
  "dashmap",
  "deflate",
@@ -3751,7 +3755,9 @@ dependencies = [
  "librashader-runtime",
  "lru",
  "memmap2",
+ "metal",
  "num-traits",
+ "objc",
  "parking_lot",
  "png 0.17.16",
  "raw-window-handle",

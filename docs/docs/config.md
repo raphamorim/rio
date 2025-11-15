@@ -74,11 +74,8 @@ cursor = '#F712FF'
 vi-cursor = '#12d0ff'
 
 # Navigation
-tabs = '#12B5E5'
-tabs-foreground = '#7d7d7d'
-tabs-active = '#303030'
-tabs-active-highlight = '#ffa133'
-tabs-active-foreground = '#FFFFFF'
+tabs = '#cccccc'  # Inactive tab text and border color
+tabs-active = '#ffffff'  # Active tab text color
 bar = '#1b1a1a'
 split = '#292527'
 
@@ -1432,9 +1429,8 @@ selection-background = ""
 selection-foreground = ""
 
 # Navigation
+tabs = ""
 tabs-active = ""
-tabs-active-foreground = ""
-tabs-active-highlight = ""
 bar = ""
 split = ""
 cursor = ""
@@ -1701,6 +1697,28 @@ You can enable window shadow on MacOS by config, it's disabled by default.
 ```toml
 [window]
 macos-use-shadow = true
+```
+
+## window.macos-traffic-light-position-x
+
+Customize the horizontal position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the left edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-x = 9.0
+```
+
+## window.macos-traffic-light-position-y
+
+Customize the vertical position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the top edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-y = 9.0
 ```
 
 ## window.windows-corner-preference

@@ -27,7 +27,12 @@ pub fn default_title_content() -> String {
 
 #[inline]
 pub fn default_padding_y() -> [f32; 2] {
-    [0., 0.]
+    [8., 0.]
+}
+
+#[inline]
+pub fn default_padding_x() -> f32 {
+    8.
 }
 
 #[inline]
@@ -166,7 +171,7 @@ pub fn default_config_file_content() -> String {
 
 # Padding-x
 #
-# define x axis padding (default is 0)
+# define x axis padding (default is 10)
 #
 # Example:
 # padding-x = 10
@@ -273,6 +278,16 @@ pub fn default_config_file_content() -> String {
 #     - "display-p3" (default on macOS)
 #     - "rec2020"
 #
+# • macos-traffic-light-position-x - Set the x position of the macOS traffic light buttons
+#     Position is in points from the left edge of the window
+#     Note: This setting is ignored when navigation mode is "Tab"
+#     Default: Not set (uses macOS default positioning)
+#
+# • macos-traffic-light-position-y - Set the y position of the macOS traffic light buttons
+#     Position is in points from the top edge of the window
+#     Note: This setting is ignored when navigation mode is "Tab"
+#     Default: Not set (uses macOS default positioning)
+#
 # Example:
 # [window]
 # width = 600
@@ -282,6 +297,8 @@ pub fn default_config_file_content() -> String {
 # blur = false
 # decorations = "enabled"
 # colorspace = "display-p3"
+# macos-traffic-light-position-x = 9.0
+# macos-traffic-light-position-y = 9.0
 
 # Renderer
 #
@@ -407,22 +424,20 @@ pub fn default_config_file_content() -> String {
 #
 # "mode" - Define navigation mode
 #   • NativeTab (MacOS only)
-#   • Bookmark
-#   • BottomTab
-#   • TopTab
+#   • Tab
 #   • Plain
 #
 # "hide-if-single" - Hide navigation UI if is single.
 # "clickable" - Enable click on tabs to switch.
-# "use-current-path" - Use same path whenever a new tab is created (Note: requires `use-fork` to be set to false).
+# "current-working-directory" - Show current working directory in navigation.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 #
 # Example:
 # [navigation]
-# mode = "bookmark"
+# mode = "Tab"
 # clickable = false
 # hide-if-single = true
-# use-current-path = false
+# current-working-directory = true
 # color-automation = []
 
 # Shell
@@ -469,8 +484,8 @@ pub fn default_config_file_content() -> String {
 # background = '#0F0D0E'
 # foreground = '#F9F4DA'
 # cursor = '#F38BA3'
-# tabs = '#443d40'
-# tabs-active = '#F38BA3'
+# tabs = '#cccccc'  # Inactive tab text and border color (matches Hyper)
+# tabs-active = '#ffffff'  # Active tab text color (matches Hyper)
 # green = '#0BA95B'
 # red = '#ED203D'
 # blue = '#12B5E5'

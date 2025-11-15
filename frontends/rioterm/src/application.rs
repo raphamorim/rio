@@ -335,10 +335,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    tracing::info!(
+                        "UpdateGraphics: route_id={}, pending={}, remove={}",
+                        route_id,
+                        queues.pending.len(),
+                        queues.remove_queue.len()
+                    );
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
                     for graphic_data in queues.pending {
+                        tracing::info!(
+                            "Inserting graphic: id={}, width={}, height={}",
+                            graphic_data.id.0,
+                            graphic_data.width,
+                            graphic_data.height
+                        );
                         sugarloaf.graphics.insert(graphic_data);
                     }
 
@@ -443,7 +456,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .window
                         .screen
                         .context_manager
-                        .should_close_context_manager(route_id)
+                        .should_close_context_manager(
+                            route_id,
+                            &mut route.window.screen.sugarloaf,
+                        )
                     {
                         self.router.routes.remove(&window_id);
 
@@ -896,20 +912,43 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     _ => (),
                 }
 
-                #[cfg(target_os = "macos")]
-                {
-                    if route.window.is_macos_deadzone {
-                        return;
-                    }
-                }
-
                 match state {
                     ElementState::Pressed => {
-                        // In case need to switch grid current
-                        route.window.screen.select_current_based_on_mouse();
+                        // Calculate time since the last click to handle double/triple clicks.
+                        // Do this early so island clicks can use the click state
+                        let now = Instant::now();
+                        let elapsed =
+                            now - route.window.screen.mouse.last_click_timestamp;
+                        route.window.screen.mouse.last_click_timestamp = now;
 
-                        if route.window.screen.trigger_hyperlink() {
-                            return;
+                        let threshold = Duration::from_millis(300);
+                        let mouse = &route.window.screen.mouse;
+                        route.window.screen.mouse.click_state = match mouse.click_state {
+                            // Reset click state if button has changed.
+                            _ if button != mouse.last_click_button => {
+                                route.window.screen.mouse.last_click_button = button;
+                                ClickState::Click
+                            }
+                            ClickState::Click if elapsed < threshold => {
+                                ClickState::DoubleClick
+                            }
+                            ClickState::DoubleClick if elapsed < threshold => {
+                                ClickState::TripleClick
+                            }
+                            _ => ClickState::Click,
+                        };
+
+                        if let MouseButton::Left = button {
+                            let handled_by_island = route
+                                .window
+                                .screen
+                                .handle_island_click(&route.window.winit_window);
+
+                            if handled_by_island {
+                                // Island handled the click, don't process further
+                                route.request_redraw();
+                                return;
+                            }
                         }
 
                         // Process mouse press before bindings to update the `click_state`.
@@ -935,30 +974,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                             route.window.screen.process_mouse_bindings(button);
                         } else {
-                            // Calculate time since the last click to handle double/triple clicks.
-                            let now = Instant::now();
-                            let elapsed =
-                                now - route.window.screen.mouse.last_click_timestamp;
-                            route.window.screen.mouse.last_click_timestamp = now;
+                            // In case need to switch grid current
+                            route.window.screen.select_current_based_on_mouse();
 
-                            let threshold = Duration::from_millis(300);
-                            let mouse = &route.window.screen.mouse;
-                            route.window.screen.mouse.click_state = match mouse
-                                .click_state
-                            {
-                                // Reset click state if button has changed.
-                                _ if button != mouse.last_click_button => {
-                                    route.window.screen.mouse.last_click_button = button;
-                                    ClickState::Click
-                                }
-                                ClickState::Click if elapsed < threshold => {
-                                    ClickState::DoubleClick
-                                }
-                                ClickState::DoubleClick if elapsed < threshold => {
-                                    ClickState::TripleClick
-                                }
-                                _ => ClickState::Click,
-                            };
+                            if route.window.screen.trigger_hyperlink() {
+                                return;
+                            }
 
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
@@ -1021,43 +1042,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let x = position.x;
                 let y = position.y;
 
-                let lmb_pressed =
-                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
-                let rmb_pressed =
-                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
-
-                let has_selection = !route.window.screen.selection_is_empty();
-
-                #[cfg(target_os = "macos")]
-                {
-                    // Dead zone for MacOS only
-                    // e.g: Dragging the terminal
-                    if !has_selection
-                        && !route.window.screen.context_manager.config.is_native
-                        && route.window.screen.is_macos_deadzone(y)
-                    {
-                        route.window.winit_window.set_cursor(CursorIcon::Default);
-
-                        route.window.is_macos_deadzone = true;
-                        return;
-                    }
-
-                    route.window.is_macos_deadzone = false;
-                }
-
-                if has_selection && (lmb_pressed || rmb_pressed) {
-                    route.window.screen.update_selection_scrolling(y);
-                }
-
-                let display_offset = route.window.screen.display_offset();
-                let old_point = route.window.screen.mouse_position(display_offset);
-
                 let layout = route.window.screen.sugarloaf.window_size();
 
                 let x = x.clamp(0.0, (layout.width as i32 - 1).into()) as usize;
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                // Check if mouse is over island and set cursor to default
+                use crate::renderer::island::ISLAND_HEIGHT;
+                let scale_factor = route.window.screen.sugarloaf.scale_factor();
+                let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+                if route.window.screen.renderer.navigation.is_enabled()
+                    && y <= island_height_px
+                {
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
+
+                let lmb_pressed =
+                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
+                let rmb_pressed =
+                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
+
+                let has_selection = !route.window.screen.selection_is_empty();
+                if has_selection && (lmb_pressed || rmb_pressed) {
+                    route.window.screen.update_selection_scrolling(position.y);
+                }
+
+                let display_offset = route.window.screen.display_offset();
+                let old_point = route.window.screen.mouse_position(display_offset);
 
                 let point = route.window.screen.mouse_position(display_offset);
 
