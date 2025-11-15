@@ -42,6 +42,10 @@ pub struct TerminalOptions {
     /// Start window with specified title
     #[clap(long, name = "title-placeholder")]
     pub title_placeholder: Option<String>,
+
+    /// Set the Wayland app_id or X11 WM_CLASS (Linux/BSD only)
+    #[clap(long)]
+    pub app_id: Option<String>,
 }
 
 impl TerminalOptions {
