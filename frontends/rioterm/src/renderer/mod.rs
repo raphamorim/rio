@@ -49,7 +49,7 @@ pub struct Renderer {
     pub colors: List,
     pub navigation: Navigation,
     pub padding_y: [f32; 2],
-    pub island: island::Island,
+    pub island: Option<island::Island>,
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     last_active: Option<usize>,
@@ -90,16 +90,16 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut island = island::Island::new();
-        if config.navigation.is_enabled() {
-            island.set_enabled(true);
-            island.set_hide_if_single(config.navigation.hide_if_single);
-            // tabs = inactive text and border color
-            // tabs_active = active text color
-            island.set_inactive_text_color(named_colors.tabs);
-            island.set_active_text_color(named_colors.tabs_active);
-            island.set_border_color(named_colors.tabs);
-        }
+        let island = if config.navigation.is_enabled() {
+            Some(island::Island::new(
+                named_colors.tabs,
+                named_colors.tabs_active,
+                named_colors.tab_border,
+                config.navigation.hide_if_single,
+            ))
+        } else {
+            None
+        };
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
@@ -1202,11 +1202,13 @@ impl Renderer {
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
 
-        self.island.render(
-            sugarloaf,
-            (window_size.width, window_size.height, scale_factor),
-            context_manager,
-        );
+        if let Some(island) = &mut self.island {
+            island.render(
+                sugarloaf,
+                (window_size.width, window_size.height, scale_factor),
+                context_manager,
+            );
+        }
 
         self.command_palette.render(
             sugarloaf,

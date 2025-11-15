@@ -1177,7 +1177,8 @@ impl Screen<'_> {
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
         // Create rich text with initial position accounting for island
-        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_config =
             RichTextConfig::new().with_position(config.padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
@@ -1196,7 +1197,8 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_config =
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
@@ -1211,7 +1213,8 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_config =
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
@@ -1261,7 +1264,8 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0] + self.renderer.island.height();
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_config =
             RichTextConfig::new().with_position(padding_x, padding_y_top);
         let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));

@@ -36,8 +36,6 @@ struct TabIslandData {
 }
 
 pub struct Island {
-    /// Whether the island is enabled
-    pub enabled: bool,
     /// Hide island when only a single tab exists
     pub hide_if_single: bool,
     /// Text color for inactive tabs (RGBA)
@@ -50,37 +48,26 @@ pub struct Island {
     tab_data: HashMap<usize, TabIslandData>,
 }
 
-impl Default for Island {
-    fn default() -> Self {
+impl Island {
+    pub fn new(
+        inactive_text_color: [f32; 4],
+        active_text_color: [f32; 4],
+        border_color: [f32; 4],
+        hide_if_single: bool,
+    ) -> Self {
         Self {
-            // Disabled by default - can be enabled via configuration
-            enabled: false,
-            // Don't hide single tab by default
-            hide_if_single: false,
-            // Default inactive tab color: #ccc (0.8, 0.8, 0.8)
-            inactive_text_color: [0.8, 0.8, 0.8, 1.0],
-            // Default active tab color: #fff (1.0, 1.0, 1.0)
-            active_text_color: [1.0, 1.0, 1.0, 1.0],
-            // Default border color: #ccc (0.8, 0.8, 0.8)
-            border_color: [0.8, 0.8, 0.8, 1.0],
+            hide_if_single,
+            inactive_text_color,
+            active_text_color,
+            border_color,
             tab_data: HashMap::new(),
         }
     }
-}
 
-impl Island {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Get the effective height of the island (0 if disabled)
+    /// Get the height of the island
     #[inline]
     pub fn height(&self) -> f32 {
-        if self.enabled {
-            ISLAND_HEIGHT
-        } else {
-            0.0
-        }
+        ISLAND_HEIGHT
     }
 
     /// Render tabs using equal-width layout
@@ -91,10 +78,6 @@ impl Island {
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
     ) {
-        if !self.enabled {
-            return;
-        }
-
         let (window_width, _window_height, scale_factor) = dimensions;
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
@@ -247,31 +230,6 @@ impl Island {
         // Default fallback - show tab number
         format!("Tab {}", tab_index + 1)
     }
-
-    /// Set whether the island is enabled
-    pub fn set_enabled(&mut self, enabled: bool) {
-        self.enabled = enabled;
-    }
-
-    /// Set whether to hide island when only single tab exists
-    pub fn set_hide_if_single(&mut self, hide: bool) {
-        self.hide_if_single = hide;
-    }
-
-    /// Set the inactive text color
-    pub fn set_inactive_text_color(&mut self, color: [f32; 4]) {
-        self.inactive_text_color = color;
-    }
-
-    /// Set the active text color
-    pub fn set_active_text_color(&mut self, color: [f32; 4]) {
-        self.active_text_color = color;
-    }
-
-    /// Set the border color
-    pub fn set_border_color(&mut self, color: [f32; 4]) {
-        self.border_color = color;
-    }
 }
 
 #[cfg(test)]
@@ -290,45 +248,22 @@ mod tests {
     }
 
     #[test]
-    fn test_island_default_colors() {
-        let island = Island::default();
-
-        // Verify default colors are set correctly
-        assert_eq!(island.inactive_text_color, [0.8, 0.8, 0.8, 1.0]); // #ccc
-        assert_eq!(island.active_text_color, [1.0, 1.0, 1.0, 1.0]); // #fff
-        assert_eq!(island.border_color, [0.8, 0.8, 0.8, 1.0]); // #ccc
-        assert!(!island.enabled);
-        assert!(!island.hide_if_single);
-    }
-
-    #[test]
-    fn test_island_color_setters() {
-        let mut island = Island::new();
-
+    fn test_island_initialization() {
         let inactive_color = [0.5, 0.5, 0.5, 1.0];
         let active_color = [0.9, 0.9, 0.9, 1.0];
         let border_color = [0.7, 0.7, 0.7, 1.0];
 
-        island.set_inactive_text_color(inactive_color);
-        island.set_active_text_color(active_color);
-        island.set_border_color(border_color);
+        let island = Island::new(inactive_color, active_color, border_color, true);
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
         assert_eq!(island.border_color, border_color);
+        assert!(island.hide_if_single);
     }
 
     #[test]
-    fn test_island_height_when_disabled() {
-        let island = Island::default();
-        assert!(!island.enabled);
-        assert_eq!(island.height(), 0.0);
-    }
-
-    #[test]
-    fn test_island_height_when_enabled() {
-        let mut island = Island::default();
-        island.set_enabled(true);
+    fn test_island_height() {
+        let island = Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], [0.8, 0.8, 0.8, 1.0], false);
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
 }
