@@ -914,6 +914,39 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match state {
                     ElementState::Pressed => {
+                        // Calculate time since the last click to handle double/triple clicks.
+                        // Do this early so island clicks can use the click state
+                        let now = Instant::now();
+                        let elapsed = now - route.window.screen.mouse.last_click_timestamp;
+                        route.window.screen.mouse.last_click_timestamp = now;
+
+                        let threshold = Duration::from_millis(300);
+                        let mouse = &route.window.screen.mouse;
+                        route.window.screen.mouse.click_state = match mouse.click_state {
+                            // Reset click state if button has changed.
+                            _ if button != mouse.last_click_button => {
+                                route.window.screen.mouse.last_click_button = button;
+                                ClickState::Click
+                            }
+                            ClickState::Click if elapsed < threshold => {
+                                ClickState::DoubleClick
+                            }
+                            ClickState::DoubleClick if elapsed < threshold => {
+                                ClickState::TripleClick
+                            }
+                            _ => ClickState::Click,
+                        };
+
+                        if let MouseButton::Left = button {
+                            let handled_by_island = route.window.screen.handle_island_click(&route.window.winit_window);
+
+                            if handled_by_island {
+                                // Island handled the click, don't process further
+                                route.request_redraw();
+                                return;
+                            }
+                        }
+
                         // Process mouse press before bindings to update the `click_state`.
                         if !route.window.screen.modifiers.state().shift_key()
                             && route.window.screen.mouse_mode()
@@ -937,42 +970,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                             route.window.screen.process_mouse_bindings(button);
                         } else {
-                            // Calculate time since the last click to handle double/triple clicks.
-                            let now = Instant::now();
-                            let elapsed =
-                                now - route.window.screen.mouse.last_click_timestamp;
-                            route.window.screen.mouse.last_click_timestamp = now;
-
-                            let threshold = Duration::from_millis(300);
-                            let mouse = &route.window.screen.mouse;
-                            route.window.screen.mouse.click_state = match mouse
-                                .click_state
-                            {
-                                // Reset click state if button has changed.
-                                _ if button != mouse.last_click_button => {
-                                    route.window.screen.mouse.last_click_button = button;
-                                    ClickState::Click
-                                }
-                                ClickState::Click if elapsed < threshold => {
-                                    ClickState::DoubleClick
-                                }
-                                ClickState::DoubleClick if elapsed < threshold => {
-                                    ClickState::TripleClick
-                                }
-                                _ => ClickState::Click,
-                            };
-
-                            // Check if click is on island tab bar first (before any other processing)
-                            if let MouseButton::Left = button {
-                                let handled_by_island = route.window.screen.handle_island_click(&route.window.winit_window);
-
-                                if handled_by_island {
-                                    // Island handled the click, don't process further
-                                    route.request_redraw();
-                                    return;
-                                }
-                            }
-
                             // In case need to switch grid current
                             route.window.screen.select_current_based_on_mouse();
 
