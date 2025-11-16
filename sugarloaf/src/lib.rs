@@ -3,6 +3,7 @@ pub mod context;
 pub mod font;
 pub mod font_introspector;
 pub mod layout;
+pub mod renderer;
 mod sugarloaf;
 
 // Expose WGPU
@@ -24,6 +25,6 @@ pub use crate::sugarloaf::{
 };
 pub use components::filters::Filter;
 pub use layout::{
-    Content, FragmentStyle, FragmentStyleDecoration, RichTextConfig, SugarDimensions,
+    Content, SpanStyle, SpanStyleDecoration, RichTextConfig, TextDimensions,
     UnderlineInfo, UnderlineShape,
 };

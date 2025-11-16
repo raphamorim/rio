@@ -46,6 +46,7 @@ parking_lot = { workspace = true }
 dashmap = { workspace = true }
 approx = "0.5.1"
 lru = "0.16.1"
+smallvec = { workspace = true }
 skrifa = "0.37.0"
 halfbrown = "0.3.0"
 half = "2.6.0"

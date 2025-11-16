@@ -8,7 +8,7 @@
 
 use crate::font_introspector::shape::cluster::Glyph as ShapedGlyph;
 use crate::font_introspector::GlyphId;
-use crate::layout::FragmentStyle;
+use crate::layout::SpanStyle;
 
 pub const GLYPH_DETAILED: u32 = 0x80000000;
 
@@ -52,7 +52,7 @@ impl GlyphData {
 
 #[derive(Debug, Clone)]
 pub struct RunData {
-    pub span: FragmentStyle,
+    pub span: SpanStyle,
     pub line: u32,
     pub size: f32,
     pub glyphs: Vec<GlyphData>,

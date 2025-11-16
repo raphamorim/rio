@@ -8,6 +8,7 @@
 // https://github.com/dfrg/swash_demo/blob/master/LICENSE
 
 pub mod content;
+pub mod content_data;
 mod glyph;
 mod render_data;
 pub mod rich_text_render_data;
@@ -17,9 +18,10 @@ pub use render_data::RenderData;
 pub use rich_text_render_data::RichTextRenderData;
 
 pub use content::{
-    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentStyle,
-    FragmentStyleDecoration, UnderlineInfo, UnderlineShape, WordCache,
+    BuilderLine, BuilderState, BuilderStateUpdate, Content, FragmentData, SpanStyle,
+    SpanStyleDecoration, UnderlineInfo, UnderlineShape, WordCache,
 };
+pub use content_data::{ContentData, ContentRenderData, ContentState};
 pub use render_data::Run;
 
 /// Index of a span in sequential order of submission to a paragraph content.
@@ -41,13 +43,13 @@ pub struct Delta<T: Default> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct SugarDimensions {
+pub struct TextDimensions {
     pub width: f32,
     pub height: f32,
     pub scale: f32,
 }
 
-impl Default for SugarDimensions {
+impl Default for TextDimensions {
     fn default() -> Self {
         Self {
             width: 8.0,   // Reasonable character cell width fallback
@@ -58,14 +60,14 @@ impl Default for SugarDimensions {
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub struct RichTextLayout {
+pub struct TextLayout {
     pub line_height: f32,
     pub font_size: f32,
     pub original_font_size: f32,
-    pub dimensions: SugarDimensions,
+    pub dimensions: TextDimensions,
 }
 
-impl RichTextLayout {
+impl TextLayout {
     #[inline]
     pub fn rescale(&mut self, scale_factor: f32) -> &mut Self {
         self.dimensions.width *= scale_factor;
@@ -79,21 +81,21 @@ impl RichTextLayout {
             line_height: default_layout.line_height,
             font_size: default_layout.font_size,
             original_font_size: default_layout.font_size,
-            dimensions: SugarDimensions {
+            dimensions: TextDimensions {
                 scale: default_layout.scale_factor,
-                ..SugarDimensions::default()
+                ..TextDimensions::default()
             },
         }
     }
 }
 
-impl Default for RichTextLayout {
+impl Default for TextLayout {
     fn default() -> Self {
         Self {
             line_height: 1.0,
             font_size: 0.0,
             original_font_size: 0.0,
-            dimensions: SugarDimensions::default(),
+            dimensions: TextDimensions::default(),
         }
     }
 }
