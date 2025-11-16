@@ -386,6 +386,8 @@ pub struct Content {
     font_features: Vec<crate::font_introspector::Setting<u16>>,
     scx: ShapeContext,
     pub states: FxHashMap<usize, ContentState>,
+    /// Transient text content that gets cleared after each render
+    pub transient_texts: Vec<ContentState>,
     word_cache: WordCache,
     selector: Option<usize>,
 }
@@ -397,6 +399,7 @@ impl Content {
             fonts: font_library.clone(),
             scx: ShapeContext::new(),
             states: FxHashMap::default(),
+            transient_texts: Vec::new(),
             word_cache: WordCache::new(),
             font_features: vec![],
             selector: None,
@@ -586,6 +589,76 @@ impl Content {
         for content_state in self.states.values_mut() {
             if let Some(text_state) = content_state.as_text_mut() {
                 text_state.mark_clean();
+            }
+        }
+    }
+
+    /// Add a transient text content that will be cleared after rendering.
+    /// Returns the index into transient_texts vec.
+    #[inline]
+    pub fn add_transient_text(&mut self, layout: &TextLayout) -> usize {
+        let mut builder_state = BuilderState::from_layout(layout);
+        builder_state.layout.dimensions = self.calculate_character_cell_dimensions(layout);
+
+        let mut content_state = ContentState::new(ContentData::Text(builder_state));
+        content_state.render_data.transient = true;
+
+        let index = self.transient_texts.len();
+        self.transient_texts.push(content_state);
+        index
+    }
+
+    /// Get mutable reference to transient text by index
+    #[inline]
+    pub fn get_transient_text_mut(&mut self, index: usize) -> Option<&mut BuilderState> {
+        self.transient_texts.get_mut(index)?.as_text_mut()
+    }
+
+    /// Get mutable reference to transient content state by index
+    #[inline]
+    pub fn get_transient_state_mut(&mut self, index: usize) -> Option<&mut ContentState> {
+        self.transient_texts.get_mut(index)
+    }
+
+    /// Clear all transient texts (called after rendering)
+    #[inline]
+    pub fn clear_transient_texts(&mut self) {
+        self.transient_texts.clear();
+    }
+
+    /// Build/shape all transient texts
+    #[inline]
+    pub fn build_transient_texts(&mut self) {
+        let script = Script::Latin;
+
+        for transient_idx in 0..self.transient_texts.len() {
+            let (scaled_font_size, num_lines) = {
+                let content_state = &self.transient_texts[transient_idx];
+                let text_state = match content_state.as_text() {
+                    Some(state) => state,
+                    None => continue,
+                };
+                (text_state.scaled_font_size, text_state.lines.len())
+            };
+
+            // Process each line
+            for line_number in 0..num_lines {
+                let content_state = &mut self.transient_texts[transient_idx];
+                let text_state = match content_state.as_text_mut() {
+                    Some(state) => state,
+                    None => continue,
+                };
+
+                Self::process_text_line(
+                    text_state,
+                    line_number,
+                    scaled_font_size,
+                    script,
+                    &self.font_features,
+                    &self.fonts,
+                    &mut self.scx,
+                    &mut self.word_cache,
+                );
             }
         }
     }
@@ -782,6 +855,28 @@ impl Content {
             None => return,
         };
 
+        Self::process_text_line(
+            text_state,
+            line_number,
+            scaled_font_size,
+            script,
+            features,
+            &self.fonts,
+            &mut self.scx,
+            &mut self.word_cache,
+        );
+    }
+
+    fn process_text_line(
+        text_state: &mut BuilderState,
+        line_number: usize,
+        scaled_font_size: f32,
+        script: Script,
+        features: &[crate::font_introspector::Setting<u16>],
+        fonts: &FontLibrary,
+        scx: &mut ShapeContext,
+        word_cache: &mut WordCache,
+    ) {
         // Process fragments in the line
         let line = &mut text_state.lines[line_number];
 
@@ -799,11 +894,10 @@ impl Content {
 
             // Check if the shaped text is already in the cache
             if let Some(cached_content) =
-                self.word_cache.get_cached_content(&font_id, content)
+                word_cache.get_cached_content(&font_id, content)
             {
                 // Get metrics from FontLibraryData (with caching)
-                if let Some((ascent, descent, leading)) = self
-                    .fonts
+                if let Some((ascent, descent, leading)) = fonts
                     .inner
                     .write()
                     .get_font_metrics(&font_id, scaled_font_size)
@@ -851,7 +945,7 @@ impl Content {
 
             // If not in cache, shape the text
             // Set up cache entry info
-            self.word_cache.set_content(font_id, content);
+            word_cache.set_content(font_id, content);
 
             // Check if this is a repeated whitespace sequence that we can optimize
             if let Some((whitespace_char, count)) =
@@ -861,7 +955,7 @@ impl Content {
                 let single_char_content = whitespace_char.to_string();
 
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let font_library = &fonts.inner.read();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -869,8 +963,7 @@ impl Content {
                         offset,
                         key,
                     };
-                    let mut shaper = self
-                        .scx
+                    let mut shaper = scx
                         .builder(font_ref)
                         .script(script)
                         .size(scaled_font_size)
@@ -897,19 +990,19 @@ impl Content {
                         };
 
                         // Store in cache
-                        if let Some(cache) = self.word_cache.inner.get_mut(&font_id) {
-                            cache.put(self.word_cache.content_hash, cached_content);
+                        if let Some(cache) = word_cache.inner.get_mut(&font_id) {
+                            cache.put(word_cache.content_hash, cached_content);
                         } else {
                             let size = if font_id == 0 { 512 } else { 128 };
                             let mut cache =
                                 LruCache::new(NonZeroUsize::new(size).unwrap());
-                            cache.put(self.word_cache.content_hash, cached_content);
-                            self.word_cache.inner.insert(font_id, cache);
+                            cache.put(word_cache.content_hash, cached_content);
+                            word_cache.inner.insert(font_id, cache);
                         }
 
                         // Get the cached content and expand it for rendering
                         if let Some(cached) =
-                            self.word_cache.get_cached_content(&font_id, content)
+                            word_cache.get_cached_content(&font_id, content)
                         {
                             let expanded_clusters = cached.expand(None);
                             line.render_data.push_run_without_shaper(
@@ -923,14 +1016,14 @@ impl Content {
                     }
 
                     // Reset cache state
-                    self.word_cache.font_id = 0;
-                    self.word_cache.content_hash = 0;
-                    self.word_cache.current_content = None;
+                    word_cache.font_id = 0;
+                    word_cache.content_hash = 0;
+                    word_cache.current_content = None;
                 }
             } else {
                 // Normal content - shape as usual
                 // Process the font data directly without cloning FontRef
-                let font_library = &self.fonts.inner.read();
+                let font_library = &fonts.inner.read();
                 if let Some((shared_data, offset, key)) = font_library.get_data(&font_id)
                 {
                     let font_ref = FontRef {
@@ -938,8 +1031,7 @@ impl Content {
                         offset,
                         key,
                     };
-                    let mut shaper = self
-                        .scx
+                    let mut shaper = scx
                         .builder(font_ref) // Use reference directly without cloning
                         .script(script)
                         .size(scaled_font_size)
@@ -955,7 +1047,7 @@ impl Content {
                         scaled_font_size,
                         line_number as u32,
                         shaper,
-                        &mut self.word_cache,
+                        word_cache,
                     );
                 }
             }

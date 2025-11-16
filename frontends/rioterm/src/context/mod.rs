@@ -33,6 +33,14 @@ use std::time::{Duration, Instant};
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
+// Global atomic counter for generating unique rich text IDs
+static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Generate a unique rich text ID for terminal contexts
+pub fn next_rich_text_id() -> usize {
+    RICH_TEXT_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
+
 #[cfg(target_os = "windows")]
 use teletypewriter::create_pty;
 #[cfg(not(target_os = "windows"))]

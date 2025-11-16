@@ -89,9 +89,9 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         // Initialize text areas with different font sizes
-        sugarloaf.text(TEXT_ID_0); // Default font size
-        sugarloaf.text(TEXT_ID_1); // Will set font size below
-        sugarloaf.text(TEXT_ID_2); // Will set font size below
+        sugarloaf.text(Some(TEXT_ID_0)); // Default font size
+        sugarloaf.text(Some(TEXT_ID_1)); // Will set font size below
+        sugarloaf.text(Some(TEXT_ID_2)); // Will set font size below
 
         sugarloaf.set_text_font_size(&TEXT_ID_1, 24.0);
         sugarloaf.set_text_font_size(&TEXT_ID_2, 12.0);

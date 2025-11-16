@@ -310,18 +310,106 @@ impl Sugarloaf<'_> {
         self.state.content().sel(text_id).build_line(line_number);
     }
 
-    /// Create or get text content at the given ID. If ID doesn't exist or is not text,
-    /// creates new text content with default layout. Returns mutable reference.
+    /// Create or get text content.
+    /// - `id: Some(n)` - cached with id n, persistent across renders
+    /// - `id: None` - transient text, cleared after rendering. Returns index into transient vec.
     #[inline]
-    pub fn text(&mut self, id: usize) -> &mut crate::layout::BuilderState {
-        // Check if text already exists
-        if self.state.content.get_text_by_id(id).is_none() {
-            // Create new text with default layout
-            let default_layout = TextLayout::from_default_layout(&self.state.style);
-            self.state.content.set_text(id, &default_layout);
+    pub fn text(&mut self, id: Option<usize>) -> usize {
+        match id {
+            Some(text_id) => {
+                // Check if text already exists
+                if self.state.content.get_text_by_id(text_id).is_none() {
+                    // Create new text with default layout
+                    let default_layout = TextLayout::from_default_layout(&self.state.style);
+                    self.state.content.set_text(text_id, &default_layout);
+                }
+                text_id
+            }
+            None => {
+                // Create transient text
+                let default_layout = TextLayout::from_default_layout(&self.state.style);
+                self.state.content.add_transient_text(&default_layout)
+            }
         }
-        // Now it must exist
-        self.state.content.get_text_by_id_mut(id).unwrap()
+    }
+
+    /// Get mutable reference to text content by id (for cached text)
+    #[inline]
+    pub fn get_text_mut(&mut self, id: usize) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_text_by_id_mut(id)
+    }
+
+    /// Get mutable reference to transient text by index
+    #[inline]
+    pub fn get_transient_text_mut(
+        &mut self,
+        index: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_transient_text_mut(index)
+    }
+
+    /// Set font size for transient text
+    #[inline]
+    pub fn set_transient_text_font_size(&mut self, index: usize, font_size: f32) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.layout.font_size = font_size;
+                text_state.scaled_font_size = font_size * self.state.style.scale_factor;
+            }
+            content_state.render_data.needs_repaint = true;
+        }
+    }
+
+    /// Set position for transient text
+    #[inline]
+    pub fn set_transient_position(&mut self, index: usize, x: f32, y: f32) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state
+                .render_data
+                .set_position(x * self.state.style.scale_factor, y * self.state.style.scale_factor);
+        }
+    }
+
+    /// Set visibility for transient text
+    #[inline]
+    pub fn set_transient_visibility(&mut self, index: usize, visible: bool) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.set_hidden(!visible);
+        }
+    }
+
+    /// Set whether to use grid cell size for glyph positioning (cached text)
+    /// - true: monospace grid alignment (default, for terminal)
+    /// - false: proportional text using actual glyph advances (for rich text)
+    #[inline]
+    pub fn set_use_grid_cell_size(&mut self, id: usize, use_grid: bool) {
+        if let Some(content_state) = self.state.content.states.get_mut(&id) {
+            content_state.render_data.use_grid_cell_size = use_grid;
+        }
+    }
+
+    /// Set whether to use grid cell size for glyph positioning (transient text)
+    /// - true: monospace grid alignment (default, for terminal)
+    /// - false: proportional text using actual glyph advances (for rich text)
+    #[inline]
+    pub fn set_transient_use_grid_cell_size(&mut self, index: usize, use_grid: bool) {
+        if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
+            content_state.render_data.use_grid_cell_size = use_grid;
+        }
+    }
+
+    /// Get the next available ID for cached content.
+    /// Returns the highest key + 1 (wrapping on overflow).
+    /// Useful for dynamically allocating IDs without hardcoded constants.
+    #[inline]
+    pub fn get_next_id(&self) -> usize {
+        self.state
+            .content
+            .states
+            .keys()
+            .max()
+            .map(|max_id| max_id.wrapping_add(1))
+            .unwrap_or(0)
     }
 
     /// Add a rectangle to content system

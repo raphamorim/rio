@@ -3,7 +3,7 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{
-    layout::SugarDimensions, Object, Rect, RichText, Sugarloaf,
+    layout::TextDimensions, Object, Rect, RichText, Sugarloaf,
 };
 use std::collections::HashMap;
 
@@ -15,7 +15,7 @@ const PADDING: f32 = 2.;
 fn compute(
     width: f32,
     height: f32,
-    dimensions: SugarDimensions,
+    dimensions: TextDimensions,
     line_height: f32,
     margin: Delta<f32>,
 ) -> (usize, usize) {
@@ -583,8 +583,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
         for context in self.inner.values_mut() {
-            let layout = sugarloaf.rich_text_layout(&context.val.rich_text_id);
-            context.val.dimension.update_dimensions(layout.dimensions);
+            if let Some(layout) = sugarloaf.get_text_layout(&context.val.rich_text_id) {
+                context.val.dimension.update_dimensions(layout.dimensions);
+            }
         }
         // Update scaled_padding from the first context (they should all have the same scale)
         if let Some(root) = self.root {
@@ -1055,7 +1056,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.inner.remove(&down_val),
                 ) {
                     // Cleanup rich text from sugarloaf
-                    sugarloaf.remove_rich_text(rich_text_id);
+                    sugarloaf.remove_content(rich_text_id);
                     // Clear parent reference since this becomes the new root
                     down_item.parent = None;
 
@@ -1113,7 +1114,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.inner.remove(&right_val),
                 ) {
                     // Cleanup rich text from sugarloaf
-                    sugarloaf.remove_rich_text(rich_text_id);
+                    sugarloaf.remove_content(rich_text_id);
 
                     let new_root = right_item.val.route_id;
                     self.inner.insert(new_root, right_item);
@@ -1131,7 +1132,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Some(item) = self.inner.get(&to_be_removed) {
             let rich_text_id = item.val.rich_text_id;
             self.inner.remove(&to_be_removed);
-            sugarloaf.remove_rich_text(rich_text_id);
+            sugarloaf.remove_content(rich_text_id);
         }
         if let Some(first_key) = self.inner.keys().next() {
             self.current = *first_key;
@@ -1220,7 +1221,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.inner.remove(&key);
 
         // Cleanup rich text from sugarloaf
-        sugarloaf.remove_rich_text(rich_text_id);
+        sugarloaf.remove_content(rich_text_id);
 
         // Update root if necessary
         if Some(key) == self.root {
@@ -1313,11 +1314,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Update sugarloaf positions for affected contexts
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
-            sugarloaf.show_rich_text(current_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_visibility(current_item.val.rich_text_id, true);
         }
         if let Some(new_item) = self.inner.get(&new_key) {
             let pos = new_item.position();
-            sugarloaf.show_rich_text(new_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_visibility(new_item.val.rich_text_id, true);
         }
     }
 
@@ -1398,11 +1401,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Update sugarloaf positions for affected contexts
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
-            sugarloaf.show_rich_text(current_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_visibility(current_item.val.rich_text_id, true);
         }
         if let Some(new_item) = self.inner.get(&new_key) {
             let pos = new_item.position();
-            sugarloaf.show_rich_text(new_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
+            sugarloaf.set_visibility(new_item.val.rich_text_id, true);
         }
     }
 
@@ -1900,14 +1905,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, hidden: bool) {
         for item in self.inner.values() {
-            sugarloaf.set_rich_text_visibility(item.val.rich_text_id, hidden);
+            sugarloaf.set_visibility(item.val.rich_text_id, hidden);
         }
     }
 
     #[inline]
     pub fn remove_all_rich_text(&self, sugarloaf: &mut Sugarloaf) {
         for item in self.inner.values() {
-            sugarloaf.remove_rich_text(item.val.rich_text_id);
+            sugarloaf.remove_content(item.val.rich_text_id);
         }
     }
 }
@@ -1918,7 +1923,7 @@ pub struct ContextDimension {
     pub height: f32,
     pub columns: usize,
     pub lines: usize,
-    pub dimension: SugarDimensions,
+    pub dimension: TextDimensions,
     pub margin: Delta<f32>,
     pub line_height: f32,
 }
@@ -1931,7 +1936,7 @@ impl Default for ContextDimension {
             columns: MIN_COLS,
             lines: MIN_LINES,
             line_height: 1.,
-            dimension: SugarDimensions::default(),
+            dimension: TextDimensions::default(),
             margin: Delta::<f32>::default(),
         }
     }
@@ -1941,7 +1946,7 @@ impl ContextDimension {
     pub fn build(
         width: f32,
         height: f32,
-        dimension: SugarDimensions,
+        dimension: TextDimensions,
         line_height: f32,
         margin: Delta<f32>,
     ) -> Self {
@@ -1994,7 +1999,7 @@ impl ContextDimension {
     }
 
     #[inline]
-    pub fn update_dimensions(&mut self, dimensions: SugarDimensions) {
+    pub fn update_dimensions(&mut self, dimensions: TextDimensions) {
         self.dimension = dimensions;
         self.update();
     }
@@ -2063,7 +2068,7 @@ impl Dimensions for ContextDimension {
 //             compute(
 //                 1600.0,
 //                 1000.0,
-//                 SugarDimensions {
+//                 TextDimensions {
 //                     scale: 2.,
 //                     width: 18.,
 //                     height: 37.,
@@ -2077,7 +2082,7 @@ impl Dimensions for ContextDimension {
 //             compute(
 //                 1600.0,
 //                 1000.0,
-//                 SugarDimensions {
+//                 TextDimensions {
 //                     scale: 2.,
 //                     width: 20.,
 //                     height: 40.,
@@ -2099,7 +2104,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0,
 //             800.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 18.,
 //                 height: 9.,
@@ -2150,7 +2155,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0,
 //             800.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.,
 //                 width: 14.,
 //                 height: 8.,
@@ -2275,7 +2280,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -2495,7 +2500,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -2633,7 +2638,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.,
 //                 width: 14.,
 //                 height: 8.,
@@ -2796,7 +2801,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             width,
 //             height,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -2949,7 +2954,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3146,7 +3151,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0,
 //             800.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3271,7 +3276,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3384,7 +3389,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3472,7 +3477,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3571,7 +3576,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3677,7 +3682,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3765,7 +3770,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3864,7 +3869,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -3970,7 +3975,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -4206,7 +4211,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -4538,7 +4543,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.,
 //                 width: 14.,
 //                 height: 8.,
@@ -4658,7 +4663,7 @@ impl Dimensions for ContextDimension {
 //     fn test_edge_case_invalid_dimensions() {
 //         // Test with zero dimensions
 //         let (cols, lines) =
-//             compute(0.0, 0.0, SugarDimensions::default(), 1.0, Delta::default());
+//             compute(0.0, 0.0, TextDimensions::default(), 1.0, Delta::default());
 //         assert_eq!(cols, MIN_COLS);
 //         assert_eq!(lines, MIN_LINES);
 
@@ -4666,7 +4671,7 @@ impl Dimensions for ContextDimension {
 //         let (cols, lines) = compute(
 //             -100.0,
 //             -100.0,
-//             SugarDimensions::default(),
+//             TextDimensions::default(),
 //             1.0,
 //             Delta::default(),
 //         );
@@ -4677,7 +4682,7 @@ impl Dimensions for ContextDimension {
 //         let (cols, lines) = compute(
 //             1000.0,
 //             1000.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 0.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -4695,7 +4700,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -4776,7 +4781,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.0,
 //             400.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -4839,7 +4844,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0,
 //             800.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 8.0,
 //                 height: 8.0,
@@ -4899,7 +4904,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             100.0,
 //             100.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -4936,7 +4941,7 @@ impl Dimensions for ContextDimension {
 //         let (cols, lines) = compute(
 //             0.1,
 //             0.1,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 0.1,
 //                 width: 0.1,
 //                 height: 0.1,
@@ -4952,7 +4957,7 @@ impl Dimensions for ContextDimension {
 //         let (cols, lines) = compute(
 //             100.0,
 //             100.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -4974,7 +4979,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5018,7 +5023,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5058,7 +5063,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5125,7 +5130,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5189,7 +5194,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             200.0, // Small total width
 //             150.0, // Small total height
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5230,7 +5235,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0,
 //             800.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5274,7 +5279,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5312,7 +5317,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5358,7 +5363,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1600.0,
 //             1200.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5416,7 +5421,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 10.0,
 //                 height: 10.0,
@@ -5492,7 +5497,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5526,7 +5531,7 @@ impl Dimensions for ContextDimension {
 //         let first_context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5538,7 +5543,7 @@ impl Dimensions for ContextDimension {
 //         let second_context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5597,7 +5602,7 @@ impl Dimensions for ContextDimension {
 //         let first_context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5609,7 +5614,7 @@ impl Dimensions for ContextDimension {
 //         let second_context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5668,7 +5673,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 100.0,
 //                 height: 100.0,
@@ -5761,7 +5766,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 2.5,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5789,7 +5794,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5839,7 +5844,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5891,7 +5896,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5941,7 +5946,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             600.,
 //             400.,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -5995,7 +6000,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6103,7 +6108,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6170,7 +6175,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             300.0, // Small width to test limits
 //             400.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6218,7 +6223,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6246,7 +6251,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6315,7 +6320,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6467,7 +6472,7 @@ impl Dimensions for ContextDimension {
 //     fn test_parent_references_basic() {
 //         use crate::context::create_mock_context;
 //         use rio_backend::event::WindowId;
-//         use rio_backend::sugarloaf::layout::SugarDimensions;
+//         use rio_backend::sugarloaf::layout::TextDimensions;
 
 //         // Create a simple context for testing
 //         let context = create_mock_context(
@@ -6477,7 +6482,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6497,7 +6502,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6516,7 +6521,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6532,7 +6537,7 @@ impl Dimensions for ContextDimension {
 //     fn test_parent_references_complex_layout() {
 //         use crate::context::create_mock_context;
 //         use rio_backend::event::WindowId;
-//         use rio_backend::sugarloaf::layout::SugarDimensions;
+//         use rio_backend::sugarloaf::layout::TextDimensions;
 
 //         // Create initial context
 //         let context = create_mock_context(
@@ -6542,7 +6547,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6559,7 +6564,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6575,7 +6580,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6611,7 +6616,7 @@ impl Dimensions for ContextDimension {
 //     fn test_parent_references_after_removal() {
 //         use crate::context::create_mock_context;
 //         use rio_backend::event::WindowId;
-//         use rio_backend::sugarloaf::layout::SugarDimensions;
+//         use rio_backend::sugarloaf::layout::TextDimensions;
 
 //         // Create initial context
 //         let context = create_mock_context(
@@ -6621,7 +6626,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6638,7 +6643,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6653,7 +6658,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6692,7 +6697,7 @@ impl Dimensions for ContextDimension {
 //     fn test_find_node_margin_optimization() {
 //         use crate::context::create_mock_context;
 //         use rio_backend::event::WindowId;
-//         use rio_backend::sugarloaf::layout::SugarDimensions;
+//         use rio_backend::sugarloaf::layout::TextDimensions;
 
 //         // Create initial context
 //         let context = create_mock_context(
@@ -6702,7 +6707,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6725,7 +6730,7 @@ impl Dimensions for ContextDimension {
 //             ContextDimension::build(
 //                 300.,
 //                 300.,
-//                 SugarDimensions::default(),
+//                 TextDimensions::default(),
 //                 1.0,
 //                 Delta::default(),
 //             ),
@@ -6749,7 +6754,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6850,7 +6855,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -6940,7 +6945,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             1200.0, // Wider to accommodate 3 horizontal panels
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -7021,7 +7026,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             total_width,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,
@@ -7077,7 +7082,7 @@ impl Dimensions for ContextDimension {
 //         let context_dimension = ContextDimension::build(
 //             800.0,
 //             600.0,
-//             SugarDimensions {
+//             TextDimensions {
 //                 scale: 1.0,
 //                 width: 20.0,
 //                 height: 40.0,

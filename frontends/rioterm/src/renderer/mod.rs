@@ -26,7 +26,7 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic,
+    drawable_character, Content, SpanStyle, SpanStyleDecoration, Graphic,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
@@ -144,7 +144,7 @@ impl Renderer {
         &mut self,
         square: &Square,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
+    ) -> (SpanStyle, char) {
         let flags = square.flags;
 
         let mut foreground_color = self.compute_color(&square.fg, flags, term_colors);
@@ -184,13 +184,13 @@ impl Renderer {
         let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
 
         (
-            FragmentStyle {
+            SpanStyle {
                 color: foreground_color,
                 background_color,
                 font_attrs: font_attrs.into(),
                 decoration,
                 decoration_color,
-                ..FragmentStyle::default()
+                ..SpanStyle::default()
             },
             content,
         )
@@ -201,34 +201,34 @@ impl Renderer {
         &self,
         square: &Square,
         term_colors: &TermColors,
-    ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
+    ) -> (Option<SpanStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(FragmentStyleDecoration::Strikethrough);
+            decoration = Some(SpanStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
@@ -275,7 +275,7 @@ impl Renderer {
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
         let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
+        let mut last_style = SpanStyle::default();
 
         // Collect all characters that need font lookups to batch them
         let mut font_lookups = Vec::new();
@@ -309,7 +309,7 @@ impl Renderer {
 
             if should_underline {
                 style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                    Some(SpanStyleDecoration::Underline(UnderlineInfo {
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
@@ -721,7 +721,7 @@ impl Renderer {
         cursor: &Cursor,
         is_active: bool,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
+    ) -> (SpanStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
             square.flags.contains(Flags::BOLD_ITALIC),
@@ -773,11 +773,11 @@ impl Renderer {
             (false, false) => {}
         }
 
-        let mut style = FragmentStyle {
+        let mut style = SpanStyle {
             color,
             background_color,
             font_attrs: font_attrs.into(),
-            ..FragmentStyle::default()
+            ..SpanStyle::default()
         };
 
         let cursor_color = if !self.is_vi_mode_enabled {
@@ -793,7 +793,7 @@ impl Renderer {
         match cursor.state.content {
             CursorShape::Underline => {
                 style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+                    Some(SpanStyleDecoration::Underline(UnderlineInfo {
                         is_doubled: false,
                         shape: UnderlineShape::Regular,
                     }));
@@ -865,21 +865,21 @@ impl Renderer {
                         .new_line()
                         .add_text(
                             &String::from("Search: type something..."),
-                            FragmentStyle {
+                            SpanStyle {
                                 color: [
                                     self.named_colors.foreground[0],
                                     self.named_colors.foreground[1],
                                     self.named_colors.foreground[2],
                                     self.named_colors.foreground[3] - 0.3,
                                 ],
-                                ..FragmentStyle::default()
+                                ..SpanStyle::default()
                             },
                         )
                         .build();
                 } else {
-                    let style = FragmentStyle {
+                    let style = SpanStyle {
                         color: self.named_colors.foreground,
-                        ..FragmentStyle::default()
+                        ..SpanStyle::default()
                     };
                     let line = content.sel(search_rich_text);
                     line.clear().new_line().add_text("Search: ", style);
@@ -948,8 +948,9 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text(None);
-            sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
+            let search_rich_text = sugarloaf.get_next_id();
+            let _ = sugarloaf.text(Some(search_rich_text));
+            sugarloaf.set_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }
 
