@@ -159,6 +159,8 @@ impl SugarState {
         context: &mut super::Context,
         graphics: &mut Graphics,
     ) {
+        // Shape transient texts before rendering
+        self.content.build_transient_texts();
         advance_brush.prepare(context, self, graphics);
     }
 
@@ -175,6 +177,9 @@ impl SugarState {
         for id in to_remove {
             self.content.remove_state(&id);
         }
+
+        // Clear all transient texts (they get recreated each frame)
+        self.content.clear_transient_texts();
 
         self.content.mark_states_clean();
     }
@@ -244,9 +249,12 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_text_font_size(&mut self, rt_id: &usize, _font_size: f32) {
-        // Mark for repaint
+    pub fn set_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
         if let Some(content_state) = self.content.states.get_mut(rt_id) {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.layout.font_size = font_size;
+                text_state.scaled_font_size = font_size * self.style.scale_factor;
+            }
             content_state.render_data.needs_repaint = true;
         }
         self.compute_dimensions();

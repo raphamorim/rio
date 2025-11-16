@@ -1160,13 +1160,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let layout = route.window.screen.sugarloaf.rich_text_layout(&0);
-                        let new_scroll_px_x = columns * layout.font_size;
-                        let new_scroll_px_y = lines * layout.font_size;
-                        route
+                        let current_id =
+                            route.window.screen.ctx().current().rich_text_id;
+                        if let Some(layout) = route
                             .window
                             .screen
-                            .scroll(new_scroll_px_x as f64, new_scroll_px_y as f64);
+                            .sugarloaf
+                            .get_text_layout(&current_id)
+                        {
+                            let new_scroll_px_x = columns * layout.font_size;
+                            let new_scroll_px_y = lines * layout.font_size;
+                            route.window.screen.scroll(
+                                new_scroll_px_x as f64,
+                                new_scroll_px_y as f64,
+                            );
+                        }
                     }
                     MouseScrollDelta::PixelDelta(mut lpos) => {
                         match phase {

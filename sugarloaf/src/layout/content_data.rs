@@ -97,6 +97,11 @@ pub struct ContentRenderData {
     pub needs_repaint: bool,
     /// Whether this content should be removed
     pub should_remove: bool,
+    /// Whether this content is transient (render once then cleanup)
+    pub transient: bool,
+    /// Whether to use monospace grid dimensions for glyph positioning (terminal text)
+    /// When false, uses actual glyph advances (rich text)
+    pub use_grid_cell_size: bool,
 }
 
 impl Default for ContentRenderData {
@@ -107,6 +112,8 @@ impl Default for ContentRenderData {
             hidden: false,
             needs_repaint: true, // Should paint initially
             should_remove: false,
+            transient: false,
+            use_grid_cell_size: true, // Default to monospace grid for terminal
         }
     }
 }
