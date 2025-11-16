@@ -1,11 +1,6 @@
 use crate::context::grid::ContextDimension;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
-// Rich text ID constants for dialog screen
-const DIALOG_HEADING_ID: usize = 400_000;
-const DIALOG_CONFIRM_ID: usize = 400_001;
-const DIALOG_QUIT_ID: usize = 400_002;
-
 #[inline]
 pub fn screen(
     sugarloaf: &mut Sugarloaf,
@@ -30,41 +25,46 @@ pub fn screen(
     sugarloaf.rect(None, 128.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
     sugarloaf.rect(None, 240.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
 
-    let _ = sugarloaf.text(DIALOG_HEADING_ID);
-    let _ = sugarloaf.text(DIALOG_CONFIRM_ID);
-    let _ = sugarloaf.text(DIALOG_QUIT_ID);
+    // Use simple IDs for transient UI elements (not cached)
+    let heading_id = 1003;
+    let confirm_id = 1004;
+    let quit_id = 1005;
 
-    sugarloaf.set_text_font_size(&DIALOG_HEADING_ID, 32.0);
-    sugarloaf.set_text_font_size(&DIALOG_CONFIRM_ID, 20.0);
-    sugarloaf.set_text_font_size(&DIALOG_QUIT_ID, 20.0);
+    let _ = sugarloaf.text(heading_id);
+    let _ = sugarloaf.text(confirm_id);
+    let _ = sugarloaf.text(quit_id);
+
+    sugarloaf.set_text_font_size(&heading_id, 32.0);
+    sugarloaf.set_text_font_size(&confirm_id, 20.0);
+    sugarloaf.set_text_font_size(&quit_id, 20.0);
 
     let content = sugarloaf.content();
 
     content
-        .sel(DIALOG_HEADING_ID)
+        .sel(heading_id)
         .clear()
         .add_text(heading_content, SpanStyle::default())
         .build();
 
     content
-        .sel(DIALOG_CONFIRM_ID)
+        .sel(confirm_id)
         .clear()
         .add_text(confirm_content, SpanStyle::default())
         .build();
 
     content
-        .sel(DIALOG_QUIT_ID)
+        .sel(quit_id)
         .clear()
         .add_text(quit_content, SpanStyle::default())
         .build();
 
     // Show rich texts at specific positions
-    sugarloaf.set_position(DIALOG_HEADING_ID, 150.0, 270.0);
-    sugarloaf.set_visibility(DIALOG_HEADING_ID, true);
+    sugarloaf.set_position(heading_id, 150.0, 270.0);
+    sugarloaf.set_visibility(heading_id, true);
 
-    sugarloaf.set_position(DIALOG_CONFIRM_ID, 150.0, 330.0);
-    sugarloaf.set_visibility(DIALOG_CONFIRM_ID, true);
+    sugarloaf.set_position(confirm_id, 150.0, 330.0);
+    sugarloaf.set_visibility(confirm_id, true);
 
-    sugarloaf.set_position(DIALOG_QUIT_ID, 268.0, 330.0);
-    sugarloaf.set_visibility(DIALOG_QUIT_ID, true);
+    sugarloaf.set_position(quit_id, 268.0, 330.0);
+    sugarloaf.set_visibility(quit_id, true);
 }

@@ -2,11 +2,6 @@ use crate::context::grid::ContextDimension;
 use rio_backend::error::{RioError, RioErrorLevel};
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
-// Rich text ID constants for assistant screen
-const ASSISTANT_HEADING_ID: usize = 300_000;
-const ASSISTANT_PARAGRAPH_ACTION_ID: usize = 300_001;
-const ASSISTANT_PARAGRAPH_ID: usize = 300_002;
-
 pub struct Assistant {
     pub inner: Option<RioError>,
 }
@@ -81,22 +76,27 @@ pub fn screen(
         0.0,
     );
 
-    let _ = sugarloaf.text(ASSISTANT_HEADING_ID);
-    let _ = sugarloaf.text(ASSISTANT_PARAGRAPH_ACTION_ID);
-    let _ = sugarloaf.text(ASSISTANT_PARAGRAPH_ID);
+    // Use simple IDs for transient UI elements (not cached)
+    let heading_id = 1000;
+    let action_id = 1001;
+    let paragraph_id = 1002;
 
-    sugarloaf.set_text_font_size(&ASSISTANT_HEADING_ID, 28.0);
-    sugarloaf.set_text_font_size(&ASSISTANT_PARAGRAPH_ACTION_ID, 18.0);
-    sugarloaf.set_text_font_size(&ASSISTANT_PARAGRAPH_ID, 14.0);
+    let _ = sugarloaf.text(heading_id);
+    let _ = sugarloaf.text(action_id);
+    let _ = sugarloaf.text(paragraph_id);
+
+    sugarloaf.set_text_font_size(&heading_id, 28.0);
+    sugarloaf.set_text_font_size(&action_id, 18.0);
+    sugarloaf.set_text_font_size(&paragraph_id, 14.0);
 
     let content = sugarloaf.content();
-    let heading_line = content.sel(ASSISTANT_HEADING_ID);
+    let heading_line = content.sel(heading_id);
     heading_line
         .clear()
         .add_text("Woops! Rio got errors", SpanStyle::default())
         .build();
 
-    let paragraph_action_line = content.sel(ASSISTANT_PARAGRAPH_ACTION_ID);
+    let paragraph_action_line = content.sel(action_id);
     paragraph_action_line
         .clear()
         .add_text(
@@ -109,7 +109,7 @@ pub fn screen(
         .build();
 
     if let Some(report) = &assistant.inner {
-        let paragraph_line = content.sel(ASSISTANT_PARAGRAPH_ID).clear();
+        let paragraph_line = content.sel(paragraph_id).clear();
 
         for line in report.report.to_string().lines() {
             paragraph_line.add_text(line, SpanStyle::default());
@@ -119,26 +119,18 @@ pub fn screen(
     }
 
     // Show rich texts at specific positions
-    sugarloaf.set_position(
-        ASSISTANT_HEADING_ID,
-        70.0,
-        context_dimension.margin.top_y + 30.0,
-    );
-    sugarloaf.set_visibility(ASSISTANT_HEADING_ID, true);
+    sugarloaf.set_position(heading_id, 70.0, context_dimension.margin.top_y + 30.0);
+    sugarloaf.set_visibility(heading_id, true);
 
-    sugarloaf.set_position(
-        ASSISTANT_PARAGRAPH_ACTION_ID,
-        70.0,
-        context_dimension.margin.top_y + 70.0,
-    );
-    sugarloaf.set_visibility(ASSISTANT_PARAGRAPH_ACTION_ID, true);
+    sugarloaf.set_position(action_id, 70.0, context_dimension.margin.top_y + 70.0);
+    sugarloaf.set_visibility(action_id, true);
 
     if assistant.inner.is_some() {
         sugarloaf.set_position(
-            ASSISTANT_PARAGRAPH_ID,
+            paragraph_id,
             70.0,
             context_dimension.margin.top_y + 140.0,
         );
-        sugarloaf.set_visibility(ASSISTANT_PARAGRAPH_ID, true);
+        sugarloaf.set_visibility(paragraph_id, true);
     }
 }

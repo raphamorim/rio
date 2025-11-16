@@ -34,8 +34,7 @@ use std::time::{Duration, Instant};
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 // Global atomic counter for generating unique rich text IDs
-// Starting at 500_000 to avoid collision with other rich text IDs
-static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(500_000);
+static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// Generate a unique rich text ID for terminal contexts
 pub fn next_rich_text_id() -> usize {
