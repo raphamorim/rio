@@ -210,7 +210,7 @@ impl Screen<'_> {
 
         // Create rich text with initial position accounting for island
         let rich_text_id = next_rich_text_id();
-        let _ = sugarloaf.text(rich_text_id);
+        let _ = sugarloaf.text(Some(rich_text_id));
         sugarloaf.set_position(rich_text_id, config.padding_x, padding_y_top);
 
         let margin = Delta {
@@ -1216,7 +1216,7 @@ impl Screen<'_> {
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(rich_text_id);
+        let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
             .set_position(rich_text_id, config.padding_x, padding_y_top);
         self.context_manager.split_from_config(
@@ -1237,7 +1237,7 @@ impl Screen<'_> {
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(rich_text_id);
+        let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
             .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
@@ -1254,7 +1254,7 @@ impl Screen<'_> {
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(rich_text_id);
+        let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
             .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
@@ -1306,7 +1306,7 @@ impl Screen<'_> {
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
-        let _ = self.sugarloaf.text(rich_text_id);
+        let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
             .set_position(rich_text_id, padding_x, padding_y_top);
         let old_index = self.context_manager.current_index();

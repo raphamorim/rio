@@ -948,9 +948,8 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            // Use a high ID to avoid collision
-            let search_rich_text = 600_000;
-            let _ = sugarloaf.text(search_rich_text);
+            let search_rich_text = sugarloaf.get_next_id();
+            let _ = sugarloaf.text(Some(search_rich_text));
             sugarloaf.set_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }

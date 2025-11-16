@@ -76,61 +76,72 @@ pub fn screen(
         0.0,
     );
 
-    // Use simple IDs for transient UI elements (not cached)
-    let heading_id = 1000;
-    let action_id = 1001;
-    let paragraph_id = 1002;
+    // Create transient text elements (rendered once then cleaned up)
+    let heading_idx = sugarloaf.text(None);
+    let action_idx = sugarloaf.text(None);
+    let paragraph_idx = sugarloaf.text(None);
 
-    let _ = sugarloaf.text(heading_id);
-    let _ = sugarloaf.text(action_id);
-    let _ = sugarloaf.text(paragraph_id);
+    // Use proportional text rendering (not monospace grid)
+    sugarloaf.set_transient_use_grid_cell_size(heading_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(action_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(paragraph_idx, false);
 
-    sugarloaf.set_text_font_size(&heading_id, 28.0);
-    sugarloaf.set_text_font_size(&action_id, 18.0);
-    sugarloaf.set_text_font_size(&paragraph_id, 14.0);
+    sugarloaf.set_transient_text_font_size(heading_idx, 28.0);
+    sugarloaf.set_transient_text_font_size(action_idx, 18.0);
+    sugarloaf.set_transient_text_font_size(paragraph_idx, 14.0);
 
-    let content = sugarloaf.content();
-    let heading_line = content.sel(heading_id);
-    heading_line
-        .clear()
-        .add_text("Woops! Rio got errors", SpanStyle::default())
-        .build();
+    // Add text content to transient elements
+    if let Some(heading_state) = sugarloaf.get_transient_text_mut(heading_idx) {
+        heading_state
+            .clear()
+            .add_span("Woops! Rio got errors", SpanStyle::default())
+            .build();
+    }
 
-    let paragraph_action_line = content.sel(action_id);
-    paragraph_action_line
-        .clear()
-        .add_text(
-            "> press enter to continue",
-            SpanStyle {
-                color: yellow,
-                ..SpanStyle::default()
-            },
-        )
-        .build();
+    if let Some(action_state) = sugarloaf.get_transient_text_mut(action_idx) {
+        action_state
+            .clear()
+            .add_span(
+                "> press enter to continue",
+                SpanStyle {
+                    color: yellow,
+                    ..SpanStyle::default()
+                },
+            )
+            .build();
+    }
 
     if let Some(report) = &assistant.inner {
-        let paragraph_line = content.sel(paragraph_id).clear();
-
-        for line in report.report.to_string().lines() {
-            paragraph_line.add_text(line, SpanStyle::default());
+        if let Some(paragraph_state) = sugarloaf.get_transient_text_mut(paragraph_idx) {
+            paragraph_state.clear();
+            for line in report.report.to_string().lines() {
+                paragraph_state.add_span(line, SpanStyle::default()).new_line();
+            }
+            paragraph_state.build();
         }
-
-        paragraph_line.build();
     }
 
     // Show rich texts at specific positions
-    sugarloaf.set_position(heading_id, 70.0, context_dimension.margin.top_y + 30.0);
-    sugarloaf.set_visibility(heading_id, true);
+    sugarloaf.set_transient_position(
+        heading_idx,
+        70.0,
+        context_dimension.margin.top_y + 30.0,
+    );
+    sugarloaf.set_transient_visibility(heading_idx, true);
 
-    sugarloaf.set_position(action_id, 70.0, context_dimension.margin.top_y + 70.0);
-    sugarloaf.set_visibility(action_id, true);
+    sugarloaf.set_transient_position(
+        action_idx,
+        70.0,
+        context_dimension.margin.top_y + 70.0,
+    );
+    sugarloaf.set_transient_visibility(action_idx, true);
 
     if assistant.inner.is_some() {
-        sugarloaf.set_position(
-            paragraph_id,
+        sugarloaf.set_transient_position(
+            paragraph_idx,
             70.0,
             context_dimension.margin.top_y + 140.0,
         );
-        sugarloaf.set_visibility(paragraph_id, true);
+        sugarloaf.set_transient_visibility(paragraph_idx, true);
     }
 }

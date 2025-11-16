@@ -399,13 +399,9 @@ impl Renderer {
         // Always clear vertices first
         self.vertices.clear();
 
-        if state.content.states.is_empty() {
-            return;
-        }
-
         let library = state.content.font_library();
         // Iterate over all content states and render visible ones
-        for (content_id, content_state) in &state.content.states {
+        for (_, content_state) in &state.content.states {
             // Skip if marked for removal or hidden
             if content_state.render_data.should_remove || content_state.render_data.hidden {
                 continue;
@@ -425,7 +421,6 @@ impl Renderer {
                     let depth = content_state.render_data.depth;
 
                     self.draw_layout(
-                        *content_id,
                         &builder_state.lines,
                         &None,
                         Some(pos),
@@ -433,6 +428,7 @@ impl Renderer {
                         library,
                         Some(&builder_state.layout),
                         graphics,
+                        content_state.render_data.use_grid_cell_size,
                     );
                 }
                 crate::layout::ContentData::Rect { x, y, width, height, color, depth } => {
@@ -478,6 +474,39 @@ impl Renderer {
                         *atlas_layer,
                     );
                 }
+            }
+        }
+
+        // Process transient texts (rendered once then cleared)
+        for (index, content_state) in state.content.transient_texts.iter().enumerate() {
+            // Skip if hidden
+            if content_state.render_data.hidden {
+                continue;
+            }
+
+            if let crate::layout::ContentData::Text(builder_state) = &content_state.data {
+                // Skip if there are no lines to render
+                if builder_state.lines.is_empty() {
+                    continue;
+                }
+
+                let pos = (
+                    content_state.render_data.position[0],
+                    content_state.render_data.position[1],
+                );
+                let depth = content_state.render_data.depth;
+
+                // Use index + large offset to avoid collision with cached text IDs
+                self.draw_layout(
+                    &builder_state.lines,
+                    &None,
+                    Some(pos),
+                    depth,
+                    library,
+                    Some(&builder_state.layout),
+                    graphics,
+                    content_state.render_data.use_grid_cell_size,
+                );
             }
         }
 
@@ -559,7 +588,6 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     fn draw_layout(
         &mut self,
-        _rich_text_id: usize,
         lines: &Vec<crate::layout::BuilderLine>,
         selected_lines: &Option<RichTextLinesRange>,
         pos: Option<(f32, f32)>,
@@ -567,6 +595,7 @@ impl Renderer {
         font_library: &FontLibrary,
         rte_layout: Option<&TextLayout>,
         graphics: &mut Graphics,
+        use_grid_cell_size: bool,
     ) {
         if lines.is_empty() {
             return;
@@ -804,8 +833,13 @@ impl Renderer {
                                     let x = px;
                                     let y = baseline; // Glyph y should be at baseline position
 
-                                    px +=
-                                        rte_layout.unwrap().dimensions.width * char_width;
+                                    // Use grid cell size for terminal, actual glyph advance for rich text
+                                    if use_grid_cell_size {
+                                        px += rte_layout.unwrap().dimensions.width
+                                            * char_width;
+                                    } else {
+                                        px += shaped_glyph.x_advance;
+                                    }
 
                                     glyphs.push(Glyph {
                                         id: shaped_glyph.glyph_id as GlyphId,
@@ -877,9 +911,13 @@ impl Renderer {
                                     let y = baseline; // Use baseline for consistency with cached path
                                     let advance = glyph.simple_data().1;
 
-                                    // Different advance calculation based on mode
-                                    px +=
-                                        rte_layout.unwrap().dimensions.width * char_width;
+                                    // Use grid cell size for terminal, actual glyph advance for rich text
+                                    if use_grid_cell_size {
+                                        px += rte_layout.unwrap().dimensions.width
+                                            * char_width;
+                                    } else {
+                                        px += advance;
+                                    }
 
                                     let glyph_id = glyph.simple_data().0;
                                     glyphs.push(Glyph { id: glyph_id, x, y });
