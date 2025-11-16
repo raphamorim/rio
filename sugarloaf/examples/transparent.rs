@@ -61,8 +61,8 @@ fn main() {
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested = event {
                     // Add rectangles directly
-                    sugarloaf.rect(10.0, 10.0, 50.0, 50.0, [1.0, 1.0, 1.0, 1.0], 0.0);
-                    sugarloaf.rect(115.0, 10.0, 50.0, 50.0, [0.0, 0.0, 0.0, 1.0], 0.0);
+                    sugarloaf.rect(None, 10.0, 10.0, 50.0, 50.0, [1.0, 1.0, 1.0, 1.0], 0.0);
+                    sugarloaf.rect(None, 115.0, 10.0, 50.0, 50.0, [0.0, 0.0, 0.0, 1.0], 0.0);
 
                     sugarloaf.render();
                 }

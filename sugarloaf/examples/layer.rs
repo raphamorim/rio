@@ -8,7 +8,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, SpanStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -24,8 +24,6 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
-    rich_text: usize,
-    second_rich_text: usize,
 }
 
 impl Application {
@@ -37,8 +35,6 @@ impl Application {
             window: None,
             width,
             height,
-            rich_text: 0,
-            second_rich_text: 0,
         }
     }
 
@@ -81,8 +77,6 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        self.rich_text = sugarloaf.create_rich_text(None);
-        self.second_rich_text = sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         // we will add three layers
@@ -123,44 +117,49 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let content = sugarloaf.content();
-                content.sel(self.rich_text).clear();
-                content
-                    .new_line()
-                    .add_text(
-                        "First Layer",
-                        FragmentStyle {
-                            color: [1.0, 1.0, 1.0, 1.0],
-                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
-                        },
-                    )
-                    .new_line()
-                    .build();
+                const TEXT_ID_0: usize = 0;
+                const TEXT_ID_1: usize = 1;
 
-                content.sel(self.second_rich_text).clear();
-                content
+                sugarloaf
+                    .text(TEXT_ID_0)
+                    .clear()
                     .new_line()
-                    .add_text(
-                        "Second Layer",
-                        FragmentStyle {
+                    .add_span(
+                        "First Layer",
+                        SpanStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
+                    .new_line();
+                sugarloaf.build_text_by_id(TEXT_ID_0);
+
+                sugarloaf
+                    .text(TEXT_ID_1)
+                    .clear()
                     .new_line()
-                    .build();
+                    .add_span(
+                        "Second Layer",
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..SpanStyle::default()
+                        },
+                    )
+                    .new_line();
+                sugarloaf.build_text_by_id(TEXT_ID_1);
 
                 // Add rectangles directly
-                sugarloaf.rect(10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
-                sugarloaf.rect(10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0], 0.0);
-                sugarloaf.rect(95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
+                sugarloaf.rect(None, 10., 10., 120., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
+                sugarloaf.rect(None, 10., 80., 120., 100., [0.0, 0.0, 0.0, 1.0], 0.0);
+                sugarloaf.rect(None, 95., 30., 20., 100., [1.0, 1.0, 1.0, 1.0], 0.0);
 
                 // Show rich text
-                sugarloaf.show_rich_text(self.rich_text, 10., 10.);
-                sugarloaf.show_rich_text(self.second_rich_text, 10., 60.);
-                sugarloaf.show_rich_text(self.rich_text, 100., 100.);
+                sugarloaf.set_position(TEXT_ID_0, 10., 10.);
+                sugarloaf.set_visibility(TEXT_ID_0, true);
+                sugarloaf.set_position(TEXT_ID_1, 10., 60.);
+                sugarloaf.set_visibility(TEXT_ID_1, true);
 
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
