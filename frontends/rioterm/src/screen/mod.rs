@@ -18,7 +18,7 @@ use crate::bindings::{
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::{ContextDimension, Delta};
 use crate::context::renderable::{Cursor, RenderableContent};
-use crate::context::{self, process_open_url, ContextManager};
+use crate::context::{self, next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -209,9 +209,9 @@ impl Screen<'_> {
         };
 
         // Create rich text with initial position accounting for island
-        let rich_text_config =
-            RichTextConfig::new().with_position(config.padding_x, padding_y_top);
-        let rich_text_id = sugarloaf.create_rich_text(Some(&rich_text_config));
+        let rich_text_id = next_rich_text_id();
+        let _ = sugarloaf.text(rich_text_id);
+        sugarloaf.set_position(rich_text_id, config.padding_x, padding_y_top);
 
         let margin = Delta {
             x: config.padding_x,
@@ -221,7 +221,7 @@ impl Screen<'_> {
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            sugarloaf.get_text_dimensions(&rich_text_id).unwrap_or_default(),
             config.line_height,
             margin,
         );
@@ -338,11 +338,15 @@ impl Screen<'_> {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let layout = self
+        if let Some(layout) = self
             .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
-        let scale_f64 = layout.dimensions.scale as f64;
-        pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
+            .get_text_layout(&self.context_manager.current().rich_text_id)
+        {
+            let scale_f64 = layout.dimensions.scale as f64;
+            pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
+        } else {
+            false
+        }
     }
 
     /// update_config is triggered in any configuration file update
@@ -391,7 +395,7 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf.set_rich_text_line_height(
+                self.sugarloaf.set_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
                 );
@@ -435,7 +439,7 @@ impl Screen<'_> {
             FontSizeAction::Reset => 0,
         };
 
-        self.sugarloaf.set_rich_text_font_size_based_on_action(
+        self.sugarloaf.set_text_font_size_action(
             &self.context_manager.current().rich_text_id,
             action,
         );
@@ -1211,9 +1215,10 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
-        let rich_text_config =
-            RichTextConfig::new().with_position(config.padding_x, padding_y_top);
-        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(rich_text_id);
+        self.sugarloaf
+            .set_position(rich_text_id, config.padding_x, padding_y_top);
         self.context_manager.split_from_config(
             rich_text_id,
             false,
@@ -1231,9 +1236,10 @@ impl Screen<'_> {
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
-        let rich_text_config =
-            RichTextConfig::new().with_position(padding_x, padding_y_top);
-        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(rich_text_id);
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
             .split(rich_text_id, false, &mut self.sugarloaf);
 
@@ -1247,9 +1253,10 @@ impl Screen<'_> {
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
-        let rich_text_config =
-            RichTextConfig::new().with_position(padding_x, padding_y_top);
-        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(rich_text_id);
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
         self.context_manager
             .split(rich_text_id, true, &mut self.sugarloaf);
 
@@ -1298,9 +1305,10 @@ impl Screen<'_> {
         let padding_x = margin.x;
         let padding_y_top = self.renderer.padding_y[0]
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
-        let rich_text_config =
-            RichTextConfig::new().with_position(padding_x, padding_y_top);
-        let rich_text_id = self.sugarloaf.create_rich_text(Some(&rich_text_config));
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(rich_text_id);
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
         let old_index = self.context_manager.current_index();
         self.context_manager.add_context(redirect, rich_text_id);
         let new_index = self.context_manager.current_index();
@@ -1359,16 +1367,18 @@ impl Screen<'_> {
         if previous_margin.top_y != padding_y_top
             || previous_margin.bottom_y != padding_y_bottom
         {
-            let layout = self
+            if let Some(layout) = self
                 .sugarloaf
-                .rich_text_layout(&self.context_manager.current().rich_text_id);
-            let s = self.sugarloaf.style_mut();
-            s.font_size = layout.font_size;
-            s.line_height = layout.line_height;
+                .get_text_layout(&self.context_manager.current().rich_text_id)
+            {
+                let s = self.sugarloaf.style_mut();
+                s.font_size = layout.font_size;
+                s.line_height = layout.line_height;
 
-            let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
-            self.resize_all_contexts();
+                let d = self.context_manager.current_grid_mut();
+                d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
+                self.resize_all_contexts();
+            }
         }
     }
 
@@ -1984,9 +1994,13 @@ impl Screen<'_> {
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
-        let sugarloaf_layout = self
+        let sugarloaf_layout = match self
             .sugarloaf
-            .rich_text_layout(&current_context.rich_text_id);
+            .get_text_layout(&current_context.rich_text_id)
+        {
+            Some(l) => l,
+            None => return,
+        };
         let scale_factor = layout.dimension.scale;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
@@ -2521,9 +2535,13 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = self
+        let layout = match self
             .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
+            .get_text_layout(&self.context_manager.current().rich_text_id)
+        {
+            Some(l) => l,
+            None => return,
+        };
         let width = layout.dimensions.width as f64;
         let height = layout.dimensions.height as f64;
         let mode = self.get_mode();

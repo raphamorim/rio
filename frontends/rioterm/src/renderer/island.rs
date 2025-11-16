@@ -27,6 +27,10 @@ const ISLAND_MARGIN_RIGHT: f32 = 8.0;
 #[cfg(target_os = "macos")]
 const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
 
+// Rich text ID constants for island tabs
+// Using high IDs to avoid collision with other rich texts
+const ISLAND_TAB_BASE_ID: usize = 200_000;
+
 /// Data for each individual tab
 struct TabIslandData {
     /// Rich text ID for this tab's title
@@ -86,14 +90,14 @@ impl Island {
         if self.hide_if_single && num_tabs == 1 {
             // Hide all existing tab rich texts
             for tab_data in self.tab_data.values() {
-                sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
+                sugarloaf.set_visibility(tab_data.rich_text_id, false);
             }
             return;
         }
 
         // Hide all existing tab rich texts first
         for tab_data in self.tab_data.values() {
-            sugarloaf.set_rich_text_visibility(tab_data.rich_text_id, false);
+            sugarloaf.set_visibility(tab_data.rich_text_id, false);
         }
 
         // Calculate left margin (macOS needs space for traffic light buttons)
@@ -113,6 +117,7 @@ impl Island {
         // Draw bottom border for the left margin area (traffic light space on macOS)
         if left_margin > 0.0 {
             sugarloaf.rect(
+                None,
                 0.0,
                 ISLAND_HEIGHT - 1.0,
                 left_margin,
@@ -135,11 +140,10 @@ impl Island {
 
             // Get or create tab data
             let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
-                use rio_backend::sugarloaf::layout::RichTextConfig;
                 // Text should be in front of everything (terminal at 0.0)
-                let config = RichTextConfig::new().with_depth(-0.1);
-                let rich_text_id = sugarloaf.create_rich_text(Some(&config));
-                sugarloaf.set_rich_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
+                let rich_text_id = ISLAND_TAB_BASE_ID + tab_index;
+                let _ = sugarloaf.text(rich_text_id);
+                sugarloaf.set_text_font_size(&rich_text_id, TITLE_FONT_SIZE);
 
                 TabIslandData {
                     rich_text_id,
@@ -155,7 +159,7 @@ impl Island {
             };
 
             // Update text (always update to handle active state changes)
-            use rio_backend::sugarloaf::FragmentStyle;
+            use rio_backend::sugarloaf::SpanStyle;
             let content = sugarloaf.content();
             content
                 .sel(tab_data.rich_text_id)
@@ -163,26 +167,30 @@ impl Island {
                 .new_line()
                 .add_text(
                     &title,
-                    FragmentStyle {
+                    SpanStyle {
                         color: text_color,
-                        ..FragmentStyle::default()
+                        ..SpanStyle::default()
                     },
                 )
                 .build();
             tab_data.last_title = title.clone();
 
             // Get text dimensions to center it
-            let text_dims = sugarloaf.get_rich_text_dimensions(&tab_data.rich_text_id);
+            let text_dims = sugarloaf
+                .get_text_dimensions(&tab_data.rich_text_id)
+                .unwrap_or_default();
 
             // Position text centered horizontally and vertically in the tab
             let text_x = x_position + (tab_width - text_dims.width) / 2.0;
             let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.0);
-            sugarloaf.show_rich_text(tab_data.rich_text_id, text_x, text_y);
+            sugarloaf.set_position(tab_data.rich_text_id, text_x, text_y);
+            sugarloaf.set_visibility(tab_data.rich_text_id, true);
 
             // Draw vertical left border (separator between tabs)
             // Skip for first tab UNLESS it's active (then draw to separate from traffic lights)
             if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
                 sugarloaf.rect(
+                    None,
                     x_position,
                     0.0, // Start from top
                     1.0, // 1px width
@@ -195,6 +203,7 @@ impl Island {
             // Draw bottom border for inactive tabs (active tabs have no border)
             if !is_active {
                 sugarloaf.rect(
+                    None,
                     x_position,
                     ISLAND_HEIGHT - 1.0, // 1px from bottom
                     tab_width,

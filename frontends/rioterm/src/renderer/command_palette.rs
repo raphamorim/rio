@@ -25,6 +25,11 @@ const SCROLLBAR_WIDTH: f32 = 6.0;
 const SCROLLBAR_MARGIN: f32 = 4.0;
 const SCROLLBAR_MIN_HEIGHT: f32 = 20.0;
 
+// Rich text ID constants for command palette
+// Using high IDs to avoid collision with other rich texts
+const COMMAND_PALETTE_INPUT_ID: usize = 100_000;
+const COMMAND_PALETTE_RESULTS_BASE_ID: usize = 100_001;
+
 /// Command palette state
 #[derive(Debug, Clone)]
 pub struct CommandPaletteItem {
@@ -55,10 +60,10 @@ pub struct CommandPalette {
     text_color: [f32; 4],
     /// Description text color
     description_color: [f32; 4],
-    /// Rich text ID for search input
-    input_rich_text_id: Option<usize>,
-    /// Rich text IDs for result items
-    result_rich_text_ids: Vec<usize>,
+    /// Whether input text has been initialized
+    input_initialized: bool,
+    /// Number of result items initialized
+    results_initialized: usize,
 }
 
 impl Default for CommandPalette {
@@ -74,8 +79,8 @@ impl Default for CommandPalette {
             selected_background_color: [0.25, 0.25, 0.25, 1.0],
             text_color: [1.0, 1.0, 1.0, 1.0],
             description_color: [0.6, 0.6, 0.6, 1.0],
-            input_rich_text_id: None,
-            result_rich_text_ids: Vec::new(),
+            input_initialized: false,
+            results_initialized: 0,
         }
     }
 }
@@ -226,6 +231,7 @@ impl CommandPalette {
 
         // Render main background with rounded corners
         sugarloaf.rounded_rect(
+            None,
             palette_x,
             palette_y,
             palette_width,
@@ -241,6 +247,7 @@ impl CommandPalette {
         let input_width = palette_width - (PALETTE_PADDING * 2.0);
 
         sugarloaf.rounded_rect(
+            None,
             input_x,
             input_y,
             input_width,
@@ -251,16 +258,14 @@ impl CommandPalette {
         );
 
         // Render search query text
-        if self.input_rich_text_id.is_none() {
-            use rio_backend::sugarloaf::layout::RichTextConfig;
-            let config = RichTextConfig::new().with_depth(-0.5);
-            let rich_text_id = sugarloaf.create_rich_text(Some(&config));
-            sugarloaf.set_rich_text_font_size(&rich_text_id, INPUT_FONT_SIZE);
-            self.input_rich_text_id = Some(rich_text_id);
+        if !self.input_initialized {
+            let _ = sugarloaf.text(COMMAND_PALETTE_INPUT_ID);
+            sugarloaf.set_text_font_size(&COMMAND_PALETTE_INPUT_ID, INPUT_FONT_SIZE);
+            self.input_initialized = true;
         }
 
-        if let Some(input_id) = self.input_rich_text_id {
-            use rio_backend::sugarloaf::FragmentStyle;
+        {
+            use rio_backend::sugarloaf::SpanStyle;
             let display_text = if self.query.is_empty() {
                 "Search commands..."
             } else {
@@ -275,21 +280,22 @@ impl CommandPalette {
 
             let content = sugarloaf.content();
             content
-                .sel(input_id)
+                .sel(COMMAND_PALETTE_INPUT_ID)
                 .clear()
                 .new_line()
                 .add_text(
                     display_text,
-                    FragmentStyle {
+                    SpanStyle {
                         color: text_color,
-                        ..FragmentStyle::default()
+                        ..SpanStyle::default()
                     },
                 )
                 .build();
 
             let text_x = input_x + INPUT_PADDING_X;
             let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
-            sugarloaf.show_rich_text(input_id, text_x, text_y);
+            sugarloaf.set_position(COMMAND_PALETTE_INPUT_ID, text_x, text_y);
+            sugarloaf.set_visibility(COMMAND_PALETTE_INPUT_ID, true);
         }
 
         // Render results
@@ -297,12 +303,11 @@ impl CommandPalette {
         let visible_count = self.filtered_commands().len().min(MAX_VISIBLE_RESULTS);
 
         // Ensure we have enough rich text IDs for results
-        while self.result_rich_text_ids.len() < visible_count {
-            use rio_backend::sugarloaf::layout::RichTextConfig;
-            let config = RichTextConfig::new().with_depth(-0.5);
-            let rich_text_id = sugarloaf.create_rich_text(Some(&config));
-            sugarloaf.set_rich_text_font_size(&rich_text_id, RESULT_FONT_SIZE);
-            self.result_rich_text_ids.push(rich_text_id);
+        while self.results_initialized < visible_count {
+            let result_id = COMMAND_PALETTE_RESULTS_BASE_ID + self.results_initialized;
+            let _ = sugarloaf.text(result_id);
+            sugarloaf.set_text_font_size(&result_id, RESULT_FONT_SIZE);
+            self.results_initialized += 1;
         }
 
         // Get filtered commands after modifying result_rich_text_ids
@@ -324,6 +329,7 @@ impl CommandPalette {
             // Render selection background
             if is_selected {
                 sugarloaf.rounded_rect(
+                    None,
                     input_x,
                     item_y,
                     input_width,
@@ -335,25 +341,26 @@ impl CommandPalette {
             }
 
             // Render result text
-            if let Some(result_id) = self.result_rich_text_ids.get(display_i) {
-                use rio_backend::sugarloaf::FragmentStyle;
+            let result_id = COMMAND_PALETTE_RESULTS_BASE_ID + display_i;
+            {
+                use rio_backend::sugarloaf::SpanStyle;
                 let content = sugarloaf.content();
-                let mut builder = content.sel(*result_id).clear().new_line();
+                let mut builder = content.sel(result_id).clear().new_line();
 
                 builder = builder.add_text(
                     &cmd.title,
-                    FragmentStyle {
+                    SpanStyle {
                         color: self.text_color,
-                        ..FragmentStyle::default()
+                        ..SpanStyle::default()
                     },
                 );
 
                 if let Some(desc) = &cmd.description {
                     builder = builder.add_text(
                         &format!(" — {}", desc),
-                        FragmentStyle {
+                        SpanStyle {
                             color: self.description_color,
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     );
                 }
@@ -362,7 +369,8 @@ impl CommandPalette {
 
                 let text_x = input_x + INPUT_PADDING_X;
                 let text_y = item_y + (RESULT_ITEM_HEIGHT - RESULT_FONT_SIZE) / 2.0;
-                sugarloaf.show_rich_text(*result_id, text_x, text_y);
+                sugarloaf.set_position(result_id, text_x, text_y);
+                sugarloaf.set_visibility(result_id, true);
             }
         }
 
@@ -391,6 +399,7 @@ impl CommandPalette {
 
             // Render scrollbar thumb
             sugarloaf.rounded_rect(
+                None,
                 scrollbar_x,
                 thumb_y,
                 SCROLLBAR_WIDTH,
