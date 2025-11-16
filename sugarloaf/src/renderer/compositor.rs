@@ -5,11 +5,11 @@
 //
 // Compositor with vertex capture for text run caching
 
-use crate::components::rich_text::batch::{BatchManager, RunUnderline};
-pub use crate::components::rich_text::batch::{Rect, Vertex};
-use crate::components::rich_text::image_cache::glyph::GlyphCacheSession;
-use crate::components::rich_text::text::*;
-use crate::layout::{FragmentStyleDecoration, UnderlineShape};
+use crate::renderer::batch::{BatchManager, RunUnderline};
+pub use crate::renderer::batch::{Rect, Vertex};
+use crate::renderer::image_cache::glyph::GlyphCacheSession;
+use crate::renderer::text::*;
+use crate::layout::{SpanStyleDecoration, UnderlineShape};
 
 pub struct Compositor {
     pub batches: BatchManager,
@@ -29,7 +29,7 @@ impl Compositor {
         rect: &Rect,
     ) -> Option<RunUnderline> {
         match style.decoration {
-            Some(FragmentStyleDecoration::Underline(info)) => {
+            Some(SpanStyleDecoration::Underline(info)) => {
                 // Use font metrics for thickness when available, otherwise fall back to shape-based defaults
                 let underline_thickness = if style.underline_thickness > 0.0 {
                     style.underline_thickness
@@ -53,7 +53,7 @@ impl Compositor {
                     shape: info.shape,
                 })
             }
-            Some(FragmentStyleDecoration::Strikethrough) => {
+            Some(SpanStyleDecoration::Strikethrough) => {
                 // Use font's built-in strikeout offset if available, otherwise use x-height/2
                 // This matches standard typographic positioning for strikethrough
                 let strikethrough_offset = if style.strikeout_offset != 0.0 {

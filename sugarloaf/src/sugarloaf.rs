@@ -4,14 +4,14 @@ pub mod state;
 
 use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
-use crate::components::rich_text::RichTextBrush;
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{RichTextConfig, RichTextLayout, RootStyle};
+use crate::layout::{TextLayout, RootStyle};
+use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::Graphics;
 
 use crate::context::Context;
 use crate::Content;
-use crate::SugarDimensions;
+use crate::TextDimensions;
 use core::fmt::{Debug, Formatter};
 use primitives::ImageProperties;
 use raw_window_handle::{
@@ -21,7 +21,7 @@ use state::SugarState;
 
 pub struct Sugarloaf<'a> {
     pub ctx: Context<'a>,
-    rich_text_brush: RichTextBrush,
+    renderer: Renderer,
     state: state::SugarState,
     pub background_color: Option<wgpu::Color>,
     pub background_image: Option<ImageProperties>,
@@ -152,7 +152,7 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let ctx = Context::new(window, renderer);
 
-        let rich_text_brush = RichTextBrush::new(&ctx);
+        let renderer = Renderer::new(&ctx);
         let state = SugarState::new(layout, font_library, &font_features);
 
         let instance = Sugarloaf {
@@ -160,7 +160,7 @@ impl Sugarloaf<'_> {
             ctx,
             background_color: Some(wgpu::Color::BLACK),
             background_image: None,
-            rich_text_brush,
+            renderer,
             graphics: Graphics::default(),
             filters_brush: None,
         };
@@ -176,11 +176,11 @@ impl Sugarloaf<'_> {
         crate::font::clear_font_data_cache();
 
         // Clear the atlas to remove old font glyphs
-        self.rich_text_brush.clear_atlas();
+        self.renderer.clear_atlas();
 
         self.state.reset();
         self.state
-            .set_fonts(font_library, &mut self.rich_text_brush);
+            .set_fonts(font_library, &mut self.renderer);
     }
 
     #[inline]
@@ -203,24 +203,38 @@ impl Sugarloaf<'_> {
         &mut self.state.style
     }
 
+    /// Update text font size based on action (0=reset, 1=decrease, 2=increase)
+    /// Returns true if the operation was applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_font_size_based_on_action(
-        &mut self,
-        rt_id: &usize,
-        operation: u8,
-    ) {
-        self.state
-            .set_rich_text_font_size_based_on_action(rt_id, operation);
+    pub fn set_text_font_size_action(&mut self, id: &usize, operation: u8) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.update_text_style(id, operation);
+            true
+        } else {
+            false
+        }
     }
 
+    /// Set font size for text content. Returns true if applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_font_size(&mut self, rt_id: &usize, font_size: f32) {
-        self.state.set_rich_text_font_size(rt_id, font_size);
+    pub fn set_text_font_size(&mut self, id: &usize, font_size: f32) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.set_text_font_size(id, font_size);
+            true
+        } else {
+            false
+        }
     }
 
+    /// Set line height for text content. Returns true if applied, false if id is not text
     #[inline]
-    pub fn set_rich_text_line_height(&mut self, rt_id: &usize, line_height: f32) {
-        self.state.set_rich_text_line_height(rt_id, line_height);
+    pub fn set_text_line_height(&mut self, id: &usize, line_height: f32) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.set_text_line_height(id, line_height);
+            true
+        } else {
+            false
+        }
     }
 
     #[inline]
@@ -255,37 +269,68 @@ impl Sugarloaf<'_> {
         self
     }
 
+    /// Remove content by ID (any type)
     #[inline]
-    pub fn create_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
-        self.state.create_rich_text(config)
+    pub fn remove_content(&mut self, id: usize) {
+        self.state.content.remove_state(&id);
     }
 
+    /// Clear text content (resets to empty). Returns true if applied, false if id is not text
     #[inline]
-    pub fn remove_rich_text(&mut self, rich_text_id: usize) {
-        self.state.content.remove_state(&rich_text_id);
-    }
-
-    // This RichText is different than regular rich text
-    // it will be removed after the render and doesn't
-    // offer any type of optimization (e.g: cache) per render.
-    #[inline]
-    pub fn create_temp_rich_text(&mut self, config: Option<&RichTextConfig>) -> usize {
-        self.state.create_temp_rich_text(config)
-    }
-
-    #[inline]
-    pub fn clear_rich_text(&mut self, id: &usize) {
-        self.state.clear_rich_text(id);
+    pub fn clear_text(&mut self, id: &usize) -> bool {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            self.state.clear_text(id);
+            true
+        } else {
+            false
+        }
     }
 
     pub fn content(&mut self) -> &mut Content {
         self.state.content()
     }
 
-    /// Add a rectangle directly to the rendering pipeline
+    #[inline]
+    pub fn get_text_by_id_mut(&mut self, id: usize) -> Option<&mut crate::layout::BuilderState> {
+        self.state.content.get_text_by_id_mut(id)
+    }
+
+    #[inline]
+    pub fn get_text_by_id(&mut self, id: usize) -> Option<&crate::layout::BuilderState> {
+        self.state.content.get_text_by_id(id)
+    }
+
+    #[inline]
+    pub fn build_text_by_id(&mut self, id: usize) {
+        self.state.content().sel(id).build();
+    }
+
+     #[inline]
+    pub fn build_text_by_id_line_number(&mut self, text_id: usize, line_number: usize) {
+        self.state.content().sel(text_id).build_line(line_number);
+    }
+
+    /// Create or get text content at the given ID. If ID doesn't exist or is not text,
+    /// creates new text content with default layout. Returns mutable reference.
+    #[inline]
+    pub fn text(&mut self, id: usize) -> &mut crate::layout::BuilderState {
+        // Check if text already exists
+        if self.state.content.get_text_by_id(id).is_none() {
+            // Create new text with default layout
+            let default_layout = TextLayout::from_default_layout(&self.state.style);
+            self.state.content.set_text(id, &default_layout);
+        }
+        // Now it must exist
+        self.state.content.get_text_by_id_mut(id).unwrap()
+    }
+
+    /// Add a rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
     #[inline]
     pub fn rect(
         &mut self,
+        id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -297,20 +342,36 @@ impl Sugarloaf<'_> {
         let scaled_y = y * self.state.style.scale_factor;
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
-        self.rich_text_brush.rect(
-            scaled_x,
-            scaled_y,
-            scaled_width,
-            scaled_height,
-            color,
-            depth,
-        );
+
+        if let Some(content_id) = id {
+            self.state.content.set_rect(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+            );
+        } else {
+            self.renderer.rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+            );
+        }
     }
 
-    /// Add a rounded rectangle directly to the rendering pipeline
+    /// Add a rounded rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
     #[inline]
     pub fn rounded_rect(
         &mut self,
+        id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -324,21 +385,38 @@ impl Sugarloaf<'_> {
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
         let scaled_border_radius = border_radius * self.state.style.scale_factor;
-        self.rich_text_brush.rounded_rect(
-            scaled_x,
-            scaled_y,
-            scaled_width,
-            scaled_height,
-            color,
-            depth,
-            scaled_border_radius,
-        );
+
+        if let Some(content_id) = id {
+            self.state.content.set_rounded_rect(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+                scaled_border_radius,
+            );
+        } else {
+            self.renderer.rounded_rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                depth,
+                scaled_border_radius,
+            );
+        }
     }
 
-    /// Add an image rectangle directly to the rendering pipeline
+    /// Add an image rectangle to content system
+    /// - `id: None` - not cached, rendered immediately
+    /// - `id: Some(n)` - cached with id n, overwrites existing content
     #[inline]
-    pub fn add_image_rect(
+    pub fn image_rect(
         &mut self,
+        id: Option<usize>,
         x: f32,
         y: f32,
         width: f32,
@@ -353,50 +431,69 @@ impl Sugarloaf<'_> {
         let scaled_y = y * self.state.style.scale_factor;
         let scaled_width = width * self.state.style.scale_factor;
         let scaled_height = height * self.state.style.scale_factor;
-        self.rich_text_brush.add_image_rect(
-            scaled_x,
-            scaled_y,
-            scaled_width,
-            scaled_height,
-            color,
-            coords,
-            has_alpha,
-            depth,
-            atlas_layer,
-        );
+
+        if let Some(content_id) = id {
+            self.state.content.set_image(
+                content_id,
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                coords,
+                has_alpha,
+                depth,
+                atlas_layer,
+            );
+        } else {
+            self.renderer.add_image_rect(
+                scaled_x,
+                scaled_y,
+                scaled_width,
+                scaled_height,
+                color,
+                coords,
+                has_alpha,
+                depth,
+                atlas_layer,
+            );
+        }
     }
 
-    /// Show a rich text at a specific position
+    /// Show content at a specific position (any type)
     #[inline]
-    pub fn show_rich_text(&mut self, id: usize, x: f32, y: f32) {
+    pub fn set_position(&mut self, id: usize, x: f32, y: f32) {
         self.state
-            .set_rich_text_visibility_and_position(id, x, y, false);
+            .set_content_position(id, x, y);
     }
 
-    /// Hide a rich text
+    /// Set content visibility (any type)
     #[inline]
-    pub fn hide_rich_text(&mut self, id: usize) {
-        self.state.set_rich_text_hidden(id, true);
+    pub fn set_visibility(&mut self, id: usize, visible: bool) {
+        self.state.set_content_hidden(id, !visible);
     }
 
+    /// Get text layout. Returns None if id is not text
     #[inline]
-    pub fn set_rich_text_visibility(&mut self, id: usize, hidden: bool) {
-        self.state.set_rich_text_hidden(id, !hidden);
+    pub fn get_text_layout(&self, id: &usize) -> Option<TextLayout> {
+        self.state.content.get_text_by_id(*id)?;
+        Some(self.state.get_state_layout(id))
     }
 
-    #[inline]
-    pub fn rich_text_layout(&self, id: &usize) -> RichTextLayout {
-        self.state.get_state_layout(id)
-    }
-
+    /// Force update dimensions for text content
     #[inline]
     pub fn force_update_dimensions(&mut self, id: &usize) {
         self.state.content.update_dimensions(id);
     }
 
+    /// Get text dimensions. Returns None if id is not text
     #[inline]
-    pub fn get_rich_text_dimensions(&mut self, id: &usize) -> SugarDimensions {
-        self.state.get_rich_text_dimensions(id)
+    pub fn get_text_dimensions(&mut self, id: &usize) -> Option<TextDimensions> {
+        if self.state.content.get_text_by_id(*id).is_some() {
+            Some(self.state.get_text_dimensions(id))
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -437,7 +534,7 @@ impl Sugarloaf<'_> {
     pub fn render(&mut self) {
         self.state.compute_dimensions();
         self.state.compute_updates(
-            &mut self.rich_text_brush,
+            &mut self.renderer,
             &mut self.ctx,
             &mut self.graphics,
         );
@@ -501,7 +598,7 @@ impl Sugarloaf<'_> {
                     command_buffer.new_render_command_encoder(render_pass_descriptor);
                 render_encoder.set_label("Sugarloaf Metal Render Pass");
 
-                self.rich_text_brush.render_metal(ctx, render_encoder);
+                self.renderer.render_metal(ctx, render_encoder);
 
                 render_encoder.end_encoding();
                 command_buffer.present_drawable(&surface_texture.drawable);
@@ -565,7 +662,7 @@ impl Sugarloaf<'_> {
                             depth_stencil_attachment: None,
                         });
 
-                    self.rich_text_brush.render(ctx, &mut rpass);
+                    self.renderer.render(ctx, &mut rpass);
                 }
 
                 if let Some(ref mut filters_brush) = self.filters_brush {

@@ -10,7 +10,7 @@
 // text color, underline color and etc.
 
 use crate::font_introspector::{GlyphId, NormalizedCoord};
-use crate::layout::FragmentStyleDecoration;
+use crate::layout::SpanStyleDecoration;
 use crate::sugarloaf::primitives::{DrawableChar, SugarCursor};
 
 /// Properties for a text run.
@@ -37,7 +37,7 @@ pub struct TextRunStyle<'a> {
     /// Total advance of the run.
     pub advance: f32,
     /// Underline style.
-    pub decoration: Option<FragmentStyleDecoration>,
+    pub decoration: Option<SpanStyleDecoration>,
     /// Underline style.
     pub decoration_color: Option<[f32; 4]>,
     /// Cursor style.

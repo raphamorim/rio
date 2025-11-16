@@ -10,7 +10,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
+    layout::RootStyle, SpanStyle, Sugarloaf, SugarloafWindow, SugarloafWindowSize,
 };
 
 fn main() {
@@ -21,10 +21,17 @@ fn main() {
     let _ = application.run(window_event_loop);
 }
 
+// User-defined content IDs
+const TEXT_ID_0: usize = 0;
+const TEXT_ID_1: usize = 1;
+const TEXT_ID_2: usize = 2;
+const RECT_ID_0: usize = 10;
+const RECT_ID_1: usize = 11;
+const RECT_ID_2: usize = 12;
+
 struct Application {
     sugarloaf: Option<Sugarloaf<'static>>,
     window: Option<Window>,
-    rich_texts: Vec<usize>,
     height: f32,
     width: f32,
 }
@@ -36,7 +43,6 @@ impl Application {
         Application {
             sugarloaf: None,
             window: None,
-            rich_texts: vec![],
             width,
             height,
         }
@@ -82,12 +88,13 @@ impl ApplicationHandler for Application {
         )
         .expect("Sugarloaf instance should be created");
 
-        self.rich_texts.push(sugarloaf.create_rich_text(None));
-        self.rich_texts.push(sugarloaf.create_rich_text(None));
-        self.rich_texts.push(sugarloaf.create_rich_text(None));
+        // Initialize text areas with different font sizes
+        sugarloaf.text(TEXT_ID_0); // Default font size
+        sugarloaf.text(TEXT_ID_1); // Will set font size below
+        sugarloaf.text(TEXT_ID_2); // Will set font size below
 
-        sugarloaf.set_rich_text_font_size(&1, 24.0);
-        sugarloaf.set_rich_text_font_size(&2, 12.0);
+        sugarloaf.set_text_font_size(&TEXT_ID_1, 24.0);
+        sugarloaf.set_text_font_size(&TEXT_ID_2, 12.0);
 
         sugarloaf.set_background_color(None);
         window.request_redraw();
@@ -112,7 +119,6 @@ impl ApplicationHandler for Application {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::ScaleFactorChanged {
-                // mut inner_size_writer,
                 scale_factor,
                 ..
             } => {
@@ -127,78 +133,110 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let content = sugarloaf.content();
                 let time = std::time::Instant::now();
-                for rich_text in &self.rich_texts {
-                    if rich_text < &2 {
-                        content.sel(*rich_text).clear();
 
-                        content.new_line().add_text(
-                            &format!("Text area {:?}", rich_text),
-                            FragmentStyle {
+                // First text area
+                sugarloaf
+                    .text(TEXT_ID_0)
+                    .clear()
+                    .new_line()
+                    .add_span(
+                        &format!("Text area {:?}", TEXT_ID_0),
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..SpanStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_span(
+                        &format!("{:?}", time.elapsed()),
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            ..SpanStyle::default()
+                        },
+                    );
+                sugarloaf.build_text_by_id(TEXT_ID_0);
+
+                // Second text area
+                sugarloaf
+                    .text(TEXT_ID_1)
+                    .clear()
+                    .new_line()
+                    .add_span(
+                        &format!("Text area {:?}", TEXT_ID_1),
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            background_color: Some([0.0, 0.0, 0.0, 1.0]),
+                            ..SpanStyle::default()
+                        },
+                    )
+                    .new_line()
+                    .add_span(
+                        &format!("{:?}", time.elapsed()),
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            ..SpanStyle::default()
+                        },
+                    );
+                sugarloaf.build_text_by_id(TEXT_ID_1);
+
+                // Third text area - demonstrates partial updates
+                let needs_init = sugarloaf
+                    .get_text_by_id(TEXT_ID_2)
+                    .map_or(true, |state| state.lines.is_empty());
+
+                if needs_init {
+                    // Initial setup
+                    sugarloaf
+                        .text(TEXT_ID_2)
+                        .new_line()
+                        .add_span(
+                            &format!("Should not update {:?}", time.elapsed()),
+                            SpanStyle {
                                 color: [1.0, 1.0, 1.0, 1.0],
-                                background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                                ..FragmentStyle::default()
+                                ..SpanStyle::default()
+                            },
+                        )
+                        .new_line()
+                        .add_span(
+                            &format!("Should update {:?}", time.elapsed()),
+                            SpanStyle {
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                ..SpanStyle::default()
                             },
                         );
-                        content
-                            .new_line()
-                            .add_text(
-                                &format!("{:?}", time.elapsed()),
-                                FragmentStyle {
-                                    color: [1.0, 1.0, 1.0, 1.0],
-                                    ..FragmentStyle::default()
-                                },
-                            )
-                            .build();
-                    } else if let Some(state) = content.get_state(rich_text) {
-                        // Line has initialised
-                        if !state.lines.is_empty() {
-                            content
-                                .sel(*rich_text)
-                                .clear_line(1)
-                                .add_text_on_line(
-                                    1,
-                                    &format!("Updated {:?}", time.elapsed()),
-                                    FragmentStyle {
-                                        color: [1.0, 1.0, 1.0, 1.0],
-                                        ..FragmentStyle::default()
-                                    },
-                                )
-                                .build_line(1);
-                        } else {
-                            // Line has not initialised
-                            content
-                                .sel(*rich_text)
-                                .new_line()
-                                .add_text(
-                                    &format!("Should not update {:?}", time.elapsed()),
-                                    FragmentStyle {
-                                        color: [1.0, 1.0, 1.0, 1.0],
-                                        ..FragmentStyle::default()
-                                    },
-                                )
-                                .new_line()
-                                .add_text(
-                                    &format!("Should update {:?}", time.elapsed()),
-                                    FragmentStyle {
-                                        color: [1.0, 1.0, 1.0, 1.0],
-                                        ..FragmentStyle::default()
-                                    },
-                                )
-                                .build();
-                        }
-                    }
+                    sugarloaf.build_text_by_id(TEXT_ID_2);
+                } else {
+                    // Partial update - only update line 1
+                    sugarloaf
+                        .text(TEXT_ID_2)
+                        .clear_line(1)
+                        .add_span_on_line(
+                            1,
+                            &format!("Updated {:?}", time.elapsed()),
+                            SpanStyle {
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                ..SpanStyle::default()
+                            },
+                        );
+                    sugarloaf.build_text_by_id_line_number(TEXT_ID_2, 1);
                 }
 
-                sugarloaf.rect(5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.rect(220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.rect(440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                // Add background rectangles (cached)
+                sugarloaf.rect(Some(RECT_ID_0), 5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(Some(RECT_ID_1), 220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(Some(RECT_ID_2), 440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
 
-                // Show rich text
-                sugarloaf.show_rich_text(self.rich_texts[0], 5., 5.);
-                sugarloaf.show_rich_text(self.rich_texts[1], 220., 5.);
-                sugarloaf.show_rich_text(self.rich_texts[2], 440., 5.);
+                // Position and show text
+                sugarloaf.set_position(TEXT_ID_0, 5., 5.);
+                sugarloaf.set_visibility(TEXT_ID_0, true);
+
+                sugarloaf.set_position(TEXT_ID_1, 220., 5.);
+                sugarloaf.set_visibility(TEXT_ID_1, true);
+
+                sugarloaf.set_position(TEXT_ID_2, 440., 5.);
+                sugarloaf.set_visibility(TEXT_ID_2, true);
 
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

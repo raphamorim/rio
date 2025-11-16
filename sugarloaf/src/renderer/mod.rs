@@ -7,13 +7,13 @@ pub mod text;
 mod text_run_manager;
 
 use crate::components::core::orthographic_projection;
-use crate::components::rich_text::image_cache::{GlyphCache, ImageCache};
-use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
+use crate::renderer::image_cache::{GlyphCache, ImageCache};
+use crate::renderer::text_run_manager::{CacheResult, TextRunManager};
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
-use crate::layout::{RichTextLayout, SugarDimensions};
+use crate::layout::{TextLayout, TextDimensions};
 use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use crate::RichTextLinesRange;
@@ -43,14 +43,14 @@ pub const BLEND: Option<wgpu::BlendState> = Some(wgpu::BlendState {
 });
 
 #[derive(Debug)]
-pub enum RichTextBrushType {
-    Wgpu(WgpuRichTextBrush),
+pub enum RendererType {
+    Wgpu(WgpuRenderer),
     #[cfg(target_os = "macos")]
-    Metal(MetalRichTextBrush),
+    Metal(MetalRenderer),
 }
 
 #[derive(Debug)]
-pub struct WgpuRichTextBrush {
+pub struct WgpuRenderer {
     vertex_buffer: wgpu::Buffer,
     constant_bind_group: wgpu::BindGroup,
     layout_bind_group: wgpu::BindGroup,
@@ -69,7 +69,7 @@ struct Globals {
 
 #[cfg(target_os = "macos")]
 #[derive(Debug)]
-pub struct MetalRichTextBrush {
+pub struct MetalRenderer {
     pipeline_state: RenderPipelineState,
     vertex_buffer: Buffer,
     uniform_buffer: Buffer,
@@ -79,12 +79,12 @@ pub struct MetalRichTextBrush {
 }
 
 #[cfg(target_os = "macos")]
-impl MetalRichTextBrush {
+impl MetalRenderer {
     pub fn new(context: &MetalContext) -> Self {
         let supported_vertex_buffer = 500;
 
         // Create Metal shader library
-        let shader_source = include_str!("rich_text.metal");
+        let shader_source = include_str!("renderer.metal");
         let library = context
             .device
             .new_library_with_source(shader_source, &CompileOptions::new())
@@ -354,8 +354,8 @@ struct CachedGraphic {
     atlas_layer: i32,
 }
 
-pub struct RichTextBrush {
-    brush_type: RichTextBrushType,
+pub struct Renderer {
+    brush_type: RendererType,
     comp: Compositor,
     vertices: Vec<Vertex>,
     images: ImageCache,
@@ -365,15 +365,15 @@ pub struct RichTextBrush {
     current_frame: u64,
 }
 
-impl RichTextBrush {
+impl Renderer {
     pub fn new(context: &Context) -> Self {
         let brush_type = match &context.inner {
             ContextType::Wgpu(wgpu_context) => {
-                RichTextBrushType::Wgpu(WgpuRichTextBrush::new(wgpu_context))
+                RendererType::Wgpu(WgpuRenderer::new(wgpu_context))
             }
             #[cfg(target_os = "macos")]
             ContextType::Metal(metal_context) => {
-                RichTextBrushType::Metal(MetalRichTextBrush::new(metal_context))
+                RendererType::Metal(MetalRenderer::new(metal_context))
             }
         };
 
@@ -405,34 +405,80 @@ impl RichTextBrush {
 
         let library = state.content.font_library();
         // Iterate over all content states and render visible ones
-        for (rich_text_id, builder_state) in &state.content.states {
+        for (content_id, content_state) in &state.content.states {
             // Skip if marked for removal or hidden
-            if builder_state.render_data.should_remove || builder_state.render_data.hidden
-            {
+            if content_state.render_data.should_remove || content_state.render_data.hidden {
                 continue;
             }
 
-            // Skip if there are no lines to render
-            if builder_state.lines.is_empty() {
-                continue;
+            match &content_state.data {
+                crate::layout::ContentData::Text(builder_state) => {
+                    // Skip if there are no lines to render
+                    if builder_state.lines.is_empty() {
+                        continue;
+                    }
+
+                    let pos = (
+                        content_state.render_data.position[0] * state.style.scale_factor,
+                        content_state.render_data.position[1] * state.style.scale_factor,
+                    );
+                    let depth = content_state.render_data.depth;
+
+                    self.draw_layout(
+                        *content_id,
+                        &builder_state.lines,
+                        &None,
+                        Some(pos),
+                        depth,
+                        library,
+                        Some(&builder_state.layout),
+                        graphics,
+                    );
+                }
+                crate::layout::ContentData::Rect { x, y, width, height, color, depth } => {
+                    self.comp.batches.rect(
+                        &Rect::new(*x, *y, *width, *height),
+                        *depth,
+                        color,
+                    );
+                }
+                crate::layout::ContentData::RoundedRect { x, y, width, height, color, depth, border_radius } => {
+                    self.comp.batches.rounded_rect(
+                        &Rect::new(*x, *y, *width, *height),
+                        *depth,
+                        color,
+                        *border_radius,
+                    );
+                }
+                crate::layout::ContentData::Line { x1, y1, x2, y2, width, color, depth } => {
+                    self.comp.batches.add_line(*x1, *y1, *x2, *y2, *width, *depth, *color);
+                }
+                crate::layout::ContentData::Triangle { points, color, depth } => {
+                    self.comp.batches.add_triangle(
+                        points[0].0, points[0].1,
+                        points[1].0, points[1].1,
+                        points[2].0, points[2].1,
+                        *depth,
+                        *color,
+                    );
+                }
+                crate::layout::ContentData::Polygon { points, color, depth } => {
+                    self.comp.batches.add_polygon(points.as_slice(), *depth, *color);
+                }
+                crate::layout::ContentData::Arc { center_x, center_y, radius, start_angle, end_angle, stroke_width, color, depth } => {
+                    self.comp.batches.add_arc(*center_x, *center_y, *radius, *start_angle, *end_angle, *stroke_width, *depth, color);
+                }
+                crate::layout::ContentData::Image { x, y, width, height, color, coords, has_alpha, depth, atlas_layer } => {
+                    self.comp.batches.add_image_rect(
+                        &Rect::new(*x, *y, *width, *height),
+                        *depth,
+                        color,
+                        coords,
+                        *has_alpha,
+                        *atlas_layer,
+                    );
+                }
             }
-
-            let pos = (
-                builder_state.render_data.position[0] * state.style.scale_factor,
-                builder_state.render_data.position[1] * state.style.scale_factor,
-            );
-            let depth = builder_state.render_data.depth;
-
-            self.draw_layout(
-                *rich_text_id, // Pass the rich text ID for caching
-                &builder_state.lines,
-                &None, // No line range filtering for now
-                Some(pos),
-                depth,
-                library,
-                Some(&builder_state.layout),
-                graphics,
-            );
         }
 
         self.vertices.clear();
@@ -447,7 +493,7 @@ impl RichTextBrush {
         font_library: &FontLibrary,
         font_size: f32,
         line_height: f32,
-    ) -> Option<SugarDimensions> {
+    ) -> Option<TextDimensions> {
         // Use read lock instead of write lock since we're not modifying
         if let Some(font_library_data) = font_library.inner.try_read() {
             let font_id = 0; // FONT_ID_REGULAR
@@ -463,7 +509,7 @@ impl RichTextBrush {
                 let char_width = font_size * 0.6; // Common monospace width ratio
                 let total_line_height = (ascent + descent + leading) * line_height;
 
-                return Some(SugarDimensions {
+                return Some(TextDimensions {
                     width: char_width.max(1.0),
                     height: total_line_height.max(1.0),
                     scale: 1.0,
@@ -519,7 +565,7 @@ impl RichTextBrush {
         pos: Option<(f32, f32)>,
         depth: f32,
         font_library: &FontLibrary,
-        rte_layout: Option<&RichTextLayout>,
+        rte_layout: Option<&TextLayout>,
         graphics: &mut Graphics,
     ) {
         if lines.is_empty() {
@@ -1009,7 +1055,7 @@ impl RichTextBrush {
         self.text_run_manager.clear_all();
         self.graphic_cache.clear();
         tracing::info!(
-            "RichTextBrush atlas, glyph cache, text run cache, and graphic cache cleared"
+            "Renderer atlas, glyph cache, text run cache, and graphic cache cleared"
         );
     }
 
@@ -1095,7 +1141,7 @@ impl RichTextBrush {
         rpass: &mut wgpu::RenderPass<'pass>,
     ) {
         #[cfg_attr(not(target_os = "macos"), expect(irrefutable_let_patterns))]
-        if let RichTextBrushType::Wgpu(brush) = &mut self.brush_type {
+        if let RendererType::Wgpu(brush) = &mut self.brush_type {
             // Get all atlas textures
             let color_views = self.images.get_texture_views();
             let mask_texture_view = self.images.get_mask_texture_view();
@@ -1155,7 +1201,7 @@ impl RichTextBrush {
         context: &MetalContext, // Add context parameter
         render_encoder: &metal::RenderCommandEncoderRef,
     ) {
-        if let RichTextBrushType::Metal(brush) = &mut self.brush_type {
+        if let RendererType::Metal(brush) = &mut self.brush_type {
             brush.render(&self.vertices, &self.images, render_encoder, context);
         }
     }
@@ -1172,7 +1218,7 @@ impl RichTextBrush {
         };
 
         match &mut self.brush_type {
-            RichTextBrushType::Wgpu(wgpu_brush) => {
+            RendererType::Wgpu(wgpu_brush) => {
                 if transform != wgpu_brush.current_transform {
                     let queue = match &context.inner {
                         ContextType::Wgpu(wgpu_ctx) => &wgpu_ctx.queue,
@@ -1189,14 +1235,14 @@ impl RichTextBrush {
                 }
             }
             #[cfg(target_os = "macos")]
-            RichTextBrushType::Metal(metal_brush) => {
+            RendererType::Metal(metal_brush) => {
                 metal_brush.resize(transform);
             }
         }
     }
 }
 
-impl WgpuRichTextBrush {
+impl WgpuRenderer {
     pub fn new(context: &WgpuContext) -> Self {
         let supported_vertex_buffer = 500;
 
@@ -1380,7 +1426,7 @@ impl WgpuRichTextBrush {
                     label: Some("rich_text::layout_bind_group"),
                 });
 
-        let shader_source = include_str!("rich_text.wgsl");
+        let shader_source = include_str!("renderer.wgsl");
 
         let shader = context
             .device
@@ -1445,7 +1491,7 @@ impl WgpuRichTextBrush {
             mapped_at_creation: false,
         });
 
-        WgpuRichTextBrush {
+        WgpuRenderer {
             layout_bind_group,
             layout_bind_group_layout,
             constant_bind_group,
