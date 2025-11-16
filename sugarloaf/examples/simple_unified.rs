@@ -102,6 +102,7 @@ impl ApplicationHandler for Application {
             WindowEvent::RedrawRequested => {
                 // Add rectangles directly using the unified rendering approach
                 sugarloaf.rect(
+                    None,
                     0.0,
                     0.0,
                     self.width,
@@ -109,9 +110,9 @@ impl ApplicationHandler for Application {
                     [0.1, 0.1, 0.2, 1.0],
                     0.0,
                 ); // background
-                sugarloaf.rect(50.0, 50.0, 200.0, 100.0, [1.0, 0.2, 0.2, 0.8], 0.0); // red rectangle
-                sugarloaf.rect(300.0, 150.0, 150.0, 80.0, [0.2, 1.0, 0.2, 0.9], 0.0); // green rectangle
-                sugarloaf.rect(500.0, 300.0, 180.0, 120.0, [0.2, 0.2, 1.0, 0.7], 0.0); // blue rectangle
+                sugarloaf.rect(None, 50.0, 50.0, 200.0, 100.0, [1.0, 0.2, 0.2, 0.8], 0.0); // red rectangle
+                sugarloaf.rect(None, 300.0, 150.0, 150.0, 80.0, [0.2, 1.0, 0.2, 0.9], 0.0); // green rectangle
+                sugarloaf.rect(None, 500.0, 300.0, 180.0, 120.0, [0.2, 0.2, 1.0, 0.7], 0.0); // blue rectangle
 
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);

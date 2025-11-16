@@ -11,7 +11,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, SugarCursor, Sugarloaf, SugarloafWindow,
+    layout::RootStyle, SpanStyle, SugarCursor, Sugarloaf, SugarloafWindow,
     SugarloafWindowSize,
 };
 
@@ -84,7 +84,6 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::BLUE));
-        sugarloaf.create_rich_text(None);
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -130,13 +129,13 @@ impl ApplicationHandler for Application {
                     match key_event.logical_key.as_ref() {
                         Key::Named(NamedKey::ArrowUp) => {
                             self.line_height += 0.1;
-                            sugarloaf.set_rich_text_line_height(&0, self.line_height);
+                            sugarloaf.set_text_line_height(&0, self.line_height);
                             window.request_redraw();
                         }
                         Key::Named(NamedKey::ArrowDown) => {
                             if self.line_height > 1.0 {
                                 self.line_height -= 0.1;
-                                sugarloaf.set_rich_text_line_height(&0, self.line_height);
+                                sugarloaf.set_text_line_height(&0, self.line_height);
                                 window.request_redraw();
                             }
                         }
@@ -145,58 +144,61 @@ impl ApplicationHandler for Application {
                 }
             }
             WindowEvent::RedrawRequested => {
-                let content = sugarloaf.content();
-                content.sel(0).clear();
-                content
+                const TEXT_ID: usize = 0;
+
+                sugarloaf
+                    .text(TEXT_ID)
+                    .clear()
                     .new_line()
-                    .add_text(
+                    .add_span(
                         &format!("current line_height: {:?}", self.line_height),
-                        FragmentStyle {
+                        SpanStyle {
                             color: [0.0, 0.0, 0.0, 1.0],
                             background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "press arrow up to increase",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "press arrow down to decrease",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [0.0, 0.0, 0.0, 1.0],
                             background_color: Some([1.0, 1.0, 1.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "│ \u{E0B6}Hello There!\u{e0b4}",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([1.0, 0.5, 1.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         "?",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [0.5, 0.5, 1.0, 1.0],
                             background_color: Some([1.0, 0.5, 1.0, 1.0]),
                             cursor: Some(SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
-                    )
-                    .build();
+                    );
+                sugarloaf.build_text_by_id(TEXT_ID);
 
                 // Show rich text using new API
-                sugarloaf.show_rich_text(0, 10., 0.);
+                sugarloaf.set_position(TEXT_ID, 10., 0.);
+                sugarloaf.set_visibility(TEXT_ID, true);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

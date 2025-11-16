@@ -75,7 +75,7 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_image(&sugarloaf::ImageProperties {
-            path: String::from("resources/rio-colors.png"),
+            path: String::from("resources/demo-sugarloaf-1.png"),
             width: Some(400.),
             height: Some(400.),
             x: 0.,
@@ -119,6 +119,7 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                // No rect() calls needed here, just rendering the background image
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }
