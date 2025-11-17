@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,700;1,400;1,500;1,700&amp;display=swap"><link rel="stylesheet" href="/zh-hans/assets/css/styles.8883f6ff.css">
-<script src="/zh-hans/assets/js/runtime~main.36f10671.js" defer="defer"></script>
+<script src="/zh-hans/assets/js/runtime~main.e6e3ea06.js" defer="defer"></script>
 <script src="/zh-hans/assets/js/main.a5148a12.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -35,6 +35,7 @@
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0236">0.2.36<a href="#0236" class="hash-link" aria-label="0.2.36的直接链接" title="0.2.36的直接链接">​</a></h2>
 <ul>
+<li>Fix: handler should process two intermediate bytes in CSI sequences by <a href="https://github.com/aymanbagabas" target="_blank" rel="noopener noreferrer">@aymanbagabas</a>.</li>
 <li>Fix DECSCUSR.</li>
 </ul>
 <h2 class="anchor anchorWithStickyNavbar_LWe7" id="0235">0.2.35<a href="#0235" class="hash-link" aria-label="0.2.35的直接链接" title="0.2.35的直接链接">​</a></h2>
@@ -195,7 +196,7 @@
 <li>Improve performance by stopping locking on rendering run steps.</li>
 <li>Fix: <a href="https://github.com/raphamorim/rio/issues/1155" target="_blank" rel="noopener noreferrer">X11: WM_CLASS has an empty string property</a>.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0222">0.2.22<a href="#0222" class="hash-link" aria-label="0.2.22的直接链接" title="0.2.22的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0222">0.2.22<a href="#0222" class="hash-link" aria-label="0.2.22的直接链  接" title="0.2.22的直接链接">​</a></h2>
 <ul>
 <li>Fix some regressions introduced by 0.2.21.</li>
 </ul>
@@ -411,7 +412,7 @@
 <li>Font library is now under a RWLock instead of Mutex to allow multiple tabs readings same font data.</li>
 <li>Fix: crash on openSUSE Tumbleweed <a href="https://github.com/raphamorim/rio/issues/1160" target="_blank" rel="noopener noreferrer">#1160</a>.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0219">0.2.19<a href="#0219" class="hash-link" aria-label="0.2.19的直接链接" title="0.2.19的直接链接">  ​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0219">0.2.19<a href="#0219" class="hash-link" aria-label="0.2.19的直接链接" title="0.2.19的直接链接">​</a></h2>
 <ul>
 <li>Reduced the bundle size by ~20.81% (MacOS, Linux, BSD).</li>
 <li>Performance: stop saving empty images in the image cache.</li>
@@ -434,7 +435,7 @@
 <li>Skip passing sandbox env in Flatpak, fixes user environment in spawned shell <a href="https://github.com/raphamorim/rio/pull/1116" target="_blank" rel="noopener noreferrer">#1116</a> by <a href="https://github.com/ranisalt" target="_blank" rel="noopener noreferrer">@ranisalt</a>.</li>
 <li>On Windows, fixed crash in should_apps_use_dark_mode() for Windows versions &lt; 17763.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0216">0.2.16<a href="#0216" class="hash-link" aria-label="0.2.16的直接链接" title="0.2.16的直接  链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="0216">0.2.16<a href="#0216" class="hash-link" aria-label="0.2.16的直接链接" title="0.2.16的直接链接">​</a></h2>
 <ul>
 <li><em>Breaking</em>: support reading from config directory using <code>$XDG_CONFIG_HOME</code> on Linux <a href="https://github.com/raphamorim/rio/pull/1105" target="_blank" rel="noopener noreferrer">#1105</a> by <a href="https://github.com/ranisalt" target="_blank" rel="noopener noreferrer">@ranisalt</a>.</li>
 <li>Fix: Crash on whenever attempting to clean an invalid line index.</li>
@@ -512,7 +513,7 @@
 <li>Add Switch to Next/Prev Split or Tab command by <a href="https://github.com/vlabo" target="_blank" rel="noopener noreferrer">@vlabo</a>.</li>
 <li>Fix issue whenever the first main font cannot be found.</li>
 </ul>
-<h2 class="anchor anchorWithStickyNavbar_LWe7" id="028">0.2.8<a href="#028" class="hash-link" aria-label="0.2.8的直接链接" title="0.2.8的直接链接">​</a></h2>
+<h2 class="anchor anchorWithStickyNavbar_LWe7" id="028">0.2.8<a href="#028" class="hash-link" aria-label="0.2.8的直接链接" title="0.2.8  的直接链接">​</a></h2>
 <ul>
 <li>Support to <code>.rpm</code> files! (thanks <a href="https://github.com/vedantmgoyal9" target="_blank" rel="noopener noreferrer">@vedantmgoyal9</a> and <a href="https://github.com/caarlos0" target="_blank" rel="noopener noreferrer">@caarlos0</a>)</li>
 <li>OSC 7 Escape sequences to advise the terminal of the working directory.</li>
