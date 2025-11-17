@@ -175,9 +175,8 @@ impl Atlas {
             let offset = row * padded_width;
             let src_row_bytes = (bytes_per_pixel * width) as usize;
 
-            padded_data[offset..offset + src_row_bytes].copy_from_slice(
-                &data[row * src_row_bytes..(row + 1) * src_row_bytes],
-            )
+            padded_data[offset..offset + src_row_bytes]
+                .copy_from_slice(&data[row * src_row_bytes..(row + 1) * src_row_bytes])
         }
 
         match &entry {
