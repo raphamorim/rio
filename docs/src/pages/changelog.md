@@ -15,6 +15,7 @@ language: 'en'
 
 ## 0.2.36
 
+- Fix: handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
 - Fix DECSCUSR.
 
 ## 0.2.35
