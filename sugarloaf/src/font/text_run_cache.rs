@@ -55,59 +55,12 @@ pub struct ShapedGlyph {
 /// Using u64 hash is more memory efficient than storing full text strings
 pub type TextRunKey = u64;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct FontAttributes {
-    pub weight: u16,
-    pub style: u8, // 0=normal, 1=italic, 2=oblique
-    pub stretch: u8,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum TextDirection {
-    LeftToRight,
-    RightToLeft,
-}
-
-/// Statistics for cache performance monitoring
-#[derive(Default, Debug, Clone)]
-pub struct CacheStats {
-    pub full_render_hits: usize,
-    pub shaping_hits: usize,
-    pub glyph_hits: usize,
-    pub misses: usize,
-}
-
-impl CacheStats {
-    pub fn total_hits(&self) -> usize {
-        self.full_render_hits + self.shaping_hits + self.glyph_hits
-    }
-
-    pub fn total_requests(&self) -> usize {
-        self.total_hits() + self.misses
-    }
-
-    pub fn hit_rate(&self) -> f64 {
-        let total = self.total_requests();
-        if total == 0 {
-            0.0
-        } else {
-            (self.total_hits() as f64 / total as f64) * 100.0
-        }
-    }
-
-    pub fn reset(&mut self) {
-        *self = Self::default();
-    }
-}
-
 /// Simplified text run cache for efficient terminal rendering
 /// Caches only shaping results (glyph IDs + positions), not rendering artifacts
 /// Vertices are generated on-demand from cached shaping data (fast operation)
 pub struct TextRunCache {
     /// Single LRU cache for shaped text runs
     cache: LruCache<TextRunKey, CachedTextRun>,
-    /// Statistics for monitoring cache performance
-    stats: CacheStats,
 }
 
 impl TextRunCache {
@@ -117,7 +70,6 @@ impl TextRunCache {
             cache: LruCache::new(
                 NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap(),
             ),
-            stats: CacheStats::default(),
         }
     }
 
@@ -146,16 +98,6 @@ impl TextRunCache {
     /// Get current cache utilization (0.0 to 1.0)
     pub fn utilization(&self) -> f64 {
         self.cache.len() as f64 / self.cache.cap().get() as f64
-    }
-
-    /// Get cache statistics
-    pub fn stats(&self) -> &CacheStats {
-        &self.stats
-    }
-
-    /// Reset cache statistics
-    pub fn reset_stats(&mut self) {
-        self.stats.reset();
     }
 
     /// Resize the cache (useful for dynamic adjustment)
