@@ -72,6 +72,24 @@ pub struct Renderer {
     char_cache: CharCache,
 }
 
+/// Check if two styles are compatible for shaping (can be in the same text run)
+/// Background color is intentionally excluded because it doesn't affect text shaping.
+/// This allows runs with varying background colors to share cache entries,
+/// dramatically improving cache hit rates for highlighted/selected text.
+fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
+    a.font_id == b.font_id
+        && a.color == b.color
+        && a.font_attrs == b.font_attrs
+        && a.decoration == b.decoration
+        && a.decoration_color == b.decoration_color
+        && a.cursor == b.cursor
+        && a.media == b.media
+        && a.drawable_char == b.drawable_char
+        && a.font_vars == b.font_vars
+        && a.width == b.width
+    // Note: background_color is intentionally excluded!
+}
+
 impl Renderer {
     pub fn new(
         config: &Config,
@@ -590,7 +608,9 @@ impl Renderer {
                     last_char_was_space = false;
                 }
 
-                if last_style != style {
+                // Only break runs when styles differ in ways that affect shaping
+                // Background color is intentionally ignored to improve cache hit rates
+                if !styles_are_compatible_for_shaping(&last_style, &style) {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_text_on_line(line, &content, last_style);
