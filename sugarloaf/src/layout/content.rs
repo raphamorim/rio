@@ -194,7 +194,12 @@ impl BuilderState {
 
     /// Add text to a specific line
     #[inline]
-    pub fn add_span_on_line(&mut self, line_number: usize, text: &str, style: SpanStyle) -> &mut Self {
+    pub fn add_span_on_line(
+        &mut self,
+        line_number: usize,
+        text: &str,
+        style: SpanStyle,
+    ) -> &mut Self {
         if let Some(line) = self.lines.get_mut(line_number) {
             line.fragments.push(FragmentData {
                 content: text.to_string(),
@@ -463,7 +468,10 @@ impl Content {
 
     /// Get mutable content state by ID (any type)
     #[inline]
-    pub fn get_content_state_mut(&mut self, state_id: &usize) -> Option<&mut ContentState> {
+    pub fn get_content_state_mut(
+        &mut self,
+        state_id: &usize,
+    ) -> Option<&mut ContentState> {
         self.states.get_mut(state_id)
     }
 
@@ -477,11 +485,7 @@ impl Content {
 
     /// Create text content at the given ID (overwrites existing content)
     #[inline]
-    pub fn set_text(
-        &mut self,
-        id: usize,
-        rich_text_layout: &TextLayout,
-    ) {
+    pub fn set_text(&mut self, id: usize, rich_text_layout: &TextLayout) {
         let mut builder_state = BuilderState::from_layout(rich_text_layout);
 
         // Immediately calculate dimensions for a representative character
@@ -493,7 +497,8 @@ impl Content {
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Text(builder_state)));
+            self.states
+                .insert(id, ContentState::new(ContentData::Text(builder_state)));
         }
     }
 
@@ -598,7 +603,8 @@ impl Content {
     #[inline]
     pub fn add_transient_text(&mut self, layout: &TextLayout) -> usize {
         let mut builder_state = BuilderState::from_layout(layout);
-        builder_state.layout.dimensions = self.calculate_character_cell_dimensions(layout);
+        builder_state.layout.dimensions =
+            self.calculate_character_cell_dimensions(layout);
 
         let mut content_state = ContentState::new(ContentData::Text(builder_state));
         content_state.render_data.transient = true;
@@ -893,8 +899,7 @@ impl Content {
             let vars: Vec<_> = text_state.vars.get(font_vars).to_vec();
 
             // Check if the shaped text is already in the cache
-            if let Some(cached_content) =
-                word_cache.get_cached_content(&font_id, content)
+            if let Some(cached_content) = word_cache.get_cached_content(&font_id, content)
             {
                 // Get metrics from FontLibraryData (with caching)
                 if let Some((ascent, descent, leading)) = fonts
@@ -1084,90 +1089,274 @@ impl Content {
 
     /// Set rectangle at ID (overwrites existing content)
     #[inline]
-    pub fn set_rect(&mut self, id: usize, x: f32, y: f32, width: f32, height: f32, color: [f32; 4], depth: f32) {
+    pub fn set_rect(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Rect { x, y, width, height, color, depth };
+            content_state.data = ContentData::Rect {
+                x,
+                y,
+                width,
+                height,
+                color,
+                depth,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Rect { x, y, width, height, color, depth }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                }),
+            );
         }
     }
 
     /// Set rounded rectangle at ID
     #[inline]
-    pub fn set_rounded_rect(&mut self, id: usize, x: f32, y: f32, width: f32, height: f32, color: [f32; 4], depth: f32, border_radius: f32) {
+    pub fn set_rounded_rect(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        depth: f32,
+        border_radius: f32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::RoundedRect { x, y, width, height, color, depth, border_radius };
+            content_state.data = ContentData::RoundedRect {
+                x,
+                y,
+                width,
+                height,
+                color,
+                depth,
+                border_radius,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::RoundedRect { x, y, width, height, color, depth, border_radius }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::RoundedRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                    border_radius,
+                }),
+            );
         }
     }
 
     /// Set line at ID
     #[inline]
-    pub fn set_line(&mut self, id: usize, x1: f32, y1: f32, x2: f32, y2: f32, width: f32, color: [f32; 4], depth: f32) {
+    pub fn set_line(
+        &mut self,
+        id: usize,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Line { x1, y1, x2, y2, width, color, depth };
+            content_state.data = ContentData::Line {
+                x1,
+                y1,
+                x2,
+                y2,
+                width,
+                color,
+                depth,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Line { x1, y1, x2, y2, width, color, depth }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    color,
+                    depth,
+                }),
+            );
         }
     }
 
     /// Set triangle at ID
     #[inline]
-    pub fn set_triangle(&mut self, id: usize, points: [(f32, f32); 3], color: [f32; 4], depth: f32) {
+    pub fn set_triangle(
+        &mut self,
+        id: usize,
+        points: [(f32, f32); 3],
+        color: [f32; 4],
+        depth: f32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Triangle { points, color, depth };
+            content_state.data = ContentData::Triangle {
+                points,
+                color,
+                depth,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Triangle { points, color, depth }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Triangle {
+                    points,
+                    color,
+                    depth,
+                }),
+            );
         }
     }
 
     /// Set polygon at ID
     #[inline]
-    pub fn set_polygon(&mut self, id: usize, points: &[(f32, f32)], color: [f32; 4], depth: f32) {
+    pub fn set_polygon(
+        &mut self,
+        id: usize,
+        points: &[(f32, f32)],
+        color: [f32; 4],
+        depth: f32,
+    ) {
         let points_smallvec: SmallVec<[(f32, f32); 8]> = points.iter().copied().collect();
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Polygon { points: points_smallvec, color, depth };
+            content_state.data = ContentData::Polygon {
+                points: points_smallvec,
+                color,
+                depth,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Polygon { points: points_smallvec, color, depth }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Polygon {
+                    points: points_smallvec,
+                    color,
+                    depth,
+                }),
+            );
         }
     }
 
     /// Set arc at ID
     #[inline]
-    pub fn set_arc(&mut self, id: usize, center_x: f32, center_y: f32, radius: f32, start_angle: f32, end_angle: f32, stroke_width: f32, color: [f32; 4], depth: f32) {
+    pub fn set_arc(
+        &mut self,
+        id: usize,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        stroke_width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Arc { center_x, center_y, radius, start_angle, end_angle, stroke_width, color, depth };
+            content_state.data = ContentData::Arc {
+                center_x,
+                center_y,
+                radius,
+                start_angle,
+                end_angle,
+                stroke_width,
+                color,
+                depth,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Arc { center_x, center_y, radius, start_angle, end_angle, stroke_width, color, depth }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Arc {
+                    center_x,
+                    center_y,
+                    radius,
+                    start_angle,
+                    end_angle,
+                    stroke_width,
+                    color,
+                    depth,
+                }),
+            );
         }
     }
 
     /// Set image rectangle at ID
     #[inline]
-    pub fn set_image(&mut self, id: usize, x: f32, y: f32, width: f32, height: f32, color: [f32; 4], coords: [f32; 4], has_alpha: bool, depth: f32, atlas_layer: i32) {
+    pub fn set_image(
+        &mut self,
+        id: usize,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: [f32; 4],
+        coords: [f32; 4],
+        has_alpha: bool,
+        depth: f32,
+        atlas_layer: i32,
+    ) {
         if let Some(content_state) = self.states.get_mut(&id) {
-            content_state.data = ContentData::Image { x, y, width, height, color, coords, has_alpha, depth, atlas_layer };
+            content_state.data = ContentData::Image {
+                x,
+                y,
+                width,
+                height,
+                color,
+                coords,
+                has_alpha,
+                depth,
+                atlas_layer,
+            };
             content_state.render_data.needs_repaint = true;
             content_state.render_data.should_remove = false;
         } else {
-            self.states.insert(id, ContentState::new(ContentData::Image { x, y, width, height, color, coords, has_alpha, depth, atlas_layer }));
+            self.states.insert(
+                id,
+                ContentState::new(ContentData::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    coords,
+                    has_alpha,
+                    depth,
+                    atlas_layer,
+                }),
+            );
         }
     }
 }
-
 
 #[derive(Default)]
 pub struct WordCache {

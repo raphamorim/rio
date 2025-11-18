@@ -9,6 +9,30 @@ use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
+/// UI-level damage tracking for non-terminal elements
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UIDamage {
+    /// Island (tab bar with progress) needs redraw
+    pub island: bool,
+    /// Search bar needs redraw
+    pub search: bool,
+}
+
+impl UIDamage {
+    /// Check if any UI element is dirty
+    pub fn is_dirty(&self) -> bool {
+        self.island || self.search
+    }
+
+    /// Merge two UI damages
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            island: self.island || other.island,
+            search: self.search || other.search,
+        }
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Cursor {
     pub state: CursorState,
@@ -91,8 +115,10 @@ pub struct TerminalSnapshot {
 pub struct PendingUpdate {
     /// Whether there's any pending update that needs rendering
     dirty: bool,
-    /// UI-level damage (hints, selections) that needs to be merged with terminal damage
-    ui_damage: Option<TerminalDamage>,
+    /// Terminal content damage (lines, text)
+    terminal_damage: Option<TerminalDamage>,
+    /// UI element damage (island, search bar, etc.)
+    ui_damage: UIDamage,
 }
 
 impl PendingUpdate {
@@ -108,28 +134,42 @@ impl PendingUpdate {
         self.dirty = true;
     }
 
-    /// Mark as needing update with UI-level damage (hints, selections)
-    pub fn set_ui_damage(&mut self, damage: TerminalDamage) {
+    /// Mark terminal content as damaged
+    pub fn set_terminal_damage(&mut self, damage: TerminalDamage) {
         self.dirty = true;
-        self.ui_damage = Some(match self.ui_damage.take() {
+        self.terminal_damage = Some(match self.terminal_damage.take() {
             None => damage,
-            Some(existing) => Self::merge_damages(existing, damage),
+            Some(existing) => Self::merge_terminal_damages(existing, damage),
         });
     }
 
+    /// Mark UI elements as damaged
+    pub fn set_ui_damage(&mut self, damage: UIDamage) {
+        self.dirty = true;
+        self.ui_damage = self.ui_damage.merge(damage);
+    }
+
+    /// Get and clear terminal damage
+    pub fn take_terminal_damage(&mut self) -> Option<TerminalDamage> {
+        self.terminal_damage.take()
+    }
+
     /// Get and clear UI damage
-    pub fn take_ui_damage(&mut self) -> Option<TerminalDamage> {
-        self.ui_damage.take()
+    pub fn take_ui_damage(&mut self) -> UIDamage {
+        std::mem::take(&mut self.ui_damage)
     }
 
     /// Reset the dirty flag after rendering
     pub fn reset(&mut self) {
         self.dirty = false;
-        // Note: ui_damage is cleared by take_ui_damage during render
+        // Note: damages are cleared by take_*_damage during render
     }
 
-    /// Merge two damages into one
-    fn merge_damages(existing: TerminalDamage, new: TerminalDamage) -> TerminalDamage {
+    /// Merge two terminal damages into one
+    fn merge_terminal_damages(
+        existing: TerminalDamage,
+        new: TerminalDamage,
+    ) -> TerminalDamage {
         match (existing, new) {
             // Any damage + Full = Full
             (_, TerminalDamage::Full) | (TerminalDamage::Full, _) => TerminalDamage::Full,

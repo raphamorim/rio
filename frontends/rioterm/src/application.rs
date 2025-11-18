@@ -495,7 +495,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             terminal.cursor().pos.row.0 as usize
                         };
 
-                        // Set UI damage for cursor line
+                        // Set terminal damage for cursor line
                         route
                             .window
                             .screen
@@ -503,15 +503,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_ui_damage(rio_backend::event::TerminalDamage::Partial(
-                                [rio_backend::crosswords::LineDamage::new(
-                                    cursor_line,
-                                    true,
-                                )]
-                                .into_iter()
-                                .collect(),
-                            ));
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Partial(
+                                    [rio_backend::crosswords::LineDamage::new(
+                                        cursor_line,
+                                        true,
+                                    )]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                            );
 
+                        route.request_redraw();
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::ProgressReport(report)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if let Some(island) = &mut route.window.screen.renderer.island {
+                        island.set_progress_report(report);
                         route.request_redraw();
                     }
                 }
@@ -1160,20 +1170,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 match delta {
                     MouseScrollDelta::LineDelta(columns, lines) => {
-                        let current_id =
-                            route.window.screen.ctx().current().rich_text_id;
-                        if let Some(layout) = route
-                            .window
-                            .screen
-                            .sugarloaf
-                            .get_text_layout(&current_id)
+                        let current_id = route.window.screen.ctx().current().rich_text_id;
+                        if let Some(layout) =
+                            route.window.screen.sugarloaf.get_text_layout(&current_id)
                         {
                             let new_scroll_px_x = columns * layout.font_size;
                             let new_scroll_px_y = lines * layout.font_size;
-                            route.window.screen.scroll(
-                                new_scroll_px_x as f64,
-                                new_scroll_px_y as f64,
-                            );
+                            route
+                                .window
+                                .screen
+                                .scroll(new_scroll_px_x as f64, new_scroll_px_y as f64);
                         }
                     }
                     MouseScrollDelta::PixelDelta(mut lpos) => {

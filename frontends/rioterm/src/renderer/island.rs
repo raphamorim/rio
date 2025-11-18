@@ -7,12 +7,19 @@
 // which is licensed under MIT license.
 
 use crate::context::ContextManager;
-use rio_backend::event::EventProxy;
+use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
+use std::time::Instant;
 
 /// Height of the tab bar in pixels
 pub const ISLAND_HEIGHT: f32 = 34.0;
+
+/// Height of the progress bar in pixels
+const PROGRESS_BAR_HEIGHT: f32 = 3.0;
+
+/// Timeout in seconds for auto-dismissing stale progress bars
+const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 
 const TITLE_FONT_SIZE: f32 = 12.0;
 
@@ -37,6 +44,16 @@ pub struct Island {
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
     tab_data: HashMap<usize, TabIslandData>,
+    /// Current progress bar state
+    progress_state: Option<ProgressState>,
+    /// Current progress value (0-100)
+    progress_value: Option<u8>,
+    /// Time of the last progress update (for timeout)
+    progress_last_update: Option<Instant>,
+    /// Progress bar color
+    pub progress_bar_color: [f32; 4],
+    /// Progress bar error color
+    pub progress_bar_error_color: [f32; 4],
 }
 
 impl Island {
@@ -52,6 +69,121 @@ impl Island {
             active_text_color,
             border_color,
             tab_data: HashMap::new(),
+            progress_state: None,
+            progress_value: None,
+            progress_last_update: None,
+            // Default progress bar color (blue-ish)
+            progress_bar_color: [0.3, 0.6, 1.0, 1.0],
+            // Default error color (red-ish)
+            progress_bar_error_color: [1.0, 0.3, 0.3, 1.0],
+        }
+    }
+
+    /// Update the progress bar state from an OSC 9;4 report
+    pub fn set_progress_report(&mut self, report: ProgressReport) {
+        match report.state {
+            ProgressState::Remove => {
+                // Clear progress bar
+                self.progress_state = None;
+                self.progress_value = None;
+                self.progress_last_update = None;
+            }
+            _ => {
+                self.progress_state = Some(report.state);
+                self.progress_value = report.progress;
+                self.progress_last_update = Some(Instant::now());
+            }
+        }
+    }
+
+    /// Check if the progress bar needs continuous rendering (for animations)
+    pub fn needs_redraw(&self) -> bool {
+        matches!(self.progress_state, Some(ProgressState::Indeterminate))
+    }
+
+    /// Check if the progress bar should be auto-dismissed due to timeout
+    fn check_progress_timeout(&mut self) {
+        if let Some(last_update) = self.progress_last_update {
+            if last_update.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
+                // Auto-dismiss stale progress bar
+                self.progress_state = None;
+                self.progress_value = None;
+                self.progress_last_update = None;
+            }
+        }
+    }
+
+    /// Render the progress bar below the island
+    fn render_progress_bar(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        window_width: f32,
+        scale_factor: f32,
+    ) {
+        // Check for timeout first
+        self.check_progress_timeout();
+
+        let state = match self.progress_state {
+            Some(s) => s,
+            None => return, // No progress bar to render
+        };
+
+        let width = window_width / scale_factor;
+        let y_position = ISLAND_HEIGHT;
+
+        // Determine color based on state
+        let color = match state {
+            ProgressState::Error => self.progress_bar_error_color,
+            _ => self.progress_bar_color,
+        };
+
+        match state {
+            ProgressState::Remove => {
+                // Should not reach here, but just in case
+                return;
+            }
+            ProgressState::Set | ProgressState::Error | ProgressState::Pause => {
+                // Render progress bar with specific percentage
+                let progress = self.progress_value.unwrap_or(0) as f32 / 100.0;
+                let bar_width = width * progress;
+
+                if bar_width > 0.0 {
+                    sugarloaf.rect(
+                        None,
+                        0.0,
+                        y_position,
+                        bar_width,
+                        PROGRESS_BAR_HEIGHT,
+                        color,
+                        0.0, // Same depth as other rects
+                    );
+                }
+            }
+            ProgressState::Indeterminate => {
+                // For indeterminate, show a pulsing/moving indicator
+                // Simple implementation: show a 20% wide bar that moves based on time
+                let elapsed = self
+                    .progress_last_update
+                    .map(|t| t.elapsed().as_millis() as f32)
+                    .unwrap_or(0.0);
+
+                // Move the bar from left to right over 2 seconds, then repeat
+                let cycle_ms = 2000.0;
+                let position = (elapsed % cycle_ms) / cycle_ms;
+                let bar_fraction = 0.2; // 20% of width
+                let bar_width = width * bar_fraction;
+                let x_pos = position * (width - bar_width);
+
+                sugarloaf.rect(
+                    None,
+                    x_pos,
+                    y_position,
+                    bar_width,
+                    PROGRESS_BAR_HEIGHT,
+                    color,
+                    0.0,
+                );
+            }
         }
     }
 
@@ -79,6 +211,8 @@ impl Island {
             for tab_data in self.tab_data.values() {
                 sugarloaf.set_visibility(tab_data.text_id, false);
             }
+            // Still render the progress bar even when tabs are hidden
+            self.render_progress_bar(sugarloaf, window_width, scale_factor);
             return;
         }
 
@@ -204,6 +338,9 @@ impl Island {
             // Move to next tab position
             x_position += tab_width;
         }
+
+        // Render the progress bar below the island
+        self.render_progress_bar(sugarloaf, window_width, scale_factor);
     }
 
     /// Get the title text for a specific tab index

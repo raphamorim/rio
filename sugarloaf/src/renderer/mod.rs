@@ -7,13 +7,13 @@ pub mod text;
 mod text_run_manager;
 
 use crate::components::core::orthographic_projection;
-use crate::renderer::image_cache::{GlyphCache, ImageCache};
-use crate::renderer::text_run_manager::{CacheResult, TextRunManager};
 use crate::context::webgpu::WgpuContext;
 use crate::context::{Context, ContextType};
 use crate::font::FontLibrary;
 use crate::font_introspector::GlyphId;
-use crate::layout::{TextLayout, TextDimensions};
+use crate::layout::{TextDimensions, TextLayout};
+use crate::renderer::image_cache::{GlyphCache, ImageCache};
+use crate::renderer::text_run_manager::{CacheResult, TextRunManager};
 use crate::sugarloaf::graphics::GraphicId;
 use crate::Graphics;
 use crate::RichTextLinesRange;
@@ -403,7 +403,8 @@ impl Renderer {
         // Iterate over all content states and render visible ones
         for (_, content_state) in &state.content.states {
             // Skip if marked for removal or hidden
-            if content_state.render_data.should_remove || content_state.render_data.hidden {
+            if content_state.render_data.should_remove || content_state.render_data.hidden
+            {
                 continue;
             }
 
@@ -431,14 +432,29 @@ impl Renderer {
                         content_state.render_data.use_grid_cell_size,
                     );
                 }
-                crate::layout::ContentData::Rect { x, y, width, height, color, depth } => {
+                crate::layout::ContentData::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                } => {
                     self.comp.batches.rect(
                         &Rect::new(*x, *y, *width, *height),
                         *depth,
                         color,
                     );
                 }
-                crate::layout::ContentData::RoundedRect { x, y, width, height, color, depth, border_radius } => {
+                crate::layout::ContentData::RoundedRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    depth,
+                    border_radius,
+                } => {
                     self.comp.batches.rounded_rect(
                         &Rect::new(*x, *y, *width, *height),
                         *depth,
@@ -446,25 +462,76 @@ impl Renderer {
                         *border_radius,
                     );
                 }
-                crate::layout::ContentData::Line { x1, y1, x2, y2, width, color, depth } => {
-                    self.comp.batches.add_line(*x1, *y1, *x2, *y2, *width, *depth, *color);
+                crate::layout::ContentData::Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    width,
+                    color,
+                    depth,
+                } => {
+                    self.comp
+                        .batches
+                        .add_line(*x1, *y1, *x2, *y2, *width, *depth, *color);
                 }
-                crate::layout::ContentData::Triangle { points, color, depth } => {
+                crate::layout::ContentData::Triangle {
+                    points,
+                    color,
+                    depth,
+                } => {
                     self.comp.batches.add_triangle(
-                        points[0].0, points[0].1,
-                        points[1].0, points[1].1,
-                        points[2].0, points[2].1,
+                        points[0].0,
+                        points[0].1,
+                        points[1].0,
+                        points[1].1,
+                        points[2].0,
+                        points[2].1,
                         *depth,
                         *color,
                     );
                 }
-                crate::layout::ContentData::Polygon { points, color, depth } => {
-                    self.comp.batches.add_polygon(points.as_slice(), *depth, *color);
+                crate::layout::ContentData::Polygon {
+                    points,
+                    color,
+                    depth,
+                } => {
+                    self.comp
+                        .batches
+                        .add_polygon(points.as_slice(), *depth, *color);
                 }
-                crate::layout::ContentData::Arc { center_x, center_y, radius, start_angle, end_angle, stroke_width, color, depth } => {
-                    self.comp.batches.add_arc(*center_x, *center_y, *radius, *start_angle, *end_angle, *stroke_width, *depth, color);
+                crate::layout::ContentData::Arc {
+                    center_x,
+                    center_y,
+                    radius,
+                    start_angle,
+                    end_angle,
+                    stroke_width,
+                    color,
+                    depth,
+                } => {
+                    self.comp.batches.add_arc(
+                        *center_x,
+                        *center_y,
+                        *radius,
+                        *start_angle,
+                        *end_angle,
+                        *stroke_width,
+                        *depth,
+                        color,
+                    );
                 }
-                crate::layout::ContentData::Image { x, y, width, height, color, coords, has_alpha, depth, atlas_layer } => {
+                crate::layout::ContentData::Image {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    coords,
+                    has_alpha,
+                    depth,
+                    atlas_layer,
+                } => {
                     self.comp.batches.add_image_rect(
                         &Rect::new(*x, *y, *width, *height),
                         *depth,

@@ -30,6 +30,11 @@ language: 'en'
   - Configure via `macos-traffic-light-position-x` and `macos-traffic-light-position-y`
   - Defaults to standard macOS positioning (11.4, 16.1)
   - Not available in Tab navigation mode
+- **OSC 9;4 Progress Bar Support**: Terminal progress indicator (ConEmu/Windows Terminal compatible)
+  - Displays thin progress bar below tab bar
+  - Support for set (percentage), error (red), indeterminate (animated), and pause states
+  - Auto-dismisses after 15 seconds of no updates (prevents orphaned bars)
+  - Test with: `printf '\e]9;4;1;50\a'` (50% progress)
 - Wgpu now is always f32.
 
 **Breaking Changes**

@@ -26,8 +26,8 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, SpanStyle, SpanStyleDecoration, Graphic,
-    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, Content, Graphic, SpanStyle, SpanStyleDecoration, Stretch, Style,
+    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -308,11 +308,10 @@ impl Renderer {
             };
 
             if should_underline {
-                style.decoration =
-                    Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
             }
 
             // Check selection more efficiently
@@ -792,11 +791,10 @@ impl Renderer {
 
         match cursor.state.content {
             CursorShape::Underline => {
-                style.decoration =
-                    Some(SpanStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
                 style.decoration_color = Some(cursor_color);
             }
             CursorShape::Block => {
@@ -990,29 +988,36 @@ impl Renderer {
                 continue;
             }
 
-            // Get UI damage before resetting
-            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            // Get damages before resetting
+            let pending_terminal_damage = context
+                .renderable_content
+                .pending_update
+                .take_terminal_damage();
+            let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            // Note: ui_damage is extracted but not currently used for selective rendering.
+            // In the future, we can optimize by only re-rendering specific UI elements
+            // (island, search) when ui_damage.island or ui_damage.search is true.
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal
+                // Get damage from terminal itself
                 let terminal_damage = if force_full_damage {
                     Some(TerminalDamage::Full)
                 } else {
                     terminal.peek_damage_event()
                 };
 
-                // Merge terminal damage with UI damage
-                let damage = match (terminal_damage, ui_damage) {
+                // Merge terminal damage from the terminal with pending terminal damage (selections, hints, etc.)
+                let damage = match (terminal_damage, pending_terminal_damage) {
                     (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
                         TerminalDamage::Full
                     }
-                    (Some(term), Some(ui)) => {
+                    (Some(term), Some(pending)) => {
                         // Merge partial damages
-                        match (term, ui) {
+                        match (term, pending) {
                             (
                                 TerminalDamage::Partial(mut lines1),
                                 TerminalDamage::Partial(lines2),
@@ -1229,6 +1234,15 @@ impl Renderer {
         sugarloaf.render();
 
         // let _duration = start.elapsed();
+    }
+
+    /// Check if the renderer needs continuous redraw (for animations)
+    pub fn needs_redraw(&self) -> bool {
+        if let Some(island) = &self.island {
+            island.needs_redraw()
+        } else {
+            false
+        }
     }
 
     /// Find hint label at the specified position

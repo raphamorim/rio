@@ -5,7 +5,7 @@ pub mod state;
 use crate::components::core::image::Handle;
 use crate::components::filters::{Filter, FiltersBrush};
 use crate::font::{fonts::SugarloafFont, FontLibrary};
-use crate::layout::{TextLayout, RootStyle};
+use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
 use crate::sugarloaf::graphics::Graphics;
 
@@ -179,8 +179,7 @@ impl Sugarloaf<'_> {
         self.renderer.clear_atlas();
 
         self.state.reset();
-        self.state
-            .set_fonts(font_library, &mut self.renderer);
+        self.state.set_fonts(font_library, &mut self.renderer);
     }
 
     #[inline]
@@ -291,7 +290,10 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
-    pub fn get_text_by_id_mut(&mut self, id: usize) -> Option<&mut crate::layout::BuilderState> {
+    pub fn get_text_by_id_mut(
+        &mut self,
+        id: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
         self.state.content.get_text_by_id_mut(id)
     }
 
@@ -305,7 +307,7 @@ impl Sugarloaf<'_> {
         self.state.content().sel(id).build();
     }
 
-     #[inline]
+    #[inline]
     pub fn build_text_by_id_line_number(&mut self, text_id: usize, line_number: usize) {
         self.state.content().sel(text_id).build_line(line_number);
     }
@@ -320,7 +322,8 @@ impl Sugarloaf<'_> {
                 // Check if text already exists
                 if self.state.content.get_text_by_id(text_id).is_none() {
                     // Create new text with default layout
-                    let default_layout = TextLayout::from_default_layout(&self.state.style);
+                    let default_layout =
+                        TextLayout::from_default_layout(&self.state.style);
                     self.state.content.set_text(text_id, &default_layout);
                 }
                 text_id
@@ -335,7 +338,10 @@ impl Sugarloaf<'_> {
 
     /// Get mutable reference to text content by id (for cached text)
     #[inline]
-    pub fn get_text_mut(&mut self, id: usize) -> Option<&mut crate::layout::BuilderState> {
+    pub fn get_text_mut(
+        &mut self,
+        id: usize,
+    ) -> Option<&mut crate::layout::BuilderState> {
         self.state.content.get_text_by_id_mut(id)
     }
 
@@ -364,9 +370,10 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn set_transient_position(&mut self, index: usize, x: f32, y: f32) {
         if let Some(content_state) = self.state.content.get_transient_state_mut(index) {
-            content_state
-                .render_data
-                .set_position(x * self.state.style.scale_factor, y * self.state.style.scale_factor);
+            content_state.render_data.set_position(
+                x * self.state.style.scale_factor,
+                y * self.state.style.scale_factor,
+            );
         }
     }
 
@@ -551,8 +558,7 @@ impl Sugarloaf<'_> {
     /// Show content at a specific position (any type)
     #[inline]
     pub fn set_position(&mut self, id: usize, x: f32, y: f32) {
-        self.state
-            .set_content_position(id, x, y);
+        self.state.set_content_position(id, x, y);
     }
 
     /// Set content visibility (any type)
@@ -621,11 +627,8 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn render(&mut self) {
         self.state.compute_dimensions();
-        self.state.compute_updates(
-            &mut self.renderer,
-            &mut self.ctx,
-            &mut self.graphics,
-        );
+        self.state
+            .compute_updates(&mut self.renderer, &mut self.ctx, &mut self.graphics);
 
         match self.ctx.inner {
             crate::context::ContextType::Wgpu(_) => {

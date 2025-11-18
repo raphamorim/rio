@@ -5,11 +5,11 @@
 //
 // Compositor with vertex capture for text run caching
 
+use crate::layout::{SpanStyleDecoration, UnderlineShape};
 use crate::renderer::batch::{BatchManager, RunUnderline};
 pub use crate::renderer::batch::{Rect, Vertex};
 use crate::renderer::image_cache::glyph::GlyphCacheSession;
 use crate::renderer::text::*;
-use crate::layout::{SpanStyleDecoration, UnderlineShape};
 
 pub struct Compositor {
     pub batches: BatchManager,

@@ -2156,6 +2156,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.title = title.unwrap_or_default();
     }
 
+    fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
+        self.event_proxy
+            .send_event(RioEvent::ProgressReport(report), self.window_id);
+    }
+
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
         trace!("Setting working directory {:?}", path);
         self.current_directory = Some(path);

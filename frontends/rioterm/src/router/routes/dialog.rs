@@ -22,8 +22,24 @@ pub fn screen(
         0.0,
     );
     sugarloaf.rect(None, 128.0, 256.0, 350.0, 150.0, [0.0, 0.0, 0.0, 1.0], 0.0);
-    sugarloaf.rect(None, 128.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
-    sugarloaf.rect(None, 240.0, 320.0, 106.0, 36.0, [0.133, 0.141, 0.176, 1.0], 0.0);
+    sugarloaf.rect(
+        None,
+        128.0,
+        320.0,
+        106.0,
+        36.0,
+        [0.133, 0.141, 0.176, 1.0],
+        0.0,
+    );
+    sugarloaf.rect(
+        None,
+        240.0,
+        320.0,
+        106.0,
+        36.0,
+        [0.133, 0.141, 0.176, 1.0],
+        0.0,
+    );
 
     // Create transient text elements (rendered once then cleaned up)
     let heading_idx = sugarloaf.text(None);

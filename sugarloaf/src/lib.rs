@@ -25,6 +25,6 @@ pub use crate::sugarloaf::{
 };
 pub use components::filters::Filter;
 pub use layout::{
-    Content, SpanStyle, SpanStyleDecoration, RichTextConfig, TextDimensions,
+    Content, RichTextConfig, SpanStyle, SpanStyleDecoration, TextDimensions,
     UnderlineInfo, UnderlineShape,
 };

@@ -78,9 +78,10 @@ impl<T: EventListener> Context<T> {
         let has_updated = old_selection != selection_range;
 
         if has_updated {
-            // Calculate partial damage for selection changes
-            let damage = calculate_selection_damage(old_selection, selection_range);
-            self.renderable_content.pending_update.set_ui_damage(damage);
+            // Selection affects terminal line rendering, so use terminal damage
+            self.renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -91,10 +92,10 @@ impl<T: EventListener> Context<T> {
         let old_hyperlink = self.renderable_content.hyperlink_range;
 
         if old_hyperlink != hyperlink_range {
-            // For hyperlinks, use full damage as they're less frequent
+            // Hyperlinks affect terminal line rendering, so use terminal damage
             self.renderable_content
                 .pending_update
-                .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
         self.renderable_content.hyperlink_range = hyperlink_range;
