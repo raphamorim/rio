@@ -170,8 +170,6 @@ impl PositioningTestHelper {
                 x_offset: 0.0,
                 y_offset: 0.0,
                 cluster: i as u32,
-                atlas_coords: None,
-                atlas_layer: None,
             });
         }
 
@@ -182,7 +180,6 @@ impl PositioningTestHelper {
             12.0, // font_size
             shaped_glyphs,
             false, // has_emoji
-            None,  // shaping_features
         );
 
         *px - run_start_x
