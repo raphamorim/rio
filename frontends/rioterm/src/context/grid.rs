@@ -2,9 +2,7 @@ use crate::context::Context;
 use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
-use rio_backend::sugarloaf::{
-    layout::TextDimensions, Object, Rect, RichText, Sugarloaf,
-};
+use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
 use std::collections::HashMap;
 
 const MIN_COLS: usize = 2;

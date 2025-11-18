@@ -4,7 +4,7 @@
 // LICENSE file in the root directory of this source tree.
 
 use crate::font::FontLibrary;
-use crate::layout::{TextLayout, RootStyle};
+use crate::layout::{RootStyle, TextLayout};
 use crate::renderer::Renderer;
 use crate::Graphics;
 use crate::{Content, TextDimensions};
@@ -190,12 +190,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_content_position(
-        &mut self,
-        id: usize,
-        x: f32,
-        y: f32,
-    ) {
+    pub fn set_content_position(&mut self, id: usize, x: f32, y: f32) {
         if let Some(content_state) = self.content.states.get_mut(&id) {
             content_state.render_data.set_position(x, y);
         }
@@ -240,11 +235,7 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn set_text_font_size_based_on_action(
-        &mut self,
-        text_id: &usize,
-        operation: u8,
-    ) {
+    pub fn set_text_font_size_based_on_action(&mut self, text_id: &usize, operation: u8) {
         self.update_text_style(text_id, operation);
     }
 

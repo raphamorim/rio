@@ -115,7 +115,9 @@ pub fn screen(
         if let Some(paragraph_state) = sugarloaf.get_transient_text_mut(paragraph_idx) {
             paragraph_state.clear();
             for line in report.report.to_string().lines() {
-                paragraph_state.add_span(line, SpanStyle::default()).new_line();
+                paragraph_state
+                    .add_span(line, SpanStyle::default())
+                    .new_line();
             }
             paragraph_state.build();
         }

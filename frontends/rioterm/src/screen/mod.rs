@@ -221,7 +221,9 @@ impl Screen<'_> {
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf.get_text_dimensions(&rich_text_id).unwrap_or_default(),
+            sugarloaf
+                .get_text_dimensions(&rich_text_id)
+                .unwrap_or_default(),
             config.line_height,
             margin,
         );
@@ -2742,7 +2744,7 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
         }
 
@@ -2752,6 +2754,19 @@ impl Screen<'_> {
             &mut self.context_manager,
             &self.search_state.focused_match,
         );
+
+        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
+        if self.renderer.needs_redraw() {
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_ui_damage(crate::context::renderable::UIDamage {
+                    island: true,
+                    search: false,
+                });
+        }
+
         // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
@@ -2988,13 +3003,13 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Partial(damaged_lines));
+                    .set_terminal_damage(TerminalDamage::Partial(damaged_lines));
             } else {
                 // Force full damage if no specific lines (for hint highlights)
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Full);
+                    .set_terminal_damage(TerminalDamage::Full);
             }
         } else {
             // Clear hint state
@@ -3012,7 +3027,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .set_ui_damage(TerminalDamage::Full);
+                .set_terminal_damage(TerminalDamage::Full);
         }
     }
 

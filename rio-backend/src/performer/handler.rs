@@ -391,6 +391,9 @@ pub trait Handler {
     /// Set mouse cursor icon.
     fn set_mouse_cursor_icon(&mut self, _: CursorIcon) {}
 
+    /// Set progress bar report (OSC 9;4).
+    fn set_progress_report(&mut self, _: crate::event::ProgressReport) {}
+
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}
 
@@ -1022,6 +1025,40 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                     .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok());
 
                 self.handler.set_hyperlink(Some(Hyperlink::new(id, uri)));
+            }
+
+            // OSC 9;4 - ConEmu/Windows Terminal progress bar reporting
+            // Format: OSC 9;4;<state>;<progress> ST
+            // States: 0=remove, 1=set, 2=error, 3=indeterminate, 4=pause
+            b"9" => {
+                // Check if this is OSC 9;4 progress reporting
+                // params[0] = b"9", params[1] = b"4", params[2] = state, params[3] = progress (optional)
+                if params.len() >= 3 && params[1] == b"4" {
+                    // Parse state from params[2]
+                    let state = match params[2] {
+                        b"0" => Some(crate::event::ProgressState::Remove),
+                        b"1" => Some(crate::event::ProgressState::Set),
+                        b"2" => Some(crate::event::ProgressState::Error),
+                        b"3" => Some(crate::event::ProgressState::Indeterminate),
+                        b"4" => Some(crate::event::ProgressState::Pause),
+                        _ => None,
+                    };
+
+                    if let Some(state) = state {
+                        // Parse optional progress value from params[3]
+                        let progress = if params.len() >= 4 {
+                            parse_number(params[3]).map(|p| (p as u8).min(100))
+                        } else {
+                            None
+                        };
+
+                        let report = crate::event::ProgressReport { state, progress };
+                        self.handler.set_progress_report(report);
+                        return;
+                    }
+                }
+                // OSC 9 can also be used for desktop notifications, but we don't support that yet
+                unhandled(params);
             }
 
             b"10" | b"11" | b"12" => {

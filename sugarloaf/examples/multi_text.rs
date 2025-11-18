@@ -118,10 +118,7 @@ impl ApplicationHandler for Application {
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::ScaleFactorChanged {
-                scale_factor,
-                ..
-            } => {
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 let scale_factor_f32 = scale_factor as f32;
                 let new_inner_size = window.inner_size();
                 sugarloaf.rescale(scale_factor_f32);
@@ -209,24 +206,45 @@ impl ApplicationHandler for Application {
                     sugarloaf.build_text_by_id(TEXT_ID_2);
                 } else {
                     // Partial update - only update line 1
-                    sugarloaf
-                        .text(TEXT_ID_2)
-                        .clear_line(1)
-                        .add_span_on_line(
-                            1,
-                            &format!("Updated {:?}", time.elapsed()),
-                            SpanStyle {
-                                color: [1.0, 1.0, 1.0, 1.0],
-                                ..SpanStyle::default()
-                            },
-                        );
+                    sugarloaf.text(TEXT_ID_2).clear_line(1).add_span_on_line(
+                        1,
+                        &format!("Updated {:?}", time.elapsed()),
+                        SpanStyle {
+                            color: [1.0, 1.0, 1.0, 1.0],
+                            ..SpanStyle::default()
+                        },
+                    );
                     sugarloaf.build_text_by_id_line_number(TEXT_ID_2, 1);
                 }
 
                 // Add background rectangles (cached)
-                sugarloaf.rect(Some(RECT_ID_0), 5., 5., 200.0, 200.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.rect(Some(RECT_ID_1), 220., 5., 200.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
-                sugarloaf.rect(Some(RECT_ID_2), 440., 5., 320.0, 150.0, [1.0, 0.5, 0.5, 0.5], 0.0);
+                sugarloaf.rect(
+                    Some(RECT_ID_0),
+                    5.,
+                    5.,
+                    200.0,
+                    200.0,
+                    [1.0, 0.5, 0.5, 0.5],
+                    0.0,
+                );
+                sugarloaf.rect(
+                    Some(RECT_ID_1),
+                    220.,
+                    5.,
+                    200.0,
+                    150.0,
+                    [1.0, 0.5, 0.5, 0.5],
+                    0.0,
+                );
+                sugarloaf.rect(
+                    Some(RECT_ID_2),
+                    440.,
+                    5.,
+                    320.0,
+                    150.0,
+                    [1.0, 0.5, 0.5, 0.5],
+                    0.0,
+                );
 
                 // Position and show text
                 sugarloaf.set_position(TEXT_ID_0, 5., 5.);
