@@ -1,7 +1,9 @@
 use lru::LruCache;
+use std::hash::Hasher;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tracing::debug;
+use wyhash::WyHash;
 
 /// Maximum number of text runs to cache
 /// Increased to 8192 to maximize cache hits for terminal text
@@ -45,17 +47,13 @@ pub struct ShapedGlyph {
     pub cluster: u32,
 }
 
-/// Key for text run caching - includes all factors that affect shaping
+/// Key for text run caching - uses position-independent hash
+/// This allows identical text runs at different positions to share cache entries
 /// Color is NOT part of the key since we only cache shaping, not vertices
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TextRunKey {
-    /// The text content
-    pub text: String,
-    /// Font family/style attributes
-    pub font_id: usize,
-    /// Font size (as integer to avoid float precision issues)
-    pub font_size_scaled: u32,
-}
+///
+/// The hash includes: codepoints + relative clusters + font + size
+/// Using u64 hash is more memory efficient than storing full text strings
+pub type TextRunKey = u64;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct FontAttributes {
@@ -193,18 +191,48 @@ impl Default for TextRunCache {
     }
 }
 
-/// Helper function to create a text run key
+/// Helper function to create a position-independent text run key
+///
+/// This hashes the codepoints with their relative cluster positions,
+/// making the cache key independent of where the text appears.
+/// This allows "hello" at column 0 and "hello" at column 50 to share
+/// the same cache entry, dramatically improving cache hit rates.
+///
+/// Hash components (in order):
+/// 1. For each codepoint: (codepoint, relative_cluster_position)
+/// 2. Run length
+/// 3. Font ID
+/// 4. Font size (scaled)
 pub fn create_text_run_key(
     text: &str,
     font_id: usize,
     font_size: f32,
 ) -> TextRunKey {
-    TextRunKey {
-        text: text.to_string(),
-        font_id,
-        // Scale font size to avoid float precision issues
-        font_size_scaled: (font_size * 100.0) as u32,
+    let mut hasher = WyHash::with_seed(0);
+
+    // Hash each codepoint with its relative position (0, 1, 2, ...)
+    // This makes the hash position-independent
+    for (cluster, ch) in text.chars().enumerate() {
+        // Skip emoji/text presentation modifiers (they don't affect shaping)
+        if ch == '\u{FE0E}' || ch == '\u{FE0F}' {
+            continue;
+        }
+
+        hasher.write_u32(ch as u32);
+        hasher.write_usize(cluster);
     }
+
+    // Add run length to avoid collisions
+    hasher.write_usize(text.chars().count());
+
+    // Add font ID
+    hasher.write_usize(font_id);
+
+    // Add scaled font size
+    let font_size_scaled = (font_size * 100.0) as u32;
+    hasher.write_u32(font_size_scaled);
+
+    hasher.finish()
 }
 
 /// Helper function to create a cached text run from shaped glyphs
@@ -233,95 +261,55 @@ mod tests {
     fn test_unified_text_run_cache_basic() {
         let mut cache = TextRunCache::new();
 
-        let key = create_text_run_key("hello world", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
+        let key = create_text_run_key("hello world", 0, 12.0);
 
-        let run = create_cached_text_run(
-            vec![],
-            0,
-            12.0,
-            false,
-            None,
-            None,
-            None,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let run = create_cached_text_run(vec![], 0, 12.0, false);
 
         // Test miss
         assert!(cache.get(&key).is_none());
 
         // Test insert and hit
-        cache.insert(key.clone(), run.clone());
+        cache.insert(key, run.clone());
         assert!(cache.get(&key).is_some());
         assert_eq!(cache.len(), 1);
     }
 
     #[test]
-    fn test_shaping_cache_fallback() {
+    fn test_position_independence() {
         let mut cache = TextRunCache::new();
 
-        // Insert with shaping data only (no color)
-        let shaping_key = create_shaping_key("hello", 0, 12.0);
+        // Same text "hello" should produce same hash regardless of position
+        let key1 = create_text_run_key("hello", 0, 12.0);
+        let key2 = create_text_run_key("hello", 0, 12.0);
 
-        let run = create_cached_text_run(
-            vec![],
-            0,
-            12.0,
-            false,
-            Some(vec![1, 2, 3]), // Non-empty shaping features to trigger ShapingOnly
-            None,
-            None,
-            None,
-        );
+        assert_eq!(key1, key2);
 
-        cache.insert(shaping_key, run);
+        let run = create_cached_text_run(vec![], 0, 12.0, false);
+        cache.insert(key1, run);
 
-        // Try to get with color - should hit shaping cache
-        let render_key =
-            create_text_run_key("hello", 0, 12.0, Some([1.0, 0.0, 0.0, 1.0]));
-
-        if let Some(hit_type) = cache.get(&render_key) {
-            match hit_type {
-                CacheHitType::ShapingOnly(_) => {
-                    // Expected - we got shaping data without vertex data
-                }
-                CacheHitType::GlyphsOnly(_) => {
-                    // Also acceptable if no shaping features
-                }
-                _ => panic!("Expected shaping-only or glyphs-only cache hit"),
-            }
-        } else {
-            panic!("Expected cache hit");
-        }
+        // Second identical text should hit the cache
+        assert!(cache.get(&key2).is_some());
     }
 
     #[test]
-    fn test_vertex_cache_update() {
-        let mut cache = TextRunCache::new();
+    fn test_hash_consistency() {
+        // Same text with same attributes should always produce same hash
+        let key1 = create_text_run_key("test", 0, 12.0);
+        let key2 = create_text_run_key("test", 0, 12.0);
 
-        let key = create_text_run_key("test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
+        assert_eq!(key1, key2);
 
-        let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+        // Different text should produce different hash
+        let key3 = create_text_run_key("other", 0, 12.0);
+        assert_ne!(key1, key3);
 
-        cache.insert(key.clone(), run);
+        // Different font should produce different hash
+        let key4 = create_text_run_key("test", 1, 12.0);
+        assert_ne!(key1, key4);
 
-        // Update with vertex data
-        let vertices = vec![];
-        let updated =
-            cache.update_vertices(&key, vertices, (10.0, 20.0), [1.0, 1.0, 1.0, 1.0]);
-        assert!(updated);
-
-        // Should now get full render cache hit
-        if let Some(hit_type) = cache.get(&key) {
-            match hit_type {
-                CacheHitType::FullRender(cached_run) => {
-                    assert!(cached_run.vertices.is_some());
-                    assert_eq!(cached_run.base_position, Some((10.0, 20.0)));
-                }
-                _ => panic!("Expected full render cache hit"),
-            }
-        } else {
-            panic!("Expected cache hit");
-        }
+        // Different size should produce different hash
+        let key5 = create_text_run_key("test", 0, 14.0);
+        assert_ne!(key1, key5);
     }
 
     #[test]
@@ -331,15 +319,8 @@ mod tests {
 
         // Fill cache to capacity + 1 to trigger eviction
         for i in 0..capacity + 1 {
-            let key = create_text_run_key(
-                &format!("text{i}"),
-                0,
-                12.0,
-                Some([1.0, 1.0, 1.0, 1.0]),
-            );
-
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let key = create_text_run_key(&format!("text{i}"), 0, 12.0);
+            let run = create_cached_text_run(vec![], 0, 12.0, false);
             cache.insert(key, run);
         }
 
@@ -347,16 +328,11 @@ mod tests {
         assert_eq!(cache.len(), capacity);
 
         // The first item should have been evicted
-        let first_key = create_text_run_key("text0", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
+        let first_key = create_text_run_key("text0", 0, 12.0);
         assert!(cache.get(&first_key).is_none());
 
         // The last item should still be there
-        let last_key = create_text_run_key(
-            &format!("text{capacity}"),
-            0,
-            12.0,
-            Some([1.0, 1.0, 1.0, 1.0]),
-        );
+        let last_key = create_text_run_key(&format!("text{capacity}"), 0, 12.0);
         assert!(cache.get(&last_key).is_some());
     }
 
@@ -366,15 +342,8 @@ mod tests {
 
         // Fill cache
         for i in 0..10 {
-            let key = create_text_run_key(
-                &format!("text{i}"),
-                0,
-                12.0,
-                Some([1.0, 1.0, 1.0, 1.0]),
-            );
-
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let key = create_text_run_key(&format!("text{i}"), 0, 12.0);
+            let run = create_cached_text_run(vec![], 0, 12.0, false);
             cache.insert(key, run);
         }
 
@@ -390,10 +359,9 @@ mod tests {
     fn test_peek_functionality() {
         let mut cache = TextRunCache::new();
 
-        let key = create_text_run_key("peek_test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
-
-        let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
-        cache.insert(key.clone(), run);
+        let key = create_text_run_key("peek_test", 0, 12.0);
+        let run = create_cached_text_run(vec![], 0, 12.0, false);
+        cache.insert(key, run);
 
         // Test that peek works
         assert!(cache.peek(&key).is_some());
@@ -410,15 +378,8 @@ mod tests {
 
         // Add some items
         for i in 0..5 {
-            let key = create_text_run_key(
-                &format!("util_test{i}"),
-                0,
-                12.0,
-                Some([1.0, 1.0, 1.0, 1.0]),
-            );
-
-            let run =
-                create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+            let key = create_text_run_key(&format!("util_test{i}"), 0, 12.0);
+            let run = create_cached_text_run(vec![], 0, 12.0, false);
             cache.insert(key, run);
         }
 
@@ -433,9 +394,8 @@ mod tests {
 
         assert!(cache.is_empty());
 
-        let key = create_text_run_key("test", 0, 12.0, Some([1.0, 1.0, 1.0, 1.0]));
-
-        let run = create_cached_text_run(vec![], 0, 12.0, false, None, None, None, None);
+        let key = create_text_run_key("test", 0, 12.0);
+        let run = create_cached_text_run(vec![], 0, 12.0, false);
         cache.insert(key, run);
 
         assert!(!cache.is_empty());
