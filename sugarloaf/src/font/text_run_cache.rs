@@ -6,11 +6,7 @@ use tracing::debug;
 use wyhash::WyHash;
 
 /// Maximum number of text runs to cache
-/// Increased to 8192 to maximize cache hits for terminal text
-/// Terminal displays are highly repetitive - same text renders frame after frame
-/// Text shaping can account for 90%+ of frame time, so caching is critical
-/// Larger cache reduces cache thrashing when scrolling through large buffers
-const MAX_TEXT_RUN_CACHE_SIZE: usize = 8192;
+const MAX_TEXT_RUN_CACHE_SIZE: usize = 4096;
 
 /// A simplified cached text run containing only essential shaping data
 /// Cache shaping results (expensive), not rendering artifacts (cheap)
