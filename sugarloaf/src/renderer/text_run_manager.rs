@@ -6,8 +6,7 @@
 // Unified text run manager - replaces separate line cache and shaping cache
 
 use crate::font::text_run_cache::{
-    create_cached_text_run, create_shaping_key, create_text_run_key, CacheHitType,
-    ShapedGlyph, TextRunCache,
+    create_cached_text_run, create_text_run_key, ShapedGlyph, TextRunCache,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -25,34 +24,17 @@ impl TextRunManager {
         }
     }
 
-    /// Get cached data for a text run - returns the best available cache level
-    #[allow(clippy::too_many_arguments)]
+    /// Get cached shaping data for a text run
     pub fn get_cached_data(
         &mut self,
         text: &str,
         font_id: usize,
         font_size: f32,
-        color: Option<[f32; 4]>,
     ) -> CacheResult {
-        let key = create_text_run_key(text, font_id, font_size, color);
+        let key = create_text_run_key(text, font_id, font_size);
 
         match self.unified_cache.get(&key) {
-            Some(CacheHitType::FullRender(cached_run)) => CacheResult::FullRender {
-                glyphs: cached_run.glyphs.clone(),
-                vertices: cached_run.vertices.clone().unwrap(),
-                base_position: cached_run.base_position.unwrap(),
-                advance_width: cached_run.advance_width,
-                has_emoji: cached_run.has_emoji,
-                font_id: cached_run.font_id,
-            },
-            Some(CacheHitType::ShapingOnly(cached_run)) => CacheResult::ShapingOnly {
-                glyphs: cached_run.glyphs.clone(),
-                shaping_features: cached_run.shaping_features.clone(),
-                advance_width: cached_run.advance_width,
-                has_emoji: cached_run.has_emoji,
-                font_id: cached_run.font_id,
-            },
-            Some(CacheHitType::GlyphsOnly(cached_run)) => CacheResult::GlyphsOnly {
+            Some(cached_run) => CacheResult::Hit {
                 glyphs: cached_run.glyphs.clone(),
                 advance_width: cached_run.advance_width,
                 has_emoji: cached_run.has_emoji,
@@ -62,8 +44,7 @@ impl TextRunManager {
         }
     }
 
-    /// Cache shaping data for a text run (first level of caching)
-    #[allow(clippy::too_many_arguments)]
+    /// Cache shaping data for a text run
     pub fn cache_shaping_data(
         &mut self,
         text: &str,
@@ -71,19 +52,14 @@ impl TextRunManager {
         font_size: f32,
         glyphs: Vec<ShapedGlyph>,
         has_emoji: bool,
-        shaping_features: Option<Vec<u8>>,
     ) {
-        let key = create_shaping_key(text, font_id, font_size);
+        let key = create_text_run_key(text, font_id, font_size);
 
         let cached_run = create_cached_text_run(
             glyphs,
             font_id,
             font_size,
             has_emoji,
-            shaping_features,
-            None, // No vertices yet
-            None, // No base position yet
-            None, // No color yet
         );
 
         self.unified_cache.insert(key, cached_run);
@@ -164,26 +140,10 @@ impl TextRunManager {
 /// Result of a cache lookup - indicates what level of cached data is available
 #[derive(Debug)]
 #[allow(unused)]
+/// Simplified cache result - just shaping data or miss
 pub enum CacheResult {
-    /// Full render data available (glyphs + vertices + shaping)
-    FullRender {
-        glyphs: Arc<Vec<ShapedGlyph>>,
-        vertices: Arc<Vec<u8>>,
-        base_position: (f32, f32),
-        advance_width: f32,
-        has_emoji: bool,
-        font_id: usize,
-    },
-    /// Shaping and glyph data available (can skip shaping)
-    ShapingOnly {
-        glyphs: Arc<Vec<ShapedGlyph>>,
-        shaping_features: Option<Arc<Vec<u8>>>,
-        advance_width: f32,
-        has_emoji: bool,
-        font_id: usize,
-    },
-    /// Only basic glyph data available (need to re-shape)
-    GlyphsOnly {
+    /// Shaping data available (glyph IDs + positions)
+    Hit {
         glyphs: Arc<Vec<ShapedGlyph>>,
         advance_width: f32,
         has_emoji: bool,
@@ -199,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_vertex_positioning() {
-        // Create mock vertex data for one complete vertex
+        // Create mock vertex data for one complete vertex (60 bytes)
         let mut vertices = Vec::new();
 
         // Position: (10.0, 20.0, 0.0)

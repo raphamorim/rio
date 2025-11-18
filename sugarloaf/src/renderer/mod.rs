@@ -858,35 +858,13 @@ impl Renderer {
                             &run_text,
                             font,
                             run.size,
-                            Some(run.span.color),
                         )
                     } else {
                         CacheResult::Miss
                     };
 
                     match cached_result {
-                        CacheResult::FullRender {
-                            glyphs: _cached_glyphs,
-                            vertices,
-                            base_position,
-                            ..
-                        } => {
-                            // Use cached render data - apply vertices directly
-                            let mut vertex_output = Vec::new();
-                            TextRunManager::apply_cached_vertices(
-                                &vertices,
-                                base_position,
-                                (run_x, py + padding_y),
-                                &mut vertex_output,
-                            );
-
-                            px += rte_layout.unwrap().dimensions.width * char_width;
-                        }
-                        CacheResult::ShapingOnly {
-                            glyphs: cached_glyphs,
-                            ..
-                        }
-                        | CacheResult::GlyphsOnly {
+                        CacheResult::Hit {
                             glyphs: cached_glyphs,
                             ..
                         } => {
@@ -998,8 +976,6 @@ impl Renderer {
                                             x_offset: 0.0,
                                             y_offset: 0.0,
                                             cluster: 0,
-                                            atlas_coords: None,
-                                            atlas_layer: None,
                                         },
                                     );
                                 }
@@ -1013,7 +989,6 @@ impl Renderer {
                                     run.size,
                                     shaped_glyphs,
                                     false, // has_emoji - would need to be detected
-                                    None, // shaping_features - would need actual shaping data
                                 );
                             }
 
