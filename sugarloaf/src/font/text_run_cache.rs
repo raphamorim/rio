@@ -4,7 +4,9 @@ use std::sync::Arc;
 use tracing::debug;
 
 /// Maximum number of text runs to cache
-const MAX_TEXT_RUN_CACHE_SIZE: usize = 256;
+/// Increased to 2048 to maximize FullRender cache hits for terminal text
+/// Terminal displays are highly repetitive - same text renders frame after frame
+const MAX_TEXT_RUN_CACHE_SIZE: usize = 2048;
 
 /// A unified cached text run containing shaping cache, glyphs, and render data
 /// This replaces separate line cache and shaping cache with a single comprehensive cache

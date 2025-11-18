@@ -37,6 +37,20 @@ pub struct Vertex {
     pub _padding: f32, // Padding to align to 16 bytes
 }
 
+impl Vertex {
+    /// Convert vertex to bytes for caching
+    #[inline]
+    pub fn to_bytes(&self) -> [u8; 60] {
+        bytemuck::cast(*self)
+    }
+
+    /// Create vertex from bytes
+    #[inline]
+    pub fn from_bytes(bytes: &[u8; 60]) -> Self {
+        bytemuck::cast(*bytes)
+    }
+}
+
 /// Rectangle with floating point coordinates.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Rect {

@@ -105,12 +105,15 @@ impl TextRunManager {
             return;
         }
 
-        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] = 11 * 4 bytes = 44 bytes
+        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + border_radius + rect_size[2] + padding
         // pos: [f32; 3] = 12 bytes
         // color: [f32; 4] = 16 bytes
         // uv: [f32; 2] = 8 bytes
         // layers: [i32; 2] = 8 bytes
-        const VERTEX_SIZE: usize = 44;
+        // border_radius: f32 = 4 bytes
+        // rect_size: [f32; 2] = 8 bytes
+        // _padding: f32 = 4 bytes
+        const VERTEX_SIZE: usize = 60;
 
         if !vertices_data.len().is_multiple_of(VERTEX_SIZE) {
             debug!("Invalid vertex data size: {}", vertices_data.len());
@@ -218,6 +221,16 @@ mod tests {
         vertices.extend_from_slice(&1i32.to_le_bytes());
         vertices.extend_from_slice(&2i32.to_le_bytes());
 
+        // Border radius: 0.0
+        vertices.extend_from_slice(&0.0f32.to_le_bytes());
+
+        // Rect size: (100.0, 50.0)
+        vertices.extend_from_slice(&100.0f32.to_le_bytes());
+        vertices.extend_from_slice(&50.0f32.to_le_bytes());
+
+        // Padding: 0.0
+        vertices.extend_from_slice(&0.0f32.to_le_bytes());
+
         let mut output_vertices = Vec::new();
 
         TextRunManager::apply_cached_vertices(
@@ -229,7 +242,7 @@ mod tests {
 
         // Expected: only position should be offset by (+50, +50)
         // So (10, 20, 0) becomes (60, 70, 0)
-        assert_eq!(output_vertices.len(), 44);
+        assert_eq!(output_vertices.len(), 60);
 
         // Check adjusted position
         let x = f32::from_le_bytes([
@@ -282,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_vertex_positioning_no_offset() {
-        let vertices = vec![0u8; 44]; // Mock vertex data (44 bytes)
+        let vertices = vec![0u8; 60]; // Mock vertex data (60 bytes)
         let mut output_vertices = Vec::new();
 
         TextRunManager::apply_cached_vertices(
