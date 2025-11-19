@@ -35,6 +35,7 @@ pub struct Application<'a> {
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
+    app_id: Option<String>,
 }
 
 impl Application<'_> {
@@ -42,6 +43,7 @@ impl Application<'_> {
         config: rio_backend::config::Config,
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
+        app_id: Option<String>,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `loop_exiting`.
@@ -70,6 +72,7 @@ impl Application<'_> {
             event_proxy,
             router,
             scheduler,
+            app_id,
         }
     }
 
@@ -195,6 +198,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             self.event_proxy.clone(),
             &self.config,
             None,
+            self.app_id.as_deref(),
         );
 
         // Schedule title updates every 2s
@@ -689,6 +693,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     self.event_proxy.clone(),
                     &self.config,
                     None,
+                    self.app_id.as_deref(),
                 );
             }
             #[cfg(target_os = "macos")]
@@ -800,6 +805,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     self.event_proxy.clone(),
                     config,
                     Some(url),
+                    self.app_id.as_deref(),
                 );
             }
             return;
