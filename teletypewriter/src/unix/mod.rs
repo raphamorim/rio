@@ -548,7 +548,7 @@ pub fn create_pty_with_spawn(
             // Create a new process group.
             let err = libc::setsid();
             if err == -1 {
-                return Err(Error::other("Failed to set session id"));
+                return Err(Error::last_os_error());
             }
 
             if is_controling_terminal {
