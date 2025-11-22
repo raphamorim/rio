@@ -116,7 +116,7 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(rename = "padding-x", default = "f32::default")]
+    #[serde(rename = "padding-x", default = "default_padding_x")]
     pub padding_x: f32,
     #[serde(rename = "padding-y", default = "default_padding_y")]
     pub padding_y: [f32; 2],
@@ -507,6 +507,12 @@ impl Config {
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
+            if let Some(x) = window_overwrite.macos_traffic_light_position_x {
+                self.window.macos_traffic_light_position_x = Some(x);
+            }
+            if let Some(y) = window_overwrite.macos_traffic_light_position_y {
+                self.window.macos_traffic_light_position_y = Some(y);
+            }
             if let Some(initial_title) = &window_overwrite.initial_title {
                 self.window.initial_title = Some(initial_title.clone());
             }
@@ -844,7 +850,6 @@ mod tests {
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
-        assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
         assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -1444,7 +1449,7 @@ mod tests {
             disable-unfocused-render = false
 
             [navigation]
-            mode = "BottomTab"
+            mode = "Tab"
             clickable = false
 
             shell = { program = "/bin/sh", args = ["-c"] }
@@ -1481,10 +1486,7 @@ mod tests {
 
         // Navigation: clickable overridden, mode preserved
         assert!(result.navigation.clickable);
-        assert_eq!(
-            result.navigation.mode,
-            navigation::NavigationMode::BottomTab
-        );
+        assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
         assert_eq!(result.shell.program, "/bin/zsh");

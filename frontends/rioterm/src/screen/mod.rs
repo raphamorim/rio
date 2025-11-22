@@ -18,7 +18,7 @@ use crate::bindings::{
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::grid::{ContextDimension, Delta};
 use crate::context::renderable::{Cursor, RenderableContent};
-use crate::context::{self, process_open_url, ContextManager};
+use crate::context::{self, next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},
@@ -38,15 +38,13 @@ use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
-use rio_backend::config::renderer::{
-    Backend as RendererBackend, Performance as RendererPerformance,
-};
+use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::{ClickState, EventProxy, SearchState};
 use rio_backend::sugarloaf::{
-    layout::RootStyle, Sugarloaf, SugarloafErrors, SugarloafRenderer, SugarloafWindow,
-    SugarloafWindowSize,
+    layout::RootStyle, RichTextConfig, Sugarloaf, SugarloafBackend, SugarloafErrors,
+    SugarloafRenderer, SugarloafWindow, SugarloafWindowSize,
 };
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
@@ -143,18 +141,20 @@ impl Screen<'_> {
         };
 
         let backend = match config.renderer.backend {
-            RendererBackend::Automatic => {
+            Backend::Automatic => {
                 #[cfg(target_arch = "wasm32")]
                 let default_backend = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
                 #[cfg(not(target_arch = "wasm32"))]
                 let default_backend = wgpu::Backends::all();
 
-                default_backend
+                SugarloafBackend::Wgpu(default_backend)
             }
-            RendererBackend::Vulkan => wgpu::Backends::VULKAN,
-            RendererBackend::GL => wgpu::Backends::GL,
-            RendererBackend::Metal => wgpu::Backends::METAL,
-            RendererBackend::DX12 => wgpu::Backends::DX12,
+            Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
+            Backend::GL => SugarloafBackend::Wgpu(wgpu::Backends::GL),
+            Backend::WgpuMetal => SugarloafBackend::Wgpu(wgpu::Backends::METAL),
+            #[cfg(target_os = "macos")]
+            Backend::Metal => SugarloafBackend::Metal,
+            Backend::DX12 => SugarloafBackend::Wgpu(wgpu::Backends::DX12),
         };
 
         let sugarloaf_renderer = SugarloafRenderer {
@@ -208,7 +208,10 @@ impl Screen<'_> {
             keyboard: config.keyboard,
         };
 
-        let rich_text_id = sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let rich_text_id = next_rich_text_id();
+        let _ = sugarloaf.text(Some(rich_text_id));
+        sugarloaf.set_position(rich_text_id, config.padding_x, padding_y_top);
 
         let margin = Delta {
             x: config.padding_x,
@@ -218,7 +221,9 @@ impl Screen<'_> {
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
-            sugarloaf.get_rich_text_dimensions(&rich_text_id),
+            sugarloaf
+                .get_text_dimensions(&rich_text_id)
+                .unwrap_or_default(),
             config.line_height,
             margin,
         );
@@ -243,16 +248,11 @@ impl Screen<'_> {
             sugarloaf_errors,
         )?;
 
-        if cfg!(target_os = "macos") {
-            sugarloaf.set_background_color(None);
-        } else {
-            sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
-        }
+        sugarloaf.set_background_color(Some(renderer.dynamic_background.1));
 
         if let Some(image) = &config.window.background_image {
             sugarloaf.set_background_image(image);
         }
-        sugarloaf.render();
 
         Ok(Screen {
             search_state: SearchState::default(),
@@ -340,11 +340,15 @@ impl Screen<'_> {
     #[inline]
     #[cfg(target_os = "macos")]
     pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        let layout = self
+        if let Some(layout) = self
             .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
-        let scale_f64 = layout.dimensions.scale as f64;
-        pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
+            .get_text_layout(&self.context_manager.current().rich_text_id)
+        {
+            let scale_f64 = layout.dimensions.scale as f64;
+            pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
+        } else {
+            false
+        }
     }
 
     /// update_config is triggered in any configuration file update
@@ -393,7 +397,7 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf.set_rich_text_line_height(
+                self.sugarloaf.set_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
                 );
@@ -437,7 +441,7 @@ impl Screen<'_> {
             FontSizeAction::Reset => 0,
         };
 
-        self.sugarloaf.set_rich_text_font_size_based_on_action(
+        self.sugarloaf.set_text_font_size_action(
             &self.context_manager.current().rich_text_id,
             action,
         );
@@ -552,6 +556,24 @@ impl Screen<'_> {
 
         let mode = self.get_mode();
         let mods = self.modifiers.state();
+
+        // Handle command palette toggle (Cmd+Shift+P on macOS, Ctrl+Shift+P elsewhere)
+        if key.state == ElementState::Pressed {
+            let is_command_palette_key = matches!(
+                key.logical_key.as_ref(),
+                Key::Character("p") | Key::Character("P")
+            );
+            #[cfg(target_os = "macos")]
+            let has_correct_modifiers = mods.super_key() && mods.shift_key();
+            #[cfg(not(target_os = "macos"))]
+            let has_correct_modifiers = mods.control_key() && mods.shift_key();
+
+            if is_command_palette_key && has_correct_modifiers {
+                self.renderer.command_palette.toggle();
+                self.render();
+                return;
+            }
+        }
 
         if key.state == ElementState::Released {
             if !mode.contains(Mode::REPORT_EVENT_TYPES)
@@ -1083,47 +1105,103 @@ impl Screen<'_> {
                     Act::SelectNextSplitOrTab => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next_split_or_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevSplitOrTab => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev_split_or_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectTab(tab_index) => {
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_tab(*tab_index);
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.cancel_search();
                         self.render();
                     }
                     Act::SelectLastTab => {
                         self.cancel_search();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.select_last_tab();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectNextTab => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_next();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToPrev => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_prev();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::MoveCurrentTabToNext => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.move_current_to_next();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::SelectPrevTab => {
                         self.cancel_search();
                         self.clear_selection();
+                        let old_index = self.context_manager.current_index();
                         self.context_manager.switch_to_prev();
+                        let new_index = self.context_manager.current_index();
+                        self.context_manager.switch_context_visibility(
+                            &mut self.sugarloaf,
+                            old_index,
+                            new_index,
+                        );
                         self.render();
                     }
                     Act::ReceiveChar | Act::None => (),
@@ -1136,23 +1214,53 @@ impl Screen<'_> {
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager
-            .split_from_config(rich_text_id, false, config);
+        // Create rich text with initial position accounting for island
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, config.padding_x, padding_y_top);
+        self.context_manager.split_from_config(
+            rich_text_id,
+            false,
+            config,
+            &mut self.sugarloaf,
+        );
 
         self.render();
     }
 
     pub fn split_right(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, false);
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        self.context_manager
+            .split(rich_text_id, false, &mut self.sugarloaf);
 
         self.render();
     }
 
     pub fn split_down(&mut self) {
-        let rich_text_id = self.sugarloaf.create_rich_text();
-        self.context_manager.split(rich_text_id, true);
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        self.context_manager
+            .split(rich_text_id, true, &mut self.sugarloaf);
 
         self.render();
     }
@@ -1193,8 +1301,24 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         self.resize_top_or_bottom_line(num_tabs + 1);
 
-        let rich_text_id = self.sugarloaf.create_rich_text();
+        // Create rich text with initial position accounting for island
+        let current_grid = self.context_manager.current_grid();
+        let (_context, margin) = current_grid.current_context_with_computed_dimension();
+        let padding_x = margin.x;
+        let padding_y_top = self.renderer.padding_y[0]
+            + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
+        let rich_text_id = next_rich_text_id();
+        let _ = self.sugarloaf.text(Some(rich_text_id));
+        self.sugarloaf
+            .set_position(rich_text_id, padding_x, padding_y_top);
+        let old_index = self.context_manager.current_index();
         self.context_manager.add_context(redirect, rich_text_id);
+        let new_index = self.context_manager.current_index();
+        self.context_manager.switch_context_visibility(
+            &mut self.sugarloaf,
+            old_index,
+            new_index,
+        );
 
         self.cancel_search();
         self.render();
@@ -1203,7 +1327,8 @@ impl Screen<'_> {
     pub fn close_split_or_tab(&mut self) {
         if self.context_manager.current_grid_len() > 1 {
             self.clear_selection();
-            self.context_manager.remove_current_grid();
+            self.context_manager
+                .remove_current_grid(&mut self.sugarloaf);
             self.render();
         } else {
             self.close_tab();
@@ -1212,7 +1337,8 @@ impl Screen<'_> {
 
     pub fn close_tab(&mut self) {
         self.clear_selection();
-        self.context_manager.close_current_context();
+        self.context_manager
+            .close_current_context(&mut self.sugarloaf);
 
         self.cancel_search();
         if self.ctx().len() <= 1 {
@@ -1228,14 +1354,14 @@ impl Screen<'_> {
         let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[0],
+            &self.renderer.navigation,
+            self.renderer.padding_y[0],
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
-            &self.renderer.navigation.navigation,
-            self.renderer.navigation.padding_y[1],
+            &self.renderer.navigation,
+            self.renderer.padding_y[1],
             num_tabs,
             self.search_active(),
         );
@@ -1243,16 +1369,18 @@ impl Screen<'_> {
         if previous_margin.top_y != padding_y_top
             || previous_margin.bottom_y != padding_y_bottom
         {
-            let layout = self
+            if let Some(layout) = self
                 .sugarloaf
-                .rich_text_layout(&self.context_manager.current().rich_text_id);
-            let s = self.sugarloaf.style_mut();
-            s.font_size = layout.font_size;
-            s.line_height = layout.line_height;
+                .get_text_layout(&self.context_manager.current().rich_text_id)
+            {
+                let s = self.sugarloaf.style_mut();
+                s.font_size = layout.font_size;
+                s.line_height = layout.line_height;
 
-            let d = self.context_manager.current_grid_mut();
-            d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
-            self.resize_all_contexts();
+                let d = self.context_manager.current_grid_mut();
+                d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
+                self.resize_all_contexts();
+            }
         }
     }
 
@@ -1868,9 +1996,13 @@ impl Screen<'_> {
     pub fn update_selection_scrolling(&mut self, mouse_y: f64) {
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
-        let sugarloaf_layout = self
+        let sugarloaf_layout = match self
             .sugarloaf
-            .rich_text_layout(&current_context.rich_text_id);
+            .get_text_layout(&current_context.rich_text_id)
+        {
+            Some(l) => l,
+            None => return,
+        };
         let scale_factor = layout.dimension.scale;
         let min_height = (MIN_SELECTION_SCROLLING_HEIGHT * scale_factor) as i32;
         let step = (SELECTION_SCROLLING_STEP * scale_factor) as f64;
@@ -1939,6 +2071,78 @@ impl Screen<'_> {
             .renderable_content
             .selection_range
             .is_none()
+    }
+
+    // return true if the click was handled by the island
+    #[inline]
+    pub fn handle_island_click(&mut self, window: &rio_window::window::Window) -> bool {
+        // Only handle if navigation is enabled
+        if !self.renderer.navigation.is_enabled() {
+            return false;
+        }
+
+        let mouse_x = self.mouse.x;
+        let mouse_y = self.mouse.y;
+
+        use crate::renderer::island::ISLAND_HEIGHT;
+        let scale_factor = self.sugarloaf.scale_factor();
+        let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
+
+        // Check if click is within island height
+        if mouse_y > island_height_px {
+            return false;
+        }
+
+        // Handle double-click: toggle window maximization
+        if let ClickState::DoubleClick = self.mouse.click_state {
+            // Toggle maximization state
+            let is_maximized = window.is_maximized();
+            window.set_maximized(!is_maximized);
+            return true; // Consume the double-click
+        }
+
+        // Calculate tab width and left margin
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let num_tabs = self.context_manager.len();
+
+        #[cfg(target_os = "macos")]
+        let left_margin = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let margin_right = 8.0;
+        let available_width = (window_width / scale_factor) - margin_right - left_margin;
+        let tab_width = available_width / num_tabs as f32;
+
+        // Convert mouse X to unscaled coordinates
+        let mouse_x_unscaled = mouse_x as f32 / scale_factor;
+
+        // Check if click is in the left margin (traffic light area)
+        if mouse_x_unscaled < left_margin {
+            return true; // Consume click but don't switch tabs
+        }
+
+        // Calculate which tab was clicked
+        let x_in_tabs = mouse_x_unscaled - left_margin;
+        let clicked_tab = (x_in_tabs / tab_width) as usize;
+
+        // Only switch if it's a valid tab index and not already current
+        if clicked_tab < num_tabs && clicked_tab != self.context_manager.current_index() {
+            self.cancel_search();
+            self.clear_selection();
+            let old_index = self.context_manager.current_index();
+            self.context_manager.set_current(clicked_tab);
+            let new_index = self.context_manager.current_index();
+            self.context_manager.switch_context_visibility(
+                &mut self.sugarloaf,
+                old_index,
+                new_index,
+            );
+
+            self.render();
+        }
+
+        true // Click was in island area, consumed
     }
 
     #[inline]
@@ -2333,9 +2537,13 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        let layout = self
+        let layout = match self
             .sugarloaf
-            .rich_text_layout(&self.context_manager.current().rich_text_id);
+            .get_text_layout(&self.context_manager.current().rich_text_id)
+        {
+            Some(l) => l,
+            None => return,
+        };
         let width = layout.dimensions.width as f64;
         let height = layout.dimensions.height as f64;
         let mode = self.get_mode();
@@ -2536,7 +2744,7 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
         }
 
@@ -2546,6 +2754,19 @@ impl Screen<'_> {
             &mut self.context_manager,
             &self.search_state.focused_match,
         );
+
+        // Mark as dirty if we need continuous rendering (e.g., indeterminate progress bar)
+        if self.renderer.needs_redraw() {
+            self.context_manager
+                .current_mut()
+                .renderable_content
+                .pending_update
+                .set_ui_damage(crate::context::renderable::UIDamage {
+                    island: true,
+                    search: false,
+                });
+        }
+
         // In case the configuration of blinking cursor is enabled
         // and the terminal also have instructions of blinking enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
@@ -2782,13 +3003,13 @@ impl Screen<'_> {
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Partial(damaged_lines));
+                    .set_terminal_damage(TerminalDamage::Partial(damaged_lines));
             } else {
                 // Force full damage if no specific lines (for hint highlights)
                 current
                     .renderable_content
                     .pending_update
-                    .set_ui_damage(TerminalDamage::Full);
+                    .set_terminal_damage(TerminalDamage::Full);
             }
         } else {
             // Clear hint state
@@ -2806,7 +3027,7 @@ impl Screen<'_> {
             current
                 .renderable_content
                 .pending_update
-                .set_ui_damage(TerminalDamage::Full);
+                .set_terminal_damage(TerminalDamage::Full);
         }
     }
 
