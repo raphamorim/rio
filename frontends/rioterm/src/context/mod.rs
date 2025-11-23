@@ -706,6 +706,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     self.titles.set_key_val(i, content, None);
                 }
             }
+            //println!("MITIGATION");
 
             self.titles.set_key(id);
         }
