@@ -59,6 +59,25 @@ impl Application<'_> {
             rio_backend::config::config_dir_path(),
             event_proxy.clone(),
         );
+
+        // Start monitoring system theme changes on Linux
+        #[cfg(all(
+            unix,
+            not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))
+        ))]
+        {
+            let theme_event_proxy = event_proxy.clone();
+            let _ = rio_window::platform::linux::theme_monitor::start_theme_monitor(
+                move || {
+                    // Request config update to apply the new theme
+                    theme_event_proxy.send_event(
+                        RioEventType::Rio(RioEvent::UpdateConfig),
+                        rio_backend::event::WindowId::from(0),
+                    );
+                },
+            );
+        }
+
         let scheduler = Scheduler::new(proxy);
         event_loop.listen_device_events(DeviceEvents::Never);
 
@@ -351,6 +370,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::PrepareUpdateConfig) => {
+                eprintln!(
+                    "[Rio] PrepareUpdateConfig event received for window: {:?}",
+                    window_id
+                );
                 let timer_id = TimerId::new(Topic::UpdateConfig, 0);
                 let event = EventPayload::new(
                     RioEventType::Rio(RioEvent::UpdateConfig),
@@ -358,6 +381,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 );
 
                 if !self.scheduler.scheduled(timer_id) {
+                    eprintln!("[Rio] Scheduling UpdateConfig event");
                     self.scheduler.schedule(
                         event,
                         Duration::from_millis(250),
@@ -396,7 +420,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 for (_id, route) in self.router.routes.iter_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
+                        // On Linux, read cached theme (non-blocking)
+                        #[cfg(all(
+                            unix,
+                            not(any(
+                                target_os = "redox",
+                                target_family = "wasm",
+                                target_os = "macos"
+                            ))
+                        ))]
+                        let system_theme =
+                            rio_window::platform::linux::theme_monitor::get_cached_theme(
+                            );
+
+                        // On other platforms, use window.theme()
+                        #[cfg(not(all(
+                            unix,
+                            not(any(
+                                target_os = "redox",
+                                target_family = "wasm",
+                                target_os = "macos"
+                            ))
+                        )))]
                         let system_theme = route.window.winit_window.theme();
+
                         update_colors_based_on_theme(&mut self.config, system_theme);
                         has_checked_adaptive_colors = true;
                     }
