@@ -327,7 +327,7 @@ impl Island {
                 sugarloaf.rect(
                     None,
                     x_position,
-                    ISLAND_HEIGHT - 0.5,
+                    ISLAND_HEIGHT - 1.0,
                     tab_width,
                     0.5, // 1px height
                     self.border_color,
@@ -363,7 +363,7 @@ impl Island {
         }
 
         // Default fallback - show tab number
-        format!("Tab {}", tab_index + 1)
+        String::from("~")
     }
 }
 
