@@ -103,6 +103,7 @@ brevity.
 | `OSC 12`  | IMPLEMENTED |                                                |
 | `OSC 50`  | IMPLEMENTED | Only `CursorShape` is supported                |
 | `OSC 52`  | IMPLEMENTED | Only Clipboard and primary selection supported |
+| `OSC 53`  | PROPOSED    | [Terminal text selection protocol](/docs/features/osc-53-selection-protocol) |
 | `OSC 104` | IMPLEMENTED |                                                |
 | `OSC 110` | IMPLEMENTED |                                                |
 | `OSC 111` | IMPLEMENTED |                                                |
