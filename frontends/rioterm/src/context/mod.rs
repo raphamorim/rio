@@ -1,4 +1,5 @@
 pub mod grid;
+pub mod layout;
 pub mod renderable;
 pub mod title;
 
@@ -972,7 +973,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
-            padding_panel: config.padding_panel.left,
+            padding_panel: config.panel.padding.left,
             title: config.title,
             keyboard: config.keyboard,
         };

@@ -26,13 +26,8 @@ pub fn default_title_content() -> String {
 }
 
 #[inline]
-pub fn default_padding() -> crate::config::padding::Padding {
-    crate::config::padding::Padding::all(10.0)
-}
-
-#[inline]
-pub fn default_padding_panel() -> crate::config::padding::Padding {
-    crate::config::padding::Padding::all(5.0)
+pub fn default_padding() -> crate::config::layout::Padding {
+    crate::config::layout::Padding::all(10.0)
 }
 
 #[inline]
@@ -171,7 +166,7 @@ pub fn default_config_file_content() -> String {
 
 # Padding
 #
-# Define padding using CSS-like syntax
+# Define outer padding around the window/tab area using CSS-like syntax
 # [all] - Apply same padding to all sides
 # [top/bottom, left/right] - Apply vertical and horizontal padding
 # [top, right, bottom, left] - Apply individual padding to each side
@@ -182,13 +177,25 @@ pub fn default_config_file_content() -> String {
 # padding = [10, 5]        # 10px top/bottom, 5px left/right
 # padding = [10, 5, 15, 20] # 10px top, 5px right, 15px bottom, 20px left
 
-# Padding Panel
+# Panel Configuration
 #
-# Define padding for split panels (spacing between panels)
-# (default is [5])
+# Configure layout for split panels (when using vertical/horizontal splits)
+# 
+# panel.padding - Inner padding inside each panel (around terminal content)
+# panel.row-gap - Vertical spacing between panels when split down
+# panel.column-gap - Horizontal spacing between panels when split right
+#
+# Defaults:
+# [panel]
+# padding = [5]
+# row-gap = 0
+# column-gap = 0
 #
 # Example:
-# padding-panel = [5]
+# [panel]
+# padding = [5]       # Inner padding inside panels
+# row-gap = 10        # Vertical gap between panels
+# column-gap = 15     # Horizontal gap between panels
 
 # Option as Alt
 #
