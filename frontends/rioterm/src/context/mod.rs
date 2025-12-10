@@ -1,5 +1,4 @@
 pub mod grid;
-pub mod layout;
 pub mod renderable;
 pub mod title;
 
@@ -130,6 +129,7 @@ pub struct ContextManagerConfig {
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
     pub padding_panel: f32,
+    pub panel: rio_backend::config::layout::Panel,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
 }
@@ -397,6 +397,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 margin,
                 ctx_config.split_color,
                 ctx_config.padding_panel,
+                ctx_config.panel,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -445,6 +446,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 Delta::<f32>::default(),
                 config.split_color,
                 config.padding_panel,
+                config.panel,
             )],
             capacity,
             event_proxy,
@@ -974,6 +976,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             padding_panel: config.panel.padding.left,
+            panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,
         };
@@ -1069,6 +1072,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         previous_margin,
                         self.config.split_color,
                         self.config.padding_panel,
+                        self.config.panel,
                     ));
                     if redirect {
                         self.current_index = last_index;

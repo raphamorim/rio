@@ -3,7 +3,9 @@ use crate::mouse::Mouse;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
+use taffy::{AvailableSpace, Display, style_helpers::length, Style, NodeId, TaffyTree, TaffyError, geometry};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -60,6 +62,24 @@ pub struct Delta<T: Default> {
     pub bottom_y: T,
 }
 
+/// Border configuration for split panels
+#[derive(Debug, Clone, Copy)]
+pub struct BorderConfig {
+    pub width: f32,
+    pub color: [f32; 4], // RGBA
+    pub radius: f32,     // Corner radius (0.0 = sharp)
+}
+
+impl Default for BorderConfig {
+    fn default() -> Self {
+        Self {
+            width: 2.0,
+            color: [0.8, 0.8, 0.8, 1.0], // Light gray
+            radius: 0.0,
+        }
+    }
+}
+
 pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
@@ -70,13 +90,18 @@ pub struct ContextGrid<T: EventListener> {
     scaled_padding: f32,
     inner: HashMap<usize, ContextGridItem<T>>,
     pub root: Option<usize>,
+    // Panel configuration
+    panel_config: rio_backend::config::layout::Panel,
+    // Taffy layout (embedded from TaffyLayoutManager)
+    taffy: TaffyTree<()>,
+    taffy_root_node: NodeId,
+    taffy_node_to_context: FxHashMap<NodeId, usize>,
+    taffy_context_to_node: FxHashMap<usize, NodeId>,
+    border_config: BorderConfig,
 }
 
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
-    right: Option<usize>,
-    down: Option<usize>,
-    parent: Option<usize>,
     rich_text_object: Object,
 }
 
@@ -95,9 +120,6 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 
         Self {
             val: context,
-            right: None,
-            down: None,
-            parent: None,
             rich_text_object,
         }
     }
@@ -105,7 +127,6 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
-    #[allow(unused)]
     pub fn context(&self) -> &Context<T> {
         &self.val
     }
@@ -138,6 +159,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         margin: Delta<f32>,
         border_color: [f32; 4],
         padding_panel: f32,
+        panel_config: rio_backend::config::layout::Panel,
     ) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
@@ -146,6 +168,55 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut inner = HashMap::new();
         let root_key = context.route_id;
         inner.insert(context.route_id, ContextGridItem::new(context));
+
+        // Initialize Taffy layout
+        let mut taffy = TaffyTree::new();
+
+        // Create root container with padding and gaps
+        let padding = [margin.top_y, 0.0, margin.bottom_y, margin.x];
+        let root_style = Style {
+            display: Display::Flex,
+            padding: geometry::Rect {
+                left: length(padding[3]),
+                right: length(padding[1]),
+                top: length(padding[0]),
+                bottom: length(padding[2]),
+            },
+            gap: geometry::Size {
+                width: length(panel_config.column_gap),
+                height: length(panel_config.row_gap),
+            },
+            size: geometry::Size {
+                width: length(width),
+                height: length(height),
+            },
+            ..Default::default()
+        };
+
+        let taffy_root_node = taffy.new_leaf(root_style).expect("Failed to create root node");
+
+        // Create initial panel node
+        let panel_style = Style {
+            display: Display::Flex,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            ..Default::default()
+        };
+
+        let panel_node = taffy.new_leaf(panel_style).expect("Failed to create panel node");
+        taffy.add_child(taffy_root_node, panel_node).expect("Failed to add child");
+
+        let mut taffy_node_to_context = FxHashMap::default();
+        let mut taffy_context_to_node = FxHashMap::default();
+        taffy_node_to_context.insert(panel_node, root_key);
+        taffy_context_to_node.insert(root_key, panel_node);
+
+        let border_config = BorderConfig {
+            width: 2.0,
+            color: border_color,
+            radius: 0.0,
+        };
+
         let mut grid = Self {
             inner,
             current: root_key,
@@ -156,6 +227,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             padding_panel,
             scaled_padding,
             root: Some(root_key),
+            panel_config,
+            taffy,
+            taffy_root_node,
+            taffy_node_to_context,
+            taffy_context_to_node,
+            border_config,
         };
         grid.calculate_positions_for_affected_nodes(&[root_key]);
         grid
@@ -172,13 +249,342 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub fn scale(&self) -> f32 {
         self.scaled_padding / self.padding_panel
     }
 
+    /// Get panel borders from Taffy layout
+    // Taffy Layout Methods (from TaffyLayoutManager)
+
+    /// Get the number of panels in the layout
+    pub fn panel_count(&self) -> usize {
+        self.taffy_node_to_context.len()
+    }
+
+    /// Check if borders should be drawn (only when 2+ panels)
+    pub fn should_draw_borders(&self) -> bool {
+        self.panel_count() > 1
+    }
+
+    /// Update the Taffy root container size (e.g., on window resize)
+    fn update_taffy_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
+        let mut style = self.taffy.style(self.taffy_root_node)?.clone();
+        style.size = geometry::Size {
+            width: length(width),
+            height: length(height),
+        };
+        self.taffy.set_style(self.taffy_root_node, style)?;
+        Ok(())
+    }
+
+    /// Compute the Taffy layout and return positions/sizes for all contexts
+    fn compute_taffy_layout(&mut self) -> Result<FxHashMap<usize, (f32, f32, f32, f32)>, TaffyError> {
+        let available = geometry::Size {
+            width: AvailableSpace::MaxContent,
+            height: AvailableSpace::MaxContent,
+        };
+        self.taffy.compute_layout(self.taffy_root_node, available)?;
+
+        let mut layouts = FxHashMap::default();
+        for (&node, &context_id) in &self.taffy_node_to_context {
+            let layout = self.taffy.layout(node)?;
+            layouts.insert(
+                context_id,
+                (
+                    layout.location.x,
+                    layout.location.y,
+                    layout.size.width,
+                    layout.size.height,
+                ),
+            );
+        }
+
+        Ok(layouts)
+    }
+
+    /// Find which context contains the given point (for mouse interaction)
+    pub fn find_context_at_position(&self, x: f32, y: f32) -> Option<usize> {
+        for (&node, &context_id) in &self.taffy_node_to_context {
+            if let Ok(layout) = self.taffy.layout(node) {
+                let left = layout.location.x;
+                let top = layout.location.y;
+                let right = left + layout.size.width;
+                let bottom = top + layout.size.height;
+
+                if x >= left && x < right && y >= top && y < bottom {
+                    return Some(context_id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Create border rectangles for all panels (only if 2+ panels exist)
+    pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
+        use rio_backend::sugarloaf::{Object, Rect};
+
+        if !self.should_draw_borders() {
+            return vec![];
+        }
+
+        let mut borders = Vec::new();
+        let border_width = self.border_config.width;
+        let color = self.border_config.color;
+
+        for &node in self.taffy_node_to_context.keys() {
+            if let Ok(layout) = self.taffy.layout(node) {
+                let x = layout.location.x;
+                let y = layout.location.y;
+                let width = layout.size.width;
+                let height = layout.size.height;
+
+                // Top border
+                borders.push(Object::Rect(Rect::new(x, y, width, border_width, color)));
+
+                // Right border
+                borders.push(Object::Rect(Rect::new(
+                    x + width - border_width,
+                    y,
+                    border_width,
+                    height,
+                    color,
+                )));
+
+                // Bottom border
+                borders.push(Object::Rect(Rect::new(
+                    x,
+                    y + height - border_width,
+                    width,
+                    border_width,
+                    color,
+                )));
+
+                // Left border
+                borders.push(Object::Rect(Rect::new(x, y, border_width, height, color)));
+            }
+        }
+
+        borders
+    }
+
+    /// Split the current panel horizontally (right) - Taffy implementation
+    fn taffy_split_right(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
+        // Set root to row direction (horizontal split)
+        let mut root_style = self.taffy.style(self.taffy_root_node)?.clone();
+        root_style.flex_direction = taffy::FlexDirection::Row;
+        self.taffy.set_style(self.taffy_root_node, root_style)?;
+
+        // Create new panel node
+        let new_panel_style = Style {
+            display: Display::Flex,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            ..Default::default()
+        };
+        let new_node = self.taffy.new_leaf(new_panel_style)?;
+
+        // Add to root container (gap will handle spacing)
+        self.taffy.add_child(self.taffy_root_node, new_node)?;
+
+        // Update mappings
+        self.taffy_node_to_context.insert(new_node, new_context_id);
+        self.taffy_context_to_node.insert(new_context_id, new_node);
+
+        Ok(())
+    }
+
+    /// Split the current panel vertically (down) - Taffy implementation
+    fn taffy_split_down(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
+        // Set root to column direction (vertical split)
+        let mut root_style = self.taffy.style(self.taffy_root_node)?.clone();
+        root_style.flex_direction = taffy::FlexDirection::Column;
+        self.taffy.set_style(self.taffy_root_node, root_style)?;
+
+        // Create new panel node
+        let new_panel_style = Style {
+            display: Display::Flex,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            ..Default::default()
+        };
+        let new_node = self.taffy.new_leaf(new_panel_style)?;
+
+        // Add to root container (gap will handle spacing)
+        self.taffy.add_child(self.taffy_root_node, new_node)?;
+
+        // Update mappings
+        self.taffy_node_to_context.insert(new_node, new_context_id);
+        self.taffy_context_to_node.insert(new_context_id, new_node);
+
+        Ok(())
+    }
+
+    /// Set explicit size (flex_basis) for a panel node
+    /// If width is Some, sets flex_basis for width (horizontal layouts)
+    /// If height is Some, sets flex_basis for height (vertical layouts)
+    fn set_panel_size(&mut self, node: NodeId, width: Option<f32>, height: Option<f32>) -> Result<(), TaffyError> {
+        let mut style = self.taffy.style(node)?.clone();
+
+        if let Some(w) = width {
+            style.flex_basis = length(w);
+            style.flex_grow = 0.0;
+            style.flex_shrink = 0.0;
+        } else if let Some(h) = height {
+            style.flex_basis = length(h);
+            style.flex_grow = 0.0;
+            style.flex_shrink = 0.0;
+        }
+
+        self.taffy.set_style(node, style)?;
+        Ok(())
+    }
+
+    /// Find two horizontally adjacent panels (left panel to the left of right panel)
+    /// Returns (left_context_id, right_context_id) if found
+    fn find_horizontal_neighbors(&self, context_id: usize) -> Option<(usize, usize)> {
+        let current_node = self.taffy_context_to_node.get(&context_id)?;
+        let current_layout = self.taffy.layout(*current_node).ok()?;
+
+        let gap = self.panel_config.column_gap;
+
+        // Find panel directly to the left (overlapping Y range, touching on X axis)
+        for (&node, &other_id) in &self.taffy_node_to_context {
+            if other_id == context_id { continue; }
+
+            let other_layout = self.taffy.layout(node).ok()?;
+
+            // Check if vertically overlapping (Y ranges overlap)
+            let current_y_end = current_layout.location.y + current_layout.size.height;
+            let other_y_end = other_layout.location.y + other_layout.size.height;
+            let y_overlap = current_layout.location.y < other_y_end && other_layout.location.y < current_y_end;
+
+            if y_overlap {
+                // Check if other panel is directly to the left (touching with gap)
+                let other_right = other_layout.location.x + other_layout.size.width;
+                let distance = current_layout.location.x - other_right;
+
+                if distance >= 0.0 && distance <= gap + 1.0 {
+                    return Some((other_id, context_id));
+                }
+            }
+        }
+
+        // Try finding panel to the right
+        let current_right = current_layout.location.x + current_layout.size.width;
+        for (&node, &other_id) in &self.taffy_node_to_context {
+            if other_id == context_id { continue; }
+
+            let other_layout = self.taffy.layout(node).ok()?;
+
+            // Check if vertically overlapping
+            let current_y_end = current_layout.location.y + current_layout.size.height;
+            let other_y_end = other_layout.location.y + other_layout.size.height;
+            let y_overlap = current_layout.location.y < other_y_end && other_layout.location.y < current_y_end;
+
+            if y_overlap {
+                let distance = other_layout.location.x - current_right;
+
+                if distance >= 0.0 && distance <= gap + 1.0 {
+                    return Some((context_id, other_id));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Find two vertically adjacent panels (top panel above bottom panel)
+    /// Returns (top_context_id, bottom_context_id) if found
+    fn find_vertical_neighbors(&self, context_id: usize) -> Option<(usize, usize)> {
+        let current_node = self.taffy_context_to_node.get(&context_id)?;
+        let current_layout = self.taffy.layout(*current_node).ok()?;
+
+        let gap = self.panel_config.row_gap;
+
+        // Find panel directly above (overlapping X range, touching on Y axis)
+        for (&node, &other_id) in &self.taffy_node_to_context {
+            if other_id == context_id { continue; }
+
+            let other_layout = self.taffy.layout(node).ok()?;
+
+            // Check if horizontally overlapping (X ranges overlap)
+            let current_x_end = current_layout.location.x + current_layout.size.width;
+            let other_x_end = other_layout.location.x + other_layout.size.width;
+            let x_overlap = current_layout.location.x < other_x_end && other_layout.location.x < current_x_end;
+
+            if x_overlap {
+                // Check if other panel is directly above (touching with gap)
+                let other_bottom = other_layout.location.y + other_layout.size.height;
+                let distance = current_layout.location.y - other_bottom;
+
+                if distance >= 0.0 && distance <= gap + 1.0 {
+                    return Some((other_id, context_id));
+                }
+            }
+        }
+
+        // Try finding panel below
+        let current_bottom = current_layout.location.y + current_layout.size.height;
+        for (&node, &other_id) in &self.taffy_node_to_context {
+            if other_id == context_id { continue; }
+
+            let other_layout = self.taffy.layout(node).ok()?;
+
+            // Check if horizontally overlapping
+            let current_x_end = current_layout.location.x + current_layout.size.width;
+            let other_x_end = other_layout.location.x + other_layout.size.width;
+            let x_overlap = current_layout.location.x < other_x_end && other_layout.location.x < current_x_end;
+
+            if x_overlap {
+                let distance = other_layout.location.y - current_bottom;
+
+                if distance >= 0.0 && distance <= gap + 1.0 {
+                    return Some((context_id, other_id));
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Apply Taffy layout to all contexts after changes
+    fn apply_taffy_layout(&mut self) -> bool {
+        if let Ok(layouts) = self.compute_taffy_layout() {
+            for (&context_id, &(x, y, width, height)) in layouts.iter() {
+                if let Some(item) = self.inner.get_mut(&context_id) {
+                    item.val.dimension.update_width(width);
+                    item.val.dimension.update_height(height);
+
+                    // Update terminal size
+                    let mut terminal = item.val.terminal.lock();
+                    terminal.resize::<ContextDimension>(item.val.dimension);
+                    drop(terminal);
+
+                    let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+                    let _ = item.val.messenger.send_resize(winsize);
+
+                    // Update rich text position
+                    item.rich_text_object = rio_backend::sugarloaf::Object::RichText(
+                        rio_backend::sugarloaf::RichText {
+                            id: item.val.rich_text_id,
+                            lines: None,
+                            render_data: rio_backend::sugarloaf::RichTextRenderData {
+                                position: [x, y],
+                                should_repaint: false,
+                                should_remove: false,
+                                hidden: false,
+                            },
+                        }
+                    );
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     #[inline]
-    #[allow(dead_code)]
     pub fn scaled_padding(&self) -> f32 {
         self.scaled_padding
     }
@@ -189,53 +595,37 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    #[allow(unused)]
     pub fn contexts(&mut self) -> &HashMap<usize, ContextGridItem<T>> {
         &self.inner
     }
 
     /// Get all keys in the order they appear in the grid (depth-first traversal)
+    /// Get contexts ordered by visual position (top-to-bottom, left-to-right)
+    /// Uses Taffy layout positions for natural ordering
     pub fn get_ordered_keys(&self) -> Vec<usize> {
-        let mut keys = Vec::new();
-        if let Some(root) = self.root {
-            self.collect_keys_recursive(root, &mut keys);
+        let mut panels: Vec<(usize, f32, f32)> = Vec::new();
+
+        // Collect all panels with their positions from Taffy
+        for (&context_id, &node) in &self.taffy_context_to_node {
+            if let Ok(layout) = self.taffy.layout(node) {
+                panels.push((context_id, layout.location.y, layout.location.x));
+            }
         }
-        keys
+
+        // Sort by Y first (top to bottom), then X (left to right)
+        panels.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        panels.into_iter().map(|(id, _, _)| id).collect()
     }
 
     /// Get the index of the current key in the ordered list
-    #[allow(dead_code)]
     pub fn current_index(&self) -> usize {
         let keys = self.get_ordered_keys();
         keys.iter().position(|&k| k == self.current).unwrap_or(0)
-    }
-
-    /// Get contexts in the order they appear in the grid
-    #[allow(dead_code)]
-    pub fn contexts_ordered(&self) -> Vec<&ContextGridItem<T>> {
-        let keys = self.get_ordered_keys();
-        keys.iter()
-            .filter_map(|&key| self.inner.get(&key))
-            .collect()
-    }
-
-    /// Get the index of a key in the ordered list
-    #[allow(dead_code)]
-    pub fn key_to_index(&self, key: usize) -> Option<usize> {
-        let keys = self.get_ordered_keys();
-        keys.iter().position(|&k| k == key)
-    }
-
-    fn collect_keys_recursive(&self, key: usize, keys: &mut Vec<usize>) {
-        if let Some(item) = self.inner.get(&key) {
-            keys.push(key);
-            if let Some(right_key) = item.right {
-                self.collect_keys_recursive(right_key, keys);
-            }
-            if let Some(down_key) = item.down {
-                self.collect_keys_recursive(down_key, keys);
-            }
-        }
     }
 
     #[inline]
@@ -304,12 +694,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
         false
-    }
-
-    #[inline]
-    #[allow(unused)]
-    pub fn current_key(&self) -> usize {
-        self.current
     }
 
     #[inline]
@@ -444,39 +828,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
+    /// Select panel based on mouse position using Taffy layout
     pub fn select_current_based_on_mouse(&mut self, mouse: &Mouse) -> bool {
-        let len = self.inner.len();
-        if len <= 1 {
+        if self.inner.len() <= 1 {
             return false;
         }
 
-        let objects = self.objects();
-        let mut select_new_current = None;
-        for obj in objects {
-            if let Object::RichText(rich_text_obj) = obj {
-                if let Some(key) = self.find_by_rich_text_id(rich_text_obj.id) {
-                    if let Some(item) = self.inner.get(&key) {
-                        let scale_factor = self.scaled_padding / self.padding_panel;
-                        let scaled_position_x = rich_text_obj.render_data.position[0] * scale_factor;
-                        let scaled_position_y = rich_text_obj.render_data.position[1] * scale_factor;
-                        if mouse.x >= scaled_position_x as usize
-                            && mouse.y >= scaled_position_y as usize
-                            && mouse.x
-                                <= (scaled_position_x + item.val.dimension.width) as usize
-                            && mouse.y
-                                <= (scaled_position_y + item.val.dimension.height)
-                                    as usize
-                        {
-                            select_new_current = Some(key);
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        // Convert mouse coordinates to unscaled coordinates
+        let scale_factor = self.scaled_padding / self.padding_panel;
+        let x = mouse.x as f32 / scale_factor;
+        let y = mouse.y as f32 / scale_factor;
 
-        if let Some(new_current) = select_new_current {
-            self.current = new_current;
+        // Use Taffy's find_context_at_position to find the panel
+        if let Some(context_id) = self.find_context_at_position(x, y) {
+            self.current = context_id;
             return true;
         }
 
@@ -509,60 +874,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    /// Collect rich text objects from all panels
+    /// Note: Borders are handled separately by get_panel_borders()
     pub fn plot_objects(&self, objects: &mut Vec<Object>) {
         if self.inner.is_empty() {
             return;
         }
-        if let Some(root) = self.root {
-            self.plot_objects_recursive(objects, root);
-        }
-    }
 
-    fn plot_objects_recursive(&self, objects: &mut Vec<Object>, key: usize) {
-        if let Some(item) = self.inner.get(&key) {
-            // Add pre-computed rich text object
+        // Simply collect all rich text objects
+        for item in self.inner.values() {
             objects.push(item.rich_text_object.clone());
-
-            let item_pos = item.position();
-
-            // Always create horizontal border
-            objects.push(create_border(
-                self.border_color,
-                [
-                    item_pos[0],
-                    item_pos[1]
-                        + (item.val.dimension.height
-                            / item.val.dimension.dimension.scale),
-                ],
-                [
-                    item.val.dimension.width / item.val.dimension.dimension.scale,
-                    1.,
-                ],
-            ));
-
-            // Recurse down if child exists
-            if let Some(down_key) = item.down {
-                self.plot_objects_recursive(objects, down_key);
-            }
-
-            // Always create vertical border
-            objects.push(create_border(
-                self.border_color,
-                [
-                    item_pos[0]
-                        + (item.val.dimension.width / item.val.dimension.dimension.scale),
-                    item_pos[1],
-                ],
-                [
-                    1.,
-                    item.val.dimension.height / item.val.dimension.dimension.scale,
-                ],
-            ));
-
-            // Recurse right if child exists
-            if let Some(right_key) = item.right {
-                self.plot_objects_recursive(objects, right_key);
-            }
         }
     }
 
@@ -596,95 +917,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     self.padding_panel * first_context.val.dimension.dimension.scale;
             }
         }
-        self.calculate_positions();
+
+        // Apply Taffy layout (only with splits)
+        if self.panel_count() > 1 {
+            if let Ok(layouts) = self.compute_taffy_layout() {
+                // Apply Taffy layout to all contexts
+                for (&context_id, &(x, y, width, height)) in layouts.iter() {
+                    if let Some(item) = self.inner.get_mut(&context_id) {
+                        item.val.dimension.update_width(width);
+                        item.val.dimension.update_height(height);
+                        // Update rich text position
+                        item.rich_text_object = rio_backend::sugarloaf::Object::RichText(
+                            rio_backend::sugarloaf::RichText {
+                                id: item.val.rich_text_id,
+                                lines: None,
+                                render_data: rio_backend::sugarloaf::RichTextRenderData {
+                                    position: [x, y],
+                                    should_repaint: false,
+                                    should_remove: false,
+                                    hidden: false,
+                                },
+                            }
+                        );
+                    }
+                }
+            }
+        } else {
+            // Single panel - use traditional layout
+            self.calculate_positions();
+        }
     }
 
+    /// Resize grid - always uses Taffy for consistent layout
     pub fn resize(&mut self, new_width: f32, new_height: f32) {
-        let width_difference = new_width - self.width;
-        let height_difference = new_height - self.height;
         self.width = new_width;
         self.height = new_height;
 
-        // Create a map to store resize deltas for each key
-        let mut resize_deltas: std::collections::HashMap<usize, (f32, f32)> =
-            std::collections::HashMap::new();
+        // Update Taffy size and recompute layout
+        let _ = self.update_taffy_size(new_width, new_height);
 
-        if let Some(root) = self.root {
-            self.resize_context_slotmap(
-                &mut resize_deltas,
-                root,
-                width_difference,
-                height_difference,
-            );
-        }
-
-        // Apply the resize deltas
-        for (key, (width_delta, height_delta)) in resize_deltas {
-            if let Some(context) = self.inner.get_mut(&key) {
-                let current_width = context.val.dimension.width;
-                context
-                    .val
-                    .dimension
-                    .update_width(current_width + width_delta);
-
-                let current_height = context.val.dimension.height;
-                context
-                    .val
-                    .dimension
-                    .update_height(current_height + height_delta);
-
-                let mut terminal = context.val.terminal.lock();
-                terminal.resize::<ContextDimension>(context.val.dimension);
-                drop(terminal);
-                let winsize =
-                    crate::renderer::utils::terminal_dimensions(&context.val.dimension);
-                let _ = context.val.messenger.send_resize(winsize);
-            }
-        }
-
-        // All nodes are affected by resize
-        let all_keys: Vec<usize> = self.inner.keys().cloned().collect();
-        self.calculate_positions_for_affected_nodes(&all_keys);
-    }
-
-    // Updated resize_context to work with slotmap
-    fn resize_context_slotmap(
-        &self,
-        resize_deltas: &mut std::collections::HashMap<usize, (f32, f32)>,
-        key: usize,
-        available_width: f32,
-        available_height: f32,
-    ) -> (f32, f32) {
-        if let Some(item) = self.inner.get(&key) {
-            let mut current_available_width = available_width;
-            let mut current_available_height = available_height;
-
-            if let Some(right_key) = item.right {
-                let (new_available_width, _) = self.resize_context_slotmap(
-                    resize_deltas,
-                    right_key,
-                    available_width / 2.,
-                    available_height,
-                );
-                current_available_width = new_available_width;
-            }
-
-            if let Some(down_key) = item.down {
-                let (_, new_available_height) = self.resize_context_slotmap(
-                    resize_deltas,
-                    down_key,
-                    available_width,
-                    available_height / 2.,
-                );
-                current_available_height = new_available_height;
-            }
-
-            resize_deltas
-                .insert(key, (current_available_width, current_available_height));
-            return (current_available_width, current_available_height);
-        }
-
-        (available_width, available_height)
+        // Apply layout - works for both single and multi-panel
+        self.apply_taffy_layout();
     }
 
     fn request_resize(&mut self, key: usize) {
@@ -699,621 +972,136 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Calculate and update positions for all grid items
+    /// Calculate positions using Taffy layout
+    /// For multi-panel layouts, Taffy already computed positions via apply_taffy_layout()
+    /// For single panel, set position to margin
     pub fn calculate_positions(&mut self) {
         if self.inner.is_empty() {
             return;
         }
+
+        if self.panel_count() > 1 {
+            // Multi-panel: positions already set by Taffy in apply_taffy_layout()
+            // or during split operations. Nothing to do here.
+            return;
+        }
+
+        // Single panel: set position to margin
         if let Some(root) = self.root {
-            self.calculate_positions_recursive(root, self.margin);
+            if let Some(item) = self.inner.get_mut(&root) {
+                item.set_position([self.margin.x, self.margin.top_y]);
+            }
         }
     }
 
-    /// Calculate positions only for affected nodes and their children
-    pub fn calculate_positions_for_affected_nodes(&mut self, affected_keys: &[usize]) {
+    /// Calculate positions only for affected nodes
+    /// With Taffy, this is simplified - just recompute Taffy layout if multi-panel
+    pub fn calculate_positions_for_affected_nodes(&mut self, _affected_keys: &[usize]) {
         if self.inner.is_empty() {
             return;
         }
 
-        // For each affected node, we need to recalculate its position and all its children
-        for &key in affected_keys {
-            if self.inner.contains_key(&key) {
-                // Find the position this node should have based on its parent
-                let margin = self.find_node_margin(key);
-                self.calculate_positions_recursive(key, margin);
-            }
+        if self.panel_count() > 1 {
+            // Multi-panel: recompute entire Taffy layout
+            let _ = self.apply_taffy_layout();
+        } else {
+            // Single panel: just update position
+            self.calculate_positions();
         }
     }
 
-    /// Find the margin/position a node should have based on its parent
-    fn find_node_margin(&self, key: usize) -> Delta<f32> {
-        // If it's the root node, use the grid margin
-        if Some(key) == self.root {
-            return self.margin;
-        }
 
-        // Get the current node to check its parent reference
-        if let Some(node) = self.inner.get(&key) {
-            if let Some(parent_key) = node.parent {
-                if let Some(parent) = self.inner.get(&parent_key) {
-                    // Determine if this node is a right or down child
-                    if parent.right == Some(key) {
-                        // This is a right child
-                        let parent_pos = parent.position();
-                        return Delta {
-                            x: parent_pos[0]
-                                + self.scaled_padding
-                                + (parent.val.dimension.width
-                                    / parent.val.dimension.dimension.scale),
-                            top_y: parent_pos[1],
-                            bottom_y: self.margin.bottom_y,
-                        };
-                    } else if parent.down == Some(key) {
-                        // This is a down child
-                        let parent_pos = parent.position();
-                        return Delta {
-                            x: parent_pos[0],
-                            top_y: parent_pos[1]
-                                + self.scaled_padding
-                                + (parent.val.dimension.height
-                                    / parent.val.dimension.dimension.scale),
-                            bottom_y: self.margin.bottom_y,
-                        };
-                    }
-                }
-            }
-        }
-
-        // Fallback to grid margin if parent not found
-        self.margin
-    }
-
-    /// Recursively calculate positions for grid items
-    fn calculate_positions_recursive(&mut self, key: usize, margin: Delta<f32>) {
-        if let Some(item) = self.inner.get_mut(&key) {
-            // Set position for current item in the rich text object
-            item.set_position([margin.x, margin.top_y]);
-
-            // Calculate margin for down item
-            let down_margin = Delta {
-                x: margin.x,
-                top_y: margin.top_y
-                    + self.scaled_padding
-                    + (item.val.dimension.height / item.val.dimension.dimension.scale),
-                bottom_y: margin.bottom_y,
-            };
-
-            // Calculate margin for right item
-            let right_margin = Delta {
-                x: margin.x
-                    + self.scaled_padding
-                    + (item.val.dimension.width / item.val.dimension.dimension.scale),
-                top_y: margin.top_y,
-                bottom_y: margin.bottom_y,
-            };
-
-            // Store the down and right keys to avoid borrowing issues
-            let down_key = item.down;
-            let right_key = item.right;
-
-            // Recursively calculate positions for child items
-            if let Some(down_key) = down_key {
-                self.calculate_positions_recursive(down_key, down_margin);
-            }
-
-            if let Some(right_key) = right_key {
-                self.calculate_positions_recursive(right_key, right_margin);
-            }
-        }
-    }
-
+    /// Remove current panel and select next one - simplified with Taffy
     pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
             return;
         }
 
-        if !self.inner.contains_key(&self.current) {
-            tracing::error!("Current key {:?} not found in grid", self.current);
-            if let Some(root) = self.root {
-                self.current = root;
-            }
-            return;
-        }
-
-        // If there's only one context, we can't remove it
+        // Can't remove the last panel
         if self.inner.len() == 1 {
             tracing::warn!("Cannot remove the last remaining context");
             return;
         }
 
-        let to_be_removed = self.current;
-        let (to_be_removed_width, to_be_removed_height) = {
-            if let Some(item) = self.inner.get(&to_be_removed) {
-                (
-                    item.val.dimension.width + self.margin.x,
-                    item.val.dimension.height,
-                )
+        let to_remove = self.current;
+
+        if !self.inner.contains_key(&to_remove) {
+            tracing::error!("Current key {:?} not found in grid", to_remove);
+            return;
+        }
+
+        // Get rich text ID before removing
+        let rich_text_id = self.inner.get(&to_remove).map(|item| item.val.rich_text_id);
+
+        // Select next panel before removing (use visual ordering)
+        let ordered_keys = self.get_ordered_keys();
+        let current_pos = ordered_keys.iter().position(|&k| k == to_remove);
+        let next_current = if let Some(pos) = current_pos {
+            // Try next panel, or previous if we're at the end
+            if pos + 1 < ordered_keys.len() {
+                ordered_keys[pos + 1]
+            } else if pos > 0 {
+                ordered_keys[pos - 1]
             } else {
-                return;
+                // Fallback to any other panel
+                *ordered_keys.iter().find(|&&k| k != to_remove).unwrap_or(&to_remove)
             }
+        } else {
+            // Fallback to first panel
+            *self.inner.keys().find(|&&k| k != to_remove).unwrap_or(&to_remove)
         };
 
-        // Find parent context if it exists
-        let mut parent_context = None;
-        if Some(to_be_removed) != self.root {
-            if let Some(node) = self.inner.get(&to_be_removed) {
-                if let Some(parent_key) = node.parent {
-                    if let Some(parent) = self.inner.get(&parent_key) {
-                        // Determine if this is a right or down child
-                        if parent.right == Some(to_be_removed) {
-                            parent_context = Some((true, parent_key));
-                        } else if parent.down == Some(to_be_removed) {
-                            parent_context = Some((false, parent_key));
-                        }
-                    }
-                }
-            }
+        // Remove from Taffy
+        if let Some(&node) = self.taffy_context_to_node.get(&to_remove) {
+            let _ = self.taffy.remove(node);
+            self.taffy_context_to_node.remove(&to_remove);
+            self.taffy_node_to_context.remove(&node);
         }
 
-        // Handle removal with parent context
-        if let Some((is_right, parent_key)) = parent_context {
-            self.handle_removal_with_parent(
-                to_be_removed,
-                parent_key,
-                is_right,
-                to_be_removed_width,
-                to_be_removed_height,
-                self.scaled_padding,
-                sugarloaf,
-            );
-            self.calculate_positions_for_affected_nodes(&[parent_key]);
-            return;
-        }
-
-        // Handle removal without parent (root context)
-        self.handle_root_removal(
-            to_be_removed,
-            to_be_removed_height,
-            self.scaled_padding,
-            sugarloaf,
-        );
-        if let Some(root) = self.root {
-            self.calculate_positions_for_affected_nodes(&[root]);
-        }
-    }
-
-    fn handle_removal_with_parent(
-        &mut self,
-        to_be_removed: usize,
-        parent_key: usize,
-        is_right: bool,
-        to_be_removed_width: f32,
-        to_be_removed_height: f32,
-        scaled_padding: f32,
-        sugarloaf: &mut Sugarloaf,
-    ) {
-        if !self.inner.contains_key(&parent_key) {
-            tracing::error!("Parent key {:?} not found in grid", parent_key);
-            return;
-        }
-
-        let mut next_current = parent_key;
-
-        if is_right {
-            // Handle right child removal
-            let current_down = self.inner.get(&to_be_removed).and_then(|item| item.down);
-            if let Some(current_down) = current_down {
-                if self.inner.contains_key(&current_down) {
-                    if let Some(item) = self.inner.get_mut(&current_down) {
-                        item.val
-                            .dimension
-                            .increase_height(to_be_removed_height + scaled_padding);
-                    }
-
-                    let to_be_remove_right =
-                        self.inner.get(&to_be_removed).and_then(|item| item.right);
-                    self.request_resize(current_down);
-                    self.remove_key(to_be_removed, sugarloaf);
-
-                    next_current = current_down;
-
-                    // Handle right inheritance
-                    if let Some(right_val) = to_be_remove_right {
-                        self.inherit_right_children(
-                            next_current,
-                            right_val,
-                            to_be_removed_height,
-                            scaled_padding,
-                        );
-                    }
-
-                    if let Some(parent) = self.inner.get_mut(&parent_key) {
-                        parent.right = Some(next_current);
-                    }
-                    // Update parent reference for the new child
-                    if let Some(new_child) = self.inner.get_mut(&next_current) {
-                        new_child.parent = Some(parent_key);
-                    }
-                    self.current = next_current;
-                    return;
-                }
-            }
-
-            // No down children, expand parent
-            let to_be_removed_right =
-                self.inner.get(&to_be_removed).and_then(|item| item.right);
-            if let Some(parent) = self.inner.get_mut(&parent_key) {
-                let parent_width = parent.val.dimension.width;
-                parent
-                    .val
-                    .dimension
-                    .update_width(parent_width + to_be_removed_width + scaled_padding);
-                parent.right = to_be_removed_right;
-            }
-            // Update parent reference for inherited right child
-            if let Some(inherited_right) = to_be_removed_right {
-                if let Some(inherited_child) = self.inner.get_mut(&inherited_right) {
-                    inherited_child.parent = Some(parent_key);
-                }
-            }
-            self.request_resize(parent_key);
-        } else {
-            // Handle down child removal
-            let current_right =
-                self.inner.get(&to_be_removed).and_then(|item| item.right);
-            if let Some(current_right) = current_right {
-                if self.inner.contains_key(&current_right) {
-                    if let Some(item) = self.inner.get_mut(&current_right) {
-                        item.val
-                            .dimension
-                            .increase_width(to_be_removed_width + scaled_padding);
-                    }
-
-                    self.request_resize(current_right);
-                    next_current = current_right;
-
-                    if let Some(parent) = self.inner.get_mut(&parent_key) {
-                        parent.down = Some(next_current);
-                    }
-                    // Update parent reference for the new child
-                    if let Some(new_child) = self.inner.get_mut(&next_current) {
-                        new_child.parent = Some(parent_key);
-                    }
-                } else {
-                    // Invalid right reference, just expand parent
-                    let to_be_removed_down =
-                        self.inner.get(&to_be_removed).and_then(|item| item.down);
-                    if let Some(parent) = self.inner.get_mut(&parent_key) {
-                        let parent_height = parent.val.dimension.height;
-                        parent.val.dimension.update_height(
-                            parent_height + to_be_removed_height + scaled_padding,
-                        );
-                        parent.down = to_be_removed_down;
-                    }
-                    // Update parent reference for inherited down child
-                    if let Some(inherited_down) = to_be_removed_down {
-                        if let Some(inherited_child) = self.inner.get_mut(&inherited_down)
-                        {
-                            inherited_child.parent = Some(parent_key);
-                        }
-                    }
-                    self.request_resize(parent_key);
-                }
-            } else {
-                // No right children, expand parent
-                let to_be_removed_down =
-                    self.inner.get(&to_be_removed).and_then(|item| item.down);
-                if let Some(parent) = self.inner.get_mut(&parent_key) {
-                    let parent_height = parent.val.dimension.height;
-                    parent.val.dimension.update_height(
-                        parent_height + to_be_removed_height + scaled_padding,
-                    );
-                    parent.down = to_be_removed_down;
-                }
-                // Update parent reference for inherited down child
-                if let Some(inherited_down) = to_be_removed_down {
-                    if let Some(inherited_child) = self.inner.get_mut(&inherited_down) {
-                        inherited_child.parent = Some(parent_key);
-                    }
-                }
-                self.request_resize(parent_key);
-            }
-        }
-
-        self.remove_key(to_be_removed, sugarloaf);
-        self.current = next_current;
-    }
-
-    fn handle_root_removal(
-        &mut self,
-        to_be_removed: usize,
-        to_be_removed_height: f32,
-        scaled_padding: f32,
-        sugarloaf: &mut Sugarloaf,
-    ) {
-        // Priority: down items first, then right items
-        let down_val = self.inner.get(&to_be_removed).and_then(|item| item.down);
-        if let Some(down_val) = down_val {
-            if self.inner.contains_key(&down_val) {
-                if let Some(down_item) = self.inner.get_mut(&down_val) {
-                    let down_height = down_item.val.dimension.height;
-                    down_item.val.dimension.update_height(
-                        down_height + to_be_removed_height + scaled_padding,
-                    );
-                }
-
-                let to_be_removed_right_item =
-                    self.inner.get(&to_be_removed).and_then(|item| item.right);
-
-                // Get rich_text_id before removing
-                let rich_text_id = if let Some(item) = self.inner.get(&to_be_removed) {
-                    item.val.rich_text_id
-                } else {
-                    return;
-                };
-
-                // Move down item to root position by swapping the data
-                if let (Some(_to_be_removed_item), Some(mut down_item)) = (
-                    self.inner.remove(&to_be_removed),
-                    self.inner.remove(&down_val),
-                ) {
-                    // Cleanup rich text from sugarloaf
-                    sugarloaf.remove_content(rich_text_id);
-                    // Clear parent reference since this becomes the new root
-                    down_item.parent = None;
-
-                    // Insert the down item as the new root
-                    let new_root = down_item.val.route_id;
-                    self.inner.insert(new_root, down_item);
-                    self.root = Some(new_root);
-                    self.current = new_root;
-
-                    self.request_resize(new_root);
-
-                    // Handle right inheritance
-                    if let Some(right_val) = to_be_removed_right_item {
-                        self.inherit_right_children(
-                            new_root,
-                            right_val,
-                            to_be_removed_height,
-                            scaled_padding,
-                        );
-                    }
-                }
-                return;
-            }
-        }
-
-        let right_val = self.inner.get(&to_be_removed).and_then(|item| item.right);
-        if let Some(right_val) = right_val {
-            if self.inner.contains_key(&right_val) {
-                let (right_width, to_be_removed_width) = {
-                    let right_item = self.inner.get(&right_val).unwrap();
-                    let to_be_removed_item = self.inner.get(&to_be_removed).unwrap();
-                    (
-                        right_item.val.dimension.width,
-                        to_be_removed_item.val.dimension.width + self.margin.x,
-                    )
-                };
-
-                if let Some(right_item) = self.inner.get_mut(&right_val) {
-                    right_item
-                        .val
-                        .dimension
-                        .update_width(right_width + to_be_removed_width + scaled_padding);
-                }
-
-                // Get rich_text_id before removing
-                let rich_text_id = if let Some(item) = self.inner.get(&to_be_removed) {
-                    item.val.rich_text_id
-                } else {
-                    return;
-                };
-
-                // Move right item to root position
-                if let (Some(_to_be_removed_item), Some(right_item)) = (
-                    self.inner.remove(&to_be_removed),
-                    self.inner.remove(&right_val),
-                ) {
-                    // Cleanup rich text from sugarloaf
-                    sugarloaf.remove_content(rich_text_id);
-
-                    let new_root = right_item.val.route_id;
-                    self.inner.insert(new_root, right_item);
-                    self.root = Some(new_root);
-                    self.current = new_root;
-
-                    self.request_resize(new_root);
-                }
-                return;
-            }
-        }
-
-        // Fallback: just remove the item
-        // Get rich_text_id before removing
-        if let Some(item) = self.inner.get(&to_be_removed) {
-            let rich_text_id = item.val.rich_text_id;
-            self.inner.remove(&to_be_removed);
-            sugarloaf.remove_content(rich_text_id);
-        }
-        if let Some(first_key) = self.inner.keys().next() {
-            self.current = *first_key;
-            self.root = Some(*first_key);
-        }
-    }
-
-    fn inherit_right_children(
-        &mut self,
-        base_key: usize,
-        right_val: usize,
-        height_increase: f32,
-        scaled_padding: f32,
-    ) {
-        if !self.inner.contains_key(&base_key) || !self.inner.contains_key(&right_val) {
-            return;
-        }
-
-        let mut last_right = None;
-        let mut right_ptr = self.inner.get(&base_key).and_then(|item| item.right);
-
-        // Find the last right item and resize all
-        while let Some(right_key) = right_ptr {
-            if !self.inner.contains_key(&right_key) {
-                break;
-            }
-
-            last_right = Some(right_key);
-            if let Some(item) = self.inner.get_mut(&right_key) {
-                let last_right_height = item.val.dimension.height;
-                item.val
-                    .dimension
-                    .update_height(last_right_height + height_increase + scaled_padding);
-            }
-            self.request_resize(right_key);
-            right_ptr = self.inner.get(&right_key).and_then(|item| item.right);
-        }
-
-        // Attach the inherited right chain
-        if let Some(last_right_val) = last_right {
-            if let Some(item) = self.inner.get_mut(&last_right_val) {
-                item.right = Some(right_val);
-            }
-        } else if let Some(item) = self.inner.get_mut(&base_key) {
-            item.right = Some(right_val);
-        }
-    }
-
-    fn remove_key(&mut self, key: usize, sugarloaf: &mut Sugarloaf) {
-        if !self.inner.contains_key(&key) {
-            tracing::error!("Attempted to remove key {:?} which doesn't exist", key);
-            return;
-        }
-
-        // Get rich_text_id before removing
-        let rich_text_id = if let Some(item) = self.inner.get(&key) {
-            item.val.rich_text_id
-        } else {
-            return;
-        };
-
-        // Update all references to this key
-        let keys_to_update: Vec<usize> = self.inner.keys().cloned().collect();
-        for update_key in keys_to_update {
-            if update_key == key {
-                continue;
-            }
-
-            if let Some(context) = self.inner.get_mut(&update_key) {
-                if let Some(right_val) = context.right {
-                    if right_val == key {
-                        // The referenced context is being removed
-                        context.right = None;
-                    }
-                }
-
-                if let Some(down_val) = context.down {
-                    if down_val == key {
-                        // The referenced context is being removed
-                        context.down = None;
-                    }
-                }
-            }
-        }
-
-        self.inner.remove(&key);
+        // Remove from inner map
+        self.inner.remove(&to_remove);
 
         // Cleanup rich text from sugarloaf
-        sugarloaf.remove_content(rich_text_id);
+        if let Some(id) = rich_text_id {
+            sugarloaf.remove_content(id);
+        }
 
         // Update root if necessary
-        if Some(key) == self.root {
+        if Some(to_remove) == self.root {
             self.root = self.inner.keys().next().copied();
         }
 
-        // Ensure current key is still valid
-        if self.current == key {
-            if let Some(new_current) = self.root {
-                self.current = new_current;
-            } else if let Some(first_key) = self.inner.keys().next() {
-                self.current = *first_key;
-            }
+        // Set new current
+        self.current = next_current;
+
+        // Recompute Taffy layout for remaining panels
+        if self.panel_count() > 0 {
+            self.apply_taffy_layout();
         }
     }
 
     pub fn split_right(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
-        let current_item = if let Some(item) = self.inner.get(&self.current) {
-            item
-        } else {
+        if !self.inner.contains_key(&self.current) {
             return;
-        };
-
-        let old_right = current_item.right;
-        let old_grid_item_height = current_item.val.dimension.height;
-        let old_grid_item_width = current_item.val.dimension.width - self.margin.x;
-        let new_grid_item_width = old_grid_item_width / 2.0;
-        let current_key = self.current;
-
-        // Update current item width
-        if let Some(current_item) = self.inner.get_mut(&self.current) {
-            current_item
-                .val
-                .dimension
-                .update_width(new_grid_item_width - self.scaled_padding);
-
-            // The current dimension margin should reset
-            // otherwise will add a space before the rect
-            let mut new_margin = current_item.val.dimension.margin;
-            new_margin.x = 0.0;
-            current_item.val.dimension.update_margin(new_margin);
         }
 
-        self.request_resize(self.current);
+        let current_key = self.current;
 
-        let mut new_context = ContextGridItem::new(context);
-        new_context.val.dimension.update_width(new_grid_item_width);
-        new_context
-            .val
-            .dimension
-            .update_height(old_grid_item_height);
-
+        // Create new context
+        let new_context = ContextGridItem::new(context);
         let new_key = new_context.val.route_id;
         self.inner.insert(new_key, new_context);
 
-        // Update relationships
-        if let Some(new_item) = self.inner.get_mut(&new_key) {
-            new_item.right = old_right;
-            new_item.parent = Some(self.current); // Set parent reference
-        }
-        if let Some(current_item) = self.inner.get_mut(&self.current) {
-            current_item.right = Some(new_key);
+        // Add new panel to Taffy and recompute layout
+        if self.taffy_split_right(new_key).is_ok() {
+            self.apply_taffy_layout();
         }
 
-        // Update parent reference for old_right if it exists
-        if let Some(old_right_key) = old_right {
-            if let Some(old_right_item) = self.inner.get_mut(&old_right_key) {
-                old_right_item.parent = Some(new_key);
-            }
-        }
-
+        // Set new panel as current
         self.current = new_key;
 
-        // In case the new context does not have right
-        // it means it's the last one, for this case
-        // whenever a margin exists then we need to add
-        // half of margin to respect margin.x border on
-        // the right side.
-        if let Some(new_item) = self.inner.get_mut(&new_key) {
-            if new_item.right.is_none() {
-                let mut new_margin = new_item.val.dimension.margin;
-                new_margin.x = self.margin.x / 2.0;
-                new_item.val.dimension.update_margin(new_margin);
-            }
-        }
-
-        self.request_resize(new_key);
-        self.calculate_positions_for_affected_nodes(&[current_key, new_key]);
-
-        // Update sugarloaf positions for affected contexts
+        // Update sugarloaf visibility for both panels
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
             sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
@@ -1326,81 +1114,28 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    /// Split down - create new panel below using Taffy
     pub fn split_down(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
-        let current_item = if let Some(item) = self.inner.get(&self.current) {
-            item
-        } else {
+        if !self.inner.contains_key(&self.current) {
             return;
-        };
-
-        let old_down = current_item.down;
-        let old_grid_item_height = current_item.val.dimension.height;
-        let old_grid_item_width = current_item.val.dimension.width;
-        let new_grid_item_height = old_grid_item_height / 2.0;
-        let current_key = self.current;
-
-        // Update current item
-        if let Some(current_item) = self.inner.get_mut(&self.current) {
-            current_item
-                .val
-                .dimension
-                .update_height(new_grid_item_height - self.scaled_padding);
-
-            // The current dimension margin should reset
-            // otherwise will add a space before the rect
-            let mut new_margin = current_item.val.dimension.margin;
-            new_margin.bottom_y = 0.0;
-            current_item.val.dimension.update_margin(new_margin);
         }
 
-        self.request_resize(self.current);
+        let current_key = self.current;
 
-        let mut new_context = ContextGridItem::new(context);
-        new_context
-            .val
-            .dimension
-            .update_height(new_grid_item_height);
-        new_context.val.dimension.update_width(old_grid_item_width);
-
+        // Create new context
+        let new_context = ContextGridItem::new(context);
         let new_key = new_context.val.route_id;
         self.inner.insert(new_key, new_context);
 
-        // Update relationships
-        if let Some(new_item) = self.inner.get_mut(&new_key) {
-            new_item.down = old_down;
-            new_item.parent = Some(self.current); // Set parent reference
-        }
-        if let Some(current_item) = self.inner.get_mut(&self.current) {
-            current_item.down = Some(new_key);
+        // Add new panel to Taffy and recompute layout
+        if self.taffy_split_down(new_key).is_ok() {
+            self.apply_taffy_layout();
         }
 
-        // Update parent reference for old_down if it exists
-        if let Some(old_down_key) = old_down {
-            if let Some(old_down_item) = self.inner.get_mut(&old_down_key) {
-                old_down_item.parent = Some(new_key);
-            }
-        }
-
+        // Set new panel as current
         self.current = new_key;
 
-        // TODO: Needs to validate this
-        // In case the new context does not have down
-        // it means it's the last one, for this case
-        // whenever a margin exists then we need to add
-        // margin to respect margin.top_y and margin.bottom_y
-        // borders on the bottom side.
-        if let Some(new_item) = self.inner.get_mut(&new_key) {
-            if new_item.down.is_none() {
-                let mut new_margin = new_item.val.dimension.margin;
-                new_margin.bottom_y = self.margin.bottom_y;
-                new_item.val.dimension.update_margin(new_margin);
-            }
-        }
-
-        self.request_resize(new_key);
-        self.calculate_positions_for_affected_nodes(&[current_key, new_key]);
-
-        // Update sugarloaf positions for affected contexts
+        // Update sugarloaf visibility for both panels
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
             sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
@@ -1414,495 +1149,249 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Move divider up - decreases height of current split and increases height of split above
+    /// Uses Taffy layout to find and adjust vertically adjacent panels
     pub fn move_divider_up(&mut self, amount: f32) -> bool {
-        if self.inner.len() <= 1 {
+        if self.panel_count() <= 1 {
             return false;
         }
 
-        let current_key = self.current;
-        if !self.inner.contains_key(&current_key) {
-            tracing::error!("Current key {:?} not found in grid", current_key);
-            return false;
-        }
+        let current_context = self.current;
 
-        // Strategy: Find any vertically adjacent split and adjust the divider between them
-        // Case 1: Current split has a parent above (current is a down child)
-        if let Some(current_item) = self.inner.get(&current_key) {
-            if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(&parent_key) {
-                    if parent.down == Some(current_key) {
-                        let (current_height, parent_height) = {
-                            let current_item = self.inner.get(&current_key).unwrap();
-                            let parent_item = self.inner.get(&parent_key).unwrap();
-                            (
-                                current_item.val.dimension.height,
-                                parent_item.val.dimension.height,
-                            )
-                        };
+        // Find vertically adjacent panels
+        if let Some((top_id, bottom_id)) = self.find_vertical_neighbors(current_context) {
+            let top_node = match self.taffy_context_to_node.get(&top_id) {
+                Some(&node) => node,
+                None => return false,
+            };
+            let bottom_node = match self.taffy_context_to_node.get(&bottom_id) {
+                Some(&node) => node,
+                None => return false,
+            };
 
-                        let min_height = 50.0;
-                        if current_height - amount < min_height
-                            || parent_height + amount < min_height
-                        {
-                            return false;
-                        }
+            // Get current sizes
+            let top_layout = match self.taffy.layout(top_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
+            let bottom_layout = match self.taffy.layout(bottom_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
 
-                        // Shrink current, expand parent (above)
-                        if let Some(current_item) = self.inner.get_mut(&current_key) {
-                            current_item
-                                .val
-                                .dimension
-                                .update_height(current_height - amount);
-                        }
-                        if let Some(parent_item) = self.inner.get_mut(&parent_key) {
-                            parent_item
-                                .val
-                                .dimension
-                                .update_height(parent_height + amount);
-                        }
+            let min_height = 50.0;
 
-                        self.request_resize(current_key);
-                        self.request_resize(parent_key);
+            // Determine which panel to shrink based on which one is current
+            let new_top_height;
+            let new_bottom_height;
 
-                        // Update positions for affected nodes
-                        self.calculate_positions_for_affected_nodes(&[
-                            current_key,
-                            parent_key,
-                        ]);
-                        return true;
-                    }
-                }
+            if current_context == bottom_id {
+                // Current is bottom: shrink bottom, expand top (divider moves up)
+                new_bottom_height = bottom_layout.size.height - amount;
+                new_top_height = top_layout.size.height + amount;
+            } else {
+                // Current is top: shrink top, expand bottom (divider moves up)
+                new_top_height = top_layout.size.height - amount;
+                new_bottom_height = bottom_layout.size.height + amount;
             }
-        }
 
-        // Case 2: Current split has a down child - move the divider between current and down child
-        let down_child_key = self.inner.get(&current_key).and_then(|item| item.down);
-        if let Some(down_child_key) = down_child_key {
-            if self.inner.contains_key(&down_child_key) {
-                let (current_height, down_height) = {
-                    let current_item = self.inner.get(&current_key).unwrap();
-                    let down_item = self.inner.get(&down_child_key).unwrap();
-                    (
-                        current_item.val.dimension.height,
-                        down_item.val.dimension.height,
-                    )
-                };
-
-                let min_height = 50.0;
-                if current_height - amount < min_height
-                    || down_height + amount < min_height
-                {
-                    return false;
-                }
-
-                // Shrink current, expand down child
-                if let Some(current_item) = self.inner.get_mut(&current_key) {
-                    current_item
-                        .val
-                        .dimension
-                        .update_height(current_height - amount);
-                }
-                if let Some(down_item) = self.inner.get_mut(&down_child_key) {
-                    down_item.val.dimension.update_height(down_height + amount);
-                }
-
-                self.request_resize(current_key);
-                self.request_resize(down_child_key);
-
-                // Update positions for affected nodes
-                self.calculate_positions_for_affected_nodes(&[
-                    current_key,
-                    down_child_key,
-                ]);
-                return true;
+            if new_top_height < min_height || new_bottom_height < min_height {
+                return false;
             }
+
+            // Update panel sizes using flex_basis
+            let _ = self.set_panel_size(top_node, None, Some(new_top_height));
+            let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
+
+            // Apply layout and update all contexts
+            return self.apply_taffy_layout();
         }
 
         false
     }
 
     /// Move divider down - increases height of current split and decreases height of split above
+    /// Uses Taffy layout to find and adjust vertically adjacent panels
     pub fn move_divider_down(&mut self, amount: f32) -> bool {
-        if self.inner.len() <= 1 {
+        if self.panel_count() <= 1 {
             return false;
         }
 
-        let current_key = self.current;
-        if !self.inner.contains_key(&current_key) {
-            tracing::error!("Current key {:?} not found in grid", current_key);
-            return false;
-        }
+        let current_context = self.current;
 
-        // Strategy: Find any vertically adjacent split and adjust the divider between them
-        // Case 1: Current split has a parent above (current is a down child)
-        if let Some(current_item) = self.inner.get(&current_key) {
-            if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(&parent_key) {
-                    if parent.down == Some(current_key) {
-                        let (current_height, parent_height) = {
-                            let current_item = self.inner.get(&current_key).unwrap();
-                            let parent_item = self.inner.get(&parent_key).unwrap();
-                            (
-                                current_item.val.dimension.height,
-                                parent_item.val.dimension.height,
-                            )
-                        };
+        // Find vertically adjacent panels
+        if let Some((top_id, bottom_id)) = self.find_vertical_neighbors(current_context) {
+            let top_node = match self.taffy_context_to_node.get(&top_id) {
+                Some(&node) => node,
+                None => return false,
+            };
+            let bottom_node = match self.taffy_context_to_node.get(&bottom_id) {
+                Some(&node) => node,
+                None => return false,
+            };
 
-                        let min_height = 50.0;
-                        if current_height + amount < min_height
-                            || parent_height - amount < min_height
-                        {
-                            return false;
-                        }
+            // Get current sizes
+            let top_layout = match self.taffy.layout(top_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
+            let bottom_layout = match self.taffy.layout(bottom_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
 
-                        // Expand current, shrink parent (above) - divider moves down
-                        if let Some(current_item) = self.inner.get_mut(&current_key) {
-                            current_item
-                                .val
-                                .dimension
-                                .update_height(current_height + amount);
-                        }
-                        if let Some(parent_item) = self.inner.get_mut(&parent_key) {
-                            parent_item
-                                .val
-                                .dimension
-                                .update_height(parent_height - amount);
-                        }
+            let min_height = 50.0;
 
-                        self.request_resize(current_key);
-                        self.request_resize(parent_key);
+            // Determine which panel to expand based on which one is current
+            let new_top_height;
+            let new_bottom_height;
 
-                        // Update positions for affected nodes
-                        self.calculate_positions_for_affected_nodes(&[
-                            current_key,
-                            parent_key,
-                        ]);
-                        return true;
-                    }
-                }
+            if current_context == bottom_id {
+                // Current is bottom: expand bottom, shrink top (divider moves down)
+                new_bottom_height = bottom_layout.size.height + amount;
+                new_top_height = top_layout.size.height - amount;
+            } else {
+                // Current is top: expand top, shrink bottom (divider moves down)
+                new_top_height = top_layout.size.height + amount;
+                new_bottom_height = bottom_layout.size.height - amount;
             }
-        }
 
-        // Case 2: Current split has a down child - move the divider between current and down child
-        let down_child_key = self.inner.get(&current_key).and_then(|item| item.down);
-        if let Some(down_child_key) = down_child_key {
-            if self.inner.contains_key(&down_child_key) {
-                let (current_height, down_height) = {
-                    let current_item = self.inner.get(&current_key).unwrap();
-                    let down_item = self.inner.get(&down_child_key).unwrap();
-                    (
-                        current_item.val.dimension.height,
-                        down_item.val.dimension.height,
-                    )
-                };
-
-                let min_height = 50.0;
-                if current_height + amount < min_height
-                    || down_height - amount < min_height
-                {
-                    return false;
-                }
-
-                // Expand current, shrink down child - divider moves down
-                if let Some(current_item) = self.inner.get_mut(&current_key) {
-                    current_item
-                        .val
-                        .dimension
-                        .update_height(current_height + amount);
-                }
-                if let Some(down_item) = self.inner.get_mut(&down_child_key) {
-                    down_item.val.dimension.update_height(down_height - amount);
-                }
-
-                self.request_resize(current_key);
-                self.request_resize(down_child_key);
-
-                // Update positions for affected nodes
-                self.calculate_positions_for_affected_nodes(&[
-                    current_key,
-                    down_child_key,
-                ]);
-                return true;
+            if new_top_height < min_height || new_bottom_height < min_height {
+                return false;
             }
+
+            // Update panel sizes using flex_basis
+            let _ = self.set_panel_size(top_node, None, Some(new_top_height));
+            let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
+
+            // Apply layout and update all contexts
+            return self.apply_taffy_layout();
         }
 
         false
     }
 
-    /// Move divider left - shrinks current split and expands the split to the left
+    /// Move divider left - shrinks left panel and expands right panel
+    /// Uses Taffy layout to find and adjust horizontally adjacent panels
     pub fn move_divider_left(&mut self, amount: f32) -> bool {
-        if self.inner.len() <= 1 {
+        if self.panel_count() <= 1 {
             return false;
         }
 
-        let current_key = self.current;
-        if !self.inner.contains_key(&current_key) {
-            tracing::error!("Current key {:?} not found in grid", current_key);
-            return false;
-        }
+        let current_context = self.current;
 
-        // Find horizontally adjacent splits
-        let mut left_split = None;
-        let mut right_split = None;
+        // Find horizontally adjacent panels
+        if let Some((left_id, right_id)) = self.find_horizontal_neighbors(current_context) {
+            let left_node = match self.taffy_context_to_node.get(&left_id) {
+                Some(&node) => node,
+                None => return false,
+            };
+            let right_node = match self.taffy_context_to_node.get(&right_id) {
+                Some(&node) => node,
+                None => return false,
+            };
 
-        // Case 1: Current split is a right child - its parent is to the left
-        if let Some(current_item) = self.inner.get(&current_key) {
-            if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(&parent_key) {
-                    if parent.right == Some(current_key) {
-                        left_split = Some(parent_key);
-                        right_split = Some(current_key);
-                    }
-                }
-            }
-        }
-
-        // Case 2: Current split has a right child - current is left, child is right
-        if left_split.is_none() {
-            let right_child_key =
-                self.inner.get(&current_key).and_then(|item| item.right);
-            if let Some(right_child_key) = right_child_key {
-                if self.inner.contains_key(&right_child_key) {
-                    left_split = Some(current_key);
-                    right_split = Some(right_child_key);
-                }
-            }
-        }
-
-        // Case 3: Current split is a down child - check if its parent has horizontal relationships
-        if left_split.is_none() {
-            if let Some(current_item) = self.inner.get(&current_key) {
-                if let Some(parent_key) = current_item.parent {
-                    if let Some(parent) = self.inner.get(&parent_key) {
-                        if parent.down == Some(current_key) {
-                            // Current is a down child, check if parent has horizontal relationships
-                            if let Some(grandparent_key) = parent.parent {
-                                if let Some(grandparent) =
-                                    self.inner.get(&grandparent_key)
-                                {
-                                    if grandparent.right == Some(parent_key) {
-                                        // Parent is a right child, so grandparent is to the left
-                                        left_split = Some(grandparent_key);
-                                        right_split = Some(parent_key);
-                                    }
-                                }
-                            }
-
-                            // Also check if parent has a right child
-                            if left_split.is_none() {
-                                if let Some(parent_right) = parent.right {
-                                    left_split = Some(parent_key);
-                                    right_split = Some(parent_right);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
-            let (left_width, right_width) = {
-                let left_item = self.inner.get(&left_key).unwrap();
-                let right_item = self.inner.get(&right_key).unwrap();
-                (
-                    left_item.val.dimension.width,
-                    right_item.val.dimension.width,
-                )
+            // Get current sizes
+            let left_layout = match self.taffy.layout(left_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
+            let right_layout = match self.taffy.layout(right_node).ok() {
+                Some(layout) => layout,
+                None => return false,
             };
 
             let min_width = 100.0;
-            if left_width - amount < min_width || right_width + amount < min_width {
+
+            // Determine which panel to shrink based on which one is current
+            let new_left_width;
+            let new_right_width;
+
+            if current_context == right_id {
+                // Current is right: shrink right, expand left (divider moves left)
+                new_right_width = right_layout.size.width - amount;
+                new_left_width = left_layout.size.width + amount;
+            } else {
+                // Current is left: shrink left, expand right (divider moves left)
+                new_left_width = left_layout.size.width - amount;
+                new_right_width = right_layout.size.width + amount;
+            }
+
+            if new_left_width < min_width || new_right_width < min_width {
                 return false;
             }
 
-            // Move divider left: shrink left split, expand right split
-            if let Some(left_item) = self.inner.get_mut(&left_key) {
-                left_item.val.dimension.update_width(left_width - amount);
-            }
-            if let Some(right_item) = self.inner.get_mut(&right_key) {
-                right_item.val.dimension.update_width(right_width + amount);
-            }
+            // Update panel sizes using flex_basis
+            let _ = self.set_panel_size(left_node, Some(new_left_width), None);
+            let _ = self.set_panel_size(right_node, Some(new_right_width), None);
 
-            // Update all children in the vertical stacks to match their parent's width
-            self.update_children_width(left_key, left_width - amount);
-            self.update_children_width(right_key, right_width + amount);
-
-            self.request_resize(left_key);
-            self.request_resize(right_key);
-
-            // Collect all affected nodes (parents and their children)
-            let mut affected_nodes = vec![left_key, right_key];
-            self.collect_all_children(left_key, &mut affected_nodes);
-            self.collect_all_children(right_key, &mut affected_nodes);
-
-            // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&affected_nodes);
-            return true;
+            // Apply layout and update all contexts
+            return self.apply_taffy_layout();
         }
 
         false
     }
 
-    /// Move divider right - expands current split and shrinks the split to the right
+    /// Move divider right - expands left panel and shrinks right panel
+    /// Uses Taffy layout to find and adjust horizontally adjacent panels
     pub fn move_divider_right(&mut self, amount: f32) -> bool {
-        if self.inner.len() <= 1 {
+        if self.panel_count() <= 1 {
             return false;
         }
 
-        let current_key = self.current;
-        if !self.inner.contains_key(&current_key) {
-            tracing::error!("Current key {:?} not found in grid", current_key);
-            return false;
-        }
+        let current_context = self.current;
 
-        // Find horizontally adjacent splits
-        let mut left_split = None;
-        let mut right_split = None;
+        // Find horizontally adjacent panels
+        if let Some((left_id, right_id)) = self.find_horizontal_neighbors(current_context) {
+            let left_node = match self.taffy_context_to_node.get(&left_id) {
+                Some(&node) => node,
+                None => return false,
+            };
+            let right_node = match self.taffy_context_to_node.get(&right_id) {
+                Some(&node) => node,
+                None => return false,
+            };
 
-        // Case 1: Current split is a right child - its parent is to the left
-        if let Some(current_item) = self.inner.get(&current_key) {
-            if let Some(parent_key) = current_item.parent {
-                if let Some(parent) = self.inner.get(&parent_key) {
-                    if parent.right == Some(current_key) {
-                        left_split = Some(parent_key);
-                        right_split = Some(current_key);
-                    }
-                }
-            }
-        }
-
-        // Case 2: Current split has a right child - current is left, child is right
-        if left_split.is_none() {
-            let right_child_key =
-                self.inner.get(&current_key).and_then(|item| item.right);
-            if let Some(right_child_key) = right_child_key {
-                if self.inner.contains_key(&right_child_key) {
-                    left_split = Some(current_key);
-                    right_split = Some(right_child_key);
-                }
-            }
-        }
-
-        // Case 3: Current split is a down child - check if its parent has horizontal relationships
-        if left_split.is_none() {
-            if let Some(current_item) = self.inner.get(&current_key) {
-                if let Some(parent_key) = current_item.parent {
-                    if let Some(parent) = self.inner.get(&parent_key) {
-                        if parent.down == Some(current_key) {
-                            // Current is a down child, check if parent has horizontal relationships
-                            if let Some(grandparent_key) = parent.parent {
-                                if let Some(grandparent) =
-                                    self.inner.get(&grandparent_key)
-                                {
-                                    if grandparent.right == Some(parent_key) {
-                                        // Parent is a right child, so grandparent is to the left
-                                        left_split = Some(grandparent_key);
-                                        right_split = Some(parent_key);
-                                    }
-                                }
-                            }
-
-                            // Also check if parent has a right child
-                            if left_split.is_none() {
-                                if let Some(parent_right) = parent.right {
-                                    left_split = Some(parent_key);
-                                    right_split = Some(parent_right);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if let (Some(left_key), Some(right_key)) = (left_split, right_split) {
-            let (left_width, right_width) = {
-                let left_item = self.inner.get(&left_key).unwrap();
-                let right_item = self.inner.get(&right_key).unwrap();
-                (
-                    left_item.val.dimension.width,
-                    right_item.val.dimension.width,
-                )
+            // Get current sizes
+            let left_layout = match self.taffy.layout(left_node).ok() {
+                Some(layout) => layout,
+                None => return false,
+            };
+            let right_layout = match self.taffy.layout(right_node).ok() {
+                Some(layout) => layout,
+                None => return false,
             };
 
             let min_width = 100.0;
-            if left_width + amount < min_width || right_width - amount < min_width {
+
+            // Determine which panel to expand based on which one is current
+            let new_left_width;
+            let new_right_width;
+
+            if current_context == right_id {
+                // Current is right: expand right, shrink left (divider moves right)
+                new_right_width = right_layout.size.width + amount;
+                new_left_width = left_layout.size.width - amount;
+            } else {
+                // Current is left: expand left, shrink right (divider moves right)
+                new_left_width = left_layout.size.width + amount;
+                new_right_width = right_layout.size.width - amount;
+            }
+
+            if new_left_width < min_width || new_right_width < min_width {
                 return false;
             }
 
-            // Move divider right: expand left split, shrink right split
-            if let Some(left_item) = self.inner.get_mut(&left_key) {
-                left_item.val.dimension.update_width(left_width + amount);
-            }
-            if let Some(right_item) = self.inner.get_mut(&right_key) {
-                right_item.val.dimension.update_width(right_width - amount);
-            }
+            // Update panel sizes using flex_basis
+            let _ = self.set_panel_size(left_node, Some(new_left_width), None);
+            let _ = self.set_panel_size(right_node, Some(new_right_width), None);
 
-            // Update all children in the vertical stacks to match their parent's width
-            self.update_children_width(left_key, left_width + amount);
-            self.update_children_width(right_key, right_width - amount);
-
-            self.request_resize(left_key);
-            self.request_resize(right_key);
-
-            // Collect all affected nodes (parents and their children)
-            let mut affected_nodes = vec![left_key, right_key];
-            self.collect_all_children(left_key, &mut affected_nodes);
-            self.collect_all_children(right_key, &mut affected_nodes);
-
-            // Update positions for affected nodes
-            self.calculate_positions_for_affected_nodes(&affected_nodes);
-            return true;
+            // Apply layout and update all contexts
+            return self.apply_taffy_layout();
         }
 
         false
     }
 
-    /// Update the width of all children in a vertical stack to match the parent's width
-    fn update_children_width(&mut self, parent_key: usize, new_width: f32) {
-        // Find all down children and update their width
-        if let Some(parent) = self.inner.get(&parent_key) {
-            if let Some(down_key) = parent.down {
-                self.update_children_width_recursive(down_key, new_width);
-            }
-        }
-    }
-
-    /// Recursively update width for all nodes in a vertical chain
-    fn update_children_width_recursive(&mut self, key: usize, new_width: f32) {
-        let down_key = if let Some(item) = self.inner.get_mut(&key) {
-            item.val.dimension.update_width(new_width);
-            item.down
-        } else {
-            return;
-        };
-
-        self.request_resize(key);
-
-        // Continue down the chain
-        if let Some(down_key) = down_key {
-            self.update_children_width_recursive(down_key, new_width);
-        }
-    }
-
-    /// Collect all children (down and right) of a given node
-    fn collect_all_children(&self, parent_key: usize, affected_nodes: &mut Vec<usize>) {
-        if let Some(parent) = self.inner.get(&parent_key) {
-            if let Some(right_key) = parent.right {
-                if !affected_nodes.contains(&right_key) {
-                    affected_nodes.push(right_key);
-                    self.collect_all_children(right_key, affected_nodes);
-                }
-            }
-            if let Some(down_key) = parent.down {
-                if !affected_nodes.contains(&down_key) {
-                    affected_nodes.push(down_key);
-                    self.collect_all_children(down_key, affected_nodes);
-                }
-            }
-        }
-    }
 
     #[inline]
     pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, hidden: bool) {
