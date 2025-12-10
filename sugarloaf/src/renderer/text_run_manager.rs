@@ -66,6 +66,7 @@ impl TextRunManager {
     }
 
     /// Apply cached vertices to output, adjusting for new position
+    #[cfg(test)]
     pub fn apply_cached_vertices(
         vertices_data: &[u8],
         base_position: (f32, f32),

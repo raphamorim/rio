@@ -26,13 +26,13 @@ pub fn default_title_content() -> String {
 }
 
 #[inline]
-pub fn default_padding_y() -> [f32; 2] {
-    [8., 0.]
+pub fn default_padding() -> crate::config::padding::Padding {
+    crate::config::padding::Padding::all(10.0)
 }
 
 #[inline]
-pub fn default_padding_x() -> f32 {
-    8.
+pub fn default_padding_panel() -> crate::config::padding::Padding {
+    crate::config::padding::Padding::all(5.0)
 }
 
 #[inline]
