@@ -337,20 +337,6 @@ impl Screen<'_> {
         &mut self.touchpurpose
     }
 
-    #[inline]
-    #[cfg(target_os = "macos")]
-    pub fn is_macos_deadzone(&self, pos_y: f64) -> bool {
-        if let Some(layout) = self
-            .sugarloaf
-            .get_text_layout(&self.context_manager.current().rich_text_id)
-        {
-            let scale_f64 = layout.dimensions.scale as f64;
-            pos_y <= DEADZONE_START_Y * scale_f64 && pos_y >= DEADZONE_END_Y * scale_f64
-        } else {
-            false
-        }
-    }
-
     /// update_config is triggered in any configuration file update
     #[inline]
     pub fn update_config(
