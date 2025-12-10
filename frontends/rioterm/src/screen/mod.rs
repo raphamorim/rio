@@ -204,6 +204,7 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names/path
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            padding_panel: config.padding_panel.left,
             title: config.title.clone(),
             keyboard: config.keyboard,
         };

@@ -169,20 +169,26 @@ pub fn default_config_file_content() -> String {
 # Example:
 # theme = "dracula"
 
-# Padding-x
+# Padding
 #
-# define x axis padding (default is 10)
+# Define padding using CSS-like syntax
+# [all] - Apply same padding to all sides
+# [top/bottom, left/right] - Apply vertical and horizontal padding
+# [top, right, bottom, left] - Apply individual padding to each side
+# (default is [10])
 #
-# Example:
-# padding-x = 10
+# Examples:
+# padding = [10]           # 10px on all sides
+# padding = [10, 5]        # 10px top/bottom, 5px left/right
+# padding = [10, 5, 15, 20] # 10px top, 5px right, 15px bottom, 20px left
 
-# Padding-y
+# Padding Panel
 #
-# define y axis padding based on a format [top, bottom]
-# (default is [0, 0])
+# Define padding for split panels (spacing between panels)
+# (default is [5])
 #
 # Example:
-# padding-y = [30, 10]
+# padding-panel = [5]
 
 # Option as Alt
 #

@@ -128,6 +128,7 @@ pub struct ContextManagerConfig {
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
+    pub padding_panel: f32,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
 }
@@ -394,6 +395,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 initial_context,
                 margin,
                 ctx_config.split_color,
+                ctx_config.padding_panel,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
@@ -441,6 +443,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 initial_context,
                 Delta::<f32>::default(),
                 config.split_color,
+                config.padding_panel,
             )],
             capacity,
             event_proxy,
@@ -969,6 +972,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            padding_panel: config.padding_panel.left,
             title: config.title,
             keyboard: config.keyboard,
         };
@@ -1063,6 +1067,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         new_context,
                         previous_margin,
                         self.config.split_color,
+                        self.config.padding_panel,
                     ));
                     if redirect {
                         self.current_index = last_index;
