@@ -4,8 +4,8 @@ pub mod colors;
 pub mod defaults;
 pub mod hints;
 pub mod keyboard;
+pub mod layout;
 pub mod navigation;
-pub mod padding;
 pub mod platform;
 pub mod renderer;
 pub mod theme;
@@ -18,8 +18,8 @@ use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
+use crate::config::layout::{Padding, Panel};
 use crate::config::navigation::Navigation;
-use crate::config::padding::Padding;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
 use crate::config::title::Title;
@@ -120,8 +120,8 @@ pub struct Config {
     pub editor: Shell,
     #[serde(default = "default_padding")]
     pub padding: Padding,
-    #[serde(default = "default_padding_panel", rename = "padding-panel")]
-    pub padding_panel: Padding,
+    #[serde(default = "Panel::default")]
+    pub panel: Panel,
     #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -617,7 +617,7 @@ impl Default for Config {
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
             padding: default_padding(),
-            padding_panel: default_padding_panel(),
+            panel: Panel::default(),
             renderer: Renderer::default(),
             shell: default_shell(),
             platform: Platform::default(),

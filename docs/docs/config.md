@@ -1096,7 +1096,7 @@ option-as-alt = 'left'
 
 ## padding
 
-Define padding using CSS-like syntax (default is `[10]`)
+Define outer padding around the entire window/tab area using CSS-like syntax (default is `[10]`)
 
 ```toml
 # Apply 10px to all sides
@@ -1109,13 +1109,48 @@ padding = [10, 5]
 padding = [10, 5, 15, 20]
 ```
 
-## padding-panel
+## panel
 
-Define padding for split panels (default is `[5]`)
+Configure panel layout when using splits (vertical/horizontal terminal splits).
+
+### panel.padding
+
+Define inner padding inside each panel (around terminal content). Default is `[5]`
 
 ```toml
-# Apply 5px spacing between split panels
-padding-panel = [5]
+[panel]
+# Apply 5px padding inside all panels
+padding = [5]
+
+# Different padding: top/bottom: 10px, left/right: 5px
+padding = [10, 5]
+```
+
+### panel.row-gap
+
+Define vertical spacing between panels when split vertically (down). Default is `0`
+
+```toml
+[panel]
+row-gap = 10  # 10px vertical gap between panels
+```
+
+### panel.column-gap
+
+Define horizontal spacing between panels when split horizontally (right). Default is `0`
+
+```toml
+[panel]
+column-gap = 15  # 15px horizontal gap between panels
+```
+
+### Full panel example
+
+```toml
+[panel]
+padding = [5]       # Inner padding inside each panel
+row-gap = 10        # Vertical gap when split down
+column-gap = 15     # Horizontal gap when split right
 ```
 
 ## platform
