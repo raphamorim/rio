@@ -113,13 +113,13 @@ impl Screen<'_> {
 
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.padding.top,
             1,
             config.window.macos_use_unified_titlebar,
         );
 
         let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding_y[1], 1, false);
+            padding_bottom_from_config(&config.navigation, config.padding.bottom, 1, false);
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -211,10 +211,10 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let rich_text_id = next_rich_text_id();
         let _ = sugarloaf.text(Some(rich_text_id));
-        sugarloaf.set_position(rich_text_id, config.padding_x, padding_y_top);
+        sugarloaf.set_position(rich_text_id, config.padding.left, padding_y_top);
 
         let margin = Delta {
-            x: config.padding_x,
+            x: config.padding.left,
             top_y: padding_y_top,
             bottom_y: padding_y_bottom,
         };
@@ -348,13 +348,13 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding_y[0],
+            config.padding.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &config.navigation,
-            config.padding_y[1],
+            config.padding.bottom,
             num_tabs,
             self.search_active(),
         );
@@ -374,7 +374,7 @@ impl Screen<'_> {
             context_grid.update_line_height(config.line_height);
 
             context_grid.update_margin((
-                config.padding_x,
+                config.padding.left,
                 padding_y_top,
                 padding_y_bottom,
             ));
@@ -1201,12 +1201,12 @@ impl Screen<'_> {
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
         // Create rich text with initial position accounting for island
-        let padding_y_top = self.renderer.padding_y[0]
+        let padding_y_top = self.renderer.padding.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
-            .set_position(rich_text_id, config.padding_x, padding_y_top);
+            .set_position(rich_text_id, config.padding.left, padding_y_top);
         self.context_manager.split_from_config(
             rich_text_id,
             false,
@@ -1222,7 +1222,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0]
+        let padding_y_top = self.renderer.padding.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1239,7 +1239,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0]
+        let padding_y_top = self.renderer.padding.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1291,7 +1291,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding_y[0]
+        let padding_y_top = self.renderer.padding.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1341,13 +1341,13 @@ impl Screen<'_> {
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation,
-            self.renderer.padding_y[0],
+            self.renderer.padding.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &self.renderer.navigation,
-            self.renderer.padding_y[1],
+            self.renderer.padding.bottom,
             num_tabs,
             self.search_active(),
         );
