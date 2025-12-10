@@ -134,11 +134,16 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 }
 
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
-    pub fn new(context: Context<T>, margin: Delta<f32>, border_color: [f32; 4]) -> Self {
+    pub fn new(
+        context: Context<T>,
+        margin: Delta<f32>,
+        border_color: [f32; 4],
+        padding_panel: f32,
+    ) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
         let scale = context.dimension.dimension.scale;
-        let scaled_padding = PADDING * scale;
+        let scaled_padding = padding_panel * scale;
         let mut inner = HashMap::new();
         let root_key = context.route_id;
         inner.insert(context.route_id, ContextGridItem::new(context));

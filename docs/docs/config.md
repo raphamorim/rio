@@ -1094,22 +1094,28 @@ Possible choices: `both`, `left` and `right`.
 option-as-alt = 'left'
 ```
 
-## padding-x
+## padding
 
-Define x axis padding (default is 0)
+Define padding using CSS-like syntax (default is `[10]`)
 
 ```toml
-padding-x = 10
+# Apply 10px to all sides
+padding = [10]
+
+# top and bottom: 10px, right and left: 5px
+padding = [10, 5]
+
+# top: 10px, right: 5px, bottom: 15px, left: 20px
+padding = [10, 5, 15, 20]
 ```
 
-## padding-y
+## padding-panel
 
-Define y axis padding based on a format `[top, bottom]`
-
-- Default is `[0, 0]`
+Define padding for split panels (default is `[5]`)
 
 ```toml
-padding-y = [15, 10]
+# Apply 5px spacing between split panels
+padding-panel = [5]
 ```
 
 ## platform
