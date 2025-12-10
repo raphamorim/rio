@@ -48,7 +48,7 @@ pub struct Renderer {
     pub named_colors: Colors,
     pub colors: List,
     pub navigation: Navigation,
-    pub padding: rio_backend::config::padding::Padding,
+    pub padding: rio_backend::config::layout::Padding,
     pub island: Option<island::Island>,
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,

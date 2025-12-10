@@ -205,6 +205,7 @@ impl Screen<'_> {
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             padding_panel: config.panel.padding.left,
+            panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
         };
