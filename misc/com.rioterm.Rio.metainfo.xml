@@ -228,4 +228,11 @@
       <url type="details">https://github.com/raphamorim/rio/releases/tag/0.1.0</url>
     </release>
   </releases>
+  <keywords>
+    <keyword>hardware accelerated</keyword>
+    <keyword>gpu terminal emulator</keyword>
+    <keyword>webgpu supported</keyword>
+    <keyword>fast terminal emulator</keyword>
+    <keyword>true color terminal</keyword>
+  </keywords>
 </component>
