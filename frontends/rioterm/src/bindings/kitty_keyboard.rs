@@ -58,6 +58,7 @@ pub fn build_key_sequence(key: &KeyEvent, mods: ModifiersState, mode: Mode) -> V
         .or_else(|| context.try_build_named_kitty(key))
         .or_else(|| context.try_build_named_normal(key, associated_text.is_some()))
         .or_else(|| context.try_build_control_char_or_mod(key, &mut modifiers))
+        .or_else(|| context.try_build_ctrl_number(key, &mut modifiers))
         .or_else(|| context.try_build_textual(key, associated_text));
 
     let (payload, terminator) = match sequence_base {
@@ -324,6 +325,52 @@ impl SequenceBuilder {
         Some(SequenceBase::new(base.into(), terminator))
     }
 
+    /// Try building escape sequence for Ctrl+number keys.
+    /// These keys should be mapped to specific control characters according to:
+    /// https://vt100.net/docs/vt220-rm/table3-5.html
+    fn try_build_ctrl_number(
+        &self,
+        key: &KeyEvent,
+        _mods: &mut SequenceModifiers,
+    ) -> Option<SequenceBase> {
+        // Only handle when Control is pressed
+        if !self.modifiers.contains(SequenceModifiers::CONTROL) {
+            return None;
+        }
+
+        let character = match key.logical_key.as_ref() {
+            Key::Character(character) => character,
+            _ => return None,
+        };
+
+        // Check if it's a single digit character
+        if character.len() != 1 {
+            return None;
+        }
+
+        let ch = character.chars().next().unwrap();
+
+        // Map Ctrl+number to control characters
+        // Note: Ctrl+2 sends NUL (0x00) which is handled elsewhere
+        let base = match ch {
+            '1' => "49",  // Send '1' unmodified
+            '3' => "27",  // ESC (0x1B)
+            '4' => "28",  // FS (0x1C)
+            '5' => "29",  // GS (0x1D)
+            '6' => "30",  // RS (0x1E)
+            '7' => "31",  // US (0x1F)
+            '8' => "127", // DEL (0x7F)
+            '9' => "57",  // Send '9' unmodified
+            _ => return None,
+        };
+
+        if self.kitty_seq {
+            Some(SequenceBase::new(base.into(), SequenceTerminator::Kitty))
+        } else {
+            None
+        }
+    }
+
     /// Try building escape from control characters (e.g. Enter) and modifiers.
     fn try_build_control_char_or_mod(
         &self,
@@ -463,4 +510,137 @@ fn is_control_character(text: &str) -> bool {
     // does not match the reported text (`^H`), despite not technically being part of C0 or C1.
     let codepoint = text.bytes().next().unwrap();
     text.len() == 1 && (codepoint < 0x20 || (0x7f..=0x9f).contains(&codepoint))
+}
+
+/// Try to build control character sequence for Ctrl+number keys.
+/// Returns the appropriate control character bytes if this is a Ctrl+number combination.
+/// Based on: https://vt100.net/docs/vt220-rm/table3-5.html
+pub fn try_build_ctrl_number_sequence(
+    key: &KeyEvent,
+    mods: ModifiersState,
+) -> Option<Vec<u8>> {
+    // Only handle when Control is pressed (and not other modifiers that would change behavior)
+    if !mods.control_key() || mods.alt_key() || mods.super_key() {
+        return None;
+    }
+
+    let character = match key.logical_key.as_ref() {
+        Key::Character(character) => character,
+        _ => return None,
+    };
+
+    // Check if it's a single digit character
+    if character.len() != 1 {
+        return None;
+    }
+
+    let ch = character.chars().next().unwrap();
+
+    // Map Ctrl+number to control characters
+    // Note: Ctrl+2 sends NUL (0x00) and Ctrl+0 doesn't send anything
+    let byte = match ch {
+        '1' => return Some(vec![b'1']),  // Send '1' unmodified
+        '2' => 0x00,  // NUL
+        '3' => 0x1B,  // ESC
+        '4' => 0x1C,  // FS (File Separator)
+        '5' => 0x1D,  // GS (Group Separator)
+        '6' => 0x1E,  // RS (Record Separator)
+        '7' => 0x1F,  // US (Unit Separator)
+        '8' => 0x7F,  // DEL
+        '9' => return Some(vec![b'9']),  // Send '9' unmodified
+        _ => return None,
+    };
+
+    Some(vec![byte])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to test the core logic without needing to construct full KeyEvents
+    fn test_ctrl_number_byte(ch: char, mods: ModifiersState) -> Option<Vec<u8>> {
+        // Only handle when Control is pressed (and not other modifiers that would change behavior)
+        if !mods.control_key() || mods.alt_key() || mods.super_key() {
+            return None;
+        }
+
+        // Map Ctrl+number to control characters
+        let byte = match ch {
+            '1' => return Some(vec![b'1']),
+            '2' => 0x00,
+            '3' => 0x1B,
+            '4' => 0x1C,
+            '5' => 0x1D,
+            '6' => 0x1E,
+            '7' => 0x1F,
+            '8' => 0x7F,
+            '9' => return Some(vec![b'9']),
+            _ => return None,
+        };
+
+        Some(vec![byte])
+    }
+
+    #[test]
+    fn test_ctrl_number_sequences() {
+        let ctrl = ModifiersState::CONTROL;
+
+        // Ctrl+1 should send '1' unmodified
+        assert_eq!(test_ctrl_number_byte('1', ctrl), Some(vec![b'1']));
+
+        // Ctrl+2 should send NUL (0x00)
+        assert_eq!(test_ctrl_number_byte('2', ctrl), Some(vec![0x00]));
+
+        // Ctrl+3 should send ESC (0x1B)
+        assert_eq!(test_ctrl_number_byte('3', ctrl), Some(vec![0x1B]));
+
+        // Ctrl+4 should send FS (0x1C)
+        assert_eq!(test_ctrl_number_byte('4', ctrl), Some(vec![0x1C]));
+
+        // Ctrl+5 should send GS (0x1D)
+        assert_eq!(test_ctrl_number_byte('5', ctrl), Some(vec![0x1D]));
+
+        // Ctrl+6 should send RS (0x1E)
+        assert_eq!(test_ctrl_number_byte('6', ctrl), Some(vec![0x1E]));
+
+        // Ctrl+7 should send US (0x1F)
+        assert_eq!(test_ctrl_number_byte('7', ctrl), Some(vec![0x1F]));
+
+        // Ctrl+8 should send DEL (0x7F)
+        assert_eq!(test_ctrl_number_byte('8', ctrl), Some(vec![0x7F]));
+
+        // Ctrl+9 should send '9' unmodified
+        assert_eq!(test_ctrl_number_byte('9', ctrl), Some(vec![b'9']));
+    }
+
+    #[test]
+    fn test_ctrl_number_with_other_modifiers() {
+        // Should not trigger with Alt
+        assert_eq!(
+            test_ctrl_number_byte('6', ModifiersState::CONTROL | ModifiersState::ALT),
+            None
+        );
+
+        // Should not trigger with Super
+        assert_eq!(
+            test_ctrl_number_byte('6', ModifiersState::CONTROL | ModifiersState::SUPER),
+            None
+        );
+
+        // Should work with Shift (Ctrl+Shift+6 is the same as Ctrl+6 on most keyboards)
+        assert_eq!(
+            test_ctrl_number_byte('6', ModifiersState::CONTROL | ModifiersState::SHIFT),
+            Some(vec![0x1E])
+        );
+    }
+
+    #[test]
+    fn test_non_number_keys() {
+        let ctrl = ModifiersState::CONTROL;
+
+        // Should not trigger for non-number keys
+        assert_eq!(test_ctrl_number_byte('a', ctrl), None);
+        assert_eq!(test_ctrl_number_byte('!', ctrl), None);
+    }
 }
