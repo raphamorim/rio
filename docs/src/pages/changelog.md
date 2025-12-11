@@ -36,6 +36,7 @@ language: 'en'
   - Auto-dismisses after 15 seconds of no updates (prevents orphaned bars)
   - Test with: `printf '\e]9;4;1;50\a'` (50% progress)
 - Wgpu now is always f32.
+  - This fixes non arm chip macos use cases.
 
 **Breaking Changes**
 
@@ -51,6 +52,20 @@ language: 'en'
 - **Tab color configuration simplified**: Removed `tabs-foreground`, `tabs-active-foreground`, and `tabs-active-highlight`
   - Use `tabs` for inactive tab text and border color (default: `#cccccc`)
   - Use `tabs-active` for active tab text color (default: `#ffffff`)
+- New padding api:
+  ```toml
+  # It will apply padding rules to the main container
+  # CSS-Like
+  padding = [10] # (10px to all)
+  padding = [10, 5] # (top and bottom padding are 10px, right and left padding are 5px)
+  padding = [10, 5, 15, 20] # (top padding is 10px, right padding is 5px, bottom padding is 15px, left padding is 20px)
+
+  # It will apply padding rules to panels
+  [panel]
+  padding = [5] # (5px to all)
+  row-gap = 0 # (0px)
+  column-gap = 0 # (0px)
+  ```
 
 **Technical Details**
 
