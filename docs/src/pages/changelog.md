@@ -7,8 +7,6 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-**What's New**
-
 - **Kitty Graphics Protocol**: Display images directly in your terminal
   - Direct placements (U=0)
   - Virtual placements (U=1)
@@ -31,10 +29,6 @@ language: 'en'
   - Defaults to standard macOS positioning (11.4, 16.1)
   - Not available in Tab navigation mode
 - **OSC 9;4 Progress Bar Support**: Terminal progress indicator (ConEmu/Windows Terminal compatible)
-  - Displays thin progress bar below tab bar
-  - Support for set (percentage), error (red), indeterminate (animated), and pause states
-  - Auto-dismisses after 15 seconds of no updates (prevents orphaned bars)
-  - Test with: `printf '\e]9;4;1;50\a'` (50% progress)
 - Wgpu now is always f32.
   - This fixes non arm chip macos use cases.
 
@@ -73,7 +67,7 @@ language: 'en'
 - Parser now supports APC sequences for Kitty graphics protocol
 - Removed legacy layer/quad rendering system
 - Added Metal backend for macOS, split WebGPU backend for cross-platform
-- New `kitty_virtual` module for Ghostty-compatible placeholder encoding
+- New `kitty_virtual` module for placeholder encoding
 - Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
 - Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
