@@ -118,8 +118,8 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(default = "default_padding")]
-    pub padding: Padding,
+    #[serde(default = "default_margin", alias = "padding")]
+    pub margin: Padding,
     #[serde(default = "Panel::default")]
     pub panel: Panel,
     #[serde(default = "Vec::default", rename = "env-vars")]
@@ -616,7 +616,7 @@ impl Default for Config {
             line_height: default_line_height(),
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
-            padding: default_padding(),
+            margin: default_margin(),
             panel: Panel::default(),
             renderer: Renderer::default(),
             shell: default_shell(),
@@ -955,10 +955,10 @@ mod tests {
         assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
-        assert_eq!(result.padding.top, 0.0);
-        assert_eq!(result.padding.bottom, 0.0);
-        assert_eq!(result.padding.left, 0.0);
-        assert_eq!(result.padding.right, 0.0);
+        assert_eq!(result.margin.top, 0.0);
+        assert_eq!(result.margin.bottom, 0.0);
+        assert_eq!(result.margin.left, 0.0);
+        assert_eq!(result.margin.right, 0.0);
         assert_eq!(result.window.opacity, 0.5);
         assert_eq!(
             result.window.background_image,

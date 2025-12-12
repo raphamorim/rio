@@ -606,23 +606,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn move_divider_up(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_up(amount)
+    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_up(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_down(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_down(amount)
+    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_down(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_left(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_left(amount)
+    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_left(amount, sugarloaf)
     }
 
     #[inline]
-    pub fn move_divider_right(&mut self, amount: f32) -> bool {
-        self.contexts[self.current_index].move_divider_right(amount)
+    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
+        self.contexts[self.current_index].move_divider_right(amount, sugarloaf)
     }
 
     #[inline]
@@ -694,6 +694,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.contexts.len()
+    }
+
+    #[inline]
+    pub fn resize_all_grids(&mut self, width: f32, height: f32, sugarloaf: &mut Sugarloaf) {
+        for context_grid in self.contexts.iter_mut() {
+            context_grid.resize(width, height, sugarloaf);
+        }
     }
 
     pub fn update_titles(&mut self) {
@@ -975,7 +982,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
-            padding_panel: config.panel.padding.left,
+            padding_panel: config.panel.margin.left,
             panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,

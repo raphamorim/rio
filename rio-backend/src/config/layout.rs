@@ -3,8 +3,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 // Panel configuration for split layouts
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Panel {
-    #[serde(default = "default_panel_padding")]
-    pub padding: Padding,
+    #[serde(default = "default_panel_margin", alias = "padding")]
+    pub margin: Padding,
     #[serde(default = "default_row_gap", rename = "row-gap")]
     pub row_gap: f32,
     #[serde(default = "default_column_gap", rename = "column-gap")]
@@ -14,7 +14,7 @@ pub struct Panel {
 impl Default for Panel {
     fn default() -> Self {
         Self {
-            padding: default_panel_padding(),
+            margin: default_panel_margin(),
             row_gap: default_row_gap(),
             column_gap: default_column_gap(),
         }
@@ -22,7 +22,7 @@ impl Default for Panel {
 }
 
 #[inline]
-fn default_panel_padding() -> Padding {
+fn default_panel_margin() -> Padding {
     Padding::all(5.0)
 }
 
@@ -155,10 +155,10 @@ mod tests {
             padding: Padding,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.padding.top, 10.0);
-        assert_eq!(config.padding.right, 10.0);
-        assert_eq!(config.padding.bottom, 10.0);
-        assert_eq!(config.padding.left, 10.0);
+        assert_eq!(config.margin.top, 10.0);
+        assert_eq!(config.margin.right, 10.0);
+        assert_eq!(config.margin.bottom, 10.0);
+        assert_eq!(config.margin.left, 10.0);
     }
 
     #[test]
@@ -169,10 +169,10 @@ mod tests {
             padding: Padding,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.padding.top, 10.0);
-        assert_eq!(config.padding.right, 5.0);
-        assert_eq!(config.padding.bottom, 10.0);
-        assert_eq!(config.padding.left, 5.0);
+        assert_eq!(config.margin.top, 10.0);
+        assert_eq!(config.margin.right, 5.0);
+        assert_eq!(config.margin.bottom, 10.0);
+        assert_eq!(config.margin.left, 5.0);
     }
 
     #[test]
@@ -183,10 +183,10 @@ mod tests {
             padding: Padding,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.padding.top, 10.0);
-        assert_eq!(config.padding.right, 5.0);
-        assert_eq!(config.padding.bottom, 15.0);
-        assert_eq!(config.padding.left, 20.0);
+        assert_eq!(config.margin.top, 10.0);
+        assert_eq!(config.margin.right, 5.0);
+        assert_eq!(config.margin.bottom, 15.0);
+        assert_eq!(config.margin.left, 20.0);
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_panel_default() {
         let panel = Panel::default();
-        assert_eq!(panel.padding, Padding::all(5.0));
+        assert_eq!(panel.margin, Padding::all(5.0));
         assert_eq!(panel.row_gap, 0.0);
         assert_eq!(panel.column_gap, 0.0);
     }
@@ -224,14 +224,14 @@ mod tests {
         }
         
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.panel.padding, Padding::all(8.0));
+        assert_eq!(config.panel.margin, Padding::all(8.0));
         assert_eq!(config.panel.row_gap, 2.0);
         assert_eq!(config.panel.column_gap, 3.0);
     }
 
     #[test]
     fn test_panel_padding_is_inner_spacing() {
-        // This test documents that panel.padding is INSIDE the panel
+        // This test documents that panel.margin is INSIDE the panel
         // It creates space around the terminal content within each panel
         let toml_str = r#"
             [panel]
@@ -248,10 +248,10 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         
         // Panel padding is applied inside each panel
-        assert_eq!(config.panel.padding.top, 10.0);
-        assert_eq!(config.panel.padding.bottom, 10.0);
-        assert_eq!(config.panel.padding.left, 5.0);
-        assert_eq!(config.panel.padding.right, 5.0);
+        assert_eq!(config.panel.margin.top, 10.0);
+        assert_eq!(config.panel.margin.bottom, 10.0);
+        assert_eq!(config.panel.margin.left, 5.0);
+        assert_eq!(config.panel.margin.right, 5.0);
         
         // Gaps control spacing BETWEEN panels, not inside
         assert_eq!(config.panel.row_gap, 0.0);
@@ -273,7 +273,7 @@ mod tests {
         }
         
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.panel.padding, Padding::all(5.0));
+        assert_eq!(config.panel.margin, Padding::all(5.0));
         assert_eq!(config.panel.row_gap, 10.0);
         assert_eq!(config.panel.column_gap, 15.0);
     }
