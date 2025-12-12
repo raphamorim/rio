@@ -2442,6 +2442,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         self.colors[index] = Some(color_arr);
+        self.event_proxy
+            .send_event(RioEvent::ColorChange(index, Some(color)), self.window_id);
     }
 
     #[inline]
@@ -2452,6 +2454,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         self.colors[index] = None;
+        self.event_proxy
+            .send_event(RioEvent::ColorChange(index, None), self.window_id);
     }
 
     #[inline]
