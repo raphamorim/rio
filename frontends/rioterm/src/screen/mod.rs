@@ -113,13 +113,13 @@ impl Screen<'_> {
 
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding.top,
+            config.margin.top,
             1,
             config.window.macos_use_unified_titlebar,
         );
 
         let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.padding.bottom, 1, false);
+            padding_bottom_from_config(&config.navigation, config.margin.bottom, 1, false);
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -204,7 +204,7 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names/path
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
-            padding_panel: config.panel.padding.left,
+            padding_panel: config.panel.margin.left,
             panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
@@ -213,10 +213,10 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let rich_text_id = next_rich_text_id();
         let _ = sugarloaf.text(Some(rich_text_id));
-        sugarloaf.set_position(rich_text_id, config.padding.left, padding_y_top);
+        sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
 
         let margin = Delta {
-            x: config.padding.left,
+            x: config.margin.left,
             top_y: padding_y_top,
             bottom_y: padding_y_bottom,
         };
@@ -350,13 +350,13 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
-            config.padding.top,
+            config.margin.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &config.navigation,
-            config.padding.bottom,
+            config.margin.bottom,
             num_tabs,
             self.search_active(),
         );
@@ -376,12 +376,12 @@ impl Screen<'_> {
             context_grid.update_line_height(config.line_height);
 
             context_grid.update_margin((
-                config.padding.left,
+                config.margin.left,
                 padding_y_top,
                 padding_y_bottom,
             ));
 
-            context_grid.update_dimensions(&self.sugarloaf);
+            context_grid.update_dimensions(&mut self.sugarloaf);
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
@@ -436,7 +436,7 @@ impl Screen<'_> {
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
 
         self.render();
         self.resize_all_contexts();
@@ -457,9 +457,7 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager.resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -476,13 +474,11 @@ impl Screen<'_> {
         self.resize_all_contexts();
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&self.sugarloaf);
+            .update_dimensions(&mut self.sugarloaf);
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        for context_grid in self.context_manager.contexts_mut() {
-            context_grid.resize(width, height);
-        }
+        self.context_manager.resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -1203,12 +1199,12 @@ impl Screen<'_> {
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
         // Create rich text with initial position accounting for island
-        let padding_y_top = self.renderer.padding.top
+        let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
-            .set_position(rich_text_id, config.padding.left, padding_y_top);
+            .set_position(rich_text_id, config.margin.left, padding_y_top);
         self.context_manager.split_from_config(
             rich_text_id,
             false,
@@ -1224,7 +1220,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding.top
+        let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1241,7 +1237,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding.top
+        let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1255,28 +1251,28 @@ impl Screen<'_> {
 
     pub fn move_divider_up(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_up(amount) {
+        if self.context_manager.move_divider_up(amount, &mut self.sugarloaf) {
             self.render();
         }
     }
 
     pub fn move_divider_down(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_down(amount) {
+        if self.context_manager.move_divider_down(amount, &mut self.sugarloaf) {
             self.render();
         }
     }
 
     pub fn move_divider_left(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_left(amount) {
+        if self.context_manager.move_divider_left(amount, &mut self.sugarloaf) {
             self.render();
         }
     }
 
     pub fn move_divider_right(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_right(amount) {
+        if self.context_manager.move_divider_right(amount, &mut self.sugarloaf) {
             self.render();
         }
     }
@@ -1293,7 +1289,7 @@ impl Screen<'_> {
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
         let padding_x = margin.x;
-        let padding_y_top = self.renderer.padding.top
+        let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
         let _ = self.sugarloaf.text(Some(rich_text_id));
@@ -1343,13 +1339,13 @@ impl Screen<'_> {
         let previous_margin = layout.margin;
         let padding_y_top = padding_top_from_config(
             &self.renderer.navigation,
-            self.renderer.padding.top,
+            self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
         );
         let padding_y_bottom = padding_bottom_from_config(
             &self.renderer.navigation,
-            self.renderer.padding.bottom,
+            self.renderer.margin.bottom,
             num_tabs,
             self.search_active(),
         );

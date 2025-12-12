@@ -228,7 +228,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             context_to_node,
             border_config,
         };
-        grid.calculate_positions_for_affected_nodes(&[root_key]);
+        grid.calculate_positions();
         grid
     }
 
@@ -260,28 +260,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         Ok(())
     }
 
-    fn try_compute_layout(&mut self) -> Result<FxHashMap<usize, (f32, f32, f32, f32)>, TaffyError> {
+    fn compute_layout(&mut self) -> Result<(), TaffyError> {
         let available = geometry::Size {
             width: AvailableSpace::MaxContent,
             height: AvailableSpace::MaxContent,
         };
-        self.tree.compute_layout(self.root_node, available)?;
-
-        let mut layouts = FxHashMap::default();
-        for (&node, &context_id) in &self.node_to_context {
-            let layout = self.tree.layout(node)?;
-            layouts.insert(
-                context_id,
-                (
-                    layout.location.x,
-                    layout.location.y,
-                    layout.size.width,
-                    layout.size.height,
-                ),
-            );
-        }
-
-        Ok(layouts)
+        self.tree.compute_layout(self.root_node, available)
     }
 
     pub fn find_context_at_position(&self, x: f32, y: f32) -> Option<usize> {
@@ -518,40 +502,40 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
-    fn apply_taffy_layout(&mut self) -> bool {
-        if let Ok(layouts) = self.try_compute_layout() {
-            for (&context_id, &(x, y, width, height)) in layouts.iter() {
-                if let Some(item) = self.inner.get_mut(&context_id) {
-                    item.val.dimension.update_width(width);
-                    item.val.dimension.update_height(height);
-
-                    // Update terminal size
-                    let mut terminal = item.val.terminal.lock();
-                    terminal.resize::<ContextDimension>(item.val.dimension);
-                    drop(terminal);
-
-                    let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-                    let _ = item.val.messenger.send_resize(winsize);
-
-                    // Update rich text position
-                    item.rich_text_object = rio_backend::sugarloaf::Object::RichText(
-                        rio_backend::sugarloaf::RichText {
-                            id: item.val.rich_text_id,
-                            lines: None,
-                            render_data: rio_backend::sugarloaf::RichTextRenderData {
-                                position: [x, y],
-                                should_repaint: false,
-                                should_remove: false,
-                                hidden: false,
-                            },
-                        }
-                    );
-                }
-            }
-            true
-        } else {
-            false
+    fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+        if self.compute_layout().is_err() {
+            return false;
         }
+
+        let scale = sugarloaf.ctx.scale();
+        for (&node, &context_id) in &self.node_to_context {
+            let layout = match self.tree.layout(node) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            let x = layout.location.x / scale;
+            let y = layout.location.y / scale;
+            let width = layout.size.width;
+            let height = layout.size.height;
+
+            if let Some(item) = self.inner.get_mut(&context_id) {
+                item.val.dimension.update_width(width);
+                item.val.dimension.update_height(height);
+
+                // Update terminal size
+                let mut terminal = item.val.terminal.lock();
+                terminal.resize::<ContextDimension>(item.val.dimension);
+                drop(terminal);
+
+                let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+                let _ = item.val.messenger.send_resize(winsize);
+
+                // Update position via sugarloaf (handles scaling)
+                sugarloaf.set_position(item.val.rich_text_id, x, y);
+            }
+        }
+        true
     }
 
     #[inline]
@@ -815,7 +799,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &Sugarloaf) {
+    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
         for context in self.inner.values_mut() {
             if let Some(layout) = sugarloaf.get_text_layout(&context.val.rich_text_id) {
                 context.val.dimension.update_dimensions(layout.dimensions);
@@ -824,35 +808,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Apply Taffy layout (only with splits)
         if self.panel_count() > 1 {
-            if let Ok(layouts) = self.try_compute_layout() {
-                // Apply Taffy layout to all contexts
-                for (&context_id, &(x, y, width, height)) in layouts.iter() {
-                    if let Some(item) = self.inner.get_mut(&context_id) {
-                        item.val.dimension.update_width(width);
-                        item.val.dimension.update_height(height);
-                        // Update rich text position
-                        item.rich_text_object = rio_backend::sugarloaf::Object::RichText(
-                            rio_backend::sugarloaf::RichText {
-                                id: item.val.rich_text_id,
-                                lines: None,
-                                render_data: rio_backend::sugarloaf::RichTextRenderData {
-                                    position: [x, y],
-                                    should_repaint: false,
-                                    should_remove: false,
-                                    hidden: false,
-                                },
-                            }
-                        );
-                    }
-                }
-            }
+            self.apply_taffy_layout(sugarloaf);
         } else {
             self.calculate_positions();
         }
     }
 
     /// Resize grid - always uses Taffy for consistent layout
-    pub fn resize(&mut self, new_width: f32, new_height: f32) {
+    pub fn resize(&mut self, new_width: f32, new_height: f32, sugarloaf: &mut Sugarloaf) {
         self.width = new_width;
         self.height = new_height;
 
@@ -860,7 +823,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.try_update_size(new_width, new_height);
 
         // Apply layout - works for both single and multi-panel
-        self.apply_taffy_layout();
+        self.apply_taffy_layout(sugarloaf);
     }
 
     fn request_resize(&mut self, key: usize) {
@@ -893,20 +856,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
     }
-
-    pub fn calculate_positions_for_affected_nodes(&mut self, _affected_keys: &[usize]) {
-        if self.inner.is_empty() {
-            return;
-        }
-
-        if self.panel_count() > 1 {
-            // Multi-panel: recompute entire Taffy layout
-            let _ = self.apply_taffy_layout();
-        } else {
-            self.calculate_positions();
-        }
-    }
-
 
     pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.inner.is_empty() {
@@ -973,7 +922,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Recompute Taffy layout for remaining panels
         if self.panel_count() > 0 {
-            self.apply_taffy_layout();
+            self.apply_taffy_layout(sugarloaf);
         }
     }
 
@@ -982,29 +931,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        let current_key = self.current;
-
         // Create new context
         let new_context = ContextGridItem::new(context);
         let new_key = new_context.val.route_id;
         self.inner.insert(new_key, new_context);
 
         if self.try_split_right(new_key).is_ok() {
-            self.apply_taffy_layout();
+            self.apply_taffy_layout(sugarloaf);
         }
 
         // Set new panel as current
         self.current = new_key;
-
-        // Update sugarloaf visibility for both panels
-        if let Some(current_item) = self.inner.get(&current_key) {
-            let pos = current_item.position();
-            sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
-        }
-        if let Some(new_item) = self.inner.get(&new_key) {
-            let pos = new_item.position();
-            sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
-        }
     }
 
     /// Split down - create new panel below using Taffy
@@ -1013,33 +950,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        let current_key = self.current;
-
         // Create new context
         let new_context = ContextGridItem::new(context);
         let new_key = new_context.val.route_id;
         self.inner.insert(new_key, new_context);
 
-        // Add new panel to Taffy and recompute layout
         if self.try_split_down(new_key).is_ok() {
-            self.apply_taffy_layout();
+            self.apply_taffy_layout(sugarloaf);
         }
 
         // Set new panel as current
         self.current = new_key;
-
-        // Update sugarloaf visibility for both panels
-        if let Some(current_item) = self.inner.get(&current_key) {
-            let pos = current_item.position();
-            sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
-        }
-        if let Some(new_item) = self.inner.get(&new_key) {
-            let pos = new_item.position();
-            sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
-        }
     }
 
-    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
         if self.panel_count() <= 1 {
             return false;
         }
@@ -1092,13 +1016,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
 
             // Apply layout and update all contexts
-            return self.apply_taffy_layout();
+            return self.apply_taffy_layout(sugarloaf);
         }
 
         false
     }
 
-    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
         if self.panel_count() <= 1 {
             return false;
         }
@@ -1151,13 +1075,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.set_panel_size(bottom_node, None, Some(new_bottom_height));
 
             // Apply layout and update all contexts
-            return self.apply_taffy_layout();
+            return self.apply_taffy_layout(sugarloaf);
         }
 
         false
     }
 
-    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
         if self.panel_count() <= 1 {
             return false;
         }
@@ -1210,13 +1134,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.set_panel_size(right_node, Some(new_right_width), None);
 
             // Apply layout and update all contexts
-            return self.apply_taffy_layout();
+            return self.apply_taffy_layout(sugarloaf);
         }
 
         false
     }
 
-    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
         if self.panel_count() <= 1 {
             return false;
         }
@@ -1269,7 +1193,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = self.set_panel_size(right_node, Some(new_right_width), None);
 
             // Apply layout and update all contexts
-            return self.apply_taffy_layout();
+            return self.apply_taffy_layout(sugarloaf);
         }
 
         false
