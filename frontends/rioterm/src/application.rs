@@ -94,38 +94,6 @@ impl Application<'_> {
         )
     }
 
-    fn handle_visual_bell(&mut self, window_id: WindowId) {
-        if let Some(route) = self.router.routes.get_mut(&window_id) {
-            route.window.screen.renderer.trigger_visual_bell();
-
-            // Mark content as dirty to ensure render happens
-            route
-                .window
-                .screen
-                .ctx_mut()
-                .current_mut()
-                .renderable_content
-                .pending_update
-                .set_dirty();
-
-            // Force immediate render to show the bell
-            route.request_redraw();
-
-            // Schedule a render after the bell duration to clear it
-            let timer_id =
-                TimerId::new(Topic::Render, route.window.screen.ctx().current_route());
-            let event = EventPayload::new(RioEventType::Rio(RioEvent::Render), window_id);
-
-            // Schedule render to clear bell effect after visual bell duration
-            self.scheduler.schedule(
-                event,
-                crate::constants::BELL_DURATION,
-                false,
-                timer_id,
-            );
-        }
-    }
-
     fn handle_audio_bell(&mut self) {
         #[cfg(target_os = "macos")]
         {
@@ -527,11 +495,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell) => {
-                // Handle visual bell
-                if self.config.bell.visual {
-                    self.handle_visual_bell(window_id);
-                }
-
                 // Handle audio bell
                 if self.config.bell.audio {
                     self.handle_audio_bell();

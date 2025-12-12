@@ -4,7 +4,7 @@ use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
+
 use taffy::{AvailableSpace, Display, style_helpers::length, Style, NodeId, TaffyTree, TaffyError, geometry};
 
 const MIN_COLS: usize = 2;
@@ -86,17 +86,15 @@ pub struct ContextGrid<T: EventListener> {
     pub current: usize,
     pub margin: Delta<f32>,
     border_color: [f32; 4],
-    padding_panel: f32,
-    scaled_padding: f32,
-    inner: HashMap<usize, ContextGridItem<T>>,
+    inner: FxHashMap<usize, ContextGridItem<T>>,
     pub root: Option<usize>,
     // Panel configuration
     panel_config: rio_backend::config::layout::Panel,
     // Taffy layout (embedded from TaffyLayoutManager)
-    taffy: TaffyTree<()>,
-    taffy_root_node: NodeId,
-    taffy_node_to_context: FxHashMap<NodeId, usize>,
-    taffy_context_to_node: FxHashMap<usize, NodeId>,
+    tree: TaffyTree<()>,
+    root_node: NodeId,
+    node_to_context: FxHashMap<NodeId, usize>,
+    context_to_node: FxHashMap<usize, NodeId>,
     border_config: BorderConfig,
 }
 
@@ -163,14 +161,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     ) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
-        let scale = context.dimension.dimension.scale;
-        let scaled_padding = padding_panel * scale;
-        let mut inner = HashMap::new();
+        let mut inner = FxHashMap::default();
         let root_key = context.route_id;
         inner.insert(context.route_id, ContextGridItem::new(context));
 
         // Initialize Taffy layout
-        let mut taffy = TaffyTree::new();
+        let mut tree = TaffyTree::new();
 
         // Create root container with padding and gaps
         let padding = [margin.top_y, 0.0, margin.bottom_y, margin.x];
@@ -193,7 +189,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
 
-        let taffy_root_node = taffy.new_leaf(root_style).expect("Failed to create root node");
+        let root_node = tree.new_leaf(root_style).expect("Failed to create root node");
 
         // Create initial panel node
         let panel_style = Style {
@@ -203,16 +199,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
 
-        let panel_node = taffy.new_leaf(panel_style).expect("Failed to create panel node");
-        taffy.add_child(taffy_root_node, panel_node).expect("Failed to add child");
+        let panel_node = tree.new_leaf(panel_style).expect("Failed to create panel node");
+        tree.add_child(root_node, panel_node).expect("Failed to add child");
 
-        let mut taffy_node_to_context = FxHashMap::default();
-        let mut taffy_context_to_node = FxHashMap::default();
-        taffy_node_to_context.insert(panel_node, root_key);
-        taffy_context_to_node.insert(root_key, panel_node);
+        let mut node_to_context = FxHashMap::default();
+        let mut context_to_node = FxHashMap::default();
+        node_to_context.insert(panel_node, root_key);
+        context_to_node.insert(root_key, panel_node);
 
         let border_config = BorderConfig {
-            width: 2.0,
+            width: 1.0,
             color: border_color,
             radius: 0.0,
         };
@@ -224,14 +220,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             width,
             height,
             border_color,
-            padding_panel,
-            scaled_padding,
             root: Some(root_key),
             panel_config,
-            taffy,
-            taffy_root_node,
-            taffy_node_to_context,
-            taffy_context_to_node,
+            tree,
+            root_node,
+            node_to_context,
+            context_to_node,
             border_config,
         };
         grid.calculate_positions_for_affected_nodes(&[root_key]);
@@ -248,46 +242,34 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.inner.len()
     }
 
-    #[inline]
-    pub fn scale(&self) -> f32 {
-        self.scaled_padding / self.padding_panel
-    }
-
-    /// Get panel borders from Taffy layout
-    // Taffy Layout Methods (from TaffyLayoutManager)
-
-    /// Get the number of panels in the layout
     pub fn panel_count(&self) -> usize {
-        self.taffy_node_to_context.len()
+        self.node_to_context.len()
     }
 
-    /// Check if borders should be drawn (only when 2+ panels)
     pub fn should_draw_borders(&self) -> bool {
         self.panel_count() > 1
     }
 
-    /// Update the Taffy root container size (e.g., on window resize)
-    fn update_taffy_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
-        let mut style = self.taffy.style(self.taffy_root_node)?.clone();
+    fn try_update_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
+        let mut style = self.tree.style(self.root_node)?.clone();
         style.size = geometry::Size {
             width: length(width),
             height: length(height),
         };
-        self.taffy.set_style(self.taffy_root_node, style)?;
+        self.tree.set_style(self.root_node, style)?;
         Ok(())
     }
 
-    /// Compute the Taffy layout and return positions/sizes for all contexts
-    fn compute_taffy_layout(&mut self) -> Result<FxHashMap<usize, (f32, f32, f32, f32)>, TaffyError> {
+    fn try_compute_layout(&mut self) -> Result<FxHashMap<usize, (f32, f32, f32, f32)>, TaffyError> {
         let available = geometry::Size {
             width: AvailableSpace::MaxContent,
             height: AvailableSpace::MaxContent,
         };
-        self.taffy.compute_layout(self.taffy_root_node, available)?;
+        self.tree.compute_layout(self.root_node, available)?;
 
         let mut layouts = FxHashMap::default();
-        for (&node, &context_id) in &self.taffy_node_to_context {
-            let layout = self.taffy.layout(node)?;
+        for (&node, &context_id) in &self.node_to_context {
+            let layout = self.tree.layout(node)?;
             layouts.insert(
                 context_id,
                 (
@@ -302,10 +284,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         Ok(layouts)
     }
 
-    /// Find which context contains the given point (for mouse interaction)
     pub fn find_context_at_position(&self, x: f32, y: f32) -> Option<usize> {
-        for (&node, &context_id) in &self.taffy_node_to_context {
-            if let Ok(layout) = self.taffy.layout(node) {
+        for (&node, &context_id) in &self.node_to_context {
+            if let Ok(layout) = self.tree.layout(node) {
                 let left = layout.location.x;
                 let top = layout.location.y;
                 let right = left + layout.size.width;
@@ -319,7 +300,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
-    /// Create border rectangles for all panels (only if 2+ panels exist)
     pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
         use rio_backend::sugarloaf::{Object, Rect};
 
@@ -331,8 +311,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let border_width = self.border_config.width;
         let color = self.border_config.color;
 
-        for &node in self.taffy_node_to_context.keys() {
-            if let Ok(layout) = self.taffy.layout(node) {
+        for &node in self.node_to_context.keys() {
+            if let Ok(layout) = self.tree.layout(node) {
                 let x = layout.location.x;
                 let y = layout.location.y;
                 let width = layout.size.width;
@@ -367,12 +347,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         borders
     }
 
-    /// Split the current panel horizontally (right) - Taffy implementation
-    fn taffy_split_right(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
+    fn try_split_right(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
         // Set root to row direction (horizontal split)
-        let mut root_style = self.taffy.style(self.taffy_root_node)?.clone();
+        let mut root_style = self.tree.style(self.root_node)?.clone();
         root_style.flex_direction = taffy::FlexDirection::Row;
-        self.taffy.set_style(self.taffy_root_node, root_style)?;
+        self.tree.set_style(self.root_node, root_style)?;
 
         // Create new panel node
         let new_panel_style = Style {
@@ -381,24 +360,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             flex_shrink: 1.0,
             ..Default::default()
         };
-        let new_node = self.taffy.new_leaf(new_panel_style)?;
+        let new_node = self.tree.new_leaf(new_panel_style)?;
 
         // Add to root container (gap will handle spacing)
-        self.taffy.add_child(self.taffy_root_node, new_node)?;
+        self.tree.add_child(self.root_node, new_node)?;
 
         // Update mappings
-        self.taffy_node_to_context.insert(new_node, new_context_id);
-        self.taffy_context_to_node.insert(new_context_id, new_node);
+        self.node_to_context.insert(new_node, new_context_id);
+        self.context_to_node.insert(new_context_id, new_node);
 
         Ok(())
     }
 
-    /// Split the current panel vertically (down) - Taffy implementation
-    fn taffy_split_down(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
+    fn try_split_down(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
         // Set root to column direction (vertical split)
-        let mut root_style = self.taffy.style(self.taffy_root_node)?.clone();
+        let mut root_style = self.tree.style(self.root_node)?.clone();
         root_style.flex_direction = taffy::FlexDirection::Column;
-        self.taffy.set_style(self.taffy_root_node, root_style)?;
+        self.tree.set_style(self.root_node, root_style)?;
 
         // Create new panel node
         let new_panel_style = Style {
@@ -407,23 +385,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             flex_shrink: 1.0,
             ..Default::default()
         };
-        let new_node = self.taffy.new_leaf(new_panel_style)?;
+        let new_node = self.tree.new_leaf(new_panel_style)?;
 
         // Add to root container (gap will handle spacing)
-        self.taffy.add_child(self.taffy_root_node, new_node)?;
+        self.tree.add_child(self.root_node, new_node)?;
 
         // Update mappings
-        self.taffy_node_to_context.insert(new_node, new_context_id);
-        self.taffy_context_to_node.insert(new_context_id, new_node);
+        self.node_to_context.insert(new_node, new_context_id);
+        self.context_to_node.insert(new_context_id, new_node);
 
         Ok(())
     }
 
-    /// Set explicit size (flex_basis) for a panel node
-    /// If width is Some, sets flex_basis for width (horizontal layouts)
-    /// If height is Some, sets flex_basis for height (vertical layouts)
     fn set_panel_size(&mut self, node: NodeId, width: Option<f32>, height: Option<f32>) -> Result<(), TaffyError> {
-        let mut style = self.taffy.style(node)?.clone();
+        let mut style = self.tree.style(node)?.clone();
 
         if let Some(w) = width {
             style.flex_basis = length(w);
@@ -435,23 +410,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             style.flex_shrink = 0.0;
         }
 
-        self.taffy.set_style(node, style)?;
+        self.tree.set_style(node, style)?;
         Ok(())
     }
 
-    /// Find two horizontally adjacent panels (left panel to the left of right panel)
-    /// Returns (left_context_id, right_context_id) if found
     fn find_horizontal_neighbors(&self, context_id: usize) -> Option<(usize, usize)> {
-        let current_node = self.taffy_context_to_node.get(&context_id)?;
-        let current_layout = self.taffy.layout(*current_node).ok()?;
+        let current_node = self.context_to_node.get(&context_id)?;
+        let current_layout = self.tree.layout(*current_node).ok()?;
 
         let gap = self.panel_config.column_gap;
 
         // Find panel directly to the left (overlapping Y range, touching on X axis)
-        for (&node, &other_id) in &self.taffy_node_to_context {
+        for (&node, &other_id) in &self.node_to_context {
             if other_id == context_id { continue; }
 
-            let other_layout = self.taffy.layout(node).ok()?;
+            let other_layout = self.tree.layout(node).ok()?;
 
             // Check if vertically overlapping (Y ranges overlap)
             let current_y_end = current_layout.location.y + current_layout.size.height;
@@ -471,10 +444,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Try finding panel to the right
         let current_right = current_layout.location.x + current_layout.size.width;
-        for (&node, &other_id) in &self.taffy_node_to_context {
+        for (&node, &other_id) in &self.node_to_context {
             if other_id == context_id { continue; }
 
-            let other_layout = self.taffy.layout(node).ok()?;
+            let other_layout = self.tree.layout(node).ok()?;
 
             // Check if vertically overlapping
             let current_y_end = current_layout.location.y + current_layout.size.height;
@@ -493,19 +466,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
-    /// Find two vertically adjacent panels (top panel above bottom panel)
-    /// Returns (top_context_id, bottom_context_id) if found
     fn find_vertical_neighbors(&self, context_id: usize) -> Option<(usize, usize)> {
-        let current_node = self.taffy_context_to_node.get(&context_id)?;
-        let current_layout = self.taffy.layout(*current_node).ok()?;
+        let current_node = self.context_to_node.get(&context_id)?;
+        let current_layout = self.tree.layout(*current_node).ok()?;
 
         let gap = self.panel_config.row_gap;
 
         // Find panel directly above (overlapping X range, touching on Y axis)
-        for (&node, &other_id) in &self.taffy_node_to_context {
+        for (&node, &other_id) in &self.node_to_context {
             if other_id == context_id { continue; }
 
-            let other_layout = self.taffy.layout(node).ok()?;
+            let other_layout = self.tree.layout(node).ok()?;
 
             // Check if horizontally overlapping (X ranges overlap)
             let current_x_end = current_layout.location.x + current_layout.size.width;
@@ -525,10 +496,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Try finding panel below
         let current_bottom = current_layout.location.y + current_layout.size.height;
-        for (&node, &other_id) in &self.taffy_node_to_context {
+        for (&node, &other_id) in &self.node_to_context {
             if other_id == context_id { continue; }
 
-            let other_layout = self.taffy.layout(node).ok()?;
+            let other_layout = self.tree.layout(node).ok()?;
 
             // Check if horizontally overlapping
             let current_x_end = current_layout.location.x + current_layout.size.width;
@@ -547,9 +518,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
-    /// Apply Taffy layout to all contexts after changes
     fn apply_taffy_layout(&mut self) -> bool {
-        if let Ok(layouts) = self.compute_taffy_layout() {
+        if let Ok(layouts) = self.try_compute_layout() {
             for (&context_id, &(x, y, width, height)) in layouts.iter() {
                 if let Some(item) = self.inner.get_mut(&context_id) {
                     item.val.dimension.update_width(width);
@@ -585,17 +555,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     #[inline]
-    pub fn scaled_padding(&self) -> f32 {
-        self.scaled_padding
-    }
-
-    #[inline]
-    pub fn contexts_mut(&mut self) -> &mut HashMap<usize, ContextGridItem<T>> {
+    pub fn contexts_mut(&mut self) -> &mut FxHashMap<usize, ContextGridItem<T>> {
         &mut self.inner
     }
 
     #[inline]
-    pub fn contexts(&mut self) -> &HashMap<usize, ContextGridItem<T>> {
+    pub fn contexts(&mut self) -> &FxHashMap<usize, ContextGridItem<T>> {
         &self.inner
     }
 
@@ -606,8 +571,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut panels: Vec<(usize, f32, f32)> = Vec::new();
 
         // Collect all panels with their positions from Taffy
-        for (&context_id, &node) in &self.taffy_context_to_node {
-            if let Ok(layout) = self.taffy.layout(node) {
+        for (&context_id, &node) in &self.context_to_node {
+            if let Ok(layout) = self.tree.layout(node) {
                 panels.push((context_id, layout.location.y, layout.location.x));
             }
         }
@@ -758,31 +723,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     target.push(item.rich_text_object.clone());
                 }
             }
-        } else {
-            self.plot_objects(target);
         }
-    }
-
-    #[inline]
-    pub fn objects(&self) -> Vec<Object> {
-        let len = self.inner.len();
-        if len == 0 {
-            return vec![];
-        }
-
-        let mut objects = Vec::with_capacity(len);
-
-        // In case there's only 1 context then ignore quad
-        if len == 1 {
-            if let Some(root) = self.root {
-                if let Some(item) = self.inner.get(&root) {
-                    objects.push(item.rich_text_object.clone());
-                }
-            }
-        } else {
-            self.plot_objects(&mut objects);
-        }
-        objects
     }
 
     pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
@@ -799,23 +740,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         if let Some(current_item) = self.inner.get(&self.current) {
-            let objects = self.objects();
-            let rich_text_id = current_item.val.rich_text_id;
-
-            let mut margin = self.margin;
-            for obj in objects {
-                if let Object::RichText(rich_text_obj) = obj {
-                    if rich_text_obj.id == rich_text_id {
-                        margin.x =
-                            rich_text_obj.render_data.position[0] + self.scaled_padding;
-                        margin.top_y =
-                            rich_text_obj.render_data.position[1] + self.scaled_padding;
-                        break;
-                    }
-                }
-            }
-
-            (&current_item.val, margin)
+            (&current_item.val, self.margin)
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
@@ -834,10 +759,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return false;
         }
 
-        // Convert mouse coordinates to unscaled coordinates
-        let scale_factor = self.scaled_padding / self.padding_panel;
-        let x = mouse.x as f32 / scale_factor;
-        let y = mouse.y as f32 / scale_factor;
+        let x = mouse.x as f32;
+        let y = mouse.y as f32;
 
         // Use Taffy's find_context_at_position to find the panel
         if let Some(context_id) = self.find_context_at_position(x, y) {
@@ -874,28 +797,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    /// Collect rich text objects from all panels
-    /// Note: Borders are handled separately by get_panel_borders()
-    pub fn plot_objects(&self, objects: &mut Vec<Object>) {
-        if self.inner.is_empty() {
-            return;
-        }
-
-        // Simply collect all rich text objects
-        for item in self.inner.values() {
-            objects.push(item.rich_text_object.clone());
-        }
-    }
-
     pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
         self.margin = Delta {
             x: padding.0,
             top_y: padding.1,
             bottom_y: padding.2,
         };
-        for context in self.inner.values_mut() {
-            context.val.dimension.update_margin(self.margin);
-        }
+        // TODO: Fix it
+        // for context in self.inner.values_mut() {
+            // context.val.dimension.update_margin(self.margin);
+        // }
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
@@ -910,17 +821,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 context.val.dimension.update_dimensions(layout.dimensions);
             }
         }
-        // Update scaled_padding from the first context (they should all have the same scale)
-        if let Some(root) = self.root {
-            if let Some(first_context) = self.inner.get(&root) {
-                self.scaled_padding =
-                    self.padding_panel * first_context.val.dimension.dimension.scale;
-            }
-        }
 
         // Apply Taffy layout (only with splits)
         if self.panel_count() > 1 {
-            if let Ok(layouts) = self.compute_taffy_layout() {
+            if let Ok(layouts) = self.try_compute_layout() {
                 // Apply Taffy layout to all contexts
                 for (&context_id, &(x, y, width, height)) in layouts.iter() {
                     if let Some(item) = self.inner.get_mut(&context_id) {
@@ -943,7 +847,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 }
             }
         } else {
-            // Single panel - use traditional layout
             self.calculate_positions();
         }
     }
@@ -954,7 +857,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.height = new_height;
 
         // Update Taffy size and recompute layout
-        let _ = self.update_taffy_size(new_width, new_height);
+        let _ = self.try_update_size(new_width, new_height);
 
         // Apply layout - works for both single and multi-panel
         self.apply_taffy_layout();
@@ -971,10 +874,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    /// Calculate and update positions for all grid items
-    /// Calculate positions using Taffy layout
-    /// For multi-panel layouts, Taffy already computed positions via apply_taffy_layout()
-    /// For single panel, set position to margin
+    #[inline]
     pub fn calculate_positions(&mut self) {
         if self.inner.is_empty() {
             return;
@@ -994,8 +894,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    /// Calculate positions only for affected nodes
-    /// With Taffy, this is simplified - just recompute Taffy layout if multi-panel
     pub fn calculate_positions_for_affected_nodes(&mut self, _affected_keys: &[usize]) {
         if self.inner.is_empty() {
             return;
@@ -1005,13 +903,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             // Multi-panel: recompute entire Taffy layout
             let _ = self.apply_taffy_layout();
         } else {
-            // Single panel: just update position
             self.calculate_positions();
         }
     }
 
 
-    /// Remove current panel and select next one - simplified with Taffy
     pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
@@ -1053,10 +949,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
 
         // Remove from Taffy
-        if let Some(&node) = self.taffy_context_to_node.get(&to_remove) {
-            let _ = self.taffy.remove(node);
-            self.taffy_context_to_node.remove(&to_remove);
-            self.taffy_node_to_context.remove(&node);
+        if let Some(&node) = self.context_to_node.get(&to_remove) {
+            let _ = self.tree.remove(node);
+            self.context_to_node.remove(&to_remove);
+            self.node_to_context.remove(&node);
         }
 
         // Remove from inner map
@@ -1093,8 +989,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let new_key = new_context.val.route_id;
         self.inner.insert(new_key, new_context);
 
-        // Add new panel to Taffy and recompute layout
-        if self.taffy_split_right(new_key).is_ok() {
+        if self.try_split_right(new_key).is_ok() {
             self.apply_taffy_layout();
         }
 
@@ -1105,12 +1000,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
             sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
-            sugarloaf.set_visibility(current_item.val.rich_text_id, true);
         }
         if let Some(new_item) = self.inner.get(&new_key) {
             let pos = new_item.position();
             sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
-            sugarloaf.set_visibility(new_item.val.rich_text_id, true);
         }
     }
 
@@ -1128,7 +1021,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.inner.insert(new_key, new_context);
 
         // Add new panel to Taffy and recompute layout
-        if self.taffy_split_down(new_key).is_ok() {
+        if self.try_split_down(new_key).is_ok() {
             self.apply_taffy_layout();
         }
 
@@ -1139,17 +1032,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Some(current_item) = self.inner.get(&current_key) {
             let pos = current_item.position();
             sugarloaf.set_position(current_item.val.rich_text_id, pos[0], pos[1]);
-            sugarloaf.set_visibility(current_item.val.rich_text_id, true);
         }
         if let Some(new_item) = self.inner.get(&new_key) {
             let pos = new_item.position();
             sugarloaf.set_position(new_item.val.rich_text_id, pos[0], pos[1]);
-            sugarloaf.set_visibility(new_item.val.rich_text_id, true);
         }
     }
 
-    /// Move divider up - decreases height of current split and increases height of split above
-    /// Uses Taffy layout to find and adjust vertically adjacent panels
     pub fn move_divider_up(&mut self, amount: f32) -> bool {
         if self.panel_count() <= 1 {
             return false;
@@ -1159,21 +1048,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find vertically adjacent panels
         if let Some((top_id, bottom_id)) = self.find_vertical_neighbors(current_context) {
-            let top_node = match self.taffy_context_to_node.get(&top_id) {
+            let top_node = match self.context_to_node.get(&top_id) {
                 Some(&node) => node,
                 None => return false,
             };
-            let bottom_node = match self.taffy_context_to_node.get(&bottom_id) {
+            let bottom_node = match self.context_to_node.get(&bottom_id) {
                 Some(&node) => node,
                 None => return false,
             };
 
             // Get current sizes
-            let top_layout = match self.taffy.layout(top_node).ok() {
+            let top_layout = match self.tree.layout(top_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
-            let bottom_layout = match self.taffy.layout(bottom_node).ok() {
+            let bottom_layout = match self.tree.layout(bottom_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
@@ -1209,8 +1098,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
-    /// Move divider down - increases height of current split and decreases height of split above
-    /// Uses Taffy layout to find and adjust vertically adjacent panels
     pub fn move_divider_down(&mut self, amount: f32) -> bool {
         if self.panel_count() <= 1 {
             return false;
@@ -1220,21 +1107,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find vertically adjacent panels
         if let Some((top_id, bottom_id)) = self.find_vertical_neighbors(current_context) {
-            let top_node = match self.taffy_context_to_node.get(&top_id) {
+            let top_node = match self.context_to_node.get(&top_id) {
                 Some(&node) => node,
                 None => return false,
             };
-            let bottom_node = match self.taffy_context_to_node.get(&bottom_id) {
+            let bottom_node = match self.context_to_node.get(&bottom_id) {
                 Some(&node) => node,
                 None => return false,
             };
 
             // Get current sizes
-            let top_layout = match self.taffy.layout(top_node).ok() {
+            let top_layout = match self.tree.layout(top_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
-            let bottom_layout = match self.taffy.layout(bottom_node).ok() {
+            let bottom_layout = match self.tree.layout(bottom_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
@@ -1270,8 +1157,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
-    /// Move divider left - shrinks left panel and expands right panel
-    /// Uses Taffy layout to find and adjust horizontally adjacent panels
     pub fn move_divider_left(&mut self, amount: f32) -> bool {
         if self.panel_count() <= 1 {
             return false;
@@ -1281,21 +1166,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find horizontally adjacent panels
         if let Some((left_id, right_id)) = self.find_horizontal_neighbors(current_context) {
-            let left_node = match self.taffy_context_to_node.get(&left_id) {
+            let left_node = match self.context_to_node.get(&left_id) {
                 Some(&node) => node,
                 None => return false,
             };
-            let right_node = match self.taffy_context_to_node.get(&right_id) {
+            let right_node = match self.context_to_node.get(&right_id) {
                 Some(&node) => node,
                 None => return false,
             };
 
             // Get current sizes
-            let left_layout = match self.taffy.layout(left_node).ok() {
+            let left_layout = match self.tree.layout(left_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
-            let right_layout = match self.taffy.layout(right_node).ok() {
+            let right_layout = match self.tree.layout(right_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
@@ -1331,8 +1216,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         false
     }
 
-    /// Move divider right - expands left panel and shrinks right panel
-    /// Uses Taffy layout to find and adjust horizontally adjacent panels
     pub fn move_divider_right(&mut self, amount: f32) -> bool {
         if self.panel_count() <= 1 {
             return false;
@@ -1342,21 +1225,21 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find horizontally adjacent panels
         if let Some((left_id, right_id)) = self.find_horizontal_neighbors(current_context) {
-            let left_node = match self.taffy_context_to_node.get(&left_id) {
+            let left_node = match self.context_to_node.get(&left_id) {
                 Some(&node) => node,
                 None => return false,
             };
-            let right_node = match self.taffy_context_to_node.get(&right_id) {
+            let right_node = match self.context_to_node.get(&right_id) {
                 Some(&node) => node,
                 None => return false,
             };
 
             // Get current sizes
-            let left_layout = match self.taffy.layout(left_node).ok() {
+            let left_layout = match self.tree.layout(left_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
-            let right_layout = match self.taffy.layout(right_node).ok() {
+            let right_layout = match self.tree.layout(right_node).ok() {
                 Some(layout) => layout,
                 None => return false,
             };
