@@ -40,7 +40,7 @@ image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
-taffy = "0.9.2"
+taffy = { version = "0.9.2", features = ["flexbox","grid"] }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }

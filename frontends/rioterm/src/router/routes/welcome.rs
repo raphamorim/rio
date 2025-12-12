@@ -1,4 +1,4 @@
-use crate::context::grid::ContextDimension;
+use crate::layout::ContextDimension;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
 #[inline]
@@ -24,7 +24,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     sugarloaf.rect(
         None,
         15.0,
-        context_dimension.margin.top_y + 60.0,
+        context_dimension.margin.top + 60.0,
         15.0,
         layout.height,
         yellow,
@@ -33,7 +33,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     sugarloaf.rect(
         None,
         30.0,
-        context_dimension.margin.top_y + 120.0,
+        context_dimension.margin.top + 120.0,
         15.0,
         layout.height,
         red,
@@ -123,21 +123,21 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     sugarloaf.set_transient_position(
         heading_idx,
         70.0,
-        context_dimension.margin.top_y + 30.0,
+        context_dimension.margin.top + 30.0,
     );
     sugarloaf.set_transient_visibility(heading_idx, true);
 
     sugarloaf.set_transient_position(
         action_idx,
         70.0,
-        context_dimension.margin.top_y + 70.0,
+        context_dimension.margin.top + 70.0,
     );
     sugarloaf.set_transient_visibility(action_idx, true);
 
     sugarloaf.set_transient_position(
         paragraph_idx,
         70.0,
-        context_dimension.margin.top_y + 140.0,
+        context_dimension.margin.top + 140.0,
     );
     sugarloaf.set_transient_visibility(paragraph_idx, true);
 }

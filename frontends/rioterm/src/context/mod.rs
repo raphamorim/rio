@@ -1,9 +1,9 @@
-pub mod grid;
 pub mod renderable;
 pub mod title;
 
 use crate::ansi::CursorShape;
-use crate::context::grid::{ContextDimension, ContextGrid, ContextGridItem, Delta};
+pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
+use rio_backend::config::layout::Margin;
 use crate::context::title::{
     create_title_extra_from_context, update_title, ContextManagerTitles,
 };
@@ -128,7 +128,6 @@ pub struct ContextManagerConfig {
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
-    pub padding_panel: f32,
     pub panel: rio_backend::config::layout::Panel,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
@@ -337,7 +336,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: ContextDimension,
-        margin: Delta<f32>,
+        margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
@@ -396,7 +395,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 initial_context,
                 margin,
                 ctx_config.split_color,
-                ctx_config.padding_panel,
                 ctx_config.panel,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
@@ -443,9 +441,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
-                Delta::<f32>::default(),
+                Margin::default(),
                 config.split_color,
-                config.padding_panel,
                 config.panel,
             )],
             capacity,
@@ -982,7 +979,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
-            padding_panel: config.panel.margin.left,
             panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,
@@ -1078,7 +1074,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         new_context,
                         previous_margin,
                         self.config.split_color,
-                        self.config.padding_panel,
                         self.config.panel,
                     ));
                     if redirect {

@@ -1,5 +1,6 @@
 use crate::context::Context;
 use crate::mouse::Mouse;
+use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
@@ -15,15 +16,15 @@ fn compute(
     height: f32,
     dimensions: TextDimensions,
     line_height: f32,
-    margin: Delta<f32>,
+    margin: Margin,
 ) -> (usize, usize) {
     // Ensure we have positive dimensions
     if width <= 0.0 || height <= 0.0 || dimensions.scale <= 0.0 || line_height <= 0.0 {
         return (MIN_COLS, MIN_LINES);
     }
 
-    let margin_x = margin.x;
-    let margin_spaces = margin.top_y + margin.bottom_y;
+    let margin_x = margin.left;
+    let margin_spaces = margin.top + margin.bottom;
 
     // Calculate available space in physical pixels
     let available_width = width - margin_x;
@@ -55,13 +56,6 @@ fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object 
     Object::Rect(Rect::new(position[0], position[1], size[0], size[1], color))
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Delta<T: Default> {
-    pub x: T,
-    pub top_y: T,
-    pub bottom_y: T,
-}
-
 /// Border configuration for split panels
 #[derive(Debug, Clone, Copy)]
 pub struct BorderConfig {
@@ -84,7 +78,7 @@ pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
     pub current: usize,
-    pub margin: Delta<f32>,
+    pub margin: Margin,
     border_color: [f32; 4],
     inner: FxHashMap<usize, ContextGridItem<T>>,
     pub root: Option<usize>,
@@ -154,9 +148,8 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(
         context: Context<T>,
-        margin: Delta<f32>,
+        margin: Margin,
         border_color: [f32; 4],
-        padding_panel: f32,
         panel_config: rio_backend::config::layout::Panel,
     ) -> Self {
         let width = context.dimension.width;
@@ -168,34 +161,43 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Initialize Taffy layout
         let mut tree = TaffyTree::new();
 
-        // Create root container with padding and gaps
-        let padding = [margin.top_y, 0.0, margin.bottom_y, margin.x];
+        // Calculate available size after window margin
+        let available_width = width - margin.left - margin.right;
+        let available_height = height - margin.top - margin.bottom;
+
+        // Create root container (window margin handled separately via position offset)
         let root_style = Style {
             display: Display::Flex,
-            padding: geometry::Rect {
-                left: length(padding[3]),
-                right: length(padding[1]),
-                top: length(padding[0]),
-                bottom: length(padding[2]),
-            },
             gap: geometry::Size {
                 width: length(panel_config.column_gap),
                 height: length(panel_config.row_gap),
             },
             size: geometry::Size {
-                width: length(width),
-                height: length(height),
+                width: length(available_width),
+                height: length(available_height),
             },
             ..Default::default()
         };
 
         let root_node = tree.new_leaf(root_style).expect("Failed to create root node");
 
-        // Create initial panel node
+        // Create initial panel node with padding and margin from config
         let panel_style = Style {
             display: Display::Flex,
             flex_grow: 1.0,
             flex_shrink: 1.0,
+            padding: geometry::Rect {
+                left: length(panel_config.padding.left),
+                right: length(panel_config.padding.right),
+                top: length(panel_config.padding.top),
+                bottom: length(panel_config.padding.bottom),
+            },
+            margin: geometry::Rect {
+                left: length(panel_config.margin.left),
+                right: length(panel_config.margin.right),
+                top: length(panel_config.margin.top),
+                bottom: length(panel_config.margin.bottom),
+            },
             ..Default::default()
         };
 
@@ -251,10 +253,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn try_update_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
+        // Subtract window margin from available size
+        let available_width = width - self.margin.left - self.margin.right;
+        let available_height = height - self.margin.top - self.margin.bottom;
+
         let mut style = self.tree.style(self.root_node)?.clone();
         style.size = geometry::Size {
-            width: length(width),
-            height: length(height),
+            width: length(available_width),
+            height: length(available_height),
         };
         self.tree.set_style(self.root_node, style)?;
         Ok(())
@@ -331,20 +337,35 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         borders
     }
 
+    fn create_panel_style(&self) -> Style {
+        Style {
+            display: Display::Flex,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            padding: geometry::Rect {
+                left: length(self.panel_config.padding.left),
+                right: length(self.panel_config.padding.right),
+                top: length(self.panel_config.padding.top),
+                bottom: length(self.panel_config.padding.bottom),
+            },
+            margin: geometry::Rect {
+                left: length(self.panel_config.margin.left),
+                right: length(self.panel_config.margin.right),
+                top: length(self.panel_config.margin.top),
+                bottom: length(self.panel_config.margin.bottom),
+            },
+            ..Default::default()
+        }
+    }
+
     fn try_split_right(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
         // Set root to row direction (horizontal split)
         let mut root_style = self.tree.style(self.root_node)?.clone();
         root_style.flex_direction = taffy::FlexDirection::Row;
         self.tree.set_style(self.root_node, root_style)?;
 
-        // Create new panel node
-        let new_panel_style = Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        };
-        let new_node = self.tree.new_leaf(new_panel_style)?;
+        // Create new panel node with padding and margin from config
+        let new_node = self.tree.new_leaf(self.create_panel_style())?;
 
         // Add to root container (gap will handle spacing)
         self.tree.add_child(self.root_node, new_node)?;
@@ -362,14 +383,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         root_style.flex_direction = taffy::FlexDirection::Column;
         self.tree.set_style(self.root_node, root_style)?;
 
-        // Create new panel node
-        let new_panel_style = Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        };
-        let new_node = self.tree.new_leaf(new_panel_style)?;
+        // Create new panel node with padding and margin from config
+        let new_node = self.tree.new_leaf(self.create_panel_style())?;
 
         // Add to root container (gap will handle spacing)
         self.tree.add_child(self.root_node, new_node)?;
@@ -508,14 +523,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let scale = sugarloaf.ctx.scale();
+
         for (&node, &context_id) in &self.node_to_context {
             let layout = match self.tree.layout(node) {
                 Ok(l) => l,
                 Err(_) => continue,
             };
 
-            let x = layout.location.x / scale;
-            let y = layout.location.y / scale;
+            let x = (layout.location.x / scale) + self.margin.left;
+            let y = (layout.location.y / scale) + self.margin.top;
             let width = layout.size.width;
             let height = layout.size.height;
 
@@ -710,7 +726,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Delta<f32>) {
+    pub fn current_context_with_computed_dimension(&self) -> (&Context<T>, Margin) {
         let len = self.inner.len();
         if len <= 1 {
             if let Some(item) = self.inner.get(&self.current) {
@@ -781,16 +797,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_margin(&mut self, padding: (f32, f32, f32)) {
-        self.margin = Delta {
-            x: padding.0,
-            top_y: padding.1,
-            bottom_y: padding.2,
-        };
-        // TODO: Fix it
-        // for context in self.inner.values_mut() {
-            // context.val.dimension.update_margin(self.margin);
-        // }
+    pub fn update_margin(&mut self, margin: Margin) {
+        self.margin = margin;
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
@@ -806,12 +814,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        // Apply Taffy layout (only with splits)
-        if self.panel_count() > 1 {
-            self.apply_taffy_layout(sugarloaf);
-        } else {
-            self.calculate_positions();
-        }
+        // Always apply Taffy layout for consistent positioning
+        self.apply_taffy_layout(sugarloaf);
     }
 
     /// Resize grid - always uses Taffy for consistent layout
@@ -843,16 +847,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return;
         }
 
-        if self.panel_count() > 1 {
-            // Multi-panel: positions already set by Taffy in apply_taffy_layout()
-            // or during split operations. Nothing to do here.
+        // Compute Taffy layout
+        if self.compute_layout().is_err() {
             return;
         }
 
-        // Single panel: set position to margin
-        if let Some(root) = self.root {
-            if let Some(item) = self.inner.get_mut(&root) {
-                item.set_position([self.margin.x, self.margin.top_y]);
+        // Update positions from Taffy for all panels
+        for (&node, &context_id) in &self.node_to_context {
+            let layout = match self.tree.layout(node) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            let x = layout.location.x + self.margin.left;
+            let y = layout.location.y + self.margin.top;
+
+            if let Some(item) = self.inner.get_mut(&context_id) {
+                item.set_position([x, y]);
             }
         }
     }
@@ -1222,7 +1233,7 @@ pub struct ContextDimension {
     pub columns: usize,
     pub lines: usize,
     pub dimension: TextDimensions,
-    pub margin: Delta<f32>,
+    pub margin: Margin,
     pub line_height: f32,
 }
 
@@ -1235,7 +1246,7 @@ impl Default for ContextDimension {
             lines: MIN_LINES,
             line_height: 1.,
             dimension: TextDimensions::default(),
-            margin: Delta::<f32>::default(),
+            margin: Margin::default(),
         }
     }
 }
@@ -1246,7 +1257,7 @@ impl ContextDimension {
         height: f32,
         dimension: TextDimensions,
         line_height: f32,
-        margin: Delta<f32>,
+        margin: Margin,
     ) -> Self {
         let (columns, lines) = compute(width, height, dimension, line_height, margin);
         Self {
@@ -1285,7 +1296,7 @@ impl ContextDimension {
     }
 
     #[inline]
-    pub fn update_margin(&mut self, margin: Delta<f32>) {
+    pub fn update_margin(&mut self, margin: Margin) {
         self.margin = margin;
         self.update();
     }
