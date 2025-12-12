@@ -416,8 +416,8 @@ impl Renderer {
                     }
 
                     let pos = (
-                        content_state.render_data.position[0] * state.style.scale_factor,
-                        content_state.render_data.position[1] * state.style.scale_factor,
+                        content_state.render_data.position[0],
+                        content_state.render_data.position[1],
                     );
                     let depth = content_state.render_data.depth;
 
