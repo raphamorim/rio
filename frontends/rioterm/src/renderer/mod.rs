@@ -64,9 +64,6 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
-    // Visual bell state
-    visual_bell_active: bool,
-    visual_bell_start: Option<std::time::Instant>,
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
     char_cache: CharCache,
@@ -137,8 +134,6 @@ impl Renderer {
             command_palette: command_palette::CommandPalette::new(),
             named_colors,
             dynamic_background,
-            visual_bell_active: false,
-            visual_bell_start: None,
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
@@ -837,33 +832,6 @@ impl Renderer {
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
-    }
-
-    /// Trigger the visual bell
-    #[inline]
-    pub fn trigger_visual_bell(&mut self) {
-        self.visual_bell_active = true;
-        self.visual_bell_start = Some(std::time::Instant::now());
-    }
-
-    /// Check if visual bell should be displayed and update its state
-    #[inline]
-    pub fn update_visual_bell(&mut self) -> bool {
-        if !self.visual_bell_active {
-            return false;
-        }
-
-        if let Some(start_time) = self.visual_bell_start {
-            if start_time.elapsed() >= crate::constants::BELL_DURATION {
-                self.visual_bell_active = false;
-                self.visual_bell_start = None;
-                false
-            } else {
-                true
-            }
-        } else {
-            false
-        }
     }
 
     // Get the RGB value for a color index.
