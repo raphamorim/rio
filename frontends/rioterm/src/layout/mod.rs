@@ -413,6 +413,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         Ok(())
     }
 
+    /// Reset all panels to flexible sizing so they expand to fill available space
+    fn reset_panel_styles_to_flexible(&mut self) {
+        for &node in self.context_to_node.values() {
+            if let Ok(mut style) = self.tree.style(node).cloned() {
+                style.flex_basis = taffy::Dimension::auto();
+                style.flex_grow = 1.0;
+                style.flex_shrink = 1.0;
+                let _ = self.tree.set_style(node, style);
+            }
+        }
+    }
+
     fn find_horizontal_neighbors(&self, context_id: usize) -> Option<(usize, usize)> {
         let current_node = self.context_to_node.get(&context_id)?;
         let current_layout = self.tree.layout(*current_node).ok()?;
@@ -931,8 +943,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Set new current
         self.current = next_current;
 
-        // Recompute Taffy layout for remaining panels
+        // Reset remaining panels to flexible sizing and recompute layout
         if self.panel_count() > 0 {
+            self.reset_panel_styles_to_flexible();
             self.apply_taffy_layout(sugarloaf);
         }
     }
