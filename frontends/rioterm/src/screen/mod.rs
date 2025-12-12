@@ -16,7 +16,8 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
-use crate::context::grid::{ContextDimension, Delta};
+use crate::layout::ContextDimension;
+use rio_backend::config::layout::Margin;
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{self, next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
@@ -204,7 +205,6 @@ impl Screen<'_> {
             // does not make sense fetch for foreground process names/path
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
-            padding_panel: config.panel.margin.left,
             panel: config.panel,
             title: config.title.clone(),
             keyboard: config.keyboard,
@@ -215,11 +215,13 @@ impl Screen<'_> {
         let _ = sugarloaf.text(Some(rich_text_id));
         sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
 
-        let margin = Delta {
-            x: config.margin.left,
-            top_y: padding_y_top,
-            bottom_y: padding_y_bottom,
-        };
+        // Create margin with computed top/bottom (includes island/search adjustments)
+        let margin = Margin::new(
+            padding_y_top,
+            config.margin.right,
+            padding_y_bottom,
+            config.margin.left,
+        );
         let context_dimension = ContextDimension::build(
             size.width as f32,
             size.height as f32,
@@ -325,8 +327,8 @@ impl Screen<'_> {
             display_offset,
             style.scale_factor,
             (context_dimension.columns, context_dimension.lines),
-            margin.x,
-            margin.top_y,
+            margin.left,
+            margin.top,
             (
                 context_dimension.dimension.width,
                 context_dimension.dimension.height * style.line_height,
@@ -375,10 +377,11 @@ impl Screen<'_> {
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
-            context_grid.update_margin((
-                config.margin.left,
+            context_grid.update_margin(Margin::new(
                 padding_y_top,
+                config.margin.right,
                 padding_y_bottom,
+                config.margin.left,
             ));
 
             context_grid.update_dimensions(&mut self.sugarloaf);
@@ -1219,7 +1222,7 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.x;
+        let padding_x = margin.left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
@@ -1236,7 +1239,7 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.x;
+        let padding_x = margin.left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
@@ -1288,7 +1291,7 @@ impl Screen<'_> {
         // Create rich text with initial position accounting for island
         let current_grid = self.context_manager.current_grid();
         let (_context, margin) = current_grid.current_context_with_computed_dimension();
-        let padding_x = margin.x;
+        let padding_x = margin.left;
         let padding_y_top = self.renderer.margin.top
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let rich_text_id = next_rich_text_id();
@@ -1350,8 +1353,8 @@ impl Screen<'_> {
             self.search_active(),
         );
 
-        if previous_margin.top_y != padding_y_top
-            || previous_margin.bottom_y != padding_y_bottom
+        if previous_margin.top != padding_y_top
+            || previous_margin.bottom != padding_y_bottom
         {
             if let Some(layout) = self
                 .sugarloaf
@@ -1362,7 +1365,12 @@ impl Screen<'_> {
                 s.line_height = layout.line_height;
 
                 let d = self.context_manager.current_grid_mut();
-                d.update_margin((d.margin.x, padding_y_top, padding_y_bottom));
+                d.update_margin(Margin::new(
+                    padding_y_top,
+                    d.margin.right,
+                    padding_y_bottom,
+                    d.margin.left,
+                ));
                 self.resize_all_contexts();
             }
         }
@@ -2017,12 +2025,12 @@ impl Screen<'_> {
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
         let width = layout.dimension.width;
-        x <= (layout.margin.x + layout.columns as f32 * width) as usize
-            && x > (layout.margin.x * layout.dimension.scale) as usize
-            && y <= (layout.margin.top_y * layout.dimension.scale
+        x <= (layout.margin.left + layout.columns as f32 * width) as usize
+            && x > (layout.margin.left * layout.dimension.scale) as usize
+            && y <= (layout.margin.top * layout.dimension.scale
                 + layout.lines as f32 * layout.dimension.height)
                 as usize
-            && y > layout.margin.top_y as usize
+            && y > layout.margin.top as usize
     }
 
     #[inline]
@@ -2030,7 +2038,7 @@ impl Screen<'_> {
         let current_context = self.context_manager.current();
         let layout = current_context.dimension;
         let width = (layout.dimension.width) as usize;
-        let margin_x = layout.margin.x * layout.dimension.scale;
+        let margin_x = layout.margin.left * layout.dimension.scale;
 
         let cell_x = x.saturating_sub(margin_x as usize) % width;
         let half_cell_width = width / 2;
@@ -2795,8 +2803,8 @@ impl Screen<'_> {
         // Calculate pixel position of cursor
         let cell_width = layout.dimension.width;
         let cell_height = layout.dimension.height;
-        let margin_x = layout.margin.x * layout.dimension.scale;
-        let margin_y = layout.margin.top_y * layout.dimension.scale;
+        let margin_x = layout.margin.left * layout.dimension.scale;
+        let margin_y = layout.margin.top * layout.dimension.scale;
 
         // Validate dimensions before calculation
         if cell_width <= 0.0 || cell_height <= 0.0 {

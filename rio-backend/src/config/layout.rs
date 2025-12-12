@@ -5,6 +5,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct Panel {
     #[serde(default = "default_panel_margin")]
     pub margin: Margin,
+    #[serde(default = "default_panel_padding")]
+    pub padding: Margin,
     #[serde(default = "default_row_gap", rename = "row-gap")]
     pub row_gap: f32,
     #[serde(default = "default_column_gap", rename = "column-gap")]
@@ -15,6 +17,7 @@ impl Default for Panel {
     fn default() -> Self {
         Self {
             margin: default_panel_margin(),
+            padding: default_panel_padding(),
             row_gap: default_row_gap(),
             column_gap: default_column_gap(),
         }
@@ -23,6 +26,11 @@ impl Default for Panel {
 
 #[inline]
 fn default_panel_margin() -> Margin {
+    Margin::all(0.0)
+}
+
+#[inline]
+fn default_panel_padding() -> Margin {
     Margin::all(5.0)
 }
 

@@ -1,5 +1,5 @@
 use crate::constants;
-use crate::context::grid::ContextDimension;
+use crate::layout::ContextDimension;
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_window::window::Theme;
@@ -53,8 +53,8 @@ pub fn padding_bottom_from_config(
 
 #[inline]
 pub fn terminal_dimensions(layout: &ContextDimension) -> teletypewriter::WinsizeBuilder {
-    let width = layout.width - (layout.margin.x * 2.);
-    let height = (layout.height - layout.margin.top_y) - layout.margin.bottom_y;
+    let width = layout.width - layout.margin.left - layout.margin.right;
+    let height = layout.height - layout.margin.top - layout.margin.bottom;
     teletypewriter::WinsizeBuilder {
         width: width as u16,
         height: height as u16,

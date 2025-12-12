@@ -1,4 +1,4 @@
-use crate::context::grid::ContextDimension;
+use crate::layout::ContextDimension;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
 #[inline]
