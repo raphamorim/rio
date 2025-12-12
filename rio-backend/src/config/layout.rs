@@ -3,8 +3,8 @@ use serde::{Deserialize, Deserializer, Serialize};
 // Panel configuration for split layouts
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Panel {
-    #[serde(default = "default_panel_margin", alias = "padding")]
-    pub margin: Padding,
+    #[serde(default = "default_panel_margin")]
+    pub margin: Margin,
     #[serde(default = "default_row_gap", rename = "row-gap")]
     pub row_gap: f32,
     #[serde(default = "default_column_gap", rename = "column-gap")]
@@ -22,8 +22,8 @@ impl Default for Panel {
 }
 
 #[inline]
-fn default_panel_margin() -> Padding {
-    Padding::all(5.0)
+fn default_panel_margin() -> Margin {
+    Margin::all(5.0)
 }
 
 #[inline]
@@ -36,16 +36,16 @@ fn default_column_gap() -> f32 {
     0.0
 }
 
-// CSS-like padding structure
+// CSS-like margin structure
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
-pub struct Padding {
+pub struct Margin {
     pub top: f32,
     pub right: f32,
     pub bottom: f32,
     pub left: f32,
 }
 
-impl Padding {
+impl Margin {
     pub fn new(top: f32, right: f32, bottom: f32, left: f32) -> Self {
         Self {
             top,
@@ -65,20 +65,20 @@ impl Padding {
             2 => Ok(Self::new(values[0], values[1], values[0], values[1])),
             4 => Ok(Self::new(values[0], values[1], values[2], values[3])),
             _ => Err(format!(
-                "Invalid padding format: expected 1, 2, or 4 values, got {}",
+                "Invalid margin format: expected 1, 2, or 4 values, got {}",
                 values.len()
             )),
         }
     }
 }
 
-impl Default for Padding {
+impl Default for Margin {
     fn default() -> Self {
         Self::all(10.0)
     }
 }
 
-impl<'de> Deserialize<'de> for Padding {
+impl<'de> Deserialize<'de> for Margin {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -93,66 +93,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_padding_all() {
-        let padding = Padding::all(10.0);
-        assert_eq!(padding.top, 10.0);
-        assert_eq!(padding.right, 10.0);
-        assert_eq!(padding.bottom, 10.0);
-        assert_eq!(padding.left, 10.0);
+    fn test_margin_all() {
+        let margin = Margin::all(10.0);
+        assert_eq!(margin.top, 10.0);
+        assert_eq!(margin.right, 10.0);
+        assert_eq!(margin.bottom, 10.0);
+        assert_eq!(margin.left, 10.0);
     }
 
     #[test]
-    fn test_padding_from_css_single_value() {
-        let padding = Padding::from_css_values(&[10.0]).unwrap();
-        assert_eq!(padding.top, 10.0);
-        assert_eq!(padding.right, 10.0);
-        assert_eq!(padding.bottom, 10.0);
-        assert_eq!(padding.left, 10.0);
+    fn test_margin_from_css_single_value() {
+        let margin = Margin::from_css_values(&[10.0]).unwrap();
+        assert_eq!(margin.top, 10.0);
+        assert_eq!(margin.right, 10.0);
+        assert_eq!(margin.bottom, 10.0);
+        assert_eq!(margin.left, 10.0);
     }
 
     #[test]
-    fn test_padding_from_css_two_values() {
-        let padding = Padding::from_css_values(&[10.0, 5.0]).unwrap();
-        assert_eq!(padding.top, 10.0);
-        assert_eq!(padding.right, 5.0);
-        assert_eq!(padding.bottom, 10.0);
-        assert_eq!(padding.left, 5.0);
+    fn test_margin_from_css_two_values() {
+        let margin = Margin::from_css_values(&[10.0, 5.0]).unwrap();
+        assert_eq!(margin.top, 10.0);
+        assert_eq!(margin.right, 5.0);
+        assert_eq!(margin.bottom, 10.0);
+        assert_eq!(margin.left, 5.0);
     }
 
     #[test]
-    fn test_padding_from_css_four_values() {
-        let padding = Padding::from_css_values(&[10.0, 5.0, 15.0, 20.0]).unwrap();
-        assert_eq!(padding.top, 10.0);
-        assert_eq!(padding.right, 5.0);
-        assert_eq!(padding.bottom, 15.0);
-        assert_eq!(padding.left, 20.0);
+    fn test_margin_from_css_four_values() {
+        let margin = Margin::from_css_values(&[10.0, 5.0, 15.0, 20.0]).unwrap();
+        assert_eq!(margin.top, 10.0);
+        assert_eq!(margin.right, 5.0);
+        assert_eq!(margin.bottom, 15.0);
+        assert_eq!(margin.left, 20.0);
     }
 
     #[test]
-    fn test_padding_from_css_invalid_count() {
-        let result = Padding::from_css_values(&[10.0, 5.0, 15.0]);
+    fn test_margin_from_css_invalid_count() {
+        let result = Margin::from_css_values(&[10.0, 5.0, 15.0]);
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            "Invalid padding format: expected 1, 2, or 4 values, got 3"
+            "Invalid margin format: expected 1, 2, or 4 values, got 3"
         );
     }
 
     #[test]
-    fn test_padding_default() {
-        let padding = Padding::default();
-        assert_eq!(padding.top, 10.0);
-        assert_eq!(padding.right, 10.0);
-        assert_eq!(padding.bottom, 10.0);
-        assert_eq!(padding.left, 10.0);
+    fn test_margin_default() {
+        let margin = Margin::default();
+        assert_eq!(margin.top, 10.0);
+        assert_eq!(margin.right, 10.0);
+        assert_eq!(margin.bottom, 10.0);
+        assert_eq!(margin.left, 10.0);
     }
 
     #[test]
-    fn test_padding_deserialize_single() {
-        let toml_str = r#"padding = [10]"#;
+    fn test_margin_deserialize_single() {
+        let toml_str = r#"margin = [10]"#;
         #[derive(Deserialize)]
         struct Config {
-            padding: Padding,
+            margin: Margin,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.margin.top, 10.0);
@@ -162,11 +162,11 @@ mod tests {
     }
 
     #[test]
-    fn test_padding_deserialize_two() {
-        let toml_str = r#"padding = [10, 5]"#;
+    fn test_margin_deserialize_two() {
+        let toml_str = r#"margin = [10, 5]"#;
         #[derive(Deserialize)]
         struct Config {
-            padding: Padding,
+            margin: Margin,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.margin.top, 10.0);
@@ -176,11 +176,11 @@ mod tests {
     }
 
     #[test]
-    fn test_padding_deserialize_four() {
-        let toml_str = r#"padding = [10, 5, 15, 20]"#;
+    fn test_margin_deserialize_four() {
+        let toml_str = r#"margin = [10, 5, 15, 20]"#;
         #[derive(Deserialize)]
         struct Config {
-            padding: Padding,
+            margin: Margin,
         }
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.margin.top, 10.0);
@@ -190,11 +190,11 @@ mod tests {
     }
 
     #[test]
-    fn test_padding_deserialize_invalid() {
-        let toml_str = r#"padding = [10, 5, 15]"#;
+    fn test_margin_deserialize_invalid() {
+        let toml_str = r#"margin = [10, 5, 15]"#;
         #[derive(Deserialize)]
         struct Config {
-            padding: Padding,
+            margin: Margin,
         }
         let result: Result<Config, _> = toml::from_str(toml_str);
         assert!(result.is_err());
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_panel_default() {
         let panel = Panel::default();
-        assert_eq!(panel.margin, Padding::all(5.0));
+        assert_eq!(panel.margin, Margin::all(5.0));
         assert_eq!(panel.row_gap, 0.0);
         assert_eq!(panel.column_gap, 0.0);
     }
@@ -213,7 +213,7 @@ mod tests {
     fn test_panel_deserialize_full() {
         let toml_str = r#"
             [panel]
-            padding = [8]
+            margin = [8]
             row-gap = 2
             column-gap = 3
         "#;
@@ -224,18 +224,18 @@ mod tests {
         }
         
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.panel.margin, Padding::all(8.0));
+        assert_eq!(config.panel.margin, Margin::all(8.0));
         assert_eq!(config.panel.row_gap, 2.0);
         assert_eq!(config.panel.column_gap, 3.0);
     }
 
     #[test]
-    fn test_panel_padding_is_inner_spacing() {
+    fn test_panel_margin_is_inner_spacing() {
         // This test documents that panel.margin is INSIDE the panel
         // It creates space around the terminal content within each panel
         let toml_str = r#"
             [panel]
-            padding = [10, 5]  # top/bottom: 10px, left/right: 5px inside panel
+            margin = [10, 5]  # top/bottom: 10px, left/right: 5px inside panel
             row-gap = 0
             column-gap = 0
         "#;
@@ -247,7 +247,7 @@ mod tests {
         
         let config: Config = toml::from_str(toml_str).unwrap();
         
-        // Panel padding is applied inside each panel
+        // Panel margin is applied inside each panel
         assert_eq!(config.panel.margin.top, 10.0);
         assert_eq!(config.panel.margin.bottom, 10.0);
         assert_eq!(config.panel.margin.left, 5.0);
@@ -262,7 +262,7 @@ mod tests {
     fn test_panel_with_gaps() {
         let toml_str = r#"
             [panel]
-            padding = [5]
+            margin = [5]
             row-gap = 10     # Vertical spacing when split down
             column-gap = 15  # Horizontal spacing when split right
         "#;
@@ -273,7 +273,7 @@ mod tests {
         }
         
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.panel.margin, Padding::all(5.0));
+        assert_eq!(config.panel.margin, Margin::all(5.0));
         assert_eq!(config.panel.row_gap, 10.0);
         assert_eq!(config.panel.column_gap, 15.0);
     }

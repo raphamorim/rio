@@ -18,7 +18,7 @@ use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
-use crate::config::layout::{Padding, Panel};
+use crate::config::layout::{Margin, Panel};
 use crate::config::navigation::Navigation;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
@@ -118,8 +118,8 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(default = "default_margin", alias = "padding")]
-    pub margin: Padding,
+    #[serde(default = "default_margin", alias = "margin")]
+    pub margin: Margin,
     #[serde(default = "Panel::default")]
     pub panel: Panel,
     #[serde(default = "Vec::default", rename = "env-vars")]
@@ -937,7 +937,7 @@ mod tests {
             r#"
             font-size = 14.0
             line-height = 2.0
-            padding = [0]
+            margin = [0]
 
             [renderer]
             performance = "Low"
