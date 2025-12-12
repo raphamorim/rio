@@ -66,6 +66,16 @@ impl ColorRgb {
         let temp_dim_self = Self { r, g, b };
         ColorBuilder::from_rgb(temp_dim_self, Format::SRGB0_1).to_arr()
     }
+
+    pub fn to_wgpu(&self) -> ColorWGPU {
+        ColorBuilder::from_rgb(*self, Format::SRGB0_1).to_wgpu()
+    }
+
+    pub fn to_composition(&self) -> ColorComposition {
+        let arr = self.to_arr();
+        let wgpu = self.to_wgpu();
+        (arr, wgpu)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
