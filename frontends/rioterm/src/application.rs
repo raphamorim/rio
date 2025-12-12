@@ -13,7 +13,7 @@ use crate::watcher::configuration_file_updates;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
-use rio_backend::config::colors::ColorRgb;
+use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
     ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
@@ -772,6 +772,31 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .winit_window
                             .set_fullscreen(Some(Fullscreen::Borderless(None))),
                         _ => route.window.winit_window.set_fullscreen(None),
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::ColorChange(index, color)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    let window = &mut route.window;
+                    let screen = &mut window.screen;
+                    match index - NamedColor::Foreground as usize {
+                        1 => {
+                            let sugarloaf = &mut screen.sugarloaf;
+                            sugarloaf.set_background_color(color.map(|c| c.to_wgpu()));
+                            sugarloaf.render();
+
+                            #[cfg(target_os = "macos")]
+                            {
+                                let bg_color = color
+                                    .map_or(self.config.colors.background.1, |c| {
+                                        c.to_composition().1
+                                    });
+                                window.winit_window.set_background_color(
+                                    bg_color.r, bg_color.g, bg_color.b, bg_color.a,
+                                );
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
