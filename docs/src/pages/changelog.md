@@ -42,21 +42,20 @@ language: 'en'
 - Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
 - Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
 - Available modes: `Plain`, `Tab`, `NativeTab` (macOS only)
-- padding-x is now 10.0
 - **Tab color configuration simplified**: Removed `tabs-foreground`, `tabs-active-foreground`, and `tabs-active-highlight`
   - Use `tabs` for inactive tab text and border color (default: `#cccccc`)
   - Use `tabs-active` for active tab text color (default: `#ffffff`)
-- New padding api:
+- The old padding api became margin:
   ```toml
-  # It will apply padding rules to the main container
+  # It will apply margin rules to the main container
   # CSS-Like
-  padding = [10] # (10px to all)
-  padding = [10, 5] # (top and bottom padding are 10px, right and left padding are 5px)
-  padding = [10, 5, 15, 20] # (top padding is 10px, right padding is 5px, bottom padding is 15px, left padding is 20px)
+  margin = [10] # (10px to all)
+  margin = [10, 5] # (top and bottom margin are 10px, right and left margin are 5px)
+  margin = [10, 5, 15, 20] # (top margin is 10px, right margin is 5px, bottom margin is 15px, left margin is 20px)
 
-  # It will apply padding rules to panels
+  # It will apply margin rules to panels
   [panel]
-  padding = [5] # (5px to all)
+  margin = [5] # (5px to all)
   row-gap = 0 # (0px)
   column-gap = 0 # (0px)
   ```
