@@ -5,6 +5,7 @@ pub mod island;
 mod search;
 pub mod utils;
 
+use taffy::NodeId;
 use crate::context::renderable::TerminalSnapshot;
 use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
@@ -52,7 +53,7 @@ pub struct Renderer {
     pub island: Option<island::Island>,
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
-    last_active: Option<usize>,
+    last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,

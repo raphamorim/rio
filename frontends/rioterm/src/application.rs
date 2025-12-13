@@ -234,7 +234,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                         // Mark the renderable content as needing to render
                         if let Some(ctx_item) =
-                            route.window.screen.ctx_mut().get_mut(route_id)
+                            route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
                             ctx_item.val.renderable_content.pending_update.set_dirty();
                         }
@@ -293,7 +293,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Mark the renderable content as needing to check for damage
                         // The actual damage retrieval will happen during render
                         if let Some(ctx_item) =
-                            route.window.screen.ctx_mut().get_mut(route_id)
+                            route.window.screen.ctx_mut().get_by_route_id(route_id)
                         {
                             ctx_item.val.renderable_content.pending_update.set_dirty();
                             route.schedule_redraw(&mut self.scheduler, route_id);
