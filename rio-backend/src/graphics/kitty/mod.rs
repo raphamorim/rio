@@ -81,7 +81,7 @@ fn test_direct_parse_transmit() {
     assert_eq!(graphic.width, 1);
     assert_eq!(graphic.height, 1);
     assert_eq!(graphic.pixels.len(), 4); // 1x1x4 bytes (RGBA)
-    assert_eq!(graphic.id.0, 1);
+    assert_eq!(graphic.id.get(), 1);
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn test_parse_png_format() {
     let graphic = &handler.graphics[0];
     assert_eq!(graphic.width, 1, "PNG should be decoded to 1x1");
     assert_eq!(graphic.height, 1, "PNG should be decoded to 1x1");
-    assert_eq!(graphic.id.0, 2);
+    assert_eq!(graphic.id.get(), 2);
     // PNG should be decoded to RGBA pixels
     assert!(
         graphic.pixels.len() >= 4,
@@ -192,7 +192,7 @@ fn test_png_format_support() {
             let graphic = &handler.graphics[0];
             assert_eq!(graphic.width, 1, "PNG should decode to 1x1");
             assert_eq!(graphic.height, 1, "PNG should decode to 1x1");
-            assert_eq!(graphic.id.0, 100);
+            assert_eq!(graphic.id.get(), 100);
         } else {
             panic!("PNG failed to decode");
         }
@@ -300,7 +300,7 @@ fn test_chunked_transfer() {
 
     // Now graphic should be created
     assert_eq!(handler.graphics.len(), 1);
-    assert_eq!(handler.graphics[0].id.0, 100);
+    assert_eq!(handler.graphics[0].id.get(), 100);
     assert_eq!(handler.graphics[0].width, 1);
     assert_eq!(handler.graphics[0].height, 1);
 }
@@ -351,9 +351,9 @@ fn test_multiple_graphics_in_sequence() {
     assert_eq!(handler.graphics.len(), 3);
 
     // Verify IDs
-    assert_eq!(handler.graphics[0].id.0, 1);
-    assert_eq!(handler.graphics[1].id.0, 2);
-    assert_eq!(handler.graphics[2].id.0, 3);
+    assert_eq!(handler.graphics[0].id.get(), 1);
+    assert_eq!(handler.graphics[1].id.get(), 2);
+    assert_eq!(handler.graphics[2].id.get(), 3);
 }
 
 // Cursor Movement Tests
@@ -380,7 +380,7 @@ fn test_cursor_movement_default() {
     // Create a 100x100 pixel image (will be resized to fit 2 rows)
     let pixels = vec![255u8; 100 * 100 * 4];
     let graphic = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 100,
         color_type: ColorType::Rgba,
@@ -449,7 +449,7 @@ fn test_cursor_movement_no_move() {
     // Create a 100x100 pixel image
     let pixels = vec![255u8; 100 * 100 * 4];
     let graphic = GraphicData {
-        id: GraphicId(2),
+        id: GraphicId::new(2),
         width: 100,
         height: 100,
         color_type: ColorType::Rgba,
@@ -549,7 +549,7 @@ fn test_image_row_occupation_exact_fit() {
     // Create a 100x100 pixel image (will be resized to fit 2 rows)
     let pixels = vec![255u8; 100 * 100 * 4];
     let graphic = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 100,
         color_type: ColorType::Rgba,
@@ -609,7 +609,7 @@ fn test_image_row_occupation_single_row() {
     // Create a small image that fits in 1 row
     let pixels = vec![255u8; 50 * 20 * 4];
     let graphic = GraphicData {
-        id: GraphicId(2),
+        id: GraphicId::new(2),
         width: 50,
         height: 20,
         color_type: ColorType::Rgba,
@@ -671,7 +671,7 @@ fn test_image_row_occupation_three_rows() {
 
     let pixels = vec![255u8; 100 * 150 * 4];
     let graphic = GraphicData {
-        id: GraphicId(3),
+        id: GraphicId::new(3),
         width: 100,
         height: 150,
         color_type: ColorType::Rgba,
@@ -738,7 +738,7 @@ fn test_image_row_occupation_from_middle() {
 
     let pixels = vec![255u8; 100 * 100 * 4];
     let graphic = GraphicData {
-        id: GraphicId(4),
+        id: GraphicId::new(4),
         width: 100,
         height: 100,
         color_type: ColorType::Rgba,
@@ -826,7 +826,7 @@ fn test_store_graphic() {
 
     let pixels = vec![255u8, 0, 0, 255]; // 1x1 red pixel
     let graphic = GraphicData {
-        id: GraphicId(100),
+        id: GraphicId::new(100),
         width: 1,
         height: 1,
         color_type: ColorType::Rgba,

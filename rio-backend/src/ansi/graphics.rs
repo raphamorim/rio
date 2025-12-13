@@ -205,7 +205,7 @@ impl Graphics {
     /// Generate a new graphic identifier.
     pub fn next_id(&mut self) -> GraphicId {
         self.last_id += 1;
-        GraphicId(self.last_id)
+        GraphicId::new(self.last_id)
     }
 
     /// Get queues to update graphics in the grid.
@@ -319,7 +319,7 @@ impl Graphics {
         // Check pending graphics
         for graphic in &self.pending {
             if let Some(&timestamp) = self.image_timestamps.get(&graphic.id) {
-                let is_used = used_ids.contains(&graphic.id.0);
+                let is_used = used_ids.contains(&graphic.id.get());
                 let bytes = Self::calculate_graphic_bytes(graphic);
                 candidates.push((graphic.id, timestamp, is_used, bytes));
             }
@@ -327,8 +327,8 @@ impl Graphics {
 
         // Check stored kitty images
         for (&kitty_id, stored) in &self.kitty_images {
-            let graphic_id = GraphicId(kitty_id as u64);
-            let is_used = used_ids.contains(&graphic_id.0);
+            let graphic_id = GraphicId::new(kitty_id as u64);
+            let is_used = used_ids.contains(&graphic_id.get());
             let bytes = Self::calculate_graphic_bytes(&stored.data);
             candidates.push((graphic_id, stored.transmission_time, is_used, bytes));
         }
@@ -360,7 +360,7 @@ impl Graphics {
 
             debug!(
                 "Evicting graphic id={}, bytes={}, used={}",
-                graphic_id.0, bytes, is_used
+                graphic_id.get(), bytes, is_used
             );
         }
 
@@ -371,7 +371,7 @@ impl Graphics {
 
             // Remove from kitty_images
             self.kitty_images
-                .retain(|&kitty_id, _| GraphicId(kitty_id as u64) != id);
+                .retain(|&kitty_id, _| GraphicId::new(kitty_id as u64) != id);
 
             // Remove timestamp
             self.image_timestamps.remove(&id);
@@ -416,7 +416,7 @@ impl Graphics {
 fn check_opaque_region() {
     use sugarloaf::ColorType;
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         width: 10,
         height: 10,
         color_type: ColorType::Rgb,
@@ -439,7 +439,7 @@ fn check_opaque_region() {
     };
 
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         pixels,
         width: 10,
         height: 10,
@@ -460,7 +460,7 @@ fn test_graphics_memory_tracking() {
     // Create a small graphic (100x100 RGBA = 40,000 bytes)
     let pixels = vec![255u8; 100 * 100 * 4];
     let graphic = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 100,
         color_type: ColorType::Rgba,
@@ -473,14 +473,14 @@ fn test_graphics_memory_tracking() {
     assert_eq!(bytes, 40_000);
 
     // Track the graphic
-    graphics.track_graphic(GraphicId(1), bytes);
+    graphics.track_graphic(GraphicId::new(1), bytes);
     assert_eq!(graphics.total_bytes, 40_000);
-    assert!(graphics.image_timestamps.contains_key(&GraphicId(1)));
+    assert!(graphics.image_timestamps.contains_key(&GraphicId::new(1)));
 
     // Untrack the graphic
-    graphics.untrack_graphic(GraphicId(1), bytes);
+    graphics.untrack_graphic(GraphicId::new(1), bytes);
     assert_eq!(graphics.total_bytes, 0);
-    assert!(!graphics.image_timestamps.contains_key(&GraphicId(1)));
+    assert!(!graphics.image_timestamps.contains_key(&GraphicId::new(1)));
 }
 
 #[test]
@@ -497,7 +497,7 @@ fn test_graphics_eviction_unused_first() {
     // Graphic 1: 50KB, used
     let pixels1 = vec![255u8; 50_000];
     let graphic1 = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 125,
         color_type: ColorType::Rgba,
@@ -506,7 +506,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
     };
     graphics.pending.push(graphic1);
-    graphics.track_graphic(GraphicId(1), pixels1.len());
+    graphics.track_graphic(GraphicId::new(1), pixels1.len());
     used_ids.insert(1); // Mark as used
 
     std::thread::sleep(std::time::Duration::from_millis(10));
@@ -514,7 +514,7 @@ fn test_graphics_eviction_unused_first() {
     // Graphic 2: 50KB, unused (should be evicted first)
     let pixels2 = vec![255u8; 50_000];
     let graphic2 = GraphicData {
-        id: GraphicId(2),
+        id: GraphicId::new(2),
         width: 100,
         height: 125,
         color_type: ColorType::Rgba,
@@ -523,7 +523,7 @@ fn test_graphics_eviction_unused_first() {
         resize: None,
     };
     graphics.pending.push(graphic2);
-    graphics.track_graphic(GraphicId(2), pixels2.len());
+    graphics.track_graphic(GraphicId::new(2), pixels2.len());
     // Not marked as used
 
     // Try to add Graphic 3 (will trigger eviction)
@@ -533,9 +533,9 @@ fn test_graphics_eviction_unused_first() {
     assert!(success, "Eviction should succeed");
     // Graphic 2 (unused) should be evicted, Graphic 1 (used) should remain
     assert_eq!(graphics.pending.len(), 1);
-    assert_eq!(graphics.pending[0].id, GraphicId(1));
-    assert!(graphics.image_timestamps.contains_key(&GraphicId(1)));
-    assert!(!graphics.image_timestamps.contains_key(&GraphicId(2)));
+    assert_eq!(graphics.pending[0].id, GraphicId::new(1));
+    assert!(graphics.image_timestamps.contains_key(&GraphicId::new(1)));
+    assert!(!graphics.image_timestamps.contains_key(&GraphicId::new(2)));
 }
 
 #[test]
@@ -552,7 +552,7 @@ fn test_graphics_eviction_oldest_first() {
     // Graphic 1: oldest
     let pixels1 = vec![255u8; 50_000];
     let graphic1 = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 125,
         color_type: ColorType::Rgba,
@@ -561,14 +561,14 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
     };
     graphics.pending.push(graphic1);
-    graphics.track_graphic(GraphicId(1), pixels1.len());
+    graphics.track_graphic(GraphicId::new(1), pixels1.len());
 
     std::thread::sleep(std::time::Duration::from_millis(10));
 
     // Graphic 2: middle
     let pixels2 = vec![255u8; 50_000];
     let graphic2 = GraphicData {
-        id: GraphicId(2),
+        id: GraphicId::new(2),
         width: 100,
         height: 125,
         color_type: ColorType::Rgba,
@@ -577,7 +577,7 @@ fn test_graphics_eviction_oldest_first() {
         resize: None,
     };
     graphics.pending.push(graphic2);
-    graphics.track_graphic(GraphicId(2), pixels2.len());
+    graphics.track_graphic(GraphicId::new(2), pixels2.len());
 
     // Try to add Graphic 3 (will trigger eviction, oldest should go first)
     let pixels3_len = 50_000;
@@ -586,7 +586,7 @@ fn test_graphics_eviction_oldest_first() {
     assert!(success);
     // Graphic 1 (oldest) should be evicted
     assert_eq!(graphics.pending.len(), 1);
-    assert_eq!(graphics.pending[0].id, GraphicId(2));
+    assert_eq!(graphics.pending[0].id, GraphicId::new(2));
 }
 
 #[test]
@@ -602,7 +602,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
     // Add one 90KB graphic that's in use
     let pixels1 = vec![255u8; 90_000];
     let graphic1 = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 150,
         height: 150,
         color_type: ColorType::Rgba,
@@ -611,7 +611,7 @@ fn test_graphics_eviction_fails_when_not_enough_space() {
         resize: None,
     };
     graphics.pending.push(graphic1);
-    graphics.track_graphic(GraphicId(1), pixels1.len());
+    graphics.track_graphic(GraphicId::new(1), pixels1.len());
     used_ids.insert(1); // Mark as used
 
     // Try to add another 90KB (total would be 180KB, exceeds limit)
@@ -640,7 +640,7 @@ fn test_graphics_no_eviction_when_under_limit() {
     // Add one 50KB graphic
     let pixels1 = vec![255u8; 50_000];
     let graphic1 = GraphicData {
-        id: GraphicId(1),
+        id: GraphicId::new(1),
         width: 100,
         height: 125,
         color_type: ColorType::Rgba,
@@ -649,7 +649,7 @@ fn test_graphics_no_eviction_when_under_limit() {
         resize: None,
     };
     graphics.pending.push(graphic1);
-    graphics.track_graphic(GraphicId(1), pixels1.len());
+    graphics.track_graphic(GraphicId::new(1), pixels1.len());
 
     // Try to add another 50KB (total 100KB, well under limit)
     let pixels2_len = 50_000;
