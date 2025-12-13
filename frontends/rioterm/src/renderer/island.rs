@@ -156,6 +156,7 @@ impl Island {
                         PROGRESS_BAR_HEIGHT,
                         color,
                         0.0, // Same depth as other rects
+                        0,
                     );
                 }
             }
@@ -182,6 +183,7 @@ impl Island {
                     PROGRESS_BAR_HEIGHT,
                     color,
                     0.0,
+                    0,
                 );
             }
         }
@@ -245,6 +247,7 @@ impl Island {
                 0.5,
                 self.border_color,
                 0.1,
+                0,
             );
         }
 
@@ -319,6 +322,7 @@ impl Island {
                     ISLAND_HEIGHT,
                     self.border_color,
                     0.1, // Same depth as other island elements
+                    0,
                 );
             }
 
@@ -332,6 +336,7 @@ impl Island {
                     0.5, // 1px height
                     self.border_color,
                     0.1, // Same depth as other island elements
+                    0,
                 );
             }
 

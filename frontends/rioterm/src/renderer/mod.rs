@@ -26,8 +26,8 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, Graphic, SpanStyle, SpanStyleDecoration, Stretch, Style,
-    SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration, Stretch,
+    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -813,17 +813,29 @@ impl Renderer {
                 style.decoration_color = Some(cursor_color);
             }
             CursorShape::Block => {
-                style.cursor = Some(SugarCursor::Block(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Block,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Beam => {
-                style.cursor = Some(SugarCursor::Caret(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Caret,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Hidden => {}
         }
 
         if !is_active {
             style.decoration = None;
-            style.cursor = Some(SugarCursor::HollowBlock(cursor_color));
+            style.cursor = Some(SugarCursor {
+                kind: CursorKind::HollowBlock,
+                color: cursor_color,
+                order: 0,
+            });
         }
 
         (style, content)

@@ -19,8 +19,9 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         layout.height,
         black,
         0.0,
+        0,
     );
-    sugarloaf.rect(None, 0.0, 30.0, 15.0, layout.height, blue, 0.0);
+    sugarloaf.rect(None, 0.0, 30.0, 15.0, layout.height, blue, 0.0, 0);
     sugarloaf.rect(
         None,
         15.0,
@@ -29,6 +30,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         layout.height,
         yellow,
         0.0,
+        0,
     );
     sugarloaf.rect(
         None,
@@ -38,6 +40,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         layout.height,
         red,
         0.0,
+        0,
     );
 
     // Create transient text elements

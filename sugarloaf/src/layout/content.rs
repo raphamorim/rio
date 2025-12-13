@@ -1321,7 +1321,6 @@ impl Content {
         height: f32,
         color: [f32; 4],
         coords: [f32; 4],
-        has_alpha: bool,
         depth: f32,
         atlas_layer: i32,
     ) {
@@ -1333,7 +1332,6 @@ impl Content {
                 height,
                 color,
                 coords,
-                has_alpha,
                 depth,
                 atlas_layer,
             };
@@ -1349,7 +1347,6 @@ impl Content {
                     height,
                     color,
                     coords,
-                    has_alpha,
                     depth,
                     atlas_layer,
                 }),

@@ -78,7 +78,6 @@ pub enum ContentData {
         height: f32,
         color: [f32; 4],
         coords: [f32; 4],
-        has_alpha: bool,
         depth: f32,
         atlas_layer: i32,
     },

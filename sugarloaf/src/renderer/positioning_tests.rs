@@ -9,7 +9,7 @@
 
 use crate::components::rich_text::text_run_manager::{CacheResult, TextRunManager};
 use crate::font::text_run_cache::ShapedGlyph;
-use crate::sugarloaf::primitives::{DrawableChar, SugarCursor};
+use crate::sugarloaf::primitives::{CursorKind, DrawableChar, SugarCursor};
 
 /// Captured positioning data for comparison
 #[derive(Debug, Clone, PartialEq)]
@@ -286,13 +286,17 @@ mod tests {
         let ascent = 10.0;
         let descent = 3.0;
         let line_height = 15.0;
-        let _cursor = Some(SugarCursor::Block([1.0, 0.0, 0.0, 1.0]));
+        let _cursor = Some(SugarCursor {
+            kind: CursorKind::Block,
+            color: [1.0, 0.0, 0.0, 1.0],
+            order: 0,
+        });
 
         // Test with different cursor types
         let cursor_types = vec![
-            SugarCursor::Block([1.0, 0.0, 0.0, 1.0]),
-            SugarCursor::Underline([0.0, 1.0, 0.0, 1.0]),
-            SugarCursor::Caret([0.0, 0.0, 1.0, 1.0]),
+            SugarCursor { kind: CursorKind::Block, color: [1.0, 0.0, 0.0, 1.0], order: 0 },
+            SugarCursor { kind: CursorKind::Underline, color: [0.0, 1.0, 0.0, 1.0], order: 0 },
+            SugarCursor { kind: CursorKind::Caret, color: [0.0, 0.0, 1.0, 1.0], order: 0 },
         ];
 
         for cursor_type in cursor_types {
@@ -487,7 +491,7 @@ mod tests {
             ascent,
             descent,
             line_height,
-            Some(SugarCursor::Block([1.0, 0.0, 0.0, 1.0])),
+            Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 0.0, 0.0, 1.0], order: 0 }),
             None,
             true,
         );
@@ -597,9 +601,9 @@ mod tests {
         let line_height = 20.0;
 
         for cursor_type in [
-            Some(crate::SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
-            Some(crate::SugarCursor::Caret([1.0, 1.0, 1.0, 1.0])),
-            Some(crate::SugarCursor::Underline([1.0, 1.0, 1.0, 1.0])),
+            Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
+            Some(SugarCursor { kind: CursorKind::Caret, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
+            Some(SugarCursor { kind: CursorKind::Underline, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
         ] {
             let result = helper.calculate_positioning(
                 "A",
@@ -629,9 +633,8 @@ mod tests {
 
             // Block and Caret cursors use topline
             // Underline cursor uses baseline + 1.0
-            match cursor_type {
-                Some(crate::SugarCursor::Block(_))
-                | Some(crate::SugarCursor::Caret(_)) => {
+            match cursor_type.map(|c| c.kind) {
+                Some(CursorKind::Block) | Some(CursorKind::Caret) => {
                     // These should span from topline to topline + line_height
                     let cursor_top = result.topline;
                     let cursor_bottom = result.topline + line_height;
@@ -648,7 +651,7 @@ mod tests {
                         "Block/Caret cursor bottom should be at or below text bottom"
                     );
                 }
-                Some(crate::SugarCursor::Underline(_)) => {
+                Some(CursorKind::Underline) => {
                     // Underline should be positioned at baseline + 1.0
                     let underline_y = result.baseline + 1.0;
 
@@ -671,7 +674,7 @@ mod tests {
         let font_size = 16.0;
         let ascent = 12.0;
         let descent = 3.0;
-        let cursor = Some(crate::SugarCursor::Block([1.0, 1.0, 1.0, 1.0]));
+        let cursor = Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 });
 
         // Test with different line heights to ensure consistency
         for test_line_height in [16.0, 20.0, 24.0, 30.0] {
@@ -730,13 +733,13 @@ mod tests {
             ("Hello", None, None),
             (
                 "World",
-                Some(crate::SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
+                Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
                 None,
             ),
             ("─", None, Some(crate::DrawableChar::Horizontal)),
             (
                 "│",
-                Some(crate::SugarCursor::Underline([1.0, 1.0, 1.0, 1.0])),
+                Some(SugarCursor { kind: CursorKind::Underline, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
                 Some(crate::DrawableChar::Vertical),
             ),
         ];

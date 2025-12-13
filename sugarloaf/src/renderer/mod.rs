@@ -444,6 +444,7 @@ impl Renderer {
                         &Rect::new(*x, *y, *width, *height),
                         *depth,
                         color,
+                        0,
                     );
                 }
                 crate::layout::ContentData::RoundedRect {
@@ -460,6 +461,7 @@ impl Renderer {
                         *depth,
                         color,
                         *border_radius,
+                        0,
                     );
                 }
                 crate::layout::ContentData::Line {
@@ -528,7 +530,6 @@ impl Renderer {
                     height,
                     color,
                     coords,
-                    has_alpha,
                     depth,
                     atlas_layer,
                 } => {
@@ -537,7 +538,6 @@ impl Renderer {
                         *depth,
                         color,
                         coords,
-                        *has_alpha,
                         *atlas_layer,
                     );
                 }
@@ -1075,7 +1075,6 @@ impl Renderer {
                                         cached.location.max.0,
                                         cached.location.max.1,
                                     ],
-                                    true,
                                     cached.atlas_layer,
                                 );
                             } else {
@@ -1148,6 +1147,7 @@ impl Renderer {
         height: f32,
         color: [f32; 4],
         depth: f32,
+        order: u8,
     ) {
         self.comp.batches.rect(
             &Rect {
@@ -1158,6 +1158,7 @@ impl Renderer {
             },
             depth,
             &color,
+            order,
         );
     }
 
@@ -1172,6 +1173,7 @@ impl Renderer {
         color: [f32; 4],
         depth: f32,
         border_radius: f32,
+        order: u8,
     ) {
         self.comp.batches.rounded_rect(
             &Rect {
@@ -1183,6 +1185,7 @@ impl Renderer {
             depth,
             &color,
             border_radius,
+            order,
         );
     }
 
@@ -1195,7 +1198,6 @@ impl Renderer {
         height: f32,
         color: [f32; 4],
         coords: [f32; 4],
-        has_alpha: bool,
         depth: f32,
         atlas_layer: i32,
     ) {
@@ -1209,7 +1211,6 @@ impl Renderer {
             depth,
             &color,
             &coords,
-            has_alpha,
             atlas_layer,
         );
     }
