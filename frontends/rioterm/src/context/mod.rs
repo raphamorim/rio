@@ -737,8 +737,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn get_mut(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
-        self.contexts[self.current_index].get_mut(route_id)
+    pub fn get_by_route_id(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
+        self.contexts[self.current_index].get_by_route_id(route_id)
     }
 
     #[inline]
