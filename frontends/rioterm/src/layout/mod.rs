@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod layout_tests;
+
 use crate::context::Context;
 use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
@@ -96,6 +99,8 @@ pub struct ContextGrid<T: EventListener> {
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
     rich_text_object: Object,
+    /// Cached absolute layout: (x, y, width, height) in physical pixels
+    layout_rect: [f32; 4],
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
@@ -114,11 +119,10 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         Self {
             val: context,
             rich_text_object,
+            layout_rect: [0.0; 4],
         }
     }
-}
 
-impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     #[inline]
     pub fn context(&self) -> &Context<T> {
         &self.val
@@ -276,20 +280,46 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             width: AvailableSpace::MaxContent,
             height: AvailableSpace::MaxContent,
         };
-        self.tree.compute_layout(self.root_node, available)
+        self.tree.compute_layout(self.root_node, available)?;
+        self.update_layout_rects();
+        Ok(())
+    }
+
+    /// Update layout_rect for all panel items in a single top-down traversal.
+    /// O(n) where n is total nodes in tree.
+    fn update_layout_rects(&mut self) {
+        let mut stack: Vec<(NodeId, f32, f32)> = vec![(self.root_node, 0.0, 0.0)];
+
+        while let Some((node, parent_x, parent_y)) = stack.pop() {
+            let layout = match self.tree.layout(node) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+
+            let abs_x = parent_x + layout.location.x;
+            let abs_y = parent_y + layout.location.y;
+
+            // Update layout_rect for panel nodes
+            if let Some(&context_id) = self.node_to_context.get(&node) {
+                if let Some(item) = self.inner.get_mut(&context_id) {
+                    item.layout_rect = [abs_x, abs_y, layout.size.width, layout.size.height];
+                }
+            }
+
+            // Add children to stack
+            if let Ok(children) = self.tree.children(node) {
+                for child in children {
+                    stack.push((child, abs_x, abs_y));
+                }
+            }
+        }
     }
 
     pub fn find_context_at_position(&self, x: f32, y: f32) -> Option<usize> {
-        for (&node, &context_id) in &self.node_to_context {
-            if let Ok(layout) = self.tree.layout(node) {
-                let left = layout.location.x;
-                let top = layout.location.y;
-                let right = left + layout.size.width;
-                let bottom = top + layout.size.height;
-
-                if x >= left && x < right && y >= top && y < bottom {
-                    return Some(context_id);
-                }
+        for (&context_id, item) in &self.inner {
+            let [left, top, width, height] = item.layout_rect;
+            if x >= left && x < left + width && y >= top && y < top + height {
+                return Some(context_id);
             }
         }
         None
@@ -305,51 +335,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             return vec![];
         }
 
-        let mut borders = Vec::new();
+        let mut borders = Vec::with_capacity(self.inner.len() * 4);
         let border_width = self.border_config.width;
         let inactive_color = self.border_config.color;
         let active_color = self.border_config.active_color;
 
-        for (&node, &context_id) in &self.node_to_context {
-            if let Ok(layout) = self.tree.layout(node) {
-                // Use active color for the current panel, inactive for others
-                let color = if context_id == self.current {
-                    active_color
-                } else {
-                    inactive_color
-                };
+        for (&context_id, item) in &self.inner {
+            let [x, y, width, height] = item.layout_rect;
+            let color = if context_id == self.current {
+                active_color
+            } else {
+                inactive_color
+            };
 
-                // Positions are in physical pixels
-                // Caller should: (x / scale) + margin to convert to logical coords
-                let x = layout.location.x;
-                let y = layout.location.y;
-                let width = layout.size.width;
-                let height = layout.size.height;
-
-                // Top border
-                borders.push(Object::Rect(Rect::new(x, y, width, border_width, color)));
-
-                // Right border
-                borders.push(Object::Rect(Rect::new(
-                    x + width - border_width,
-                    y,
-                    border_width,
-                    height,
-                    color,
-                )));
-
-                // Bottom border
-                borders.push(Object::Rect(Rect::new(
-                    x,
-                    y + height - border_width,
-                    width,
-                    border_width,
-                    color,
-                )));
-
-                // Left border
-                borders.push(Object::Rect(Rect::new(x, y, border_width, height, color)));
-            }
+            // Top border
+            borders.push(Object::Rect(Rect::new(x, y, width, border_width, color)));
+            // Right border
+            borders.push(Object::Rect(Rect::new(x + width - border_width, y, border_width, height, color)));
+            // Bottom border
+            borders.push(Object::Rect(Rect::new(x, y + height - border_width, width, border_width, color)));
+            // Left border
+            borders.push(Object::Rect(Rect::new(x, y, border_width, height, color)));
         }
 
         borders
@@ -383,37 +389,58 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn try_split_right(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
-        // Set root to row direction (horizontal split)
-        let mut root_style = self.tree.style(self.root_node)?.clone();
-        root_style.flex_direction = taffy::FlexDirection::Row;
-        self.tree.set_style(self.root_node, root_style)?;
-
-        // Create new panel node with padding and margin from config
-        let new_node = self.tree.new_leaf(self.create_panel_style())?;
-
-        // Add to root container (gap will handle spacing)
-        self.tree.add_child(self.root_node, new_node)?;
-
-        // Update mappings
-        self.node_to_context.insert(new_node, new_context_id);
-        self.context_to_node.insert(new_context_id, new_node);
-
-        Ok(())
+        self.split_panel(new_context_id, taffy::FlexDirection::Row)
     }
 
     fn try_split_down(&mut self, new_context_id: usize) -> Result<(), TaffyError> {
-        // Set root to column direction (vertical split)
-        let mut root_style = self.tree.style(self.root_node)?.clone();
-        root_style.flex_direction = taffy::FlexDirection::Column;
-        self.tree.set_style(self.root_node, root_style)?;
+        self.split_panel(new_context_id, taffy::FlexDirection::Column)
+    }
 
-        // Create new panel node with padding and margin from config
+    fn split_panel(&mut self, new_context_id: usize, direction: taffy::FlexDirection) -> Result<(), TaffyError> {
+        // Get the current panel's node
+        let current_node = *self.context_to_node.get(&self.current)
+            .ok_or(TaffyError::InvalidInputNode(self.root_node))?;
+
+        // Find the parent of the current node
+        let parent_node = self.tree.parent(current_node).unwrap_or(self.root_node);
+
+        // Create a container node with the split direction
+        let scale = self.scale;
+        let container_style = Style {
+            display: Display::Flex,
+            flex_direction: direction,
+            flex_grow: 1.0,
+            flex_shrink: 1.0,
+            gap: geometry::Size {
+                width: length(self.panel_config.column_gap * scale),
+                height: length(self.panel_config.row_gap * scale),
+            },
+            ..Default::default()
+        };
+        let container_node = self.tree.new_leaf(container_style)?;
+
+        // Create the new panel node
         let new_node = self.tree.new_leaf(self.create_panel_style())?;
 
-        // Add to root container (gap will handle spacing)
-        self.tree.add_child(self.root_node, new_node)?;
+        // Get the index of current_node in its parent
+        let children = self.tree.children(parent_node)?;
+        let current_index = children.iter().position(|&n| n == current_node);
 
-        // Update mappings
+        // Remove current_node from parent
+        self.tree.remove_child(parent_node, current_node)?;
+
+        // Add current_node and new_node as children of container
+        self.tree.add_child(container_node, current_node)?;
+        self.tree.add_child(container_node, new_node)?;
+
+        // Insert container at the same position in parent
+        if let Some(idx) = current_index {
+            self.tree.insert_child_at_index(parent_node, idx, container_node)?;
+        } else {
+            self.tree.add_child(parent_node, container_node)?;
+        }
+
+        // Update mappings for the new panel
         self.node_to_context.insert(new_node, new_context_id);
         self.context_to_node.insert(new_context_id, new_node);
 
@@ -560,34 +587,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let scale = sugarloaf.ctx.scale();
 
-        for (&node, &context_id) in &self.node_to_context {
-            let layout = match self.tree.layout(node) {
-                Ok(l) => l,
-                Err(_) => continue,
-            };
+        for item in self.inner.values_mut() {
+            let [abs_x, abs_y, width, height] = item.layout_rect;
 
-            let x = (layout.location.x + self.scaled_margin.left) / scale;
-            let y = (layout.location.y + self.scaled_margin.top) / scale;
-            let width = layout.size.width;
-            let height = layout.size.height;
+            let x = (abs_x + self.scaled_margin.left) / scale;
+            let y = (abs_y + self.scaled_margin.top) / scale;
 
-            if let Some(item) = self.inner.get_mut(&context_id) {
-                // Clear margin since Taffy layout already accounts for spacing
-                item.val.dimension.margin = Margin::all(0.0);
-                item.val.dimension.update_width(width);
-                item.val.dimension.update_height(height);
+            // Clear margin since Taffy layout already accounts for spacing
+            item.val.dimension.margin = Margin::all(0.0);
+            item.val.dimension.update_width(width);
+            item.val.dimension.update_height(height);
 
-                // Update terminal size
-                let mut terminal = item.val.terminal.lock();
-                terminal.resize::<ContextDimension>(item.val.dimension);
-                drop(terminal);
+            // Update terminal size
+            let mut terminal = item.val.terminal.lock();
+            terminal.resize::<ContextDimension>(item.val.dimension);
+            drop(terminal);
 
-                let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-                let _ = item.val.messenger.send_resize(winsize);
+            let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+            let _ = item.val.messenger.send_resize(winsize);
 
-                // Update position via sugarloaf (handles scaling)
-                sugarloaf.set_position(item.val.rich_text_id, x, y);
-            }
+            // Update position via sugarloaf (handles scaling)
+            sugarloaf.set_position(item.val.rich_text_id, x, y);
         }
         true
     }
@@ -602,18 +622,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         &self.inner
     }
 
-    /// Get all keys in the order they appear in the grid (depth-first traversal)
     /// Get contexts ordered by visual position (top-to-bottom, left-to-right)
-    /// Uses Taffy layout positions for natural ordering
     pub fn get_ordered_keys(&self) -> Vec<usize> {
-        let mut panels: Vec<(usize, f32, f32)> = Vec::new();
-
-        // Collect all panels with their positions from Taffy
-        for (&context_id, &node) in &self.context_to_node {
-            if let Ok(layout) = self.tree.layout(node) {
-                panels.push((context_id, layout.location.y, layout.location.x));
-            }
-        }
+        let mut panels: Vec<(usize, f32, f32)> = self
+            .inner
+            .iter()
+            .map(|(&id, item)| (id, item.layout_rect[1], item.layout_rect[0])) // (id, y, x)
+            .collect();
 
         // Sort by Y first (top to bottom), then X (left to right)
         panels.sort_by(|a, b| {
