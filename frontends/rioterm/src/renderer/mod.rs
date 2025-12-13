@@ -1221,6 +1221,31 @@ impl Renderer {
             (window_size.width, window_size.height, scale_factor),
         );
 
+        // Render panel borders (on top of terminal content)
+        let grid_margin = context_manager.get_current_grid_margin();
+        for border_object in context_manager.get_panel_borders() {
+            if let rio_backend::sugarloaf::Object::Rect(rect) = border_object {
+                // Convert from physical pixels to logical coordinates
+                // Same transformation as apply_taffy_layout: (physical / scale) + margin
+                let x = (rect.x / scale_factor) + grid_margin.left;
+                let y = (rect.y / scale_factor) + grid_margin.top;
+                let width = rect.width / scale_factor;
+                let height = rect.height / scale_factor;
+
+                // Render with higher order (1) to appear on top of terminal content
+                sugarloaf.rect(
+                    None,
+                    x,
+                    y,
+                    width,
+                    height,
+                    rect.color,
+                    -0.1, // Negative depth = closer to camera (in front)
+                    1,    // Higher order renders on top
+                );
+            }
+        }
+
         // Render navigation rectangles directly
         // self.navigation.render_directly(
         //     sugarloaf,

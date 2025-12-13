@@ -26,7 +26,7 @@ impl Default for Panel {
 
 #[inline]
 fn default_panel_margin() -> Margin {
-    Margin::all(0.0)
+    Margin::all(5.0)
 }
 
 #[inline]

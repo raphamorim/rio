@@ -259,6 +259,12 @@ pub struct Colors {
     #[serde(default = "defaults::split", deserialize_with = "deserialize_to_arr")]
     pub split: ColorArray,
     #[serde(
+        default = "defaults::split_active",
+        deserialize_with = "deserialize_to_arr",
+        rename = "split-active"
+    )]
+    pub split_active: ColorArray,
+    #[serde(
         default = "defaults::search_match_background",
         deserialize_with = "deserialize_to_arr",
         rename = "search-match-background"
@@ -311,6 +317,7 @@ impl Default for Colors {
             tab_border: defaults::tab_border(),
             cursor: defaults::cursor(),
             split: defaults::split(),
+            split_active: defaults::split_active(),
             vi_cursor: defaults::vi_cursor(),
             black: defaults::black(),
             cyan: defaults::cyan(),

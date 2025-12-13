@@ -176,6 +176,13 @@ pub fn split() -> ColorArray {
 }
 
 #[inline]
+pub fn split_active() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
 pub fn selection_foreground() -> ColorArray {
     ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
         .unwrap()

@@ -60,15 +60,17 @@ fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object 
 #[derive(Debug, Clone, Copy)]
 pub struct BorderConfig {
     pub width: f32,
-    pub color: [f32; 4], // RGBA
-    pub radius: f32,     // Corner radius (0.0 = sharp)
+    pub color: [f32; 4],        // RGBA for inactive panels
+    pub active_color: [f32; 4], // RGBA for active panel
+    pub radius: f32,            // Corner radius (0.0 = sharp)
 }
 
 impl Default for BorderConfig {
     fn default() -> Self {
         Self {
             width: 2.0,
-            color: [0.8, 0.8, 0.8, 1.0], // Light gray
+            color: [0.8, 0.8, 0.8, 1.0],        // Light gray
+            active_color: [0.3, 0.8, 0.9, 1.0], // Cyan-ish for active
             radius: 0.0,
         }
     }
@@ -150,6 +152,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         context: Context<T>,
         margin: Margin,
         border_color: [f32; 4],
+        border_active_color: [f32; 4],
         panel_config: rio_backend::config::layout::Panel,
     ) -> Self {
         let width = context.dimension.width;
@@ -212,6 +215,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let border_config = BorderConfig {
             width: 1.0,
             color: border_color,
+            active_color: border_active_color,
             radius: 0.0,
         };
 
@@ -290,6 +294,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
+    /// Get panel borders for rendering. Returns border rectangles in physical pixel coordinates.
+    /// The caller is responsible for converting to logical coordinates and adding margin.
+    /// Active panel uses `border_config.active_color`, inactive panels use `border_config.color`.
     pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
         use rio_backend::sugarloaf::{Object, Rect};
 
@@ -299,10 +306,20 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let mut borders = Vec::new();
         let border_width = self.border_config.width;
-        let color = self.border_config.color;
+        let inactive_color = self.border_config.color;
+        let active_color = self.border_config.active_color;
 
-        for &node in self.node_to_context.keys() {
+        for (&node, &context_id) in &self.node_to_context {
             if let Ok(layout) = self.tree.layout(node) {
+                // Use active color for the current panel, inactive for others
+                let color = if context_id == self.current {
+                    active_color
+                } else {
+                    inactive_color
+                };
+
+                // Positions are in physical pixels (from Taffy layout)
+                // Caller should: (x / scale) + margin to convert to logical coords
                 let x = layout.location.x;
                 let y = layout.location.y;
                 let width = layout.size.width;
@@ -335,6 +352,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         borders
+    }
+
+    /// Get margin values (needed by renderer to position borders correctly)
+    #[inline]
+    pub fn get_margin(&self) -> Margin {
+        self.margin
     }
 
     fn create_panel_style(&self) -> Style {
