@@ -308,9 +308,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     pub fn find_context_at_position(&self, x: f32, y: f32) -> Option<NodeId> {
+        // Adjust for window margin - layout_rect is relative to root container
+        let adj_x = x - self.scaled_margin.left;
+        let adj_y = y - self.scaled_margin.top;
+
         for (&node_id, item) in &self.inner {
             let [left, top, width, height] = item.layout_rect;
-            if x >= left && x < left + width && y >= top && y < top + height {
+            if adj_x >= left && adj_x < left + width && adj_y >= top && adj_y < top + height {
                 return Some(node_id);
             }
         }
