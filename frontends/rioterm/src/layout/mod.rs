@@ -72,7 +72,7 @@ impl Default for BorderConfig {
             width: 2.0,
             color: [0.8, 0.8, 0.8, 1.0],        // Light gray
             active_color: [0.3, 0.8, 0.9, 1.0], // Cyan-ish for active
-            radius: 0.0,
+            radius: 8.0,                         // Default rounded corners
         }
     }
 }
@@ -210,7 +210,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             width: 1.0,
             color: border_color,
             active_color: border_active_color,
-            radius: 0.0,
+            radius: 8.0, // Rounded corners for panel borders
         };
 
         let mut grid = Self {
@@ -321,37 +321,43 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
-    /// Get panel borders for rendering. Returns border rectangles in physical pixel coordinates.
+    /// Get panel borders for rendering. Returns quad objects in physical pixel coordinates.
     /// The caller is responsible for converting to logical coordinates and adding margin.
     /// Active panel uses `border_config.active_color`, inactive panels use `border_config.color`.
+    /// Uses Quad with rounded corners when `border_config.radius > 0`.
     pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
-        use rio_backend::sugarloaf::{Object, Rect};
+        use rio_backend::sugarloaf::{Corners, Edges, Object, Quad};
 
         if !self.should_draw_borders() {
             return vec![];
         }
 
-        let mut borders = Vec::with_capacity(self.inner.len() * 4);
+        let mut borders = Vec::with_capacity(self.inner.len());
         let border_width = self.border_config.width;
+        let corner_radius = self.border_config.radius;
         let inactive_color = self.border_config.color;
         let active_color = self.border_config.active_color;
 
         for (&context_id, item) in &self.inner {
             let [x, y, width, height] = item.layout_rect;
-            let color = if context_id == self.current {
+            let border_color = if context_id == self.current {
                 active_color
             } else {
                 inactive_color
             };
 
-            // Top border
-            borders.push(Object::Rect(Rect::new(x, y, width, border_width, color)));
-            // Right border
-            borders.push(Object::Rect(Rect::new(x + width - border_width, y, border_width, height, color)));
-            // Bottom border
-            borders.push(Object::Rect(Rect::new(x, y + height - border_width, width, border_width, color)));
-            // Left border
-            borders.push(Object::Rect(Rect::new(x, y, border_width, height, color)));
+            // Use a Quad with rounded corners for the panel border
+            // Background is transparent, only the border is visible
+            borders.push(Object::Quad(Quad::new(
+                x,
+                y,
+                width,
+                height,
+                [0.0, 0.0, 0.0, 0.0], // Transparent background
+                Corners::all(corner_radius),
+                Edges::all(border_width),
+                border_color,
+            )));
         }
 
         borders

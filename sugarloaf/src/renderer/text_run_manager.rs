@@ -82,15 +82,16 @@ impl TextRunManager {
             return;
         }
 
-        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + border_radius + rect_size[2] + padding
+        // Vertex structure: pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4]
         // pos: [f32; 3] = 12 bytes
         // color: [f32; 4] = 16 bytes
         // uv: [f32; 2] = 8 bytes
         // layers: [i32; 2] = 8 bytes
-        // border_radius: f32 = 4 bytes
+        // corner_radii: [f32; 4] = 16 bytes
         // rect_size: [f32; 2] = 8 bytes
-        // _padding: f32 = 4 bytes
-        const VERTEX_SIZE: usize = 60;
+        // border_widths: [f32; 4] = 16 bytes
+        // border_color: [f32; 4] = 16 bytes
+        const VERTEX_SIZE: usize = 116;
 
         if !vertices_data.len().is_multiple_of(VERTEX_SIZE) {
             debug!("Invalid vertex data size: {}", vertices_data.len());
