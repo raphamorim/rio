@@ -23,12 +23,9 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    let margin_x = margin.left;
-    let margin_spaces = margin.top + margin.bottom;
-
-    // Calculate available space in physical pixels
-    let available_width = width - margin_x;
-    let available_height = height - margin_spaces;
+    // Calculate available space accounting for margins
+    let available_width = width - margin.left - margin.right;
+    let available_height = height - margin.top - margin.bottom;
 
     // Ensure we have positive available space
     if available_width <= 0.0 || available_height <= 0.0 {
@@ -45,7 +42,7 @@ fn compute(
         return (visible_columns, MIN_LINES);
     }
 
-    let lines = (available_height / char_height).floor() - 1.0;
+    let lines = (available_height / char_height).floor();
     let visible_lines = std::cmp::max(lines as usize, MIN_LINES);
 
     (visible_columns, visible_lines)
@@ -81,6 +78,7 @@ pub struct ContextGrid<T: EventListener> {
     pub height: f32,
     pub current: usize,
     pub margin: Margin,
+    scale: f32,
     border_color: [f32; 4],
     inner: FxHashMap<usize, ContextGridItem<T>>,
     pub root: Option<usize>,
@@ -157,6 +155,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     ) -> Self {
         let width = context.dimension.width;
         let height = context.dimension.height;
+        let scale = context.dimension.dimension.scale;
         let mut inner = FxHashMap::default();
         let root_key = context.route_id;
         inner.insert(context.route_id, ContextGridItem::new(context));
@@ -164,16 +163,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Initialize Taffy layout
         let mut tree = TaffyTree::new();
 
-        // Calculate available size after window margin
-        let available_width = width - margin.left - margin.right;
-        let available_height = height - margin.top - margin.bottom;
+        // Calculate available size after window margin (scale margins to physical pixels)
+        let available_width = width - (margin.left * scale) - (margin.right * scale);
+        let available_height = height - (margin.top * scale) - (margin.bottom * scale);
 
         // Create root container (window margin handled separately via position offset)
         let root_style = Style {
             display: Display::Flex,
             gap: geometry::Size {
-                width: length(panel_config.column_gap),
-                height: length(panel_config.row_gap),
+                width: length(panel_config.column_gap * scale),
+                height: length(panel_config.row_gap * scale),
             },
             size: geometry::Size {
                 width: length(available_width),
@@ -184,22 +183,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let root_node = tree.new_leaf(root_style).expect("Failed to create root node");
 
-        // Create initial panel node with padding and margin from config
+        // Create initial panel node with padding and margin from config (scaled to physical pixels)
         let panel_style = Style {
             display: Display::Flex,
             flex_grow: 1.0,
             flex_shrink: 1.0,
             padding: geometry::Rect {
-                left: length(panel_config.padding.left),
-                right: length(panel_config.padding.right),
-                top: length(panel_config.padding.top),
-                bottom: length(panel_config.padding.bottom),
+                left: length(panel_config.padding.left * scale),
+                right: length(panel_config.padding.right * scale),
+                top: length(panel_config.padding.top * scale),
+                bottom: length(panel_config.padding.bottom * scale),
             },
             margin: geometry::Rect {
-                left: length(panel_config.margin.left),
-                right: length(panel_config.margin.right),
-                top: length(panel_config.margin.top),
-                bottom: length(panel_config.margin.bottom),
+                left: length(panel_config.margin.left * scale),
+                right: length(panel_config.margin.right * scale),
+                top: length(panel_config.margin.top * scale),
+                bottom: length(panel_config.margin.bottom * scale),
             },
             ..Default::default()
         };
@@ -223,6 +222,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             inner,
             current: root_key,
             margin,
+            scale,
             width,
             height,
             border_color,
@@ -257,9 +257,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn try_update_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
-        // Subtract window margin from available size
-        let available_width = width - self.margin.left - self.margin.right;
-        let available_height = height - self.margin.top - self.margin.bottom;
+        // Subtract window margin from available size (scale margins to physical pixels)
+        let scale = self.scale;
+        let available_width = width - (self.margin.left * scale) - (self.margin.right * scale);
+        let available_height = height - (self.margin.top * scale) - (self.margin.bottom * scale);
 
         let mut style = self.tree.style(self.root_node)?.clone();
         style.size = geometry::Size {
@@ -361,21 +362,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn create_panel_style(&self) -> Style {
+        let scale = self.scale;
         Style {
             display: Display::Flex,
             flex_grow: 1.0,
             flex_shrink: 1.0,
             padding: geometry::Rect {
-                left: length(self.panel_config.padding.left),
-                right: length(self.panel_config.padding.right),
-                top: length(self.panel_config.padding.top),
-                bottom: length(self.panel_config.padding.bottom),
+                left: length(self.panel_config.padding.left * scale),
+                right: length(self.panel_config.padding.right * scale),
+                top: length(self.panel_config.padding.top * scale),
+                bottom: length(self.panel_config.padding.bottom * scale),
             },
             margin: geometry::Rect {
-                left: length(self.panel_config.margin.left),
-                right: length(self.panel_config.margin.right),
-                top: length(self.panel_config.margin.top),
-                bottom: length(self.panel_config.margin.bottom),
+                left: length(self.panel_config.margin.left * scale),
+                right: length(self.panel_config.margin.right * scale),
+                top: length(self.panel_config.margin.top * scale),
+                bottom: length(self.panel_config.margin.bottom * scale),
             },
             ..Default::default()
         }
@@ -452,7 +454,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.context_to_node.get(&context_id)?;
         let current_layout = self.tree.layout(*current_node).ok()?;
 
-        let gap = self.panel_config.column_gap;
+        let gap = self.panel_config.column_gap * self.scale;
 
         // Find panel directly to the left (overlapping Y range, touching on X axis)
         for (&node, &other_id) in &self.node_to_context {
@@ -504,7 +506,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.context_to_node.get(&context_id)?;
         let current_layout = self.tree.layout(*current_node).ok()?;
 
-        let gap = self.panel_config.row_gap;
+        let gap = self.panel_config.row_gap * self.scale;
 
         // Find panel directly above (overlapping X range, touching on Y axis)
         for (&node, &other_id) in &self.node_to_context {
