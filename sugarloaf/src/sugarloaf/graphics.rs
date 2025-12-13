@@ -9,7 +9,6 @@ use rustc_hash::FxHashMap;
 use std::cmp;
 use std::num::NonZeroU64;
 
-/// Max allowed dimensions (width, height) for the graphic, in pixels.
 pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 
 pub struct GraphicDataEntry {

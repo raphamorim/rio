@@ -23,9 +23,10 @@ fn compute(
         return (MIN_COLS, MIN_LINES);
     }
 
-    // Calculate available space accounting for margins
-    let available_width = width - margin.left - margin.right;
-    let available_height = height - margin.top - margin.bottom;
+    // Calculate available space accounting for margins (scale margins to physical pixels)
+    let scale = dimensions.scale;
+    let available_width = width - (margin.left * scale) - (margin.right * scale);
+    let available_height = height - (margin.top * scale) - (margin.bottom * scale);
 
     // Ensure we have positive available space
     if available_width <= 0.0 || available_height <= 0.0 {
@@ -77,7 +78,7 @@ pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
     pub current: usize,
-    pub margin: Margin,
+    pub scaled_margin: Margin,
     scale: f32,
     border_color: [f32; 4],
     inner: FxHashMap<usize, ContextGridItem<T>>,
@@ -148,7 +149,7 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     pub fn new(
         context: Context<T>,
-        margin: Margin,
+        scaled_margin: Margin,
         border_color: [f32; 4],
         border_active_color: [f32; 4],
         panel_config: rio_backend::config::layout::Panel,
@@ -163,9 +164,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Initialize Taffy layout
         let mut tree = TaffyTree::new();
 
-        // Calculate available size after window margin (scale margins to physical pixels)
-        let available_width = width - (margin.left * scale) - (margin.right * scale);
-        let available_height = height - (margin.top * scale) - (margin.bottom * scale);
+        // Calculate available size after window margin (already scaled)
+        let available_width = width - scaled_margin.left - scaled_margin.right;
+        let available_height = height - scaled_margin.top - scaled_margin.bottom;
 
         // Create root container (window margin handled separately via position offset)
         let root_style = Style {
@@ -221,7 +222,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let mut grid = Self {
             inner,
             current: root_key,
-            margin,
+            scaled_margin,
             scale,
             width,
             height,
@@ -257,10 +258,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     fn try_update_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
-        // Subtract window margin from available size (scale margins to physical pixels)
-        let scale = self.scale;
-        let available_width = width - (self.margin.left * scale) - (self.margin.right * scale);
-        let available_height = height - (self.margin.top * scale) - (self.margin.bottom * scale);
+        // Subtract window margin from available size
+        let available_width = width - self.scaled_margin.left - self.scaled_margin.right;
+        let available_height = height - self.scaled_margin.top - self.scaled_margin.bottom;
 
         let mut style = self.tree.style(self.root_node)?.clone();
         style.size = geometry::Size {
@@ -319,7 +319,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                     inactive_color
                 };
 
-                // Positions are in physical pixels (from Taffy layout)
+                // Positions are in physical pixels
                 // Caller should: (x / scale) + margin to convert to logical coords
                 let x = layout.location.x;
                 let y = layout.location.y;
@@ -355,10 +355,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         borders
     }
 
-    /// Get margin values (needed by renderer to position borders correctly)
     #[inline]
-    pub fn get_margin(&self) -> Margin {
-        self.margin
+    pub fn get_scaled_margin(&self) -> Margin {
+        self.scaled_margin
     }
 
     fn create_panel_style(&self) -> Style {
@@ -567,12 +566,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 Err(_) => continue,
             };
 
-            let x = (layout.location.x / scale) + self.margin.left;
-            let y = (layout.location.y / scale) + self.margin.top;
+            let x = (layout.location.x + self.scaled_margin.left) / scale;
+            let y = (layout.location.y + self.scaled_margin.top) / scale;
             let width = layout.size.width;
             let height = layout.size.height;
 
             if let Some(item) = self.inner.get_mut(&context_id) {
+                // Clear margin since Taffy layout already accounts for spacing
+                item.val.dimension.margin = Margin::all(0.0);
                 item.val.dimension.update_width(width);
                 item.val.dimension.update_height(height);
 
@@ -767,22 +768,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let len = self.inner.len();
         if len <= 1 {
             if let Some(item) = self.inner.get(&self.current) {
-                return (&item.val, self.margin);
+                return (&item.val, self.scaled_margin);
             } else if let Some(root) = self.root {
                 if let Some(item) = self.inner.get(&root) {
-                    return (&item.val, self.margin);
+                    return (&item.val, self.scaled_margin);
                 }
             }
             panic!("Grid is in an invalid state - no contexts available");
         }
 
         if let Some(current_item) = self.inner.get(&self.current) {
-            (&current_item.val, self.margin)
+            (&current_item.val, self.scaled_margin)
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
             if let Some(root) = self.root {
                 if let Some(item) = self.inner.get(&root) {
-                    return (&item.val, self.margin);
+                    return (&item.val, self.scaled_margin);
                 }
             }
             panic!("Grid is in an invalid state - no contexts available");
@@ -826,7 +827,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 self.height,
                 current_context_dimension.dimension,
                 current_context_dimension.line_height,
-                self.margin,
+                self.scaled_margin,
             )
         } else {
             tracing::error!("Current key {:?} not found in grid", self.current);
@@ -834,8 +835,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_margin(&mut self, margin: Margin) {
-        self.margin = margin;
+    pub fn update_scaled_margin(&mut self, scaled_margin: Margin) {
+        self.scaled_margin = scaled_margin;
     }
 
     pub fn update_line_height(&mut self, line_height: f32) {
@@ -896,8 +897,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 Err(_) => continue,
             };
 
-            let x = layout.location.x + self.margin.left;
-            let y = layout.location.y + self.margin.top;
+            let x = layout.location.x + self.scaled_margin.left;
+            let y = layout.location.y + self.scaled_margin.top;
 
             if let Some(item) = self.inner.get_mut(&context_id) {
                 item.set_position([x, y]);

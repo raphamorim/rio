@@ -10,7 +10,6 @@ use crate::Graphics;
 use crate::{Content, TextDimensions};
 
 pub struct SugarState {
-    // Rich text metadata now managed directly in content.states[].render_data
     pub style: RootStyle,
     pub content: Content,
     pub visual_bell_overlay: Option<crate::sugarloaf::primitives::Rect>,
@@ -264,7 +263,6 @@ impl SugarState {
 
     #[inline]
     pub fn compute_layout_rescale(&mut self, _scale: f32) {
-        // Simplified - rescaling handled elsewhere
         self.compute_dimensions();
     }
 }

@@ -216,12 +216,19 @@ impl Screen<'_> {
         let _ = sugarloaf.text(Some(rich_text_id));
         sugarloaf.set_position(rich_text_id, config.margin.left, padding_y_top);
 
-        // Create margin with computed top/bottom (includes island/search adjustments)
+        // Create unscaled margin for ContextDimension (compute() will scale it)
         let margin = Margin::new(
             padding_y_top,
             config.margin.right,
             padding_y_bottom,
             config.margin.left,
+        );
+        // Create scaled margin for ContextGrid (already in physical pixels)
+        let scaled_margin = Margin::new(
+            padding_y_top * scale as f32,
+            config.margin.right * scale as f32,
+            padding_y_bottom * scale as f32,
+            config.margin.left * scale as f32,
         );
         let context_dimension = ContextDimension::build(
             size.width as f32,
@@ -249,7 +256,7 @@ impl Screen<'_> {
             rich_text_id,
             context_manager_config,
             context_dimension,
-            margin,
+            scaled_margin,
             sugarloaf_errors,
         )?;
 
@@ -375,14 +382,15 @@ impl Screen<'_> {
             .update_filters(config.renderer.filters.as_slice());
         self.renderer = Renderer::new(config, font_library);
 
+        let scale = self.sugarloaf.scale_factor();
         for context_grid in self.context_manager.contexts_mut() {
             context_grid.update_line_height(config.line_height);
 
-            context_grid.update_margin(Margin::new(
-                padding_y_top,
-                config.margin.right,
-                padding_y_bottom,
-                config.margin.left,
+            context_grid.update_scaled_margin(Margin::new(
+                padding_y_top * scale,
+                config.margin.right * scale,
+                padding_y_bottom * scale,
+                config.margin.left * scale,
             ));
 
             context_grid.update_dimensions(&mut self.sugarloaf);
@@ -1365,12 +1373,13 @@ impl Screen<'_> {
                 s.font_size = layout.font_size;
                 s.line_height = layout.line_height;
 
+                let scale = self.sugarloaf.scale_factor();
                 let d = self.context_manager.current_grid_mut();
-                d.update_margin(Margin::new(
-                    padding_y_top,
-                    d.margin.right,
-                    padding_y_bottom,
-                    d.margin.left,
+                d.update_scaled_margin(Margin::new(
+                    padding_y_top * scale,
+                    d.scaled_margin.right,
+                    padding_y_bottom * scale,
+                    d.scaled_margin.left,
                 ));
                 self.resize_all_contexts();
             }
