@@ -7,6 +7,7 @@ use crate::sugarloaf::Handle;
 use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
 use std::cmp;
+use std::num::NonZeroU64;
 
 /// Max allowed dimensions (width, height) for the graphic, in pixels.
 pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
@@ -63,7 +64,30 @@ pub struct Graphic {
 
 /// Unique identifier for every graphic added to a grid.
 #[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
-pub struct GraphicId(pub u64);
+pub struct GraphicId(pub NonZeroU64);
+
+impl GraphicId {
+    /// Create a new GraphicId from a u64 value.
+    /// Panics if value is 0.
+    #[inline]
+    pub fn new(value: u64) -> Self {
+        Self(NonZeroU64::new(value).expect("GraphicId cannot be 0"))
+    }
+
+    /// Create a new GraphicId from a u64 value without checking.
+    /// # Safety
+    /// The value must not be 0.
+    #[inline]
+    pub const unsafe fn new_unchecked(value: u64) -> Self {
+        Self(NonZeroU64::new_unchecked(value))
+    }
+
+    /// Get the inner u64 value.
+    #[inline]
+    pub const fn get(self) -> u64 {
+        self.0.get()
+    }
+}
 
 /// Specifies the format of the pixel data.
 #[derive(Eq, PartialEq, Clone, Debug, Copy)]
@@ -301,7 +325,7 @@ pub struct ResizeCommand {
 #[test]
 fn check_opaque_region() {
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         width: 10,
         height: 10,
         color_type: ColorType::Rgb,
@@ -324,7 +348,7 @@ fn check_opaque_region() {
     };
 
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         pixels,
         width: 10,
         height: 10,

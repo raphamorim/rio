@@ -796,7 +796,7 @@ impl<'a, H: Handler + 'a, T: Timeout> Performer<'a, H, T> {
                 if let Some(graphic_data) = response.graphic_data {
                     debug!(
                         "[process_apc_buffer] Graphic data present: id={}, {}x{}",
-                        graphic_data.id.0, graphic_data.width, graphic_data.height
+                        graphic_data.id.get(), graphic_data.width, graphic_data.height
                     );
 
                     if has_placement {

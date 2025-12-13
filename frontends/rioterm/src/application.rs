@@ -316,7 +316,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     for graphic_data in queues.pending {
                         tracing::info!(
                             "Inserting graphic: id={}, width={}, height={}",
-                            graphic_data.id.0,
+                            graphic_data.id.get(),
                             graphic_data.width,
                             graphic_data.height
                         );

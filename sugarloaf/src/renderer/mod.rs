@@ -1078,7 +1078,7 @@ impl Renderer {
                                     cached.atlas_layer,
                                 );
                             } else {
-                                tracing::warn!("Graphic {} not in cache!", graphic.id.0);
+                                tracing::warn!("Graphic {} not in cache!", graphic.id.get());
                             }
 
                             last_rendered_graphic.insert(graphic.id);
@@ -1801,9 +1801,9 @@ mod rect_positioning_tests {
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
 
         // Create dummy graphics with different last_used_frame values
-        let graphic1 = GraphicId(1);
-        let graphic2 = GraphicId(2);
-        let graphic3 = GraphicId(3);
+        let graphic1 = GraphicId::new(1);
+        let graphic2 = GraphicId::new(2);
+        let graphic3 = GraphicId::new(3);
 
         // graphic2 is oldest (frame 5)
         // graphic1 is middle (frame 10)
@@ -1868,7 +1868,7 @@ mod rect_positioning_tests {
         let mut graphic_cache: FxHashMap<GraphicId, CachedGraphic> = FxHashMap::default();
         let current_frame = 100;
 
-        let graphic1 = GraphicId(1);
+        let graphic1 = GraphicId::new(1);
         graphic_cache.insert(
             graphic1,
             CachedGraphic {
@@ -1944,7 +1944,7 @@ mod rect_positioning_tests {
 
         let mut last_rendered_graphic: HashSet<GraphicId> = HashSet::new();
 
-        let graphic_id = GraphicId(42);
+        let graphic_id = GraphicId::new(42);
 
         // First cell with this graphic - should render
         assert!(

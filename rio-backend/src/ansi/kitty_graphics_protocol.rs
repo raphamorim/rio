@@ -339,7 +339,7 @@ pub fn parse(
                 let id_part = if cmd.image_id > 0 {
                     format!("i={}", cmd.image_id)
                 } else {
-                    format!("i={},I={}", graphic_data.id.0, cmd.image_number)
+                    format!("i={},I={}", graphic_data.id.get(), cmd.image_number)
                 };
                 Some(format!("\x1b_G{};OK\x1b\\", id_part))
             } else {
@@ -950,7 +950,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             };
 
             Some(GraphicData {
-                id: GraphicId(cmd.image_id as u64),
+                id: GraphicId::new(cmd.image_id as u64),
                 width,
                 height,
                 color_type: ColorType::Rgba,
@@ -1033,7 +1033,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
             };
 
             Some(GraphicData {
-                id: GraphicId(cmd.image_id as u64),
+                id: GraphicId::new(cmd.image_id as u64),
                 width: cmd.width as usize,
                 height: cmd.height as usize,
                 color_type: ColorType::Rgba, // Always RGBA after conversion

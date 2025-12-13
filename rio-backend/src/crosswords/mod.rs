@@ -1487,7 +1487,7 @@ impl<U: EventListener> Crosswords<U> {
                 if cell.flags.contains(Flags::GRAPHICS) {
                     if let Some(graphics) = cell.graphics() {
                         for graphic in graphics {
-                            used_ids.insert(graphic.texture.id.0);
+                            used_ids.insert(graphic.texture.id.get());
                         }
                     }
                 }
@@ -2933,7 +2933,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     ) {
         debug!(
             "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
-            graphic.id.0,
+            graphic.id.get(),
             graphic.width,
             graphic.height,
             graphic.color_type,
@@ -3215,7 +3215,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn store_graphic(&mut self, graphic: GraphicData) {
         // Store graphic without displaying (a=t transmit-only)
-        let image_id = graphic.id.0 as u32;
+        let image_id = graphic.id.get() as u32;
         debug!(
             "Storing kitty graphic: id={}, {}x{}",
             image_id, graphic.width, graphic.height
@@ -3320,7 +3320,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let image_id_to_match = delete.image_id;
                 self.delete_graphics_matching(|cell_graphic| {
                     // Match by GraphicId - need to check if this graphic's ID matches
-                    cell_graphic.texture.id.0 == image_id_to_match as u64
+                    cell_graphic.texture.id.get() == image_id_to_match as u64
                 });
 
                 // If uppercase, also delete from cache

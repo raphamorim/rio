@@ -542,7 +542,7 @@ impl Parser {
         }
 
         let data = GraphicData {
-            id: GraphicId(0),
+            id: GraphicId::new(1),
             height: self.height,
             width: self.width,
             color_type: ColorType::Rgba,

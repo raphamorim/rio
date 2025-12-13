@@ -318,6 +318,7 @@ pub enum DrawableChar {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
 pub enum Braille {
     Dots1,      // ⠁ U+2801 BRAILLE PATTERN DOTS-1
     Dots2,      // ⠂ U+2802 BRAILLE PATTERN DOTS-2

@@ -41,7 +41,7 @@ pub fn parse(params: &[&[u8]]) -> Option<GraphicData> {
         }
     };
 
-    let mut graphics = GraphicData::from_dynamic_image(GraphicId(0), image);
+    let mut graphics = GraphicData::from_dynamic_image(GraphicId::new(1), image);
     graphics.resize = resize_param(&params);
     Some(graphics)
 }
