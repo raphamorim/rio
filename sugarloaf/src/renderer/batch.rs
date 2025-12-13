@@ -84,6 +84,7 @@ struct Batch {
     mask: Option<i32>,
     vertices: Vec<Vertex>,
     subpix: bool,
+    order: u8,
 }
 
 impl Batch {
@@ -92,6 +93,7 @@ impl Batch {
         self.mask = None;
         self.vertices.clear();
         self.subpix = false;
+        self.order = 0;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -112,12 +114,10 @@ impl Batch {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
+        if !self.vertices.is_empty() && self.image != image {
             return false;
         }
-        if has_mask && self.mask.is_some() && self.mask != mask {
+        if !self.vertices.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -226,12 +226,10 @@ impl Batch {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
+        if !self.vertices.is_empty() && self.image != image {
             return false;
         }
-        if has_mask && self.mask.is_some() && self.mask != mask {
+        if !self.vertices.is_empty() && self.mask != mask {
             return false;
         }
 
@@ -291,12 +289,10 @@ impl Batch {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
+        if !self.vertices.is_empty() && self.image != image {
             return false;
         }
-        if has_mask && self.mask.is_some() && self.mask != mask {
+        if !self.vertices.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -410,12 +406,10 @@ impl Batch {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
+        if !self.vertices.is_empty() && self.image != image {
             return false;
         }
-        if has_mask && self.mask.is_some() && self.mask != mask {
+        if !self.vertices.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -442,12 +436,10 @@ impl Batch {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
         }
-        let has_image = image.is_some();
-        let has_mask = mask.is_some();
-        if has_image && self.image.is_some() && self.image != image {
+        if !self.vertices.is_empty() && self.image != image {
             return false;
         }
-        if has_mask && self.mask.is_some() && self.mask != mask {
+        if !self.vertices.is_empty() && self.mask != mask {
             return false;
         }
         self.subpix = subpix;
@@ -538,25 +530,24 @@ impl Batch {
 }
 
 pub struct BatchManager {
-    batches: Vec<Batch>,
-    opaque: Vec<Batch>,
-    transparent: Vec<Batch>,
+    /// Pool of reusable batches
+    pool: Vec<Batch>,
+    /// Active batches (single list, sorted by draw order)
+    active: Vec<Batch>,
 }
 
 impl BatchManager {
     pub fn new() -> Self {
         Self {
-            batches: Vec::new(),
-            opaque: Vec::new(),
-            transparent: Vec::new(),
+            pool: Vec::new(),
+            active: Vec::new(),
         }
     }
 
     #[inline]
     pub fn reset(&mut self) {
-        self.batches.append(&mut self.opaque);
-        self.batches.append(&mut self.transparent);
-        for batch in &mut self.batches {
+        self.pool.append(&mut self.active);
+        for batch in &mut self.pool {
             batch.clear();
         }
     }
@@ -606,28 +597,17 @@ impl BatchManager {
         depth: f32,
         color: [f32; 4],
     ) {
-        // Enable subpixel positioning for curved shapes
         let subpix = true;
-
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.add_triangle(
+        for batch in self.active.iter_mut() {
+            if batch.order == 0
+                && batch.add_triangle(
                     x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix,
-                ) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.add_triangle(
-                    x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix,
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent)
+        self.alloc_batch(0)
             .add_triangle(x1, y1, x2, y2, x3, y3, color, depth, None, None, subpix);
     }
 
@@ -643,33 +623,17 @@ impl BatchManager {
         depth: f32,
         color: [f32; 4],
     ) {
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.add_line(
-                    x1, y1, x2, y2, width, depth, color, None,  // image
-                    None,  // mask
-                    false, // subpix
-                ) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.add_line(
-                    x1, y1, x2, y2, width, depth, color, None,  // image
-                    None,  // mask
-                    false, // subpix
-                ) {
-                    return;
-                }
+        for batch in self.active.iter_mut() {
+            if batch.order == 0
+                && batch.add_line(
+                    x1, y1, x2, y2, width, depth, color, None, None, false,
+                )
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent).add_line(
-            x1, y1, x2, y2, width, depth, color, None,  // image
-            None,  // mask
-            false, // subpix
-        );
+        self.alloc_batch(0)
+            .add_line(x1, y1, x2, y2, width, depth, color, None, None, false);
     }
 
     #[inline]
@@ -685,10 +649,9 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
     ) {
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.add_arc(
+        for batch in self.active.iter_mut() {
+            if batch.order == 0
+                && batch.add_arc(
                     center_x,
                     center_y,
                     radius,
@@ -697,33 +660,15 @@ impl BatchManager {
                     stroke_width,
                     depth,
                     color,
-                    None,  // image
-                    None,  // mask
-                    false, // subpix
-                ) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.add_arc(
-                    center_x,
-                    center_y,
-                    radius,
-                    start_angle_deg,
-                    end_angle_deg,
-                    stroke_width,
-                    depth,
-                    color,
-                    None,  // image
-                    None,  // mask
-                    false, // subpix
-                ) {
-                    return;
-                }
+                    None,
+                    None,
+                    false,
+                )
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent).add_arc(
+        self.alloc_batch(0).add_arc(
             center_x,
             center_y,
             radius,
@@ -732,9 +677,9 @@ impl BatchManager {
             stroke_width,
             depth,
             color,
-            None,  // image
-            None,  // mask
-            false, // subpix
+            None,
+            None,
+            false,
         );
     }
 
@@ -823,12 +768,14 @@ impl BatchManager {
         coords: &[f32; 4],
         subpix: bool,
     ) {
-        for batch in &mut self.transparent {
-            if batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix) {
+        for batch in self.active.iter_mut() {
+            if batch.order == 0
+                && batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix)
+            {
                 return;
             }
         }
-        self.alloc_batch(true).rect(
+        self.alloc_batch(0).rect(
             rect,
             depth,
             color,
@@ -846,13 +793,11 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         coords: &[f32; 4],
-        has_alpha: bool,
         atlas_layer: i32,
     ) {
-        let transparent = has_alpha || color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.rect(
+        for batch in self.active.iter_mut() {
+            if batch.order == 0
+                && batch.rect(
                     rect,
                     depth,
                     color,
@@ -860,26 +805,12 @@ impl BatchManager {
                     Some(atlas_layer),
                     None,
                     false,
-                ) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(atlas_layer),
-                    None,
-                    false,
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent).rect(
+        self.alloc_batch(0).rect(
             rect,
             depth,
             color,
@@ -891,22 +822,15 @@ impl BatchManager {
     }
 
     #[inline]
-    pub fn rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4]) {
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.rect(rect, depth, color, None, None, None, false) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.rect(rect, depth, color, None, None, None, false) {
-                    return;
-                }
+    pub fn rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4], order: u8) {
+        for batch in self.active.iter_mut() {
+            if batch.order == order
+                && batch.rect(rect, depth, color, None, None, None, false)
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent)
+        self.alloc_batch(order)
             .rect(rect, depth, color, None, None, None, false);
     }
 
@@ -918,11 +842,11 @@ impl BatchManager {
         depth: f32,
         color: &[f32; 4],
         border_radius: f32,
+        order: u8,
     ) {
-        let transparent = color[3] != 1.0;
-        if transparent {
-            for batch in &mut self.transparent {
-                if batch.rounded_rect(
+        for batch in self.active.iter_mut() {
+            if batch.order == order
+                && batch.rounded_rect(
                     rect,
                     depth,
                     color,
@@ -931,27 +855,12 @@ impl BatchManager {
                     None,
                     false,
                     border_radius,
-                ) {
-                    return;
-                }
-            }
-        } else {
-            for batch in &mut self.opaque {
-                if batch.rounded_rect(
-                    rect,
-                    depth,
-                    color,
-                    None,
-                    None,
-                    None,
-                    false,
-                    border_radius,
-                ) {
-                    return;
-                }
+                )
+            {
+                return;
             }
         }
-        self.alloc_batch(transparent).rounded_rect(
+        self.alloc_batch(order).rounded_rect(
             rect,
             depth,
             color,
@@ -964,14 +873,13 @@ impl BatchManager {
     }
 
     #[inline]
-    pub fn build_display_list(&self, list: &mut Vec<Vertex>) {
-        for batch in &self.opaque {
-            if batch.vertices.is_empty() {
-                continue;
-            }
-            batch.build_display_list(list);
-        }
-        for batch in &self.transparent {
+    pub fn build_display_list(&mut self, list: &mut Vec<Vertex>) {
+        // Sort batches by draw order (painter's algorithm)
+        // Secondary sort: unmasked batches (backgrounds) before masked batches (text)
+        // This ensures backgrounds render before text at the same draw order level
+        self.active.sort_by_key(|b| (b.order, b.mask.is_some()));
+
+        for batch in &self.active {
             if batch.vertices.is_empty() {
                 continue;
             }
@@ -990,6 +898,7 @@ impl BatchManager {
         color: [f32; 4],
         depth: f32,
         line_height: f32,
+        order: u8,
     ) {
         let half_size = advance / 2.0;
         let center_x = x + half_size;
@@ -1005,7 +914,7 @@ impl BatchManager {
                     width: line_width,
                     height: stroke,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::DoubleHorizontal => {
                 // Calculate spacing between the two horizontal lines
@@ -1028,8 +937,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&top_rect, depth, &color);
-                self.rect(&bottom_rect, depth, &color);
+                self.rect(&top_rect, depth, &color, order);
+                self.rect(&bottom_rect, depth, &color, order);
             }
             DrawableChar::HeavyHorizontal => {
                 let heavy_stroke = stroke * 2.0;
@@ -1039,7 +948,7 @@ impl BatchManager {
                     width: line_width,
                     height: heavy_stroke,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::Vertical => {
                 let rect = Rect {
@@ -1048,7 +957,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::DoubleVertical => {
                 let gap = stroke * 1.5;
@@ -1070,8 +979,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&left_rect, depth, &color);
-                self.rect(&right_rect, depth, &color);
+                self.rect(&left_rect, depth, &color, order);
+                self.rect(&right_rect, depth, &color, order);
             }
             DrawableChar::HeavyVertical => {
                 let heavy_stroke = stroke * 2.0;
@@ -1081,7 +990,7 @@ impl BatchManager {
                     width: heavy_stroke,
                     height: line_height,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::DoubleCross => {
                 let gap = stroke * 1.5;
@@ -1145,14 +1054,14 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&top_left_vertical_rect, depth, &color);
-                self.rect(&top_right_vertical_rect, depth, &color);
-                self.rect(&bottom_left_vertical_rect, depth, &color);
-                self.rect(&bottom_right_vertical_rect, depth, &color);
-                self.rect(&left_top_horizontal_rect, depth, &color);
-                self.rect(&left_bottom_horizontal_rect, depth, &color);
-                self.rect(&right_top_horizontal_rect, depth, &color);
-                self.rect(&right_bottom_horizontal_rect, depth, &color);
+                self.rect(&top_left_vertical_rect, depth, &color, order);
+                self.rect(&top_right_vertical_rect, depth, &color, order);
+                self.rect(&bottom_left_vertical_rect, depth, &color, order);
+                self.rect(&bottom_right_vertical_rect, depth, &color, order);
+                self.rect(&left_top_horizontal_rect, depth, &color, order);
+                self.rect(&left_bottom_horizontal_rect, depth, &color, order);
+                self.rect(&right_top_horizontal_rect, depth, &color, order);
+                self.rect(&right_bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DoubleVerticalRight => {
                 let gap = stroke * 1.5;
@@ -1195,11 +1104,11 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&top_right_vertical_rect, depth, &color);
-                self.rect(&bottom_right_vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&top_right_vertical_rect, depth, &color, order);
+                self.rect(&bottom_right_vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DoubleVerticalLeft => {
                 let gap = stroke * 1.5;
@@ -1237,11 +1146,11 @@ impl BatchManager {
                     height: stroke,
                 };
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_top_vertical_rect, depth, &color);
-                self.rect(&right_bottom_vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_top_vertical_rect, depth, &color, order);
+                self.rect(&right_bottom_vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DoubleHorizontalDown => {
                 let gap = stroke * 1.5;
@@ -1284,11 +1193,11 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&left_bottom_horizontal_rect, depth, &color);
-                self.rect(&right_bottom_horizontal_rect, depth, &color);
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&left_bottom_horizontal_rect, depth, &color, order);
+                self.rect(&right_bottom_horizontal_rect, depth, &color, order);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
             }
             // ╦ ╩
             DrawableChar::DoubleHorizontalUp => {
@@ -1332,11 +1241,11 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&bottom_horizontal_rect, depth, &color);
-                self.rect(&left_top_horizontal_rect, depth, &color);
-                self.rect(&right_top_horizontal_rect, depth, &color);
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
+                self.rect(&left_top_horizontal_rect, depth, &color, order);
+                self.rect(&right_top_horizontal_rect, depth, &color, order);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
             }
             DrawableChar::VerticalDoubleAndHorizontalSingle => {
                 let gap = stroke * 1.5;
@@ -1365,9 +1274,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::DownDoubleAndRightSingle => {
                 let gap = stroke * 1.5;
@@ -1396,9 +1305,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::DownDoubleAndLeftSingle => {
                 let gap = stroke * 1.5;
@@ -1427,9 +1336,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::VerticalDoubleAndRightSingle => {
                 let gap = stroke * 1.5;
@@ -1458,9 +1367,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::VerticalDoubleAndLeftSingle => {
                 let gap = stroke * 1.5;
@@ -1489,9 +1398,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::VerticalSingleAndRightDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -1521,9 +1430,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::VerticalSingleAndLeftDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -1553,9 +1462,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DownSingleAndRightDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -1585,9 +1494,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DownSingleAndLeftDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -1617,9 +1526,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyDownAndRight => {
                 let heavy_stroke = stroke * 2.0;
@@ -1641,8 +1550,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyDownAndLeft => {
                 let heavy_stroke = stroke * 2.0;
@@ -1664,8 +1573,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyUpAndRight => {
                 let heavy_stroke = stroke * 2.0;
@@ -1687,8 +1596,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyUpAndLeft => {
                 let heavy_stroke = stroke * 2.0;
@@ -1710,8 +1619,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyVerticalAndRight => {
                 let heavy_stroke = stroke * 2.0;
@@ -1733,8 +1642,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyVerticalAndLeft => {
                 let heavy_stroke = stroke * 2.0;
@@ -1756,8 +1665,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyHorizontalAndDown => {
                 let heavy_stroke = stroke * 2.0;
@@ -1779,8 +1688,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&horizontal_rect, depth, &color);
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
+                self.rect(&vertical_rect, depth, &color, order);
             }
             DrawableChar::HeavyHorizontalAndUp => {
                 let heavy_stroke = stroke * 2.0;
@@ -1802,8 +1711,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&horizontal_rect, depth, &color);
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
+                self.rect(&vertical_rect, depth, &color, order);
             }
             DrawableChar::HeavyCross => {
                 let heavy_stroke = stroke * 2.0;
@@ -1825,8 +1734,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::LightDownAndHeavyRight => {
                 // Light vertical line going down from center
@@ -1847,8 +1756,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::LightDownAndHeavyLeft => {
                 // Light vertical line going down from center
@@ -1869,8 +1778,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyDownAndLightRight => {
                 // Heavy vertical line going down from center
@@ -1891,8 +1800,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyDownAndLightLeft => {
                 // Heavy vertical line going down from center
@@ -1913,8 +1822,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::LightUpAndHeavyRight => {
                 // Light vertical line going up from center
@@ -1935,8 +1844,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::LightUpAndHeavyLeft => {
                 // Light vertical line going up from center
@@ -1957,8 +1866,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyUpAndLightRight => {
                 // Heavy vertical line going up from center
@@ -1979,8 +1888,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::HeavyUpAndLightLeft => {
                 // Heavy vertical line going up from center
@@ -2001,8 +1910,8 @@ impl BatchManager {
                 };
 
                 // Draw both rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::UpperOneQuarterBlock => {
                 // Upper One Quarter Block (▀) - fills top 1/4 of the cell
@@ -2013,7 +1922,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LowerFiveEighthsBlock => {
                 // Lower Five Eighths Block (▅) - fills bottom 5/8 of the cell
@@ -2024,7 +1933,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LowerThreeQuartersBlock => {
                 // Lower Three Quarters Block (▆) - fills bottom 3/4 of the cell
@@ -2035,7 +1944,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LowerSevenEighthsBlock => {
                 // Lower Seven Eighths Block (▇) - fills bottom 7/8 of the cell
@@ -2046,7 +1955,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperRightAndLowerLeft => {
                 // QuadrantUpperRightAndLowerLeft (▟) - fills upper right and lower left quadrants
@@ -2062,8 +1971,8 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&upper_right_rect, depth, &color);
-                self.rect(&lower_left_rect, depth, &color);
+                self.rect(&upper_right_rect, depth, &color, order);
+                self.rect(&lower_left_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperRightAndLowerRight => {
                 // QuadrantUpperRightAndLowerRight (▙) - fills upper right and lower right quadrants
@@ -2079,8 +1988,8 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&upper_left_rect, depth, &color);
-                self.rect(&lower_right_rect, depth, &color);
+                self.rect(&upper_left_rect, depth, &color, order);
+                self.rect(&lower_right_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperLeftAndLowerLeft => {
                 let upper_left_rect = Rect {
@@ -2095,8 +2004,8 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&upper_left_rect, depth, &color);
-                self.rect(&lower_right_rect, depth, &color);
+                self.rect(&upper_left_rect, depth, &color, order);
+                self.rect(&lower_right_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperLeftAndUpperRight => {
                 // QuadrantUpperLeftAndUpperRight (▀) - fills upper half of the cell
@@ -2106,7 +2015,7 @@ impl BatchManager {
                     width: line_width,
                     height: line_height / 2.0,
                 };
-                self.rect(&upper_rect, depth, &color);
+                self.rect(&upper_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperLeftAndLowerRight => {
                 let upper_right_rect = Rect {
@@ -2121,8 +2030,8 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&upper_right_rect, depth, &color);
-                self.rect(&lower_left_rect, depth, &color);
+                self.rect(&upper_right_rect, depth, &color, order);
+                self.rect(&lower_left_rect, depth, &color, order);
             }
             DrawableChar::DiagonalRisingBar => {
                 self.add_line(
@@ -2179,7 +2088,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LowerOneQuarterBlock => {
                 // Lower One Quarter Block (▂) - fills bottom 1/4 of the cell
@@ -2190,7 +2099,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LowerThreeEighthsBlock => {
                 // Lower Three Eighths Block (▃) - fills bottom 3/8 of the cell
@@ -2201,7 +2110,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
 
             DrawableChar::LeftOneQuarterBlock => {
@@ -2213,7 +2122,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LeftThreeEighthsBlock => {
                 // Left Three Eighths Block (▍) - fills left 3/8 of the cell
@@ -2224,7 +2133,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::LeftThreeQuartersBlock => {
                 // Left Three Quarters Block (▊) - fills left 3/4 of the cell
@@ -2235,7 +2144,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::RightOneQuarterBlock => {
                 // Right One Quarter Block (▕) - fills right 1/4 of the cell
@@ -2246,7 +2155,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
 
             DrawableChar::RightThreeEighthsBlock => {
@@ -2258,7 +2167,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::RightThreeQuartersBlock => {
                 // Right Three Quarters Block (🮊) - fills right 3/4 of the cell
@@ -2269,7 +2178,7 @@ impl BatchManager {
                     width: block_width,
                     height: line_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::UpperOneEighthBlock => {
                 // Upper One Eighth Block (▔) - fills top 1/8 of the cell
@@ -2280,7 +2189,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::UpperThreeEighthsBlock => {
                 // Upper Three Eighths Block (🮃) - fills top 3/8 of the cell
@@ -2291,7 +2200,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::UpperThreeQuartersBlock => {
                 // Upper Three Quarters Block (🮅) - fills top 3/4 of the cell
@@ -2302,7 +2211,7 @@ impl BatchManager {
                     width: line_width,
                     height: block_height,
                 };
-                self.rect(&block_rect, depth, &color);
+                self.rect(&block_rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperLeft => {
                 let rect = Rect {
@@ -2311,7 +2220,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::QuadrantUpperRight => {
                 let rect = Rect {
@@ -2320,7 +2229,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::QuadrantLowerLeft => {
                 let rect = Rect {
@@ -2329,7 +2238,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::QuadrantLowerRight => {
                 let rect = Rect {
@@ -2338,7 +2247,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::UpperHalf => {
                 let rect = Rect {
@@ -2347,7 +2256,7 @@ impl BatchManager {
                     width: line_width,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::LowerHalf => {
                 let rect = Rect {
@@ -2356,7 +2265,7 @@ impl BatchManager {
                     width: line_width,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::LeftHalf => {
                 let rect = Rect {
@@ -2365,7 +2274,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::RightHalf => {
                 let rect = Rect {
@@ -2374,7 +2283,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: line_height,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::DownDoubleAndHorizontalSingle => {
                 // Calculate spacing between the two vertical lines
@@ -2405,9 +2314,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_rect, depth, &color);
-                self.rect(&right_rect, depth, &color);
-                self.rect(&horiz_rect, depth, &color);
+                self.rect(&left_rect, depth, &color, order);
+                self.rect(&right_rect, depth, &color, order);
+                self.rect(&horiz_rect, depth, &color, order);
             }
             DrawableChar::DownSingleAndHorizontalDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -2437,9 +2346,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DoubleUpAndRight => {
                 // Calculate spacing between the double lines
@@ -2476,10 +2385,10 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::DoubleUpAndLeft => {
                 // Calculate spacing between the double lines
@@ -2516,10 +2425,10 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&left_vertical_rect, depth, &color);
-                self.rect(&right_vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&left_vertical_rect, depth, &color, order);
+                self.rect(&right_vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::UpSingleAndRightDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -2549,9 +2458,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::UpSingleAndLeftDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -2581,9 +2490,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::VerticalSingleAndHorizontalDouble => {
                 // Calculate spacing between the double horizontal lines
@@ -2613,9 +2522,9 @@ impl BatchManager {
                 };
 
                 // Draw all rectangles
-                self.rect(&vertical_rect, depth, &color);
-                self.rect(&top_horizontal_rect, depth, &color);
-                self.rect(&bottom_horizontal_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
+                self.rect(&top_horizontal_rect, depth, &color, order);
+                self.rect(&bottom_horizontal_rect, depth, &color, order);
             }
             DrawableChar::LightShade => {
                 // For light shade (25% filled), create a sparse dot pattern
@@ -2644,7 +2553,7 @@ impl BatchManager {
                                 width: dot_size,
                                 height: dot_size,
                             };
-                            self.rect(&rect, depth, &color);
+                            self.rect(&rect, depth, &color, order);
                         }
                     }
                 }
@@ -2673,7 +2582,7 @@ impl BatchManager {
                                 width: dot_size,
                                 height: dot_size,
                             };
-                            self.rect(&rect, depth, &color);
+                            self.rect(&rect, depth, &color, order);
                         }
                     }
                 }
@@ -2695,7 +2604,7 @@ impl BatchManager {
                                 width: small_dot_size,
                                 height: small_dot_size,
                             };
-                            self.rect(&rect, depth, &color);
+                            self.rect(&rect, depth, &color, order);
                         }
                     }
                 }
@@ -2722,7 +2631,7 @@ impl BatchManager {
                     color[2] * 0.6,
                     color[3] * 0.6,
                 ];
-                self.rect(&rect, depth + 0.0001, &base_color);
+                self.rect(&rect, depth + 0.0001, &base_color, 0);
 
                 // Add dots everywhere
                 for j in 0..rows {
@@ -2738,7 +2647,7 @@ impl BatchManager {
                             width: dot_size,
                             height: dot_size,
                         };
-                        self.rect(&rect, depth, &color);
+                        self.rect(&rect, depth, &color, order);
 
                         // Skip some dots to create tiny gaps (only in a few positions)
                         if j % 4 == 0 && i % 4 == 0 {
@@ -2755,7 +2664,7 @@ impl BatchManager {
                     width: line_width,
                     height: line_height,
                 };
-                self.rect(&rect, depth, &color);
+                self.rect(&rect, depth, &color, order);
             }
             DrawableChar::Cross => {
                 // Horizontal part
@@ -2765,7 +2674,7 @@ impl BatchManager {
                     width: line_width,
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
 
                 // Vertical part
                 let rect_v = Rect {
@@ -2774,7 +2683,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
             }
             DrawableChar::TopRight => {
                 // Horizontal part (from center to right)
@@ -2784,7 +2693,7 @@ impl BatchManager {
                     width: stroke,
                     height: (line_height / 2.0) + (stroke / 2.0),
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
@@ -2793,7 +2702,7 @@ impl BatchManager {
                     width: line_width / 2.0,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::TopLeft => {
                 let vertical_rect = Rect {
@@ -2802,7 +2711,7 @@ impl BatchManager {
                     width: stroke,
                     height: (line_height / 2.0) + (stroke / 2.0),
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
@@ -2811,7 +2720,7 @@ impl BatchManager {
                     width: half_size,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
             }
             DrawableChar::BottomRight => {
                 // Horizontal part (from center to right)
@@ -2821,7 +2730,7 @@ impl BatchManager {
                     width: half_size,
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
 
                 // Vertical part (from center to bottom)
                 let rect_v = Rect {
@@ -2830,7 +2739,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
             }
             DrawableChar::BottomLeft => {
                 // Horizontal part (from left to center)
@@ -2840,7 +2749,7 @@ impl BatchManager {
                     width: half_size,
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
 
                 // Vertical part (from center to bottom)
                 let rect_v = Rect {
@@ -2849,7 +2758,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
             }
             DrawableChar::ArcTopLeft => {
                 // Arc corner at bottom-right (╯)
@@ -2861,7 +2770,7 @@ impl BatchManager {
                     width: stroke,
                     height: (line_height / 2.0) - radius,
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
 
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
@@ -2870,7 +2779,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - radius,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
 
                 // Arc in the bottom-left quarter (connecting horizontal and vertical lines)
                 self.add_arc(
@@ -2894,7 +2803,7 @@ impl BatchManager {
                     width: stroke,
                     height: (line_height / 2.0) - radius,
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
                 // Horizontal line from center to right
                 let horizontal_rect = Rect {
                     x: center_x + radius,
@@ -2902,7 +2811,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - radius,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
                 // Arc in the top-left quarter (connecting horizontal and vertical lines)
                 self.add_arc(
                     center_x + radius,
@@ -2926,7 +2835,7 @@ impl BatchManager {
                     width: stroke,
                     height: (line_height / 2.0) - radius,
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
                 // Horizontal line from left to center
                 let horizontal_rect = Rect {
                     x,
@@ -2934,7 +2843,7 @@ impl BatchManager {
                     width: center_x - radius - x,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
                 // Arc in the top-right quarter (connecting horizontal and vertical lines)
                 self.add_arc(
                     center_x - radius,
@@ -2957,7 +2866,7 @@ impl BatchManager {
                     width: stroke,
                     height: center_y - radius - y,
                 };
-                self.rect(&vertical_rect, depth, &color);
+                self.rect(&vertical_rect, depth, &color, order);
                 // Horizontal line from center to right
                 let horizontal_rect = Rect {
                     x: center_x + radius,
@@ -2965,7 +2874,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - radius,
                     height: stroke,
                 };
-                self.rect(&horizontal_rect, depth, &color);
+                self.rect(&horizontal_rect, depth, &color, order);
                 // Arc in the bottom-right quarter (connecting horizontal and vertical lines)
                 self.add_arc(
                     center_x + radius,
@@ -2986,7 +2895,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
 
                 // Horizontal line (from center to right)
                 let rect_h = Rect {
@@ -2995,7 +2904,7 @@ impl BatchManager {
                     width: half_size - (stroke / 2.0),
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
             }
             DrawableChar::VerticalLeft => {
                 // Vertical line
@@ -3005,7 +2914,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
 
                 // Horizontal line (from left to center)
                 let rect_h = Rect {
@@ -3014,7 +2923,7 @@ impl BatchManager {
                     width: half_size - (stroke / 2.0),
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
             }
             DrawableChar::HorizontalDown => {
                 // Horizontal line
@@ -3024,7 +2933,7 @@ impl BatchManager {
                     width: advance,
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
 
                 // Vertical line (from center to bottom)
                 let rect_v = Rect {
@@ -3033,7 +2942,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
             }
             DrawableChar::HorizontalUp => {
                 // Horizontal line
@@ -3043,7 +2952,7 @@ impl BatchManager {
                     width: advance,
                     height: stroke,
                 };
-                self.rect(&rect_h, depth, &color);
+                self.rect(&rect_h, depth, &color, order);
 
                 // Vertical line (from center to top)
                 let rect_v = Rect {
@@ -3052,7 +2961,7 @@ impl BatchManager {
                     width: stroke,
                     height: line_height / 2.0,
                 };
-                self.rect(&rect_v, depth, &color);
+                self.rect(&rect_v, depth, &color, order);
             }
             DrawableChar::PowerlineLeftSolid => {
                 // PowerlineLeftSolid - solid triangle pointing left
@@ -3481,7 +3390,7 @@ impl BatchManager {
                         width: dash_width,
                         height: stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::HorizontalHeavyDash => {
@@ -3500,7 +3409,7 @@ impl BatchManager {
                         width: dash_width,
                         height: heavy_stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::HorizontalLightDoubleDash => {
@@ -3518,7 +3427,7 @@ impl BatchManager {
                         width: dash_width,
                         height: stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::HorizontalHeavyDoubleDash => {
@@ -3537,7 +3446,7 @@ impl BatchManager {
                         width: dash_width,
                         height: heavy_stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::HorizontalLightTripleDash => {
@@ -3555,7 +3464,7 @@ impl BatchManager {
                         width: dash_width,
                         height: stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::HorizontalHeavyTripleDash => {
@@ -3574,7 +3483,7 @@ impl BatchManager {
                         width: dash_width,
                         height: heavy_stroke,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalLightDash => {
@@ -3592,7 +3501,7 @@ impl BatchManager {
                         width: stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalHeavyDash => {
@@ -3611,7 +3520,7 @@ impl BatchManager {
                         width: heavy_stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalLightDoubleDash => {
@@ -3629,7 +3538,7 @@ impl BatchManager {
                         width: stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalHeavyDoubleDash => {
@@ -3648,7 +3557,7 @@ impl BatchManager {
                         width: heavy_stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalLightTripleDash => {
@@ -3666,7 +3575,7 @@ impl BatchManager {
                         width: stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             DrawableChar::VerticalHeavyTripleDash => {
@@ -3685,7 +3594,7 @@ impl BatchManager {
                         width: heavy_stroke,
                         height: dash_height,
                     };
-                    self.rect(&rect, depth, &color);
+                    self.rect(&rect, depth, &color, order);
                 }
             }
             // Separated Quadrants (slightly smaller with some padding)
@@ -3698,7 +3607,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - (2.0 * padding),
                     height: (line_height / 2.0) - (2.0 * padding),
                 };
-                self.rect(&quadrant_rect, depth, &color);
+                self.rect(&quadrant_rect, depth, &color, order);
             }
             DrawableChar::SeparatedQuadrantUpperRight => {
                 // Separated upper right quadrant (🬔)
@@ -3709,7 +3618,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - (2.0 * padding),
                     height: (line_height / 2.0) - (2.0 * padding),
                 };
-                self.rect(&quadrant_rect, depth, &color);
+                self.rect(&quadrant_rect, depth, &color, order);
             }
             DrawableChar::SeparatedQuadrantLowerLeft => {
                 // Separated lower left quadrant (🬕)
@@ -3720,7 +3629,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - (2.0 * padding),
                     height: (line_height / 2.0) - (2.0 * padding),
                 };
-                self.rect(&quadrant_rect, depth, &color);
+                self.rect(&quadrant_rect, depth, &color, order);
             }
             DrawableChar::SeparatedQuadrantLowerRight => {
                 // Separated lower right quadrant (🬖)
@@ -3731,7 +3640,7 @@ impl BatchManager {
                     width: (line_width / 2.0) - (2.0 * padding),
                     height: (line_height / 2.0) - (2.0 * padding),
                 };
-                self.rect(&quadrant_rect, depth, &color);
+                self.rect(&quadrant_rect, depth, &color, order);
             }
             // Braille patterns
             DrawableChar::BrailleBlank => {
@@ -3773,7 +3682,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 2 (middle-top-left): position [0,1]
@@ -3785,7 +3694,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 3 (middle-bottom-left): position [0,2]
@@ -3797,7 +3706,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 7 (bottom-left): position [0,3]
@@ -3809,7 +3718,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Right column
@@ -3822,7 +3731,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 5 (middle-top-right): position [1,1]
@@ -3834,7 +3743,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 6 (middle-bottom-right): position [1,2]
@@ -3846,7 +3755,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
 
                 // Dot 8 (bottom-right): position [1,3]
@@ -3858,7 +3767,7 @@ impl BatchManager {
                         width: dot_size,
                         height: dot_size,
                     };
-                    self.rect(&dot_rect, depth, &color);
+                    self.rect(&dot_rect, depth, &color, order);
                 }
             }
             DrawableChar::Octant(pattern) => {
@@ -3892,7 +3801,7 @@ impl BatchManager {
                             height: cell_height,
                         };
 
-                        self.rect(&octant_rect, depth, &color);
+                        self.rect(&octant_rect, depth, &color, order);
                     }
                 }
             }
@@ -3958,7 +3867,7 @@ impl BatchManager {
                             height: cell_height,
                         };
 
-                        self.rect(&sextant_rect, depth, &color);
+                        self.rect(&sextant_rect, depth, &color, order);
                     }
                 }
             }
@@ -3989,6 +3898,7 @@ impl BatchManager {
                             &Rect::new(ux, uy, end - ux, underline.size),
                             depth,
                             &underline.color,
+                            0,
                         );
                         if underline.is_doubled {
                             // Position the second underline with a gap equal to thickness
@@ -4002,6 +3912,7 @@ impl BatchManager {
                                 ),
                                 depth,
                                 &underline.color,
+                                0,
                             );
                         }
                     }
@@ -4013,6 +3924,7 @@ impl BatchManager {
                                 &Rect::new(start, uy, 6.0, underline.size),
                                 depth,
                                 &underline.color,
+                                0,
                             );
                             start += 8.0;
                         }
@@ -4025,6 +3937,7 @@ impl BatchManager {
                                 &Rect::new(start, uy, 2.0, underline.size),
                                 depth,
                                 &underline.color,
+                                0,
                             );
                             start += 4.0;
                         }
@@ -4085,14 +3998,10 @@ impl BatchManager {
     }
 
     #[inline]
-    fn alloc_batch(&mut self, transparent: bool) -> &mut Batch {
-        let batch = self.batches.pop().unwrap_or_default();
-        if transparent {
-            self.transparent.push(batch);
-            self.transparent.last_mut().unwrap()
-        } else {
-            self.opaque.push(batch);
-            self.opaque.last_mut().unwrap()
-        }
+    fn alloc_batch(&mut self, order: u8) -> &mut Batch {
+        let mut batch = self.pool.pop().unwrap_or_default();
+        batch.order = order;
+        self.active.push(batch);
+        self.active.last_mut().unwrap()
     }
 }

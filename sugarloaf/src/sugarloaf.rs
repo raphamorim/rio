@@ -422,6 +422,7 @@ impl Sugarloaf<'_> {
     /// Add a rectangle to content system
     /// - `id: None` - not cached, rendered immediately
     /// - `id: Some(n)` - cached with id n, overwrites existing content
+    /// - `order` - draw order (higher values render on top)
     #[inline]
     pub fn rect(
         &mut self,
@@ -432,6 +433,7 @@ impl Sugarloaf<'_> {
         height: f32,
         color: [f32; 4],
         depth: f32,
+        order: u8,
     ) {
         let scaled_x = x * self.state.style.scale_factor;
         let scaled_y = y * self.state.style.scale_factor;
@@ -456,6 +458,7 @@ impl Sugarloaf<'_> {
                 scaled_height,
                 color,
                 depth,
+                order,
             );
         }
     }
@@ -463,6 +466,7 @@ impl Sugarloaf<'_> {
     /// Add a rounded rectangle to content system
     /// - `id: None` - not cached, rendered immediately
     /// - `id: Some(n)` - cached with id n, overwrites existing content
+    /// - `order` - draw order (higher values render on top)
     #[inline]
     pub fn rounded_rect(
         &mut self,
@@ -474,6 +478,7 @@ impl Sugarloaf<'_> {
         color: [f32; 4],
         depth: f32,
         border_radius: f32,
+        order: u8,
     ) {
         let scaled_x = x * self.state.style.scale_factor;
         let scaled_y = y * self.state.style.scale_factor;
@@ -501,6 +506,7 @@ impl Sugarloaf<'_> {
                 color,
                 depth,
                 scaled_border_radius,
+                order,
             );
         }
     }
@@ -518,7 +524,6 @@ impl Sugarloaf<'_> {
         height: f32,
         color: [f32; 4],
         coords: [f32; 4],
-        has_alpha: bool,
         depth: f32,
         atlas_layer: i32,
     ) {
@@ -536,7 +541,6 @@ impl Sugarloaf<'_> {
                 scaled_height,
                 color,
                 coords,
-                has_alpha,
                 depth,
                 atlas_layer,
             );
@@ -548,7 +552,6 @@ impl Sugarloaf<'_> {
                 scaled_height,
                 color,
                 coords,
-                has_alpha,
                 depth,
                 atlas_layer,
             );

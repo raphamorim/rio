@@ -6,11 +6,19 @@
 use serde::Deserialize;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub enum SugarCursor {
-    Block([f32; 4]),
-    HollowBlock([f32; 4]),
-    Caret([f32; 4]),
-    Underline([f32; 4]),
+#[repr(u8)]
+pub enum CursorKind {
+    Block,
+    HollowBlock,
+    Caret,
+    Underline,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub struct SugarCursor {
+    pub kind: CursorKind,
+    pub color: [f32; 4],
+    pub order: u8,
 }
 
 #[derive(Default, Clone, Deserialize, Debug, PartialEq)]

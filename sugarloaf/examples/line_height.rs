@@ -11,7 +11,7 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, SpanStyle, SugarCursor, Sugarloaf, SugarloafWindow,
+    layout::RootStyle, CursorKind, SpanStyle, SugarCursor, Sugarloaf, SugarloafWindow,
     SugarloafWindowSize,
 };
 
@@ -190,7 +190,11 @@ impl ApplicationHandler for Application {
                         SpanStyle {
                             color: [0.5, 0.5, 1.0, 1.0],
                             background_color: Some([1.0, 0.5, 1.0, 1.0]),
-                            cursor: Some(SugarCursor::Block([1.0, 1.0, 1.0, 1.0])),
+                            cursor: Some(SugarCursor {
+                                kind: CursorKind::Block,
+                                color: [1.0, 1.0, 1.0, 1.0],
+                                order: 0,
+                            }),
                             ..SpanStyle::default()
                         },
                     );

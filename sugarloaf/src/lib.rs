@@ -17,8 +17,8 @@ pub use crate::sugarloaf::{
         ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::{
-        contains_braille_dot, drawable_character, DrawableChar, ImageProperties, Object,
-        Rect, RichText, RichTextLinesRange, RichTextRenderData, SugarCursor,
+        contains_braille_dot, drawable_character, CursorKind, DrawableChar, ImageProperties,
+        Object, Rect, RichText, RichTextLinesRange, RichTextRenderData, SugarCursor,
     },
     Colorspace, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize, SugarloafWithErrors,

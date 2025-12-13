@@ -234,6 +234,7 @@ impl CommandPalette {
             self.background_color,
             -0.3, // In front of everything
             PALETTE_CORNER_RADIUS,
+            0,
         );
 
         // Render input field background
@@ -250,6 +251,7 @@ impl CommandPalette {
             self.input_background_color,
             -0.4, // In front of palette background
             8.0,
+            0,
         );
 
         // Render search query text
@@ -338,6 +340,7 @@ impl CommandPalette {
                     self.selected_background_color,
                     -0.4,
                     6.0,
+                    0,
                 );
             }
 
@@ -408,6 +411,7 @@ impl CommandPalette {
                 [0.5, 0.5, 0.5, 0.6],  // Semi-transparent gray
                 -0.5,                  // In front of everything else
                 SCROLLBAR_WIDTH / 2.0, // Fully rounded ends
+                0,
             );
         }
     }
