@@ -337,7 +337,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: ContextDimension,
-        margin: Margin,
+        scaled_margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
@@ -394,7 +394,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
-                margin,
+                scaled_margin,
                 ctx_config.split_color,
                 ctx_config.split_active_color,
                 ctx_config.panel,
@@ -775,10 +775,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts[self.current_index].get_panel_borders()
     }
 
-    /// Get the margin of the current grid (needed for border positioning)
+    /// Get the scaled margin of the current grid (in physical pixels, for border positioning)
     #[inline]
-    pub fn get_current_grid_margin(&self) -> rio_backend::config::layout::Margin {
-        self.contexts[self.current_index].get_margin()
+    pub fn get_current_grid_scaled_margin(&self) -> rio_backend::config::layout::Margin {
+        self.contexts[self.current_index].get_scaled_margin()
     }
 
     #[cfg(test)]
@@ -1085,10 +1085,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &cloned_config,
             ) {
                 Ok(new_context) => {
-                    let previous_margin = self.contexts[self.current_index].margin;
+                    let previous_scaled_margin = self.contexts[self.current_index].scaled_margin;
                     self.contexts.push(ContextGrid::new(
                         new_context,
-                        previous_margin,
+                        previous_scaled_margin,
                         self.config.split_color,
                         self.config.split_active_color,
                         self.config.panel,

@@ -1222,13 +1222,13 @@ impl Renderer {
         );
 
         // Render panel borders (on top of terminal content)
-        let grid_margin = context_manager.get_current_grid_margin();
+        let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
         for border_object in context_manager.get_panel_borders() {
             if let rio_backend::sugarloaf::Object::Rect(rect) = border_object {
                 // Convert from physical pixels to logical coordinates
-                // Same transformation as apply_taffy_layout: (physical / scale) + margin
-                let x = (rect.x / scale_factor) + grid_margin.left;
-                let y = (rect.y / scale_factor) + grid_margin.top;
+                // Both rect coords and margin are in physical pixels, divide after adding
+                let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+                let y = (rect.y + grid_scaled_margin.top) / scale_factor;
                 let width = rect.width / scale_factor;
                 let height = rect.height / scale_factor;
 

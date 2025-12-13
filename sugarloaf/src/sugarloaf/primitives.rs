@@ -92,7 +92,6 @@ impl RichText {
     }
 }
 
-/// Simple rectangle for rendering - replaces the complex Quad
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rect {
     pub x: f32,
