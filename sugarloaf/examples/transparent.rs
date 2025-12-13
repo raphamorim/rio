@@ -8,7 +8,7 @@ use rio_window::{
     dpi::LogicalSize, event::Event, event_loop::EventLoop, window::WindowAttributes,
 };
 use sugarloaf::layout::RootStyle;
-use sugarloaf::{Object, Quad, Sugarloaf, SugarloafWindow, SugarloafWindowSize};
+use sugarloaf::{Sugarloaf, SugarloafWindow, SugarloafWindowSize};
 
 fn main() {
     let mut event_loop = EventLoop::new().unwrap();
@@ -60,22 +60,26 @@ fn main() {
             }
             Event::WindowEvent { event, .. } => {
                 if let WindowEvent::RedrawRequested = event {
-                    let objects = vec![
-                        Object::Quad(Quad {
-                            position: [10.0, 10.0],
-                            color: [1.0, 0.0, 1.0, 0.2],
-                            size: [50.0, 50.0],
-                            ..Quad::default()
-                        }),
-                        Object::Quad(Quad {
-                            position: [115.0, 10.0],
-                            color: [0.0, 1.0, 1.0, 0.5],
-                            size: [50.0, 50.0],
-                            ..Quad::default()
-                        }),
-                    ];
+                    // Add rectangles directly
+                    sugarloaf.rect(
+                        None,
+                        10.0,
+                        10.0,
+                        50.0,
+                        50.0,
+                        [1.0, 1.0, 1.0, 1.0],
+                        0.0,
+                    );
+                    sugarloaf.rect(
+                        None,
+                        115.0,
+                        10.0,
+                        50.0,
+                        50.0,
+                        [0.0, 0.0, 0.0, 1.0],
+                        0.0,
+                    );
 
-                    sugarloaf.set_objects(objects);
                     sugarloaf.render();
                 }
             }

@@ -1579,6 +1579,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "grid"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9e2d4c0a8296178d8802098410ca05d86b17a10bb5ab559b3fb404c1f948220"
+
+[[package]]
 name = "guillotiere"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3028,6 +3034,12 @@ checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
 name = "rand_core"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+
+[[package]]
+name = "rand_core"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
@@ -3182,7 +3194,9 @@ dependencies = [
  "corcovado",
  "cursor-icon",
  "dirs",
+ "flate2",
  "image",
+ "lazy_static",
  "libc",
  "memchr",
  "parking_lot",
@@ -3201,6 +3215,7 @@ dependencies = [
  "unicode-width-16",
  "url",
  "wgpu",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3293,6 +3308,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "serde",
  "smallvec",
+ "taffy",
  "teletypewriter",
  "tinyvec",
  "tracing",
@@ -3742,6 +3758,7 @@ dependencies = [
  "bytemuck",
  "console_error_panic_hook",
  "console_log",
+ "core-graphics-types 0.2.0",
  "criterion",
  "dashmap",
  "deflate",
@@ -3762,7 +3779,9 @@ dependencies = [
  "librashader-runtime",
  "lru",
  "memmap2",
+ "metal",
  "num-traits",
+ "objc",
  "parking_lot",
  "png 0.17.16",
  "raw-window-handle",
@@ -3771,6 +3790,7 @@ dependencies = [
  "rustc-hash 2.1.1",
  "serde",
  "skrifa",
+ "smallvec",
  "thiserror 2.0.17",
  "tracing",
  "ttf-parser",
@@ -3782,6 +3802,7 @@ dependencies = [
  "wasm-bindgen-test",
  "web-sys",
  "wgpu",
+ "wyhash",
  "yazi",
  "zeno",
 ]
@@ -3812,6 +3833,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "taffy"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41ba83ebaf2954d31d05d67340fd46cebe99da2b7133b0dd68d70c65473a437b"
+dependencies = [
+ "arrayvec",
+ "grid",
+ "serde",
+ "slotmap",
 ]
 
 [[package]]
@@ -5051,6 +5084,15 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
+
+[[package]]
+name = "wyhash"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf6e163c25e3fac820b4b453185ea2dea3b6a3e0a721d4d23d75bd33734c295"
+dependencies = [
+ "rand_core 0.6.4",
+]
 
 [[package]]
 name = "x11-clipboard"
