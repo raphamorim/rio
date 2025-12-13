@@ -128,6 +128,7 @@ pub struct ContextManagerConfig {
     pub is_native: bool,
     pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
+    pub split_active_color: [f32; 4],
     pub panel: rio_backend::config::layout::Panel,
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
@@ -395,6 +396,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 initial_context,
                 margin,
                 ctx_config.split_color,
+                ctx_config.split_active_color,
                 ctx_config.panel,
             )],
             capacity: DEFAULT_CONTEXT_CAPACITY,
@@ -443,6 +445,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 initial_context,
                 Margin::default(),
                 config.split_color,
+                config.split_active_color,
                 config.panel,
             )],
             capacity,
@@ -766,6 +769,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &self.contexts[self.current_index]
     }
 
+    /// Get panel borders for the current grid (returns empty vec if single panel)
+    #[inline]
+    pub fn get_panel_borders(&self) -> Vec<Object> {
+        self.contexts[self.current_index].get_panel_borders()
+    }
+
+    /// Get the margin of the current grid (needed for border positioning)
+    #[inline]
+    pub fn get_current_grid_margin(&self) -> rio_backend::config::layout::Margin {
+        self.contexts[self.current_index].get_margin()
+    }
+
     #[cfg(test)]
     pub fn increase_capacity(&mut self, inc_val: usize) {
         self.capacity += inc_val;
@@ -979,6 +994,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             // does not make sense fetch for foreground process names
             should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
+            split_active_color: config.colors.split_active,
             panel: config.panel,
             title: config.title,
             keyboard: config.keyboard,
@@ -1074,6 +1090,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         new_context,
                         previous_margin,
                         self.config.split_color,
+                        self.config.split_active_color,
                         self.config.panel,
                     ));
                     if redirect {
