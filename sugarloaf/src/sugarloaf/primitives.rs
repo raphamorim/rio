@@ -5,6 +5,127 @@
 
 use serde::Deserialize;
 
+/// Corner radii for a rounded rectangle.
+/// Each corner can have a different radius.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[repr(C)]
+pub struct Corners {
+    pub top_left: f32,
+    pub top_right: f32,
+    pub bottom_right: f32,
+    pub bottom_left: f32,
+}
+
+impl Corners {
+    /// Create corners with the same radius for all corners.
+    #[inline]
+    pub fn all(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    /// Create corners with zero radius (sharp corners).
+    #[inline]
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// Check if all corners are zero (no rounding).
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.top_left == 0.0
+            && self.top_right == 0.0
+            && self.bottom_right == 0.0
+            && self.bottom_left == 0.0
+    }
+
+    /// Convert to array [top_left, top_right, bottom_right, bottom_left].
+    #[inline]
+    pub fn to_array(&self) -> [f32; 4] {
+        [self.top_left, self.top_right, self.bottom_right, self.bottom_left]
+    }
+}
+
+impl From<f32> for Corners {
+    fn from(radius: f32) -> Self {
+        Self::all(radius)
+    }
+}
+
+impl From<[f32; 4]> for Corners {
+    fn from(arr: [f32; 4]) -> Self {
+        Self {
+            top_left: arr[0],
+            top_right: arr[1],
+            bottom_right: arr[2],
+            bottom_left: arr[3],
+        }
+    }
+}
+
+/// Edge widths for borders.
+/// Each edge can have a different width.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[repr(C)]
+pub struct Edges {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+impl Edges {
+    /// Create edges with the same width for all edges.
+    #[inline]
+    pub fn all(width: f32) -> Self {
+        Self {
+            top: width,
+            right: width,
+            bottom: width,
+            left: width,
+        }
+    }
+
+    /// Create edges with zero width (no borders).
+    #[inline]
+    pub fn zero() -> Self {
+        Self::default()
+    }
+
+    /// Check if all edges are zero (no borders).
+    #[inline]
+    pub fn is_zero(&self) -> bool {
+        self.top == 0.0 && self.right == 0.0 && self.bottom == 0.0 && self.left == 0.0
+    }
+
+    /// Convert to array [top, right, bottom, left].
+    #[inline]
+    pub fn to_array(&self) -> [f32; 4] {
+        [self.top, self.right, self.bottom, self.left]
+    }
+}
+
+impl From<f32> for Edges {
+    fn from(width: f32) -> Self {
+        Self::all(width)
+    }
+}
+
+impl From<[f32; 4]> for Edges {
+    fn from(arr: [f32; 4]) -> Self {
+        Self {
+            top: arr[0],
+            right: arr[1],
+            bottom: arr[2],
+            left: arr[3],
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 #[repr(u8)]
 pub enum CursorKind {
@@ -113,9 +234,107 @@ impl Rect {
     }
 }
 
+/// Border style for quads
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[repr(u32)]
+pub enum BorderStyle {
+    #[default]
+    Solid = 0,
+    Dashed = 1,
+}
+
+/// A quad with per-corner radii and per-edge border widths.
+/// This is used for rounded panel borders.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quad {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub background_color: [f32; 4],
+    pub corner_radii: Corners,
+    pub border_widths: Edges,
+    pub border_color: [f32; 4],
+    pub border_style: BorderStyle,
+}
+
+impl Quad {
+    pub fn new(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radii: Corners,
+        border_widths: Edges,
+        border_color: [f32; 4],
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            background_color,
+            corner_radii,
+            border_widths,
+            border_color,
+            border_style: BorderStyle::Solid,
+        }
+    }
+
+    /// Create a quad with uniform corner radius and uniform border width
+    pub fn with_uniform_border(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radius: f32,
+        border_width: f32,
+        border_color: [f32; 4],
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            background_color,
+            corner_radii: Corners::all(corner_radius),
+            border_widths: Edges::all(border_width),
+            border_color,
+            border_style: BorderStyle::Solid,
+        }
+    }
+
+    /// Create a quad with dashed border
+    pub fn with_dashed_border(
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radii: Corners,
+        border_widths: Edges,
+        border_color: [f32; 4],
+    ) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            background_color,
+            corner_radii,
+            border_widths,
+            border_color,
+            border_style: BorderStyle::Dashed,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Object {
     Rect(Rect),
+    Quad(Quad),
     RichText(RichText),
 }
 

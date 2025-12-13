@@ -1225,25 +1225,63 @@ impl Renderer {
         // Render panel borders (on top of terminal content)
         let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
         for border_object in context_manager.get_panel_borders() {
-            if let rio_backend::sugarloaf::Object::Rect(rect) = border_object {
-                // Convert from physical pixels to logical coordinates
-                // Both rect coords and margin are in physical pixels, divide after adding
-                let x = (rect.x + grid_scaled_margin.left) / scale_factor;
-                let y = (rect.y + grid_scaled_margin.top) / scale_factor;
-                let width = rect.width / scale_factor;
-                let height = rect.height / scale_factor;
+            match border_object {
+                rio_backend::sugarloaf::Object::Quad(quad) => {
+                    // Convert from physical pixels to logical coordinates
+                    let x = (quad.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (quad.y + grid_scaled_margin.top) / scale_factor;
+                    let width = quad.width / scale_factor;
+                    let height = quad.height / scale_factor;
 
-                // Render with higher order (1) to appear on top of terminal content
-                sugarloaf.rect(
-                    None,
-                    x,
-                    y,
-                    width,
-                    height,
-                    rect.color,
-                    -0.1, // Negative depth = closer to camera (in front)
-                    1,    // Higher order renders on top
-                );
+                    // Scale corner radii and border widths
+                    let corner_radii = [
+                        quad.corner_radii.top_left / scale_factor,
+                        quad.corner_radii.top_right / scale_factor,
+                        quad.corner_radii.bottom_right / scale_factor,
+                        quad.corner_radii.bottom_left / scale_factor,
+                    ];
+                    let border_widths = [
+                        quad.border_widths.top / scale_factor,
+                        quad.border_widths.right / scale_factor,
+                        quad.border_widths.bottom / scale_factor,
+                        quad.border_widths.left / scale_factor,
+                    ];
+
+                    // Render quad with rounded corners and borders
+                    sugarloaf.quad(
+                        None,
+                        x,
+                        y,
+                        width,
+                        height,
+                        quad.background_color,
+                        corner_radii,
+                        border_widths,
+                        quad.border_color,
+                        quad.border_style as i32,
+                        -0.1, // Negative depth = closer to camera (in front)
+                        1,    // Higher order renders on top
+                    );
+                }
+                rio_backend::sugarloaf::Object::Rect(rect) => {
+                    // Simple rectangle (no rounded corners or borders)
+                    let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (rect.y + grid_scaled_margin.top) / scale_factor;
+                    let width = rect.width / scale_factor;
+                    let height = rect.height / scale_factor;
+
+                    sugarloaf.rect(
+                        None,
+                        x,
+                        y,
+                        width,
+                        height,
+                        rect.color,
+                        -0.1,
+                        1,
+                    );
+                }
+                _ => {}
             }
         }
 

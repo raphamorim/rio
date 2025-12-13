@@ -98,10 +98,22 @@ impl MetalRenderer {
             .expect("Failed to get fragment function");
 
         // Create vertex descriptor for rich text rendering
+        // Vertex layout (100 bytes total):
+        // - pos: [f32; 3] = 12 bytes (offset 0)
+        // - color: [f32; 4] = 16 bytes (offset 12)
+        // - uv: [f32; 2] = 8 bytes (offset 28)
+        // - layers: [i32; 2] = 8 bytes (offset 36)
+        // - corner_radii: [f32; 4] = 16 bytes (offset 44)
+        // - rect_size: [f32; 2] = 8 bytes (offset 60)
+        // - border_widths: [f32; 4] = 16 bytes (offset 68)
+        // - border_color: [f32; 4] = 16 bytes (offset 84)
+        // - border_style: i32 = 4 bytes (offset 100)
+        // - _padding: [i32; 3] = 12 bytes (offset 104)
+        // Total: 116 bytes
         let vertex_descriptor = VertexDescriptor::new();
         let attributes = vertex_descriptor.attributes();
 
-        // Position (attribute 0) - vec4<f32>
+        // Position (attribute 0) - vec3<f32>
         attributes
             .object_at(0)
             .unwrap()
@@ -133,11 +145,11 @@ impl MetalRenderer {
         attributes.object_at(3).unwrap().set_offset(36);
         attributes.object_at(3).unwrap().set_buffer_index(0);
 
-        // Border radius (attribute 4) - f32
+        // Corner radii (attribute 4) - vec4<f32>
         attributes
             .object_at(4)
             .unwrap()
-            .set_format(MTLVertexFormat::Float);
+            .set_format(MTLVertexFormat::Float4);
         attributes.object_at(4).unwrap().set_offset(44);
         attributes.object_at(4).unwrap().set_buffer_index(0);
 
@@ -146,8 +158,32 @@ impl MetalRenderer {
             .object_at(5)
             .unwrap()
             .set_format(MTLVertexFormat::Float2);
-        attributes.object_at(5).unwrap().set_offset(48);
+        attributes.object_at(5).unwrap().set_offset(60);
         attributes.object_at(5).unwrap().set_buffer_index(0);
+
+        // Border widths (attribute 6) - vec4<f32>
+        attributes
+            .object_at(6)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(6).unwrap().set_offset(68);
+        attributes.object_at(6).unwrap().set_buffer_index(0);
+
+        // Border color (attribute 7) - vec4<f32>
+        attributes
+            .object_at(7)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(7).unwrap().set_offset(84);
+        attributes.object_at(7).unwrap().set_buffer_index(0);
+
+        // Border style (attribute 8) - i32
+        attributes
+            .object_at(8)
+            .unwrap()
+            .set_format(MTLVertexFormat::Int);
+        attributes.object_at(8).unwrap().set_offset(100);
+        attributes.object_at(8).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
@@ -1189,6 +1225,40 @@ impl Renderer {
         );
     }
 
+    /// Add a quad with per-corner radii and per-edge border widths
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn quad(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        background_color: [f32; 4],
+        corner_radii: [f32; 4],
+        border_widths: [f32; 4],
+        border_color: [f32; 4],
+        border_style: i32,
+        depth: f32,
+        order: u8,
+    ) {
+        self.comp.batches.quad(
+            &Rect {
+                x,
+                y,
+                width,
+                height,
+            },
+            depth,
+            &background_color,
+            corner_radii,
+            border_widths,
+            border_color,
+            border_style,
+            order,
+        );
+    }
+
     #[inline]
     pub fn add_image_rect(
         &mut self,
@@ -1532,12 +1602,15 @@ impl WgpuRenderer {
                             // https://docs.rs/wgpu/latest/wgpu/enum.VertexStepMode.html
                             step_mode: wgpu::VertexStepMode::Vertex,
                             attributes: &wgpu::vertex_attr_array!(
-                                0 => Float32x3,
-                                1 => Float32x4,
-                                2 => Float32x2,
-                                3 => Sint32x2,
-                                4 => Float32,
-                                5 => Float32x2,
+                                0 => Float32x3,  // pos
+                                1 => Float32x4,  // color (background)
+                                2 => Float32x2,  // uv
+                                3 => Sint32x2,   // layers
+                                4 => Float32x4,  // corner_radii
+                                5 => Float32x2,  // rect_size
+                                6 => Float32x4,  // border_widths
+                                7 => Float32x4,  // border_color
+                                8 => Sint32,     // border_style (0=solid, 1=dashed)
                             ),
                         }],
                     },
