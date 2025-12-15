@@ -54,24 +54,24 @@ impl Compositor {
                 })
             }
             Some(SpanStyleDecoration::Strikethrough) => {
-                // Use font's built-in strikeout offset if available, otherwise use x-height/2
-                // This matches standard typographic positioning for strikethrough
+                // Strikethrough should be positioned through the middle of the text
+                // Use font-provided strikeout_offset if available, otherwise x_height/2
                 let strikethrough_offset = if style.strikeout_offset != 0.0 {
-                    // Font provides explicit strikeout position (negative because it's above baseline)
+                    // Font provides strikeout_offset as distance from baseline
                     -style.strikeout_offset
                 } else if style.x_height > 0.0 {
-                    // Use half of x-height above baseline - this is the typographically correct position
+                    // x_height is the height of lowercase letters, strike through middle
                     -(style.x_height / 2.0)
                 } else {
-                    // Final fallback: approximate x-height position
-                    -(rect.height * 0.3)
+                    // Fallback: 25% of ascent above baseline
+                    -(style.ascent * 0.25)
                 };
 
                 // Use font metrics for thickness when available
                 let strikethrough_thickness = if style.underline_thickness > 0.0 {
                     style.underline_thickness
                 } else {
-                    1.5 // Slightly thinner than before for better appearance
+                    1.5
                 };
 
                 Some(RunUnderline {
@@ -156,12 +156,22 @@ impl Compositor {
                     crate::CursorKind::Block => {
                         let cursor_rect =
                             Rect::new(rect.x, cursor_top, rect.width, font_height);
-                        self.batches.rect(&cursor_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &cursor_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                     crate::CursorKind::HollowBlock => {
                         let outer_rect =
                             Rect::new(rect.x, cursor_top, rect.width, font_height);
-                        self.batches.rect(&outer_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &outer_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
 
                         if let Some(bg_color) = style.background_color {
                             let inner_rect = Rect::new(
@@ -170,17 +180,32 @@ impl Compositor {
                                 rect.width - 2.0,
                                 font_height - 2.0,
                             );
-                            self.batches.rect(&inner_rect, depth, &bg_color, cursor.order);
+                            self.batches.rect(
+                                &inner_rect,
+                                depth,
+                                &bg_color,
+                                cursor.order,
+                            );
                         }
                     }
                     crate::CursorKind::Caret => {
                         let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
-                        self.batches.rect(&caret_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &caret_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                     crate::CursorKind::Underline => {
                         let caret_rect =
                             Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
-                        self.batches.rect(&caret_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &caret_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                 }
             }
@@ -260,12 +285,22 @@ impl Compositor {
                     crate::CursorKind::Block => {
                         let cursor_rect =
                             Rect::new(rect.x, cursor_top, rect.width, font_height);
-                        self.batches.rect(&cursor_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &cursor_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                     crate::CursorKind::HollowBlock => {
                         let outer_rect =
                             Rect::new(rect.x, cursor_top, rect.width, font_height);
-                        self.batches.rect(&outer_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &outer_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
 
                         if let Some(bg_color) = style.background_color {
                             let inner_rect = Rect::new(
@@ -274,17 +309,32 @@ impl Compositor {
                                 rect.width - 2.0,
                                 font_height - 2.0,
                             );
-                            self.batches.rect(&inner_rect, depth, &bg_color, cursor.order);
+                            self.batches.rect(
+                                &inner_rect,
+                                depth,
+                                &bg_color,
+                                cursor.order,
+                            );
                         }
                     }
                     crate::CursorKind::Caret => {
                         let caret_rect = Rect::new(rect.x, cursor_top, 2.0, font_height);
-                        self.batches.rect(&caret_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &caret_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                     crate::CursorKind::Underline => {
                         let caret_rect =
                             Rect::new(rect.x, style.baseline + 1.0, rect.width, 2.0);
-                        self.batches.rect(&caret_rect, depth, &cursor.color, cursor.order);
+                        self.batches.rect(
+                            &caret_rect,
+                            depth,
+                            &cursor.color,
+                            cursor.order,
+                        );
                     }
                 }
             }

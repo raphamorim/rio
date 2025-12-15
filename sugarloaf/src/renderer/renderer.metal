@@ -9,14 +9,15 @@ struct Globals {
 // Vertex input structure - matches Vertex struct exactly
 struct VertexInput {
     float3 v_pos [[attribute(0)]];          // Position (12 bytes)
-    float4 v_color [[attribute(1)]];        // Background color (16 bytes)
+    float4 v_color [[attribute(1)]];        // Background color / underline color (16 bytes)
     float2 v_uv [[attribute(2)]];           // UV coords (8 bytes)
     int2 layers [[attribute(3)]];           // Layers (8 bytes)
-    float4 corner_radii [[attribute(4)]];   // Corner radii [top_left, top_right, bottom_right, bottom_left] (16 bytes)
-    float2 rect_size [[attribute(5)]];      // Rect size (8 bytes)
+    float4 corner_radii [[attribute(4)]];   // Corner radii / for underlines: [thickness, 0, 0, 0] (16 bytes)
+    float2 rect_size [[attribute(5)]];      // Rect size / underline [width, height] (8 bytes)
     float4 border_widths [[attribute(6)]];  // Border widths [top, right, bottom, left] (16 bytes)
     float4 border_color [[attribute(7)]];   // Border color RGBA (16 bytes)
     int border_style [[attribute(8)]];      // 0 = solid, 1 = dashed (4 bytes)
+    int underline_style [[attribute(9)]];   // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly (4 bytes)
 };
 
 // Vertex output / Fragment input structure
@@ -31,6 +32,7 @@ struct VertexOutput {
     float4 border_widths;
     float4 border_color;
     int border_style [[flat]];
+    int underline_style [[flat]];
 };
 
 // Vertex shader
@@ -48,6 +50,7 @@ vertex VertexOutput vs_main(
     out.border_widths = input.border_widths;
     out.border_color = input.border_color;
     out.border_style = input.border_style;
+    out.underline_style = input.underline_style;
 
     // Transform position - use float4 constructor with z=0.0, w=1.0
     out.position = globals.transform * float4(input.v_pos.xy, 0.0, 1.0);
@@ -141,6 +144,59 @@ float dash_alpha(float t, float period, float dash_length, float dash_velocity, 
     return saturate(antialias_threshold - signed_distance / dash_velocity);
 }
 
+// Calculate underline alpha for pattern rendering
+float underline_alpha(float x_pos, float y_pos, float rect_height, float thickness, int style) {
+    // style 1: regular solid line
+    if (style == 1) {
+        return 1.0;
+    }
+
+    // style 2: dashed (6px dash, 2px gap)
+    if (style == 2) {
+        float antialias = 0.5;
+        float dash_width = 6.0;
+        float gap_width = 2.0;
+        float period = dash_width + gap_width;
+        float pos_in_period = fmod_pos(x_pos, period);
+        float start_aa = saturate(pos_in_period / antialias);
+        float end_aa = saturate((dash_width - pos_in_period) / antialias);
+        return min(start_aa, end_aa);
+    }
+
+    // style 3: dotted (2px dot, 2px gap)
+    if (style == 3) {
+        float antialias = 0.5;
+        float dot_width = 2.0;
+        float gap_width = 2.0;
+        float period = dot_width + gap_width;
+        float pos_in_period = fmod_pos(x_pos, period);
+        float start_aa = saturate(pos_in_period / antialias);
+        float end_aa = saturate((dot_width - pos_in_period) / antialias);
+        return min(start_aa, end_aa);
+    }
+
+    // style 4: curly (sine wave) using SDF
+    if (style == 4) {
+        const float WAVE_FREQUENCY = 2.0;
+        const float WAVE_HEIGHT_RATIO = 0.8;
+
+        float half_thickness = thickness * 0.5;
+        float2 st = float2(x_pos / rect_height, y_pos / rect_height - 0.5);
+        float frequency = PI_F * WAVE_FREQUENCY * thickness / rect_height;
+        float amplitude = (thickness * WAVE_HEIGHT_RATIO) / rect_height;
+
+        float sine = sin(st.x * frequency) * amplitude;
+        float dSine = cos(st.x * frequency) * amplitude * frequency;
+        float dist = (st.y - sine) / sqrt(1.0 + dSine * dSine);
+        float distance_in_pixels = dist * rect_height;
+        float distance_from_top_border = distance_in_pixels - half_thickness;
+        float distance_from_bottom_border = distance_in_pixels + half_thickness;
+        return saturate(0.5 - max(-distance_from_bottom_border, distance_from_top_border));
+    }
+
+    return 1.0;
+}
+
 // Fragment shader
 fragment float4 fs_main(
     VertexOutput input [[stage_in]],
@@ -149,6 +205,19 @@ fragment float4 fs_main(
     sampler font_sampler [[sampler(0)]]
 ) {
     float4 out = input.f_color;
+
+    // Handle GPU-rendered underlines
+    // Underlines have: underline_style > 0, thickness in corner_radii.x
+    if (input.underline_style > 0) {
+        float width = input.rect_size.x;
+        float rect_height = input.rect_size.y;
+        float x_pos = input.f_uv.x * width;
+        float y_pos = input.f_uv.y * rect_height;
+        float thickness = input.corner_radii.x;
+
+        float alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
+        return float4(input.f_color.rgb, input.f_color.a * alpha);
+    }
 
     // Handle texture sampling for glyphs
     if (input.color_layer > 0) {

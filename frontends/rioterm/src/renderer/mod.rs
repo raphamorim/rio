@@ -5,12 +5,12 @@ pub mod island;
 mod search;
 pub mod utils;
 
-use taffy::NodeId;
 use crate::context::renderable::TerminalSnapshot;
 use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
+use taffy::NodeId;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -27,8 +27,8 @@ use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration, Stretch,
-    Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
+    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration,
+    Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
@@ -1270,16 +1270,7 @@ impl Renderer {
                     let width = rect.width / scale_factor;
                     let height = rect.height / scale_factor;
 
-                    sugarloaf.rect(
-                        None,
-                        x,
-                        y,
-                        width,
-                        height,
-                        rect.color,
-                        -0.1,
-                        1,
-                    );
+                    sugarloaf.rect(None, x, y, width, height, rect.color, -0.1, 1);
                 }
                 _ => {}
             }

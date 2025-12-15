@@ -55,12 +55,7 @@ impl TextRunManager {
     ) {
         let key = create_text_run_key(text, font_id, font_size);
 
-        let cached_run = create_cached_text_run(
-            glyphs,
-            font_id,
-            font_size,
-            has_emoji,
-        );
+        let cached_run = create_cached_text_run(glyphs, font_id, font_size, has_emoji);
 
         self.unified_cache.insert(key, cached_run);
     }

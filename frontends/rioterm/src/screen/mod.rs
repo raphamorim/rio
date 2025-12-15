@@ -16,8 +16,6 @@ use crate::bindings::{
 };
 #[cfg(target_os = "macos")]
 use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
-use crate::layout::ContextDimension;
-use rio_backend::config::layout::Margin;
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{self, next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
@@ -28,6 +26,7 @@ use crate::crosswords::{
     Mode,
 };
 use crate::hints::HintState;
+use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::{
     utils::{padding_bottom_from_config, padding_top_from_config},
@@ -39,6 +38,7 @@ use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
+use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::{Backend, Performance as RendererPerformance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
@@ -119,8 +119,12 @@ impl Screen<'_> {
             config.window.macos_use_unified_titlebar,
         );
 
-        let padding_y_bottom =
-            padding_bottom_from_config(&config.navigation, config.margin.bottom, 1, false);
+        let padding_y_bottom = padding_bottom_from_config(
+            &config.navigation,
+            config.margin.bottom,
+            1,
+            false,
+        );
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -469,7 +473,8 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        self.context_manager.resize_all_grids(width, height, &mut self.sugarloaf);
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -490,7 +495,8 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        self.context_manager.resize_all_grids(width, height, &mut self.sugarloaf);
+        self.context_manager
+            .resize_all_grids(width, height, &mut self.sugarloaf);
 
         self
     }
@@ -1263,28 +1269,40 @@ impl Screen<'_> {
 
     pub fn move_divider_up(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_up(amount, &mut self.sugarloaf) {
+        if self
+            .context_manager
+            .move_divider_up(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_down(&mut self) {
         let amount = 20.0; // Default movement amount
-        if self.context_manager.move_divider_down(amount, &mut self.sugarloaf) {
+        if self
+            .context_manager
+            .move_divider_down(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_left(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_left(amount, &mut self.sugarloaf) {
+        if self
+            .context_manager
+            .move_divider_left(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }
 
     pub fn move_divider_right(&mut self) {
         let amount = 40.0; // Default movement amount
-        if self.context_manager.move_divider_right(amount, &mut self.sugarloaf) {
+        if self
+            .context_manager
+            .move_divider_right(amount, &mut self.sugarloaf)
+        {
             self.render();
         }
     }

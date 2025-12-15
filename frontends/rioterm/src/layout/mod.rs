@@ -9,7 +9,10 @@ use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Object, Rect, RichText, Sugarloaf};
 use rustc_hash::FxHashMap;
 
-use taffy::{AvailableSpace, Display, style_helpers::length, Style, NodeId, TaffyTree, TaffyError, geometry};
+use taffy::{
+    geometry, style_helpers::length, AvailableSpace, Display, NodeId, Style, TaffyError,
+    TaffyTree,
+};
 
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
@@ -72,7 +75,7 @@ impl Default for BorderConfig {
             width: 2.0,
             color: [0.8, 0.8, 0.8, 1.0],        // Light gray
             active_color: [0.3, 0.8, 0.9, 1.0], // Cyan-ish for active
-            radius: 8.0,                         // Default rounded corners
+            radius: 8.0,                        // Default rounded corners
         }
     }
 }
@@ -178,7 +181,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
 
-        let root_node = tree.new_leaf(root_style).expect("Failed to create root node");
+        let root_node = tree
+            .new_leaf(root_style)
+            .expect("Failed to create root node");
 
         let panel_style = Style {
             display: Display::Flex,
@@ -199,8 +204,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             ..Default::default()
         };
 
-        let panel_node = tree.new_leaf(panel_style).expect("Failed to create panel node");
-        tree.add_child(root_node, panel_node).expect("Failed to add child");
+        let panel_node = tree
+            .new_leaf(panel_style)
+            .expect("Failed to create panel node");
+        tree.add_child(root_node, panel_node)
+            .expect("Failed to add child");
 
         // Use NodeId as the key
         let mut inner = FxHashMap::default();
@@ -238,8 +246,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
     /// Get item by route_id (used for event routing)
     #[inline]
-    pub fn get_by_route_id(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
-        self.inner.values_mut().find(|item| item.val.route_id == route_id)
+    pub fn get_by_route_id(
+        &mut self,
+        route_id: usize,
+    ) -> Option<&mut ContextGridItem<T>> {
+        self.inner
+            .values_mut()
+            .find(|item| item.val.route_id == route_id)
     }
 
     #[inline]
@@ -258,7 +271,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     fn try_update_size(&mut self, width: f32, height: f32) -> Result<(), TaffyError> {
         // Subtract window margin from available size
         let available_width = width - self.scaled_margin.left - self.scaled_margin.right;
-        let available_height = height - self.scaled_margin.top - self.scaled_margin.bottom;
+        let available_height =
+            height - self.scaled_margin.top - self.scaled_margin.bottom;
 
         let mut style = self.tree.style(self.root_node)?.clone();
         style.size = geometry::Size {
@@ -314,7 +328,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         for (&node_id, item) in &self.inner {
             let [left, top, width, height] = item.layout_rect;
-            if adj_x >= left && adj_x < left + width && adj_y >= top && adj_y < top + height {
+            if adj_x >= left
+                && adj_x < left + width
+                && adj_y >= top
+                && adj_y < top + height
+            {
                 return Some(node_id);
             }
         }
@@ -398,7 +416,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.split_panel(taffy::FlexDirection::Column)
     }
 
-    fn split_panel(&mut self, direction: taffy::FlexDirection) -> Result<NodeId, TaffyError> {
+    fn split_panel(
+        &mut self,
+        direction: taffy::FlexDirection,
+    ) -> Result<NodeId, TaffyError> {
         // Current is already the NodeId
         let current_node = self.current;
         if !self.inner.contains_key(&current_node) {
@@ -439,7 +460,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Insert container at the same position in parent
         if let Some(idx) = current_index {
-            self.tree.insert_child_at_index(parent_node, idx, container_node)?;
+            self.tree
+                .insert_child_at_index(parent_node, idx, container_node)?;
         } else {
             self.tree.add_child(parent_node, container_node)?;
         }
@@ -447,7 +469,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         Ok(new_node)
     }
 
-    fn set_panel_size(&mut self, node: NodeId, width: Option<f32>, height: Option<f32>) -> Result<(), TaffyError> {
+    fn set_panel_size(
+        &mut self,
+        node: NodeId,
+        width: Option<f32>,
+        height: Option<f32>,
+    ) -> Result<(), TaffyError> {
         let mut style = self.tree.style(node)?.clone();
 
         if let Some(w) = width {
@@ -487,14 +514,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find panel directly to the left (overlapping Y range, touching on X axis)
         for &other_id in self.inner.keys() {
-            if other_id == node_id { continue; }
+            if other_id == node_id {
+                continue;
+            }
 
             let other_layout = self.tree.layout(other_id).ok()?;
 
             // Check if vertically overlapping (Y ranges overlap)
             let current_y_end = current_layout.location.y + current_layout.size.height;
             let other_y_end = other_layout.location.y + other_layout.size.height;
-            let y_overlap = current_layout.location.y < other_y_end && other_layout.location.y < current_y_end;
+            let y_overlap = current_layout.location.y < other_y_end
+                && other_layout.location.y < current_y_end;
 
             if y_overlap {
                 // Check if other panel is directly to the left (touching with gap)
@@ -510,14 +540,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Try finding panel to the right
         let current_right = current_layout.location.x + current_layout.size.width;
         for &other_id in self.inner.keys() {
-            if other_id == node_id { continue; }
+            if other_id == node_id {
+                continue;
+            }
 
             let other_layout = self.tree.layout(other_id).ok()?;
 
             // Check if vertically overlapping
             let current_y_end = current_layout.location.y + current_layout.size.height;
             let other_y_end = other_layout.location.y + other_layout.size.height;
-            let y_overlap = current_layout.location.y < other_y_end && other_layout.location.y < current_y_end;
+            let y_overlap = current_layout.location.y < other_y_end
+                && other_layout.location.y < current_y_end;
 
             if y_overlap {
                 let distance = other_layout.location.x - current_right;
@@ -541,14 +574,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Find panel directly above (overlapping X range, touching on Y axis)
         for &other_id in self.inner.keys() {
-            if other_id == node_id { continue; }
+            if other_id == node_id {
+                continue;
+            }
 
             let other_layout = self.tree.layout(other_id).ok()?;
 
             // Check if horizontally overlapping (X ranges overlap)
             let current_x_end = current_layout.location.x + current_layout.size.width;
             let other_x_end = other_layout.location.x + other_layout.size.width;
-            let x_overlap = current_layout.location.x < other_x_end && other_layout.location.x < current_x_end;
+            let x_overlap = current_layout.location.x < other_x_end
+                && other_layout.location.x < current_x_end;
 
             if x_overlap {
                 // Check if other panel is directly above (touching with gap)
@@ -564,14 +600,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Try finding panel below
         let current_bottom = current_layout.location.y + current_layout.size.height;
         for &other_id in self.inner.keys() {
-            if other_id == node_id { continue; }
+            if other_id == node_id {
+                continue;
+            }
 
             let other_layout = self.tree.layout(other_id).ok()?;
 
             // Check if horizontally overlapping
             let current_x_end = current_layout.location.x + current_layout.size.width;
             let other_x_end = other_layout.location.x + other_layout.size.width;
-            let x_overlap = current_layout.location.x < other_x_end && other_layout.location.x < current_x_end;
+            let x_overlap = current_layout.location.x < other_x_end
+                && other_layout.location.x < current_x_end;
 
             if x_overlap {
                 let distance = other_layout.location.y - current_bottom;
@@ -608,7 +647,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             terminal.resize::<ContextDimension>(item.val.dimension);
             drop(terminal);
 
-            let winsize = crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+            let winsize =
+                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
             let _ = item.val.messenger.send_resize(winsize);
 
             // Update position via sugarloaf (handles scaling)
@@ -951,11 +991,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 ordered_keys[pos - 1]
             } else {
                 // Fallback to any other panel
-                *ordered_keys.iter().find(|&&k| k != to_remove).unwrap_or(&to_remove)
+                *ordered_keys
+                    .iter()
+                    .find(|&&k| k != to_remove)
+                    .unwrap_or(&to_remove)
             }
         } else {
             // Fallback to first panel
-            *self.inner.keys().find(|&&k| k != to_remove).unwrap_or(&to_remove)
+            *self
+                .inner
+                .keys()
+                .find(|&&k| k != to_remove)
+                .unwrap_or(&to_remove)
         };
 
         // Remove from Taffy - to_remove IS the NodeId
@@ -1021,7 +1068,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.current;
 
         // Find vertically adjacent panels - returns (top_node, bottom_node)
-        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node) {
+        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node)
+        {
             // Get current sizes
             let top_layout = match self.tree.layout(top_node).ok() {
                 Some(layout) => layout,
@@ -1071,7 +1119,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.current;
 
         // Find vertically adjacent panels - returns (top_node, bottom_node)
-        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node) {
+        if let Some((top_node, bottom_node)) = self.find_vertical_neighbors(current_node)
+        {
             // Get current sizes
             let top_layout = match self.tree.layout(top_node).ok() {
                 Some(layout) => layout,
@@ -1121,7 +1170,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.current;
 
         // Find horizontally adjacent panels - returns (left_node, right_node)
-        if let Some((left_node, right_node)) = self.find_horizontal_neighbors(current_node) {
+        if let Some((left_node, right_node)) =
+            self.find_horizontal_neighbors(current_node)
+        {
             // Get current sizes
             let left_layout = match self.tree.layout(left_node).ok() {
                 Some(layout) => layout,
@@ -1171,7 +1222,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let current_node = self.current;
 
         // Find horizontally adjacent panels - returns (left_node, right_node)
-        if let Some((left_node, right_node)) = self.find_horizontal_neighbors(current_node) {
+        if let Some((left_node, right_node)) =
+            self.find_horizontal_neighbors(current_node)
+        {
             // Get current sizes
             let left_layout = match self.tree.layout(left_node).ok() {
                 Some(layout) => layout,

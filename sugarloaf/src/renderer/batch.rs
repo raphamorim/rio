@@ -26,19 +26,21 @@ pub struct RunUnderline {
 
 /// Batch geometry vertex.
 /// Supports rounded rectangles with per-corner radii and per-edge border widths.
+/// Also supports GPU-rendered underlines with various styles.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Zeroable, Pod)]
 pub struct Vertex {
     pub pos: [f32; 3],
-    pub color: [f32; 4],           // Background color
+    pub color: [f32; 4], // Background color / underline color
     pub uv: [f32; 2],
     pub layers: [i32; 2],
-    pub corner_radii: [f32; 4],    // [top_left, top_right, bottom_right, bottom_left]
-    pub rect_size: [f32; 2],
-    pub border_widths: [f32; 4],   // [top, right, bottom, left]
-    pub border_color: [f32; 4],    // Border color RGBA
-    pub border_style: i32,         // 0 = solid, 1 = dashed
-    pub _padding: [i32; 3],        // Padding for 16-byte alignment
+    pub corner_radii: [f32; 4], // [top_left, top_right, bottom_right, bottom_left] / for underlines: [thickness, 0, 0, 0]
+    pub rect_size: [f32; 2],    // For underlines: [width, height]
+    pub border_widths: [f32; 4], // [top, right, bottom, left]
+    pub border_color: [f32; 4], // Border color RGBA
+    pub border_style: i32,      // 0 = solid, 1 = dashed (for borders)
+    pub underline_style: i32, // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
+    pub _padding: [i32; 2],   // Padding for 16-byte alignment
 }
 
 impl Vertex {
@@ -175,7 +177,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         };
         let v1 = Vertex {
             pos: [x2_top, y2_top, depth],
@@ -187,7 +190,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         };
         let v2 = Vertex {
             pos: [x2_bottom, y2_bottom, depth],
@@ -199,7 +203,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         };
         let v3 = Vertex {
             pos: [x1_bottom, y1_bottom, depth],
@@ -211,7 +216,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         };
 
         // Add vertices directly in drawing order (two triangles)
@@ -270,7 +276,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         });
         self.vertices.push(Vertex {
             pos: [x2, y2, depth],
@@ -282,7 +289,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         });
         self.vertices.push(Vertex {
             pos: [x3, y3, depth],
@@ -294,7 +302,8 @@ impl Batch {
             border_widths: [0.0; 4],
             border_color: [0.0; 4],
             border_style: 0,
-            _padding: [0; 3],
+            underline_style: 0,
+            _padding: [0; 2],
         });
 
         true
@@ -377,7 +386,8 @@ impl Batch {
                 border_widths: [0.0; 4],
                 border_color: [0.0; 4],
                 border_style: 0,
-                _padding: [0; 3],
+                underline_style: 0,
+                _padding: [0; 2],
             };
             let v1 = Vertex {
                 pos: [inner_x2, inner_y2, depth],
@@ -389,7 +399,8 @@ impl Batch {
                 border_widths: [0.0; 4],
                 border_color: [0.0; 4],
                 border_style: 0,
-                _padding: [0; 3],
+                underline_style: 0,
+                _padding: [0; 2],
             };
             let v2 = Vertex {
                 pos: [outer_x2, outer_y2, depth],
@@ -401,7 +412,8 @@ impl Batch {
                 border_widths: [0.0; 4],
                 border_color: [0.0; 4],
                 border_style: 0,
-                _padding: [0; 3],
+                underline_style: 0,
+                _padding: [0; 2],
             };
             let v3 = Vertex {
                 pos: [outer_x1, outer_y1, depth],
@@ -413,7 +425,8 @@ impl Batch {
                 border_widths: [0.0; 4],
                 border_color: [0.0; 4],
                 border_style: 0,
-                _padding: [0; 3],
+                underline_style: 0,
+                _padding: [0; 2],
             };
 
             // Add vertices directly in drawing order (two triangles)
@@ -458,7 +471,9 @@ impl Batch {
         self.image = image;
         self.mask = mask;
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
-        self.push_rect(rect, depth, color, coords, layers, [0.0; 4], [0.0; 4], [0.0; 4], 0);
+        self.push_rect(
+            rect, depth, color, coords, layers, [0.0; 4], [0.0; 4], [0.0; 4], 0, 0,
+        );
         true
     }
 
@@ -491,7 +506,60 @@ impl Batch {
         self.image = image;
         self.mask = mask;
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
-        self.push_rect(rect, depth, color, coords, layers, corner_radii, border_widths, border_color, border_style);
+        self.push_rect(
+            rect,
+            depth,
+            color,
+            coords,
+            layers,
+            corner_radii,
+            border_widths,
+            border_color,
+            border_style,
+            0,
+        );
+        true
+    }
+
+    /// Add an underline quad with GPU pattern rendering
+    /// underline_style: 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
+    /// thickness: The actual line thickness (passed in corner_radii.x)
+    #[inline]
+    fn underline(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        underline_style: i32,
+        thickness: f32,
+    ) -> bool {
+        if !self.vertices.is_empty() && self.subpix {
+            return false;
+        }
+        if !self.vertices.is_empty() && self.image.is_some() {
+            return false;
+        }
+        if !self.vertices.is_empty() && self.mask.is_some() {
+            return false;
+        }
+        self.subpix = false;
+        self.image = None;
+        self.mask = None;
+        let layers = [0, 0];
+        // Pass thickness in corner_radii.x for underlines
+        let corner_radii = [thickness, 0.0, 0.0, 0.0];
+        self.push_rect(
+            rect,
+            depth,
+            color,
+            None,
+            layers,
+            corner_radii,
+            [0.0; 4],
+            [0.0; 4],
+            0,
+            underline_style,
+        );
         true
     }
 
@@ -508,6 +576,7 @@ impl Batch {
         border_widths: [f32; 4],
         border_color: [f32; 4],
         border_style: i32,
+        underline_style: i32,
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -532,7 +601,8 @@ impl Batch {
             border_widths,
             border_color,
             border_style,
-            _padding: [0; 3],
+            underline_style,
+            _padding: [0; 2],
         };
         let v1 = Vertex {
             pos: [x, y + h, depth],
@@ -544,7 +614,8 @@ impl Batch {
             border_widths,
             border_color,
             border_style,
-            _padding: [0; 3],
+            underline_style,
+            _padding: [0; 2],
         };
         let v2 = Vertex {
             pos: [x + w, y + h, depth],
@@ -556,7 +627,8 @@ impl Batch {
             border_widths,
             border_color,
             border_style,
-            _padding: [0; 3],
+            underline_style,
+            _padding: [0; 2],
         };
         let v3 = Vertex {
             pos: [x + w, y, depth],
@@ -568,7 +640,8 @@ impl Batch {
             border_widths,
             border_color,
             border_style,
-            _padding: [0; 3],
+            underline_style,
+            _padding: [0; 2],
         };
 
         // Add vertices directly in the order they'll be drawn
@@ -686,9 +759,7 @@ impl BatchManager {
     ) {
         for batch in self.active.iter_mut() {
             if batch.order == 0
-                && batch.add_line(
-                    x1, y1, x2, y2, width, depth, color, None, None, false,
-                )
+                && batch.add_line(x1, y1, x2, y2, width, depth, color, None, None, false)
             {
                 return;
             }
@@ -836,15 +907,8 @@ impl BatchManager {
                 return;
             }
         }
-        self.alloc_batch(0).rect(
-            rect,
-            depth,
-            color,
-            Some(coords),
-            None,
-            Some(1),
-            subpix,
-        );
+        self.alloc_batch(0)
+            .rect(rect, depth, color, Some(coords), None, Some(1), subpix);
     }
 
     #[inline]
@@ -893,6 +957,30 @@ impl BatchManager {
         }
         self.alloc_batch(order)
             .rect(rect, depth, color, None, None, None, false);
+    }
+
+    /// Add an underline quad with GPU pattern rendering
+    /// underline_style: 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
+    /// thickness: The actual line thickness
+    #[inline]
+    pub fn underline(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        underline_style: i32,
+        thickness: f32,
+        order: u8,
+    ) {
+        for batch in self.active.iter_mut() {
+            if batch.order == order
+                && batch.underline(rect, depth, color, underline_style, thickness)
+            {
+                return;
+            }
+        }
+        self.alloc_batch(order)
+            .underline(rect, depth, color, underline_style, thickness);
     }
 
     /// Add a rounded rectangle with uniform corner radius (no border)
@@ -4002,113 +4090,63 @@ impl BatchManager {
     ) {
         if underline.enabled {
             let ux = x;
-            // Position underline below baseline by adding the calculated offset
-            // This ensures proper underline placement in the descent area
-            let uy = baseline + underline.offset;
-
             let end = x + advance;
-            if ux < end {
-                match underline.shape {
-                    UnderlineShape::Regular => {
-                        self.rect(
-                            &Rect::new(ux, uy, end - ux, underline.size),
-                            depth,
-                            &underline.color,
-                            0,
-                        );
-                        if underline.is_doubled {
-                            // Position the second underline with a gap equal to thickness
-                            // First line is at uy, gap of underline.size, then second line
-                            self.rect(
-                                &Rect::new(
-                                    ux,
-                                    uy + (underline.size * 2.0),
-                                    end - ux,
-                                    underline.size,
-                                ),
-                                depth,
-                                &underline.color,
-                                0,
-                            );
-                        }
-                    }
-                    UnderlineShape::Dashed => {
-                        let mut start = ux;
-                        while start < end {
-                            start = start.min(end);
-                            self.rect(
-                                &Rect::new(start, uy, 6.0, underline.size),
-                                depth,
-                                &underline.color,
-                                0,
-                            );
-                            start += 8.0;
-                        }
-                    }
-                    UnderlineShape::Dotted => {
-                        let mut start = ux;
-                        while start < end {
-                            start = start.min(end);
-                            self.rect(
-                                &Rect::new(start, uy, 2.0, underline.size),
-                                depth,
-                                &underline.color,
-                                0,
-                            );
-                            start += 4.0;
-                        }
-                    }
-                    UnderlineShape::Curly => {
-                        // Create smooth curly underlines using triangles to form thick curved segments
-                        let wave_amplitude = (line_height / 12.).clamp(0.9, 1.8); // Slightly reduced amplitude
-                        let wave_frequency = 8.0; // pixels per complete wave cycle
-                        let thickness = (line_height / 16.).clamp(1.0, 2.0);
+            if ux >= end {
+                return;
+            }
 
-                        let mut x = ux;
-                        let step_size: f32 = 0.8; // Larger steps for triangle segments
+            let width = end - ux;
 
-                        while x < end - step_size {
-                            let progress1 = (x - ux) / wave_frequency;
-                            let progress2 = ((x + step_size) - ux) / wave_frequency;
-
-                            let wave_phase1 = progress1 * std::f32::consts::PI * 2.0;
-                            let wave_phase2 = progress2 * std::f32::consts::PI * 2.0;
-
-                            // Calculate Y positions for current and next points
-                            let y1 = uy + wave_phase1.sin() * wave_amplitude;
-                            let y2 = uy + wave_phase2.sin() * wave_amplitude;
-
-                            // Create thick line segment using two triangles (quad)
-                            let half_thickness = thickness * 0.5;
-
-                            // Top triangle of the quad
-                            self.add_triangle(
-                                x,
-                                y1 - half_thickness, // top-left
-                                x + step_size,
-                                y2 - half_thickness, // top-right
-                                x,
-                                y1 + half_thickness, // bottom-left
-                                depth,
-                                underline.color,
-                            );
-
-                            // Bottom triangle of the quad
-                            self.add_triangle(
-                                x + step_size,
-                                y2 - half_thickness, // top-right
-                                x + step_size,
-                                y2 + half_thickness, // bottom-right
-                                x,
-                                y1 + half_thickness, // bottom-left
-                                depth,
-                                underline.color,
-                            );
-
-                            x += step_size;
-                        }
-                    }
+            // Map UnderlineShape to underline_style:
+            // 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
+            let (underline_style, rect_height, rect_y, thickness) = match underline.shape
+            {
+                UnderlineShape::Regular => {
+                    let uy = baseline + underline.offset;
+                    (1, underline.size, uy, underline.size)
                 }
+                UnderlineShape::Dashed => {
+                    let uy = baseline + underline.offset;
+                    (2, underline.size, uy, underline.size)
+                }
+                UnderlineShape::Dotted => {
+                    let uy = baseline + underline.offset;
+                    (3, underline.size, uy, underline.size)
+                }
+                UnderlineShape::Curly => {
+                    // Curly underline needs extra height for the wave amplitude
+                    // thickness is the actual line width, rect_height includes wave amplitude
+                    let stroke = (line_height / 16.).clamp(1.0, 2.0);
+                    let wave_amplitude = stroke * 0.8; // WAVE_HEIGHT_RATIO
+                    let total_height = stroke + wave_amplitude * 2.0;
+                    let uy = baseline + underline.offset - wave_amplitude;
+                    (4, total_height, uy, stroke)
+                }
+            };
+
+            self.underline(
+                &Rect::new(ux, rect_y, width, rect_height),
+                depth,
+                &underline.color,
+                underline_style,
+                thickness,
+                0,
+            );
+
+            // Handle doubled underlines (only for regular style)
+            // Second line is placed with a small gap (1px) below the first
+            if underline.is_doubled && matches!(underline.shape, UnderlineShape::Regular)
+            {
+                let gap = 1.0;
+                let second_y = rect_y + underline.size + gap;
+                self.underline(
+                    &Rect::new(ux, second_y, width, underline.size),
+                    depth,
+                    &underline.color,
+                    1,
+                    underline.size,
+                    0,
+                );
             }
         }
     }

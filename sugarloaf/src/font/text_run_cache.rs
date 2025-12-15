@@ -63,9 +63,7 @@ impl TextRunCache {
     /// Create a new text run cache
     pub fn new() -> Self {
         Self {
-            cache: LruCache::new(
-                NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap(),
-            ),
+            cache: LruCache::new(NonZeroUsize::new(MAX_TEXT_RUN_CACHE_SIZE).unwrap()),
         }
     }
 
@@ -141,11 +139,7 @@ impl Default for TextRunCache {
 /// 2. Run length
 /// 3. Font ID
 /// 4. Font size (scaled)
-pub fn create_text_run_key(
-    text: &str,
-    font_id: usize,
-    font_size: f32,
-) -> TextRunKey {
+pub fn create_text_run_key(text: &str, font_id: usize, font_size: f32) -> TextRunKey {
     let mut hasher = WyHash::with_seed(0);
 
     // Hash each codepoint with its relative position (0, 1, 2, ...)
