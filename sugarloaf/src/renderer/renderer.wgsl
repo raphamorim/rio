@@ -10,14 +10,15 @@ struct Globals {
 struct VertexInput {
     @builtin(vertex_index) vertex_index: u32,
     @location(0) v_pos: vec3<f32>,
-    @location(1) v_color: vec4<f32>,           // Background color
+    @location(1) v_color: vec4<f32>,           // Background color / underline color
     @location(2) v_uv: vec2<f32>,
     @location(3) layers: vec2<i32>,
-    @location(4) corner_radii: vec4<f32>,      // [top_left, top_right, bottom_right, bottom_left]
-    @location(5) rect_size: vec2<f32>,
+    @location(4) corner_radii: vec4<f32>,      // [top_left, top_right, bottom_right, bottom_left] / for underlines: [thickness, 0, 0, 0]
+    @location(5) rect_size: vec2<f32>,         // For underlines: [width, height]
     @location(6) border_widths: vec4<f32>,     // [top, right, bottom, left]
     @location(7) border_color: vec4<f32>,      // Border color RGBA
     @location(8) border_style: i32,            // 0 = solid, 1 = dashed
+    @location(9) underline_style: i32,         // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
 }
 
 struct VertexOutput {
@@ -31,6 +32,7 @@ struct VertexOutput {
     @location(6) border_widths: vec4<f32>,
     @location(7) border_color: vec4<f32>,
     @location(8) @interpolate(flat) border_style: i32,
+    @location(9) @interpolate(flat) underline_style: i32,
 }
 
 @vertex
@@ -45,6 +47,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.border_widths = input.border_widths;
     out.border_color = input.border_color;
     out.border_style = input.border_style;
+    out.underline_style = input.underline_style;
 
     out.position = globals.transform * vec4<f32>(input.v_pos.xy, 0.0, 1.0);
     return out;
@@ -136,9 +139,75 @@ fn dash_alpha(t: f32, period: f32, dash_length: f32, dash_velocity: f32, antiali
     return saturate(antialias_threshold - signed_distance / dash_velocity);
 }
 
+// Calculate underline alpha for pattern rendering
+fn underline_alpha(x_pos: f32, y_pos: f32, rect_height: f32, thickness: f32, style: i32) -> f32 {
+    // style 1: regular solid line
+    if (style == 1) {
+        return 1.0;
+    }
+
+    // style 2: dashed (6px dash, 2px gap)
+    if (style == 2) {
+        let antialias = 0.5;
+        let dash_width = 6.0;
+        let gap_width = 2.0;
+        let period = dash_width + gap_width;
+        let pos_in_period = fmod(x_pos, period);
+        let start_aa = saturate(pos_in_period / antialias);
+        let end_aa = saturate((dash_width - pos_in_period) / antialias);
+        return min(start_aa, end_aa);
+    }
+
+    // style 3: dotted (2px dot, 2px gap)
+    if (style == 3) {
+        let antialias = 0.5;
+        let dot_width = 2.0;
+        let gap_width = 2.0;
+        let period = dot_width + gap_width;
+        let pos_in_period = fmod(x_pos, period);
+        let start_aa = saturate(pos_in_period / antialias);
+        let end_aa = saturate((dot_width - pos_in_period) / antialias);
+        return min(start_aa, end_aa);
+    }
+
+    // style 4: curly (sine wave) using SDF
+    if (style == 4) {
+        let WAVE_FREQUENCY: f32 = 2.0;
+        let WAVE_HEIGHT_RATIO: f32 = 0.8;
+
+        let half_thickness = thickness * 0.5;
+        let st = vec2<f32>(x_pos / rect_height, y_pos / rect_height - 0.5);
+        let frequency = M_PI_F * WAVE_FREQUENCY * thickness / rect_height;
+        let amplitude = (thickness * WAVE_HEIGHT_RATIO) / rect_height;
+
+        let sine = sin(st.x * frequency) * amplitude;
+        let dSine = cos(st.x * frequency) * amplitude * frequency;
+        let distance = (st.y - sine) / sqrt(1.0 + dSine * dSine);
+        let distance_in_pixels = distance * rect_height;
+        let distance_from_top_border = distance_in_pixels - half_thickness;
+        let distance_from_bottom_border = distance_in_pixels + half_thickness;
+        return saturate(0.5 - max(-distance_from_bottom_border, distance_from_top_border));
+    }
+
+    return 1.0;
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var out: vec4<f32> = input.f_color;
+
+    // Handle GPU-rendered underlines
+    // Underlines have: underline_style > 0, thickness in corner_radii.x
+    if (input.underline_style > 0) {
+        let width = input.rect_size.x;
+        let rect_height = input.rect_size.y;
+        let x_pos = input.f_uv.x * width;
+        let y_pos = input.f_uv.y * rect_height;
+        let thickness = input.corner_radii.x;
+
+        let alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
+        return vec4<f32>(input.f_color.rgb, input.f_color.a * alpha);
+    }
 
     // Handle texture sampling for glyphs
     if input.color_layer > 0 {

@@ -294,9 +294,21 @@ mod tests {
 
         // Test with different cursor types
         let cursor_types = vec![
-            SugarCursor { kind: CursorKind::Block, color: [1.0, 0.0, 0.0, 1.0], order: 0 },
-            SugarCursor { kind: CursorKind::Underline, color: [0.0, 1.0, 0.0, 1.0], order: 0 },
-            SugarCursor { kind: CursorKind::Caret, color: [0.0, 0.0, 1.0, 1.0], order: 0 },
+            SugarCursor {
+                kind: CursorKind::Block,
+                color: [1.0, 0.0, 0.0, 1.0],
+                order: 0,
+            },
+            SugarCursor {
+                kind: CursorKind::Underline,
+                color: [0.0, 1.0, 0.0, 1.0],
+                order: 0,
+            },
+            SugarCursor {
+                kind: CursorKind::Caret,
+                color: [0.0, 0.0, 1.0, 1.0],
+                order: 0,
+            },
         ];
 
         for cursor_type in cursor_types {
@@ -491,7 +503,11 @@ mod tests {
             ascent,
             descent,
             line_height,
-            Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 0.0, 0.0, 1.0], order: 0 }),
+            Some(SugarCursor {
+                kind: CursorKind::Block,
+                color: [1.0, 0.0, 0.0, 1.0],
+                order: 0,
+            }),
             None,
             true,
         );
@@ -601,9 +617,21 @@ mod tests {
         let line_height = 20.0;
 
         for cursor_type in [
-            Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
-            Some(SugarCursor { kind: CursorKind::Caret, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
-            Some(SugarCursor { kind: CursorKind::Underline, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
+            Some(SugarCursor {
+                kind: CursorKind::Block,
+                color: [1.0, 1.0, 1.0, 1.0],
+                order: 0,
+            }),
+            Some(SugarCursor {
+                kind: CursorKind::Caret,
+                color: [1.0, 1.0, 1.0, 1.0],
+                order: 0,
+            }),
+            Some(SugarCursor {
+                kind: CursorKind::Underline,
+                color: [1.0, 1.0, 1.0, 1.0],
+                order: 0,
+            }),
         ] {
             let result = helper.calculate_positioning(
                 "A",
@@ -674,7 +702,11 @@ mod tests {
         let font_size = 16.0;
         let ascent = 12.0;
         let descent = 3.0;
-        let cursor = Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 });
+        let cursor = Some(SugarCursor {
+            kind: CursorKind::Block,
+            color: [1.0, 1.0, 1.0, 1.0],
+            order: 0,
+        });
 
         // Test with different line heights to ensure consistency
         for test_line_height in [16.0, 20.0, 24.0, 30.0] {
@@ -733,13 +765,21 @@ mod tests {
             ("Hello", None, None),
             (
                 "World",
-                Some(SugarCursor { kind: CursorKind::Block, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
+                Some(SugarCursor {
+                    kind: CursorKind::Block,
+                    color: [1.0, 1.0, 1.0, 1.0],
+                    order: 0,
+                }),
                 None,
             ),
             ("─", None, Some(crate::DrawableChar::Horizontal)),
             (
                 "│",
-                Some(SugarCursor { kind: CursorKind::Underline, color: [1.0, 1.0, 1.0, 1.0], order: 0 }),
+                Some(SugarCursor {
+                    kind: CursorKind::Underline,
+                    color: [1.0, 1.0, 1.0, 1.0],
+                    order: 0,
+                }),
                 Some(crate::DrawableChar::Vertical),
             ),
         ];

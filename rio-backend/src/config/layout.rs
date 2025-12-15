@@ -225,12 +225,12 @@ mod tests {
             row-gap = 2
             column-gap = 3
         "#;
-        
+
         #[derive(Deserialize)]
         struct Config {
             panel: Panel,
         }
-        
+
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.panel.margin, Margin::all(8.0));
         assert_eq!(config.panel.row_gap, 2.0);
@@ -247,20 +247,20 @@ mod tests {
             row-gap = 0
             column-gap = 0
         "#;
-        
+
         #[derive(Deserialize)]
         struct Config {
             panel: Panel,
         }
-        
+
         let config: Config = toml::from_str(toml_str).unwrap();
-        
+
         // Panel margin is applied inside each panel
         assert_eq!(config.panel.margin.top, 10.0);
         assert_eq!(config.panel.margin.bottom, 10.0);
         assert_eq!(config.panel.margin.left, 5.0);
         assert_eq!(config.panel.margin.right, 5.0);
-        
+
         // Gaps control spacing BETWEEN panels, not inside
         assert_eq!(config.panel.row_gap, 0.0);
         assert_eq!(config.panel.column_gap, 0.0);
@@ -274,12 +274,12 @@ mod tests {
             row-gap = 10     # Vertical spacing when split down
             column-gap = 15  # Horizontal spacing when split right
         "#;
-        
+
         #[derive(Deserialize)]
         struct Config {
             panel: Panel,
         }
-        
+
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.panel.margin, Margin::all(5.0));
         assert_eq!(config.panel.row_gap, 10.0);

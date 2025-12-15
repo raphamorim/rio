@@ -360,7 +360,9 @@ impl Graphics {
 
             debug!(
                 "Evicting graphic id={}, bytes={}, used={}",
-                graphic_id.get(), bytes, is_used
+                graphic_id.get(),
+                bytes,
+                is_used
             );
         }
 

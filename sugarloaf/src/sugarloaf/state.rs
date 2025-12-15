@@ -191,10 +191,9 @@ impl SugarState {
     #[inline]
     pub fn set_content_position(&mut self, id: usize, x: f32, y: f32) {
         if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.set_position(
-                x * self.style.scale_factor,
-                y * self.style.scale_factor,
-            );
+            content_state
+                .render_data
+                .set_position(x * self.style.scale_factor, y * self.style.scale_factor);
         }
     }
 
@@ -207,10 +206,9 @@ impl SugarState {
         hidden: bool,
     ) {
         if let Some(content_state) = self.content.states.get_mut(&id) {
-            content_state.render_data.set_position(
-                x * self.style.scale_factor,
-                y * self.style.scale_factor,
-            );
+            content_state
+                .render_data
+                .set_position(x * self.style.scale_factor, y * self.style.scale_factor);
             content_state.render_data.set_hidden(hidden);
             content_state.render_data.should_remove = false;
         }

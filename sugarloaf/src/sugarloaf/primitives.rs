@@ -46,7 +46,12 @@ impl Corners {
     /// Convert to array [top_left, top_right, bottom_right, bottom_left].
     #[inline]
     pub fn to_array(&self) -> [f32; 4] {
-        [self.top_left, self.top_right, self.bottom_right, self.bottom_left]
+        [
+            self.top_left,
+            self.top_right,
+            self.bottom_right,
+            self.bottom_left,
+        ]
     }
 }
 

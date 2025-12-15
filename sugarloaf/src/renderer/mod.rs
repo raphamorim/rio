@@ -98,7 +98,7 @@ impl MetalRenderer {
             .expect("Failed to get fragment function");
 
         // Create vertex descriptor for rich text rendering
-        // Vertex layout (100 bytes total):
+        // Vertex layout (116 bytes total):
         // - pos: [f32; 3] = 12 bytes (offset 0)
         // - color: [f32; 4] = 16 bytes (offset 12)
         // - uv: [f32; 2] = 8 bytes (offset 28)
@@ -108,7 +108,8 @@ impl MetalRenderer {
         // - border_widths: [f32; 4] = 16 bytes (offset 68)
         // - border_color: [f32; 4] = 16 bytes (offset 84)
         // - border_style: i32 = 4 bytes (offset 100)
-        // - _padding: [i32; 3] = 12 bytes (offset 104)
+        // - underline_style: i32 = 4 bytes (offset 104)
+        // - _padding: [i32; 2] = 8 bytes (offset 108)
         // Total: 116 bytes
         let vertex_descriptor = VertexDescriptor::new();
         let attributes = vertex_descriptor.attributes();
@@ -184,6 +185,14 @@ impl MetalRenderer {
             .set_format(MTLVertexFormat::Int);
         attributes.object_at(8).unwrap().set_offset(100);
         attributes.object_at(8).unwrap().set_buffer_index(0);
+
+        // Underline style (attribute 9) - i32
+        attributes
+            .object_at(9)
+            .unwrap()
+            .set_format(MTLVertexFormat::Int);
+        attributes.object_at(9).unwrap().set_offset(104);
+        attributes.object_at(9).unwrap().set_buffer_index(0);
 
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
@@ -890,11 +899,8 @@ impl Renderer {
 
                     // Try to get cached data for this text run
                     let cached_result = if !run_text.is_empty() {
-                        self.text_run_manager.get_cached_data(
-                            &run_text,
-                            font,
-                            run.size,
-                        )
+                        self.text_run_manager
+                            .get_cached_data(&run_text, font, run.size)
                     } else {
                         CacheResult::Miss
                     };
@@ -1114,7 +1120,10 @@ impl Renderer {
                                     cached.atlas_layer,
                                 );
                             } else {
-                                tracing::warn!("Graphic {} not in cache!", graphic.id.get());
+                                tracing::warn!(
+                                    "Graphic {} not in cache!",
+                                    graphic.id.get()
+                                );
                             }
 
                             last_rendered_graphic.insert(graphic.id);
@@ -1611,6 +1620,7 @@ impl WgpuRenderer {
                                 6 => Float32x4,  // border_widths
                                 7 => Float32x4,  // border_color
                                 8 => Sint32,     // border_style (0=solid, 1=dashed)
+                                9 => Sint32,     // underline_style (0=none, 1=regular, 2=dashed, 3=dotted, 4=curly)
                             ),
                         }],
                     },

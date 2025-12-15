@@ -2,18 +2,18 @@ pub mod renderable;
 pub mod title;
 
 use crate::ansi::CursorShape;
-pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
-use rio_backend::config::layout::Margin;
 use crate::context::title::{
     create_title_extra_from_context, update_title, ContextManagerTitles,
 };
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
 use crate::ime::Ime;
+pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
+use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
 use smallvec::{smallvec, SmallVec};
 
@@ -697,7 +697,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn resize_all_grids(&mut self, width: f32, height: f32, sugarloaf: &mut Sugarloaf) {
+    pub fn resize_all_grids(
+        &mut self,
+        width: f32,
+        height: f32,
+        sugarloaf: &mut Sugarloaf,
+    ) {
         for context_grid in self.contexts.iter_mut() {
             context_grid.resize(width, height, sugarloaf);
         }
@@ -737,7 +742,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn get_by_route_id(&mut self, route_id: usize) -> Option<&mut ContextGridItem<T>> {
+    pub fn get_by_route_id(
+        &mut self,
+        route_id: usize,
+    ) -> Option<&mut ContextGridItem<T>> {
         self.contexts[self.current_index].get_by_route_id(route_id)
     }
 
@@ -1085,7 +1093,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 &cloned_config,
             ) {
                 Ok(new_context) => {
-                    let previous_scaled_margin = self.contexts[self.current_index].scaled_margin;
+                    let previous_scaled_margin =
+                        self.contexts[self.current_index].scaled_margin;
                     self.contexts.push(ContextGrid::new(
                         new_context,
                         previous_scaled_margin,
