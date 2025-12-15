@@ -526,6 +526,15 @@ impl Database {
                         bytes.len(),
                         font_index
                     );
+                    // Try to find the actual file path for this font
+                    if let Some(path) = find_font_path_from_data(&bytes) {
+                        tracing::debug!(
+                            "face_source: Found file path for memory font: {}",
+                            path.display()
+                        );
+                        return Some((Source::File(path), font_index));
+                    }
+                    // Fallback to binary if path not found
                     return Some((
                         Source::Binary(SharedData::new(bytes.to_vec())),
                         font_index,
@@ -549,4 +558,165 @@ impl Default for Database {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// System font directories to search for font files (matching fontdb)
+#[cfg(target_os = "macos")]
+const SYSTEM_FONT_DIRS: &[&str] = &[
+    "/Library/Fonts",
+    "/System/Library/Fonts",
+    "/System/Library/AssetsV2",
+    "/Network/Library/Fonts",
+];
+
+#[cfg(target_os = "windows")]
+const SYSTEM_FONT_DIRS: &[&str] = &[
+    // Note: actual paths resolved at runtime using environment variables
+];
+
+#[cfg(all(unix, not(target_os = "macos")))]
+const SYSTEM_FONT_DIRS: &[&str] = &[
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
+];
+
+/// Decode a font name from ttf-parser
+#[cfg(not(target_arch = "wasm32"))]
+fn decode_name(name: &ttf_parser::name::Name) -> Option<String> {
+    // Try UTF-16 BE first (common for Windows/Mac platform IDs)
+    if name.platform_id == ttf_parser::PlatformId::Windows
+        || name.platform_id == ttf_parser::PlatformId::Unicode
+    {
+        let bytes = name.name;
+        if bytes.len() % 2 == 0 {
+            let utf16: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                .collect();
+            return String::from_utf16(&utf16).ok();
+        }
+    }
+
+    // Try direct UTF-8 for Mac Roman
+    if name.platform_id == ttf_parser::PlatformId::Macintosh {
+        return String::from_utf8(name.name.to_vec()).ok();
+    }
+
+    None
+}
+
+/// Get the PostScript name or family name from a font face
+#[cfg(not(target_arch = "wasm32"))]
+fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
+    // Try PostScript name first
+    for name in face.names() {
+        if name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME {
+            if let Some(s) = decode_name(&name) {
+                return Some(s);
+            }
+        }
+    }
+    // Fall back to family name
+    for name in face.names() {
+        if name.name_id == ttf_parser::name_id::FAMILY {
+            if let Some(s) = decode_name(&name) {
+                return Some(s);
+            }
+        }
+    }
+    None
+}
+
+/// Build the list of font directories to search (matching fontdb)
+#[cfg(not(target_arch = "wasm32"))]
+fn get_font_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = SYSTEM_FONT_DIRS.iter().map(PathBuf::from).collect();
+
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join("Library/Fonts"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // System fonts
+        if let Some(windir) = std::env::var_os("SYSTEMROOT") {
+            dirs.push(PathBuf::from(windir).join("Fonts"));
+        }
+        // User fonts
+        if let Some(profile) = std::env::var_os("USERPROFILE") {
+            let profile = PathBuf::from(profile);
+            dirs.push(profile.join("AppData/Local/Microsoft/Windows/Fonts"));
+            dirs.push(profile.join("AppData/Roaming/Microsoft/Windows/Fonts"));
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".fonts"));
+        dirs.push(home.join(".local/share/fonts"));
+    }
+
+    dirs
+}
+
+/// Find the file path for a font given its binary data.
+/// Parses the font to get its PostScript name, then searches system directories.
+#[cfg(not(target_arch = "wasm32"))]
+fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
+    use walkdir::WalkDir;
+
+    // Parse font to get its name
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let target_name = get_font_name(&face)?;
+    let target_name_lower = target_name.to_lowercase();
+
+    tracing::debug!("find_font_path_from_data: searching for '{}'", target_name);
+
+    // Search each directory for the font file
+    for dir in get_font_dirs() {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in WalkDir::new(&dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            // Check extension
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase());
+
+            match ext.as_deref() {
+                Some("ttf") | Some("otf") | Some("ttc") | Some("otc") => {}
+                _ => continue,
+            }
+
+            // Try to parse this font and compare names
+            if let Ok(file_data) = std::fs::read(path) {
+                if let Ok(file_face) = ttf_parser::Face::parse(&file_data, 0) {
+                    if let Some(file_name) = get_font_name(&file_face) {
+                        if file_name.to_lowercase() == target_name_lower {
+                            tracing::debug!(
+                                "find_font_path_from_data: found match at {}",
+                                path.display()
+                            );
+                            return Some(path.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::debug!("find_font_path_from_data: no file found for '{}'", target_name);
+    None
 }
