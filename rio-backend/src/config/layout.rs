@@ -11,6 +11,10 @@ pub struct Panel {
     pub row_gap: f32,
     #[serde(default = "default_column_gap", rename = "column-gap")]
     pub column_gap: f32,
+    #[serde(default = "default_border_width", rename = "border-width")]
+    pub border_width: f32,
+    #[serde(default = "default_border_radius", rename = "border-radius")]
+    pub border_radius: f32,
 }
 
 impl Default for Panel {
@@ -20,13 +24,15 @@ impl Default for Panel {
             padding: default_panel_padding(),
             row_gap: default_row_gap(),
             column_gap: default_column_gap(),
+            border_width: default_border_width(),
+            border_radius: default_border_radius(),
         }
     }
 }
 
 #[inline]
 fn default_panel_margin() -> Margin {
-    Margin::all(5.0)
+    Margin::all(2.0)
 }
 
 #[inline]
@@ -41,6 +47,16 @@ fn default_row_gap() -> f32 {
 
 #[inline]
 fn default_column_gap() -> f32 {
+    0.0
+}
+
+#[inline]
+fn default_border_width() -> f32 {
+    2.0
+}
+
+#[inline]
+fn default_border_radius() -> f32 {
     0.0
 }
 
@@ -215,6 +231,8 @@ mod tests {
         assert_eq!(panel.margin, Margin::all(5.0));
         assert_eq!(panel.row_gap, 0.0);
         assert_eq!(panel.column_gap, 0.0);
+        assert_eq!(panel.border_width, 2.0);
+        assert_eq!(panel.border_radius, 0.0);
     }
 
     #[test]

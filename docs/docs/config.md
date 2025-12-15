@@ -1144,6 +1144,24 @@ Define horizontal spacing between panels when split horizontally (right). Defaul
 column-gap = 15  # 15px horizontal gap between panels
 ```
 
+### panel.border-width
+
+Define the border width around each panel. Default is `2.0`
+
+```toml
+[panel]
+border-width = 2.0  # 2px border around panels
+```
+
+### panel.border-radius
+
+Define the corner radius for panel borders. Default is `0.0` (sharp corners).
+
+```toml
+[panel]
+border-radius = 8.0  # 8px rounded corners
+```
+
 ### Full panel example
 
 ```toml
@@ -1151,6 +1169,8 @@ column-gap = 15  # 15px horizontal gap between panels
 padding = [5]       # Inner padding inside each panel
 row-gap = 10        # Vertical gap when split down
 column-gap = 15     # Horizontal gap when split right
+border-width = 2.0  # Border width around panels
+border-radius = 0.0 # Corner radius (0 = sharp)
 ```
 
 ## platform

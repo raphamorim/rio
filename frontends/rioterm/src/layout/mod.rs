@@ -72,10 +72,10 @@ pub struct BorderConfig {
 impl Default for BorderConfig {
     fn default() -> Self {
         Self {
-            width: 2.0,
+            width: 2.0,                         // Default border width
             color: [0.8, 0.8, 0.8, 1.0],        // Light gray
             active_color: [0.3, 0.8, 0.9, 1.0], // Cyan-ish for active
-            radius: 8.0,                        // Default rounded corners
+            radius: 0.0,                        // Default sharp corners
         }
     }
 }
@@ -215,10 +215,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         inner.insert(panel_node, ContextGridItem::new(context));
 
         let border_config = BorderConfig {
-            width: 1.0,
+            width: panel_config.border_width,
             color: border_color,
             active_color: border_active_color,
-            radius: 8.0, // Rounded corners for panel borders
+            radius: panel_config.border_radius,
         };
 
         let mut grid = Self {
