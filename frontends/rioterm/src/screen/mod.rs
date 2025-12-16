@@ -397,15 +397,21 @@ impl Screen<'_> {
                 config.margin.left * scale,
             ));
 
-            context_grid.update_dimensions(&mut self.sugarloaf);
-
+            // Update font size and line height BEFORE update_dimensions
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
+                self.sugarloaf
+                    .set_text_font_size(&current_context.rich_text_id, config.fonts.size);
                 self.sugarloaf.set_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
                 );
+            }
 
+            context_grid.update_dimensions(&mut self.sugarloaf);
+
+            for current_context in context_grid.contexts_mut().values_mut() {
+                let current_context = current_context.context_mut();
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
