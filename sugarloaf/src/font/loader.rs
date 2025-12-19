@@ -630,6 +630,8 @@ fn get_font_dirs() -> Vec<PathBuf> {
 // parses the font to get its PostScript name, then searches system directories.
 #[cfg(not(target_arch = "wasm32"))]
 fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
+    use memmap2::Mmap;
+    use std::fs::File;
     use walkdir::WalkDir;
 
     // Parse font to get its name
@@ -665,9 +667,18 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
                 _ => continue,
             }
 
-            // Try to parse this font and compare names
-            if let Ok(file_data) = std::fs::read(path) {
-                if let Ok(file_face) = ttf_parser::Face::parse(&file_data, 0) {
+            // Use memory mapping for efficient file access
+            let Ok(file) = File::open(path) else {
+                continue;
+            };
+            let Ok(mmap) = (unsafe { Mmap::map(&file) }) else {
+                continue;
+            };
+
+            // Handle font collections (TTC/OTC) - check all faces
+            let face_count = ttf_parser::fonts_in_collection(&mmap).unwrap_or(1);
+            for index in 0..face_count {
+                if let Ok(file_face) = ttf_parser::Face::parse(&mmap, index) {
                     if let Some(file_name) = get_font_name(&file_face) {
                         if file_name.to_lowercase() == target_name_lower {
                             tracing::debug!(
