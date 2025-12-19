@@ -580,51 +580,19 @@ const SYSTEM_FONT_DIRS: &[&str] = &[
     "/usr/local/share/fonts",
 ];
 
-/// Decode a font name from ttf-parser
-#[cfg(not(target_arch = "wasm32"))]
-fn decode_name(name: &ttf_parser::name::Name) -> Option<String> {
-    // Try UTF-16 BE first (common for Windows/Mac platform IDs)
-    if name.platform_id == ttf_parser::PlatformId::Windows
-        || name.platform_id == ttf_parser::PlatformId::Unicode
-    {
-        let bytes = name.name;
-        if bytes.len() % 2 == 0 {
-            let utf16: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
-                .collect();
-            return String::from_utf16(&utf16).ok();
-        }
-    }
-
-    // Try direct UTF-8 for Mac Roman
-    if name.platform_id == ttf_parser::PlatformId::Macintosh {
-        return String::from_utf8(name.name.to_vec()).ok();
-    }
-
-    None
-}
-
 /// Get the PostScript name or family name from a font face
 #[cfg(not(target_arch = "wasm32"))]
 fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
-    // Try PostScript name first
-    for name in face.names() {
-        if name.name_id == ttf_parser::name_id::POST_SCRIPT_NAME {
-            if let Some(s) = decode_name(&name) {
-                return Some(s);
-            }
-        }
-    }
-    // Fall back to family name
-    for name in face.names() {
-        if name.name_id == ttf_parser::name_id::FAMILY {
-            if let Some(s) = decode_name(&name) {
-                return Some(s);
-            }
-        }
-    }
-    None
+    face.names()
+        .into_iter()
+        .find(|n| n.name_id == ttf_parser::name_id::POST_SCRIPT_NAME && n.is_unicode())
+        .and_then(|n| n.to_string())
+        .or_else(|| {
+            face.names()
+                .into_iter()
+                .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
+                .and_then(|n| n.to_string())
+        })
 }
 
 /// Build the list of font directories to search (matching fontdb)
