@@ -1361,6 +1361,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             };
                             match window_update {
                                 WindowUpdate::Background(bg_state) => {
+                                    // for now setting this as allowed because it fails on linux builds
+                                    #[allow(unused_variables)]
                                     let bg_color = match bg_state {
                                         BackgroundState::Set(color) => color,
                                         BackgroundState::Reset => {
