@@ -834,7 +834,7 @@ impl Renderer {
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
-    ) {
+    ) -> Option<crate::context::renderable::WindowUpdate> {
         // let start = std::time::Instant::now();
 
         // In case rich text for search was not created
@@ -1132,9 +1132,28 @@ impl Renderer {
 
         sugarloaf.set_objects(objects);
 
+        // Apply background color from current context if changed
+        let current_context = context_manager.current_grid_mut().current_mut();
+        let window_update =
+            if let Some(bg_state) = current_context.renderable_content.background.take() {
+                use crate::context::renderable::BackgroundState;
+                match bg_state {
+                    BackgroundState::Set(color) => {
+                        sugarloaf.set_background_color(Some(color));
+                    }
+                    BackgroundState::Reset => {
+                        sugarloaf.set_background_color(None);
+                    }
+                }
+                Some(crate::context::renderable::WindowUpdate::Background(bg_state))
+            } else {
+                None
+            };
+
         sugarloaf.render();
 
         // let _duration = start.elapsed();
+        window_update
     }
 
     /// Find hint label at the specified position

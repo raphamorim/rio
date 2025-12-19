@@ -156,9 +156,9 @@ pub enum RioEvent {
 
     /// Update terminal screen colors.
     ///
-    /// The usize value represents the color index to change. That is 0 for foreground, 1 for
-    /// background, and  2 for cursor color.
-    ColorChange(usize, Option<ColorRgb>),
+    /// The first usize is the route_id, the second is the color index to change.
+    /// Color index: 0 for foreground, 1 for background, 2 for cursor color.
+    ColorChange(usize, usize, Option<ColorRgb>),
 
     // No operation
     Noop,
@@ -228,8 +228,8 @@ impl Debug for RioEvent {
             RioEvent::UpdateGraphics { route_id, .. } => {
                 write!(f, "UpdateGraphics({route_id})")
             }
-            RioEvent::ColorChange(color, rgb) => {
-                write!(f, "ColorChange({color:?}, {rgb:?})")
+            RioEvent::ColorChange(route_id, color, rgb) => {
+                write!(f, "ColorChange({route_id}, {color:?}, {rgb:?})")
             }
         }
     }

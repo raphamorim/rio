@@ -2511,7 +2511,9 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render(&mut self) {
+    pub fn render(
+        &mut self,
+    ) -> Option<crate::context::renderable::WindowUpdate> {
         // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
@@ -2545,7 +2547,7 @@ impl Screen<'_> {
         }
 
         // let renderer_run_start = std::time::Instant::now();
-        self.renderer.run(
+        let window_update = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &self.search_state.focused_match,
@@ -2572,6 +2574,7 @@ impl Screen<'_> {
         //     screen_render_duration
         // );
         // }
+        window_update
     }
 
     /// Update IME cursor position based on terminal cursor position
