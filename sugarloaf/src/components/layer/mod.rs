@@ -132,7 +132,7 @@ impl LayerBrush {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -180,8 +180,8 @@ impl LayerBrush {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("image pipeline layout"),
-            push_constant_ranges: &[],
             bind_group_layouts: &[&constant_layout, &texture_layout],
+            immediate_size: 0,
         });
 
         let shader_source = if context.supports_f16() {
@@ -258,7 +258,7 @@ impl LayerBrush {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
         });
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -486,6 +486,7 @@ impl LayerBrush {
                         depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
+                    multiview_mask: None,
                 });
 
             render_pass.set_pipeline(&self.pipeline);

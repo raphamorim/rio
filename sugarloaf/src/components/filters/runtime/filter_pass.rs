@@ -16,20 +16,16 @@ use librashader_common::{ImageFormat, Size, Viewport};
 use librashader_preprocess::ShaderSource;
 use librashader_presets::PassMeta;
 use librashader_reflect::reflect::semantics::{
-    BindingStage, MemberOffset, TextureBinding, UniformBinding,
+    MemberOffset, TextureBinding, UniformBinding,
 };
 use librashader_reflect::reflect::ShaderReflection;
 use librashader_runtime::binding::{BindSemantics, TextureInput, UniformInputs};
 use librashader_runtime::filter_pass::FilterPassMeta;
 use librashader_runtime::quad::QuadType;
 use librashader_runtime::render_target::RenderTarget;
-use librashader_runtime::uniforms::{
-    NoUniformBinder, UniformStorage, UniformStorageAccess,
-};
+use librashader_runtime::uniforms::{NoUniformBinder, UniformStorage};
 use std::sync::Arc;
-use wgpu::{
-    BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, ShaderStages,
-};
+use wgpu::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding};
 
 pub struct FilterPass {
     pub reflection: ShaderReflection,
@@ -165,7 +161,6 @@ impl FilterPass {
             });
         }
 
-        let mut has_pcb_buffer = false;
         if let Some(pcb) = &self.reflection.push_constant {
             if let Some(binding) = pcb.binding {
                 main_heap_array.push(BindGroupEntry {
@@ -176,7 +171,6 @@ impl FilterPass {
                         size: None,
                     }),
                 });
-                has_pcb_buffer = true;
             }
         }
 
@@ -195,28 +189,7 @@ impl FilterPass {
         let mut render_pass = self.graphics_pipeline.begin_rendering(output, cmd);
 
         render_pass.set_bind_group(0, &main_bind_group, &[]);
-
         render_pass.set_bind_group(1, &sampler_bind_group, &[]);
-
-        if let Some(push) = &self
-            .reflection
-            .push_constant
-            .as_ref()
-            .filter(|_| !has_pcb_buffer)
-        {
-            let mut stage_mask = ShaderStages::empty();
-            if push.stage_mask.contains(BindingStage::FRAGMENT) {
-                stage_mask |= ShaderStages::FRAGMENT;
-            }
-            if push.stage_mask.contains(BindingStage::VERTEX) {
-                stage_mask |= ShaderStages::VERTEX;
-            }
-            render_pass.set_push_constants(
-                stage_mask,
-                0,
-                self.uniform_storage.push_slice(),
-            )
-        }
 
         parent.draw_quad.draw_quad(&mut render_pass, vbo_type);
 

@@ -130,11 +130,11 @@ impl RichTextBrush {
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                push_constant_ranges: &[],
                 bind_group_layouts: &[
                     &constant_bind_group_layout,
                     &layout_bind_group_layout,
                 ],
+                immediate_size: 0,
             });
 
         let images = ImageCache::new(context);
@@ -145,7 +145,7 @@ impl RichTextBrush {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             lod_min_clamp: 0f32,
             lod_max_clamp: 0f32,
             ..Default::default()
@@ -241,7 +241,7 @@ impl RichTextBrush {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
         });
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {

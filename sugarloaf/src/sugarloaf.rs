@@ -423,6 +423,7 @@ impl Sugarloaf<'_> {
                                 },
                             })],
                             depth_stencil_attachment: None,
+                            multiview_mask: None,
                         });
 
                     if self.graphics.bottom_layer.is_some() {
@@ -461,6 +462,7 @@ impl Sugarloaf<'_> {
                                 },
                             })],
                             depth_stencil_attachment: None,
+                            multiview_mask: None,
                         });
 
                     // Render just the overlay quad directly

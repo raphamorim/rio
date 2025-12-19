@@ -13,6 +13,11 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
+## 0.2.38
+
+- Update wgpu to v0.28.
+- Update Rust to v1.92.
+
 ## 0.2.37
 
 - Support window bg color via OSC.

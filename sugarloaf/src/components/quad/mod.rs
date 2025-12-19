@@ -109,8 +109,8 @@ impl QuadBrush {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("sugarloaf::quad pipeline"),
-                    push_constant_ranges: &[],
                     bind_group_layouts: &[&constant_layout],
+                    immediate_size: 0,
                 });
 
         let shader_source = if context.supports_f16() {
@@ -196,7 +196,7 @@ impl QuadBrush {
                         mask: !0,
                         alpha_to_coverage_enabled: false,
                     },
-                    multiview: None,
+                    multiview_mask: None,
                 });
 
         Self {
