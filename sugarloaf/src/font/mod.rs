@@ -829,7 +829,7 @@ fn find_font(
                         match FontData::from_data(
                             font_data,
                             std::path::PathBuf::from(&family),
-                            evictable,
+                            false,
                             is_emoji,
                             &font_spec,
                         ) {
