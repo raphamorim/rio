@@ -13,9 +13,14 @@ language: 'en'
 - Kitty image protocol.
 - Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
 
+## 0.2.37
+
+- Fix font loader for fallbacks and extra.
+- Fix font size updating through config.
+
 ## 0.2.36
 
-- Fix: handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
+- Fix handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
 - Fix DECSCUSR.
 
 ## 0.2.35
