@@ -393,8 +393,10 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
-                self.sugarloaf
-                    .set_rich_text_font_size(&current_context.rich_text_id, config.fonts.size);
+                self.sugarloaf.set_rich_text_font_size(
+                    &current_context.rich_text_id,
+                    config.fonts.size,
+                );
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,

@@ -574,10 +574,7 @@ const SYSTEM_FONT_DIRS: &[&str] = &[
 ];
 
 #[cfg(all(unix, not(target_os = "macos")))]
-const SYSTEM_FONT_DIRS: &[&str] = &[
-    "/usr/share/fonts",
-    "/usr/local/share/fonts",
-];
+const SYSTEM_FONT_DIRS: &[&str] = &["/usr/share/fonts", "/usr/local/share/fonts"];
 
 #[cfg(not(target_arch = "wasm32"))]
 fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
@@ -647,10 +644,7 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
             continue;
         }
 
-        for entry in WalkDir::new(&dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
             let path = entry.path();
             if !path.is_file() {
                 continue;
@@ -693,6 +687,9 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
         }
     }
 
-    tracing::debug!("find_font_path_from_data: no file found for '{}'", target_name);
+    tracing::debug!(
+        "find_font_path_from_data: no file found for '{}'",
+        target_name
+    );
     None
 }
