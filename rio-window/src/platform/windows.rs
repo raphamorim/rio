@@ -253,6 +253,12 @@ impl<T> EventLoopBuilderExtWindows for EventLoopBuilder<T> {
 
 /// Additional methods on `Window` that are specific to Windows.
 pub trait WindowExtWindows {
+    /// Sets the background color of the title bar using RGBA values (0.0-1.0 range).
+    ///
+    /// This is a convenience method that converts f64 RGBA values to the Windows Color format.
+    /// Supported starting with Windows 11 Build 22000.
+    fn set_title_bar_background_color(&self, r: f64, g: f64, b: f64, a: f64);
+
     /// Enables or disables mouse and keyboard input to the specified window.
     ///
     /// A window must be enabled before it can be activated.
@@ -366,6 +372,16 @@ pub trait WindowExtWindows {
 }
 
 impl WindowExtWindows for Window {
+    #[inline]
+    fn set_title_bar_background_color(&self, r: f64, g: f64, b: f64, _a: f64) {
+        // Convert from 0.0-1.0 range to 0-255 range
+        let r = (r * 255.0) as u8;
+        let g = (g * 255.0) as u8;
+        let b = (b * 255.0) as u8;
+        self.window
+            .set_title_background_color(Color::from_rgb(r, g, b))
+    }
+
     #[inline]
     fn set_enable(&self, enabled: bool) {
         self.window.set_enable(enabled)

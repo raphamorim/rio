@@ -1356,29 +1356,41 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
-                            #[cfg(target_os = "macos")]
-                            {
-                                use crate::context::renderable::{
-                                    BackgroundState, WindowUpdate,
-                                };
-                                match window_update {
-                                    WindowUpdate::Background(bg_state) => {
-                                        let bg_color = match bg_state {
-                                            BackgroundState::Set(color) => color,
-                                            BackgroundState::Reset => {
-                                                self.config.colors.background.1
-                                            }
-                                        };
+                            use crate::context::renderable::{
+                                BackgroundState, WindowUpdate,
+                            };
+                            match window_update {
+                                WindowUpdate::Background(bg_state) => {
+                                    let bg_color = match bg_state {
+                                        BackgroundState::Set(color) => color,
+                                        BackgroundState::Reset => {
+                                            self.config.colors.background.1
+                                        }
+                                    };
+
+                                    #[cfg(target_os = "macos")]
+                                    {
                                         route.window.winit_window.set_background_color(
-                                            bg_color.r,
-                                            bg_color.g,
-                                            bg_color.b,
+                                            bg_color.r, bg_color.g, bg_color.b,
                                             bg_color.a,
                                         );
+                                    }
+
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        use rio_window::platform::windows::WindowExtWindows;
+                                        route
+                                            .window
+                                            .winit_window
+                                            .set_title_bar_background_color(
+                                                bg_color.r, bg_color.g, bg_color.b,
+                                                bg_color.a,
+                                            );
                                     }
                                 }
                             }
                         }
+
                         // Update IME cursor position after rendering to ensure it's current
                         route.window.screen.update_ime_cursor_position_if_needed(
                             &route.window.winit_window,
