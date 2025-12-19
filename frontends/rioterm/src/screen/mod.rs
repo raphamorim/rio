@@ -867,33 +867,39 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleViMode => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
-                        self.trigger_full_damage();
                         self.render();
                     }
                     Act::ViMotion(motion) => {
-                        let current_context = self.context_manager.current_mut();
-                        let mut terminal = current_context.terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         if terminal.mode().contains(Mode::VI) {
                             terminal.vi_motion(*motion);
                         }
 
                         if let Some(selection) = &terminal.selection {
-                            current_context.renderable_content.selection_range =
+                            context.renderable_content.selection_range =
                                 selection.to_range(&terminal);
                         };
                         drop(terminal);
-                        self.trigger_full_damage();
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         let display_offset = terminal.display_offset() as i32;
                         let target =
                             -display_offset + terminal.grid.screen_lines() as i32 / 2 - 1;
@@ -902,25 +908,46 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
-                        self.trigger_full_damage();
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
-                        self.trigger_full_damage();
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
-                        self.trigger_full_damage();
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
-                        self.trigger_full_damage();
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::SplitRight => {
@@ -2515,15 +2542,6 @@ impl Screen<'_> {
             close,
         );
         self.sugarloaf.render();
-    }
-
-    fn trigger_full_damage(&mut self) {
-        let current = self.context_manager.current_mut();
-        current
-            .renderable_content
-            .pending_update
-            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
-        current.renderable_content.pending_update.set_dirty();
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {

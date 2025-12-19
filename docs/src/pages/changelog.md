@@ -16,6 +16,7 @@ language: 'en'
 ## 0.2.37
 
 - Support window bg color via OSC.
+- Fix vi cursor not displayed when moving.
 - Fix font loader for fallbacks and extra.
 - Fix font size updating through config.
 
