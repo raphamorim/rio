@@ -560,7 +560,6 @@ impl Default for Database {
     }
 }
 
-/// System font directories to search for font files (matching fontdb)
 #[cfg(target_os = "macos")]
 const SYSTEM_FONT_DIRS: &[&str] = &[
     "/Library/Fonts",
@@ -580,7 +579,6 @@ const SYSTEM_FONT_DIRS: &[&str] = &[
     "/usr/local/share/fonts",
 ];
 
-/// Get the PostScript name or family name from a font face
 #[cfg(not(target_arch = "wasm32"))]
 fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
     face.names()
@@ -595,7 +593,6 @@ fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
         })
 }
 
-/// Build the list of font directories to search (matching fontdb)
 #[cfg(not(target_arch = "wasm32"))]
 fn get_font_dirs() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = SYSTEM_FONT_DIRS.iter().map(PathBuf::from).collect();
@@ -629,8 +626,8 @@ fn get_font_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Find the file path for a font given its binary data.
-/// Parses the font to get its PostScript name, then searches system directories.
+// find the file path for a font given its binary data.
+// parses the font to get its PostScript name, then searches system directories.
 #[cfg(not(target_arch = "wasm32"))]
 fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
     use walkdir::WalkDir;
