@@ -15,6 +15,7 @@ language: 'en'
 
 ## 0.2.37
 
+- Support window bg color via OSC.
 - Fix font loader for fallbacks and extra.
 - Fix font size updating through config.
 

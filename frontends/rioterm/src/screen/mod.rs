@@ -2511,9 +2511,7 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render(
-        &mut self,
-    ) -> Option<crate::context::renderable::WindowUpdate> {
+    pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {

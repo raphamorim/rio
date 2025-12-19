@@ -1134,21 +1134,24 @@ impl Renderer {
 
         // Apply background color from current context if changed
         let current_context = context_manager.current_grid_mut().current_mut();
-        let window_update =
-            if let Some(bg_state) = current_context.renderable_content.background.take() {
-                use crate::context::renderable::BackgroundState;
-                match bg_state {
-                    BackgroundState::Set(color) => {
-                        sugarloaf.set_background_color(Some(color));
-                    }
-                    BackgroundState::Reset => {
-                        sugarloaf.set_background_color(None);
-                    }
+        let window_update = if let Some(bg_state) =
+            current_context.renderable_content.background.take()
+        {
+            use crate::context::renderable::BackgroundState;
+            match bg_state {
+                BackgroundState::Set(color) => {
+                    sugarloaf.set_background_color(Some(color));
                 }
-                Some(crate::context::renderable::WindowUpdate::Background(bg_state))
-            } else {
-                None
-            };
+                BackgroundState::Reset => {
+                    sugarloaf.set_background_color(None);
+                }
+            }
+            Some(crate::context::renderable::WindowUpdate::Background(
+                bg_state,
+            ))
+        } else {
+            None
+        };
 
         sugarloaf.render();
 
