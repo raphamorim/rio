@@ -393,6 +393,10 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
+                self.sugarloaf.set_rich_text_font_size(
+                    &current_context.rich_text_id,
+                    config.fonts.size,
+                );
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
@@ -863,31 +867,39 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleViMode => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.render();
                     }
                     Act::ViMotion(motion) => {
-                        let current_context = self.context_manager.current_mut();
-                        let mut terminal = current_context.terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         if terminal.mode().contains(Mode::VI) {
                             terminal.vi_motion(*motion);
                         }
 
                         if let Some(selection) = &terminal.selection {
-                            current_context.renderable_content.selection_range =
+                            context.renderable_content.selection_range =
                                 selection.to_range(&terminal);
                         };
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         let display_offset = terminal.display_offset() as i32;
                         let target =
                             -display_offset + terminal.grid.screen_lines() as i32 / 2 - 1;
@@ -896,21 +908,46 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::SplitRight => {
@@ -2056,8 +2093,8 @@ impl Screen<'_> {
         }
 
         self.search_state.dfas = None;
-
         self.exit_search();
+        self.update_hint_state();
     }
 
     /// Cleanup the search state.
@@ -2507,7 +2544,7 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
@@ -2541,7 +2578,7 @@ impl Screen<'_> {
         }
 
         // let renderer_run_start = std::time::Instant::now();
-        self.renderer.run(
+        let window_update = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &self.search_state.focused_match,
@@ -2568,6 +2605,7 @@ impl Screen<'_> {
         //     screen_render_duration
         // );
         // }
+        window_update
     }
 
     /// Update IME cursor position based on terminal cursor position

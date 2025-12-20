@@ -13,7 +13,7 @@ use crate::watcher::configuration_file_updates;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
 use rio_backend::clipboard::{Clipboard, ClipboardType};
-use rio_backend::config::colors::ColorRgb;
+use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
     ElementState, Ime, MouseButton, MouseScrollDelta, StartCause, TouchPhase, WindowEvent,
@@ -786,6 +786,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::ColorChange(route_id, index, color)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    let screen = &mut route.window.screen;
+                    // Background color is index 1 relative to NamedColor::Foreground
+                    if index == NamedColor::Foreground as usize + 1 {
+                        let grid = screen.context_manager.current_grid_mut();
+                        if let Some(context_item) = grid.get_mut(route_id) {
+                            use crate::context::renderable::BackgroundState;
+                            context_item.context_mut().renderable_content.background =
+                                Some(match color {
+                                    Some(c) => BackgroundState::Set(c.to_wgpu()),
+                                    None => BackgroundState::Reset,
+                                });
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1338,7 +1355,44 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.render_welcome();
                     }
                     RoutePath::Terminal => {
-                        route.window.screen.render();
+                        if let Some(window_update) = route.window.screen.render() {
+                            use crate::context::renderable::{
+                                BackgroundState, WindowUpdate,
+                            };
+                            match window_update {
+                                WindowUpdate::Background(bg_state) => {
+                                    // for now setting this as allowed because it fails on linux builds
+                                    #[allow(unused_variables)]
+                                    let bg_color = match bg_state {
+                                        BackgroundState::Set(color) => color,
+                                        BackgroundState::Reset => {
+                                            self.config.colors.background.1
+                                        }
+                                    };
+
+                                    #[cfg(target_os = "macos")]
+                                    {
+                                        route.window.winit_window.set_background_color(
+                                            bg_color.r, bg_color.g, bg_color.b,
+                                            bg_color.a,
+                                        );
+                                    }
+
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        use rio_window::platform::windows::WindowExtWindows;
+                                        route
+                                            .window
+                                            .winit_window
+                                            .set_title_bar_background_color(
+                                                bg_color.r, bg_color.g, bg_color.b,
+                                                bg_color.a,
+                                            );
+                                    }
+                                }
+                            }
+                        }
+
                         // Update IME cursor position after rendering to ensure it's current
                         route.window.screen.update_ime_cursor_position_if_needed(
                             &route.window.winit_window,

@@ -68,8 +68,8 @@ impl SamplerSet {
                     };
 
                     let wgpu_mipmap_filter = match mipmap_filter {
-                        FilterMode::Linear => wgpu::FilterMode::Linear,
-                        FilterMode::Nearest => wgpu::FilterMode::Nearest,
+                        FilterMode::Linear => wgpu::MipmapFilterMode::Linear,
+                        FilterMode::Nearest => wgpu::MipmapFilterMode::Nearest,
                     };
 
                     samplers.insert(

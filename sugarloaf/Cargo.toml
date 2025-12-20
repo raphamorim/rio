@@ -75,7 +75,7 @@ twox-hash = { version = "2.1.1", default-features = false, features = [
 memmap2 = { workspace = true }
 font-kit = "0.14.3"
 walkdir = "2.5.0"
-ttf-parser = { version = "0.25.1", default-features = false, features = ["opentype-layout", "apple-layout", "variable-fonts", "glyph-names", "no-std-float"] }
+ttf-parser = { version = "0.25.1", default-features = false, features = ["std", "opentype-layout", "apple-layout", "variable-fonts", "glyph-names"] }
 
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "android"))))'.dependencies]
 fontconfig-parser = { version = "0.5.8", default-features = false }
