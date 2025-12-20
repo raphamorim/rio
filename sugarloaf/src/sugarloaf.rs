@@ -808,6 +808,7 @@ impl Sugarloaf<'_> {
                                 },
                             })],
                             depth_stencil_attachment: None,
+                            multiview_mask: None,
                         });
 
                     self.renderer.render(ctx, &mut rpass);

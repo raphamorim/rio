@@ -74,9 +74,21 @@ language: 'en'
 
 - Fix DECSCUSR.
 
+## 0.2.38
+
+- Update wgpu to v0.28.
+- Update Rust to v1.92.
+
+## 0.2.37
+
+- Support window bg color via OSC.
+- Fix vi cursor not displayed when moving.
+- Fix font loader for fallbacks and extra.
+- Fix font size updating through config.
+
 ## 0.2.36
 
-- Fix: handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
+- Fix handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
 - Fix DECSCUSR.
 
 ## 0.2.35

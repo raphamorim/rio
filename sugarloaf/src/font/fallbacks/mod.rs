@@ -1,7 +1,6 @@
 #[cfg(target_os = "macos")]
 pub fn external_fallbacks() -> Vec<String> {
     vec![
-        String::from(".SF NS"),
         String::from("Menlo"),
         String::from("Geneva"),
         String::from("Arial Unicode MS"),

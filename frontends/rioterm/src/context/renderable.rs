@@ -33,6 +33,17 @@ impl UIDamage {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum BackgroundState {
+    Set(wgpu::Color),
+    Reset,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum WindowUpdate {
+    Background(BackgroundState),
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct Cursor {
     pub state: CursorState,
@@ -64,6 +75,7 @@ pub struct RenderableContent {
     pub last_typing: Option<Instant>,
     pub last_blink_toggle: Option<Instant>,
     pub pending_update: PendingUpdate,
+    pub background: Option<BackgroundState>,
 }
 
 impl RenderableContent {
@@ -80,6 +92,7 @@ impl RenderableContent {
             hyperlink_range: None,
             pending_update: PendingUpdate::default(),
             is_blinking_cursor_visible: false,
+            background: None,
         }
     }
 

@@ -526,6 +526,15 @@ impl Database {
                         bytes.len(),
                         font_index
                     );
+                    // Try to find the actual file path for this font
+                    if let Some(path) = find_font_path_from_data(&bytes) {
+                        tracing::debug!(
+                            "face_source: Found file path for memory font: {}",
+                            path.display()
+                        );
+                        return Some((Source::File(path), font_index));
+                    }
+                    // Fallback to binary if path not found
                     return Some((
                         Source::Binary(SharedData::new(bytes.to_vec())),
                         font_index,
@@ -549,4 +558,138 @@ impl Default for Database {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[cfg(target_os = "macos")]
+const SYSTEM_FONT_DIRS: &[&str] = &[
+    "/Library/Fonts",
+    "/System/Library/Fonts",
+    "/System/Library/AssetsV2",
+    "/Network/Library/Fonts",
+];
+
+#[cfg(target_os = "windows")]
+const SYSTEM_FONT_DIRS: &[&str] = &[
+    // Note: actual paths resolved at runtime using environment variables
+];
+
+#[cfg(all(unix, not(target_os = "macos")))]
+const SYSTEM_FONT_DIRS: &[&str] = &["/usr/share/fonts", "/usr/local/share/fonts"];
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_font_name(face: &ttf_parser::Face) -> Option<String> {
+    face.names()
+        .into_iter()
+        .find(|n| n.name_id == ttf_parser::name_id::POST_SCRIPT_NAME && n.is_unicode())
+        .and_then(|n| n.to_string())
+        .or_else(|| {
+            face.names()
+                .into_iter()
+                .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
+                .and_then(|n| n.to_string())
+        })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_font_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = SYSTEM_FONT_DIRS.iter().map(PathBuf::from).collect();
+
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(home).join("Library/Fonts"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // System fonts
+        if let Some(windir) = std::env::var_os("SYSTEMROOT") {
+            dirs.push(PathBuf::from(windir).join("Fonts"));
+        }
+        // User fonts
+        if let Some(profile) = std::env::var_os("USERPROFILE") {
+            let profile = PathBuf::from(profile);
+            dirs.push(profile.join("AppData/Local/Microsoft/Windows/Fonts"));
+            dirs.push(profile.join("AppData/Roaming/Microsoft/Windows/Fonts"));
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".fonts"));
+        dirs.push(home.join(".local/share/fonts"));
+    }
+
+    dirs
+}
+
+// find the file path for a font given its binary data.
+// parses the font to get its PostScript name, then searches system directories.
+#[cfg(not(target_arch = "wasm32"))]
+fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
+    use memmap2::Mmap;
+    use std::fs::File;
+    use walkdir::WalkDir;
+
+    // Parse font to get its name
+    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let target_name = get_font_name(&face)?;
+    let target_name_lower = target_name.to_lowercase();
+
+    tracing::debug!("find_font_path_from_data: searching for '{}'", target_name);
+
+    // Search each directory for the font file
+    for dir in get_font_dirs() {
+        if !dir.exists() {
+            continue;
+        }
+
+        for entry in WalkDir::new(&dir).into_iter().filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            // Check extension
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_lowercase());
+
+            match ext.as_deref() {
+                Some("ttf") | Some("otf") | Some("ttc") | Some("otc") => {}
+                _ => continue,
+            }
+
+            // Use memory mapping for efficient file access
+            let Ok(file) = File::open(path) else {
+                continue;
+            };
+            let Ok(mmap) = (unsafe { Mmap::map(&file) }) else {
+                continue;
+            };
+
+            // Handle font collections (TTC/OTC) - check all faces
+            let face_count = ttf_parser::fonts_in_collection(&mmap).unwrap_or(1);
+            for index in 0..face_count {
+                if let Ok(file_face) = ttf_parser::Face::parse(&mmap, index) {
+                    if let Some(file_name) = get_font_name(&file_face) {
+                        if file_name.to_lowercase() == target_name_lower {
+                            tracing::debug!(
+                                "find_font_path_from_data: found match at {}",
+                                path.display()
+                            );
+                            return Some(path.to_path_buf());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::debug!(
+        "find_font_path_from_data: no file found for '{}'",
+        target_name
+    );
+    None
 }
