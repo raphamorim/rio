@@ -82,7 +82,7 @@ impl Display for Performance {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
 pub enum Backend {
     // Leave Sugarloaf/WGPU to decide
     #[default]

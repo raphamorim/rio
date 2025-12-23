@@ -13,7 +13,7 @@
     ·
     <a href="https://rioterm.com/docs/config">Config</a>
     ·
-    <a href="https://rioterm.com/docs/releases">Changelog</a>
+    <a href="https://rioterm.com/changelog">Changelog</a>
     ·
     <a href="https://github.com/sponsors/raphamorim">Sponsor</a>
   </p>
@@ -62,4 +62,4 @@ If you use and like Rio, please consider sponsoring it: your support helps to co
 
 ## Minimal stable rust version
 
-Rio's MSRV is 1.88.0.
+Rio's MSRV is 1.92.0.

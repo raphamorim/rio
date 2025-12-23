@@ -393,6 +393,10 @@ impl Screen<'_> {
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
+                self.sugarloaf.set_rich_text_font_size(
+                    &current_context.rich_text_id,
+                    config.fonts.size,
+                );
                 self.sugarloaf.set_rich_text_line_height(
                     &current_context.rich_text_id,
                     current_context.dimension.line_height,
@@ -679,7 +683,7 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut().current_mut().messenger.send_bytes(bytes);
+            self.ctx_mut().current_mut().messenger.send_write(bytes);
         }
     }
 
@@ -750,6 +754,8 @@ impl Screen<'_> {
 
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
+            let trigger = &binding.trigger;
+            let action = binding.action.clone();
 
             // We don't want the key without modifier, because it means something else most of
             // the time. However what we want is to manually lowercase the character to account
@@ -775,7 +781,7 @@ impl Screen<'_> {
                 key.logical_key.clone()
             };
 
-            let key_match = match (&binding.trigger, logical_key) {
+            let key_match = match (&trigger, logical_key) {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
                     key: code,
@@ -784,20 +790,12 @@ impl Screen<'_> {
             };
 
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &key_match) {
-                *ignore_chars.get_or_insert(true) &= binding.action != Act::ReceiveChar;
+                *ignore_chars.get_or_insert(true) &= action != Act::ReceiveChar;
 
-                match &binding.action {
+                match &action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
-                        let current_context = self.context_manager.current_mut();
-                        current_context.set_selection(None);
-                        let mut terminal = current_context.terminal.lock();
-                        terminal.selection.take();
-                        terminal.scroll_display(Scroll::Bottom);
-                        drop(terminal);
-                        current_context
-                            .messenger
-                            .send_bytes(s.to_owned().into_bytes());
+                        self.paste(s, false);
                     }
                     Act::Paste => {
                         let content =
@@ -869,31 +867,39 @@ impl Screen<'_> {
                         self.render();
                     }
                     Act::ToggleViMode => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
                         let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.render();
                     }
                     Act::ViMotion(motion) => {
-                        let current_context = self.context_manager.current_mut();
-                        let mut terminal = current_context.terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         if terminal.mode().contains(Mode::VI) {
                             terminal.vi_motion(*motion);
                         }
 
                         if let Some(selection) = &terminal.selection {
-                            current_context.renderable_content.selection_range =
+                            context.renderable_content.selection_range =
                                 selection.to_range(&terminal);
                         };
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
-                        let mut terminal =
-                            self.context_manager.current_mut().terminal.lock();
+                        let context = self.context_manager.current_mut();
+                        let mut terminal = context.terminal.lock();
                         let display_offset = terminal.display_offset() as i32;
                         let target =
                             -display_offset + terminal.grid.screen_lines() as i32 / 2 - 1;
@@ -902,21 +908,46 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                        self.render();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
                         self.toggle_selection(SelectionType::Simple, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
                         self.toggle_selection(SelectionType::Lines, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
                         self.toggle_selection(SelectionType::Block, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
                         self.toggle_selection(SelectionType::Semantic, Side::Left);
+                        self.context_manager
+                            .current_mut()
+                            .renderable_content
+                            .pending_update
+                            .set_ui_damage(rio_backend::event::TerminalDamage::Full);
                         self.render();
                     }
                     Act::SplitRight => {
@@ -2062,8 +2093,8 @@ impl Screen<'_> {
         }
 
         self.search_state.dfas = None;
-
         self.exit_search();
+        self.update_hint_state();
     }
 
     /// Cleanup the search state.
@@ -2238,7 +2269,7 @@ impl Screen<'_> {
         self.ctx_mut()
             .current_mut()
             .messenger
-            .send_bytes(msg.into_bytes());
+            .send_write(msg.into_bytes());
     }
 
     #[inline]
@@ -2321,7 +2352,7 @@ impl Screen<'_> {
             msg.push(32 + 1 + row.0 as u8);
         }
 
-        self.ctx_mut().current_mut().messenger.send_bytes(msg);
+        self.ctx_mut().current_mut().messenger.send_write(msg);
     }
 
     #[inline]
@@ -2333,7 +2364,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(msg.into_bytes());
+                .send_write(msg.into_bytes());
         }
     }
 
@@ -2409,7 +2440,7 @@ impl Screen<'_> {
             }
 
             if !content.is_empty() {
-                self.ctx_mut().current_mut().messenger.send_bytes(content);
+                self.ctx_mut().current_mut().messenger.send_write(content);
             }
         } else {
             self.mouse.accumulated_scroll.y +=
@@ -2441,7 +2472,7 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[200~"[..].to_vec());
+                .send_write(&b"\x1b[200~"[..]);
 
             // Write filtered escape sequences.
             //
@@ -2452,20 +2483,30 @@ impl Screen<'_> {
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(filtered.into_bytes());
+                .send_write(filtered.into_bytes());
 
             self.ctx_mut()
                 .current_mut()
                 .messenger
-                .send_bytes(b"\x1b[201~"[..].to_vec());
+                .send_write(&b"\x1b[201~"[..]);
         } else {
-            self.scroll_bottom_when_cursor_not_visible();
-            self.clear_selection();
+            let payload = if bracketed {
+                // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
+                // pasted data from keystrokes.
+                //
+                // In theory, we should construct the keystrokes needed to produce the data we are
+                // pasting... since that's neither practical nor sensible (and probably an
+                // impossible task to solve in a general way), we'll just replace line breaks
+                // (windows and unix style) with a single carriage return (\r, which is what the
+                // Enter key produces).
+                text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+            } else {
+                // When we explicitly disable bracketed paste don't manipulate with the input,
+                // so we pass user input as is.
+                text.to_owned().into_bytes()
+            };
 
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_bytes(text.replace("\r\n", "\r").replace('\n', "\r").into_bytes());
+            self.ctx_mut().current_mut().messenger.send_write(payload);
         }
     }
 
@@ -2503,7 +2544,7 @@ impl Screen<'_> {
         self.sugarloaf.render();
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         // let screen_render_start = std::time::Instant::now();
         let is_search_active = self.search_active();
         if is_search_active {
@@ -2537,7 +2578,7 @@ impl Screen<'_> {
         }
 
         // let renderer_run_start = std::time::Instant::now();
-        self.renderer.run(
+        let window_update = self.renderer.run(
             &mut self.sugarloaf,
             &mut self.context_manager,
             &self.search_state.focused_match,
@@ -2564,6 +2605,7 @@ impl Screen<'_> {
         //     screen_render_duration
         // );
         // }
+        window_update
     }
 
     /// Update IME cursor position based on terminal cursor position

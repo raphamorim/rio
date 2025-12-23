@@ -154,6 +154,12 @@ pub enum RioEvent {
     /// Update window titles.
     UpdateTitles,
 
+    /// Update terminal screen colors.
+    ///
+    /// The first usize is the route_id, the second is the color index to change.
+    /// Color index: 0 for foreground, 1 for background, 2 for cursor color.
+    ColorChange(usize, usize, Option<ColorRgb>),
+
     // No operation
     Noop,
 }
@@ -221,6 +227,9 @@ impl Debug for RioEvent {
             RioEvent::UpdateFontSize(action) => write!(f, "UpdateFontSize({action:?})"),
             RioEvent::UpdateGraphics { route_id, .. } => {
                 write!(f, "UpdateGraphics({route_id})")
+            }
+            RioEvent::ColorChange(route_id, color, rgb) => {
+                write!(f, "ColorChange({route_id}, {color:?}, {rgb:?})")
             }
         }
     }

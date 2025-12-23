@@ -36,15 +36,15 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    fn new(kind: AtlasKind) -> Self {
+    fn new(kind: AtlasKind, size: u16) -> Self {
         let channels = match kind {
             AtlasKind::Mask => 1,
-            AtlasKind::Color => 4, // Always 4 for Rgba8Unorm
+            AtlasKind::Color => 4,
         };
 
         Self {
-            alloc: AtlasAllocator::new(SIZE, SIZE),
-            buffer: vec![0; SIZE as usize * SIZE as usize * channels],
+            alloc: AtlasAllocator::new(size, size),
+            buffer: vec![0; size as usize * size as usize * channels],
             fresh: true,
             dirty: false,
             channels,
@@ -70,20 +70,25 @@ pub fn buffer_size(width: u32, height: u32) -> Option<usize> {
         .checked_add(4)
 }
 
-pub const SIZE: u16 = 4096;
-
 impl ImageCache {
     /// Creates a new image cache with dual atlases.
     pub fn new(context: &Context) -> Self {
         let device = &context.device;
-        let max_texture_size = SIZE;
+        let max_size = context.max_texture_dimension_2d();
+        let max_texture_size = std::cmp::min(2048, max_size) as u16;
+
+        tracing::info!(
+            "Creating rich_text image cache with size: {}x{}",
+            max_texture_size,
+            max_texture_size
+        );
 
         // Create mask texture (R8 format for alpha masks)
         let mask_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text mask atlas"),
             size: wgpu::Extent3d {
-                width: SIZE as u32,
-                height: SIZE as u32,
+                width: max_texture_size as u32,
+                height: max_texture_size as u32,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
@@ -101,8 +106,8 @@ impl ImageCache {
         let color_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("rich_text color atlas"),
             size: wgpu::Extent3d {
-                width: SIZE as u32,
-                height: SIZE as u32,
+                width: max_texture_size as u32,
+                height: max_texture_size as u32,
                 depth_or_array_layers: 1,
             },
             view_formats: &[],
@@ -117,8 +122,8 @@ impl ImageCache {
 
         Self {
             entries: Vec::new(),
-            mask_atlas: Atlas::new(AtlasKind::Mask),
-            color_atlas: Atlas::new(AtlasKind::Color), // Always 4 bytes per pixel for Rgba8Unorm
+            mask_atlas: Atlas::new(AtlasKind::Mask, max_texture_size),
+            color_atlas: Atlas::new(AtlasKind::Color, max_texture_size),
             max_texture_size,
             mask_texture,
             color_texture,
@@ -241,12 +246,10 @@ impl ImageCache {
 
     /// Clears all entries and resets the atlas. Used when fonts change.
     pub fn clear_atlas(&mut self) {
-        // Clear all entries
         self.entries.clear();
 
-        // Reset both atlases
-        self.mask_atlas = Atlas::new(AtlasKind::Mask);
-        self.color_atlas = Atlas::new(AtlasKind::Color);
+        self.mask_atlas = Atlas::new(AtlasKind::Mask, self.max_texture_size);
+        self.color_atlas = Atlas::new(AtlasKind::Color, self.max_texture_size);
 
         tracing::info!("Dual atlases cleared due to font change");
     }

@@ -416,12 +416,14 @@ impl Sugarloaf<'_> {
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                                 view: &view,
                                 resolve_target: None,
+                                depth_slice: None,
                                 ops: wgpu::Operations {
                                     load,
                                     store: wgpu::StoreOp::Store,
                                 },
                             })],
                             depth_stencil_attachment: None,
+                            multiview_mask: None,
                         });
 
                     if self.graphics.bottom_layer.is_some() {
@@ -451,6 +453,7 @@ impl Sugarloaf<'_> {
                             occlusion_query_set: None,
                             label: Some("visual_bell"),
                             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                depth_slice: None,
                                 view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
@@ -459,6 +462,7 @@ impl Sugarloaf<'_> {
                                 },
                             })],
                             depth_stencil_attachment: None,
+                            multiview_mask: None,
                         });
 
                     // Render just the overlay quad directly

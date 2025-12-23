@@ -166,11 +166,5 @@ test:
 	RUST_BACKTRACE=full cargo test --release
 
 publish-crates: build
-	cargo publish -p rio-window
-	cargo publish -p sugarloaf
-	cargo publish -p rio-proc-macros
-	cargo publish -p copa
-	cargo publish -p corcovado
-	cargo publish -p teletypewriter
-	cargo publish -p rio-backend
-	cargo publish -p rioterm
+	# Note: cargo publish is only supported from >=1.90
+	cargo publish --workspace

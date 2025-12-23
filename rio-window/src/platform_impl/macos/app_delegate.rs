@@ -33,6 +33,8 @@ use crate::event::{
 use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow};
 use crate::window::WindowId as RootWindowId;
 
+pub const UTF8_ENCODING: usize = 4;
+
 #[repr(u64)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum NSApplicationTerminateReply {
@@ -116,19 +118,19 @@ declare_class!(
                 let cancel = "Cancel";
 
                 let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
-                let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:4];
+                let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:UTF8_ENCODING];
 
                 let title_string: *mut Object = msg_send![class!(NSString), alloc];
-                let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:4];
+                let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:UTF8_ENCODING];
 
                 let yes_string: *mut Object = msg_send![class!(NSString), alloc];
-                let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:4];
+                let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:UTF8_ENCODING];
 
                 let no_string: *mut Object = msg_send![class!(NSString), alloc];
-                let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:4];
+                let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:UTF8_ENCODING];
 
                 let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
-                let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:4];
+                let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:UTF8_ENCODING];
 
                 let _: () = msg_send![panel, setMessageText: title_allocated_string];
                 let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
@@ -235,6 +237,30 @@ declare_class!(
             trace_scope!("applicationWillTerminate:");
             // TODO: Notify every window that it will be destroyed, like done in iOS?
             self.internal_exit();
+        }
+
+        #[method(applicationWillFinishLaunching:)]
+        fn will_finish_launching(&self, _sender: Option<&AnyObject>) {
+            use objc::runtime::Object;
+            use objc::{msg_send};
+            use objc::sel;
+            use objc::class;
+            use objc::sel_impl;
+
+            unsafe {
+                let user_defaults: *mut Object = msg_send![class!(NSUserDefaults), standardUserDefaults];
+
+                // The autofill heuristic controller causes slowdown and high CPU usage.
+                // We don't know exactly why. This disables the full heuristic controller.
+                //
+                // Adapted from: https://github.com/ghostty-org/ghostty/pull/8625
+                let name = str_to_nsstring("NSAutoFillHeuristicControllerEnabled");
+                let existing_value: *mut Object = msg_send![user_defaults, objectForKey: name];
+                if existing_value.is_null() {
+                    let false_value: *mut Object = msg_send![class!(NSNumber), numberWithBool:false];
+                    let _: () = msg_send![user_defaults, setObject: false_value forKey: name];
+                }
+            }
         }
 
         #[method(application:openURLs:)]
@@ -535,6 +561,7 @@ impl ApplicationDelegate {
         }
     }
 
+    #[allow(unused)]
     pub fn queue_redraw(&self, window_id: WindowId) {
         let mut pending_redraw = self.ivars().pending_redraw.borrow_mut();
         if !pending_redraw.contains(&window_id) {
@@ -769,6 +796,24 @@ pub(crate) enum QueuedEvent {
 
 #[derive(Debug)]
 pub(crate) struct HandlePendingUserEvents;
+
+fn str_to_nsstring(str: &str) -> *mut objc::runtime::Object {
+    unsafe {
+        use objc::class;
+        use objc::msg_send;
+        use objc::sel;
+        use objc::sel_impl;
+        let ns_string: *mut objc::runtime::Object = msg_send![class!(NSString), alloc];
+        let ns_string: *mut objc::runtime::Object = msg_send![
+            ns_string,
+            initWithBytes: str.as_ptr()
+            length: str.len()
+            encoding: UTF8_ENCODING
+        ];
+        let _: () = msg_send![ns_string, autorelease];
+        ns_string
+    }
+}
 
 /// Returns the minimum `Option<Instant>`, taking into account that `None`
 /// equates to an infinite timeout, not a zero timeout (so can't just use

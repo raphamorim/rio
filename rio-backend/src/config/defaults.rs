@@ -485,8 +485,8 @@ pub fn default_config_file_content() -> String {
 # [bindings]
 # keys = [
 #   { key = "q", with = "super", action = "Quit" },
-#   # Bytes[27, 91, 53, 126] is equivalent to "\x1b[5~"
-#   { key = "home", with = "super | shift", bytes = [27, 91, 53, 126] }
+#   # Send escape sequence to clear screen
+#   { key = "l", with = "control", esc = "\u001b[2J\u001b[H" }
 # ]
 
 # Platform

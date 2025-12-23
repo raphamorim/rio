@@ -132,7 +132,7 @@ impl LayerBrush {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -180,8 +180,8 @@ impl LayerBrush {
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("image pipeline layout"),
-            push_constant_ranges: &[],
             bind_group_layouts: &[&constant_layout, &texture_layout],
+            immediate_size: 0,
         });
 
         let shader_source = if context.supports_f16() {
@@ -258,7 +258,7 @@ impl LayerBrush {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
         });
 
         let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -335,6 +335,7 @@ impl LayerBrush {
                     [bounds.width, bounds.height],
                     atlas_entry,
                     instances,
+                    self.texture_atlas.size(),
                 );
             }
         }
@@ -396,6 +397,7 @@ impl LayerBrush {
                 [bounds.width, bounds.height],
                 atlas_entry,
                 instances,
+                self.texture_atlas.size(),
             );
         }
 
@@ -481,8 +483,10 @@ impl LayerBrush {
                             load: wgpu::LoadOp::Load,
                             store: wgpu::StoreOp::Store,
                         },
+                        depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
+                    multiview_mask: None,
                 });
 
             render_pass.set_pipeline(&self.pipeline);
@@ -585,10 +589,17 @@ fn add_instances(
     image_size: [f32; 2],
     entry: &atlas::Entry,
     instances: &mut Vec<Instance>,
+    atlas_size: u32,
 ) {
     match entry {
         atlas::Entry::Contiguous(allocation) => {
-            add_instance(image_position, image_size, allocation, instances);
+            add_instance(
+                image_position,
+                image_size,
+                allocation,
+                instances,
+                atlas_size,
+            );
         }
         atlas::Entry::Fragmented { fragments, size } => {
             let scaling_x = image_size[0] / size.width as f32;
@@ -614,7 +625,7 @@ fn add_instances(
                     fragment_height as f32 * scaling_y,
                 ];
 
-                add_instance(position, size, allocation, instances);
+                add_instance(position, size, allocation, instances, atlas_size);
             }
         }
     }
@@ -626,6 +637,7 @@ fn add_instance(
     size: [f32; 2],
     allocation: &atlas::Allocation,
     instances: &mut Vec<Instance>,
+    atlas_size: u32,
 ) {
     let (x, y) = allocation.position();
     let Size { width, height } = allocation.size();
@@ -635,12 +647,12 @@ fn add_instance(
         _position: position,
         _size: size,
         _position_in_atlas: [
-            (x as f32 + 0.5) / atlas::SIZE as f32,
-            (y as f32 + 0.5) / atlas::SIZE as f32,
+            (x as f32 + 0.5) / atlas_size as f32,
+            (y as f32 + 0.5) / atlas_size as f32,
         ],
         _size_in_atlas: [
-            (width as f32 - 1.0) / atlas::SIZE as f32,
-            (height as f32 - 1.0) / atlas::SIZE as f32,
+            (width as f32 - 1.0) / atlas_size as f32,
+            (height as f32 - 1.0) / atlas_size as f32,
         ],
         _layer: layer as u32,
     };
