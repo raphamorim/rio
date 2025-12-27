@@ -781,7 +781,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Background color is index 1 relative to NamedColor::Foreground
                     if index == NamedColor::Foreground as usize + 1 {
                         let grid = screen.context_manager.current_grid_mut();
-                        if let Some(context_item) = grid.get_mut(route_id) {
+                        if let Some(context_item) = grid.get_mut(route_id.into()) {
                             use crate::context::renderable::BackgroundState;
                             context_item.context_mut().renderable_content.background =
                                 Some(match color {
