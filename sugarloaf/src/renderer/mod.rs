@@ -1268,6 +1268,32 @@ impl Renderer {
         );
     }
 
+    /// Draw an arc (curved stroke)
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        stroke_width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        self.comp.batches.add_arc(
+            center_x,
+            center_y,
+            radius,
+            start_angle,
+            end_angle,
+            stroke_width,
+            depth,
+            &color,
+        );
+    }
+
     #[inline]
     pub fn add_image_rect(
         &mut self,
@@ -1488,11 +1514,11 @@ impl WgpuRenderer {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
-                    push_constant_ranges: &[],
                     bind_group_layouts: &[
                         &constant_bind_group_layout,
                         &layout_bind_group_layout,
                     ],
+                    immediate_size: 0,
                 });
 
         let sampler = context.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -1501,7 +1527,7 @@ impl WgpuRenderer {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             lod_min_clamp: 0f32,
             lod_max_clamp: 0f32,
             ..Default::default()
@@ -1645,7 +1671,7 @@ impl WgpuRenderer {
                     },
                     depth_stencil: None,
                     multisample: wgpu::MultisampleState::default(),
-                    multiview: None,
+                    multiview_mask: None,
                 });
 
         let vertex_buffer = context.device.create_buffer(&wgpu::BufferDescriptor {

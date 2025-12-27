@@ -411,6 +411,12 @@ impl Content {
         }
     }
 
+    /// Get the UI font ID (DepartureMono) for use in UI elements
+    #[inline]
+    pub fn ui_font_id(&self) -> usize {
+        self.fonts.ui_font_id()
+    }
+
     #[inline]
     pub fn sel(&mut self, state_id: usize) -> &mut Content {
         self.selector = Some(state_id);

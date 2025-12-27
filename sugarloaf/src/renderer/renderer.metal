@@ -104,6 +104,17 @@ float quarter_ellipse_sdf(float2 point, float2 radii) {
     return unit_circle_sdf * (radii.x + radii.y) * -0.5;
 }
 
+// Arc SDF from Inigo Quilez (https://iquilezles.org/articles/distfunctions2d/)
+// p: point relative to arc center
+// sc: float2(sin(aperture), cos(aperture)) where aperture is half the arc's opening angle
+// ra: arc radius
+// rb: arc thickness (stroke width / 2)
+float sd_arc(float2 p, float2 sc, float ra, float rb) {
+    float2 pa = float2(abs(p.x), p.y);
+    float k = (sc.y * pa.x > sc.x * pa.y) ? length(pa - sc * ra) : abs(length(pa) - ra);
+    return k - rb;
+}
+
 // Alpha blend: place `above` on top of `below`
 float4 over(float4 below, float4 above) {
     float alpha = above.a + below.a * (1.0 - above.a);
@@ -216,6 +227,42 @@ fragment float4 fs_main(
         float thickness = input.corner_radii.x;
 
         float alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
+        return float4(input.f_color.rgb, input.f_color.a * alpha);
+    }
+
+    // Handle GPU-rendered arcs (border_style == -1)
+    // Arc params: corner_radii.x = radius, corner_radii.y = stroke_width
+    //             corner_radii.z = sin(aperture), corner_radii.w = cos(aperture)
+    //             border_widths.x = rotation angle (radians)
+    //             border_widths.yz = arc center offset from box center
+    if (input.border_style == -1) {
+        float2 size = input.rect_size;
+        // Convert UV (0-1) to local position centered at arc center
+        float2 arc_offset = float2(input.border_widths.y, input.border_widths.z);
+        float2 local_pos = (input.f_uv - 0.5) * size - arc_offset;
+
+        // Apply rotation for arc orientation
+        float rot_angle = input.border_widths.x;
+        float cos_r = cos(rot_angle);
+        float sin_r = sin(rot_angle);
+        float2 rotated_pos = float2(
+            local_pos.x * cos_r - local_pos.y * sin_r,
+            local_pos.x * sin_r + local_pos.y * cos_r
+        );
+
+        float radius = input.corner_radii.x;
+        float stroke_width = input.corner_radii.y;
+        float2 sc = float2(input.corner_radii.z, input.corner_radii.w);
+
+        float dist = sd_arc(rotated_pos, sc, radius, stroke_width / 2.0);
+
+        // Antialiasing
+        float alpha = 1.0 - smoothstep(-0.5, 0.5, dist);
+
+        if (alpha < 0.01) {
+            discard_fragment();
+        }
+
         return float4(input.f_color.rgb, input.f_color.a * alpha);
     }
 

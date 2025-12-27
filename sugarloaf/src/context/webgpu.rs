@@ -46,7 +46,9 @@ impl<'a> WgpuContext<'a> {
         #[cfg(not(target_arch = "wasm32"))]
         {
             tracing::info!("Available adapters:");
-            for a in instance.enumerate_adapters(wgpu::Backends::all()) {
+            let adapters =
+                futures::executor::block_on(instance.enumerate_adapters(wgpu::Backends::all()));
+            for a in adapters {
                 tracing::info!("    {:?}", a.get_info())
             }
         }

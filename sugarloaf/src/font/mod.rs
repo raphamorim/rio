@@ -136,6 +136,12 @@ impl FontLibrary {
             sugarloaf_errors,
         )
     }
+
+    /// Get the UI font ID (DepartureMono) for use in UI elements
+    #[inline]
+    pub fn ui_font_id(&self) -> usize {
+        self.inner.read().ui_font_id
+    }
 }
 
 impl Default for FontLibrary {
@@ -161,6 +167,8 @@ pub struct FontLibraryData {
     pub hinting: bool,
     // Cache primary font metrics for consistent cell dimensions (consistent metrics approach)
     primary_metrics_cache: FxHashMap<u32, Metrics>,
+    // UI font (DepartureMono) ID for welcome screen and other UI elements
+    pub ui_font_id: usize,
 }
 
 impl Default for FontLibraryData {
@@ -170,6 +178,7 @@ impl Default for FontLibraryData {
             hinting: true,
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
+            ui_font_id: 0,
         }
     }
 }
@@ -452,6 +461,10 @@ impl FontLibraryData {
         }
 
         self.insert(FontData::from_slice(FONT_SYMBOLS_NERD_FONT_MONO, false).unwrap());
+
+        // Load UI font (DepartureMono) for welcome screen and other UI elements
+        self.ui_font_id = self.inner.len();
+        self.insert(FontData::from_slice(FONT_DEPARTURE_MONO, false).unwrap());
 
         // TODO: Currently, it will naively just extend fonts from symbol_map
         // without even look if the font has been loaded before.

@@ -463,6 +463,37 @@ impl Sugarloaf<'_> {
         }
     }
 
+    /// Draw an arc (curved stroke)
+    /// - `center_x`, `center_y` - center point of the arc
+    /// - `radius` - radius of the arc
+    /// - `start_angle`, `end_angle` - angles in degrees (0 = right, 90 = down)
+    /// - `stroke_width` - width of the arc stroke
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle: f32,
+        end_angle: f32,
+        stroke_width: f32,
+        color: [f32; 4],
+        depth: f32,
+    ) {
+        let scale = self.state.style.scale_factor;
+        self.renderer.arc(
+            center_x * scale,
+            center_y * scale,
+            radius * scale,
+            start_angle,
+            end_angle,
+            stroke_width * scale,
+            color,
+            depth,
+        );
+    }
+
     /// Add a rounded rectangle to content system
     /// - `id: None` - not cached, rendered immediately
     /// - `id: Some(n)` - cached with id n, overwrites existing content
@@ -655,6 +686,12 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn window_size(&self) -> SugarloafWindowSize {
         self.ctx.size()
+    }
+
+    /// Get the UI font ID (DepartureMono) for use in UI elements like welcome screen
+    #[inline]
+    pub fn ui_font_id(&self) -> usize {
+        self.state.content.ui_font_id()
     }
 
     #[inline]

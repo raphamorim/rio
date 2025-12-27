@@ -309,6 +309,12 @@ impl Batch {
         true
     }
 
+    /// Add arc using GPU SDF shader
+    /// Arc params encoded in vertex attributes:
+    /// - corner_radii.x = radius, corner_radii.y = stroke_width
+    /// - corner_radii.z = sin(aperture), corner_radii.w = cos(aperture)
+    /// - border_widths.x = rotation angle (radians)
+    /// - border_style = -1 (signals arc mode to shader)
     #[allow(clippy::too_many_arguments)]
     #[inline]
     fn add_arc(
@@ -343,105 +349,162 @@ impl Batch {
         let start_angle = start_angle_deg.to_radians();
         let end_angle = end_angle_deg.to_radians();
 
-        // Number of segments to use for the arc (more segments = smoother curve)
-        let segments = 16;
-
-        // Calculate angle increment per segment
+        // Calculate aperture (half the arc opening) and rotation
+        // IQ's arc SDF is symmetric around +Y axis
         let angle_diff = if end_angle >= start_angle {
             end_angle - start_angle
         } else {
             2.0 * std::f32::consts::PI - (start_angle - end_angle)
         };
-        let angle_increment = angle_diff / segments as f32;
+        let aperture = angle_diff / 2.0;
+        let mid_angle = start_angle + aperture;
+        // Rotation to align arc center with +Y axis
+        // We need to rotate so that mid_angle maps to +Y (90° / PI/2)
+        let rotation = std::f32::consts::FRAC_PI_2 - mid_angle;
 
-        // Calculate inner and outer radius for the stroke
-        let inner_radius = radius - stroke_width / 2.0;
-        let outer_radius = radius + stroke_width / 2.0;
+        // sin/cos of aperture for the SDF
+        let sin_aperture = aperture.sin();
+        let cos_aperture = aperture.cos();
 
-        // Create vertices for the arc segments
-        let mut current_angle = start_angle;
+        // Calculate tight bounding box for the visible arc segment
+        let outer_radius = radius + stroke_width / 2.0 + 1.0;
+        let inner_radius = (radius - stroke_width / 2.0 - 1.0).max(0.0);
 
-        for _ in 0..segments {
-            let next_angle = current_angle + angle_increment;
+        // Calculate bounding box from arc endpoints and check for axis crossings
+        let mut min_x = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut min_y = f32::MAX;
+        let mut max_y = f32::MIN;
 
-            // Calculate vertex positions for current and next angle
-            let inner_x1 = center_x + inner_radius * current_angle.cos();
-            let inner_y1 = center_y + inner_radius * current_angle.sin();
-            let outer_x1 = center_x + outer_radius * current_angle.cos();
-            let outer_y1 = center_y + outer_radius * current_angle.sin();
-
-            let inner_x2 = center_x + inner_radius * next_angle.cos();
-            let inner_y2 = center_y + inner_radius * next_angle.sin();
-            let outer_x2 = center_x + outer_radius * next_angle.cos();
-            let outer_y2 = center_y + outer_radius * next_angle.sin();
-
-            // Create vertex objects
-            let v0 = Vertex {
-                pos: [inner_x1, inner_y1, depth],
-                color: *color,
-                uv: [0.0, 0.0],
-                layers,
-                corner_radii: [0.0; 4],
-                rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
-                underline_style: 0,
-                _padding: [0; 2],
-            };
-            let v1 = Vertex {
-                pos: [inner_x2, inner_y2, depth],
-                color: *color,
-                uv: [0.0, 1.0],
-                layers,
-                corner_radii: [0.0; 4],
-                rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
-                underline_style: 0,
-                _padding: [0; 2],
-            };
-            let v2 = Vertex {
-                pos: [outer_x2, outer_y2, depth],
-                color: *color,
-                uv: [1.0, 1.0],
-                layers,
-                corner_radii: [0.0; 4],
-                rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
-                underline_style: 0,
-                _padding: [0; 2],
-            };
-            let v3 = Vertex {
-                pos: [outer_x1, outer_y1, depth],
-                color: *color,
-                uv: [1.0, 0.0],
-                layers,
-                corner_radii: [0.0; 4],
-                rect_size: [0.0, 0.0],
-                border_widths: [0.0; 4],
-                border_color: [0.0; 4],
-                border_style: 0,
-                underline_style: 0,
-                _padding: [0; 2],
-            };
-
-            // Add vertices directly in drawing order (two triangles)
-            // First triangle: v0, v1, v2
-            self.vertices.push(v0);
-            self.vertices.push(v1);
-            self.vertices.push(v2);
-
-            // Second triangle: v2, v3, v0
-            self.vertices.push(v2);
-            self.vertices.push(v3);
-            self.vertices.push(v0);
-
-            current_angle = next_angle;
+        // Check endpoints
+        for angle in [start_angle, end_angle] {
+            let px = center_x + outer_radius * angle.cos();
+            let py = center_y + outer_radius * angle.sin();
+            min_x = min_x.min(px);
+            max_x = max_x.max(px);
+            min_y = min_y.min(py);
+            max_y = max_y.max(py);
+            // Also check inner radius for stroke
+            let px_inner = center_x + inner_radius * angle.cos();
+            let py_inner = center_y + inner_radius * angle.sin();
+            min_x = min_x.min(px_inner);
+            max_x = max_x.max(px_inner);
+            min_y = min_y.min(py_inner);
+            max_y = max_y.max(py_inner);
         }
+
+        // Check if arc crosses cardinal directions (0, 90, 180, 270 degrees)
+        let angles_to_check = [0.0_f32, std::f32::consts::FRAC_PI_2, std::f32::consts::PI, 3.0 * std::f32::consts::FRAC_PI_2];
+        for &angle in &angles_to_check {
+            // Normalize angle check
+            let normalized_start = start_angle.rem_euclid(2.0 * std::f32::consts::PI);
+            let normalized_end = end_angle.rem_euclid(2.0 * std::f32::consts::PI);
+            let normalized_check = angle.rem_euclid(2.0 * std::f32::consts::PI);
+
+            let in_range = if normalized_start <= normalized_end {
+                normalized_check >= normalized_start && normalized_check <= normalized_end
+            } else {
+                normalized_check >= normalized_start || normalized_check <= normalized_end
+            };
+
+            if in_range {
+                let px = center_x + outer_radius * angle.cos();
+                let py = center_y + outer_radius * angle.sin();
+                min_x = min_x.min(px);
+                max_x = max_x.max(px);
+                min_y = min_y.min(py);
+                max_y = max_y.max(py);
+            }
+        }
+
+        // Add padding
+        min_x -= 1.0;
+        min_y -= 1.0;
+        max_x += 1.0;
+        max_y += 1.0;
+
+        let box_width = max_x - min_x;
+        let box_height = max_y - min_y;
+        let box_center_x = (min_x + max_x) / 2.0;
+        let box_center_y = (min_y + max_y) / 2.0;
+
+        // Arc center offset from box center
+        let arc_offset_x = center_x - box_center_x;
+        let arc_offset_y = center_y - box_center_y;
+
+        // corner_radii: [radius, stroke_width, sin(aperture), cos(aperture)]
+        let corner_radii = [radius, stroke_width, sin_aperture, cos_aperture];
+        // border_widths: [rotation, arc_offset_x, arc_offset_y, 0]
+        let border_widths = [rotation, arc_offset_x, arc_offset_y, 0.0];
+        let rect_size = [box_width, box_height];
+
+        let x = min_x;
+        let y = min_y;
+
+        // Create quad vertices with UV coordinates
+        let v0 = Vertex {
+            pos: [x, y, depth],
+            color: *color,
+            uv: [0.0, 0.0],
+            layers,
+            corner_radii,
+            rect_size,
+            border_widths,
+            border_color: [0.0; 4],
+            border_style: -1, // Signal arc mode
+            underline_style: 0,
+            _padding: [0; 2],
+        };
+        let v1 = Vertex {
+            pos: [x, y + box_height, depth],
+            color: *color,
+            uv: [0.0, 1.0],
+            layers,
+            corner_radii,
+            rect_size,
+            border_widths,
+            border_color: [0.0; 4],
+            border_style: -1,
+            underline_style: 0,
+            _padding: [0; 2],
+        };
+        let v2 = Vertex {
+            pos: [x + box_width, y + box_height, depth],
+            color: *color,
+            uv: [1.0, 1.0],
+            layers,
+            corner_radii,
+            rect_size,
+            border_widths,
+            border_color: [0.0; 4],
+            border_style: -1,
+            underline_style: 0,
+            _padding: [0; 2],
+        };
+        let v3 = Vertex {
+            pos: [x + box_width, y, depth],
+            color: *color,
+            uv: [1.0, 0.0],
+            layers,
+            corner_radii,
+            rect_size,
+            border_widths,
+            border_color: [0.0; 4],
+            border_style: -1,
+            underline_style: 0,
+            _padding: [0; 2],
+        };
+
+        // Add vertices for two triangles forming the quad
+        // First triangle: v0, v1, v2
+        self.vertices.push(v0.clone());
+        self.vertices.push(v1);
+        self.vertices.push(v2.clone());
+
+        // Second triangle: v2, v3, v0
+        self.vertices.push(v2);
+        self.vertices.push(v3);
+        self.vertices.push(v0);
 
         true
     }

@@ -99,6 +99,17 @@ fn quarter_ellipse_sdf(point: vec2<f32>, radii: vec2<f32>) -> f32 {
     return unit_circle_sdf * (radii.x + radii.y) * -0.5;
 }
 
+// Arc SDF from Inigo Quilez (https://iquilezles.org/articles/distfunctions2d/)
+// p: point relative to arc center
+// sc: vec2(sin(aperture), cos(aperture)) where aperture is half the arc's opening angle
+// ra: arc radius
+// rb: arc thickness (stroke width / 2)
+fn sd_arc(p: vec2<f32>, sc: vec2<f32>, ra: f32, rb: f32) -> f32 {
+    let pa = vec2<f32>(abs(p.x), p.y);
+    let k = select(abs(length(pa) - ra), length(pa - sc * ra), sc.y * pa.x > sc.x * pa.y);
+    return k - rb;
+}
+
 // Alpha blend: place `above` on top of `below`
 fn over(below: vec4<f32>, above: vec4<f32>) -> vec4<f32> {
     let alpha = above.a + below.a * (1.0 - above.a);
@@ -206,6 +217,42 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         let thickness = input.corner_radii.x;
 
         let alpha = underline_alpha(x_pos, y_pos, rect_height, thickness, input.underline_style);
+        return vec4<f32>(input.f_color.rgb, input.f_color.a * alpha);
+    }
+
+    // Handle GPU-rendered arcs (border_style == -1)
+    // Arc params: corner_radii.x = radius, corner_radii.y = stroke_width
+    //             corner_radii.z = sin(aperture), corner_radii.w = cos(aperture)
+    //             border_widths.x = rotation angle (radians)
+    //             border_widths.yz = arc center offset from box center
+    if (input.border_style == -1) {
+        let size = input.rect_size;
+        // Convert UV (0-1) to local position centered at arc center
+        let arc_offset = vec2<f32>(input.border_widths.y, input.border_widths.z);
+        let local_pos = (input.f_uv - 0.5) * size - arc_offset;
+
+        // Apply rotation for arc orientation
+        let rot_angle = input.border_widths.x;
+        let cos_r = cos(rot_angle);
+        let sin_r = sin(rot_angle);
+        let rotated_pos = vec2<f32>(
+            local_pos.x * cos_r - local_pos.y * sin_r,
+            local_pos.x * sin_r + local_pos.y * cos_r
+        );
+
+        let radius = input.corner_radii.x;
+        let stroke_width = input.corner_radii.y;
+        let sc = vec2<f32>(input.corner_radii.z, input.corner_radii.w);
+
+        let dist = sd_arc(rotated_pos, sc, radius, stroke_width / 2.0);
+
+        // Antialiasing
+        let alpha = 1.0 - smoothstep(-0.5, 0.5, dist);
+
+        if (alpha < 0.01) {
+            discard;
+        }
+
         return vec4<f32>(input.f_color.rgb, input.f_color.a * alpha);
     }
 
