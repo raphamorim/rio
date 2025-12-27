@@ -137,6 +137,9 @@ pub enum RioEvent {
 
     CursorBlinkingChangeOnRoute(usize),
 
+    /// Progress bar report from OSC 9;4 sequence
+    ProgressReport(ProgressReport),
+
     /// Terminal bell ring.
     Bell,
 
@@ -184,6 +187,9 @@ impl Debug for RioEvent {
             RioEvent::CursorBlinkingChange => write!(f, "CursorBlinkingChange"),
             RioEvent::CursorBlinkingChangeOnRoute(route_id) => {
                 write!(f, "CursorBlinkingChangeOnRoute {route_id}")
+            }
+            RioEvent::ProgressReport(report) => {
+                write!(f, "ProgressReport({:?})", report)
             }
             RioEvent::MouseCursorDirty => write!(f, "MouseCursorDirty"),
             RioEvent::ResetTitle => write!(f, "ResetTitle"),
@@ -390,4 +396,28 @@ impl Default for SearchState {
             dfas: Default::default(),
         }
     }
+}
+
+/// Progress bar state for OSC 9;4 ConEmu/Windows Terminal progress reporting
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressState {
+    /// Remove/hide the progress bar (state 0)
+    Remove,
+    /// Set progress with a specific percentage (state 1)
+    Set,
+    /// Show error state (state 2)
+    Error,
+    /// Indeterminate/pulsing progress (state 3)
+    Indeterminate,
+    /// Paused progress (state 4)
+    Pause,
+}
+
+/// Progress report from OSC 9;4 sequence
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProgressReport {
+    /// The progress bar state
+    pub state: ProgressState,
+    /// Optional progress percentage (0-100), only used with Set, Error, and Pause states
+    pub progress: Option<u8>,
 }

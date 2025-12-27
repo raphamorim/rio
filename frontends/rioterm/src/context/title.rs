@@ -219,9 +219,9 @@ pub mod test {
     use super::*;
     use crate::context::create_mock_context;
     use crate::context::ContextDimension;
-    use crate::context::Delta;
+    use rio_backend::config::layout::Margin;
     use rio_backend::event::VoidListener;
-    use rio_backend::sugarloaf::layout::SugarDimensions;
+    use rio_backend::sugarloaf::layout::TextDimensions;
     use rio_window::window::WindowId;
 
     #[test]
@@ -229,13 +229,13 @@ pub mod test {
         let context_dimension = ContextDimension::build(
             1200.0,
             800.0,
-            SugarDimensions {
+            TextDimensions {
                 scale: 2.,
                 width: 18.,
                 height: 9.,
             },
             1.0,
-            Delta::<f32>::default(),
+            Margin::default(),
         );
 
         assert_eq!(context_dimension.columns, 66);
@@ -280,13 +280,13 @@ pub mod test {
         let context_dimension = ContextDimension::build(
             1200.0,
             800.0,
-            SugarDimensions {
+            TextDimensions {
                 scale: 2.,
                 width: 18.,
                 height: 9.,
             },
             1.0,
-            Delta::<f32>::default(),
+            Margin::default(),
         );
 
         assert_eq!(context_dimension.columns, 66);

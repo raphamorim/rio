@@ -14,8 +14,8 @@ use super::glyph::*;
 use crate::font_introspector::shape::cluster::OwnedGlyphCluster;
 use crate::font_introspector::shape::Shaper;
 use crate::font_introspector::Metrics;
-use crate::layout::content::{FragmentStyleDecoration, WordCache};
-use crate::layout::FragmentStyle;
+use crate::layout::content::{SpanStyleDecoration, WordCache};
+use crate::layout::SpanStyle;
 use crate::sugarloaf::primitives::SugarCursor;
 use crate::{Graphic, GraphicId};
 
@@ -71,7 +71,7 @@ impl RenderData {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn push_run(
         &mut self,
-        style: FragmentStyle,
+        style: SpanStyle,
         size: f32,
         line: u32,
         shaper: Shaper<'_>,
@@ -97,7 +97,7 @@ impl RenderData {
                         // Simple glyph
                         glyphs.push(GlyphData {
                             data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data as usize,
+                            size: glyph.data as u32,
                         });
                         continue;
                     }
@@ -107,7 +107,7 @@ impl RenderData {
                 detailed_glyphs.push(Glyph::new(glyph));
                 glyphs.push(GlyphData {
                     data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data as usize,
+                    size: glyph.data as u32,
                 });
             }
             advance += cluster_advance;
@@ -140,7 +140,7 @@ impl RenderData {
 
     pub(super) fn push_run_without_shaper(
         &mut self,
-        style: FragmentStyle,
+        style: SpanStyle,
         size: f32,
         line: u32,
         glyph_clusters: &Vec<OwnedGlyphCluster>,
@@ -163,7 +163,7 @@ impl RenderData {
                         // Simple glyph
                         glyphs.push(GlyphData {
                             data: glyph.id as u32 | (packed_advance << 16),
-                            size: glyph.data as usize,
+                            size: glyph.data as u32,
                         });
                         continue;
                     }
@@ -173,7 +173,7 @@ impl RenderData {
                 detailed_glyphs.push(Glyph::new(glyph));
                 glyphs.push(GlyphData {
                     data: GLYPH_DETAILED | detail_index,
-                    size: glyph.data as usize,
+                    size: glyph.data as u32,
                 });
             }
             advance += cluster_advance;
@@ -213,7 +213,7 @@ pub struct Run<'a> {
 impl Run<'_> {
     /// Returns the span that contains the run.
     #[inline]
-    pub fn span(&self) -> FragmentStyle {
+    pub fn span(&self) -> SpanStyle {
         self.run.span
     }
 
@@ -265,7 +265,7 @@ impl Run<'_> {
 
     /// Returns true if the run has an underline decoration.
     #[inline]
-    pub fn decoration(&self) -> Option<FragmentStyleDecoration> {
+    pub fn decoration(&self) -> Option<SpanStyleDecoration> {
         self.run.span.decoration
     }
 

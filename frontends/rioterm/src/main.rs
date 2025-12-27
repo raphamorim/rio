@@ -11,6 +11,7 @@ mod constants;
 mod context;
 mod hints;
 mod ime;
+mod layout;
 mod messenger;
 mod mouse;
 #[cfg(windows)]

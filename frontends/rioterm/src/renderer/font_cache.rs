@@ -118,7 +118,7 @@ impl FontCache {
                 for &attrs in &common_attrs {
                     let key = (ch, attrs);
                     if self.get(&key).is_none() {
-                        let style = rio_backend::sugarloaf::FragmentStyle {
+                        let style = rio_backend::sugarloaf::SpanStyle {
                             font_attrs: attrs,
                             ..Default::default()
                         };
