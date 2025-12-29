@@ -25,7 +25,7 @@ pub fn attach_handler() {
             MessageBoxW(
                 std::ptr::null_mut(),
                 win32_string(&msg).as_ptr(),
-                win32_string("Rio: Runtime Error").as_ptr(),
+                win32_string("midterm: Runtime Error").as_ptr(),
                 MB_ICONERROR | MB_OK | MB_SETFOREGROUND | MB_TASKMODAL,
             );
         }

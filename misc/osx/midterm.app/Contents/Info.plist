@@ -7,9 +7,9 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>English</string>
   <key>CFBundleDisplayName</key>
-  <string>Rio</string>
+  <string>midterm</string>
   <key>CFBundleExecutable</key>
-  <string>rio</string>
+  <string>midterm</string>
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>
@@ -30,7 +30,7 @@
         <key>CFBundleTypeIconFile</key>
         <string>Document</string>
         <key>CFBundleTypeName</key>
-        <string>Rio Text Document</string>
+        <string>midterm Text Document</string>
         <key>CFBundleTypeRole</key>
         <string>Editor</string>
         <key>CFBundleTypeOSTypes</key>
@@ -81,13 +81,13 @@
 	</dict>
   </array>
   <key>CFBundleIdentifier</key>
-  <string>com.raphaelamorim.rio</string>
+  <string>com.jamesisanai.midterm</string>
   <key>CFBundleGetInfoString</key>
   <string>Hardware-accelerated GPU terminal emulator. More information: https://raphamorim.io/rio/</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Rio</string>
+  <string>midterm</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
@@ -102,12 +102,12 @@
   <array>
     <dict>
       <key>CFBundleURLName</key>
-      <string>Rio</string>
+      <string>midterm</string>
       <key>CFBundleTypeRole</key>
       <string>Viewer</string>
       <key>CFBundleURLSchemes</key>
       <array>
-        <string>rio</string>
+        <string>midterm</string>
       </array>
     </dict>
   </array>
@@ -126,43 +126,43 @@
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>An application in Rio would like to access AppleScript.</string>
+  <string>An application in midterm would like to access AppleScript.</string>
   <key>NSSystemAdministrationUsageDescription</key>
-  <string>An application in Rio requires elevated permissions.</string>
+  <string>An application in midterm requires elevated permissions.</string>
   <key>NSBluetoothAlwaysUsageDescription</key>
-  <string>An application in Rio wants to use Bluetooth.</string>
+  <string>An application in midterm wants to use Bluetooth.</string>
   <key>NSCalendarsUsageDescription</key>
-  <string>An application in Rio would like to access calendar data.</string>
+  <string>An application in midterm would like to access calendar data.</string>
   <key>NSCameraUsageDescription</key>
-  <string>An application in Rio would like to access the camera.</string>
+  <string>An application in midterm would like to access the camera.</string>
   <key>NSCameraUseContinuityCameraDeviceType</key>
   <true/>
   <key>NSContactsUsageDescription</key>
-  <string>An application in Rio wants to access your contacts.</string>
+  <string>An application in midterm wants to access your contacts.</string>
   <key>NSLocationAlwaysUsageDescription</key>
-  <string>An application in Rio would like to access your location information, even in the background.</string>
+  <string>An application in midterm would like to access your location information, even in the background.</string>
   <key>NSLocationUsageDescription</key>
-  <string>An application in Rio would like to access your location information.</string>
+  <string>An application in midterm would like to access your location information.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
-  <string>An application in Rio would like to access your location information while active.</string>
+  <string>An application in midterm would like to access your location information while active.</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>An application in Rio would like to access your microphone.</string>
+  <string>An application in midterm would like to access your microphone.</string>
   <key>NSLocationTemporaryUsageDescriptionDictionary</key>
-  <string>A program running inside Rio would like to access your location temporarily.</string>
+  <string>A program running inside midterm would like to access your location temporarily.</string>
   <key>NSRemindersUsageDescription</key>
-  <string>An application in Rio would like to access your reminders.</string>
+  <string>An application in midterm would like to access your reminders.</string>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright (c) Raphael Amorim 2022-present. All rights reserved.</string>
   <key>NSRequiresAquaSystemAppearance</key>
   <string>NO</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>A program running inside Rio would like to access speech recognition.</string>
+  <string>A program running inside midterm would like to access speech recognition.</string>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
   <key>NSSupportsSuddenTermination</key>
   <false/>
   <key>NSSystemAdministrationUsageDescription</key>
-  <string>A program running inside Rio requires elevated privileges.</string>
+  <string>A program running inside midterm requires elevated privileges.</string>
   <key>TICapsLockLanguageSwitchCapable</key>
   <true/>
   <key>com.apple.security.automation.apple-events</key>

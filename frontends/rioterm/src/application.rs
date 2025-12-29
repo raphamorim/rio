@@ -1400,7 +1400,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     RoutePath::ConfirmQuit => {
                         route.window.screen.render_dialog(
-                            "Quit Rio?",
+                            "Quit midterm?",
                             "Continue -> press escape key",
                             "Quit -> press enter key",
                         );

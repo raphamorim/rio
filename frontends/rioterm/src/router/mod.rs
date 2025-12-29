@@ -371,7 +371,7 @@ impl Router<'_> {
             event_proxy,
             &new_config,
             &self.font_library,
-            "Rio Settings",
+            "midterm Settings",
             None,
             None,
             self.clipboard.clone(),

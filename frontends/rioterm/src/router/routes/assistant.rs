@@ -88,7 +88,7 @@ pub fn screen(
     let heading_line = content.sel(heading);
     heading_line
         .clear()
-        .add_text("Woops! Rio got errors", FragmentStyle::default())
+        .add_text("Woops! midterm got errors", FragmentStyle::default())
         .build();
 
     let paragraph_action_line = content.sel(paragraph_action);

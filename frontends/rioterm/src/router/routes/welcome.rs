@@ -52,7 +52,7 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     let heading_line = content.sel(heading);
     heading_line
         .clear()
-        .add_text("Welcome to Rio Terminal", FragmentStyle::default())
+        .add_text("Welcome to midterm", FragmentStyle::default())
         .build();
 
     let paragraph_action_line = content.sel(paragraph_action);

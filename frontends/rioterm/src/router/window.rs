@@ -13,7 +13,7 @@ pub const DEFAULT_MINIMUM_WINDOW_WIDTH: i32 = 300;
     any(feature = "wayland", feature = "x11"),
     not(any(target_os = "macos", windows))
 ))]
-pub const APPLICATION_ID: &str = "Rio";
+pub const APPLICATION_ID: &str = "midterm";
 
 pub fn create_window_builder(
     title: &str,
