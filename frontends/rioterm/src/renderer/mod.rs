@@ -2,6 +2,7 @@ mod char_cache;
 mod font_cache;
 pub mod navigation;
 mod search;
+pub mod status;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;

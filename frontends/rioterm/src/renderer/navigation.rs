@@ -1,5 +1,6 @@
 use crate::constants::*;
 use crate::context::title::ContextTitle;
+use crate::renderer::status::StatusInfo;
 use rio_backend::config::colors::Colors;
 use rio_backend::config::navigation::{Navigation, NavigationMode};
 use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
@@ -10,6 +11,7 @@ pub struct ScreenNavigation {
     pub navigation: Navigation,
     pub padding_y: [f32; 2],
     color_automation: HashMap<String, HashMap<String, [f32; 4]>>,
+    status_info: StatusInfo,
 }
 
 impl ScreenNavigation {
@@ -22,6 +24,7 @@ impl ScreenNavigation {
             navigation,
             color_automation,
             padding_y,
+            status_info: StatusInfo::new(),
         }
     }
 
@@ -271,6 +274,54 @@ impl ScreenNavigation {
 
             initial_position_x += name_modifier + 40.;
         }
+
+        // Render status info (battery % and time) on the right side
+        self.render_status_info(sugarloaf, objects, colors, position_y, dimensions);
+    }
+
+    /// Render battery percentage and current time on the right side of the tab bar
+    #[inline]
+    fn render_status_info(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        objects: &mut Vec<Object>,
+        colors: &Colors,
+        position_y: f32,
+        dimensions: (f32, f32, f32),
+    ) {
+        let (width, _, scale) = dimensions;
+        let status_text = self.status_info.get_display_string();
+
+        // Calculate position for right-aligned text
+        // Approximate character width: ~8 pixels at font size 14
+        let char_width = 8.0;
+        let text_width = status_text.len() as f32 * char_width;
+        let padding_right = 10.0;
+        let position_x = (width / scale) - text_width - padding_right;
+
+        // Create and render the status text
+        let status_rich_text = sugarloaf.create_temp_rich_text();
+        sugarloaf.set_rich_text_font_size(&status_rich_text, 14.);
+        let content = sugarloaf.content();
+
+        let status_line = content.sel(status_rich_text);
+        status_line
+            .clear()
+            .new_line()
+            .add_text(
+                &status_text,
+                FragmentStyle {
+                    color: colors.tabs_foreground,
+                    ..FragmentStyle::default()
+                },
+            )
+            .build();
+
+        objects.push(Object::RichText(RichText {
+            id: status_rich_text,
+            position: [position_x, position_y],
+            lines: None,
+        }));
     }
 }
 
