@@ -107,7 +107,17 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
         .new_line()
         .add_text("", FragmentStyle::default())
         .new_line()
-        .add_text("More info in rioterm.com", FragmentStyle::default())
+        .add_text("", FragmentStyle::default())
+        .new_line()
+        .add_text("Powered by ", FragmentStyle::default())
+        .add_text(
+            "Rio Terminal",
+            FragmentStyle {
+                color: [0.94, 0.47, 0.0, 1.0], // Rio orange #F07900
+                ..FragmentStyle::default()
+            },
+        )
+        .add_text(" - rioterm.com", FragmentStyle::default())
         .build();
 
     objects.push(Object::RichText(RichText {

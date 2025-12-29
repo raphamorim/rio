@@ -83,7 +83,7 @@
   <key>CFBundleIdentifier</key>
   <string>com.jamesisanai.midterm</string>
   <key>CFBundleGetInfoString</key>
-  <string>Hardware-accelerated GPU terminal emulator. More information: https://raphamorim.io/rio/</string>
+  <string>midterm - Powered by Rio Terminal (rioterm.com). Hardware-accelerated GPU terminal emulator.</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -152,7 +152,7 @@
   <key>NSRemindersUsageDescription</key>
   <string>An application in midterm would like to access your reminders.</string>
   <key>NSHumanReadableCopyright</key>
-  <string>Copyright (c) Raphael Amorim 2022-present. All rights reserved.</string>
+  <string>midterm by James Dowzard. Powered by Rio Terminal - Copyright (c) Raphael Amorim 2022-present.</string>
   <key>NSRequiresAquaSystemAppearance</key>
   <string>NO</string>
   <key>NSSpeechRecognitionUsageDescription</key>
