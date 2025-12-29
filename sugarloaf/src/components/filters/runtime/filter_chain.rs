@@ -3,6 +3,7 @@
 // SnowflakePowered/librashader is licensed under MPL-2.0
 // https://github.com/SnowflakePowered/librashader/blob/master/LICENSE.md
 
+use crate::context::webgpu::WgpuContext;
 use librashader_common::map::FastHashMap;
 use librashader_presets::ShaderFeatures;
 use librashader_presets::ShaderPreset;
@@ -296,7 +297,7 @@ impl FilterChain {
         &mut self,
         input: &wgpu::Texture,
         cmd: &mut wgpu::CommandEncoder,
-        context: &crate::context::Context,
+        context: &crate::context::webgpu::WgpuContext,
     ) {
         if let Some(mut back) = self.history_framebuffers.pop_back() {
             if back.image.size() != input.size() || input.format() != back.image.format()
@@ -426,7 +427,7 @@ impl FilterChain {
         cmd: &mut wgpu::CommandEncoder,
         frame_count: usize,
         options: Option<&FrameOptionsWgpu>,
-        context: &crate::context::Context,
+        context: &WgpuContext,
     ) -> error::Result<()> {
         let max = std::cmp::min(self.passes.len(), self.common.config.passes_enabled());
         let passes = &mut self.passes[0..max];

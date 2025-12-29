@@ -4,6 +4,7 @@ pub mod colors;
 pub mod defaults;
 pub mod hints;
 pub mod keyboard;
+pub mod layout;
 pub mod navigation;
 pub mod platform;
 pub mod renderer;
@@ -17,6 +18,7 @@ use crate::config::bindings::Bindings;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
+use crate::config::layout::{Margin, Panel};
 use crate::config::navigation::Navigation;
 use crate::config::platform::{Platform, PlatformConfig};
 use crate::config::renderer::Renderer;
@@ -116,10 +118,10 @@ pub struct Config {
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
     pub editor: Shell,
-    #[serde(rename = "padding-x", default = "f32::default")]
-    pub padding_x: f32,
-    #[serde(rename = "padding-y", default = "default_padding_y")]
-    pub padding_y: [f32; 2],
+    #[serde(default = "default_margin", alias = "margin")]
+    pub margin: Margin,
+    #[serde(default = "Panel::default")]
+    pub panel: Panel,
     #[serde(default = "Vec::default", rename = "env-vars")]
     pub env_vars: Vec<String>,
     #[serde(default = "default_option_as_alt", rename = "option-as-alt")]
@@ -507,6 +509,12 @@ impl Config {
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
+            if let Some(x) = window_overwrite.macos_traffic_light_position_x {
+                self.window.macos_traffic_light_position_x = Some(x);
+            }
+            if let Some(y) = window_overwrite.macos_traffic_light_position_y {
+                self.window.macos_traffic_light_position_y = Some(y);
+            }
             if let Some(initial_title) = &window_overwrite.initial_title {
                 self.window.initial_title = Some(initial_title.clone());
             }
@@ -608,8 +616,8 @@ impl Default for Config {
             line_height: default_line_height(),
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
-            padding_x: f32::default(),
-            padding_y: default_padding_y(),
+            margin: default_margin(),
+            panel: Panel::default(),
             renderer: Renderer::default(),
             shell: default_shell(),
             platform: Platform::default(),
@@ -844,7 +852,6 @@ mod tests {
         );
 
         assert_eq!(result.renderer.performance, renderer::Performance::High);
-        assert_eq!(result.renderer.backend, renderer::Backend::Automatic);
         assert_eq!(result.cursor.shape, CursorShape::Underline);
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -930,7 +937,7 @@ mod tests {
             r#"
             font-size = 14.0
             line-height = 2.0
-            padding-x = 0.0
+            margin = [0]
 
             [renderer]
             performance = "Low"
@@ -948,7 +955,10 @@ mod tests {
         assert_eq!(result.renderer.performance, renderer::Performance::Low);
         assert_eq!(result.fonts.size, 14.0);
         assert_eq!(result.line_height, 2.0);
-        assert_eq!(result.padding_x, 0.0);
+        assert_eq!(result.margin.top, 0.0);
+        assert_eq!(result.margin.bottom, 0.0);
+        assert_eq!(result.margin.left, 0.0);
+        assert_eq!(result.margin.right, 0.0);
         assert_eq!(result.window.opacity, 0.5);
         assert_eq!(
             result.window.background_image,
@@ -1444,7 +1454,7 @@ mod tests {
             disable-unfocused-render = false
 
             [navigation]
-            mode = "BottomTab"
+            mode = "Tab"
             clickable = false
 
             shell = { program = "/bin/sh", args = ["-c"] }
@@ -1481,10 +1491,7 @@ mod tests {
 
         // Navigation: clickable overridden, mode preserved
         assert!(result.navigation.clickable);
-        assert_eq!(
-            result.navigation.mode,
-            navigation::NavigationMode::BottomTab
-        );
+        assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
         assert_eq!(result.shell.program, "/bin/zsh");

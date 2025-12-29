@@ -34,14 +34,7 @@ pub fn vi_cursor() -> ColorArray {
 
 #[inline]
 pub fn tabs() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#443d40"), Format::SRGB0_1)
-        .unwrap()
-        .to_arr()
-}
-
-#[inline]
-pub fn tabs_foreground() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#7d7d7d"), Format::SRGB0_1)
+    ColorBuilder::from_hex(String::from("#424040"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
@@ -55,19 +48,12 @@ pub fn bar() -> ColorArray {
 
 #[inline]
 pub fn tabs_active() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#303030"), Format::SRGB0_1)
-        .unwrap()
-        .to_arr()
-}
-
-#[inline]
-pub fn tabs_active_foreground() -> ColorArray {
     [1., 1., 1., 1.]
 }
 
 #[inline]
-pub fn tabs_active_highlight() -> ColorArray {
-    ColorBuilder::from_hex(String::from("#ffa133"), Format::SRGB0_1)
+pub fn tab_border() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#696767"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
@@ -185,6 +171,13 @@ pub fn default_light_yellow() -> ColorArray {
 #[inline]
 pub fn split() -> ColorArray {
     ColorBuilder::from_hex(String::from("#292527"), Format::SRGB0_1)
+        .unwrap()
+        .to_arr()
+}
+
+#[inline]
+pub fn split_active() -> ColorArray {
+    ColorBuilder::from_hex(String::from("#44C9F0"), Format::SRGB0_1)
         .unwrap()
         .to_arr()
 }
