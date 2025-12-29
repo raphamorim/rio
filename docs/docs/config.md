@@ -1581,6 +1581,21 @@ Example:
 height = 400
 ```
 
+## window.set-min-size
+
+Whether or not to give window managers a minimum size for the window. If set,
+the size is set to `400x300`
+
+- Default: `true`
+
+Example:
+
+```toml
+[window]
+set-min-size = true
+```
+
+
 ## window.mode
 
 Define how the window will be created

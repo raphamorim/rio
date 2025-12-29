@@ -77,6 +77,8 @@ pub struct Window {
     pub width: i32,
     #[serde(default = "default_window_height")]
     pub height: i32,
+    #[serde(default = "default_set_min_size", rename = "set-min-size")]
+    pub set_min_size: bool,
     #[serde(default = "WindowMode::default")]
     pub mode: WindowMode,
     #[serde(default = "default_opacity")]
@@ -111,6 +113,7 @@ impl Default for Window {
         Window {
             width: default_window_width(),
             height: default_window_height(),
+            set_min_size: default_set_min_size(),
             mode: WindowMode::default(),
             opacity: default_opacity(),
             background_image: None,

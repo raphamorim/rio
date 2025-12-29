@@ -1407,10 +1407,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
-                // let duration = start.elapsed();
-                // println!("Time elapsed in render() is: {:?}", duration);
-                // }
-
                 if self.config.renderer.strategy.is_game() {
                     route.request_redraw();
                 } else if route

@@ -122,6 +122,11 @@ pub fn default_window_height() -> i32 {
 }
 
 #[inline]
+pub fn default_set_min_size() -> bool {
+    true
+}
+
+#[inline]
 pub fn default_disable_ctlseqs_alt() -> bool {
     #[cfg(target_os = "macos")]
     {
