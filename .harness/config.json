@@ -1,0 +1,5 @@
+{
+  "base_branch": "main",
+  "max_parallel": 3,
+  "worktree_parent": ".worktrees"
+}
