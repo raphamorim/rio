@@ -30,9 +30,13 @@ pub fn create_window_builder(
 
     let mut window_builder = WindowAttributes::default()
         .with_title(title)
-        .with_min_inner_size(rio_window::dpi::LogicalSize {
-            width: DEFAULT_MINIMUM_WINDOW_WIDTH,
-            height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
+        .with_min_inner_size(if config.window.set_min_size {
+            Some(rio_window::dpi::LogicalSize {
+                width: DEFAULT_MINIMUM_WINDOW_WIDTH,
+                height: DEFAULT_MINIMUM_WINDOW_HEIGHT,
+            })
+        } else {
+            None
         })
         .with_resizable(true)
         .with_decorations(true)
