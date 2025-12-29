@@ -2,6 +2,43 @@
   "project": "rio",
   "version": "2.0.0",
   "created": "2025-12-29T21:15:43Z",
-  "updated": "2025-12-29T21:15:43Z",
-  "features": []
+  "updated": "2025-12-29T22:38:01Z",
+  "features": [
+    {
+      "id": "/Users/jamesdowzard/Documents/code/personal/rio",
+      "name": "statusbar-info",
+      "description": "Status Bar Info",
+      "status": "pending",
+      "priority": 1,
+      "branch": "feature//Users/jamesdowzard/Documents/code/personal/rio",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    },
+    {
+      "id": "statusbar-info",
+      "name": "Status Bar Info",
+      "description": "Add battery percentage and time display to top-right of tab bar",
+      "status": "archived",
+      "priority": 2,
+      "branch": "feature/statusbar-info",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": "2025-12-29T22:38:01Z"
+    },
+    {
+      "id": "app-rename",
+      "name": "Rename to midterm",
+      "description": "Rename app from rio to midterm throughout codebase",
+      "status": "pending",
+      "priority": 3,
+      "branch": "feature/app-rename",
+      "pr": null,
+      "depends_on": [],
+      "started": null,
+      "completed": null
+    }
+  ]
 }
