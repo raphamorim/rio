@@ -9,7 +9,7 @@
 pub mod hint;
 pub mod touch;
 
-use crate::bindings::kitty_keyboard::build_key_sequence;
+use crate::bindings::kitty_keyboard::{build_key_sequence, try_build_ctrl_number_sequence};
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
@@ -669,6 +669,9 @@ impl Screen<'_> {
 
         let bytes = if build_key_sequence {
             crate::bindings::kitty_keyboard::build_key_sequence(key, mods, mode)
+        } else if let Some(ctrl_num_bytes) = try_build_ctrl_number_sequence(key, mods) {
+            // Handle Ctrl+number keys with proper control character mapping
+            ctrl_num_bytes
         } else {
             let mut bytes = Vec::with_capacity(text.len() + 1);
             if mods.alt_key() {
