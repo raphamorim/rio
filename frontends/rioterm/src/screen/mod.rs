@@ -74,6 +74,102 @@ const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 
+/// Command palette state.
+#[derive(Default)]
+pub struct PaletteState {
+    /// Whether the palette is currently open.
+    pub is_open: bool,
+
+    /// Current search input.
+    pub input: String,
+
+    /// Currently selected action index.
+    pub selected_index: usize,
+
+    /// List of available actions with their descriptions.
+    pub actions: Vec<(String, String)>,
+}
+
+impl PaletteState {
+    /// Initialize palette with all available actions.
+    pub fn new() -> Self {
+        let mut actions = vec![
+            ("Paste".to_string(), "Paste from clipboard".to_string()),
+            ("Copy".to_string(), "Copy selection to clipboard".to_string()),
+            ("Search Forward".to_string(), "Search text forward".to_string()),
+            ("Search Backward".to_string(), "Search text backward".to_string()),
+            ("Clear History".to_string(), "Clear terminal history".to_string()),
+            ("Increase Font Size".to_string(), "Make text larger".to_string()),
+            ("Decrease Font Size".to_string(), "Make text smaller".to_string()),
+            ("Reset Font Size".to_string(), "Reset font to default size".to_string()),
+            ("Create Tab".to_string(), "Open new tab".to_string()),
+            ("Close Tab".to_string(), "Close current tab".to_string()),
+            ("Next Tab".to_string(), "Switch to next tab".to_string()),
+            ("Previous Tab".to_string(), "Switch to previous tab".to_string()),
+            ("Split Right".to_string(), "Split terminal horizontally".to_string()),
+            ("Split Down".to_string(), "Split terminal vertically".to_string()),
+            ("Toggle Vi Mode".to_string(), "Toggle vi mode".to_string()),
+            ("Config Editor".to_string(), "Open configuration editor".to_string()),
+            ("Quit".to_string(), "Quit application".to_string()),
+        ];
+        actions.sort_by(|a, b| a.0.cmp(&b.0));
+
+        Self {
+            is_open: false,
+            input: String::new(),
+            selected_index: 0,
+            actions,
+        }
+    }
+
+    /// Filter actions based on input.
+    pub fn filtered_actions(&self) -> Vec<(usize, &(String, String))> {
+        if self.input.is_empty() {
+            return self.actions.iter().enumerate().collect();
+        }
+
+        let input_lower = self.input.to_lowercase();
+        self.actions
+            .iter()
+            .enumerate()
+            .filter(|(_, (name, desc))| {
+                name.to_lowercase().contains(&input_lower)
+                    || desc.to_lowercase().contains(&input_lower)
+            })
+            .collect()
+    }
+
+    /// Open the palette.
+    pub fn open(&mut self) {
+        self.is_open = true;
+        self.input.clear();
+        self.selected_index = 0;
+    }
+
+    /// Close the palette.
+    pub fn close(&mut self) {
+        self.is_open = false;
+        self.input.clear();
+        self.selected_index = 0;
+    }
+
+    /// Move selection up.
+    pub fn select_previous(&mut self) {
+        let filtered = self.filtered_actions();
+        if !filtered.is_empty() && self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+
+    /// Move selection down.
+    pub fn select_next(&mut self) {
+        let filtered = self.filtered_actions();
+        if !filtered.is_empty() && self.selected_index < filtered.len() - 1 {
+            self.selected_index += 1;
+        }
+    }
+}
+
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
@@ -82,6 +178,7 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub hint_state: HintState,
+    pub palette_state: PaletteState,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -257,6 +354,7 @@ impl Screen<'_> {
         Ok(Screen {
             search_state: SearchState::default(),
             hint_state: HintState::new(config.hints.alphabet.clone()),
+            palette_state: PaletteState::new(),
             hints_config: config
                 .hints
                 .rules
@@ -637,6 +735,49 @@ impl Screen<'_> {
             return;
         }
 
+        // Handle command palette input
+        if self.palette_state.is_open {
+            match key.logical_key {
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Escape) => {
+                    self.palette_state.close();
+                    self.render();
+                    return;
+                }
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::ArrowUp) => {
+                    self.palette_state.select_previous();
+                    self.render();
+                    return;
+                }
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::ArrowDown) => {
+                    self.palette_state.select_next();
+                    self.render();
+                    return;
+                }
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Enter) => {
+                    self.execute_palette_action();
+                    return;
+                }
+                rio_window::keyboard::Key::Named(rio_window::keyboard::NamedKey::Backspace) => {
+                    self.palette_state.input.pop();
+                    self.palette_state.selected_index = 0;
+                    self.render();
+                    return;
+                }
+                _ => {}
+            }
+
+            // Handle text input
+            let text = key.text_with_all_modifiers().unwrap_or_default();
+            for character in text.chars() {
+                if !character.is_control() {
+                    self.palette_state.input.push(character);
+                    self.palette_state.selected_index = 0;
+                }
+            }
+            self.render();
+            return;
+        }
+
         let ignore_chars = self.process_key_bindings(key, &mode, mods);
         if ignore_chars {
             return;
@@ -824,6 +965,10 @@ impl Screen<'_> {
                     Act::SearchBackward => {
                         self.start_search(Direction::Left);
                         self.resize_top_or_bottom_line(self.ctx().len());
+                        self.render();
+                    }
+                    Act::CommandPalette => {
+                        self.palette_state.open();
                         self.render();
                     }
                     Act::Search(SearchAction::SearchConfirm) => {
@@ -2577,6 +2722,9 @@ impl Screen<'_> {
             }
         }
 
+        // Set palette state in renderer
+        self.renderer.set_palette_open(self.palette_state.is_open);
+
         // let renderer_run_start = std::time::Instant::now();
         let window_update = self.renderer.run(
             &mut self.sugarloaf,
@@ -2699,6 +2847,94 @@ impl Screen<'_> {
 
         // Update hint state and trigger damage tracking
         self.update_hint_state();
+
+        self.render();
+    }
+
+    /// Execute the selected command palette action
+    fn execute_palette_action(&mut self) {
+        let filtered = self.palette_state.filtered_actions();
+        if filtered.is_empty() {
+            self.palette_state.close();
+            self.render();
+            return;
+        }
+
+        let selected_idx = self.palette_state.selected_index.min(filtered.len() - 1);
+        let action_name = filtered[selected_idx].1.0.clone();
+
+        // Close palette first
+        self.palette_state.close();
+
+        // Execute the action based on name
+        match action_name.as_str() {
+            "Paste" => {
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
+                self.paste(&content, true);
+            }
+            "Copy" => {
+                self.copy_selection(ClipboardType::Clipboard);
+            }
+            "Search Forward" => {
+                self.start_search(Direction::Right);
+                self.resize_top_or_bottom_line(self.ctx().len());
+            }
+            "Search Backward" => {
+                self.start_search(Direction::Left);
+                self.resize_top_or_bottom_line(self.ctx().len());
+            }
+            "Clear History" => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.clear_saved_history();
+                drop(terminal);
+            }
+            "Increase Font Size" => {
+                self.change_font_size(FontSizeAction::Increase);
+            }
+            "Decrease Font Size" => {
+                self.change_font_size(FontSizeAction::Decrease);
+            }
+            "Reset Font Size" => {
+                self.change_font_size(FontSizeAction::Reset);
+            }
+            "Create Tab" => {
+                self.create_tab();
+            }
+            "Close Tab" => {
+                self.close_tab();
+            }
+            "Next Tab" => {
+                self.context_manager.switch_to_next();
+            }
+            "Previous Tab" => {
+                self.context_manager.switch_to_prev();
+            }
+            "Split Right" => {
+                self.split_right();
+            }
+            "Split Down" => {
+                self.split_down();
+            }
+            "Toggle Vi Mode" => {
+                let context = self.context_manager.current_mut();
+                let mut terminal = context.terminal.lock();
+                terminal.toggle_vi_mode();
+                let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
+                drop(terminal);
+                context
+                    .renderable_content
+                    .pending_update
+                    .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                self.renderer.set_vi_mode(has_vi_mode_enabled);
+            }
+            "Config Editor" => {
+                self.context_manager.switch_to_settings();
+            }
+            "Quit" => {
+                self.context_manager.quit();
+            }
+            _ => {}
+        }
 
         self.render();
     }

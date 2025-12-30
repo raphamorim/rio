@@ -218,6 +218,7 @@ impl From<String> for Action {
             "copy" => Some(Action::Copy),
             "searchforward" => Some(Action::SearchForward),
             "searchbackward" => Some(Action::SearchBackward),
+            "commandpalette" => Some(Action::CommandPalette),
             "searchconfirm" => Some(Action::Search(SearchAction::SearchConfirm)),
             "searchcancel" => Some(Action::Search(SearchAction::SearchCancel)),
             "searchclear" => Some(Action::Search(SearchAction::SearchClear)),
@@ -466,6 +467,9 @@ pub enum Action {
 
     /// Start a backward buffer search.
     SearchBackward,
+
+    /// Open the command palette.
+    CommandPalette,
 
     /// Split horizontally
     SplitRight,
@@ -1001,6 +1005,7 @@ pub fn platform_key_bindings(
         "q", ModifiersState::SUPER; Action::Quit;
         "n", ModifiersState::SUPER; Action::WindowCreateNew;
         ",", ModifiersState::SUPER; Action::ConfigEditor;
+        "p", ModifiersState::SUPER | ModifiersState::SHIFT; Action::CommandPalette;
 
         // Search
         "f", ModifiersState::SUPER, ~BindingMode::SEARCH; Action::SearchForward;

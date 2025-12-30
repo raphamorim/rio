@@ -1,6 +1,7 @@
 mod char_cache;
 mod font_cache;
 pub mod navigation;
+mod palette;
 mod search;
 pub mod status;
 pub mod utils;
@@ -40,6 +41,12 @@ pub struct Search {
     active_search: Option<String>,
 }
 
+#[derive(Default)]
+pub struct Palette {
+    rich_text_id: Option<usize>,
+    is_open: bool,
+}
+
 pub struct Renderer {
     is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
@@ -54,6 +61,7 @@ pub struct Renderer {
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
     pub search: Search,
+    pub palette: Palette,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -119,6 +127,7 @@ impl Renderer {
             visual_bell_active: false,
             visual_bell_start: None,
             search: Search::default(),
+            palette: Palette::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             char_cache: CharCache::new(),
@@ -134,6 +143,11 @@ impl Renderer {
     #[inline]
     pub fn set_active_search(&mut self, active_search: Option<String>) {
         self.search.active_search = active_search;
+    }
+
+    #[inline]
+    pub fn set_palette_open(&mut self, is_open: bool) {
+        self.palette.is_open = is_open;
     }
 
     #[inline]
@@ -846,6 +860,14 @@ impl Renderer {
             self.search.rich_text_id = Some(search_rich_text);
         }
 
+        // In case rich text for palette was not created
+        let has_palette = self.palette.is_open;
+        if has_palette && self.palette.rich_text_id.is_none() {
+            let palette_rich_text = sugarloaf.create_temp_rich_text();
+            sugarloaf.set_rich_text_font_size(&palette_rich_text, 14.0);
+            self.palette.rich_text_id = Some(palette_rich_text);
+        }
+
         let grid = context_manager.current_grid_mut();
         let active_key = grid.current;
         let mut has_active_changed = false;
@@ -1109,6 +1131,20 @@ impl Renderer {
 
             self.search.active_search = None;
             self.search.rich_text_id = None;
+        }
+
+        if has_palette {
+            if let Some(rich_text_id) = self.palette.rich_text_id {
+                palette::draw_command_palette(
+                    &mut objects,
+                    rich_text_id,
+                    &self.named_colors,
+                    (window_size.width, window_size.height, scale_factor),
+                );
+            }
+
+            self.palette.is_open = false;
+            self.palette.rich_text_id = None;
         }
 
         // let _duration = start.elapsed();
