@@ -1,0 +1,90 @@
+# Agent Context - IPC All Actions
+
+## Feature
+IPC All Actions - Expose all terminal actions via IPC + JSON screen output
+
+## Current State
+Starting implementation. Need to expand IPC to expose all ~50 terminal actions.
+
+## Key Files
+- `frontends/rioterm/src/ipc.rs` - Core IPC server and commands (MAIN FILE)
+- `frontends/rioterm/src/bindings/mod.rs` - Action enum (lines 368-597) - reference for all actions
+- `frontends/rioterm/src/application.rs` - handle_ipc_command implementation
+- `frontends/rioterm/src/cli.rs` - CLI argument parsing
+
+## Implementation Tasks
+
+### 1. Expand ListActions to return ALL actions
+Currently returns hardcoded 5 actions. Need to return all ~50 from bindings/mod.rs:
+- Simple actions: paste, quit, copy, searchforward, searchbackward, clearhistory, resetfontsize, etc.
+- Parametrized actions: selecttab(N), gotobookmark(N), connectssh(N), insertsnippet(N), jumptodirectory(N), run(cmd), scroll(N)
+
+### 2. Expand TriggerAction to handle ALL actions
+Current handle_ipc_command in application.rs only handles 5 actions.
+Parse action string using `Action::from(String)` in bindings/mod.rs (line 211-366).
+Then execute via route.window.screen.execute_action() or similar.
+
+### 3. Add JSON screen output format
+Add new command: `DumpScreenJson` or flag on `DumpScreen`
+Return structured cell data:
+```rust
+ScreenDumpJson {
+    lines: Vec<ScreenLine>,
+    cursor: CursorPosition,
+    dimensions: (usize, usize),
+}
+
+struct ScreenLine {
+    text: String,
+    cells: Vec<CellInfo>,
+}
+
+struct CellInfo {
+    char: char,
+    fg: String,  // hex color
+    bg: String,
+    flags: Vec<String>,  // bold, italic, underline, etc.
+}
+```
+
+### 4. Add line selection for DumpScreen
+Add parameters: `DumpScreen { start_line: Option<usize>, end_line: Option<usize> }`
+CLI: `midterm --dump-screen --lines 0-10` or `--dump-screen --line 5`
+
+### 5. Add ListTabs command
+Return info about all tabs:
+```rust
+IpcCommand::ListTabs
+
+IpcResponse::Tabs {
+    tabs: Vec<TabInfo>,
+    current: usize,
+}
+
+struct TabInfo {
+    index: usize,
+    title: String,
+    splits: usize,
+    working_directory: Option<String>,
+}
+```
+
+## Testing
+```bash
+# After each change, test with:
+midterm --list-actions  # Should show all ~50 actions
+midterm --action selecttab(1)
+midterm --action splitright
+midterm --dump-screen --json
+midterm --list-tabs
+```
+
+## Blockers
+None
+
+## Next Actions
+1. Update ListActions in application.rs to return all actions
+2. Update TriggerAction to parse and execute all actions
+3. Add JSON screen dump format
+4. Add line selection for screen dump
+5. Add ListTabs command

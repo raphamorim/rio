@@ -19,12 +19,18 @@ pub fn socket_path() -> PathBuf {
 pub enum IpcCommand {
     /// Trigger an action by name
     TriggerAction(String),
-    /// Get current screen content
-    DumpScreen,
+    /// Get current screen content (plain text or JSON)
+    DumpScreen {
+        format: Option<String>,  // "json" or "text" (default)
+        start_line: Option<usize>,
+        end_line: Option<usize>,
+    },
     /// Get status information
     GetStatus,
     /// List available actions
     ListActions,
+    /// List all tabs
+    ListTabs,
     /// Ping to check if server is alive
     Ping,
     /// Send text input to the terminal
@@ -34,14 +40,39 @@ pub enum IpcCommand {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ScreenCell {
+    pub c: char,
+    pub fg: Option<String>,  // Foreground color in hex
+    pub bg: Option<String>,  // Background color in hex
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TabInfo {
+    pub index: usize,
+    pub title: String,
+    pub is_current: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum IpcResponse {
     /// Action was triggered successfully
     ActionTriggered(String),
-    /// Screen content dump
+    /// Screen content dump (plain text)
     ScreenDump {
         lines: Vec<String>,
         cursor_row: usize,
         cursor_col: usize,
+    },
+    /// Screen content dump (JSON with cell data)
+    ScreenDumpJson {
+        lines: Vec<Vec<ScreenCell>>,
+        cursor_row: usize,
+        cursor_col: usize,
+        start_line: usize,
+        end_line: usize,
     },
     /// Status information
     Status {
@@ -54,6 +85,8 @@ pub enum IpcResponse {
     },
     /// List of available actions
     Actions(Vec<String>),
+    /// List of tabs
+    Tabs(Vec<TabInfo>),
     /// Pong response
     Pong,
     /// Input was sent
@@ -222,7 +255,11 @@ pub fn handle_cli_command(
     let cmd = if let Some(action_name) = action {
         IpcCommand::TriggerAction(action_name)
     } else if dump_screen {
-        IpcCommand::DumpScreen
+        IpcCommand::DumpScreen {
+            format: None,  // Default to text format
+            start_line: None,
+            end_line: None,
+        }
     } else if status {
         IpcCommand::GetStatus
     } else if list_actions {
@@ -244,6 +281,20 @@ pub fn handle_cli_command(
                     for line in lines {
                         println!("{}", line);
                     }
+                }
+                IpcResponse::ScreenDumpJson { lines, cursor_row, cursor_col, start_line, end_line } => {
+                    let json = serde_json::to_string_pretty(&serde_json::json!({
+                        "lines": lines,
+                        "cursor_row": cursor_row,
+                        "cursor_col": cursor_col,
+                        "start_line": start_line,
+                        "end_line": end_line,
+                    })).unwrap();
+                    println!("{}", json);
+                }
+                IpcResponse::Tabs(tabs) => {
+                    let json = serde_json::to_string_pretty(&tabs).unwrap();
+                    println!("{}", json);
                 }
                 IpcResponse::Status { tabs, current_tab, splits, broadcast_mode, current_directory, git_branch } => {
                     println!("{{");

@@ -8,6 +8,8 @@ use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
 #[cfg(unix)]
+use crate::bindings::Action;
+#[cfg(unix)]
 use rio_backend::crosswords::grid::Dimensions;
 #[cfg(unix)]
 use rio_backend::crosswords::pos::{Column, Line};
@@ -251,22 +253,107 @@ impl Application<'_> {
             IpcCommand::Ping => IpcResponse::Pong,
 
             IpcCommand::ListActions => {
+                // Return ALL available actions from bindings/mod.rs
                 let actions = vec![
-                    "showdirectoryjumper".to_string(),
-                    "togglebroadcast".to_string(),
-                    "showbookmarks".to_string(),
-                    "showsnippets".to_string(),
-                    "showsshprofiles".to_string(),
-                    "savesession".to_string(),
-                    "restoresession".to_string(),
+                    // Basic actions
+                    "paste".to_string(),
+                    "copy".to_string(),
+                    "quit".to_string(),
+                    "none".to_string(),
+
+                    // Search actions
+                    "searchforward".to_string(),
+                    "searchbackward".to_string(),
+                    "searchconfirm".to_string(),
+                    "searchcancel".to_string(),
+                    "searchclear".to_string(),
+                    "searchfocusnext".to_string(),
+                    "searchfocusprevious".to_string(),
+                    "searchdeleteword".to_string(),
+                    "searchhistorynext".to_string(),
+                    "searchhistoryprevious".to_string(),
+
+                    // History and font
+                    "clearhistory".to_string(),
+                    "resetfontsize".to_string(),
+                    "increasefontsize".to_string(),
+                    "decreasefontsize".to_string(),
+
+                    // Window and tab management
+                    "createwindow".to_string(),
                     "createtab".to_string(),
+                    "movecurrenttabtoprev".to_string(),
+                    "movecurrenttabtonext".to_string(),
                     "closetab".to_string(),
+                    "closesplitortab".to_string(),
+                    "closeunfocusedtabs".to_string(),
+                    "renametab".to_string(),
                     "selectprevtab".to_string(),
                     "selectnexttab".to_string(),
+                    "selectlasttab".to_string(),
+
+                    // Bookmarks
+                    "addbookmark".to_string(),
+                    "showbookmarks".to_string(),
+
+                    // Configuration
+                    "openconfigeditor".to_string(),
+
+                    // Character input
+                    "receivechar".to_string(),
+
+                    // Scrolling
+                    "scrollpageup".to_string(),
+                    "scrollpagedown".to_string(),
+                    "scrollhalfpageup".to_string(),
+                    "scrollhalfpagedown".to_string(),
+                    "scrolltotop".to_string(),
+                    "scrolltobottom".to_string(),
+
+                    // Split management
                     "splitright".to_string(),
                     "splitdown".to_string(),
-                    "copy".to_string(),
-                    "paste".to_string(),
+                    "selectnextsplit".to_string(),
+                    "selectprevsplit".to_string(),
+                    "selectnextsplitortab".to_string(),
+                    "selectprevsplitortab".to_string(),
+                    "movedividerup".to_string(),
+                    "movedividerdown".to_string(),
+                    "movedividerleft".to_string(),
+                    "movedividerright".to_string(),
+
+                    // Vi mode
+                    "togglevimode".to_string(),
+
+                    // Fullscreen
+                    "togglefullscreen".to_string(),
+
+                    // Session management
+                    "savesession".to_string(),
+                    "restoresession".to_string(),
+
+                    // SSH
+                    "showsshprofiles".to_string(),
+                    "addsshprofile".to_string(),
+
+                    // Snippets
+                    "showsnippets".to_string(),
+                    "addsnippet".to_string(),
+
+                    // Broadcast mode
+                    "togglebroadcast".to_string(),
+
+                    // Directory jumper
+                    "showdirectoryjumper".to_string(),
+
+                    // Parameterized actions (show format)
+                    "selecttab(N)".to_string(),
+                    "gotobookmark(N)".to_string(),
+                    "connectssh(N)".to_string(),
+                    "insertsnippet(N)".to_string(),
+                    "jumptodirectory(N)".to_string(),
+                    "run(COMMAND)".to_string(),
+                    "scroll(N)".to_string(),
                 ];
                 IpcResponse::Actions(actions)
             }
@@ -283,29 +370,13 @@ impl Application<'_> {
                     None => return IpcResponse::Error("Route not found".to_string()),
                 };
 
-                // Map action name to handler
-                match action_name.to_lowercase().as_str() {
-                    "showdirectoryjumper" => {
-                        route.window.screen.show_directory_jumper();
-                        IpcResponse::ActionTriggered(action_name)
-                    }
-                    "togglebroadcast" => {
-                        route.window.screen.toggle_broadcast();
-                        IpcResponse::ActionTriggered(action_name)
-                    }
-                    "showbookmarks" => {
-                        route.window.screen.show_bookmarks();
-                        IpcResponse::ActionTriggered(action_name)
-                    }
-                    "showsnippets" => {
-                        route.window.screen.show_snippets();
-                        IpcResponse::ActionTriggered(action_name)
-                    }
-                    "showsshprofiles" => {
-                        route.window.screen.show_ssh_profiles();
-                        IpcResponse::ActionTriggered(action_name)
-                    }
-                    _ => IpcResponse::Error(format!("Unknown action: {}", action_name)),
+                // Convert action name to Action enum using From<String>
+                let action = Action::from(action_name.clone());
+
+                // Execute the action
+                match route.window.screen.execute_action(&action) {
+                    Ok(_) => IpcResponse::ActionTriggered(action_name),
+                    Err(e) => IpcResponse::Error(e),
                 }
             }
 
@@ -351,7 +422,7 @@ impl Application<'_> {
                 }
             }
 
-            IpcCommand::DumpScreen => {
+            IpcCommand::DumpScreen { format, start_line, end_line } => {
                 let window_id = match self.get_any_route() {
                     Some(id) => id,
                     None => return IpcResponse::Error("No focused window".to_string()),
@@ -365,26 +436,93 @@ impl Application<'_> {
                 let terminal = route.window.screen.context_manager.current().terminal.lock();
                 let grid = &terminal.grid;
                 let cursor = &grid.cursor;
-
-                // Extract visible lines from the grid
-                let mut lines = Vec::new();
                 let num_lines = grid.screen_lines();
                 let num_cols = grid.columns();
 
-                for line_idx in 0..num_lines {
-                    let mut line = String::new();
-                    for col_idx in 0..num_cols {
-                        let cell = &grid[Line(line_idx as i32)][Column(col_idx)];
-                        line.push(cell.c);
+                // Calculate line range
+                let start = start_line.unwrap_or(0).min(num_lines);
+                let end = end_line.unwrap_or(num_lines).min(num_lines);
+
+                // Check if JSON format requested
+                let is_json = format.as_ref().map(|f| f == "json").unwrap_or(false);
+
+                if is_json {
+                    // JSON format with cell data
+                    use crate::ipc::ScreenCell;
+                    let mut json_lines = Vec::new();
+
+                    for line_idx in start..end {
+                        let mut json_line = Vec::new();
+                        for col_idx in 0..num_cols {
+                            let cell = &grid[Line(line_idx as i32)][Column(col_idx)];
+
+                            // For now, skip color information (would need color palette access)
+                            json_line.push(ScreenCell {
+                                c: cell.c,
+                                fg: None,  // TODO: Extract from color palette
+                                bg: None,  // TODO: Extract from color palette
+                                bold: cell.flags.contains(rio_backend::crosswords::square::Flags::BOLD),
+                                italic: cell.flags.contains(rio_backend::crosswords::square::Flags::ITALIC),
+                                underline: cell.flags.contains(rio_backend::crosswords::square::Flags::UNDERLINE),
+                            });
+                        }
+                        json_lines.push(json_line);
                     }
-                    lines.push(line.trim_end().to_string());
+
+                    IpcResponse::ScreenDumpJson {
+                        lines: json_lines,
+                        cursor_row: cursor.pos.row.0 as usize,
+                        cursor_col: cursor.pos.col.0,
+                        start_line: start,
+                        end_line: end,
+                    }
+                } else {
+                    // Plain text format
+                    let mut lines = Vec::new();
+                    for line_idx in start..end {
+                        let mut line = String::new();
+                        for col_idx in 0..num_cols {
+                            let cell = &grid[Line(line_idx as i32)][Column(col_idx)];
+                            line.push(cell.c);
+                        }
+                        lines.push(line.trim_end().to_string());
+                    }
+
+                    IpcResponse::ScreenDump {
+                        lines,
+                        cursor_row: cursor.pos.row.0 as usize,
+                        cursor_col: cursor.pos.col.0,
+                    }
+                }
+            }
+
+            IpcCommand::ListTabs => {
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                use crate::ipc::TabInfo;
+                let current_index = route.window.screen.context_manager.current_index();
+                let num_tabs = route.window.screen.context_manager.len();
+
+                let mut tabs = Vec::new();
+                for index in 0..num_tabs {
+                    // Get tab title - this requires accessing the context manager
+                    let title = format!("Tab {}", index + 1); // Simplified for now
+                    tabs.push(TabInfo {
+                        index,
+                        title,
+                        is_current: index == current_index,
+                    });
                 }
 
-                IpcResponse::ScreenDump {
-                    lines,
-                    cursor_row: cursor.pos.row.0 as usize,
-                    cursor_col: cursor.pos.col.0,
-                }
+                IpcResponse::Tabs(tabs)
             }
 
             IpcCommand::SendInput(text) => {

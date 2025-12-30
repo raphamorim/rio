@@ -1,0 +1,10 @@
+# Agent Progress - ipc-actions
+# Format: KEY=VALUE, one per line. Agents append, last value wins.
+# Created: 2025-12-30T05:48:22Z
+
+feature=ipc-actions
+name=IPC All Actions
+status=pending
+step=0
+step_name=Not started
+created=2025-12-30T05:48:22Z

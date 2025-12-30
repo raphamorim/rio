@@ -2329,6 +2329,450 @@ impl Screen<'_> {
         tracing::info!("Jumping to directory: {}", path);
     }
 
+    /// Execute an action generically - used by IPC and other external triggers.
+    /// This method delegates to the appropriate handler for each action type.
+    pub fn execute_action(&mut self, action: &Act) -> Result<(), String> {
+        match action {
+            // Basic clipboard actions
+            Act::Paste => {
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
+                self.paste(&content, true);
+                Ok(())
+            }
+            Act::Copy => {
+                self.copy_selection(ClipboardType::Clipboard);
+                Ok(())
+            }
+            Act::PasteSelection => {
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Selection);
+                self.paste(&content, true);
+                Ok(())
+            }
+            Act::ClearSelection => {
+                self.clear_selection();
+                Ok(())
+            }
+
+            // Search actions
+            Act::SearchForward => {
+                self.start_search(Direction::Right);
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::SearchBackward => {
+                self.start_search(Direction::Left);
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchConfirm) => {
+                self.confirm_search();
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchCancel) => {
+                self.cancel_search();
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchClear) => {
+                let direction = self.search_state.direction;
+                self.cancel_search();
+                self.start_search(direction);
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchFocusNext) => {
+                self.advance_search_origin(self.search_state.direction);
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchFocusPrevious) => {
+                let direction = self.search_state.direction.opposite();
+                self.advance_search_origin(direction);
+                self.resize_top_or_bottom_line(self.ctx().len());
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchDeleteWord) => {
+                self.search_pop_word();
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchHistoryPrevious) => {
+                self.search_history_previous();
+                self.render();
+                Ok(())
+            }
+            Act::Search(SearchAction::SearchHistoryNext) => {
+                self.search_history_next();
+                self.render();
+                Ok(())
+            }
+
+            // History and font
+            Act::ClearHistory => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.clear_saved_history();
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::IncreaseFontSize => {
+                self.change_font_size(FontSizeAction::Increase);
+                Ok(())
+            }
+            Act::DecreaseFontSize => {
+                self.change_font_size(FontSizeAction::Decrease);
+                Ok(())
+            }
+            Act::ResetFontSize => {
+                self.change_font_size(FontSizeAction::Reset);
+                Ok(())
+            }
+
+            // Window and tab management
+            Act::WindowCreateNew => {
+                self.context_manager.create_new_window();
+                Ok(())
+            }
+            Act::TabCreateNew => {
+                self.create_tab();
+                Ok(())
+            }
+            Act::MoveCurrentTabToPrev => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.move_current_to_prev();
+                self.render();
+                Ok(())
+            }
+            Act::MoveCurrentTabToNext => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.move_current_to_next();
+                self.render();
+                Ok(())
+            }
+            Act::TabCloseCurrent => {
+                self.close_tab();
+                Ok(())
+            }
+            Act::CloseCurrentSplitOrTab => {
+                self.close_split_or_tab();
+                Ok(())
+            }
+            Act::TabCloseUnfocused => {
+                self.clear_selection();
+                self.cancel_search();
+                if self.ctx().len() <= 1 {
+                    return Ok(());
+                }
+                self.context_manager.close_unfocused_tabs();
+                self.resize_top_or_bottom_line(1);
+                self.render();
+                Ok(())
+            }
+            Act::RenameTab => {
+                self.rename_current_tab();
+                Ok(())
+            }
+            Act::SelectPrevTab => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.switch_to_prev();
+                self.render();
+                Ok(())
+            }
+            Act::SelectNextTab => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.switch_to_next();
+                self.render();
+                Ok(())
+            }
+            Act::SelectLastTab => {
+                self.cancel_search();
+                self.context_manager.select_last_tab();
+                self.render();
+                Ok(())
+            }
+            Act::SelectTab(index) => {
+                self.context_manager.select_tab(*index);
+                self.cancel_search();
+                self.render();
+                Ok(())
+            }
+
+            // Bookmarks
+            Act::AddBookmark => {
+                self.add_bookmark();
+                Ok(())
+            }
+            Act::ShowBookmarks => {
+                self.show_bookmarks();
+                Ok(())
+            }
+            Act::GoToBookmark(index) => {
+                self.go_to_bookmark(*index);
+                Ok(())
+            }
+
+            // Configuration
+            Act::ConfigEditor => {
+                self.context_manager.switch_to_settings();
+                Ok(())
+            }
+
+            // Scrolling
+            Act::ScrollPageUp => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let scroll_lines = terminal.grid.screen_lines() as i32;
+                terminal.vi_mode_cursor = terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+                terminal.scroll_display(Scroll::PageUp);
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::ScrollPageDown => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let scroll_lines = -(terminal.grid.screen_lines() as i32);
+                terminal.vi_mode_cursor = terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+                terminal.scroll_display(Scroll::PageDown);
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::ScrollHalfPageUp => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let scroll_lines = terminal.grid.screen_lines() as i32 / 2;
+                terminal.vi_mode_cursor = terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+                terminal.scroll_display(Scroll::Delta(scroll_lines));
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::ScrollHalfPageDown => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                let scroll_lines = -(terminal.grid.screen_lines() as i32 / 2);
+                terminal.vi_mode_cursor = terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
+                terminal.scroll_display(Scroll::Delta(scroll_lines));
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::ScrollToTop => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.scroll_display(Scroll::Top);
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::ScrollToBottom => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.scroll_display(Scroll::Bottom);
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+            Act::Scroll(lines) => {
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
+                terminal.scroll_display(Scroll::Delta(*lines));
+                drop(terminal);
+                self.render();
+                Ok(())
+            }
+
+            // Split management
+            Act::SplitRight => {
+                self.split_right();
+                Ok(())
+            }
+            Act::SplitDown => {
+                self.split_down();
+                Ok(())
+            }
+            Act::SelectNextSplit => {
+                self.cancel_search();
+                self.context_manager.select_next_split();
+                self.render();
+                Ok(())
+            }
+            Act::SelectPrevSplit => {
+                self.cancel_search();
+                self.context_manager.select_prev_split();
+                self.render();
+                Ok(())
+            }
+            Act::SelectNextSplitOrTab => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.switch_to_next_split_or_tab();
+                self.render();
+                Ok(())
+            }
+            Act::SelectPrevSplitOrTab => {
+                self.cancel_search();
+                self.clear_selection();
+                self.context_manager.switch_to_prev_split_or_tab();
+                self.render();
+                Ok(())
+            }
+            Act::MoveDividerUp => {
+                self.move_divider_down();  // Inverted: user wants divider up, means expand bottom
+                Ok(())
+            }
+            Act::MoveDividerDown => {
+                self.move_divider_up();  // Inverted: user wants divider down, means expand top
+                Ok(())
+            }
+            Act::MoveDividerLeft => {
+                self.move_divider_left();
+                Ok(())
+            }
+            Act::MoveDividerRight => {
+                self.move_divider_right();
+                Ok(())
+            }
+
+            // Vi mode
+            Act::ToggleViMode => {
+                let context = self.context_manager.current_mut();
+                let mut terminal = context.terminal.lock();
+                terminal.toggle_vi_mode();
+                let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
+                drop(terminal);
+                context.renderable_content.pending_update.set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                self.renderer.set_vi_mode(has_vi_mode_enabled);
+                self.render();
+                Ok(())
+            }
+
+            // Session management
+            Act::SaveSession => {
+                self.save_session();
+                Ok(())
+            }
+            Act::RestoreSession => {
+                self.restore_session();
+                Ok(())
+            }
+
+            // SSH
+            Act::ShowSSHProfiles => {
+                self.show_ssh_profiles();
+                Ok(())
+            }
+            Act::AddSSHProfile => {
+                self.add_ssh_profile();
+                Ok(())
+            }
+            Act::ConnectSSH(index) => {
+                self.connect_ssh(*index);
+                Ok(())
+            }
+
+            // Snippets
+            Act::ShowSnippets => {
+                self.show_snippets();
+                Ok(())
+            }
+            Act::AddSnippet => {
+                self.add_snippet();
+                Ok(())
+            }
+            Act::InsertSnippet(index) => {
+                self.insert_snippet(*index);
+                Ok(())
+            }
+
+            // Broadcast mode
+            Act::ToggleBroadcast => {
+                self.toggle_broadcast();
+                Ok(())
+            }
+
+            // Directory jumper
+            Act::ShowDirectoryJumper => {
+                self.show_directory_jumper();
+                Ok(())
+            }
+            Act::JumpToDirectory(index) => {
+                self.jump_to_directory(*index);
+                Ok(())
+            }
+
+            // Run command
+            Act::Run(program) => {
+                self.exec(program.program(), program.args());
+                Ok(())
+            }
+
+            // Esc sequence
+            Act::Esc(s) => {
+                self.paste(s, false);
+                Ok(())
+            }
+
+            // Quit
+            Act::Quit => {
+                self.context_manager.quit();
+                Ok(())
+            }
+
+            // Actions that don't make sense for IPC or aren't implemented yet
+            Act::None => Ok(()),
+            Act::ClearLogNotice => Ok(()), // No-op for now, notification clearing handled elsewhere
+            Act::ReceiveChar => Err("ReceiveChar cannot be triggered via IPC".to_string()),
+            Act::Hint(_) => Err("Hint action cannot be triggered via IPC".to_string()),
+            Act::ViMotion(_) => Err("Vi motion cannot be triggered via IPC".to_string()),
+            Act::Vi(_) => Err("Vi action cannot be triggered via IPC".to_string()),
+            Act::Mouse(_) => Err("Mouse action cannot be triggered via IPC".to_string()),
+
+            #[cfg(not(any(target_os = "macos", windows)))]
+            Act::CopySelection => {
+                self.copy_selection(ClipboardType::Selection);
+                Ok(())
+            }
+
+            #[cfg(target_os = "macos")]
+            Act::Hide => {
+                Err("Hide window is not supported via IPC".to_string())
+            }
+
+            #[cfg(target_os = "macos")]
+            Act::HideOtherApplications => {
+                Err("Hide other applications is not supported via IPC".to_string())
+            }
+
+            Act::Minimize => {
+                Err("Minimize is not supported via IPC".to_string())
+            }
+
+            Act::SpawnNewInstance => {
+                Err("Spawn new instance is not supported via IPC".to_string())
+            }
+
+            Act::ToggleFullscreen => {
+                Err("Toggle fullscreen is not supported via IPC".to_string())
+            }
+
+            Act::ToggleMaximized => {
+                Err("Toggle maximized is not supported via IPC".to_string())
+            }
+
+            #[cfg(target_os = "macos")]
+            Act::ToggleSimpleFullscreen => {
+                Err("Toggle simple fullscreen is not supported via IPC".to_string())
+            }
+        }
+    }
+
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
         let layout = self.context_manager.current().dimension;
         let previous_margin = layout.margin;
