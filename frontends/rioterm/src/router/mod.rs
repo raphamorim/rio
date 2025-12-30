@@ -375,6 +375,7 @@ impl Router<'_> {
             None,
             None,
             self.clipboard.clone(),
+            None,
         );
         let id = window.winit_window.id();
         let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
@@ -419,6 +420,7 @@ impl Router<'_> {
         event_proxy: EventProxy,
         config: &'a rio_backend::config::Config,
         open_url: Option<String>,
+        app_id: Option<&str>,
     ) {
         let tab_id = if config.navigation.is_native() {
             let id = self.current_tab_id;
@@ -437,6 +439,7 @@ impl Router<'_> {
             tab_id.as_deref(),
             open_url,
             self.clipboard.clone(),
+            app_id,
         );
         let id = window.winit_window.id();
 
@@ -473,6 +476,7 @@ impl Router<'_> {
             tab_id,
             open_url,
             self.clipboard.clone(),
+            None,
         );
         self.routes.insert(
             window.winit_window.id(),
@@ -592,9 +596,11 @@ impl<'a> RouteWindow<'a> {
         tab_id: Option<&str>,
         open_url: Option<String>,
         clipboard: Rc<RefCell<Clipboard>>,
+        app_id: Option<&str>,
     ) -> RouteWindow<'a> {
         #[allow(unused_mut)]
-        let mut window_builder = create_window_builder(window_name, config, tab_id);
+        let mut window_builder =
+            create_window_builder(window_name, config, tab_id, app_id);
 
         #[cfg(not(any(target_os = "macos", windows)))]
         if let Some(token) = event_loop.read_token_from_env() {
