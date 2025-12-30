@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="1024" height="1024" fill="none">
+  <!-- Outer rounded rectangle - dark grey -->
+  <path fill="#1a1a1a"
+    d="M5 12.917C5 7.77 7.77 5 12.917 5h22.166C40.23 5 43 7.77 43 12.917v22.166C43 40.23 40.23 43 35.083 43H12.917C7.77 43 5 40.23 5 35.083V12.917Z" />
+  <!-- Inner black screen area -->
+  <path fill="#000" d="M8.5 14a5 5 0 0 1 5-5h21a5 5 0 0 1 5 5v20a5 5 0 0 1-5 5h-21a5 5 0 0 1-5-5V14Z" />
+  <!-- Horizontal line in the middle with Rio gradient -->
+  <rect x="14" y="22.5" width="20" height="3" rx="1.5" fill="url(#rio-gradient)" />
+  <defs>
+    <linearGradient id="rio-gradient" x1="14" x2="34" y1="24" y2="24" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fb43fe" />
+      <stop offset=".5" stop-color="#cf91f6" />
+      <stop offset="1" stop-color="#00dbe5" />
+    </linearGradient>
+  </defs>
+</svg>
