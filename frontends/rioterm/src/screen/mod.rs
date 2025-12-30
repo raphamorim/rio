@@ -74,6 +74,114 @@ const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 /// Maximum number of search terms stored in the history.
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 
+// ============ Directory Frecency Functions ============
+
+/// Get the path to the directory frecency file.
+fn get_frecency_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("rio")
+        .join("directory_frecency.json")
+}
+
+/// Load directory frecency data.
+pub fn load_frecency() -> Vec<serde_json::Value> {
+    let path = get_frecency_path();
+    if path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(data) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                return data;
+            }
+        }
+    }
+    Vec::new()
+}
+
+/// Save directory frecency data.
+fn save_frecency(data: &[serde_json::Value]) {
+    let path = get_frecency_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string_pretty(data) {
+        let _ = std::fs::write(&path, json);
+    }
+}
+
+/// Calculate frecency score for a directory entry.
+pub fn calculate_frecency_score(frequency: u64, last_access: u64) -> f64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let age_hours = if now > last_access {
+        (now - last_access) / 3600
+    } else {
+        0
+    };
+
+    let recency_weight = match age_hours {
+        0..=1 => 4.0,      // Last hour
+        2..=24 => 2.0,     // Last day
+        25..=168 => 1.0,   // Last week
+        _ => 0.5,          // Older
+    };
+
+    frequency as f64 * recency_weight
+}
+
+/// Record a directory visit for frecency tracking.
+pub fn record_directory_visit(path: &str) {
+    if path.is_empty() || path == "/" {
+        return;
+    }
+
+    let mut data = load_frecency();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Find existing entry or create new one
+    let mut found = false;
+    for entry in data.iter_mut() {
+        if entry.get("path").and_then(|p| p.as_str()) == Some(path) {
+            let freq = entry.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0);
+            entry["frequency"] = serde_json::json!(freq + 1);
+            entry["last_access"] = serde_json::json!(now);
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        data.push(serde_json::json!({
+            "path": path,
+            "frequency": 1,
+            "last_access": now,
+        }));
+    }
+
+    // Keep only top 100 entries by score
+    data.sort_by(|a, b| {
+        let score_a = calculate_frecency_score(
+            a.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+            a.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+        );
+        let score_b = calculate_frecency_score(
+            b.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+            b.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+        );
+        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    data.truncate(100);
+
+    save_frecency(&data);
+}
+
+// ============ End Frecency Functions ============
+
 pub struct Screen<'screen> {
     bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
@@ -284,6 +392,21 @@ impl Screen<'_> {
     #[inline]
     pub fn ctx_mut(&mut self) -> &mut ContextManager<EventProxy> {
         &mut self.context_manager
+    }
+
+    /// Write bytes to PTY, broadcasting to all splits if broadcast mode is enabled.
+    #[inline]
+    pub fn write_to_pty(&mut self, bytes: Vec<u8>) {
+        if self.context_manager.broadcast_input {
+            // Send to all splits in the current tab
+            let grid = self.context_manager.current_grid_mut();
+            for context_item in grid.contexts_mut().values_mut() {
+                context_item.val.messenger.send_write(bytes.clone());
+            }
+        } else {
+            // Send only to the focused split
+            self.context_manager.current_mut().messenger.send_write(bytes);
+        }
     }
 
     #[inline]
@@ -585,7 +708,7 @@ impl Screen<'_> {
                 _ => build_key_sequence(key, mods, mode),
             };
 
-            self.ctx_mut().current_mut().messenger.send_write(bytes);
+            self.write_to_pty(bytes);
 
             return;
         }
@@ -683,7 +806,7 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut().current_mut().messenger.send_write(bytes);
+            self.write_to_pty(bytes);
         }
     }
 
@@ -1030,6 +1153,15 @@ impl Screen<'_> {
                     }
                     Act::InsertSnippet(index) => {
                         self.insert_snippet(*index);
+                    }
+                    Act::ToggleBroadcast => {
+                        self.toggle_broadcast();
+                    }
+                    Act::ShowDirectoryJumper => {
+                        self.show_directory_jumper();
+                    }
+                    Act::JumpToDirectory(index) => {
+                        self.jump_to_directory(*index);
                     }
                     Act::Quit => {
                         self.context_manager.quit();
@@ -2029,6 +2161,172 @@ impl Screen<'_> {
         self.paste(content, true);
         let name = snippet.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
         tracing::info!("Inserted snippet {}: {}", index, name);
+    }
+
+    /// Toggle broadcast input mode.
+    /// When enabled, keyboard input is sent to all splits in the current tab.
+    pub fn toggle_broadcast(&mut self) {
+        self.context_manager.broadcast_input = !self.context_manager.broadcast_input;
+        let status = if self.context_manager.broadcast_input {
+            "ON"
+        } else {
+            "OFF"
+        };
+        tracing::info!("Broadcast input: {}", status);
+
+        #[cfg(target_os = "macos")]
+        {
+            let message = if self.context_manager.broadcast_input {
+                "Broadcast mode ON - typing in all splits"
+            } else {
+                "Broadcast mode OFF"
+            };
+            let script = format!(
+                r#"display notification "{}" with title "midterm""#,
+                message
+            );
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .spawn();
+        }
+    }
+
+    /// Show directory jumper dialog.
+    pub fn show_directory_jumper(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let mut data = load_frecency();
+
+            // If empty, seed with current directory
+            if data.is_empty() {
+                let current_dir = {
+                    let terminal = self.context_manager.current().terminal.lock();
+                    terminal.current_directory.clone()
+                };
+
+                if let Some(dir) = current_dir {
+                    let dir_str = dir.to_string_lossy().to_string();
+                    record_directory_visit(&dir_str);
+                    data = load_frecency();
+                }
+
+                if data.is_empty() {
+                    let script = r#"display dialog "No directories visited yet.\n\nNavigate to directories and they will be tracked." buttons {"OK"} default button "OK" with title "Directory Jumper""#;
+                    let _ = std::process::Command::new("osascript")
+                        .arg("-e")
+                        .arg(script)
+                        .output();
+                    return;
+                }
+            }
+
+            // Sort by frecency score
+            data.sort_by(|a, b| {
+                let score_a = calculate_frecency_score(
+                    a.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+                    a.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+                );
+                let score_b = calculate_frecency_score(
+                    b.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+                    b.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+                );
+                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Take top 15 entries
+            let top_dirs: Vec<String> = data
+                .iter()
+                .take(15)
+                .enumerate()
+                .filter_map(|(i, entry)| {
+                    entry.get("path").and_then(|p| p.as_str()).map(|path| {
+                        // Shorten home directory
+                        let display_path = if let Some(home) = dirs::home_dir() {
+                            let home_str = home.to_string_lossy();
+                            if path.starts_with(home_str.as_ref()) {
+                                path.replacen(home_str.as_ref(), "~", 1)
+                            } else {
+                                path.to_string()
+                            }
+                        } else {
+                            path.to_string()
+                        };
+                        format!("{}: {}", i + 1, display_path)
+                    })
+                })
+                .collect();
+
+            let list_str = top_dirs.join("\", \"");
+
+            let script = format!(
+                r#"choose from list {{"{}"}}" with title "Directory Jumper" with prompt "Jump to directory:" OK button name "Jump" cancel button name "Cancel""#,
+                list_str
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if stdout != "false" {
+                        // Parse the selected directory index
+                        if let Some(colon_pos) = stdout.find(':') {
+                            if let Ok(index) = stdout[..colon_pos].trim().parse::<usize>() {
+                                self.jump_to_directory(index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("Directory jumper UI is only supported on macOS");
+        }
+    }
+
+    /// Jump to a directory by index (1-based).
+    pub fn jump_to_directory(&mut self, index: usize) {
+        let mut data = load_frecency();
+
+        // Sort by frecency score
+        data.sort_by(|a, b| {
+            let score_a = calculate_frecency_score(
+                a.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+                a.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+            );
+            let score_b = calculate_frecency_score(
+                b.get("frequency").and_then(|f| f.as_u64()).unwrap_or(0),
+                b.get("last_access").and_then(|t| t.as_u64()).unwrap_or(0),
+            );
+            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        if index == 0 || index > data.len() {
+            tracing::warn!("Directory {} not found", index);
+            return;
+        }
+
+        let entry = &data[index - 1];
+        let path = match entry.get("path").and_then(|p| p.as_str()) {
+            Some(p) => p,
+            None => {
+                tracing::error!("Directory entry {} has no path", index);
+                return;
+            }
+        };
+
+        // Record this visit to update frecency
+        record_directory_visit(path);
+
+        // cd to the directory
+        let cd_cmd = format!("cd {}\n", path);
+        self.paste(&cd_cmd, true);
+        tracing::info!("Jumping to directory: {}", path);
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {
@@ -3229,8 +3527,71 @@ impl Screen<'_> {
         self.mouse.accumulated_scroll.y %= height;
     }
 
+    /// Check if pasted text contains dangerous commands.
+    /// Returns the warning message if dangerous, None otherwise.
+    fn is_dangerous_paste(text: &str) -> Option<&'static str> {
+        let text_lower = text.to_lowercase();
+
+        const DANGEROUS_PATTERNS: &[(&str, &str)] = &[
+            ("rm -rf /", "Deletes entire filesystem"),
+            ("rm -rf ~", "Deletes home directory"),
+            ("rm -rf *", "Deletes all files in directory"),
+            ("rm -rf .", "Deletes current directory"),
+            ("> /dev/sd", "Overwrites disk device"),
+            ("mkfs.", "Formats filesystem"),
+            ("dd if=", "Raw disk write operation"),
+            (":(){ :|:& };:", "Fork bomb - crashes system"),
+            ("chmod -r 777 /", "Removes all file permissions"),
+            ("chmod 000 /", "Removes all file permissions"),
+            ("curl | sh", "Executes remote script"),
+            ("curl | bash", "Executes remote script"),
+            ("wget | sh", "Executes remote script"),
+            ("wget | bash", "Executes remote script"),
+            ("| sh", "Pipes to shell execution"),
+            ("| bash", "Pipes to shell execution"),
+            ("> /dev/null 2>&1 &", "Runs hidden background process"),
+            ("history -c", "Clears command history"),
+            ("shred", "Permanently destroys files"),
+        ];
+
+        for (pattern, warning) in DANGEROUS_PATTERNS {
+            if text_lower.contains(pattern) {
+                return Some(warning);
+            }
+        }
+        None
+    }
+
     #[inline]
     pub fn paste(&mut self, text: &str, bracketed: bool) {
+        // Check for dangerous paste patterns
+        #[cfg(target_os = "macos")]
+        if let Some(warning) = Self::is_dangerous_paste(text) {
+            let preview = if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.to_string()
+            };
+            // Escape quotes for AppleScript
+            let preview_escaped = preview.replace('\\', "\\\\").replace('"', "\\\"");
+            let script = format!(
+                r#"display dialog "⚠️ Potentially dangerous paste detected!\n\nWarning: {}\n\nContent preview:\n{}\n\nAre you sure you want to paste this?" buttons {{"Cancel", "Paste Anyway"}} default button "Cancel" with icon caution with title "Dangerous Paste Warning""#,
+                warning, preview_escaped
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.contains("Paste Anyway") {
+                    tracing::info!("User cancelled dangerous paste: {}", warning);
+                    return;
+                }
+            }
+        }
+
         if self.search_active() {
             for c in text.chars() {
                 self.search_input(c);

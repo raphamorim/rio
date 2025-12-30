@@ -11,6 +11,8 @@ mod constants;
 mod context;
 mod hints;
 mod ime;
+#[cfg(unix)]
+pub mod ipc;
 mod messenger;
 mod mouse;
 #[cfg(windows)]
@@ -144,6 +146,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load command line options.
     let args = cli::Cli::parse();
+
+    // Handle IPC commands (communicate with running instance)
+    #[cfg(unix)]
+    if ipc::handle_cli_command(
+        args.action.clone(),
+        args.dump_screen,
+        args.status,
+        args.list_actions,
+        args.send.clone(),
+        args.wait_for.clone(),
+        args.timeout,
+    ) {
+        return Ok(());
+    }
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {

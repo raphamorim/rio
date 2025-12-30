@@ -12,6 +12,34 @@ pub struct Cli {
     /// Options which can be passed via IPC.
     #[clap(flatten)]
     pub window_options: WindowOptions,
+
+    /// Send an action to a running midterm instance.
+    #[clap(long, value_name = "ACTION")]
+    pub action: Option<String>,
+
+    /// Dump the current screen content from a running instance.
+    #[clap(long)]
+    pub dump_screen: bool,
+
+    /// Get status info from a running instance (JSON).
+    #[clap(long)]
+    pub status: bool,
+
+    /// List available actions.
+    #[clap(long)]
+    pub list_actions: bool,
+
+    /// Send text input to the terminal.
+    #[clap(long, value_name = "TEXT")]
+    pub send: Option<String>,
+
+    /// Wait for screen to contain pattern (with timeout in ms).
+    #[clap(long, value_name = "PATTERN")]
+    pub wait_for: Option<String>,
+
+    /// Timeout for wait operations in milliseconds.
+    #[clap(long, default_value = "5000")]
+    pub timeout: u64,
 }
 
 #[derive(Serialize, Deserialize, Args, Default, Clone, Debug, PartialEq, Eq)]

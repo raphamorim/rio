@@ -1,10 +1,16 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::Preedit;
+#[cfg(unix)]
+use crate::ipc::{IpcCommand, IpcResponse, IpcServer};
 use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
 use crate::screen::touch::on_touch;
 use crate::watcher::configuration_file_updates;
+#[cfg(unix)]
+use rio_backend::crosswords::grid::Dimensions;
+#[cfg(unix)]
+use rio_backend::crosswords::pos::{Column, Line};
 #[cfg(all(
     feature = "audio",
     not(target_os = "macos"),
@@ -35,6 +41,8 @@ pub struct Application<'a> {
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
+    #[cfg(unix)]
+    ipc_server: Option<IpcServer>,
 }
 
 impl Application<'_> {
@@ -65,11 +73,23 @@ impl Application<'_> {
         #[cfg(target_os = "macos")]
         event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
+        // Start IPC server for remote control
+        #[cfg(unix)]
+        let ipc_server = match IpcServer::new() {
+            Ok(server) => Some(server),
+            Err(e) => {
+                tracing::warn!("Failed to start IPC server: {}", e);
+                None
+            }
+        };
+
         Application {
             config,
             event_proxy,
             router,
             scheduler,
+            #[cfg(unix)]
+            ipc_server,
         }
     }
 
@@ -203,6 +223,217 @@ impl Application<'_> {
     #[cfg(not(target_os = "macos"))]
     fn send_command_notification(&self, _exit_code: i32, _duration_secs: f64) {
         // Notifications only supported on macOS for now
+    }
+
+    #[cfg(unix)]
+    fn poll_ipc(&mut self) {
+        let server = match &self.ipc_server {
+            Some(s) => s,
+            None => return,
+        };
+
+        for (cmd, response_tx) in server.poll() {
+            let response = self.handle_ipc_command(cmd);
+            let _ = response_tx.send(response);
+        }
+    }
+
+    #[cfg(unix)]
+    fn get_any_route(&self) -> Option<rio_window::window::WindowId> {
+        // Try focused first, fall back to any route
+        self.router.get_focused_route()
+            .or_else(|| self.router.routes.keys().next().copied())
+    }
+
+    #[cfg(unix)]
+    fn handle_ipc_command(&mut self, cmd: IpcCommand) -> IpcResponse {
+        match cmd {
+            IpcCommand::Ping => IpcResponse::Pong,
+
+            IpcCommand::ListActions => {
+                let actions = vec![
+                    "showdirectoryjumper".to_string(),
+                    "togglebroadcast".to_string(),
+                    "showbookmarks".to_string(),
+                    "showsnippets".to_string(),
+                    "showsshprofiles".to_string(),
+                    "savesession".to_string(),
+                    "restoresession".to_string(),
+                    "createtab".to_string(),
+                    "closetab".to_string(),
+                    "selectprevtab".to_string(),
+                    "selectnexttab".to_string(),
+                    "splitright".to_string(),
+                    "splitdown".to_string(),
+                    "copy".to_string(),
+                    "paste".to_string(),
+                ];
+                IpcResponse::Actions(actions)
+            }
+
+            IpcCommand::TriggerAction(action_name) => {
+                // Get the focused route's screen and trigger the action
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get_mut(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                // Map action name to handler
+                match action_name.to_lowercase().as_str() {
+                    "showdirectoryjumper" => {
+                        route.window.screen.show_directory_jumper();
+                        IpcResponse::ActionTriggered(action_name)
+                    }
+                    "togglebroadcast" => {
+                        route.window.screen.toggle_broadcast();
+                        IpcResponse::ActionTriggered(action_name)
+                    }
+                    "showbookmarks" => {
+                        route.window.screen.show_bookmarks();
+                        IpcResponse::ActionTriggered(action_name)
+                    }
+                    "showsnippets" => {
+                        route.window.screen.show_snippets();
+                        IpcResponse::ActionTriggered(action_name)
+                    }
+                    "showsshprofiles" => {
+                        route.window.screen.show_ssh_profiles();
+                        IpcResponse::ActionTriggered(action_name)
+                    }
+                    _ => IpcResponse::Error(format!("Unknown action: {}", action_name)),
+                }
+            }
+
+            IpcCommand::GetStatus => {
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                let tabs = route.window.screen.context_manager.len();
+                let current_tab = route.window.screen.context_manager.current_index();
+                let splits = route.window.screen.context_manager.current_grid_len();
+                let broadcast_mode = route.window.screen.context_manager.broadcast_input;
+
+                let current_directory = {
+                    let terminal = route.window.screen.context_manager.current().terminal.lock();
+                    terminal.current_directory.as_ref().map(|p| p.to_string_lossy().to_string())
+                };
+
+                // Try to get git branch
+                let git_branch = current_directory.as_ref().and_then(|dir| {
+                    std::process::Command::new("git")
+                        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                        .current_dir(dir)
+                        .output()
+                        .ok()
+                        .filter(|o| o.status.success())
+                        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                });
+
+                IpcResponse::Status {
+                    tabs,
+                    current_tab,
+                    splits,
+                    broadcast_mode,
+                    current_directory,
+                    git_branch,
+                }
+            }
+
+            IpcCommand::DumpScreen => {
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                let terminal = route.window.screen.context_manager.current().terminal.lock();
+                let grid = &terminal.grid;
+                let cursor = &grid.cursor;
+
+                // Extract visible lines from the grid
+                let mut lines = Vec::new();
+                let num_lines = grid.screen_lines();
+                let num_cols = grid.columns();
+
+                for line_idx in 0..num_lines {
+                    let mut line = String::new();
+                    for col_idx in 0..num_cols {
+                        let cell = &grid[Line(line_idx as i32)][Column(col_idx)];
+                        line.push(cell.c);
+                    }
+                    lines.push(line.trim_end().to_string());
+                }
+
+                IpcResponse::ScreenDump {
+                    lines,
+                    cursor_row: cursor.pos.row.0 as usize,
+                    cursor_col: cursor.pos.col.0,
+                }
+            }
+
+            IpcCommand::SendInput(text) => {
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get_mut(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                let bytes = text.as_bytes().to_vec();
+                let len = bytes.len();
+                route.window.screen.write_to_pty(bytes);
+                IpcResponse::InputSent(len)
+            }
+
+            IpcCommand::ScreenContains(pattern) => {
+                let window_id = match self.get_any_route() {
+                    Some(id) => id,
+                    None => return IpcResponse::Error("No focused window".to_string()),
+                };
+
+                let route = match self.router.routes.get(&window_id) {
+                    Some(r) => r,
+                    None => return IpcResponse::Error("Route not found".to_string()),
+                };
+
+                let terminal = route.window.screen.context_manager.current().terminal.lock();
+                let grid = &terminal.grid;
+                let num_lines = grid.screen_lines();
+                let num_cols = grid.columns();
+
+                // Search through visible lines
+                for line_idx in 0..num_lines {
+                    let mut line = String::new();
+                    for col_idx in 0..num_cols {
+                        let cell = &grid[Line(line_idx as i32)][Column(col_idx)];
+                        line.push(cell.c);
+                    }
+                    if line.contains(&pattern) {
+                        return IpcResponse::ScreenContainsResult(true);
+                    }
+                }
+                IpcResponse::ScreenContainsResult(false)
+            }
+        }
     }
 
     pub fn run(
@@ -1497,6 +1728,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Poll IPC server for commands
+        #[cfg(unix)]
+        self.poll_ipc();
+
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
             None => ControlFlow::Wait,
@@ -1522,7 +1757,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         key: &rio_window::event::KeyEvent,
         modifiers: &rio_window::event::Modifiers,
     ) {
-        let window_id = match self.router.get_focused_route() {
+        let window_id = match self.get_any_route() {
             Some(window_id) => window_id,
             None => return,
         };

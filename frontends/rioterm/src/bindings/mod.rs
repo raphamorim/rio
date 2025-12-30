@@ -273,6 +273,8 @@ impl From<String> for Action {
             "addsshprofile" => Some(Action::AddSSHProfile),
             "showsnippets" => Some(Action::ShowSnippets),
             "addsnippet" => Some(Action::AddSnippet),
+            "togglebroadcast" => Some(Action::ToggleBroadcast),
+            "showdirectoryjumper" => Some(Action::ShowDirectoryJumper),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -314,6 +316,15 @@ impl From<String> for Action {
                 let matched_string = matched.as_str().to_string();
                 let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
                 return Action::InsertSnippet(parsed_matched_string);
+            }
+        }
+
+        let re = regex::Regex::new(r"jumptodirectory\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
+                return Action::JumpToDirectory(parsed_matched_string);
             }
         }
 
@@ -571,6 +582,15 @@ pub enum Action {
 
     /// Insert snippet by index (0-9).
     InsertSnippet(usize),
+
+    /// Toggle broadcast mode - send input to all splits.
+    ToggleBroadcast,
+
+    /// Show directory jumper (frecency-based).
+    ShowDirectoryJumper,
+
+    /// Jump to directory by index.
+    JumpToDirectory(usize),
 
     /// No action.
     None,

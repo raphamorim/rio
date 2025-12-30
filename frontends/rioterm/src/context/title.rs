@@ -1,6 +1,80 @@
 use crate::context::Context;
 use rustc_hash::FxHashMap;
+use std::path::Path;
+use std::sync::Mutex;
 use std::time::Instant;
+
+// Cache for git status to avoid calling git on every title update
+static GIT_CACHE: Mutex<Option<(String, String, Instant)>> = Mutex::new(None);
+const GIT_CACHE_DURATION_MS: u128 = 2000;
+
+/// Get git branch and dirty status for a directory.
+/// Returns (branch_name, is_dirty) or None if not a git repo.
+fn get_git_status(dir: &Path) -> Option<(String, bool)> {
+    // Check cache first
+    let cache_key = dir.to_string_lossy().to_string();
+    {
+        if let Ok(cache) = GIT_CACHE.lock() {
+            if let Some((cached_dir, cached_result, cached_time)) = cache.as_ref() {
+                if cached_dir == &cache_key
+                    && cached_time.elapsed().as_millis() < GIT_CACHE_DURATION_MS
+                {
+                    // Parse cached result
+                    if cached_result.is_empty() {
+                        return None;
+                    }
+                    let is_dirty = cached_result.ends_with('*');
+                    let branch = if is_dirty {
+                        cached_result.trim_end_matches('*').to_string()
+                    } else {
+                        cached_result.clone()
+                    };
+                    return Some((branch, is_dirty));
+                }
+            }
+        }
+    }
+
+    // Get branch name
+    let branch_output = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(dir)
+        .output()
+        .ok()?;
+
+    if !branch_output.status.success() {
+        // Not a git repo, cache empty result
+        if let Ok(mut cache) = GIT_CACHE.lock() {
+            *cache = Some((cache_key, String::new(), Instant::now()));
+        }
+        return None;
+    }
+
+    let branch = String::from_utf8_lossy(&branch_output.stdout)
+        .trim()
+        .to_string();
+
+    // Check if dirty
+    let status_output = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(dir)
+        .output()
+        .ok()?;
+
+    let is_dirty = !status_output.stdout.is_empty();
+
+    // Cache result
+    let cache_result = if is_dirty {
+        format!("{}*", branch)
+    } else {
+        branch.clone()
+    };
+    if let Ok(mut cache) = GIT_CACHE.lock() {
+        *cache = Some((cache_key, cache_result, Instant::now()));
+    }
+
+    Some((branch, is_dirty))
+}
 
 pub struct ContextTitleExtra {
     pub program: String,
@@ -203,6 +277,28 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                             new_template = new_template.replace(to_replace_str, &path);
                             matched = true;
                         }
+                    }
+                }
+                "git" => {
+                    let current_dir = {
+                        let terminal = context.terminal.lock();
+                        terminal.current_directory.clone()
+                    };
+                    if let Some(ref dir) = current_dir {
+                        if let Some((branch, is_dirty)) = get_git_status(dir) {
+                            let git_str = if is_dirty {
+                                format!("[{}*]", branch)
+                            } else {
+                                format!("[{}]", branch)
+                            };
+                            new_template = new_template.replace(to_replace_str, &git_str);
+                            matched = true;
+                        } else {
+                            // Not a git repo, remove the placeholder
+                            new_template = new_template.replace(to_replace_str, "");
+                        }
+                    } else {
+                        new_template = new_template.replace(to_replace_str, "");
                     }
                 }
                 // TODO:

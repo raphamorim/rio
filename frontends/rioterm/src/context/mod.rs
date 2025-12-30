@@ -135,6 +135,8 @@ pub struct ContextManager<T: EventListener> {
     window_id: WindowId,
     pub config: ContextManagerConfig,
     pub titles: ContextManagerTitles,
+    /// When true, keyboard input is sent to all splits in the current tab
+    pub broadcast_input: bool,
 }
 
 pub fn create_dead_context<T: rio_backend::event::EventListener>(
@@ -391,6 +393,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             config: ctx_config,
             titles,
+            broadcast_input: false,
         })
     }
 
@@ -438,6 +441,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             config,
             titles,
+            broadcast_input: false,
         })
     }
 
