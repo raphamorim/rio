@@ -162,6 +162,13 @@ pub enum RioEvent {
 
     // No operation
     Noop,
+
+    /// Command finished (from OSC 133 shell integration).
+    /// Contains exit code and duration in seconds.
+    CommandFinished {
+        exit_code: i32,
+        duration_secs: f64,
+    },
 }
 
 impl Debug for RioEvent {
@@ -230,6 +237,9 @@ impl Debug for RioEvent {
             }
             RioEvent::ColorChange(route_id, color, rgb) => {
                 write!(f, "ColorChange({route_id}, {color:?}, {rgb:?})")
+            }
+            RioEvent::CommandFinished { exit_code, duration_secs } => {
+                write!(f, "CommandFinished(exit={exit_code}, duration={duration_secs:.1}s)")
             }
         }
     }

@@ -995,6 +995,42 @@ impl Screen<'_> {
                         self.resize_top_or_bottom_line(1);
                         self.render();
                     }
+                    Act::RenameTab => {
+                        self.rename_current_tab();
+                    }
+                    Act::AddBookmark => {
+                        self.add_bookmark();
+                    }
+                    Act::ShowBookmarks => {
+                        self.show_bookmarks();
+                    }
+                    Act::GoToBookmark(index) => {
+                        self.go_to_bookmark(*index);
+                    }
+                    Act::SaveSession => {
+                        self.save_session();
+                    }
+                    Act::RestoreSession => {
+                        self.restore_session();
+                    }
+                    Act::ShowSSHProfiles => {
+                        self.show_ssh_profiles();
+                    }
+                    Act::AddSSHProfile => {
+                        self.add_ssh_profile();
+                    }
+                    Act::ConnectSSH(index) => {
+                        self.connect_ssh(*index);
+                    }
+                    Act::ShowSnippets => {
+                        self.show_snippets();
+                    }
+                    Act::AddSnippet => {
+                        self.add_snippet();
+                    }
+                    Act::InsertSnippet(index) => {
+                        self.insert_snippet(*index);
+                    }
                     Act::Quit => {
                         self.context_manager.quit();
                     }
@@ -1259,6 +1295,740 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len().wrapping_sub(1);
         self.resize_top_or_bottom_line(num_tabs);
         self.render();
+    }
+
+    pub fn rename_current_tab(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let current_idx = self.context_manager.current_index();
+            let current_title = self
+                .context_manager
+                .titles
+                .titles
+                .get(&current_idx)
+                .map(|t| t.content.clone())
+                .unwrap_or_else(|| "tab".to_string());
+
+            // Use osascript to show a dialog
+            let script = format!(
+                r#"display dialog "Enter new tab name:" default answer "{}" buttons {{"Cancel", "OK"}} default button "OK""#,
+                current_title
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    // Parse "button returned:OK, text returned:NewName"
+                    if let Some(text_start) = stdout.find("text returned:") {
+                        let new_name = stdout[text_start + 14..].trim().to_string();
+                        if !new_name.is_empty() {
+                            self.context_manager.titles.set_custom_title(current_idx, new_name);
+                            self.render();
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            // On non-macOS, we could implement a different approach
+            // For now, just log that rename is not supported
+            tracing::warn!("Tab rename is only supported on macOS");
+        }
+    }
+
+    fn get_bookmarks_path() -> std::path::PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("rio")
+            .join("bookmarks.json")
+    }
+
+    fn load_bookmarks() -> Vec<String> {
+        let path = Self::get_bookmarks_path();
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                if let Ok(bookmarks) = serde_json::from_str::<Vec<String>>(&contents) {
+                    return bookmarks;
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    fn save_bookmarks(bookmarks: &[String]) {
+        let path = Self::get_bookmarks_path();
+        if let Ok(contents) = serde_json::to_string_pretty(bookmarks) {
+            let _ = std::fs::write(path, contents);
+        }
+    }
+
+    pub fn add_bookmark(&mut self) {
+        // Get current directory from terminal
+        let current_dir = {
+            let terminal = self.context_manager.current().terminal.lock();
+            terminal.current_directory.clone()
+        };
+
+        if let Some(dir) = current_dir {
+            let dir_str = dir.to_string_lossy().to_string();
+            let mut bookmarks = Self::load_bookmarks();
+
+            // Don't add duplicates
+            if !bookmarks.contains(&dir_str) {
+                bookmarks.push(dir_str.clone());
+                Self::save_bookmarks(&bookmarks);
+                tracing::info!("Added bookmark: {}", dir_str);
+            }
+        } else {
+            tracing::warn!("Cannot add bookmark: no current directory");
+        }
+    }
+
+    pub fn show_bookmarks(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let bookmarks = Self::load_bookmarks();
+            if bookmarks.is_empty() {
+                let script = r#"display dialog "No bookmarks saved.\n\nUse Cmd+Shift+B to add the current directory as a bookmark." buttons {"OK"} default button "OK" with title "Bookmarks""#;
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(script)
+                    .output();
+                return;
+            }
+
+            // Build a list of bookmarks with numbers
+            let bookmark_list: Vec<String> = bookmarks
+                .iter()
+                .enumerate()
+                .map(|(i, b)| format!("{}: {}", i + 1, b))
+                .collect();
+            let list_str = bookmark_list.join("\", \"");
+
+            let script = format!(
+                r#"choose from list {{"{}"}}" with title "Bookmarks" with prompt "Select a directory:" OK button name "Go" cancel button name "Cancel""#,
+                list_str
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if stdout != "false" {
+                        // Parse the selected item (format: "N: /path/to/dir")
+                        if let Some(colon_pos) = stdout.find(':') {
+                            let path = stdout[colon_pos + 2..].to_string();
+                            // Send cd command to terminal
+                            self.paste(&format!("cd '{}'\n", path), true);
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("Bookmarks UI is only supported on macOS");
+        }
+    }
+
+    pub fn go_to_bookmark(&mut self, index: usize) {
+        let bookmarks = Self::load_bookmarks();
+        if index > 0 && index <= bookmarks.len() {
+            let path = &bookmarks[index - 1];
+            self.paste(&format!("cd '{}'\n", path), true);
+        } else {
+            tracing::warn!("Bookmark {} not found", index);
+        }
+    }
+
+    // Session management
+
+    fn get_session_path() -> std::path::PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("rio")
+            .join("session.json")
+    }
+
+    /// Save the current session (all tabs with their working directories).
+    pub fn save_session(&mut self) {
+        let mut tabs: Vec<serde_json::Value> = Vec::new();
+
+        // Get working directory from current tab
+        let terminal = self.context_manager.current().terminal.lock();
+        let current_working_dir = terminal
+            .current_directory
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
+        drop(terminal);
+
+        // Save all tabs with their titles
+        let num_tabs = self.context_manager.len();
+        for idx in 0..num_tabs {
+            let title = self
+                .context_manager
+                .titles
+                .titles
+                .get(&idx)
+                .map(|t| t.content.clone());
+            let is_custom_title = self
+                .context_manager
+                .titles
+                .titles
+                .get(&idx)
+                .is_some_and(|t| t.is_custom);
+
+            // For the current tab, use the working dir we retrieved
+            let tab_working_dir = if idx == self.context_manager.current_index() {
+                current_working_dir.clone()
+            } else {
+                None // Can't easily get other tabs' working dirs
+            };
+
+            tabs.push(serde_json::json!({
+                "index": idx,
+                "working_dir": tab_working_dir,
+                "title": title,
+                "is_custom_title": is_custom_title,
+            }));
+        }
+
+        // Use Unix timestamp
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let session = serde_json::json!({
+            "version": 1,
+            "saved_at": timestamp,
+            "tabs": tabs,
+            "active_tab": self.context_manager.current_index(),
+        });
+
+        let path = Self::get_session_path();
+        if let Ok(contents) = serde_json::to_string_pretty(&session) {
+            if std::fs::write(&path, contents).is_ok() {
+                tracing::info!("Session saved to {:?} ({} tabs)", path, tabs.len());
+
+                // Show notification
+                #[cfg(target_os = "macos")]
+                {
+                    let script = format!(
+                        r#"display notification "Saved {} tabs" with title "midterm" subtitle "Session Saved""#,
+                        tabs.len()
+                    );
+                    let _ = std::process::Command::new("osascript")
+                        .arg("-e")
+                        .arg(&script)
+                        .spawn();
+                }
+            } else {
+                tracing::error!("Failed to save session to {:?}", path);
+            }
+        }
+    }
+
+    /// Restore the last saved session.
+    pub fn restore_session(&mut self) {
+        let path = Self::get_session_path();
+        if !path.exists() {
+            tracing::warn!("No session file found at {:?}", path);
+
+            #[cfg(target_os = "macos")]
+            {
+                let script = r#"display dialog "No saved session found.\n\nUse Cmd+Shift+S to save your current session." buttons {"OK"} default button "OK" with title "Restore Session""#;
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(script)
+                    .spawn();
+            }
+            return;
+        }
+
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("Failed to read session file: {}", e);
+                return;
+            }
+        };
+
+        let session: serde_json::Value = match serde_json::from_str(&contents) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to parse session file: {}", e);
+                return;
+            }
+        };
+
+        let tabs = match session.get("tabs").and_then(|t| t.as_array()) {
+            Some(t) => t,
+            None => {
+                tracing::error!("Invalid session file: missing tabs array");
+                return;
+            }
+        };
+
+        if tabs.is_empty() {
+            tracing::warn!("Session file has no tabs");
+            return;
+        }
+
+        // Restore working directory from the first tab that has one
+        let working_dir = tabs
+            .iter()
+            .find_map(|tab| tab.get("working_dir").and_then(|w| w.as_str()));
+
+        if let Some(dir) = working_dir {
+            self.paste(&format!("cd '{}' && clear\n", dir), true);
+            tracing::info!("Restored session - changed to directory: {}", dir);
+
+            #[cfg(target_os = "macos")]
+            {
+                let script = format!(
+                    r#"display notification "Restored to {}" with title "midterm" subtitle "Session Restored""#,
+                    dir
+                );
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&script)
+                    .spawn();
+            }
+        } else {
+            tracing::warn!("Session has no working directories to restore");
+
+            #[cfg(target_os = "macos")]
+            {
+                let script = r#"display notification "No working directory saved" with title "midterm" subtitle "Session Restore""#;
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(script)
+                    .spawn();
+            }
+        }
+    }
+
+    // SSH Profile Management
+
+    fn get_ssh_profiles_path() -> std::path::PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("rio")
+            .join("ssh_profiles.json")
+    }
+
+    fn load_ssh_profiles() -> Vec<serde_json::Value> {
+        let path = Self::get_ssh_profiles_path();
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                if let Ok(profiles) = serde_json::from_str::<Vec<serde_json::Value>>(&contents) {
+                    return profiles;
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    fn save_ssh_profiles(profiles: &[serde_json::Value]) {
+        let path = Self::get_ssh_profiles_path();
+        if let Ok(contents) = serde_json::to_string_pretty(profiles) {
+            let _ = std::fs::write(path, contents);
+        }
+    }
+
+    /// Add a new SSH profile via dialog.
+    pub fn add_ssh_profile(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            // Prompt for profile name
+            let name_script = r#"
+                set dialogResult to display dialog "Enter a name for this SSH profile:" default answer "" with title "Add SSH Profile" buttons {"Cancel", "Next"} default button "Next"
+                if button returned of dialogResult is "Cancel" then
+                    return "CANCELLED"
+                end if
+                return text returned of dialogResult
+            "#;
+
+            let name_output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(name_script)
+                .output();
+
+            let name = match name_output {
+                Ok(output) if output.status.success() => {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if s == "CANCELLED" || s.is_empty() {
+                        return;
+                    }
+                    s
+                }
+                _ => return,
+            };
+
+            // Prompt for host
+            let host_script = r#"
+                set dialogResult to display dialog "Enter the SSH host (e.g., user@hostname or hostname):" default answer "" with title "Add SSH Profile" buttons {"Cancel", "Next"} default button "Next"
+                if button returned of dialogResult is "Cancel" then
+                    return "CANCELLED"
+                end if
+                return text returned of dialogResult
+            "#;
+
+            let host_output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(host_script)
+                .output();
+
+            let host = match host_output {
+                Ok(output) if output.status.success() => {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if s == "CANCELLED" || s.is_empty() {
+                        return;
+                    }
+                    s
+                }
+                _ => return,
+            };
+
+            // Prompt for port (optional)
+            let port_script = r#"
+                set dialogResult to display dialog "Enter the SSH port (leave empty for default 22):" default answer "" with title "Add SSH Profile" buttons {"Cancel", "Save"} default button "Save"
+                if button returned of dialogResult is "Cancel" then
+                    return "CANCELLED"
+                end if
+                return text returned of dialogResult
+            "#;
+
+            let port_output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(port_script)
+                .output();
+
+            let port: Option<u16> = match port_output {
+                Ok(output) if output.status.success() => {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if s == "CANCELLED" {
+                        return;
+                    }
+                    s.parse().ok()
+                }
+                _ => None,
+            };
+
+            // Create and save the profile
+            let profile = serde_json::json!({
+                "name": name,
+                "host": host,
+                "port": port,
+            });
+
+            let mut profiles = Self::load_ssh_profiles();
+            profiles.push(profile);
+            Self::save_ssh_profiles(&profiles);
+
+            tracing::info!("Added SSH profile: {} -> {}", name, host);
+
+            let script = format!(
+                r#"display notification "Added profile: {}" with title "midterm" subtitle "SSH Profile Saved""#,
+                name
+            );
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .spawn();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("SSH profile UI is only supported on macOS");
+        }
+    }
+
+    /// Show SSH profiles and connect to selected one.
+    pub fn show_ssh_profiles(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let profiles = Self::load_ssh_profiles();
+            if profiles.is_empty() {
+                let script = r#"display dialog "No SSH profiles saved.\n\nUse ⌘⇧G to add a new SSH profile." buttons {"OK"} default button "OK" with title "SSH Profiles""#;
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(script)
+                    .output();
+                return;
+            }
+
+            let profile_list: Vec<String> = profiles
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+                    let host = p.get("host").and_then(|h| h.as_str()).unwrap_or("");
+                    format!("{}: {} ({})", i + 1, name, host)
+                })
+                .collect();
+            let list_str = profile_list.join("\", \"");
+
+            let script = format!(
+                r#"choose from list {{"{}"}}" with title "SSH Profiles" with prompt "Select a profile to connect:" OK button name "Connect" cancel button name "Cancel""#,
+                list_str
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if stdout != "false" {
+                        // Parse the selected profile index
+                        if let Some(colon_pos) = stdout.find(':') {
+                            if let Ok(index) = stdout[..colon_pos].trim().parse::<usize>() {
+                                self.connect_ssh(index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("SSH profiles UI is only supported on macOS");
+        }
+    }
+
+    /// Connect to SSH profile by index (1-based).
+    pub fn connect_ssh(&mut self, index: usize) {
+        let profiles = Self::load_ssh_profiles();
+        if index == 0 || index > profiles.len() {
+            tracing::warn!("SSH profile {} not found", index);
+            return;
+        }
+
+        let profile = &profiles[index - 1];
+        let host = match profile.get("host").and_then(|h| h.as_str()) {
+            Some(h) => h,
+            None => {
+                tracing::error!("SSH profile {} has no host", index);
+                return;
+            }
+        };
+
+        let port = profile.get("port").and_then(|p| p.as_u64());
+
+        // Build SSH command
+        let ssh_cmd = if let Some(p) = port {
+            format!("ssh -p {} {}\n", p, host)
+        } else {
+            format!("ssh {}\n", host)
+        };
+
+        self.paste(&ssh_cmd, true);
+        tracing::info!("Connecting to SSH profile {}: {}", index, host);
+    }
+
+    /// Get the path to the snippets file.
+    fn get_snippets_path() -> std::path::PathBuf {
+        dirs::config_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("rio")
+            .join("snippets.json")
+    }
+
+    /// Load snippets from file.
+    fn load_snippets() -> Vec<serde_json::Value> {
+        let path = Self::get_snippets_path();
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(snippets) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    return snippets;
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    /// Save snippets to file.
+    fn save_snippets(snippets: &[serde_json::Value]) {
+        let path = Self::get_snippets_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(snippets) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
+    /// Add a new snippet via macOS dialogs.
+    pub fn add_snippet(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            // Prompt for snippet name
+            let name_script = r#"
+                set dialogResult to display dialog "Enter a name for this snippet:" default answer "" with title "Add Snippet" buttons {"Cancel", "Next"} default button "Next"
+                if button returned of dialogResult is "Cancel" then
+                    return "CANCELLED"
+                end if
+                return text returned of dialogResult
+            "#;
+
+            let name_output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(name_script)
+                .output();
+
+            let name = match name_output {
+                Ok(output) if output.status.success() => {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if s == "CANCELLED" || s.is_empty() {
+                        return;
+                    }
+                    s
+                }
+                _ => return,
+            };
+
+            // Prompt for snippet content
+            let content_script = r#"
+                set dialogResult to display dialog "Enter the snippet text (commands, code, etc):" default answer "" with title "Add Snippet" buttons {"Cancel", "Save"} default button "Save"
+                if button returned of dialogResult is "Cancel" then
+                    return "CANCELLED"
+                end if
+                return text returned of dialogResult
+            "#;
+
+            let content_output = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(content_script)
+                .output();
+
+            let content = match content_output {
+                Ok(output) if output.status.success() => {
+                    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if s == "CANCELLED" || s.is_empty() {
+                        return;
+                    }
+                    s
+                }
+                _ => return,
+            };
+
+            // Create and save the snippet
+            let snippet = serde_json::json!({
+                "name": name,
+                "content": content,
+            });
+
+            let mut snippets = Self::load_snippets();
+            snippets.push(snippet);
+            Self::save_snippets(&snippets);
+
+            tracing::info!("Added snippet: {}", name);
+
+            let script = format!(
+                r#"display notification "Added snippet: {}" with title "midterm" subtitle "Snippet Saved""#,
+                name
+            );
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .spawn();
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("Snippet UI is only supported on macOS");
+        }
+    }
+
+    /// Show snippets and insert selected one.
+    pub fn show_snippets(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let snippets = Self::load_snippets();
+            if snippets.is_empty() {
+                let script = r#"display dialog "No snippets saved.\n\nUse ⌘⇧N to add a new snippet." buttons {"OK"} default button "OK" with title "Snippets""#;
+                let _ = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(script)
+                    .output();
+                return;
+            }
+
+            let snippet_list: Vec<String> = snippets
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let name = s.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+                    format!("{}: {}", i + 1, name)
+                })
+                .collect();
+            let list_str = snippet_list.join("\", \"");
+
+            let script = format!(
+                r#"choose from list {{"{}"}}" with title "Snippets" with prompt "Select a snippet to insert:" OK button name "Insert" cancel button name "Cancel""#,
+                list_str
+            );
+
+            if let Ok(output) = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if stdout != "false" {
+                        // Parse the selected snippet index
+                        if let Some(colon_pos) = stdout.find(':') {
+                            if let Ok(index) = stdout[..colon_pos].trim().parse::<usize>() {
+                                self.insert_snippet(index);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            tracing::warn!("Snippets UI is only supported on macOS");
+        }
+    }
+
+    /// Insert snippet by index (1-based).
+    pub fn insert_snippet(&mut self, index: usize) {
+        let snippets = Self::load_snippets();
+        if index == 0 || index > snippets.len() {
+            tracing::warn!("Snippet {} not found", index);
+            return;
+        }
+
+        let snippet = &snippets[index - 1];
+        let content = match snippet.get("content").and_then(|c| c.as_str()) {
+            Some(c) => c,
+            None => {
+                tracing::error!("Snippet {} has no content", index);
+                return;
+            }
+        };
+
+        // Paste the snippet content (don't execute automatically - user can press Enter)
+        self.paste(content, true);
+        let name = snippet.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
+        tracing::info!("Inserted snippet {}: {}", index, name);
     }
 
     pub fn resize_top_or_bottom_line(&mut self, num_tabs: usize) {

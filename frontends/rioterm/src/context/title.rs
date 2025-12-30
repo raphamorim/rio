@@ -10,6 +10,7 @@ pub struct ContextTitleExtra {
 pub struct ContextTitle {
     pub content: String,
     pub extra: Option<ContextTitleExtra>,
+    pub is_custom: bool,  // User-set title that shouldn't be auto-updated
 }
 
 pub struct ContextManagerTitles {
@@ -26,7 +27,7 @@ impl ContextManagerTitles {
     ) -> ContextManagerTitles {
         let key = format!("{idx}{content};");
         let mut map = FxHashMap::default();
-        map.insert(idx, ContextTitle { content, extra });
+        map.insert(idx, ContextTitle { content, extra, is_custom: false });
         ContextManagerTitles {
             key,
             titles: map,
@@ -41,7 +42,18 @@ impl ContextManagerTitles {
         content: String,
         extra: Option<ContextTitleExtra>,
     ) {
-        self.titles.insert(idx, ContextTitle { content, extra });
+        // Don't overwrite custom titles
+        if let Some(existing) = self.titles.get(&idx) {
+            if existing.is_custom {
+                return;
+            }
+        }
+        self.titles.insert(idx, ContextTitle { content, extra, is_custom: false });
+    }
+
+    #[inline]
+    pub fn set_custom_title(&mut self, idx: usize, content: String) {
+        self.titles.insert(idx, ContextTitle { content, extra: None, is_custom: true });
     }
 
     #[inline]

@@ -33,6 +33,8 @@ pub fn padding_top_from_config(
             return additional + padding_y_top;
         } else if navigation.hide_if_single && num_tabs == 1 {
             return default_padding;
+        } else if navigation.mode == NavigationMode::TopTab {
+            return constants::PADDING_Y_WITH_TAB_ON_TOP + padding_y_top;
         }
     }
 

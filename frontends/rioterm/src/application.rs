@@ -164,6 +164,47 @@ impl Application<'_> {
         }
     }
 
+    /// Send a macOS notification when a long-running command completes.
+    #[cfg(target_os = "macos")]
+    fn send_command_notification(&self, exit_code: i32, duration_secs: f64) {
+        let status = if exit_code == 0 { "✓" } else { "✗" };
+        let duration_str = if duration_secs >= 60.0 {
+            format!("{:.0}m {:.0}s", duration_secs / 60.0, duration_secs % 60.0)
+        } else {
+            format!("{:.1}s", duration_secs)
+        };
+
+        let title = format!("Command {} ({})", status, duration_str);
+        let message = if exit_code == 0 {
+            "Command completed successfully".to_string()
+        } else {
+            format!("Command failed with exit code {}", exit_code)
+        };
+
+        // Use osascript for notification
+        let script = format!(
+            r#"display notification "{}" with title "midterm" subtitle "{}""#,
+            message, title
+        );
+
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn();
+
+        tracing::debug!(
+            "Sent notification: {} - {} (exit={})",
+            title,
+            message,
+            exit_code
+        );
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn send_command_notification(&self, _exit_code: i32, _duration_secs: f64) {
+        // Notifications only supported on macOS for now
+    }
+
     pub fn run(
         &mut self,
         event_loop: EventLoop<EventPayload>,
@@ -800,6 +841,27 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     None => BackgroundState::Reset,
                                 });
                         }
+                    }
+                }
+            }
+            RioEventType::Rio(RioEvent::CommandFinished {
+                exit_code,
+                duration_secs,
+            }) => {
+                // Only notify if:
+                // 1. Command ran for at least 5 seconds
+                // 2. Window is not focused
+                const NOTIFY_THRESHOLD_SECS: f64 = 5.0;
+
+                if duration_secs >= NOTIFY_THRESHOLD_SECS {
+                    let is_focused = self
+                        .router
+                        .routes
+                        .get(&window_id)
+                        .is_some_and(|route| route.window.is_focused);
+
+                    if !is_focused {
+                        self.send_command_notification(exit_code, duration_secs);
                     }
                 }
             }

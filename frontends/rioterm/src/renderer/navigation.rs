@@ -61,6 +61,10 @@ impl ScreenNavigation {
                 dimensions,
             ),
             NavigationMode::TopTab => {
+                // On macOS, offset for title bar; on other platforms, start at 0
+                #[cfg(target_os = "macos")]
+                let position_y = 26.0;
+                #[cfg(not(target_os = "macos"))]
                 let position_y = 0.0;
                 self.tab(
                     sugarloaf,

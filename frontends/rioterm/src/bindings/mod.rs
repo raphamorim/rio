@@ -241,6 +241,9 @@ impl From<String> for Action {
             "closetab" => Some(Action::TabCloseCurrent),
             "closesplitortab" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
+            "renametab" => Some(Action::RenameTab),
+            "addbookmark" => Some(Action::AddBookmark),
+            "showbookmarks" => Some(Action::ShowBookmarks),
             "openconfigeditor" => Some(Action::ConfigEditor),
             "selectprevtab" => Some(Action::SelectPrevTab),
             "selectnexttab" => Some(Action::SelectNextTab),
@@ -264,6 +267,12 @@ impl From<String> for Action {
             "movedividerright" => Some(Action::MoveDividerRight),
             "togglevimode" => Some(Action::ToggleViMode),
             "togglefullscreen" => Some(Action::ToggleFullscreen),
+            "savesession" => Some(Action::SaveSession),
+            "restoresession" => Some(Action::RestoreSession),
+            "showsshprofiles" => Some(Action::ShowSSHProfiles),
+            "addsshprofile" => Some(Action::AddSSHProfile),
+            "showsnippets" => Some(Action::ShowSnippets),
+            "addsnippet" => Some(Action::AddSnippet),
             "none" => Some(Action::None),
             _ => None,
         };
@@ -278,6 +287,33 @@ impl From<String> for Action {
                 let matched_string = matched.as_str().to_string();
                 let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
                 return Action::SelectTab(parsed_matched_string);
+            }
+        }
+
+        let re = regex::Regex::new(r"gotobookmark\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
+                return Action::GoToBookmark(parsed_matched_string);
+            }
+        }
+
+        let re = regex::Regex::new(r"connectssh\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
+                return Action::ConnectSSH(parsed_matched_string);
+            }
+        }
+
+        let re = regex::Regex::new(r"insertsnippet\(([^()]+)\)").unwrap();
+        for capture in re.captures_iter(&action) {
+            if let Some(matched) = capture.get(1) {
+                let matched_string = matched.as_str().to_string();
+                let parsed_matched_string: usize = matched_string.parse().unwrap_or(0);
+                return Action::InsertSnippet(parsed_matched_string);
             }
         }
 
@@ -437,6 +473,27 @@ pub enum Action {
     /// Close all other tabs (leave only the current tab).
     TabCloseUnfocused,
 
+    /// Rename current tab.
+    RenameTab,
+
+    /// Add current directory to bookmarks.
+    AddBookmark,
+
+    /// Show bookmarks list.
+    ShowBookmarks,
+
+    /// Go to bookmark by index (0-9).
+    GoToBookmark(usize),
+
+    /// Show SSH profiles list and connect.
+    ShowSSHProfiles,
+
+    /// Add a new SSH profile.
+    AddSSHProfile,
+
+    /// Connect to SSH profile by index (0-9).
+    ConnectSSH(usize),
+
     /// Toggle fullscreen.
     #[allow(dead_code)]
     ToggleFullscreen,
@@ -499,6 +556,21 @@ pub enum Action {
 
     /// Allow receiving char input.
     ReceiveChar,
+
+    /// Save current session (all tabs and their working directories).
+    SaveSession,
+
+    /// Restore last saved session.
+    RestoreSession,
+
+    /// Show snippets list and insert selected.
+    ShowSnippets,
+
+    /// Add a new snippet.
+    AddSnippet,
+
+    /// Insert snippet by index (0-9).
+    InsertSnippet(usize),
 
     /// No action.
     None,

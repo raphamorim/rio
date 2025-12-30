@@ -81,7 +81,7 @@
 	</dict>
   </array>
   <key>CFBundleIdentifier</key>
-  <string>com.jamesisanai.midterm</string>
+  <string>com.jamesisanai.midterm6</string>
   <key>CFBundleGetInfoString</key>
   <string>midterm - Powered by Rio Terminal (rioterm.com). Hardware-accelerated GPU terminal emulator.</string>
   <key>CFBundleInfoDictionaryVersion</key>

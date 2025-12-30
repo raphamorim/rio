@@ -397,6 +397,20 @@ pub trait Handler {
 
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
+
+    // Shell integration (OSC 133)
+
+    /// OSC 133;A - Prompt started.
+    fn shell_prompt_start(&mut self) {}
+
+    /// OSC 133;B - Command started (user pressed Enter).
+    fn shell_command_start(&mut self) {}
+
+    /// OSC 133;C - Command is now executing.
+    fn shell_command_executed(&mut self) {}
+
+    /// OSC 133;D - Command finished with exit code.
+    fn shell_command_finished(&mut self, _exit_code: i32) {}
 }
 
 pub trait Timeout: Default {
@@ -944,6 +958,35 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
                     self.handler.insert_graphic(graphic, None);
+                }
+            }
+
+            // Shell integration (OSC 133).
+            // Format: OSC 133 ; <command> [; <data>] ST
+            // A = prompt start, B = command start, C = command executed, D = command finished
+            b"133" => {
+                if params.len() < 2 || params[1].is_empty() {
+                    unhandled(params);
+                    return;
+                }
+
+                match params[1] {
+                    b"A" => self.handler.shell_prompt_start(),
+                    b"B" => self.handler.shell_command_start(),
+                    b"C" => self.handler.shell_command_executed(),
+                    b"D" => {
+                        // Parse exit code if provided (format: D;exitcode)
+                        let exit_code = if params.len() > 2 {
+                            simd_utf8::from_utf8_fast(params[2])
+                                .ok()
+                                .and_then(|s| s.parse::<i32>().ok())
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        self.handler.shell_command_finished(exit_code);
+                    }
+                    _ => unhandled(params),
                 }
             }
 

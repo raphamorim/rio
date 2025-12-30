@@ -433,6 +433,9 @@ where
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     inactive_keyboard_mode_idx: usize,
+
+    // Shell integration: track when a command started executing.
+    command_start_time: Option<std::time::Instant>,
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -484,6 +487,7 @@ impl<U: EventListener> Crosswords<U> {
             keyboard_mode_idx: 0,
             inactive_keyboard_mode_stack: Default::default(),
             inactive_keyboard_mode_idx: 0,
+            command_start_time: None,
         }
     }
 
@@ -2996,6 +3000,53 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn xtgettcap_response(&mut self, response: String) {
         self.event_proxy
             .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
+
+    // Shell integration (OSC 133) handlers
+
+    #[inline]
+    fn shell_prompt_start(&mut self) {
+        trace!("Shell integration: prompt start (OSC 133;A)");
+        // Reset command timing when prompt starts
+        self.command_start_time = None;
+    }
+
+    #[inline]
+    fn shell_command_start(&mut self) {
+        trace!("Shell integration: command start (OSC 133;B)");
+    }
+
+    #[inline]
+    fn shell_command_executed(&mut self) {
+        trace!("Shell integration: command executed (OSC 133;C)");
+        // Record when the command started executing
+        self.command_start_time = Some(std::time::Instant::now());
+    }
+
+    #[inline]
+    fn shell_command_finished(&mut self, exit_code: i32) {
+        let duration_secs = self
+            .command_start_time
+            .map(|start| start.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
+
+        trace!(
+            "Shell integration: command finished (OSC 133;D) exit={} duration={:.1}s",
+            exit_code,
+            duration_secs
+        );
+
+        // Send event for notification handling
+        self.event_proxy.send_event(
+            RioEvent::CommandFinished {
+                exit_code,
+                duration_secs,
+            },
+            self.window_id,
+        );
+
+        // Reset timing
+        self.command_start_time = None;
     }
 }
 

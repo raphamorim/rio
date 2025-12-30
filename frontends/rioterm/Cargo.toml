@@ -34,6 +34,7 @@ regex = { workspace = true }
 raw-window-handle = { workspace = true }
 clap = { version = "4.5.42", features = ["derive"] }
 dirs = "6.0.0"
+serde_json = "1.0"
 notify = "8.2.0"
 rustc-hash = { workspace = true }
 image_rs = { workspace = true }
