@@ -2261,9 +2261,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.keyboard_mode_stack[self.keyboard_mode_idx] =
                 KeyboardModes::NO_MODE.bits();
             self.keyboard_mode_idx = self.keyboard_mode_idx.wrapping_sub(1);
-        }
-        if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+            if self.keyboard_mode_idx >= KEYBOARD_MODE_STACK_MAX_DEPTH {
+                self.keyboard_mode_idx %= KEYBOARD_MODE_STACK_MAX_DEPTH;
+            }
         }
 
         // Sync self.mode with keyboard_mode_stack
