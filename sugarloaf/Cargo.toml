@@ -55,7 +55,7 @@ zeno = { version = "0.3.3", optional = true }
 futures = { workspace = true }
 
 thiserror = "2.0.1"
-librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "preprocess", "presets"] }
+librashader = { version = "0.10.0", default-features = false, features = ["runtime-wgpu", "stable", "presets"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rayon = "1.10.0"
