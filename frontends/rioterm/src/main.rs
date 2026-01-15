@@ -234,8 +234,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window_event_loop =
         rio_window::event_loop::EventLoop::<EventPayload>::with_user_event().build()?;
 
-    let mut application =
-        crate::application::Application::new(config, config_error, &window_event_loop);
+    let app_id = args.window_options.terminal_options.app_id;
+
+    let mut application = crate::application::Application::new(
+        config,
+        config_error,
+        &window_event_loop,
+        app_id,
+    );
     let _ = application.run(window_event_loop);
 
     #[cfg(windows)]
