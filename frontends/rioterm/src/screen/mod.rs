@@ -687,7 +687,7 @@ impl Screen<'_> {
         }
     }
 
-    /// Check whether we should try to build escape sequence for the [`KeyEvent`].
+    /// Check whether we should try to build escape sequence for the [`KeyEvent`](rio_window::event::KeyEvent).
     fn should_build_sequence(
         key: &rio_window::event::KeyEvent,
         text: &str,
