@@ -118,7 +118,7 @@ pub enum NamedPrivateMode {
     UrgencyHints = 1042,
     SwapScreenAndSetRestoreCursor = 1049,
     BracketedPaste = 2004,
-    /// The mode is handled automatically by [`Processor`].
+    /// The mode is handled automatically by [`Processor`](crate::performer::handler::Processor).
     SyncUpdate = 2026,
 }
 

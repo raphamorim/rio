@@ -111,17 +111,17 @@ pub enum SelectionType {
 /// Describes a region of a 2-dimensional area.
 ///
 /// Used to track a text selection. There are four supported modes, each with its own constructor:
-/// [`simple`], [`block`], [`semantic`], and [`lines`]. The [`simple`] mode precisely tracks which
+/// [`simple`], [`block`], [`semantic`], and [`semantic`]. The [`simple`] mode precisely tracks which
 /// cells are selected without any expansion. [`block`] will select rectangular regions.
-/// [`lines`] will always select entire lines.
+/// [`semantic`] will always select entire lines.
 ///
 /// Calls to [`update`] operate different based on the selection kind. The [`simple`] and [`block`]
 /// mode do nothing special, simply track points and sides.
 ///
-/// [`simple`]: enum.Selection.html#method.simple
-/// [`block`]: enum.Selection.html#method.block
-/// [`lines`]: enum.Selection.html#method.rows
-/// [`update`]: enum.Selection.html#method.update
+/// [`simple`]: enum.SelectionType.html#variant.Simple
+/// [`block`]: enum.SelectionType.html#variant.Block
+/// [`semantic`]: enum.SelectionType.html#variant.Semantic
+/// [`update`]: enum.SelectionType.html#variant.Update
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
     pub ty: SelectionType,

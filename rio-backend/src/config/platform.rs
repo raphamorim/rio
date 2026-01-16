@@ -13,7 +13,7 @@ pub struct Platform {
 
 /// Other platform specific configuration options can be added here.
 ///
-/// When deserializing, each field is Option<T> to distinguish between
+/// When deserializing, each field is `Option<T>` to distinguish between
 /// "not specified" vs "specified with value". During merge, we recursively
 /// merge individual fields rather than replacing entire structures.
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]

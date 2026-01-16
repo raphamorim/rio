@@ -152,9 +152,9 @@ impl<T> Storage<T> {
         self.len == 0
     }
 
-    /// Swap implementation for Row<T>.
+    /// Swap implementation for `Row<T>`.
     ///
-    /// Exploits the known size of Row<T> to produce a slightly more efficient
+    /// Exploits the known size of `Row<T>` to produce a slightly more efficient
     /// swap than going through slice::swap.
     ///
     /// The default implementation from swap generates 8 movups and 4 movaps
