@@ -388,7 +388,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     let new_font_library = rio_backend::sugarloaf::font::FontLibrary::new(
                         config.fonts.to_owned(),
                     );
-                    self.router.font_library = Box::new(new_font_library.0);
+                    *self.router.font_library = new_font_library.0;
                     new_font_library.1
                 } else {
                     None
