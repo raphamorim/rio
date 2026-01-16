@@ -454,12 +454,12 @@ impl WindowExtWindows for Window {
 pub trait WindowBorrowExtWindows: Borrow<Window> + Sized {
     /// Create an object that allows accessing the inner window handle in a thread-unsafe way.
     ///
-    /// It is possible to call [`window_handle_any_thread`] to get around Windows's thread
+    /// It is possible to call [`window_handle_any_thread`](WindowExtWindows::window_handle_any_thread) to get around Windows's thread
     /// affinity limitations. However, it may be desired to pass the [`Window`] into something
-    /// that requires the [`HasWindowHandle`] trait, while ignoring thread affinity limitations.
+    /// that requires the [`HasWindowHandle`](raw_window_handle::HasWindowHandle) trait, while ignoring thread affinity limitations.
     ///
     /// This function wraps anything that implements `Borrow<Window>` into a structure that
-    /// uses the inner window handle as a mean of implementing [`HasWindowHandle`]. It wraps
+    /// uses the inner window handle as a mean of implementing [`HasWindowHandle`](raw_window_handle::HasWindowHandle). It wraps
     /// `Window`, `&Window`, `Arc<Window>`, and other reference types.
     ///
     /// # Safety
