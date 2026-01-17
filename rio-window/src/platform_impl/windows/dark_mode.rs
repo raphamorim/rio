@@ -4,13 +4,14 @@ use std::{ffi::c_void, ptr};
 
 use crate::utils::Lazy;
 use windows_sys::core::PCSTR;
+use windows_sys::w;
 use windows_sys::Win32::Foundation::{BOOL, HWND, NTSTATUS, S_OK};
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW;
-use windows_sys::Win32::UI::Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTA};
+use windows_sys::Win32::UI::Accessibility::{HCF_HIGHCONTRASTON, HIGHCONTRASTW};
 use windows_sys::Win32::UI::Controls::SetWindowTheme;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    SystemParametersInfoA, SPI_GETHIGHCONTRAST,
+    SystemParametersInfoW, SPI_GETHIGHCONTRAST,
 };
 
 use crate::window::Theme;
@@ -146,7 +147,7 @@ fn should_apps_use_dark_mode() -> bool {
                 return None;
             }
 
-            let module = LoadLibraryA("uxtheme.dll\0".as_ptr());
+            let module = LoadLibraryW(w!("uxtheme.dll"));
 
             if module.is_null() {
                 return None;
@@ -163,14 +164,14 @@ fn should_apps_use_dark_mode() -> bool {
 }
 
 fn is_high_contrast() -> bool {
-    let mut hc = HIGHCONTRASTA {
+    let mut hc = HIGHCONTRASTW {
         cbSize: 0,
         dwFlags: 0,
         lpszDefaultScheme: ptr::null_mut(),
     };
 
     let ok = unsafe {
-        SystemParametersInfoA(
+        SystemParametersInfoW(
             SPI_GETHIGHCONTRAST,
             std::mem::size_of_val(&hc) as _,
             &mut hc as *mut _ as _,
