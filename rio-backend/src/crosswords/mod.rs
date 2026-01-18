@@ -39,7 +39,7 @@ use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
-use crate::performer::handler::Handler;
+use crate::performer::handler::{GraphicSource, Handler};
 use crate::selection::{Selection, SelectionRange, SelectionType};
 use crate::simd_utf8;
 use attr::*;
@@ -2801,6 +2801,52 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
+        let sixel_display = self.mode.contains(Mode::SIXEL_DISPLAY);
+        self.insert_graphic_with_options(
+            graphic,
+            palette,
+            !sixel_display,
+            !sixel_display,
+        );
+    }
+
+    fn insert_graphic_with_source(
+        &mut self,
+        graphic: GraphicData,
+        palette: Option<Vec<ColorRgb>>,
+        source: GraphicSource,
+    ) {
+        let (anchor_at_cursor, allow_scroll) = match source {
+            GraphicSource::Iterm2 => (true, false),
+            GraphicSource::Sixel => {
+                let sixel_display = self.mode.contains(Mode::SIXEL_DISPLAY);
+                (!sixel_display, !sixel_display)
+            }
+        };
+
+        self.insert_graphic_with_options(
+            graphic,
+            palette,
+            anchor_at_cursor,
+            allow_scroll,
+        );
+    }
+
+    #[inline]
+    fn xtgettcap_response(&mut self, response: String) {
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
+}
+
+impl<U: EventListener> Crosswords<U> {
+    fn insert_graphic_with_options(
+        &mut self,
+        graphic: GraphicData,
+        palette: Option<Vec<ColorRgb>>,
+        anchor_at_cursor: bool,
+        allow_scroll: bool,
+    ) {
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -2836,20 +2882,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let graphic_id = self.graphics.next_id();
 
-        // If SIXEL_DISPLAY is disabled, the start of the graphic is the
-        // cursor position, and the grid can be scrolled if the graphic is
-        // larger than the screen. The cursor is moved to the next line
-        // after the graphic.
-        //
-        // If it is disabled, the graphic starts at (0, 0), the grid is never
-        // scrolled, and the cursor position is unmodified.
-
-        let scrolling = !self.mode.contains(Mode::SIXEL_DISPLAY);
-
-        let leftmost = if scrolling {
+        // When scrolling is allowed, the graphic is anchored at the cursor and
+        // the grid can scroll. Otherwise, it is clipped to the viewport and
+        // the cursor remains unchanged.
+        let leftmost = if anchor_at_cursor {
             self.grid.cursor.pos.col.0
         } else {
             0
+        };
+        let base_row = if anchor_at_cursor {
+            self.grid.cursor.pos.row
+        } else {
+            Line(0)
         };
 
         // A very simple optimization is to detect is a new graphic is replacing
@@ -2869,13 +2913,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             } else {
                 let mut set = HashSet::new();
 
-                let line = if scrolling {
-                    self.grid.cursor.pos.row
-                } else {
-                    Line(0)
-                };
-
-                if let Some(old_graphics) = self.grid[line][Column(leftmost)].graphics() {
+                if let Some(old_graphics) = self.grid[base_row][Column(leftmost)].graphics() {
                     for graphic in old_graphics {
                         let tex = &*graphic.texture;
                         if tex.width == width
@@ -2907,15 +2945,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
         });
 
         for (top, offset_y) in (0..).zip((0..height).step_by(cell_height)) {
-            let line = if scrolling {
+            let line = if allow_scroll {
                 self.grid.cursor.pos.row
             } else {
-                // Check if the image is beyond the screen limit.
-                if top >= self.grid.screen_lines() as i32 {
+                let row = base_row.0 + top;
+                if row >= self.grid.screen_lines() as i32 {
                     break;
                 }
-
-                Line(top)
+                Line(row)
             };
 
             // Store a reference to the graphic in the first column.
@@ -2969,17 +3006,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
             self.mark_line_damaged(line);
 
-            if scrolling && offset_y < height.saturating_sub(cell_height as u16) {
+            if allow_scroll && offset_y < height.saturating_sub(cell_height as u16) {
                 self.linefeed();
             }
         }
 
-        if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-            let graphic_columns = graphic.width.div_ceil(cell_width);
-            self.move_forward(Column(graphic_columns));
-        } else if scrolling {
-            self.linefeed();
-            self.carriage_return();
+        if allow_scroll {
+            if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                let graphic_columns = graphic.width.div_ceil(cell_width);
+                self.move_forward(Column(graphic_columns));
+            } else {
+                self.linefeed();
+                self.carriage_return();
+            }
         }
 
         // Add the graphic data to the pending queue.
@@ -2990,12 +3029,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Send graphics update event
         self.send_graphics_updates();
-    }
-
-    #[inline]
-    fn xtgettcap_response(&mut self, response: String) {
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
 }
 
