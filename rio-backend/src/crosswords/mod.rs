@@ -2913,7 +2913,9 @@ impl<U: EventListener> Crosswords<U> {
             } else {
                 let mut set = HashSet::new();
 
-                if let Some(old_graphics) = self.grid[base_row][Column(leftmost)].graphics() {
+                if let Some(old_graphics) =
+                    self.grid[base_row][Column(leftmost)].graphics()
+                {
                     for graphic in old_graphics {
                         let tex = &*graphic.texture;
                         if tex.width == width
