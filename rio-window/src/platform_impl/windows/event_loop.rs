@@ -637,7 +637,7 @@ fn dur2timeout(dur: Duration) -> u32 {
         .checked_mul(1000)
         .and_then(|ms| ms.checked_add((dur.subsec_nanos() as u64) / 1_000_000))
         .and_then(|ms| {
-            if dur.subsec_nanos() % 1_000_000 > 0 {
+            if !dur.subsec_nanos().is_multiple_of(1_000_000) {
                 ms.checked_add(1)
             } else {
                 Some(ms)

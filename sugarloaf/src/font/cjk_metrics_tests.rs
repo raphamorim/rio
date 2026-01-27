@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_multiple_latin_fonts_consistency() {
-        let fonts = vec![
+        let fonts = [
             TestFontData::cascadia_code(),
             TestFontData::dejavu_sans_mono(),
         ];
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_baseline_consistency_across_font_combinations() {
-        let fonts = vec![
+        let fonts = [
             TestFontData::cascadia_code(),
             TestFontData::dejavu_sans_mono(),
             TestFontData::noto_sans_cjk(),
