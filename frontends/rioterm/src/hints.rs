@@ -12,7 +12,7 @@ pub struct HintState {
     /// Visible matches for the current hint
     matches: Vec<HintMatch>,
 
-    /// Labels for each match (as Vec<char>)
+    /// Labels for each match (as `Vec<char>`)
     labels: Vec<Vec<char>>,
 
     /// Keys pressed so far for hint selection

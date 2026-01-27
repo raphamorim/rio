@@ -58,11 +58,7 @@ that yields [`NormalizedCoord`]s (a type alias for `i16` which is a fixed point 
 in 2.14 format). This method is faster than specifying variations by tag and value, but
 the difference is likely negligible outside of microbenchmarks. The real advantage
 is that a sequence of `i16` is more compact and easier to fold into a key in a glyph
-cache. You can compute these normalized coordinates by using the
-[`Variation::normalize`](crate::Variation::normalize) method for each available axis in
-the font. The best strategy, however, is to simply capture these during shaping with
-the [`Shaper::normalized_coords`](crate::shape::Shaper::normalized_coords) method which
-will have already computed them for you.
+cache.
 
 See [`ScalerBuilder`] for available options and default values.
 
@@ -108,10 +104,6 @@ Similar to outlines, bitmaps can be retrieved with the [`scale_bitmap`](Scaler::
 and [`scale_color_bitmap`](Scaler::scale_color_bitmap) for alpha and color bitmaps,
 respectively. These methods return an [`Image`] wrapped in an option. The associated
 `_into` variants are also available.
-
-Unlike outlines, bitmaps are available in [`strike`](crate::BitmapStrike)s of various sizes.
-When requesting a bitmap, you specify the strategy for strike selection using the
-[`StrikeWith`] enum.
 
 For example, if we want the largest available unscaled image for the fire emoji:
 ```ignore
@@ -807,7 +799,7 @@ impl<'a> Render<'a> {
     }
 
     /// Specifies the target format for rasterizing an outline. Default is
-    /// [`Format::Alpha`](zeno::Format::Alpha).
+    /// [`Format::Alpha`].
     pub fn format(&mut self, format: Format) -> &mut Self {
         self.format = format;
         self
