@@ -8,18 +8,18 @@
 
 use crate::font_introspector::shape::cluster::Glyph as ShapedGlyph;
 use crate::font_introspector::GlyphId;
-use crate::layout::FragmentStyle;
+use crate::layout::SpanStyle;
 
 pub const GLYPH_DETAILED: u32 = 0x80000000;
 
 #[derive(Copy, Debug, Clone)]
 pub struct GlyphData {
     pub data: u32,
-    pub size: usize,
+    pub size: u32,
 }
 
 impl GlyphData {
-    pub fn simple(id: u16, advance: f32, size: usize) -> Self {
+    pub fn simple(id: u16, advance: f32, size: u32) -> Self {
         let advance = (advance * 64.).max(0.) as u32;
         Self {
             data: id as u32 | ((advance & 0x7FFF) << 16),
@@ -52,7 +52,7 @@ impl GlyphData {
 
 #[derive(Debug, Clone)]
 pub struct RunData {
-    pub span: FragmentStyle,
+    pub span: SpanStyle,
     pub line: u32,
     pub size: f32,
     pub glyphs: Vec<GlyphData>,

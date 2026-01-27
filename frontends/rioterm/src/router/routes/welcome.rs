@@ -1,5 +1,5 @@
-use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
+use crate::layout::ContextDimension;
+use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
@@ -10,62 +10,73 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
 
     let layout = sugarloaf.window_size();
 
-    let mut objects = Vec::with_capacity(7);
+    // Render rectangles directly
+    sugarloaf.rect(
+        None,
+        0.0,
+        0.0,
+        layout.width / context_dimension.dimension.scale,
+        layout.height,
+        black,
+        0.0,
+        0,
+    );
+    sugarloaf.rect(None, 0.0, 30.0, 15.0, layout.height, blue, 0.0, 0);
+    sugarloaf.rect(
+        None,
+        15.0,
+        context_dimension.margin.top + 60.0,
+        15.0,
+        layout.height,
+        yellow,
+        0.0,
+        0,
+    );
+    sugarloaf.rect(
+        None,
+        30.0,
+        context_dimension.margin.top + 120.0,
+        15.0,
+        layout.height,
+        red,
+        0.0,
+        0,
+    );
 
-    objects.push(Object::Quad(Quad {
-        position: [0., 0.0],
-        color: black,
-        size: [
-            layout.width / context_dimension.dimension.scale,
-            layout.height,
-        ],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [0., 30.0],
-        color: blue,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [15., layout.height],
-        ..Quad::default()
-    }));
+    // Create transient text elements
+    let heading_idx = sugarloaf.text(None);
+    let action_idx = sugarloaf.text(None);
+    let paragraph_idx = sugarloaf.text(None);
 
-    let heading = sugarloaf.create_temp_rich_text();
-    let paragraph_action = sugarloaf.create_temp_rich_text();
-    let paragraph = sugarloaf.create_temp_rich_text();
+    // Use proportional text rendering (not monospace grid)
+    sugarloaf.set_transient_use_grid_cell_size(heading_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(action_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(paragraph_idx, false);
 
-    sugarloaf.set_rich_text_font_size(&heading, 28.0);
-    sugarloaf.set_rich_text_font_size(&paragraph_action, 18.0);
-    sugarloaf.set_rich_text_font_size(&paragraph, 16.0);
+    sugarloaf.set_transient_text_font_size(heading_idx, 28.0);
+    sugarloaf.set_transient_text_font_size(action_idx, 18.0);
+    sugarloaf.set_transient_text_font_size(paragraph_idx, 16.0);
 
-    let content = sugarloaf.content();
-    let heading_line = content.sel(heading);
-    heading_line
-        .clear()
-        .add_text("Welcome to Rio Terminal", FragmentStyle::default())
-        .build();
+    // Add text content
+    if let Some(heading_state) = sugarloaf.get_transient_text_mut(heading_idx) {
+        heading_state
+            .clear()
+            .add_span("Welcome to Rio Terminal", SpanStyle::default())
+            .build();
+    }
 
-    let paragraph_action_line = content.sel(paragraph_action);
-    paragraph_action_line
-        .clear()
-        .add_text(
-            "> press enter to continue",
-            FragmentStyle {
-                color: yellow,
-                ..FragmentStyle::default()
-            },
-        )
-        .build();
+    if let Some(action_state) = sugarloaf.get_transient_text_mut(action_idx) {
+        action_state
+            .clear()
+            .add_span(
+                "> press enter to continue",
+                SpanStyle {
+                    color: yellow,
+                    ..SpanStyle::default()
+                },
+            )
+            .build();
+    }
 
     #[cfg(target_os = "macos")]
     let shortcut = "\"Command\" + \",\" (comma)";
@@ -73,60 +84,63 @@ pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
     #[cfg(not(target_os = "macos"))]
     let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
 
-    let paragraph_line = content.sel(paragraph);
-    paragraph_line
-        .clear()
-        .add_text(
-            "Your configuration file will be created in",
-            FragmentStyle::default(),
-        )
-        .new_line()
-        .add_text(
-            &format!(" {} ", rio_backend::config::config_file_path().display()),
-            FragmentStyle {
-                background_color: Some(yellow),
-                color: [0., 0., 0., 1.],
-                ..FragmentStyle::default()
-            },
-        )
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("To open settings menu use", FragmentStyle::default())
-        .new_line()
-        .add_text(
-            &format!(" {shortcut} "),
-            FragmentStyle {
-                background_color: Some(yellow),
-                color: [0., 0., 0., 1.],
-                ..FragmentStyle::default()
-            },
-        )
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("", FragmentStyle::default())
-        .new_line()
-        .add_text("More info in rioterm.com", FragmentStyle::default())
-        .build();
+    if let Some(paragraph_state) = sugarloaf.get_transient_text_mut(paragraph_idx) {
+        paragraph_state
+            .clear()
+            .add_span(
+                "Your configuration file will be created in",
+                SpanStyle::default(),
+            )
+            .new_line()
+            .add_span(
+                &format!(" {} ", rio_backend::config::config_file_path().display()),
+                SpanStyle {
+                    background_color: Some(yellow),
+                    color: [0., 0., 0., 1.],
+                    ..SpanStyle::default()
+                },
+            )
+            .new_line()
+            .add_span("", SpanStyle::default())
+            .new_line()
+            .add_span("To open settings menu use", SpanStyle::default())
+            .new_line()
+            .add_span(
+                &format!(" {shortcut} "),
+                SpanStyle {
+                    background_color: Some(yellow),
+                    color: [0., 0., 0., 1.],
+                    ..SpanStyle::default()
+                },
+            )
+            .new_line()
+            .add_span("", SpanStyle::default())
+            .new_line()
+            .add_span("", SpanStyle::default())
+            .new_line()
+            .add_span("More info in rioterm.com", SpanStyle::default())
+            .build();
+    }
 
-    objects.push(Object::RichText(RichText {
-        id: heading,
-        position: [70., context_dimension.margin.top_y + 30.],
-        lines: None,
-    }));
+    // Position the text elements
+    sugarloaf.set_transient_position(
+        heading_idx,
+        70.0,
+        context_dimension.margin.top + 30.0,
+    );
+    sugarloaf.set_transient_visibility(heading_idx, true);
 
-    objects.push(Object::RichText(RichText {
-        id: paragraph_action,
-        position: [70., context_dimension.margin.top_y + 70.],
-        lines: None,
-    }));
+    sugarloaf.set_transient_position(
+        action_idx,
+        70.0,
+        context_dimension.margin.top + 70.0,
+    );
+    sugarloaf.set_transient_visibility(action_idx, true);
 
-    objects.push(Object::RichText(RichText {
-        id: paragraph,
-        position: [70., context_dimension.margin.top_y + 140.],
-        lines: None,
-    }));
-
-    sugarloaf.set_objects(objects);
+    sugarloaf.set_transient_position(
+        paragraph_idx,
+        70.0,
+        context_dimension.margin.top + 140.0,
+    );
+    sugarloaf.set_transient_visibility(paragraph_idx, true);
 }
