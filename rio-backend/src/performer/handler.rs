@@ -137,6 +137,12 @@ fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
     parse_sgr_color(&mut iter)
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum GraphicSource {
+    Sixel,
+    Iterm2,
+}
+
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
@@ -367,6 +373,14 @@ pub trait Handler {
 
     /// Insert a new graphic item.
     fn insert_graphic(&mut self, _data: GraphicData, _palette: Option<Vec<ColorRgb>>) {}
+    fn insert_graphic_with_source(
+        &mut self,
+        data: GraphicData,
+        palette: Option<Vec<ColorRgb>>,
+        _source: GraphicSource,
+    ) {
+        self.insert_graphic(data, palette);
+    }
 
     /// Set hyperlink.
     fn set_hyperlink(&mut self, _: Option<Hyperlink>) {}
@@ -943,7 +957,11 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
             // OSC 1337 is equal to xterm OSC 50
             b"1337" => {
                 if let Some(graphic) = iterm2_image_protocol::parse(params) {
-                    self.handler.insert_graphic(graphic, None);
+                    self.handler.insert_graphic_with_source(
+                        graphic,
+                        None,
+                        GraphicSource::Iterm2,
+                    );
                 }
             }
 
