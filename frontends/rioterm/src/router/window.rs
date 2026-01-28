@@ -1,7 +1,7 @@
-use rio_backend::config::window::{Decorations, WindowMode};
+use rio_backend::config::window::{Decorations, DecorationsThemeVariant, WindowMode};
 use rio_backend::config::Config;
 use rio_window::window::{
-    CursorIcon, Fullscreen, Icon, ImePurpose, Window, WindowAttributes,
+    CursorIcon, Fullscreen, Icon, ImePurpose, Theme, Window, WindowAttributes,
 };
 
 pub const LOGO_ICON: &[u8; 410598] = include_bytes!("./resources/images/rio-logo.ico");
@@ -124,6 +124,19 @@ pub fn create_window_builder(
         // On windows cloak (hide) the window initially, we later reveal it after the first draw.
         // This is a workaround to hide the "white flash" that occurs during application startup.
         window_builder = window_builder.with_cloaked(true);
+        // Apply decorations theme variant if specified
+        match config.window.decorations_theme_variant {
+            DecorationsThemeVariant::Dark => {
+                window_builder = window_builder.with_theme(Some(Theme::Dark));
+            }
+            DecorationsThemeVariant::Light => {
+                window_builder = window_builder.with_theme(Some(Theme::Light));
+            }
+            DecorationsThemeVariant::None => {
+                // Let the system decide (default behavior)
+                window_builder = window_builder.with_theme(None);
+            }
+        }
     }
 
     match config.window.mode {
@@ -218,6 +231,19 @@ pub fn configure_window(winit_window: &Window, config: &Config) {
             };
 
             winit_window.set_corner_preference(preference);
+        }
+        // Apply decorations theme variant if specified
+        match config.window.decorations_theme_variant {
+            DecorationsThemeVariant::Dark => {
+                winit_window.set_theme(Some(Theme::Dark));
+            }
+            DecorationsThemeVariant::Light => {
+                winit_window.set_theme(Some(Theme::Light));
+            }
+            DecorationsThemeVariant::None => {
+                // Let the system decide (default behavior)
+                winit_window.set_theme(None);
+            }
         }
     }
     if let Some(title) = &config.title.placeholder {
