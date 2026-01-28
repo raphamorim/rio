@@ -206,20 +206,8 @@ impl WindowAttributes {
     ///
     /// See [`Window::set_min_inner_size`] for details.
     #[inline]
-    pub fn with_min_inner_size<S: Into<Size>>(mut self, min_size: S) -> Self {
-        self.min_inner_size = Some(min_size.into());
-        self
-    }
-
-    /// Sets the maximum dimensions a window can have.
-    ///
-    /// If this is not set, the window will have no maximum or will be set to
-    /// the primary monitor's dimensions by the platform.
-    ///
-    /// See [`Window::set_max_inner_size`] for details.
-    #[inline]
-    pub fn with_max_inner_size<S: Into<Size>>(mut self, max_size: S) -> Self {
-        self.max_inner_size = Some(max_size.into());
+    pub fn with_min_inner_size<S: Into<Size>>(mut self, min_size: Option<S>) -> Self {
+        self.min_inner_size = min_size.map(|s| s.into());
         self
     }
 
