@@ -105,14 +105,15 @@ const config = {
           { to: '/docs/config', label: 'Config', position: 'left', },
           { to: '/docs/features', label: 'Features', position: 'left' },
           { to: '/changelog', label: 'Changelog', position: 'left' },
+          { to: '/contributing', label: 'Contributing', position: 'left' },
           { to: '/blog', label: 'Blog', position: 'left' },
+          {
+            type: 'localeDropdown',
+            position: 'right',
+          },
           {
             href: 'https://discord.gg/zRvJjmKGwS',
             label: 'Discord',
-            position: 'left',
-          },
-          {
-            type: 'localeDropdown',
             position: 'right',
           },
           {
