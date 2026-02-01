@@ -175,9 +175,29 @@ declare_class!(
             _sender: Option<&AnyObject>,
             has_open_windows: bool,
         ) -> bool {
-            if self.is_launched() && !has_open_windows {
-                self.dispatch_application_reopen();
-                true
+            if self.is_launched() {
+                // Check if there are open windows but all windows are minimized
+                if !has_open_windows {
+                    self.dispatch_application_reopen();
+                    true
+                } else {
+                    let mtm = MainThreadMarker::from(self);
+                    let app = NSApplication::sharedApplication(mtm);
+
+                    // Check if there are visible windows
+                    let windows = app.windows();
+                    let has_visible_window = windows.iter().any(|window| {
+                        window.isVisible() && !window.isMiniaturized()
+                    });
+
+                    // If there are no visible windows (all windows are minimized), restore the windows
+                    if !has_visible_window {
+                        self.dispatch_application_reopen();
+                        true
+                    } else {
+                        false
+                    }
+                }
             } else {
                 false
             }
