@@ -152,16 +152,13 @@ impl Renderer {
             square.c
         };
 
-        let font_attrs = match (
-            flags.contains(Flags::ITALIC),
-            flags.contains(Flags::BOLD_ITALIC),
-            flags.contains(Flags::BOLD),
-        ) {
-            (true, _, _) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
-            (_, true, _) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
-            (_, _, true) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
-            _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
-        };
+        let font_attrs =
+            match (flags.contains(Flags::BOLD), flags.contains(Flags::ITALIC)) {
+                (true, true) => (Stretch::NORMAL, Weight::BOLD, Style::Italic),
+                (true, false) => (Stretch::NORMAL, Weight::BOLD, Style::Normal),
+                (false, true) => (Stretch::NORMAL, Weight::NORMAL, Style::Italic),
+                _ => (Stretch::NORMAL, Weight::NORMAL, Style::Normal),
+            };
 
         if flags.contains(Flags::INVERSE) {
             std::mem::swap(&mut background_color, &mut foreground_color);
