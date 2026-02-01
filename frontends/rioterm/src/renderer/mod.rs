@@ -376,9 +376,11 @@ impl Renderer {
 
             if !is_active {
                 style.color[3] = self.unfocused_split_opacity;
-                if let Some(mut background_color) = style.background_color {
-                    background_color[3] = self.unfocused_split_opacity;
-                }
+                style.background_color =
+                    style.background_color.map(|mut background_color| {
+                        background_color[3] = self.unfocused_split_opacity;
+                        background_color
+                    });
             }
 
             if square.flags.contains(Flags::GRAPHICS) {

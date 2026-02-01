@@ -54,6 +54,7 @@ image_rs = { package = "image", version = "0.25.5", default-features = false, fe
     "ico",
     "png",
     "pnm",
+    "tiff",
     "webp",
     "bmp",
 ] }
