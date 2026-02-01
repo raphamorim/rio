@@ -397,6 +397,25 @@ pub trait Handler {
 
     /// Handle XTGETTCAP response.
     fn xtgettcap_response(&mut self, _response: String) {}
+
+    /// Set text selection using row and column coordinates.
+    fn set_text_selection(
+        &mut self,
+        _start_row: i32,
+        _start_col: u16,
+        _end_row: i32,
+        _end_col: u16,
+    ) {
+    }
+
+    /// Clear current text selection.
+    fn clear_text_selection(&mut self) {}
+
+    /// Query current text selection coordinates.
+    fn query_text_selection(&mut self, _terminator: &str) {}
+
+    /// Copy current text selection to clipboard.
+    fn copy_text_selection(&mut self) {}
 }
 
 pub trait Timeout: Default {
@@ -909,6 +928,69 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 match params[2] {
                     b"?" => self.handler.clipboard_load(*clipboard, terminator),
                     base64 => self.handler.clipboard_store(*clipboard, base64),
+                }
+            }
+
+            // Terminal text selection protocol.
+            b"53" => {
+                if params.len() < 2 {
+                    return unhandled(params);
+                }
+
+                match params[1] {
+                    // Set selection.
+                    b"s" => {
+                        if params.len() < 3 {
+                            return unhandled(params);
+                        }
+
+                        // Parse coordinates: start_row,start_col;end_row,end_col
+                        if let Ok(coords_str) = simd_utf8::from_utf8_fast(params[2]) {
+                            let parts: Vec<&str> = coords_str.split(';').collect();
+                            if parts.len() == 2 {
+                                let start_parts: Vec<&str> =
+                                    parts[0].split(',').collect();
+                                let end_parts: Vec<&str> = parts[1].split(',').collect();
+
+                                if start_parts.len() == 2 && end_parts.len() == 2 {
+                                    if let (
+                                        Ok(start_row),
+                                        Ok(start_col),
+                                        Ok(end_row),
+                                        Ok(end_col),
+                                    ) = (
+                                        start_parts[0].parse::<i32>(),
+                                        start_parts[1].parse::<u16>(),
+                                        end_parts[0].parse::<i32>(),
+                                        end_parts[1].parse::<u16>(),
+                                    ) {
+                                        self.handler.set_text_selection(
+                                            start_row, start_col, end_row, end_col,
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        unhandled(params);
+                    }
+
+                    // Clear selection.
+                    b"c" => {
+                        self.handler.clear_text_selection();
+                    }
+
+                    // Query selection.
+                    b"q" => {
+                        self.handler.query_text_selection(terminator);
+                    }
+
+                    // Copy selection.
+                    b"y" => {
+                        self.handler.copy_text_selection();
+                    }
+
+                    _ => unhandled(params),
                 }
             }
 
