@@ -26,8 +26,8 @@ pub fn default_title_content() -> String {
 }
 
 #[inline]
-pub fn default_padding_y() -> [f32; 2] {
-    [0., 0.]
+pub fn default_margin() -> crate::config::layout::Margin {
+    crate::config::layout::Margin::all(2.0)
 }
 
 #[inline]
@@ -164,20 +164,38 @@ pub fn default_config_file_content() -> String {
 # Example:
 # theme = "dracula"
 
-# Padding-x
+# Margin
 #
-# define x axis padding (default is 0)
+# Define outer margin around the window/tab area using CSS-like syntax
+# [all] - Apply same margin to all sides
+# [top/bottom, left/right] - Apply vertical and horizontal margin
+# [top, right, bottom, left] - Apply individual margin to each side
+# (default is [10])
 #
-# Example:
-# padding-x = 10
+# Examples:
+# margin = [10]           # 10px on all sides
+# margin = [10, 5]        # 10px top/bottom, 5px left/right
+# margin = [10, 5, 15, 20] # 10px top, 5px right, 15px bottom, 20px left
 
-# Padding-y
+# Panel Configuration
 #
-# define y axis padding based on a format [top, bottom]
-# (default is [0, 0])
+# Configure layout for split panels (when using vertical/horizontal splits)
+#
+# panel.margin - Margin inside each panel (around terminal content)
+# panel.row-gap - Vertical spacing between panels when split down
+# panel.column-gap - Horizontal spacing between panels when split right
+#
+# Defaults:
+# [panel]
+# margin = [5]
+# row-gap = 0
+# column-gap = 0
 #
 # Example:
-# padding-y = [30, 10]
+# [panel]
+# margin = [5]        # Margin inside panels
+# row-gap = 10        # Vertical gap between panels
+# column-gap = 15     # Horizontal gap between panels
 
 # Option as Alt
 #
@@ -273,6 +291,16 @@ pub fn default_config_file_content() -> String {
 #     - "display-p3" (default on macOS)
 #     - "rec2020"
 #
+# • macos-traffic-light-position-x - Set the x position of the macOS traffic light buttons
+#     Position is in points from the left edge of the window
+#     Note: This setting is ignored when navigation mode is "Tab"
+#     Default: Not set (uses macOS default positioning)
+#
+# • macos-traffic-light-position-y - Set the y position of the macOS traffic light buttons
+#     Position is in points from the top edge of the window
+#     Note: This setting is ignored when navigation mode is "Tab"
+#     Default: Not set (uses macOS default positioning)
+#
 # Example:
 # [window]
 # width = 600
@@ -282,6 +310,8 @@ pub fn default_config_file_content() -> String {
 # blur = false
 # decorations = "enabled"
 # colorspace = "display-p3"
+# macos-traffic-light-position-x = 9.0
+# macos-traffic-light-position-y = 9.0
 
 # Renderer
 #
@@ -407,22 +437,20 @@ pub fn default_config_file_content() -> String {
 #
 # "mode" - Define navigation mode
 #   • NativeTab (MacOS only)
-#   • Bookmark
-#   • BottomTab
-#   • TopTab
+#   • Tab
 #   • Plain
 #
 # "hide-if-single" - Hide navigation UI if is single.
 # "clickable" - Enable click on tabs to switch.
-# "use-current-path" - Use same path whenever a new tab is created (Note: requires `use-fork` to be set to false).
+# "current-working-directory" - Show current working directory in navigation.
 # "color-automation" - Set a specific color for the tab whenever a specific program is running, or in a specific directory.
 #
 # Example:
 # [navigation]
-# mode = "bookmark"
+# mode = "Tab"
 # clickable = false
 # hide-if-single = true
-# use-current-path = false
+# current-working-directory = true
 # color-automation = []
 
 # Shell
@@ -469,8 +497,8 @@ pub fn default_config_file_content() -> String {
 # background = '#0F0D0E'
 # foreground = '#F9F4DA'
 # cursor = '#F38BA3'
-# tabs = '#443d40'
-# tabs-active = '#F38BA3'
+# tabs = '#cccccc'  # Inactive tab text and border color (matches Hyper)
+# tabs-active = '#ffffff'  # Active tab text color (matches Hyper)
 # green = '#0BA95B'
 # red = '#ED203D'
 # blue = '#12B5E5'

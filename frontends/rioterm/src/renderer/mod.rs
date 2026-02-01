@@ -1,6 +1,7 @@
 mod char_cache;
+pub mod command_palette;
 mod font_cache;
-pub mod navigation;
+pub mod island;
 mod search;
 pub mod utils;
 
@@ -9,6 +10,7 @@ use crate::renderer::font_cache::FontCache;
 use char_cache::CharCache;
 use rio_backend::crosswords::LineDamage;
 use rio_backend::event::TerminalDamage;
+use taffy::NodeId;
 
 use crate::ansi::CursorShape;
 use crate::context::renderable::{Cursor, RenderableContent};
@@ -16,19 +18,19 @@ use crate::context::ContextManager;
 use crate::crosswords::grid::row::Row;
 use crate::crosswords::pos::{Column, Line, Pos};
 use crate::crosswords::square::{Flags, Square};
-use navigation::ScreenNavigation;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
     AnsiColor, ColorArray, Colors, NamedColor,
 };
+use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::{
-    drawable_character, Content, FragmentStyle, FragmentStyleDecoration, Graphic, Quad,
+    drawable_character, Content, CursorKind, Graphic, SpanStyle, SpanStyleDecoration,
     Stretch, Style, SugarCursor, Sugarloaf, UnderlineInfo, UnderlineShape, Weight,
 };
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 
 use unicode_width::UnicodeWidthChar;
@@ -46,9 +48,12 @@ pub struct Renderer {
     use_drawable_chars: bool,
     pub named_colors: Colors,
     pub colors: List,
-    pub navigation: ScreenNavigation,
+    pub navigation: Navigation,
+    pub margin: rio_backend::config::layout::Margin,
+    pub island: Option<island::Island>,
+    pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
-    last_active: Option<usize>,
+    last_active: Option<NodeId>,
     pub config_has_blinking_enabled: bool,
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
@@ -60,12 +65,27 @@ pub struct Renderer {
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], wgpu::Color, bool),
-    // Visual bell state
-    visual_bell_active: bool,
-    visual_bell_start: Option<std::time::Instant>,
     font_context: rio_backend::sugarloaf::font::FontLibrary,
     font_cache: FontCache,
     char_cache: CharCache,
+}
+
+/// Check if two styles are compatible for shaping (can be in the same text run)
+/// Background color is intentionally excluded because it doesn't affect text shaping.
+/// This allows runs with varying background colors to share cache entries,
+/// dramatically improving cache hit rates for highlighted/selected text.
+fn styles_are_compatible_for_shaping(a: &SpanStyle, b: &SpanStyle) -> bool {
+    a.font_id == b.font_id
+        && a.color == b.color
+        && a.font_attrs == b.font_attrs
+        && a.decoration == b.decoration
+        && a.decoration_color == b.decoration_color
+        && a.cursor == b.cursor
+        && a.media == b.media
+        && a.drawable_char == b.drawable_char
+        && a.font_vars == b.font_vars
+        && a.width == b.width
+    // Note: background_color is intentionally excluded!
 }
 
 impl Renderer {
@@ -86,15 +106,16 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let mut color_automation: HashMap<String, HashMap<String, [f32; 4]>> =
-            HashMap::new();
-
-        for rule in &config.navigation.color_automation {
-            color_automation
-                .entry(rule.program.clone())
-                .or_default()
-                .insert(rule.path.clone(), rule.color);
-        }
+        let island = if config.navigation.is_enabled() {
+            Some(island::Island::new(
+                named_colors.tabs,
+                named_colors.tabs_active,
+                named_colors.tab_border,
+                config.navigation.hide_if_single,
+            ))
+        } else {
+            None
+        };
 
         let mut renderer = Renderer {
             unfocused_split_opacity: config.navigation.unfocused_split_opacity,
@@ -108,15 +129,12 @@ impl Renderer {
             config_has_blinking_enabled: config.cursor.blinking,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
-            navigation: ScreenNavigation::new(
-                config.navigation.clone(),
-                color_automation,
-                config.padding_y,
-            ),
+            navigation: config.navigation.clone(),
+            margin: config.margin,
+            island,
+            command_palette: command_palette::CommandPalette::new(),
             named_colors,
             dynamic_background,
-            visual_bell_active: false,
-            visual_bell_start: None,
             search: Search::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
@@ -140,7 +158,7 @@ impl Renderer {
         &mut self,
         square: &Square,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
+    ) -> (SpanStyle, char) {
         let flags = square.flags;
 
         let mut foreground_color = self.compute_color(&square.fg, flags, term_colors);
@@ -180,13 +198,13 @@ impl Renderer {
         let (decoration, decoration_color) = self.compute_decoration(square, term_colors);
 
         (
-            FragmentStyle {
+            SpanStyle {
                 color: foreground_color,
                 background_color,
                 font_attrs: font_attrs.into(),
                 decoration,
                 decoration_color,
-                ..FragmentStyle::default()
+                ..SpanStyle::default()
             },
             content,
         )
@@ -197,34 +215,34 @@ impl Renderer {
         &self,
         square: &Square,
         term_colors: &TermColors,
-    ) -> (Option<FragmentStyleDecoration>, Option<[f32; 4]>) {
+    ) -> (Option<SpanStyleDecoration>, Option<[f32; 4]>) {
         let mut decoration = None;
         let mut decoration_color = None;
 
         if square.flags.contains(Flags::UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::STRIKEOUT) {
-            decoration = Some(FragmentStyleDecoration::Strikethrough);
+            decoration = Some(SpanStyleDecoration::Strikethrough);
         } else if square.flags.contains(Flags::DOUBLE_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: true,
                 shape: UnderlineShape::Regular,
             }));
         } else if square.flags.contains(Flags::DOTTED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dotted,
             }));
         } else if square.flags.contains(Flags::DASHED_UNDERLINE) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Dashed,
             }));
         } else if square.flags.contains(Flags::UNDERCURL) {
-            decoration = Some(FragmentStyleDecoration::Underline(UnderlineInfo {
+            decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
                 is_doubled: false,
                 shape: UnderlineShape::Curly,
             }));
@@ -263,6 +281,7 @@ impl Renderer {
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
         is_active: bool,
+        terminal_snapshot: &TerminalSnapshot,
     ) {
         // let start = std::time::Instant::now();
         let cursor = &renderable_content.cursor;
@@ -270,7 +289,7 @@ impl Renderer {
         let columns: usize = row.len();
         let mut content = String::with_capacity(columns);
         let mut last_char_was_space = false;
-        let mut last_style = FragmentStyle::default();
+        let mut last_style = SpanStyle::default();
 
         // Collect all characters that need font lookups to batch them
         let mut font_lookups = Vec::new();
@@ -303,11 +322,10 @@ impl Renderer {
             };
 
             if should_underline {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
             }
 
             // Check selection more efficiently
@@ -381,14 +399,117 @@ impl Renderer {
                 }
             }
 
-            if square.flags.contains(Flags::GRAPHICS) {
+            // Check for Kitty virtual placements (U=1)
+            if square_content == '\u{10EEEE}' {
+                tracing::debug!(
+                    "Found Kitty placeholder at line={:?}, col={}",
+                    line,
+                    column
+                );
+                // Build the full grapheme cluster (base char + diacritics)
+                let mut grapheme = String::from(square_content);
+                if let Some(zerowidth_chars) = square.zerowidth() {
+                    for ch in zerowidth_chars {
+                        grapheme.push(*ch);
+                    }
+                }
+
+                // Decode the placeholder to extract row/col/image_id_high
+                if let Some((row_idx, col_idx, image_id_high)) =
+                    rio_backend::ansi::kitty_virtual::decode_placeholder(&grapheme)
+                {
+                    // Decode image_id from foreground color
+                    let image_id_low = match square.fg {
+                        rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                            rio_backend::ansi::kitty_virtual::rgb_to_id(rgb)
+                        }
+                        rio_backend::config::colors::AnsiColor::Named(_) => 0,
+                        rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                            idx as u32
+                        }
+                    };
+
+                    // Combine low and high parts of image_id
+                    let image_id = if let Some(high) = image_id_high {
+                        image_id_low | ((high as u32) << 24)
+                    } else {
+                        image_id_low
+                    };
+
+                    // Decode placement_id from underline color (if present)
+                    let placement_id = square
+                        .underline_color()
+                        .and_then(|color| match color {
+                            rio_backend::config::colors::AnsiColor::Spec(rgb) => {
+                                Some(rio_backend::ansi::kitty_virtual::rgb_to_id(rgb))
+                            }
+                            rio_backend::config::colors::AnsiColor::Indexed(idx) => {
+                                Some(idx as u32)
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or(0);
+
+                    tracing::debug!(
+                        "Decoded Kitty virtual placeholder: line={:?}, col={}, row_idx={}, col_idx={}, image_id={:#X}, placement_id={}",
+                        line, column, row_idx, col_idx, image_id, placement_id
+                    );
+
+                    // Look up the virtual placement
+                    if let Some(placement) = terminal_snapshot
+                        .kitty_virtual_placements
+                        .get(&(image_id, placement_id))
+                    {
+                        // Look up the stored image data
+                        if let Some(stored_image) =
+                            terminal_snapshot.kitty_images.get(&image_id)
+                        {
+                            // Calculate the offset for this specific cell within the placement
+                            // row_idx/col_idx tell us which cell in the placement grid this is
+                            let cell_width =
+                                stored_image.data.width as u32 / placement.columns;
+                            let cell_height =
+                                stored_image.data.height as u32 / placement.rows;
+
+                            let offset_x = col_idx * cell_width;
+                            let offset_y = row_idx * cell_height;
+
+                            tracing::debug!(
+                                "Rendering Kitty virtual placement: image_id={:#X}, placement_id={}, cell=({},{}), offset=({},{})",
+                                image_id, placement_id, col_idx, row_idx, offset_x, offset_y
+                            );
+
+                            // Render the image fragment at this position
+                            style.media = Some(Graphic {
+                                id: stored_image.data.id,
+                                offset_x: offset_x as u16,
+                                offset_y: offset_y as u16,
+                            });
+                        } else {
+                            tracing::warn!(
+                                "Kitty virtual placement references missing image: image_id={:#X}",
+                                image_id
+                            );
+                        }
+                    } else {
+                        tracing::warn!(
+                            "No virtual placement found for image_id={:#X}, placement_id={}",
+                            image_id, placement_id
+                        );
+                    }
+                } else {
+                    tracing::warn!(
+                        "Failed to decode Kitty placeholder at line={:?}, col={}, grapheme={:?}",
+                        line, column, grapheme
+                    );
+                }
+            } else if square.flags.contains(Flags::GRAPHICS) {
                 let graphic = &square.graphics().unwrap()[0];
                 style.media = Some(Graphic {
                     id: graphic.texture.id,
                     offset_x: graphic.offset_x,
                     offset_y: graphic.offset_y,
                 });
-                style.background_color = None;
             }
 
             // Handle drawable characters
@@ -483,7 +604,9 @@ impl Renderer {
                     last_char_was_space = false;
                 }
 
-                if last_style != style {
+                // Only break runs when styles differ in ways that affect shaping
+                // Background color is intentionally ignored to improve cache hit rates
+                if !styles_are_compatible_for_shaping(&last_style, &style) {
                     if !content.is_empty() {
                         if let Some(line) = line_opt {
                             builder.add_text_on_line(line, &content, last_style);
@@ -613,7 +736,7 @@ impl Renderer {
         cursor: &Cursor,
         is_active: bool,
         term_colors: &TermColors,
-    ) -> (FragmentStyle, char) {
+    ) -> (SpanStyle, char) {
         let font_attrs = match (
             square.flags.contains(Flags::ITALIC),
             square.flags.contains(Flags::BOLD_ITALIC),
@@ -665,11 +788,11 @@ impl Renderer {
             (false, false) => {}
         }
 
-        let mut style = FragmentStyle {
+        let mut style = SpanStyle {
             color,
             background_color,
             font_attrs: font_attrs.into(),
-            ..FragmentStyle::default()
+            ..SpanStyle::default()
         };
 
         let cursor_color = if !self.is_vi_mode_enabled {
@@ -684,25 +807,36 @@ impl Renderer {
 
         match cursor.state.content {
             CursorShape::Underline => {
-                style.decoration =
-                    Some(FragmentStyleDecoration::Underline(UnderlineInfo {
-                        is_doubled: false,
-                        shape: UnderlineShape::Regular,
-                    }));
+                style.decoration = Some(SpanStyleDecoration::Underline(UnderlineInfo {
+                    is_doubled: false,
+                    shape: UnderlineShape::Regular,
+                }));
                 style.decoration_color = Some(cursor_color);
             }
             CursorShape::Block => {
-                style.cursor = Some(SugarCursor::Block(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Block,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Beam => {
-                style.cursor = Some(SugarCursor::Caret(cursor_color));
+                style.cursor = Some(SugarCursor {
+                    kind: CursorKind::Caret,
+                    color: cursor_color,
+                    order: 0,
+                });
             }
             CursorShape::Hidden => {}
         }
 
         if !is_active {
             style.decoration = None;
-            style.cursor = Some(SugarCursor::HollowBlock(cursor_color));
+            style.cursor = Some(SugarCursor {
+                kind: CursorKind::HollowBlock,
+                color: cursor_color,
+                order: 0,
+            });
         }
 
         (style, content)
@@ -711,33 +845,6 @@ impl Renderer {
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
-    }
-
-    /// Trigger the visual bell
-    #[inline]
-    pub fn trigger_visual_bell(&mut self) {
-        self.visual_bell_active = true;
-        self.visual_bell_start = Some(std::time::Instant::now());
-    }
-
-    /// Check if visual bell should be displayed and update its state
-    #[inline]
-    pub fn update_visual_bell(&mut self) -> bool {
-        if !self.visual_bell_active {
-            return false;
-        }
-
-        if let Some(start_time) = self.visual_bell_start {
-            if start_time.elapsed() >= crate::constants::BELL_DURATION {
-                self.visual_bell_active = false;
-                self.visual_bell_start = None;
-                false
-            } else {
-                true
-            }
-        } else {
-            false
-        }
     }
 
     // Get the RGB value for a color index.
@@ -757,21 +864,21 @@ impl Renderer {
                         .new_line()
                         .add_text(
                             &String::from("Search: type something..."),
-                            FragmentStyle {
+                            SpanStyle {
                                 color: [
                                     self.named_colors.foreground[0],
                                     self.named_colors.foreground[1],
                                     self.named_colors.foreground[2],
                                     self.named_colors.foreground[3] - 0.3,
                                 ],
-                                ..FragmentStyle::default()
+                                ..SpanStyle::default()
                             },
                         )
                         .build();
                 } else {
-                    let style = FragmentStyle {
+                    let style = SpanStyle {
                         color: self.named_colors.foreground,
-                        ..FragmentStyle::default()
+                        ..SpanStyle::default()
                     };
                     let line = content.sel(search_rich_text);
                     line.clear().new_line().add_text("Search: ", style);
@@ -840,8 +947,9 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.create_temp_rich_text();
-            sugarloaf.set_rich_text_font_size(&search_rich_text, 12.0);
+            let search_rich_text = sugarloaf.get_next_id();
+            let _ = sugarloaf.text(Some(search_rich_text));
+            sugarloaf.set_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
         }
 
@@ -881,29 +989,36 @@ impl Renderer {
                 continue;
             }
 
-            // Get UI damage before resetting
-            let ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            // Get damages before resetting
+            let pending_terminal_damage = context
+                .renderable_content
+                .pending_update
+                .take_terminal_damage();
+            let _ui_damage = context.renderable_content.pending_update.take_ui_damage();
+            // Note: ui_damage is extracted but not currently used for selective rendering.
+            // In the future, we can optimize by only re-rendering specific UI elements
+            // (island, search) when ui_damage.island or ui_damage.search is true.
             context.renderable_content.pending_update.reset();
 
             // Compute snapshot at render time
             let terminal_snapshot = {
                 let mut terminal = context.terminal.lock();
 
-                // Get damage from terminal
+                // Get damage from terminal itself
                 let terminal_damage = if force_full_damage {
                     Some(TerminalDamage::Full)
                 } else {
                     terminal.peek_damage_event()
                 };
 
-                // Merge terminal damage with UI damage
-                let damage = match (terminal_damage, ui_damage) {
+                // Merge terminal damage from the terminal with pending terminal damage (selections, hints, etc.)
+                let damage = match (terminal_damage, pending_terminal_damage) {
                     (Some(TerminalDamage::Full), _) | (_, Some(TerminalDamage::Full)) => {
                         TerminalDamage::Full
                     }
-                    (Some(term), Some(ui)) => {
+                    (Some(term), Some(pending)) => {
                         // Merge partial damages
-                        match (term, ui) {
+                        match (term, pending) {
                             (
                                 TerminalDamage::Partial(mut lines1),
                                 TerminalDamage::Partial(lines2),
@@ -928,6 +1043,11 @@ impl Renderer {
                     damage,
                     columns: terminal.columns(),
                     screen_lines: terminal.screen_lines(),
+                    kitty_virtual_placements: terminal
+                        .graphics
+                        .kitty_virtual_placements
+                        .clone(),
+                    kitty_images: terminal.graphics.kitty_images.clone(),
                 };
                 terminal.reset_damage();
                 drop(terminal);
@@ -939,13 +1059,13 @@ impl Renderer {
             let hint_matches = context.renderable_content.hint_matches.as_deref();
 
             // Update cursor state from snapshot
-            context.renderable_content.cursor.state = terminal_snapshot.cursor;
+            context.renderable_content.cursor.state = terminal_snapshot.cursor.clone();
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
             // Check for partial damage to optimize rendering
             if !force_full_damage {
-                match terminal_snapshot.damage {
+                match &terminal_snapshot.damage {
                     TerminalDamage::Full => {
                         // Full damage, render everything
                     }
@@ -1044,6 +1164,7 @@ impl Renderer {
                             focused_match,
                             &terminal_snapshot.colors,
                             is_active,
+                            &terminal_snapshot,
                         );
                     }
                     content.build();
@@ -1073,6 +1194,7 @@ impl Renderer {
                                 focused_match,
                                 &terminal_snapshot.colors,
                                 is_active,
+                                &terminal_snapshot,
                             );
                         }
                     }
@@ -1086,51 +1208,73 @@ impl Renderer {
 
         let window_size = sugarloaf.window_size();
         let scale_factor = sugarloaf.scale_factor();
-        let mut objects = Vec::with_capacity(15);
-        self.navigation.build_objects(
-            sugarloaf,
-            (window_size.width, window_size.height, scale_factor),
-            &self.named_colors,
-            context_manager,
-            self.search.active_search.is_some(),
-            &mut objects,
-        );
 
-        if has_search {
-            if let Some(rich_text_id) = self.search.rich_text_id {
-                search::draw_search_bar(
-                    &mut objects,
-                    rich_text_id,
-                    &self.named_colors,
-                    (window_size.width, window_size.height, scale_factor),
-                );
-            }
-
-            self.search.active_search = None;
-            self.search.rich_text_id = None;
+        if let Some(island) = &mut self.island {
+            island.render(
+                sugarloaf,
+                (window_size.width, window_size.height, scale_factor),
+                context_manager,
+            );
         }
 
-        // let _duration = start.elapsed();
-        context_manager.extend_with_grid_objects(&mut objects);
-        // let _duration = start.elapsed();
+        self.command_palette.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
-        // Update visual bell state and set overlay if needed
-        let visual_bell_active = self.update_visual_bell();
+        // Render panel borders (on top of terminal content)
+        let grid_scaled_margin = context_manager.get_current_grid_scaled_margin();
+        for border_object in context_manager.get_panel_borders() {
+            match border_object {
+                rio_backend::sugarloaf::Object::Quad(quad) => {
+                    // Convert from physical pixels to logical coordinates
+                    let x = (quad.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (quad.y + grid_scaled_margin.top) / scale_factor;
+                    let width = quad.width / scale_factor;
+                    let height = quad.height / scale_factor;
 
-        // Set visual bell overlay that renders on top of everything
-        let bell_overlay = if visual_bell_active {
-            Some(Quad {
-                position: [0.0, 0.0],
-                size: [window_size.width, window_size.height],
-                color: self.named_colors.foreground,
-                ..Quad::default()
-            })
-        } else {
-            None
-        };
-        sugarloaf.set_visual_bell_overlay(bell_overlay);
+                    // Scale corner radii and border widths
+                    let corner_radii = [
+                        quad.corner_radii.top_left / scale_factor,
+                        quad.corner_radii.top_right / scale_factor,
+                        quad.corner_radii.bottom_right / scale_factor,
+                        quad.corner_radii.bottom_left / scale_factor,
+                    ];
+                    let border_widths = [
+                        quad.border_widths.top / scale_factor,
+                        quad.border_widths.right / scale_factor,
+                        quad.border_widths.bottom / scale_factor,
+                        quad.border_widths.left / scale_factor,
+                    ];
 
-        sugarloaf.set_objects(objects);
+                    // Render quad with rounded corners and borders
+                    sugarloaf.quad(
+                        None,
+                        x,
+                        y,
+                        width,
+                        height,
+                        quad.background_color,
+                        corner_radii,
+                        border_widths,
+                        quad.border_color,
+                        quad.border_style as i32,
+                        -0.1, // Negative depth = closer to camera (in front)
+                        1,    // Higher order renders on top
+                    );
+                }
+                rio_backend::sugarloaf::Object::Rect(rect) => {
+                    // Simple rectangle (no rounded corners or borders)
+                    let x = (rect.x + grid_scaled_margin.left) / scale_factor;
+                    let y = (rect.y + grid_scaled_margin.top) / scale_factor;
+                    let width = rect.width / scale_factor;
+                    let height = rect.height / scale_factor;
+
+                    sugarloaf.rect(None, x, y, width, height, rect.color, -0.1, 1);
+                }
+                _ => {}
+            }
+        }
 
         // Apply background color from current context if changed
         let current_context = context_manager.current_grid_mut().current_mut();
@@ -1157,6 +1301,15 @@ impl Renderer {
 
         // let _duration = start.elapsed();
         window_update
+    }
+
+    /// Check if the renderer needs continuous redraw (for animations)
+    pub fn needs_redraw(&self) -> bool {
+        if let Some(island) = &self.island {
+            island.needs_redraw()
+        } else {
+            false
+        }
     }
 
     /// Find hint label at the specified position

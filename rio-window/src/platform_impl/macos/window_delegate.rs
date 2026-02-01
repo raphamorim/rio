@@ -6,7 +6,9 @@ use core_graphics::display::{CGDisplay, CGPoint};
 use monitor::VideoModeHandle;
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{declare_class, msg_send_id, mutability, sel, ClassType, DeclaredClass};
+use objc2::{
+    declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
+};
 use objc2_app_kit::{
     NSAppKitVersionNumber, NSAppKitVersionNumber10_12, NSAppearance, NSApplication,
     NSApplicationPresentationOptions, NSBackingStoreType, NSColor, NSDraggingDestination,
@@ -56,6 +58,7 @@ pub struct PlatformSpecificWindowAttributes {
     pub option_as_alt: OptionAsAlt,
     pub unified_titlebar: bool,
     pub colorspace: Option<crate::platform::macos::Colorspace>,
+    pub traffic_light_position: Option<(f64, f64)>,
 }
 
 impl Default for PlatformSpecificWindowAttributes {
@@ -75,6 +78,7 @@ impl Default for PlatformSpecificWindowAttributes {
             option_as_alt: Default::default(),
             unified_titlebar: false,
             colorspace: None,
+            traffic_light_position: None,
         }
     }
 }
@@ -133,6 +137,9 @@ pub(crate) struct State {
     needs_redraw: Cell<bool>,
     // Track last input timestamp for 1-second presentation window
     last_input_timestamp: Cell<std::time::Instant>,
+    // Position of traffic light buttons (close, minimize, maximize)
+    // Specified as (x, y) coordinates from top-left corner
+    traffic_light_position: Cell<Option<(f64, f64)>>,
 }
 
 declare_class!(
@@ -181,6 +188,8 @@ declare_class!(
             trace_scope!("windowDidResize:");
             // NOTE: WindowEvent::Resized is reported in frameDidChange.
             self.emit_move_event();
+            // Reapply traffic light positioning after resize
+            self.move_traffic_light();
         }
 
         #[method(windowWillStartLiveResize:)]
@@ -216,6 +225,8 @@ declare_class!(
             // TODO: center the cursor if the window had mouse grab when it
             // lost focus
             self.queue_event(WindowEvent::Focused(true));
+            // Reapply traffic light positioning when window becomes active
+            self.move_traffic_light();
         }
 
         #[method(windowDidResignKey:)]
@@ -361,6 +372,8 @@ declare_class!(
                 if let Err(e) = self.start_display_link() {
                     tracing::warn!("Failed to start display link when window became visible: {}", e);
                 }
+                // Reapply traffic light positioning when window becomes visible
+                self.move_traffic_light();
             } else if let Err(e) = self.stop_display_link() {
                 tracing::warn!("Failed to stop display link when window became occluded: {}", e);
             }
@@ -753,6 +766,9 @@ impl WindowDelegate {
             display_link: RefCell::new(None),
             needs_redraw: Cell::new(false),
             last_input_timestamp: Cell::new(std::time::Instant::now()),
+            traffic_light_position: Cell::new(
+                attrs.platform_specific.traffic_light_position,
+            ),
         });
         let delegate: Retained<WindowDelegate> =
             unsafe { msg_send_id![super(delegate), init] };
@@ -814,6 +830,9 @@ impl WindowDelegate {
 
         // Initialize display link for VSync timing
         delegate.initialize_display_link();
+
+        // Apply traffic light positioning if specified
+        delegate.move_traffic_light();
 
         Ok(delegate)
     }
@@ -883,7 +902,10 @@ impl WindowDelegate {
     }
 
     pub fn set_title(&self, title: &str) {
-        self.window().setTitle(&NSString::from_str(title))
+        self.window().setTitle(&NSString::from_str(title));
+        // Reapply traffic light positioning after title change
+        // macOS can reset traffic light positions when the title changes
+        self.move_traffic_light();
     }
 
     pub fn set_subtitle(&self, subtitle: &str) {
@@ -1759,6 +1781,74 @@ impl WindowDelegate {
     pub fn reset_dead_keys(&self) {
         // (Artur) I couldn't find a way to implement this.
     }
+
+    pub(crate) fn move_traffic_light(&self) {
+        let position = self.ivars().traffic_light_position.get();
+        let Some((x, y)) = position else {
+            return;
+        };
+
+        // Moving traffic lights while fullscreen doesn't work properly
+        if self.fullscreen().is_some() {
+            return;
+        }
+
+        let window = self.window();
+
+        // Get titlebar height for coordinate conversion
+        // macOS uses bottom-left origin, but users specify top-left coordinates
+        let window_frame = window.frame();
+        let content_layout_rect: NSRect = unsafe { msg_send![window, contentLayoutRect] };
+        let titlebar_height = window_frame.size.height - content_layout_rect.size.height;
+
+        unsafe {
+            let close_button =
+                window.standardWindowButton(NSWindowButton::NSWindowCloseButton);
+            let miniaturize_button =
+                window.standardWindowButton(NSWindowButton::NSWindowMiniaturizeButton);
+            let zoom_button =
+                window.standardWindowButton(NSWindowButton::NSWindowZoomButton);
+
+            let Some(close_btn) = close_button else {
+                return;
+            };
+            let Some(min_btn) = miniaturize_button else {
+                return;
+            };
+            let Some(zoom_btn) = zoom_button else {
+                return;
+            };
+
+            // Read all button frames before modifying any
+            let mut close_frame = close_btn.frame();
+            let mut min_frame = min_btn.frame();
+            let mut zoom_frame = zoom_btn.frame();
+
+            let button_height = close_frame.size.height;
+            let button_spacing = min_frame.origin.x - close_frame.origin.x;
+
+            // Convert y from top-left to bottom-left coordinate system
+            let mut origin_x = x;
+            let origin_y = titlebar_height - y - button_height;
+
+            // Set close button position
+            close_frame.origin.x = origin_x;
+            close_frame.origin.y = origin_y;
+            close_btn.setFrame(close_frame);
+            origin_x += button_spacing;
+
+            // Set miniaturize button position
+            min_frame.origin.x = origin_x;
+            min_frame.origin.y = origin_y;
+            min_btn.setFrame(min_frame);
+            origin_x += button_spacing;
+
+            // Set zoom button position
+            zoom_frame.origin.x = origin_x;
+            zoom_frame.origin.y = origin_y;
+            zoom_btn.setFrame(zoom_frame);
+        }
+    }
 }
 
 fn restore_and_release_display(monitor: &MonitorHandle) {
@@ -1925,7 +2015,10 @@ impl WindowExtMacOS for WindowDelegate {
     }
 
     fn set_document_edited(&self, edited: bool) {
-        self.window().setDocumentEdited(edited)
+        self.window().setDocumentEdited(edited);
+        // Changing the document edited state resets the traffic light position,
+        // so we have to move it again.
+        self.move_traffic_light();
     }
 
     fn set_option_as_alt(&self, option_as_alt: OptionAsAlt) {
@@ -1965,6 +2058,11 @@ impl WindowExtMacOS for WindowDelegate {
             window.toolbar().is_some()
                 && window.toolbarStyle() == NSWindowToolbarStyle::Unified
         }
+    }
+
+    fn set_traffic_light_position(&self, position: Option<(f64, f64)>) {
+        self.ivars().traffic_light_position.set(position);
+        self.move_traffic_light();
     }
 }
 

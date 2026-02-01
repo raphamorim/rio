@@ -8,8 +8,8 @@ use rio_window::{
 };
 use std::error::Error;
 use sugarloaf::{
-    layout::RootStyle, FragmentStyle, FragmentStyleDecoration, Object, RichText,
-    Sugarloaf, SugarloafWindow, SugarloafWindowSize, UnderlineInfo, UnderlineShape,
+    layout::RootStyle, SpanStyle, SpanStyleDecoration, Sugarloaf, SugarloafWindow,
+    SugarloafWindowSize, UnderlineInfo, UnderlineShape,
 };
 
 fn main() {
@@ -25,7 +25,6 @@ struct Application {
     window: Option<Window>,
     height: f32,
     width: f32,
-    rich_text: usize,
 }
 
 impl Application {
@@ -33,7 +32,6 @@ impl Application {
         event_loop.listen_device_events(DeviceEvents::Never);
 
         Application {
-            rich_text: 0,
             sugarloaf: None,
             window: None,
             width,
@@ -80,7 +78,6 @@ impl ApplicationHandler for Application {
         .expect("Sugarloaf instance should be created");
 
         sugarloaf.set_background_color(Some(wgpu::Color::RED));
-        self.rich_text = sugarloaf.create_rich_text();
         window.request_redraw();
 
         self.sugarloaf = Some(sugarloaf);
@@ -118,41 +115,43 @@ impl ApplicationHandler for Application {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                let content = sugarloaf.content();
-                content.sel(self.rich_text).clear();
-                content
-                    .add_text(
+                const TEXT_ID: usize = 1;
+
+                sugarloaf
+                    .text(TEXT_ID)
+                    .clear()
+                    .add_span(
                         "Sugarloaf",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "│㏑¼",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [0.0, 0.0, 0.0, 1.0],
                             background_color: Some([1.0, 1.0, 1.0, 1.0]),
                             width: 2.0,
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         "🥶",
-                        FragmentStyle {
+                        SpanStyle {
                             color: [1.0, 0.0, 1.0, 1.0],
                             background_color: Some([0.3, 0.5, 1.0, 1.0]),
                             width: 2.0,
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "│regular -> ",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
+                        SpanStyle {
+                            decoration: Some(SpanStyleDecoration::Underline(
                                 UnderlineInfo {
                                     is_doubled: false,
                                     shape: UnderlineShape::Regular,
@@ -160,22 +159,22 @@ impl ApplicationHandler for Application {
                             )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         " ",
-                        FragmentStyle {
+                        SpanStyle {
                             decoration: None,
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         "|still|",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
+                        SpanStyle {
+                            decoration: Some(SpanStyleDecoration::Underline(
                                 UnderlineInfo {
                                     is_doubled: false,
                                     shape: UnderlineShape::Regular,
@@ -183,22 +182,22 @@ impl ApplicationHandler for Application {
                             )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         " ",
-                        FragmentStyle {
+                        SpanStyle {
                             decoration: None,
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         "│curly",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
+                        SpanStyle {
+                            decoration: Some(SpanStyleDecoration::Underline(
                                 UnderlineInfo {
                                     is_doubled: false,
                                     shape: UnderlineShape::Curly,
@@ -206,14 +205,14 @@ impl ApplicationHandler for Application {
                             )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
                     .new_line()
-                    .add_text(
+                    .add_span(
                         "│dashed",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
+                        SpanStyle {
+                            decoration: Some(SpanStyleDecoration::Underline(
                                 UnderlineInfo {
                                     is_doubled: false,
                                     shape: UnderlineShape::Dashed,
@@ -221,22 +220,22 @@ impl ApplicationHandler for Application {
                             )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         " ",
-                        FragmentStyle {
+                        SpanStyle {
                             decoration: None,
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
                     )
-                    .add_text(
+                    .add_span(
                         "dotted",
-                        FragmentStyle {
-                            decoration: Some(FragmentStyleDecoration::Underline(
+                        SpanStyle {
+                            decoration: Some(SpanStyleDecoration::Underline(
                                 UnderlineInfo {
                                     is_doubled: false,
                                     shape: UnderlineShape::Dotted,
@@ -244,16 +243,12 @@ impl ApplicationHandler for Application {
                             )),
                             color: [1.0, 1.0, 1.0, 1.0],
                             background_color: Some([0.0, 0.0, 0.0, 1.0]),
-                            ..FragmentStyle::default()
+                            ..SpanStyle::default()
                         },
-                    )
-                    .build();
-
-                sugarloaf.set_objects(vec![Object::RichText(RichText {
-                    id: self.rich_text,
-                    position: [10., 0.],
-                    lines: None,
-                })]);
+                    );
+                sugarloaf.build_text_by_id(TEXT_ID);
+                sugarloaf.set_position(TEXT_ID, 10., 10.);
+                sugarloaf.set_visibility(TEXT_ID, true);
                 sugarloaf.render();
                 event_loop.set_control_flow(ControlFlow::Wait);
             }

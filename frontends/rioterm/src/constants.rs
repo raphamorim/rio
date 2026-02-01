@@ -30,6 +30,9 @@ pub const DEADZONE_END_Y: f64 = -2.0;
 #[cfg(target_os = "macos")]
 pub const ADDITIONAL_PADDING_Y_ON_UNIFIED_TITLEBAR: f32 = 2.;
 
+#[cfg(target_os = "macos")]
+pub const TRAFFIC_LIGHT_PADDING: f64 = 9.;
+
 pub const PADDING_X_COLLAPSED_TABS: f32 = 30.;
 pub const PADDING_Y_BOTTOM_TABS: f32 = 22.0;
 

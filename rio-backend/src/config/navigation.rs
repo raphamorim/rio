@@ -6,15 +6,11 @@ use serde::{Deserialize, Serialize};
 pub enum NavigationMode {
     #[serde(alias = "plain")]
     Plain,
-    #[serde(alias = "toptab")]
-    TopTab,
+    #[serde(alias = "tab")]
+    Tab,
     #[cfg(target_os = "macos")]
     #[serde(alias = "nativetab")]
     NativeTab,
-    #[serde(alias = "bottomtab")]
-    BottomTab,
-    #[serde(alias = "bookmark")]
-    Bookmark,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -22,28 +18,25 @@ impl Default for NavigationMode {
     fn default() -> NavigationMode {
         #[cfg(target_os = "macos")]
         {
-            NavigationMode::NativeTab
+            // Use Tab for full GPU rendering
+            NavigationMode::Tab
         }
 
         #[cfg(not(target_os = "macos"))]
-        NavigationMode::Bookmark
+        NavigationMode::Tab
     }
 }
 
 impl NavigationMode {
     const PLAIN_STR: &'static str = "Plain";
-    const COLLAPSED_TAB_STR: &'static str = "Bookmark";
-    const TOP_TAB_STR: &'static str = "TopTab";
-    const BOTTOM_TAB_STR: &'static str = "BottomTab";
+    const TAB_STR: &'static str = "Tab";
     #[cfg(target_os = "macos")]
     const NATIVE_TAB_STR: &'static str = "NativeTab";
 
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Plain => Self::PLAIN_STR,
-            Self::Bookmark => Self::COLLAPSED_TAB_STR,
-            Self::TopTab => Self::TOP_TAB_STR,
-            Self::BottomTab => Self::BOTTOM_TAB_STR,
+            Self::Tab => Self::TAB_STR,
             #[cfg(target_os = "macos")]
             Self::NativeTab => Self::NATIVE_TAB_STR,
         }
@@ -54,9 +47,7 @@ impl NavigationMode {
 pub fn modes_as_vec_string() -> Vec<String> {
     [
         NavigationMode::Plain,
-        NavigationMode::Bookmark,
-        NavigationMode::TopTab,
-        NavigationMode::BottomTab,
+        NavigationMode::Tab,
         #[cfg(target_os = "macos")]
         NavigationMode::NativeTab,
     ]
@@ -79,12 +70,10 @@ impl std::str::FromStr for NavigationMode {
 
     fn from_str(s: &str) -> Result<NavigationMode, ParseNavigationModeError> {
         match s {
-            Self::COLLAPSED_TAB_STR => Ok(NavigationMode::Bookmark),
-            Self::TOP_TAB_STR => Ok(NavigationMode::TopTab),
-            Self::BOTTOM_TAB_STR => Ok(NavigationMode::BottomTab),
+            Self::PLAIN_STR => Ok(NavigationMode::Plain),
+            Self::TAB_STR => Ok(NavigationMode::Tab),
             #[cfg(target_os = "macos")]
             Self::NATIVE_TAB_STR => Ok(NavigationMode::NativeTab),
-            Self::PLAIN_STR => Ok(NavigationMode::Plain),
             _ => Ok(NavigationMode::default()),
         }
     }
@@ -159,16 +148,6 @@ impl Default for Navigation {
 
 impl Navigation {
     #[inline]
-    pub fn is_collapsed_mode(&self) -> bool {
-        self.mode == NavigationMode::Bookmark
-    }
-
-    #[inline]
-    pub fn is_placed_on_bottom(&self) -> bool {
-        self.mode == NavigationMode::BottomTab
-    }
-
-    #[inline]
     pub fn is_native(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
@@ -187,8 +166,8 @@ impl Navigation {
     }
 
     #[inline]
-    pub fn is_placed_on_top(&self) -> bool {
-        self.mode == NavigationMode::TopTab
+    pub fn is_enabled(&self) -> bool {
+        self.mode == NavigationMode::Tab
     }
 }
 
@@ -205,40 +184,27 @@ mod tests {
     }
 
     #[test]
-    fn test_collapsed_tab() {
+    fn test_plain() {
         let content = r#"
             [navigation]
-            mode = 'Bookmark'
+            mode = 'Plain'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Plain);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_automation.is_empty());
     }
 
     #[test]
-    fn test_top_tab() {
+    fn test_tab() {
         let content = r#"
             [navigation]
-            mode = 'TopTab'
+            mode = 'Tab'
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::TopTab);
-        assert!(!decoded.navigation.clickable);
-        assert!(decoded.navigation.color_automation.is_empty());
-    }
-
-    #[test]
-    fn test_bottom_tab() {
-        let content = r#"
-            [navigation]
-            mode = 'BottomTab'
-        "#;
-
-        let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(decoded.navigation.color_automation.is_empty());
     }
@@ -247,14 +213,14 @@ mod tests {
     fn test_color_automation() {
         let content = r#"
             [navigation]
-            mode = 'Bookmark'
+            mode = 'Tab'
             color-automation = [
                 { program = 'vim', color = '#333333' }
             ]
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::Bookmark);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.color_automation.is_empty());
         assert_eq!(
@@ -272,7 +238,7 @@ mod tests {
     fn test_color_automation_arr() {
         let content = r#"
             [navigation]
-            mode = 'BottomTab'
+            mode = 'Tab'
             color-automation = [
                 { program = 'ssh', color = '#F1F1F1' },
                 { program = 'tmux', color = '#333333' },
@@ -282,7 +248,7 @@ mod tests {
         "#;
 
         let decoded = toml::from_str::<Root>(content).unwrap();
-        assert_eq!(decoded.navigation.mode, NavigationMode::BottomTab);
+        assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
         assert!(!decoded.navigation.clickable);
         assert!(!decoded.navigation.color_automation.is_empty());
 

@@ -40,6 +40,7 @@ image_rs = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 serde = { workspace = true }
+taffy = { version = "0.9.2", features = ["flexbox","grid"] }
 teletypewriter = { workspace = true }
 unicode-width = { workspace = true }
 copa = { workspace = true }
@@ -105,7 +106,3 @@ assets = [
 extended-description = """\
 Rio terminal is a hardware-accelerated GPU terminal emulator, focusing to run in desktops and browsers.
 The supported platforms currently consist of BSD, Linux, MacOS and Windows."""
-
-[[bench]]
-name = "renderer_bench"
-harness = false

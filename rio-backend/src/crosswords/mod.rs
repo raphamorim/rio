@@ -37,6 +37,7 @@ use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, AnsiColor, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
 use crate::crosswords::grid::{Dimensions, Grid, Scroll};
+use crate::crosswords::square::Flags;
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
 use crate::performer::handler::Handler;
@@ -1385,6 +1386,130 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
+impl<U: EventListener> Crosswords<U> {
+    /// Delete all graphics from the visible grid
+    fn delete_all_graphics(&mut self) {
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                }
+            }
+            self.mark_line_damaged(line);
+        }
+    }
+
+    /// Delete graphics matching a predicate
+    fn delete_graphics_matching<F>(&mut self, mut predicate: F)
+    where
+        F: FnMut(&GraphicCell) -> bool,
+    {
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    if let Some(graphics) = cell.take_graphics() {
+                        let filtered: smallvec::SmallVec<[GraphicCell; 1]> =
+                            graphics.into_iter().filter(|g| !predicate(g)).collect();
+
+                        if filtered.is_empty() {
+                            cell.flags.remove(Flags::GRAPHICS);
+                        } else {
+                            cell.set_graphics(filtered);
+                        }
+                    }
+                }
+            }
+            self.mark_line_damaged(line);
+        }
+    }
+
+    /// Delete graphic at a specific position
+    fn delete_graphic_at_position(&mut self, col: Column, row: Line) {
+        if row.0 >= 0
+            && (row.0 as usize) < self.grid.screen_lines()
+            && col.0 < self.grid.columns()
+        {
+            let cell = &mut self.grid[row][col];
+            if cell.flags.contains(Flags::GRAPHICS) {
+                cell.set_graphics(smallvec::SmallVec::new());
+                cell.flags.remove(Flags::GRAPHICS);
+                self.mark_line_damaged(row);
+            }
+        }
+    }
+
+    /// Delete all graphics in a column
+    fn delete_graphics_in_column(&mut self, col: Column) {
+        if col.0 < self.grid.columns() {
+            for line_idx in 0..self.grid.screen_lines() {
+                let line = Line(line_idx as i32);
+                let cell = &mut self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                    self.mark_line_damaged(line);
+                }
+            }
+        }
+    }
+
+    /// Delete all graphics in a row
+    fn delete_graphics_in_row(&mut self, row: Line) {
+        if row.0 >= 0 && (row.0 as usize) < self.grid.screen_lines() {
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &mut self.grid[row][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    cell.set_graphics(smallvec::SmallVec::new());
+                    cell.flags.remove(Flags::GRAPHICS);
+                }
+            }
+            self.mark_line_damaged(row);
+        }
+    }
+
+    /// Cleanup unused kitty images from cache
+    /// Collect all graphic IDs currently in use (displayed in the grid)
+    fn collect_used_graphic_ids(&self) -> std::collections::HashSet<u64> {
+        let mut used_ids = std::collections::HashSet::new();
+        for line_idx in 0..self.grid.screen_lines() {
+            let line = Line(line_idx as i32);
+            for col_idx in 0..self.grid.columns() {
+                let col = Column(col_idx);
+                let cell = &self.grid[line][col];
+                if cell.flags.contains(Flags::GRAPHICS) {
+                    if let Some(graphics) = cell.graphics() {
+                        for graphic in graphics {
+                            used_ids.insert(graphic.texture.id.get());
+                        }
+                    }
+                }
+            }
+        }
+        used_ids
+    }
+
+    fn cleanup_unused_kitty_images(&mut self) {
+        // Collect all currently used graphic IDs from the grid
+        let used_ids = self.collect_used_graphic_ids();
+
+        // Convert to u32 for kitty_images map
+        let used_kitty_ids: std::collections::HashSet<u32> =
+            used_ids.iter().map(|&id| id as u32).collect();
+
+        // Delete images not in use
+        self.graphics
+            .delete_kitty_images(|id, _| !used_kitty_ids.contains(id));
+    }
+}
+
 impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
@@ -2029,6 +2154,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn set_title(&mut self, title: Option<String>) {
         self.title = title.unwrap_or_default();
+    }
+
+    fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
+        self.event_proxy
+            .send_event(RioEvent::ProgressReport(report), self.window_id);
     }
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
@@ -2791,7 +2921,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let parser = self.graphics.sixel_parser.take();
         if let Some(parser) = parser {
             match parser.finish() {
-                Ok((graphic, palette)) => self.insert_graphic(graphic, Some(palette)),
+                // Sixel uses None to indicate traditional Sixel cursor behavior
+                Ok((graphic, palette)) => {
+                    self.insert_graphic(graphic, Some(palette), None)
+                }
                 Err(err) => warn!("Failed to parse Sixel data: {}", err),
             }
         } else {
@@ -2800,7 +2933,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     #[inline]
-    fn insert_graphic(&mut self, graphic: GraphicData, palette: Option<Vec<ColorRgb>>) {
+    fn insert_graphic(
+        &mut self,
+        graphic: GraphicData,
+        palette: Option<Vec<ColorRgb>>,
+        cursor_movement: Option<u8>,
+    ) {
+        debug!(
+            "insert_graphic called: id={}, {}x{}, format={:?}, cursor_movement={:?}",
+            graphic.id.get(),
+            graphic.width,
+            graphic.height,
+            graphic.color_type,
+            cursor_movement
+        );
         let cell_width = self.graphics.cell_width as usize;
         let cell_height = self.graphics.cell_height as usize;
 
@@ -2811,19 +2957,36 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        debug!(
+            "insert_graphic: resizing with cell_width={}, cell_height={}",
+            cell_width, cell_height
+        );
         let graphic = match graphic.resized(
             cell_width,
             cell_height,
             cell_width * self.grid.columns(),
             cell_height * self.grid.screen_lines(),
         ) {
-            Some(graphic) => graphic,
-            None => return,
+            Some(graphic) => {
+                debug!(
+                    "insert_graphic: resized to {}x{}",
+                    graphic.width, graphic.height
+                );
+                graphic
+            }
+            None => {
+                debug!("insert_graphic: resize returned None, aborting");
+                return;
+            }
         };
 
         if graphic.width > MAX_GRAPHIC_DIMENSIONS[0]
             || graphic.height > MAX_GRAPHIC_DIMENSIONS[1]
         {
+            debug!(
+                "insert_graphic: dimensions too large {}x{}, max is {:?}",
+                graphic.width, graphic.height, MAX_GRAPHIC_DIMENSIONS
+            );
             return;
         }
 
@@ -2831,10 +2994,39 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let height = graphic.height as u16;
 
         if width == 0 || height == 0 {
+            debug!("insert_graphic: zero width or height, aborting");
             return;
         }
 
+        // Calculate bytes for this graphic
+        let graphic_bytes = graphic.pixels.len();
+
+        debug!(
+            "insert_graphic: image needs {} bytes, current total: {}/{}",
+            graphic_bytes, self.graphics.total_bytes, self.graphics.total_limit
+        );
+
+        // Check if we need to evict images to make space
+        let used_ids = self.collect_used_graphic_ids();
+        debug!(
+            "insert_graphic: {} images currently in use in grid",
+            used_ids.len()
+        );
+
+        if !self.graphics.evict_images(graphic_bytes, &used_ids) {
+            warn!(
+                "Failed to evict enough images for {} bytes, image may not display",
+                graphic_bytes
+            );
+            // Continue anyway - let it fail gracefully rather than silently dropping
+        }
+
         let graphic_id = self.graphics.next_id();
+
+        debug!("insert_graphic: assigned new id {}", graphic_id.0);
+
+        // Track this graphic's memory usage
+        self.graphics.track_graphic(graphic_id, graphic_bytes);
 
         // If SIXEL_DISPLAY is disabled, the start of the graphic is the
         // cursor position, and the grid can be scrolled if the graphic is
@@ -2974,28 +3166,255 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
-        if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
-            let graphic_columns = graphic.width.div_ceil(cell_width);
-            self.move_forward(Column(graphic_columns));
-        } else if scrolling {
-            self.linefeed();
-            self.carriage_return();
+        // Handle cursor movement based on cursor_movement parameter:
+        // - None: Sixel (traditional behavior - move to next line after image)
+        // - Some(0): Kitty C=0 (cursor stays on last row of image)
+        // - Some(1): Kitty C=1 (cursor doesn't move at all)
+        match cursor_movement {
+            None => {
+                // Sixel graphics - traditional behavior
+                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    // Move cursor to the right of the image
+                    let graphic_columns = graphic.width.div_ceil(cell_width);
+                    self.move_forward(Column(graphic_columns));
+                } else if scrolling {
+                    // Move cursor to next line AFTER the image (traditional Sixel)
+                    self.linefeed();
+                    self.carriage_return();
+                }
+            }
+            Some(0) => {
+                // Kitty C=0: Move cursor to start of current line (ON last row of image)
+                if self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    let graphic_columns = graphic.width.div_ceil(cell_width);
+                    self.move_forward(Column(graphic_columns));
+                } else if scrolling {
+                    // For Kitty: cursor stays ON the last row of the image
+                    // The loop already did all necessary linefeeds
+                    self.carriage_return();
+                }
+            }
+            Some(1) => {
+                // Kitty C=1: Don't move cursor at all
+            }
+            Some(_) => {
+                // Unknown cursor movement value, treat as C=0
+                if scrolling && !self.mode.contains(Mode::SIXEL_CURSOR_TO_THE_RIGHT) {
+                    self.carriage_return();
+                }
+            }
         }
 
         // Add the graphic data to the pending queue.
+        debug!(
+            "insert_graphic: adding to pending queue, graphic_id={}, final size={}x{}",
+            graphic_id.0, width, height
+        );
         self.graphics.pending.push(GraphicData {
             id: graphic_id,
             ..graphic
         });
 
         // Send graphics update event
+        debug!("insert_graphic: sending graphics updates");
         self.send_graphics_updates();
+    }
+
+    #[inline]
+    fn store_graphic(&mut self, graphic: GraphicData) {
+        // Store graphic without displaying (a=t transmit-only)
+        let image_id = graphic.id.get() as u32;
+        debug!(
+            "Storing kitty graphic: id={}, {}x{}",
+            image_id, graphic.width, graphic.height
+        );
+
+        // Store in cache
+        self.graphics.store_kitty_image(image_id, None, graphic);
+    }
+
+    #[inline]
+    fn place_graphic(
+        &mut self,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
+        // Place a previously stored image (a=p)
+        debug!(
+            "Kitty graphics placement: image_id={}, x={}, y={}, columns={}, rows={}, unicode_placeholder={}",
+            placement.image_id,
+            placement.x,
+            placement.y,
+            placement.columns,
+            placement.rows,
+            placement.unicode_placeholder
+        );
+
+        // Check if this is a virtual placement (unicode_placeholder > 0 means U=1)
+        if placement.unicode_placeholder > 0 {
+            // Virtual placement: Write placeholder character(s) to grid
+            self.place_virtual_graphic(placement);
+            return;
+        }
+
+        // Direct placement (U=0): Insert graphic directly into cells
+        // Look up the stored image
+        if let Some(stored) = self.graphics.get_kitty_image(placement.image_id) {
+            // Clone the graphic data and display it at the specified position
+            let mut graphic_data = stored.data.clone();
+
+            // Update resize parameters based on placement
+            if placement.columns > 0 || placement.rows > 0 {
+                graphic_data.resize = Some(sugarloaf::ResizeCommand {
+                    width: if placement.columns > 0 {
+                        sugarloaf::ResizeParameter::Cells(placement.columns)
+                    } else {
+                        sugarloaf::ResizeParameter::Auto
+                    },
+                    height: if placement.rows > 0 {
+                        sugarloaf::ResizeParameter::Cells(placement.rows)
+                    } else {
+                        sugarloaf::ResizeParameter::Auto
+                    },
+                    preserve_aspect_ratio: true,
+                });
+            }
+
+            // Save current cursor position
+            let saved_cursor = self.grid.cursor.pos;
+
+            // Move cursor to placement position if specified
+            if placement.x > 0 || placement.y > 0 {
+                let col = Column(placement.x as usize);
+                let row = Line(placement.y as i32);
+                self.grid.cursor.pos.col = col;
+                self.grid.cursor.pos.row = row;
+            }
+
+            // Display the graphic at the cursor position with cursor_movement from placement
+            self.insert_graphic(graphic_data, None, Some(placement.cursor_movement));
+
+            // Note: cursor position handling is now controlled by cursor_movement parameter
+        } else {
+            warn!(
+                "Attempted to place non-existent kitty graphic: id={}",
+                placement.image_id
+            );
+        }
+    }
+
+    #[inline]
+    fn delete_graphics(
+        &mut self,
+        delete: crate::ansi::kitty_graphics_protocol::DeleteRequest,
+    ) {
+        debug!(
+            "Kitty graphics delete: action={}, image_id={}, x={}, y={}, z_index={}",
+            delete.action as char, delete.image_id, delete.x, delete.y, delete.z_index
+        );
+
+        match delete.action {
+            b'a' | b'A' => {
+                // Delete all graphics from visible grid
+                self.delete_all_graphics();
+
+                // If uppercase (A), also delete from stored images cache
+                if delete.action == b'A' && delete.delete_data {
+                    self.graphics.kitty_images.clear();
+                    self.graphics.kitty_image_numbers.clear();
+                }
+            }
+            b'i' | b'I' => {
+                // Delete by image ID
+                let image_id_to_match = delete.image_id;
+                self.delete_graphics_matching(|cell_graphic| {
+                    // Match by GraphicId - need to check if this graphic's ID matches
+                    cell_graphic.texture.id.get() == image_id_to_match as u64
+                });
+
+                // If uppercase, also delete from cache
+                if delete.action == b'I' && delete.delete_data {
+                    self.graphics
+                        .delete_kitty_images(|id, _| *id == image_id_to_match);
+                }
+            }
+            b'c' | b'C' => {
+                // Delete graphics intersecting cursor position
+                let cursor_pos = self.grid.cursor.pos;
+                self.delete_graphic_at_position(cursor_pos.col, cursor_pos.row);
+
+                if delete.action == b'C' && delete.delete_data {
+                    // Delete unused images from cache
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'p' | b'P' => {
+                // Delete at specific cell position (x, y are column/row)
+                if delete.x > 0 && delete.y > 0 {
+                    let col = Column((delete.x - 1) as usize); // 1-indexed to 0-indexed
+                    let row = Line((delete.y - 1) as i32);
+                    self.delete_graphic_at_position(col, row);
+                }
+
+                if delete.action == b'P' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'x' | b'X' => {
+                // Delete by column
+                if delete.x > 0 {
+                    let col = Column((delete.x - 1) as usize);
+                    self.delete_graphics_in_column(col);
+                }
+
+                if delete.action == b'X' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'y' | b'Y' => {
+                // Delete by row
+                if delete.y > 0 {
+                    let row = Line((delete.y - 1) as i32);
+                    self.delete_graphics_in_row(row);
+                }
+
+                if delete.action == b'Y' && delete.delete_data {
+                    self.cleanup_unused_kitty_images();
+                }
+            }
+            b'z' | b'Z' => {
+                // Delete by z-index (not fully implemented - would need z-index tracking)
+                debug!("Delete by z-index not implemented - treating as delete all");
+                self.delete_all_graphics();
+            }
+            _ => {
+                debug!(
+                    "Kitty graphics delete mode '{}' not implemented",
+                    delete.action as char
+                );
+            }
+        }
+
+        self.send_graphics_updates();
+    }
+
+    #[inline]
+    fn kitty_graphics_response(&mut self, response: String) {
+        // Send response back to the terminal
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(response), self.window_id);
     }
 
     #[inline]
     fn xtgettcap_response(&mut self, response: String) {
         self.event_proxy
             .send_event(RioEvent::PtyWrite(response), self.window_id);
+    }
+
+    #[inline]
+    fn kitty_chunking_state_mut(
+        &mut self,
+    ) -> Option<&mut crate::ansi::kitty_graphics_protocol::KittyGraphicsState> {
+        Some(&mut self.graphics.kitty_chunking_state)
     }
 }
 
@@ -3083,6 +3502,121 @@ impl<T: EventListener> Dimensions for Crosswords<T> {
 
     fn square_height(&self) -> f32 {
         self.graphics.cell_height
+    }
+}
+
+// Additional Crosswords methods (not part of Handler trait)
+impl<U: EventListener> Crosswords<U> {
+    fn place_virtual_graphic(
+        &mut self,
+        placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
+    ) {
+        use crate::ansi::graphics::VirtualPlacement;
+        use crate::ansi::kitty_virtual;
+
+        debug!(
+            "Virtual placement: image_id={}, placement_id={}, columns={}, rows={}",
+            placement.image_id, placement.placement_id, placement.columns, placement.rows
+        );
+
+        // Store the virtual placement metadata
+        let vp = VirtualPlacement {
+            image_id: placement.image_id,
+            placement_id: placement.placement_id,
+            columns: placement.columns,
+            rows: placement.rows,
+            x: placement.x,
+            y: placement.y,
+        };
+        self.graphics
+            .kitty_virtual_placements
+            .insert((placement.image_id, placement.placement_id), vp);
+
+        // Calculate the grid dimensions needed
+        let columns = if placement.columns > 0 {
+            placement.columns as usize
+        } else {
+            // Default to a reasonable size if not specified
+            10
+        };
+        let rows = if placement.rows > 0 {
+            placement.rows as usize
+        } else {
+            10
+        };
+
+        // Extract image ID components
+        let image_id_low = placement.image_id & 0x00FFFFFF; // Lower 24 bits
+        let image_id_high = if placement.image_id > 0x00FFFFFF {
+            Some(((placement.image_id >> 24) & 0xFF) as u8)
+        } else {
+            None
+        };
+
+        // Convert IDs to colors
+        let fg_color = kitty_virtual::id_to_rgb(image_id_low);
+        let underline_color = if placement.placement_id > 0 {
+            Some(kitty_virtual::id_to_rgb(placement.placement_id))
+        } else {
+            None
+        };
+
+        // Save cursor position and template
+        let start_col = self.grid.cursor.pos.col;
+        let _start_row = self.grid.cursor.pos.row;
+        let saved_template = self.grid.cursor.template.clone();
+
+        // Move to placement position if specified
+        if placement.x > 0 || placement.y > 0 {
+            self.grid.cursor.pos.col = Column(placement.x as usize);
+            self.grid.cursor.pos.row = Line(placement.y as i32);
+        }
+
+        // Write placeholder characters with proper encoding
+        for row_idx in 0..rows {
+            // Move to start of row
+            self.grid.cursor.pos.col = if placement.x > 0 {
+                Column(placement.x as usize)
+            } else {
+                start_col
+            };
+
+            for col_idx in 0..columns {
+                // Set colors to encode image_id and placement_id
+                self.grid.cursor.template.fg =
+                    crate::config::colors::AnsiColor::Spec(fg_color);
+                if let Some(ul_color) = underline_color {
+                    self.grid.cursor.template.set_underline_color(Some(
+                        crate::config::colors::AnsiColor::Spec(ul_color),
+                    ));
+                }
+
+                // Encode placeholder with diacritics for this cell's position
+                let placeholder_str = kitty_virtual::encode_placeholder(
+                    row_idx as u32,
+                    col_idx as u32,
+                    image_id_high,
+                );
+
+                // Write each character of the encoded placeholder
+                for ch in placeholder_str.chars() {
+                    self.write_at_cursor(ch);
+                }
+            }
+
+            // Move to next row
+            if row_idx < rows - 1 {
+                self.linefeed();
+            }
+        }
+
+        // Restore cursor template
+        self.grid.cursor.template = saved_template;
+
+        debug!(
+            "Wrote {}x{} placeholder cells for virtual placement (image_id={:#X})",
+            columns, rows, placement.image_id
+        );
     }
 }
 

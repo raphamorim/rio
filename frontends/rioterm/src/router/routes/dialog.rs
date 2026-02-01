@@ -1,5 +1,5 @@
-use crate::context::grid::ContextDimension;
-use rio_backend::sugarloaf::{FragmentStyle, Object, Quad, RichText, Sugarloaf};
+use crate::layout::ContextDimension;
+use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 
 #[inline]
 pub fn screen(
@@ -9,99 +9,93 @@ pub fn screen(
     confirm_content: &str,
     quit_content: &str,
 ) {
-    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
-    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
-    let red = [1.0, 0.07058824, 0.38039216, 1.0];
-    let black = [0.0, 0.0, 0.0, 1.0];
-
     let layout = sugarloaf.window_size();
 
-    let mut objects = Vec::with_capacity(7);
+    // Render rectangles directly
+    sugarloaf.rect(
+        None,
+        0.0,
+        0.0,
+        layout.width / context_dimension.dimension.scale,
+        layout.height,
+        [0.0, 0.0, 0.0, 0.5],
+        0.0,
+        0,
+    );
+    sugarloaf.rect(
+        None,
+        128.0,
+        256.0,
+        350.0,
+        150.0,
+        [0.0, 0.0, 0.0, 1.0],
+        0.0,
+        0,
+    );
+    sugarloaf.rect(
+        None,
+        128.0,
+        320.0,
+        106.0,
+        36.0,
+        [0.133, 0.141, 0.176, 1.0],
+        0.0,
+        0,
+    );
+    sugarloaf.rect(
+        None,
+        240.0,
+        320.0,
+        106.0,
+        36.0,
+        [0.133, 0.141, 0.176, 1.0],
+        0.0,
+        0,
+    );
 
-    objects.push(Object::Quad(Quad {
-        position: [0., 0.0],
-        color: black,
-        size: [layout.width, layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [0., 30.0],
-        color: blue,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [15., context_dimension.margin.top_y + 60.],
-        color: yellow,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
-    objects.push(Object::Quad(Quad {
-        position: [30., context_dimension.margin.top_y + 120.],
-        color: red,
-        size: [30., layout.height],
-        ..Quad::default()
-    }));
+    // Create transient text elements (rendered once then cleaned up)
+    let heading_idx = sugarloaf.text(None);
+    let confirm_idx = sugarloaf.text(None);
+    let quit_idx = sugarloaf.text(None);
 
-    let heading = sugarloaf.create_temp_rich_text();
-    let confirm = sugarloaf.create_temp_rich_text();
-    let quit = sugarloaf.create_temp_rich_text();
+    // Use proportional text rendering (not monospace grid)
+    sugarloaf.set_transient_use_grid_cell_size(heading_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(confirm_idx, false);
+    sugarloaf.set_transient_use_grid_cell_size(quit_idx, false);
 
-    sugarloaf.set_rich_text_font_size(&heading, 28.0);
-    sugarloaf.set_rich_text_font_size(&confirm, 18.0);
-    sugarloaf.set_rich_text_font_size(&quit, 18.0);
+    sugarloaf.set_transient_text_font_size(heading_idx, 32.0);
+    sugarloaf.set_transient_text_font_size(confirm_idx, 20.0);
+    sugarloaf.set_transient_text_font_size(quit_idx, 20.0);
 
-    let content = sugarloaf.content();
-
-    let heading_line = content.sel(heading).clear();
-    for line in heading_content.to_string().lines() {
-        heading_line.add_text(line, FragmentStyle::default());
+    // Add text content to transient elements
+    if let Some(heading_state) = sugarloaf.get_transient_text_mut(heading_idx) {
+        heading_state
+            .clear()
+            .add_span(heading_content, SpanStyle::default())
+            .build();
     }
-    heading_line.build();
 
-    objects.push(Object::RichText(RichText {
-        id: heading,
-        position: [70., context_dimension.margin.top_y + 30.],
-        lines: None,
-    }));
+    if let Some(confirm_state) = sugarloaf.get_transient_text_mut(confirm_idx) {
+        confirm_state
+            .clear()
+            .add_span(confirm_content, SpanStyle::default())
+            .build();
+    }
 
-    let confirm_line = content.sel(confirm);
-    confirm_line
-        .clear()
-        .add_text(
-            &format!(" {confirm_content} "),
-            FragmentStyle {
-                color: [0., 0., 0., 1.],
-                background_color: Some(yellow),
-                ..FragmentStyle::default()
-            },
-        )
-        .build();
+    if let Some(quit_state) = sugarloaf.get_transient_text_mut(quit_idx) {
+        quit_state
+            .clear()
+            .add_span(quit_content, SpanStyle::default())
+            .build();
+    }
 
-    objects.push(Object::RichText(RichText {
-        id: confirm,
-        position: [70., context_dimension.margin.top_y + 100.],
-        lines: None,
-    }));
+    // Show rich texts at specific positions
+    sugarloaf.set_transient_position(heading_idx, 150.0, 270.0);
+    sugarloaf.set_transient_visibility(heading_idx, true);
 
-    let quit_line = content.sel(quit);
-    quit_line
-        .clear()
-        .add_text(
-            &format!(" {quit_content} "),
-            FragmentStyle {
-                color: [0., 0., 0., 1.],
-                background_color: Some(red),
-                ..FragmentStyle::default()
-            },
-        )
-        .build();
+    sugarloaf.set_transient_position(confirm_idx, 150.0, 330.0);
+    sugarloaf.set_transient_visibility(confirm_idx, true);
 
-    objects.push(Object::RichText(RichText {
-        id: quit,
-        position: [70., context_dimension.margin.top_y + 140.],
-        lines: None,
-    }));
-
-    sugarloaf.set_objects(objects);
+    sugarloaf.set_transient_position(quit_idx, 268.0, 330.0);
+    sugarloaf.set_transient_visibility(quit_idx, true);
 }

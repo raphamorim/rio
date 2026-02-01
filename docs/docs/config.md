@@ -74,11 +74,8 @@ cursor = '#F712FF'
 vi-cursor = '#12d0ff'
 
 # Navigation
-tabs = '#12B5E5'
-tabs-foreground = '#7d7d7d'
-tabs-active = '#303030'
-tabs-active-highlight = '#ffa133'
-tabs-active-foreground = '#FFFFFF'
+tabs = '#cccccc'  # Inactive tab text and border color
+tabs-active = '#ffffff'  # Active tab text color
 bar = '#1b1a1a'
 split = '#292527'
 
@@ -1097,22 +1094,83 @@ Possible choices: `both`, `left` and `right`.
 option-as-alt = 'left'
 ```
 
-## padding-x
+## padding
 
-Define x axis padding (default is 0)
+Define outer padding around the entire window/tab area using CSS-like syntax (default is `[10]`)
 
 ```toml
-padding-x = 10
+# Apply 10px to all sides
+padding = [10]
+
+# top and bottom: 10px, right and left: 5px
+padding = [10, 5]
+
+# top: 10px, right: 5px, bottom: 15px, left: 20px
+padding = [10, 5, 15, 20]
 ```
 
-## padding-y
+## panel
 
-Define y axis padding based on a format `[top, bottom]`
+Configure panel layout when using splits (vertical/horizontal terminal splits).
 
-- Default is `[0, 0]`
+### panel.padding
+
+Define inner padding inside each panel (around terminal content). Default is `[5]`
 
 ```toml
-padding-y = [15, 10]
+[panel]
+# Apply 5px padding inside all panels
+padding = [5]
+
+# Different padding: top/bottom: 10px, left/right: 5px
+padding = [10, 5]
+```
+
+### panel.row-gap
+
+Define vertical spacing between panels when split vertically (down). Default is `0`
+
+```toml
+[panel]
+row-gap = 10  # 10px vertical gap between panels
+```
+
+### panel.column-gap
+
+Define horizontal spacing between panels when split horizontally (right). Default is `0`
+
+```toml
+[panel]
+column-gap = 15  # 15px horizontal gap between panels
+```
+
+### panel.border-width
+
+Define the border width around each panel. Default is `2.0`
+
+```toml
+[panel]
+border-width = 2.0  # 2px border around panels
+```
+
+### panel.border-radius
+
+Define the corner radius for panel borders. Default is `0.0` (sharp corners).
+
+```toml
+[panel]
+border-radius = 8.0  # 8px rounded corners
+```
+
+### Full panel example
+
+```toml
+[panel]
+padding = [5]       # Inner padding inside each panel
+row-gap = 10        # Vertical gap when split down
+column-gap = 15     # Horizontal gap when split right
+border-width = 2.0  # Border width around panels
+border-radius = 0.0 # Corner radius (0 = sharp)
 ```
 
 ## platform
@@ -1432,9 +1490,8 @@ selection-background = ""
 selection-foreground = ""
 
 # Navigation
+tabs = ""
 tabs-active = ""
-tabs-active-foreground = ""
-tabs-active-highlight = ""
 bar = ""
 split = ""
 cursor = ""
@@ -1701,6 +1758,28 @@ You can enable window shadow on MacOS by config, it's disabled by default.
 ```toml
 [window]
 macos-use-shadow = true
+```
+
+## window.macos-traffic-light-position-x
+
+Customize the horizontal position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the left edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-x = 9.0
+```
+
+## window.macos-traffic-light-position-y
+
+Customize the vertical position of macOS traffic light buttons (close, minimize, maximize). Position is specified in points from the top edge of the window.
+
+**Note:** This setting is ignored when navigation mode is set to "Tab" as the traffic lights are positioned automatically for that mode.
+
+```toml
+[window]
+macos-traffic-light-position-y = 9.0
 ```
 
 ## window.windows-corner-preference

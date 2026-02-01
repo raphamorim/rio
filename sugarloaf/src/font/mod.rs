@@ -20,7 +20,7 @@ use crate::font_introspector::text::cluster::{CharCluster, Status};
 use crate::font_introspector::text::Codepoint;
 use crate::font_introspector::text::Script;
 use crate::font_introspector::{CacheKey, FontRef, Synthesis};
-use crate::layout::FragmentStyle;
+use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -179,7 +179,7 @@ impl FontLibraryData {
     pub fn find_best_font_match(
         &self,
         ch: char,
-        fragment_style: &FragmentStyle,
+        fragment_style: &SpanStyle,
     ) -> Option<(usize, bool)> {
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();

@@ -182,7 +182,7 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             State::EscapeIntermediate => self.advance_esc_intermediate(performer, byte),
             State::OscString => self.advance_osc_string(performer, byte),
             State::SosString => self.advance_opaque_string(SosDispatch(performer), byte),
-            State::ApcString => self.advance_opaque_string(ApcDispatch(performer), byte),
+            State::ApcString => self.advance_apc_string(performer, byte),
             State::PmString => self.advance_opaque_string(PmDispatch(performer), byte),
             State::Ground => unreachable!(),
         }
@@ -446,6 +446,75 @@ impl<const OSC_RAW_BUF_SIZE: usize> Parser<OSC_RAW_BUF_SIZE> {
             }
             _ => self.action_osc_put(byte),
         }
+    }
+
+    #[inline(always)]
+    fn advance_apc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        match byte {
+            0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (), // Ignore control bytes
+            0x07 => {
+                // Bell-terminated APC
+                self.action_apc_end(performer);
+                self.osc_raw.clear();
+                self.osc_num_params = 0;
+                self.state = State::Ground;
+            }
+            0x18 | 0x1A => {
+                // C0 termination (CAN or SUB)
+                self.action_apc_put(performer, byte);
+                self.action_apc_end(performer);
+                performer.execute(byte);
+                self.osc_raw.clear();
+                self.osc_num_params = 0;
+                self.state = State::Ground;
+            }
+            0x1B => {
+                // Start of ST termination (\x1b\)
+                self.action_apc_end(performer);
+                self.osc_raw.clear();
+                self.osc_num_params = 0;
+                self.state = State::Escape;
+            }
+            0x3B => {
+                // Semicolon separates control data from payload
+                #[cfg(not(feature = "std"))]
+                {
+                    if self.osc_raw.is_full() {
+                        return;
+                    }
+                }
+                self.action_apc_put(performer, byte);
+                self.action_osc_put_param(); // Reuse existing method to track parameter boundaries
+            }
+            0x2C => {
+                // Comma is part of the control data (separates key-value pairs)
+                // Don't create a parameter boundary
+                self.action_apc_put(performer, byte);
+            }
+            0x20..=0xFF => {
+                // Collect valid APC content (control data or payload)
+                self.action_apc_put(performer, byte);
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn action_apc_put<P: Perform>(&mut self, performer: &mut P, byte: u8) {
+        #[cfg(not(feature = "std"))]
+        {
+            if self.osc_raw.is_full() {
+                return;
+            }
+        }
+        self.osc_raw.push(byte);
+        performer.apc_put(byte); // Optionally pass to apc_put for immediate processing
+    }
+
+    #[inline]
+    fn action_apc_end<P: Perform>(&self, performer: &mut P) {
+        // APCs are handled through apc_start/apc_put/apc_end hooks which properly
+        // accumulate large payloads. This function just calls apc_end() to complete the sequence.
+        performer.apc_end();
     }
 
     #[inline(always)]
@@ -865,6 +934,9 @@ pub trait Perform {
     /// Dispatch an operating system command.
     fn osc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
 
+    /// Dispatch an application program command.
+    fn apc_dispatch(&mut self, _params: &[&[u8]], _bell_terminated: bool) {}
+
     /// A final character has arrived for a CSI sequence
     ///
     /// The `ignore` flag indicates that either more than two intermediates
@@ -962,6 +1034,7 @@ impl<P: Perform> OpaqueDispatch for SosDispatch<'_, P> {
     }
 }
 
+#[allow(dead_code)]
 struct ApcDispatch<'a, P: Perform>(&'a mut P);
 
 impl<P: Perform> OpaqueDispatch for ApcDispatch<'_, P> {
@@ -1713,6 +1786,64 @@ mod tests {
             &[],
             ST_ESC_SEQUENCE,
         );
+    }
+
+    #[test]
+    fn parse_kitty_apc() {
+        const INPUT: &[u8] = b"\x1b_Gf=24,s=10,v=20;Zm9v\x1b\\";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        let expected = vec![
+            Sequence::OpaqueStart(OpaqueSequenceKind::Apc),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'G'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'f'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'='),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'2'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'4'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b','),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b's'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'='),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'1'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'0'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b','),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'v'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'='),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'2'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'0'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b';'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'Z'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'm'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'9'),
+            Sequence::OpaquePut(OpaqueSequenceKind::Apc, b'v'),
+            Sequence::OpaqueEnd(OpaqueSequenceKind::Apc),
+            Sequence::Esc(vec![], false, b'\\'),
+        ];
+
+        assert_eq!(dispatcher.dispatched, expected)
+    }
+
+    #[test]
+    fn parse_kitty_apc_dispatch_params() {
+        // Test that commas in control data are NOT treated as param separators
+        // Only semicolons should separate control data from payload
+        const INPUT: &[u8] = b"\x1b_Gf=32,s=10,v=20;AQIDBA==\x1b\\";
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::new();
+
+        parser.advance(&mut dispatcher, INPUT);
+
+        // Verify we got an APC dispatch
+        let apc_dispatch = dispatcher
+            .dispatched
+            .iter()
+            .find(|s| matches!(s, Sequence::OpaqueEnd(OpaqueSequenceKind::Apc)));
+        assert!(apc_dispatch.is_some(), "Should have APC dispatch");
+
+        // The test in performer::handler verifies the actual param parsing
+        // Here we just ensure the sequence completes correctly
     }
 
     #[test]

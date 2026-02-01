@@ -237,6 +237,93 @@ impl Route<'_> {
 
     #[inline]
     pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
+        use rio_window::event::ElementState;
+
+        // Handle command palette input first (works in all routes)
+        if self.window.screen.renderer.command_palette.is_enabled() {
+            if key_event.state == ElementState::Pressed {
+                tracing::debug!("Command palette key: {:?}", key_event.logical_key);
+                match &key_event.logical_key {
+                    Key::Named(NamedKey::Escape) => {
+                        tracing::debug!("Command palette: Escape pressed");
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .set_enabled(false);
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowUp) => {
+                        tracing::debug!("Command palette: ArrowUp pressed");
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_up();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::ArrowDown) => {
+                        tracing::debug!("Command palette: ArrowDown pressed");
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Enter) => {
+                        tracing::debug!("Command palette: Enter pressed");
+                        if let Some(action) = self
+                            .window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .get_selected_action()
+                        {
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_enabled(false);
+                            // TODO: Execute the action
+                            tracing::info!("Command palette action: {}", action);
+                        }
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Backspace) => {
+                        tracing::debug!("Command palette: Backspace pressed");
+                        let current_query =
+                            self.window.screen.renderer.command_palette.query.clone();
+                        if !current_query.is_empty() {
+                            let mut chars = current_query.chars().collect::<Vec<_>>();
+                            chars.pop();
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_query(chars.into_iter().collect());
+                            self.window.screen.render();
+                        }
+                    }
+                    _ => {
+                        // Handle text input for search
+                        if let Some(text) = key_event.text.as_ref() {
+                            tracing::debug!("Command palette: Text input: {}", text);
+                            let current_query =
+                                self.window.screen.renderer.command_palette.query.clone();
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .set_query(format!("{}{}", current_query, text));
+                            self.window.screen.render();
+                        }
+                    }
+                }
+            }
+            return true; // Block all input when command palette is active
+        }
+
         if self.path == RoutePath::Terminal {
             return false;
         }
@@ -498,9 +585,6 @@ pub struct RouteWindow<'a> {
     pub vblank_interval: Duration,
     pub winit_window: Window,
     pub screen: Screen<'a>,
-
-    #[cfg(target_os = "macos")]
-    pub is_macos_deadzone: bool,
 }
 
 impl<'a> RouteWindow<'a> {
@@ -667,8 +751,6 @@ impl<'a> RouteWindow<'a> {
             needs_render_after_occlusion: false,
             winit_window,
             screen,
-            #[cfg(target_os = "macos")]
-            is_macos_deadzone: false,
         }
     }
 }

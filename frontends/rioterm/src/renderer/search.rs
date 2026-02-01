@@ -1,6 +1,6 @@
 use crate::constants::*;
 use rio_backend::config::colors::Colors;
-use rio_backend::sugarloaf::{Object, Quad, RichText};
+use rio_backend::sugarloaf::{Object, Rect, RichText};
 
 #[inline]
 pub fn draw_search_bar(
@@ -12,16 +12,22 @@ pub fn draw_search_bar(
     let (width, height, scale) = dimensions;
     let position_y = (height / scale) - PADDING_Y_BOTTOM_TABS;
 
-    objects.push(Object::Quad(Quad {
-        position: [0.0, position_y],
-        color: colors.bar,
-        size: [width, PADDING_Y_BOTTOM_TABS],
-        ..Quad::default()
-    }));
+    objects.push(Object::Rect(Rect::new(
+        0.0,
+        position_y,
+        width,
+        PADDING_Y_BOTTOM_TABS,
+        colors.bar,
+    )));
 
     objects.push(Object::RichText(RichText {
         id: rich_text_id,
-        position: [4., position_y],
         lines: None,
+        render_data: rio_backend::sugarloaf::RichTextRenderData {
+            position: [4., position_y],
+            should_repaint: false,
+            should_remove: false,
+            hidden: false,
+        },
     }));
 }

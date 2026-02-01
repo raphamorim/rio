@@ -3,13 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-use crate::sugarloaf::types;
 use crate::sugarloaf::Handle;
 use image_rs::DynamicImage;
 use rustc_hash::FxHashMap;
 use std::cmp;
+use std::num::NonZeroU64;
 
-/// Max allowed dimensions (width, height) for the graphic, in pixels.
 pub const MAX_GRAPHIC_DIMENSIONS: [usize; 2] = [4096, 4096];
 
 pub struct GraphicDataEntry {
@@ -18,38 +17,12 @@ pub struct GraphicDataEntry {
     pub height: f32,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct GraphicRenderRequest {
-    pub id: GraphicId,
-    pub pos_x: f32,
-    pub pos_y: f32,
-    pub width: Option<f32>,
-    pub height: Option<f32>,
-}
-
-pub struct BottomLayer {
-    pub data: types::Raster,
-    pub should_fit: bool,
-}
-
 #[derive(Default)]
 pub struct Graphics {
     inner: FxHashMap<GraphicId, GraphicDataEntry>,
-    pub bottom_layer: Option<BottomLayer>,
-    pub top_layer: Vec<GraphicRenderRequest>,
 }
 
 impl Graphics {
-    #[inline]
-    pub fn has_graphics_on_top_layer(&self) -> bool {
-        !self.top_layer.is_empty()
-    }
-
-    #[inline]
-    pub fn clear_top_layer(&mut self) {
-        self.top_layer.clear();
-    }
-
     #[inline]
     pub fn get(&self, id: &GraphicId) -> Option<&GraphicDataEntry> {
         self.inner.get(id)
@@ -90,7 +63,30 @@ pub struct Graphic {
 
 /// Unique identifier for every graphic added to a grid.
 #[derive(Eq, PartialEq, Clone, Debug, Copy, Hash, PartialOrd, Ord)]
-pub struct GraphicId(pub u64);
+pub struct GraphicId(pub NonZeroU64);
+
+impl GraphicId {
+    /// Create a new GraphicId from a u64 value.
+    /// Panics if value is 0.
+    #[inline]
+    pub fn new(value: u64) -> Self {
+        Self(NonZeroU64::new(value).expect("GraphicId cannot be 0"))
+    }
+
+    /// Create a new GraphicId from a u64 value without checking.
+    /// # Safety
+    /// The value must not be 0.
+    #[inline]
+    pub const unsafe fn new_unchecked(value: u64) -> Self {
+        Self(NonZeroU64::new_unchecked(value))
+    }
+
+    /// Get the inner u64 value.
+    #[inline]
+    pub const fn get(self) -> u64 {
+        self.0.get()
+    }
+}
 
 /// Specifies the format of the pixel data.
 #[derive(Eq, PartialEq, Clone, Debug, Copy)]
@@ -328,7 +324,7 @@ pub struct ResizeCommand {
 #[test]
 fn check_opaque_region() {
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         width: 10,
         height: 10,
         color_type: ColorType::Rgb,
@@ -351,7 +347,7 @@ fn check_opaque_region() {
     };
 
     let graphic = GraphicData {
-        id: GraphicId(0),
+        id: GraphicId::new(1),
         pixels,
         width: 10,
         height: 10,

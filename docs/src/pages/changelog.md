@@ -7,11 +7,72 @@ language: 'en'
 
 ## 0.3.0 (unreleased)
 
-- Native Metal Support.
-- Native Vulkan Support.
-- Quake window support.
-- Kitty image protocol.
-- Breaking: `Decorations` as `Transparent` is default on MacOS (instead of `Enabled`).
+- **Kitty Graphics Protocol**: Display images directly in your terminal
+  - Direct placements (U=0)
+  - Virtual placements (U=1)
+  - Diacritic-based row/column encoding (283 combining characters)
+  - RGB color encoding for image/placement IDs (24+8 bit support)
+  - Virtual placement rendering (infrastructure complete, rendering pending)
+- **Sixel Graphics**: Full support with proper scrolling and positioning
+- **Graphics Rendering Improvements**:
+  - Fixed vertical positioning alignment
+  - Fixed scrolling (images persist when origin scrolls off-screen)
+  - Fixed duplicate rendering with per-frame deduplication
+  - LRU cache with automatic eviction
+- **Native Metal Support** (macOS): Hardware-accelerated rendering with Metal
+- **Native Vulkan Support** (Linux/Windows): Hardware-accelerated rendering with Vulkan
+- **New GPU-Rendered Navigation**: Faster, smoother tab interface
+- **Command Palette**: Quick access to terminal functions
+- **Quake Window Mode**: Drop-down terminal from top of screen
+- **macOS Traffic Light Positioning**: Customize position of window control buttons
+  - Configure via `macos-traffic-light-position-x` and `macos-traffic-light-position-y`
+  - Defaults to standard macOS positioning (11.4, 16.1)
+  - Not available in Tab navigation mode
+- **OSC 9;4 Progress Bar Support**: Terminal progress indicator (ConEmu/Windows Terminal compatible)
+- Wgpu now is always f32.
+  - This fixes non arm chip macos use cases.
+
+**Breaking Changes**
+
+- Navigation modes simplified - if you use `TopTab`, `BottomTab`, or `Bookmark`, change to:
+  ```toml
+  [navigation]
+  mode = "Tab"
+  ```
+- Default `Decorations` changed to `Transparent` on macOS (was `Enabled`)
+- Removed: `TopTab`, `BottomTab`, and `Bookmark` navigation modes
+- Available modes: `Plain`, `Tab`, `NativeTab` (macOS only)
+- **Tab color configuration simplified**: Removed `tabs-foreground`, `tabs-active-foreground`, and `tabs-active-highlight`
+  - Use `tabs` for inactive tab text and border color (default: `#cccccc`)
+  - Use `tabs-active` for active tab text color (default: `#ffffff`)
+- The old padding api became margin:
+  ```toml
+  # It will apply margin rules to the main container
+  # CSS-Like
+  margin = [10] # (10px to all)
+  margin = [10, 5] # (top and bottom margin are 10px, right and left margin are 5px)
+  margin = [10, 5, 15, 20] # (top margin is 10px, right margin is 5px, bottom margin is 15px, left margin is 20px)
+
+  # It will apply margin rules to panels
+  [panel]
+  margin = [5] # (5px to all)
+  row-gap = 0 # (0px)
+  column-gap = 0 # (0px)
+  ```
+
+**Technical Details**
+
+- Complete rendering architecture rewrite for GPU-based UI
+- Parser now supports APC sequences for Kitty graphics protocol
+- Removed legacy layer/quad rendering system
+- Added Metal backend for macOS, split WebGPU backend for cross-platform
+- New `kitty_virtual` module for placeholder encoding
+- Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
+- Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
+
+## 0.2.36
+
+- Fix DECSCUSR.
 
 ## 0.2.38
 
