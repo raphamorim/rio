@@ -86,9 +86,7 @@ pub trait ApplicationHandler<T: 'static = ()> {
     /// Emitted when an event is sent from [`EventLoopProxy::send_event`].
     ///
     /// [`EventLoopProxy::send_event`]: crate::event_loop::EventLoopProxy::send_event
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: T) {
-        let _ = (event_loop, event);
-    }
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: T);
 
     /// Emitted when the OS sends an event to a winit window.
     fn window_event(

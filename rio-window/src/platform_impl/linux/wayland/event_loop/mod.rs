@@ -61,7 +61,7 @@ pub struct EventLoop<T: 'static> {
 
     /// The Wayland dispatcher to has raw access to the queue when needed, such as
     /// when creating a new window.
-    wayland_dispatcher: WaylandDispatcher,
+    wayland_dispatcher: Rc<WaylandDispatcher>,
 
     /// Connection to the wayland server.
     connection: Connection,
@@ -123,12 +123,15 @@ impl<T: 'static> EventLoop<T> {
             },
         );
 
+        // register_dispatcher requires ownership of the dispatcher.
         map_err!(
             event_loop
                 .handle()
                 .register_dispatcher(wayland_dispatcher.clone()),
             WaylandError::Calloop
         )?;
+
+        let dispatch_clone = Rc::new(wayland_dispatcher);
 
         // Setup the user proxy.
         let pending_user_events = Rc::new(RefCell::new(Vec::new()));
@@ -169,7 +172,7 @@ impl<T: 'static> EventLoop<T> {
 
         let window_target = ActiveEventLoop {
             connection: connection.clone(),
-            wayland_dispatcher: wayland_dispatcher.clone(),
+            wayland_dispatcher: Rc::clone(&dispatch_clone),
             event_loop_awakener,
             queue_handle,
             control_flow: Cell::new(ControlFlow::default()),
@@ -183,7 +186,7 @@ impl<T: 'static> EventLoop<T> {
             buffer_sink: EventSink::default(),
             window_ids: Vec::new(),
             connection,
-            wayland_dispatcher,
+            wayland_dispatcher: Rc::clone(&dispatch_clone),
             user_events_sender,
             pending_user_events,
             event_loop,
@@ -685,7 +688,7 @@ pub struct ActiveEventLoop {
     pub state: RefCell<WinitState>,
 
     /// Dispatcher of Wayland events.
-    pub wayland_dispatcher: WaylandDispatcher,
+    pub wayland_dispatcher: Rc<WaylandDispatcher>,
 
     /// Connection to the wayland server.
     pub connection: Connection,
