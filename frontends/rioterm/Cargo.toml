@@ -16,6 +16,10 @@ readme.workspace = true
 name = "rio"
 path = "src/main.rs"
 
+[lib]
+name = "rioterm"
+path = "src/lib.rs"
+
 [dependencies]
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "registry"] }
