@@ -31,7 +31,85 @@ use rio_backend::sugarloaf::{
 use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 
+use crate::ime::Preedit;
 use unicode_width::UnicodeWidthChar;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreeditCell {
+    Char(char),
+    Spacer,
+}
+
+struct PreeditOverlay {
+    columns: usize,
+    cells: Vec<Option<PreeditCell>>,
+}
+
+impl PreeditOverlay {
+    fn new(
+        preedit: &Preedit,
+        start_row: usize,
+        start_col: usize,
+        columns: usize,
+        rows: usize,
+    ) -> Option<Self> {
+        if preedit.text.is_empty() || columns == 0 || rows == 0 {
+            return None;
+        }
+
+        let mut cells = vec![None; rows.saturating_mul(columns)];
+        let mut row = start_row;
+        let mut col = start_col;
+
+        for ch in preedit.text.chars() {
+            if row >= rows {
+                break;
+            }
+
+            if col >= columns {
+                row += 1;
+                col = 0;
+            }
+            if row >= rows {
+                break;
+            }
+
+            let width = ch.width().unwrap_or(1).max(1);
+            if width > 1 && col + 1 >= columns {
+                row += 1;
+                col = 0;
+                if row >= rows {
+                    break;
+                }
+            }
+
+            let idx = row * columns + col;
+            if let Some(cell) = cells.get_mut(idx) {
+                *cell = Some(PreeditCell::Char(ch));
+            }
+
+            if width > 1 && col + 1 < columns {
+                let spacer_idx = idx + 1;
+                if let Some(cell) = cells.get_mut(spacer_idx) {
+                    *cell = Some(PreeditCell::Spacer);
+                }
+            }
+
+            col = col.saturating_add(width);
+            if col >= columns {
+                row += 1;
+                col = 0;
+            }
+        }
+
+        Some(Self { columns, cells })
+    }
+
+    fn get(&self, row: usize, col: usize) -> Option<PreeditCell> {
+        let idx = row.checked_mul(self.columns)?.saturating_add(col);
+        self.cells.get(idx).copied().flatten()
+    }
+}
 
 #[derive(Default)]
 pub struct Search {
@@ -256,9 +334,11 @@ impl Renderer {
         builder: &mut Content,
         row: &Row<Square>,
         has_cursor: bool,
+        visible_row_index: usize,
         line_opt: Option<usize>,
         line: Line,
         renderable_content: &RenderableContent,
+        ime_preedit: Option<&PreeditOverlay>,
         hint_matches: Option<&[rio_backend::crosswords::search::Match]>,
         focused_match: &Option<RangeInclusive<Pos>>,
         term_colors: &TermColors,
@@ -279,8 +359,10 @@ impl Renderer {
         // First pass: collect all styles and identify font cache misses
         for column in 0..columns {
             let square = &row.inner[column];
+            let preedit_cell =
+                ime_preedit.and_then(|preedit| preedit.get(visible_row_index, column));
 
-            if square.flags.contains(Flags::WIDE_CHAR_SPACER) {
+            if square.flags.contains(Flags::WIDE_CHAR_SPACER) && preedit_cell.is_none() {
                 continue;
             }
 
@@ -374,10 +456,28 @@ impl Renderer {
                 );
             }
 
+            if let Some(cell) = preedit_cell {
+                match cell {
+                    PreeditCell::Char(ch) => {
+                        square_content = ch;
+                    }
+                    PreeditCell::Spacer => {
+                        square_content = ' ';
+                    }
+                }
+                if !(has_cursor && column == cursor.state.pos.col) {
+                    style.color =
+                        self.color(NamedColor::DimForeground as usize, term_colors);
+                    style.decoration = None;
+                    style.decoration_color = None;
+                }
+            }
+
             if !is_active {
                 style.color[3] = self.unfocused_split_opacity;
                 if let Some(mut background_color) = style.background_color {
                     background_color[3] = self.unfocused_split_opacity;
+                    style.background_color = Some(background_color);
                 }
             }
 
@@ -940,6 +1040,15 @@ impl Renderer {
 
             // Update cursor state from snapshot
             context.renderable_content.cursor.state = terminal_snapshot.cursor;
+            let preedit_overlay = context.ime.preedit().and_then(|preedit| {
+                PreeditOverlay::new(
+                    preedit,
+                    context.renderable_content.cursor.state.pos.row.0.max(0) as usize,
+                    context.renderable_content.cursor.state.pos.col.0,
+                    terminal_snapshot.columns,
+                    terminal_snapshot.visible_rows.len(),
+                )
+            });
 
             let mut specific_lines: Option<BTreeSet<LineDamage>> = None;
 
@@ -1037,9 +1146,11 @@ impl Renderer {
                             content,
                             row,
                             has_cursor,
+                            i,
                             None,
                             Line((i as i32) - terminal_snapshot.display_offset as i32),
                             &context.renderable_content,
+                            preedit_overlay.as_ref(),
                             hint_matches,
                             focused_match,
                             &terminal_snapshot.colors,
@@ -1063,12 +1174,14 @@ impl Renderer {
                                 content,
                                 visible_row,
                                 has_cursor,
+                                line,
                                 Some(line),
                                 Line(
                                     (line as i32)
                                         - terminal_snapshot.display_offset as i32,
                                 ),
                                 &context.renderable_content,
+                                preedit_overlay.as_ref(),
                                 hint_matches,
                                 focused_match,
                                 &terminal_snapshot.colors,
@@ -1313,5 +1426,26 @@ mod tests {
             &matches,
             Pos::new(Line(2), Column(12))
         ));
+    }
+
+    #[test]
+    fn preedit_overlay_places_wide_chars_and_spacers() {
+        let preedit = Preedit::new("啊a".to_string(), None);
+        let overlay = PreeditOverlay::new(&preedit, 0, 0, 4, 1).unwrap();
+
+        assert_eq!(overlay.get(0, 0), Some(PreeditCell::Char('啊')));
+        assert_eq!(overlay.get(0, 1), Some(PreeditCell::Spacer));
+        assert_eq!(overlay.get(0, 2), Some(PreeditCell::Char('a')));
+        assert_eq!(overlay.get(0, 3), None);
+    }
+
+    #[test]
+    fn preedit_overlay_wraps_wide_chars() {
+        let preedit = Preedit::new("啊".to_string(), None);
+        let overlay = PreeditOverlay::new(&preedit, 0, 2, 3, 2).unwrap();
+
+        assert_eq!(overlay.get(0, 2), None);
+        assert_eq!(overlay.get(1, 0), Some(PreeditCell::Char('啊')));
+        assert_eq!(overlay.get(1, 1), Some(PreeditCell::Spacer));
     }
 }
