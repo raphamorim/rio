@@ -152,7 +152,7 @@
 //! [`Window`]: window::Window
 //! [`WindowId`]: window::WindowId
 //! [`WindowAttributes`]: window::WindowAttributes
-//! [window_new]: window::Window::new
+//! [window_new]: event_loop::ActiveEventLoop::create_window
 //! [`create_window`]: event_loop::ActiveEventLoop::create_window
 //! [`Window::id()`]: window::Window::id
 //! [`WindowEvent`]: event::WindowEvent

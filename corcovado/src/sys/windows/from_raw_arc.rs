@@ -17,7 +17,7 @@
 //!
 //! * The size of `FromRawArc` is actually two words because of the drop flag
 //! * The compiler doesn't understand that the pointer in `FromRawArc` is never
-//!   null, so Option<FromRawArc<T>> is not a nullable pointer.
+//!   null, so `Option<FromRawArc<T>>` is not a nullable pointer.
 
 use std::mem;
 use std::ops::Deref;

@@ -170,7 +170,7 @@ impl From<KeyboardModes> for Mode {
     }
 }
 
-/// Terminal damage information collected since the last [`Term::reset_damage`] call.
+/// Terminal damage information collected since the last [`Crosswords::reset_damage`] call.
 #[derive(Debug)]
 pub enum TermDamage<'a> {
     /// The entire terminal is damaged.
