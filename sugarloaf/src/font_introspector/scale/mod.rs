@@ -263,9 +263,10 @@ pub enum StrikeWith {
 }
 
 /// Glyph sources for the renderer.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum Source {
     /// Scalable outlines.
+    #[default]
     Outline,
     /// Layered color scalable outlines.
     ColorOutline(PaletteIndex),
@@ -273,12 +274,6 @@ pub enum Source {
     Bitmap(StrikeWith),
     /// Embedded color bitmaps.
     ColorBitmap(StrikeWith),
-}
-
-impl Default for Source {
-    fn default() -> Self {
-        Self::Outline
-    }
 }
 
 /// Context that manages caches and scratch buffers for scaling.

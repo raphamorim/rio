@@ -50,6 +50,7 @@ impl ContextManagerTitles {
     }
 }
 
+#[cfg_attr(not(unix), allow(unused_variables))]
 pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {
