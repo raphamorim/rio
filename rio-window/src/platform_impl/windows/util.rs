@@ -9,7 +9,7 @@ use crate::utils::Lazy;
 use windows_sys::core::{HRESULT, PCWSTR};
 use windows_sys::Win32::Foundation::{BOOL, HANDLE, HMODULE, HWND, RECT};
 use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, HMONITOR};
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::System::SystemServices::IMAGE_DOS_HEADER;
 use windows_sys::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT, MONITOR_DPI_TYPE, PROCESS_DPI_AWARENESS,
@@ -193,12 +193,15 @@ pub(crate) fn to_windows_cursor(cursor: CursorIcon) -> PCWSTR {
 // may not be available on all Windows platforms supported by winit.
 //
 // `library` and `function` must be zero-terminated.
-pub(super) fn get_function_impl(library: &str, function: &str) -> Option<*const c_void> {
-    assert_eq!(library.chars().last(), Some('\0'));
+pub(super) fn get_function_impl(
+    library: PCWSTR,
+    function: &str,
+) -> Option<*const c_void> {
+    // assert_eq!(library.chars().last(), Some('\0'));
     assert_eq!(function.chars().last(), Some('\0'));
 
     // Library names we will use are ASCII so we can use the A version to avoid string conversion.
-    let module = unsafe { LoadLibraryA(library.as_ptr()) };
+    let module = unsafe { LoadLibraryW(library) };
     if module.is_null() {
         return None;
     }
@@ -210,7 +213,7 @@ pub(super) fn get_function_impl(library: &str, function: &str) -> Option<*const 
 macro_rules! get_function {
     ($lib:expr, $func:ident) => {
         crate::platform_impl::platform::util::get_function_impl(
-            concat!($lib, '\0'),
+            ::windows_sys::w!($lib),
             concat!(stringify!($func), '\0'),
         )
         .map(|f| unsafe { std::mem::transmute::<*const _, $func>(f) })
