@@ -940,7 +940,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let context_manager_config = ContextManagerConfig {
             cwd: config.navigation.current_working_directory,
-            shell,
+            shell: shell.clone(),
+            shells: config.shells.clone(),
             working_dir,
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]

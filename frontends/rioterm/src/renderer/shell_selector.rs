@@ -22,8 +22,8 @@ const FONT_SIZE: f32 = 14.0;
 /// Alpha value for the backdrop overlay
 const BACKDROP_ALPHA: f32 = 0.5;
 
-/// Alpha value for the backdrop overlay
-const BORDER_RADIUS: f32 = 8.0;
+/// Border radius for all corners (uniform)
+const BORDER_RADIUS: [f32; 4] = [8.0, 8.0, 8.0, 8.0];
 
 /// Draw the shell selector overlay
 ///
@@ -86,7 +86,12 @@ pub fn draw_shell_selector(
             panel_height + (border_width * 2.0),
         ],
         color: border_color,
-        border_radius: BORDER_RADIUS + border_width,
+        border_radius: [
+            BORDER_RADIUS[0] + border_width,
+            BORDER_RADIUS[1] + border_width,
+            BORDER_RADIUS[2] + border_width,
+            BORDER_RADIUS[3] + border_width,
+        ],
         ..Quad::default()
     }));
 
@@ -126,7 +131,7 @@ pub fn draw_shell_selector(
     // Draw each profile item
     let items_start_y = panel_y + PANEL_PADDING + ITEM_HEIGHT;
     for (index, shell, is_selected) in &profiles {
-        let item_y = items_start_y + (*index as f32 * ITEM_HEIGHT);
+        let item_y = items_start_y + (index as f32 * ITEM_HEIGHT);
 
         // Draw selection highlight background
         if *is_selected {
@@ -134,13 +139,13 @@ pub fn draw_shell_selector(
                 position: [panel_x + 4.0, item_y],
                 size: [PANEL_WIDTH - 8.0, ITEM_HEIGHT - 4.0],
                 color: colors.tabs_active,
-                border_radius: 4.0,
+                border_radius: [4.0, 4.0, 4.0, 4.0],
                 ..Quad::default()
             }));
         }
 
         // Create the display text with shortcut key
-        let shortcut = get_shortcut_key(*index);
+        let shortcut = get_shortcut_key(index);
         let display_name = ShellSelector::display_name(shell);
 
         // Create rich text for this item
@@ -170,18 +175,13 @@ pub fn draw_shell_selector(
                 color: shortcut_color,
                 ..FragmentStyle::default()
             },
-        );
-
-        // Draw display name with regular color
-        item_line.add_text(
+        ).add_text(
             display_name,
             FragmentStyle {
                 color: text_color,
                 ..FragmentStyle::default()
             },
-        );
-
-        item_line.build();
+        ).build();
 
         objects.push(Object::RichText(RichText {
             id: item_rich_text,
@@ -191,9 +191,8 @@ pub fn draw_shell_selector(
     }
 
     // Draw help text at the bottom
-    let help_text = "Enter to select, Esc to cancel";
     let help_rich_text = sugarloaf.create_temp_rich_text();
-    sugarloaf.set_rich_text_font_size(&help_rich_text, FONT_SIZE - 2.0);
+    sugarloaf.set_rich_text_font_size(&help_rich_text, 12.0);
 
     let content = sugarloaf.content();
     let help_line = content.sel(help_rich_text);
@@ -201,23 +200,22 @@ pub fn draw_shell_selector(
         .clear()
         .new_line()
         .add_text(
-            help_text,
+            "Enter to select, Esc to cancel",
             FragmentStyle {
                 color: [
                     colors.foreground[0],
                     colors.foreground[1],
                     colors.foreground[2],
-                    colors.foreground[3] - 0.4, // Make it slightly dimmer
+                    0.6, // Slightly dimmed
                 ],
                 ..FragmentStyle::default()
             },
         )
         .build();
 
-    let help_y = panel_y + panel_height - PANEL_PADDING - 8.0;
     objects.push(Object::RichText(RichText {
         id: help_rich_text,
-        position: [panel_x + PANEL_PADDING, help_y],
+        position: [panel_x + PANEL_PADDING, panel_y + panel_height - PANEL_PADDING - 8.0],
         lines: None,
     }));
 }
