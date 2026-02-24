@@ -2,6 +2,7 @@ mod char_cache;
 mod font_cache;
 pub mod navigation;
 mod search;
+pub mod shell_selector;
 pub mod utils;
 
 use crate::context::renderable::TerminalSnapshot;
@@ -835,6 +836,17 @@ impl Renderer {
         context_manager: &mut ContextManager<EventProxy>,
         focused_match: &Option<RangeInclusive<Pos>>,
     ) -> Option<crate::context::renderable::WindowUpdate> {
+        self.run_with_shell_selector(sugarloaf, context_manager, focused_match, None)
+    }
+
+    #[inline]
+    pub fn run_with_shell_selector(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        context_manager: &mut ContextManager<EventProxy>,
+        focused_match: &Option<RangeInclusive<Pos>>,
+        shell_selector: Option<&crate::shell_selector::ShellSelector>,
+    ) -> Option<crate::context::renderable::WindowUpdate> {
         // let start = std::time::Instant::now();
 
         // In case rich text for search was not created
@@ -1113,6 +1125,18 @@ impl Renderer {
         // let _duration = start.elapsed();
         context_manager.extend_with_grid_objects(&mut objects);
         // let _duration = start.elapsed();
+
+        // Render shell selector overlay if active
+        if let Some(selector) = shell_selector {
+            let dimensions = (window_size.width, window_size.height, scale_factor);
+            shell_selector::draw_shell_selector(
+                &mut objects,
+                sugarloaf,
+                selector,
+                &self.named_colors,
+                dimensions,
+            );
+        }
 
         // Update visual bell state and set overlay if needed
         let visual_bell_active = self.update_visual_bell();

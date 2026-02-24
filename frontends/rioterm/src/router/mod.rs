@@ -360,6 +360,7 @@ impl Router<'_> {
         );
         let new_config = RioConfig {
             shell: rio_backend::config::Shell {
+                name: None,
                 program: editor.program,
                 args,
             },
@@ -394,6 +395,7 @@ impl Router<'_> {
         );
         let new_config = RioConfig {
             shell: rio_backend::config::Shell {
+                name: None,
                 program: editor.program,
                 args,
             },

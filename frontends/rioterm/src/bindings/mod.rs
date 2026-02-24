@@ -236,6 +236,7 @@ impl From<String> for Action {
             "decreasefontsize" => Some(Action::DecreaseFontSize),
             "createwindow" => Some(Action::WindowCreateNew),
             "createtab" => Some(Action::TabCreateNew),
+            "shellprofileselector" => Some(Action::ShellProfileSelector),
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
             "closetab" => Some(Action::TabCloseCurrent),
@@ -416,6 +417,9 @@ pub enum Action {
 
     /// Create a new Rio tab.
     TabCreateNew,
+
+    /// Show shell profile selector overlay.
+    ShellProfileSelector,
 
     /// Move current tab to previous slot.
     MoveCurrentTabToPrev,
@@ -1018,6 +1022,7 @@ pub fn platform_key_bindings(
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::SUPER; Action::TabCreateNew;
+            "y", ModifiersState::SUPER; Action::ShellProfileSelector;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "w", ModifiersState::SUPER; Action::CloseCurrentSplitOrTab;
@@ -1101,6 +1106,7 @@ pub fn platform_key_bindings(
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
+            "y", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ShellProfileSelector;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "[", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
@@ -1170,6 +1176,7 @@ pub fn platform_key_bindings(
         key_bindings.extend(bindings!(
             KeyBinding;
             "t", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::TabCreateNew;
+            "y", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::ShellProfileSelector;
             Key::Named(Tab), ModifiersState::CONTROL; Action::SelectNextTab;
             Key::Named(Tab), ModifiersState::CONTROL | ModifiersState::SHIFT; Action::SelectPrevTab;
             "w", ModifiersState::CONTROL | ModifiersState::SHIFT; Action::CloseCurrentSplitOrTab;

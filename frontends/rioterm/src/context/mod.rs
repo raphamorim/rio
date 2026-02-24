@@ -111,6 +111,7 @@ impl<T: EventListener> Context<T> {
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: Shell,
+    pub shells: Vec<Shell>,
     #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
     pub working_dir: Option<String>,
@@ -184,6 +185,7 @@ pub fn create_mock_context<
         use_fork: true,
         working_dir: None,
         shell: Shell {
+            name: None,
             program: std::env::var("SHELL").unwrap_or("bash".to_string()),
             args: vec![],
         },
@@ -405,6 +407,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             use_fork: true,
             working_dir: None,
             shell: Shell {
+                name: None,
                 program: std::env::var("SHELL").unwrap_or("bash".to_string()),
                 args: vec![],
             },
@@ -980,6 +983,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
+        self.add_context_with_shell(redirect, rich_text_id, None)
+    }
+
+    pub fn add_context_with_shell(
+        &mut self,
+        redirect: bool,
+        rich_text_id: usize,
+        shell_override: Option<Shell>,
+    ) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
@@ -1016,6 +1028,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             let mut cloned_config = self.config.clone();
             if working_dir.is_some() {
                 cloned_config.working_dir = working_dir;
+            }
+            if let Some(shell) = shell_override {
+                cloned_config.shell = shell;
             }
 
             let current = self.current();
@@ -1072,6 +1087,7 @@ pub fn process_open_url(
                     let mut args = editor.args;
                     args.push(path_buf.display().to_string());
                     shell = Shell {
+                        name: None,
                         program: editor.program,
                         args,
                     }

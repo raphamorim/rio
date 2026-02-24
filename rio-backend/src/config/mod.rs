@@ -40,6 +40,8 @@ pub enum ConfigError {
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {
+    #[serde(default)]
+    pub name: Option<String>,
     pub program: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -90,6 +92,8 @@ pub struct Config {
     pub window: Window,
     #[serde(default = "default_shell")]
     pub shell: Shell,
+    #[serde(default, rename = "shells")]
+    pub shells: Vec<Shell>,
     #[serde(default = "Platform::default")]
     pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
