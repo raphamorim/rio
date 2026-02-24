@@ -377,7 +377,7 @@ impl Renderer {
 
             if !is_active {
                 style.color[3] = self.unfocused_split_opacity;
-                if let Some(mut background_color) = style.background_color {
+                if let Some(background_color) = style.background_color.as_mut() {
                     background_color[3] = self.unfocused_split_opacity;
                 }
             }
@@ -830,6 +830,7 @@ impl Renderer {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn run(
         &mut self,
         sugarloaf: &mut Sugarloaf,

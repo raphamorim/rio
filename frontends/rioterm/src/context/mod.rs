@@ -180,30 +180,8 @@ pub fn create_mock_context<
     rich_text_id: usize,
     dimension: ContextDimension,
 ) -> Context<T> {
-    let config = ContextManagerConfig {
-        #[cfg(not(target_os = "windows"))]
-        use_fork: true,
-        working_dir: None,
-        shell: Shell {
-            name: None,
-            program: std::env::var("SHELL").unwrap_or("bash".to_string()),
-            args: vec![],
-        },
-        spawn_performer: false,
-        is_native: false,
-        should_update_title_extra: false,
-        cwd: false,
-        ..ContextManagerConfig::default()
-    };
-    ContextManager::create_context(
-        (&Cursor::default(), false),
-        event_proxy.clone(),
-        window_id,
-        rich_text_id,
-        dimension,
-        &config,
-    )
-    .unwrap()
+    let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+    create_dead_context(event_proxy, window_id, route_id, rich_text_id, dimension)
 }
 
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
