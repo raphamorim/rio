@@ -677,7 +677,8 @@ impl Screen<'_> {
                     let ch_str = ch.as_str();
                     if let Ok(index) = ch_str.parse::<usize>() {
                         if index > 0 && self.shell_selector.select_by_index(index - 1) {
-                            if let Some(shell) = self.shell_selector.selected_profile().cloned()
+                            if let Some(shell) =
+                                self.shell_selector.selected_profile().cloned()
                             {
                                 self.shell_selector.stop();
                                 self.create_tab_with_shell(Some(shell));
