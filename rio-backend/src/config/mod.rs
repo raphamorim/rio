@@ -616,6 +616,7 @@ impl Default for Config {
             padding_y: default_padding_y(),
             renderer: Renderer::default(),
             shell: default_shell(),
+            shells: vec![],
             platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
