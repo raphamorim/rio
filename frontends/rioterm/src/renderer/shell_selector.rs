@@ -259,13 +259,15 @@ mod tests {
         assert_eq!(get_shortcut_key(1), "2.");
         assert_eq!(get_shortcut_key(8), "9.");
 
-        // Test items 10-35 (a-z)
-        assert_eq!(get_shortcut_key(9), "a.");
-        assert_eq!(get_shortcut_key(10), "b.");
-        assert_eq!(get_shortcut_key(34), "y.");
-        assert_eq!(get_shortcut_key(35), "z.");
+        // Test items 9-34 (a-z, 26 letters total)
+        // letter_index = index - 9
+        assert_eq!(get_shortcut_key(9), "a."); // letter_index 0
+        assert_eq!(get_shortcut_key(10), "b."); // letter_index 1
+        assert_eq!(get_shortcut_key(33), "y."); // letter_index 24
+        assert_eq!(get_shortcut_key(34), "z."); // letter_index 25
 
-        // Test items beyond 35
+        // Test items beyond 35 (fallback to numbers)
+        assert_eq!(get_shortcut_key(35), "36."); // letter_index 26 >= 26, fallback
         assert_eq!(get_shortcut_key(36), "37.");
         assert_eq!(get_shortcut_key(37), "38.");
     }
