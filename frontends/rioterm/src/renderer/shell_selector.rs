@@ -169,19 +169,24 @@ pub fn draw_shell_selector(
         };
 
         // Draw shortcut key with accent color
-        item_line.clear().new_line().add_text(
-            &format!("{} ", shortcut),
-            FragmentStyle {
-                color: shortcut_color,
-                ..FragmentStyle::default()
-            },
-        ).add_text(
-            display_name,
-            FragmentStyle {
-                color: text_color,
-                ..FragmentStyle::default()
-            },
-        ).build();
+        item_line
+            .clear()
+            .new_line()
+            .add_text(
+                &format!("{} ", shortcut),
+                FragmentStyle {
+                    color: shortcut_color,
+                    ..FragmentStyle::default()
+                },
+            )
+            .add_text(
+                display_name,
+                FragmentStyle {
+                    color: text_color,
+                    ..FragmentStyle::default()
+                },
+            )
+            .build();
 
         objects.push(Object::RichText(RichText {
             id: item_rich_text,
@@ -215,7 +220,10 @@ pub fn draw_shell_selector(
 
     objects.push(Object::RichText(RichText {
         id: help_rich_text,
-        position: [panel_x + PANEL_PADDING, panel_y + panel_height - PANEL_PADDING - 8.0],
+        position: [
+            panel_x + PANEL_PADDING,
+            panel_y + panel_height - PANEL_PADDING - 8.0,
+        ],
         lines: None,
     }));
 }
