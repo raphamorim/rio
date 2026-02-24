@@ -131,7 +131,7 @@ pub fn draw_shell_selector(
     // Draw each profile item
     let items_start_y = panel_y + PANEL_PADDING + ITEM_HEIGHT;
     for (index, shell, is_selected) in &profiles {
-        let item_y = items_start_y + (index as f32 * ITEM_HEIGHT);
+        let item_y = items_start_y + (*index as f32 * ITEM_HEIGHT);
 
         // Draw selection highlight background
         if *is_selected {
@@ -145,7 +145,7 @@ pub fn draw_shell_selector(
         }
 
         // Create the display text with shortcut key
-        let shortcut = get_shortcut_key(index);
+        let shortcut = get_shortcut_key(*index);
         let display_name = ShellSelector::display_name(shell);
 
         // Create rich text for this item
