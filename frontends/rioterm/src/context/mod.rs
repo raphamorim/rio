@@ -111,7 +111,6 @@ impl<T: EventListener> Context<T> {
 #[derive(Clone, Default)]
 pub struct ContextManagerConfig {
     pub shell: Shell,
-    pub shells: Vec<Shell>,
     #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
     pub working_dir: Option<String>,
@@ -380,35 +379,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         event_proxy: T,
         window_id: WindowId,
     ) -> Result<Self, Box<dyn Error>> {
-        let config = ContextManagerConfig {
-            #[cfg(not(target_os = "windows"))]
-            use_fork: true,
-            working_dir: None,
-            shell: Shell {
-                name: None,
-                program: std::env::var("SHELL").unwrap_or("bash".to_string()),
-                args: vec![],
-            },
-            spawn_performer: false,
-            is_native: false,
-            should_update_title_extra: false,
-            cwd: false,
-            ..ContextManagerConfig::default()
-        };
-        let initial_context = ContextManager::create_context(
-            (&Cursor::default(), false),
+        let config = ContextManagerConfig::default();
+        let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+
+        // Use create_dead_context to avoid forking real shell processes in tests
+        let initial_context = create_dead_context(
             event_proxy.clone(),
             window_id,
+            route_id,
             0,
             ContextDimension::default(),
-            &config,
-        )?;
+        );
 
         let titles = ContextManagerTitles::new(0, String::new(), None);
 
         Ok(ContextManager {
             current_index: 0,
-            current_route: 0,
+            current_route: route_id,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Delta::<f32>::default(),
@@ -919,7 +906,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let context_manager_config = ContextManagerConfig {
             cwd: config.navigation.current_working_directory,
             shell: shell.clone(),
-            shells: config.shells.clone(),
             working_dir,
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
@@ -960,9 +946,35 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    #[cfg(test)]
     #[inline]
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
-        self.add_context_with_shell(redirect, rich_text_id, None)
+        // Use create_dead_context to avoid forking real shell processes in tests
+        let size = self.contexts.len();
+        if size < self.capacity {
+            let last_index = self.contexts.len();
+            let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+            let dimension = self.current().dimension;
+            let new_context = create_dead_context(
+                self.event_proxy.clone(),
+                self.window_id,
+                route_id,
+                rich_text_id,
+                dimension,
+            );
+
+            let previous_margin = self.contexts[self.current_index].margin;
+            self.contexts.push(ContextGrid::new(
+                new_context,
+                previous_margin,
+                self.config.split_color,
+            ));
+
+            if redirect {
+                self.current_index = last_index;
+                self.current_route = route_id;
+            }
+        }
     }
 
     pub fn add_context_with_shell(

@@ -196,7 +196,6 @@ impl Screen<'_> {
         let context_manager_config = context::ContextManagerConfig {
             cwd: config.navigation.current_working_directory,
             shell: shell.clone(),
-            shells: config.shells.clone(),
             working_dir,
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
@@ -424,6 +423,12 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard;
+
+        // Update shell selector with potentially new shells list
+        self.shell_selector = crate::shell_selector::ShellSelector::new(
+            config.shell.clone(),
+            config.shells.clone(),
+        );
 
         if cfg!(target_os = "macos") {
             self.sugarloaf.set_background_color(None);
