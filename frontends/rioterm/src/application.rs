@@ -1408,7 +1408,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
-                if self.config.renderer.strategy.is_game() {
+                if self.config.renderer.strategy.is_game()
+                    || route.path == RoutePath::Welcome
+                {
                     route.request_redraw();
                 } else if route
                     .window

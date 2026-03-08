@@ -9,12 +9,12 @@
 pub mod hint;
 pub mod touch;
 
-use crate::context;
 use crate::bindings::kitty_keyboard::build_key_sequence;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
+use crate::context;
 use crate::context::renderable::{Cursor, RenderableContent};
 use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
@@ -900,7 +900,9 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.render();
                     }
@@ -919,7 +921,9 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::CenterAroundViCursor) => {
@@ -936,7 +940,9 @@ impl Screen<'_> {
                         context
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
@@ -945,7 +951,9 @@ impl Screen<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleLineSelection) => {
@@ -954,7 +962,9 @@ impl Screen<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleBlockSelection) => {
@@ -963,7 +973,9 @@ impl Screen<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::Vi(ViAction::ToggleSemanticSelection) => {
@@ -972,7 +984,9 @@ impl Screen<'_> {
                             .current_mut()
                             .renderable_content
                             .pending_update
-                            .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                            .set_terminal_damage(
+                                rio_backend::event::TerminalDamage::Full,
+                            );
                         self.render();
                     }
                     Act::SplitRight => {

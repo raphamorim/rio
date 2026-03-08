@@ -1295,6 +1295,73 @@ impl Renderer {
     }
 
     #[inline]
+    pub fn polygon(&mut self, points: &[(f32, f32)], depth: f32, color: [f32; 4]) {
+        self.comp
+            .batches
+            .add_antialiased_polygon(points, depth, color);
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn triangle(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        x3: f32,
+        y3: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        self.comp
+            .batches
+            .add_triangle(x1, y1, x2, y2, x3, y3, depth, color);
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn line(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        self.comp
+            .batches
+            .add_line(x1, y1, x2, y2, width, depth, color);
+    }
+
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle_deg: f32,
+        end_angle_deg: f32,
+        stroke_width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        self.comp.batches.add_arc(
+            center_x,
+            center_y,
+            radius,
+            start_angle_deg,
+            end_angle_deg,
+            stroke_width,
+            depth,
+            &color,
+        );
+    }
+
+    #[inline]
     pub fn render<'pass>(
         &'pass mut self,
         ctx: &mut WgpuContext,

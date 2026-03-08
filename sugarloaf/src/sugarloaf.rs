@@ -612,6 +612,91 @@ impl Sugarloaf<'_> {
         }
     }
 
+    /// Draw an anti-aliased polygon from a list of points.
+    /// Coordinates are in logical pixels (scaled internally).
+    #[inline]
+    pub fn polygon(&mut self, points: &[(f32, f32)], depth: f32, color: [f32; 4]) {
+        let scale = self.state.style.scale_factor;
+        let scaled: Vec<(f32, f32)> =
+            points.iter().map(|(x, y)| (x * scale, y * scale)).collect();
+        self.renderer.polygon(&scaled, depth, color);
+    }
+
+    /// Draw a triangle.
+    /// Coordinates are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn triangle(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        x3: f32,
+        y3: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer.triangle(
+            x1 * s,
+            y1 * s,
+            x2 * s,
+            y2 * s,
+            x3 * s,
+            y3 * s,
+            depth,
+            color,
+        );
+    }
+
+    /// Draw a line between two points.
+    /// Coordinates and width are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn line(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer
+            .line(x1 * s, y1 * s, x2 * s, y2 * s, width * s, depth, color);
+    }
+
+    /// Draw an arc (stroke only).
+    /// Coordinates, radius, and stroke width are in logical pixels (scaled internally).
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn arc(
+        &mut self,
+        center_x: f32,
+        center_y: f32,
+        radius: f32,
+        start_angle_deg: f32,
+        end_angle_deg: f32,
+        stroke_width: f32,
+        depth: f32,
+        color: [f32; 4],
+    ) {
+        let s = self.state.style.scale_factor;
+        self.renderer.arc(
+            center_x * s,
+            center_y * s,
+            radius * s,
+            start_angle_deg,
+            end_angle_deg,
+            stroke_width * s,
+            depth,
+            color,
+        );
+    }
+
     /// Show content at a specific position (any type)
     #[inline]
     pub fn set_position(&mut self, id: usize, x: f32, y: f32) {
