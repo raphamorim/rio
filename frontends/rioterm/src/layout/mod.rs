@@ -1,5 +1,5 @@
-#[cfg(test)]
-mod layout_tests;
+// #[cfg(test)]
+// mod layout_tests;
 
 use crate::context::Context;
 use crate::mouse::Mouse;

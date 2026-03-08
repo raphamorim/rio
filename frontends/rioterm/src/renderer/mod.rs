@@ -947,7 +947,7 @@ impl Renderer {
         // In case rich text for search was not created
         let has_search = self.search.active_search.is_some();
         if has_search && self.search.rich_text_id.is_none() {
-            let search_rich_text = sugarloaf.get_next_id();
+            let search_rich_text = crate::context::next_rich_text_id();
             let _ = sugarloaf.text(Some(search_rich_text));
             sugarloaf.set_text_font_size(&search_rich_text, 12.0);
             self.search.rich_text_id = Some(search_rich_text);
@@ -1304,6 +1304,7 @@ impl Renderer {
     }
 
     /// Check if the renderer needs continuous redraw (for animations)
+    #[inline]
     pub fn needs_redraw(&self) -> bool {
         if let Some(island) = &self.island {
             island.needs_redraw()
