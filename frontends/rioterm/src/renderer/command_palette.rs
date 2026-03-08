@@ -3,6 +3,7 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+use crate::context::next_rich_text_id;
 use rio_backend::sugarloaf::Sugarloaf;
 
 // Design constants
@@ -258,7 +259,7 @@ impl CommandPalette {
         let input_id = if let Some(id) = self.input_text_id {
             id
         } else {
-            let id = sugarloaf.get_next_id();
+            let id = next_rich_text_id();
             let _ = sugarloaf.text(Some(id));
             sugarloaf.set_use_grid_cell_size(id, false); // Proportional text
             sugarloaf.set_text_font_size(&id, INPUT_FONT_SIZE);
@@ -306,7 +307,7 @@ impl CommandPalette {
 
         // Ensure we have enough rich text IDs for results
         while self.result_text_ids.len() < visible_count {
-            let result_id = sugarloaf.get_next_id();
+            let result_id = next_rich_text_id();
             let _ = sugarloaf.text(Some(result_id));
             sugarloaf.set_use_grid_cell_size(result_id, false); // Proportional text
             sugarloaf.set_text_font_size(&result_id, RESULT_FONT_SIZE);

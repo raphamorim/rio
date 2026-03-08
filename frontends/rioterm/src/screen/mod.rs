@@ -9,15 +9,14 @@
 pub mod hint;
 pub mod touch;
 
+use crate::context;
 use crate::bindings::kitty_keyboard::build_key_sequence;
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
 };
-#[cfg(target_os = "macos")]
-use crate::constants::{DEADZONE_END_Y, DEADZONE_START_Y};
 use crate::context::renderable::{Cursor, RenderableContent};
-use crate::context::{self, next_rich_text_id, process_open_url, ContextManager};
+use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
     pos::{Column, Pos, Side},

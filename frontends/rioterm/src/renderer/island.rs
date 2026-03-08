@@ -6,7 +6,7 @@
 // island.rs was originally retired from boo editor
 // which is licensed under MIT license.
 
-use crate::context::ContextManager;
+use crate::context::{next_rich_text_id, ContextManager};
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::Sugarloaf;
 use std::collections::HashMap;
@@ -265,7 +265,7 @@ impl Island {
             // Get or create tab data
             let tab_data = self.tab_data.entry(tab_index).or_insert_with(|| {
                 // Text should be in front of everything (terminal at 0.0)
-                let text_id = sugarloaf.get_next_id();
+                let text_id = next_rich_text_id();
                 let _ = sugarloaf.text(Some(text_id));
                 sugarloaf.set_use_grid_cell_size(text_id, false); // Proportional text for tabs
                 sugarloaf.set_text_font_size(&text_id, TITLE_FONT_SIZE);
