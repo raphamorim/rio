@@ -926,7 +926,7 @@ mode = "NativeTab"
 
 Note: `BottomTab` does not support click mode yet.
 
-<img alt="Demo BottomTab" src="/rio/assets/features/demo-bottom-tab.png" width="58%"/>
+<img alt="Demo BottomTab" src="/assets/features/demo-bottom-tab.png" width="58%"/>
 
 Usage:
 
@@ -942,7 +942,7 @@ mode = "BottomTab"
 
 Note: `TopTab` does not support click mode yet.
 
-<img alt="Demo TopTab" src="/rio/assets/features/demo-top-tab.png" width="70%"/>
+<img alt="Demo TopTab" src="/assets/features/demo-top-tab.png" width="70%"/>
 
 Usage:
 
@@ -1011,9 +1011,9 @@ color-automation = [
 The example below sets `#FFFF00` as color background whenever `nvim` is running.
 
 <p>
-<img alt="example navigation with program color automation using BottomTab" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
+<img alt="example navigation with program color automation using BottomTab" src="/assets/features/demo-colorized-navigation.png" width="48%"/>
 
-<img alt="example navigation with program color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
+<img alt="example navigation with program color automation using Bookmark" src="/assets/features/demo-colorized-navigation-2.png" width="48%"/>
 </p>
 
 The configuration would be like:
@@ -1041,9 +1041,9 @@ color-automation = [
 ```
 
 <p>
-<img alt="example navigation with path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
+<img alt="example navigation with path color automation using TopTab" src="/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
 
-<img alt="example navigation with path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
+<img alt="example navigation with path color automation using Bookmark" src="/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
 </p>
 
 #### Program and path
@@ -1064,9 +1064,9 @@ color-automation = [
 ```
 
 <p>
-<img alt="example navigation with program and path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
+<img alt="example navigation with program and path color automation using TopTab" src="/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
 
-<img alt="example navigation with program and path color automation using Bookmark" src="/rio/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
+<img alt="example navigation with program and path color automation using Bookmark" src="/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
 </p>
 
 ## navigation.hide-if-single

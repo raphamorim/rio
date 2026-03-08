@@ -14,9 +14,9 @@ Note: `path` is only available for MacOS, BSD and Linux.
 The example below sets `#FFFF00` as color background whenever `nvim` is running.
 
 <p>
-<img alt="example navigation with program color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation.png" width="48%"/>
+<img alt="example navigation with program color automation using TopTab" src="/assets/features/demo-colorized-navigation.png" width="48%"/>
 
-<img alt="example navigation with program color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-2.png" width="48%"/>
+<img alt="example navigation with program color automation using CollapsedTab" src="/assets/features/demo-colorized-navigation-2.png" width="48%"/>
 </p>
 
 The configuration would be like:
@@ -44,9 +44,9 @@ color-automation = [
 ```
 
 <p>
-<img alt="example navigation with path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
+<img alt="example navigation with path color automation using TopTab" src="/assets/features/demo-colorized-navigation-path-1.png" width="48%"/>
 
-<img alt="example navigation with path color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
+<img alt="example navigation with path color automation using CollapsedTab" src="/assets/features/demo-colorized-navigation-path-2.png" width="48%"/>
 </p>
 
 #### Program and path
@@ -67,7 +67,7 @@ color-automation = [
 ```
 
 <p>
-<img alt="example navigation with program and path color automation using TopTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
+<img alt="example navigation with program and path color automation using TopTab" src="/assets/features/demo-colorized-navigation-program-and-path-1.png" width="48%"/>
 
-<img alt="example navigation with program and path color automation using CollapsedTab" src="/rio/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
+<img alt="example navigation with program and path color automation using CollapsedTab" src="/assets/features/demo-colorized-navigation-program-and-path-2.png" width="48%"/>
 </p>
