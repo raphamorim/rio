@@ -138,6 +138,32 @@ fn handle_colon_rgb(params: &[u16]) -> Option<AnsiColor> {
     parse_sgr_color(&mut iter)
 }
 
+/// SCP control's first parameter which determines character path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpCharPath {
+    /// SCP's first parameter value of 0. Behavior is implementation defined.
+    Default,
+    /// SCP's first parameter value of 1 which sets character path to LEFT-TO-RIGHT.
+    LTR,
+    /// SCP's first parameter value of 2 which sets character path to RIGHT-TO-LEFT.
+    RTL,
+}
+
+/// SCP control's second parameter which determines update mode/direction between components.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ScpUpdateMode {
+    /// SCP's second parameter value of 0 (the default). Implementation dependant update.
+    ImplementationDependant,
+    /// SCP's second parameter value of 1.
+    ///
+    /// Reflect data component changes in the presentation component.
+    DataToPresentation,
+    /// SCP's second parameter value of 2.
+    ///
+    /// Reflect presentation component changes in the data component.
+    PresentationToData,
+}
+
 pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
@@ -432,6 +458,9 @@ pub trait Handler {
     ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
         None
     }
+
+    // Set SCP control.
+    fn set_scp(&mut self, _char_path: ScpCharPath, _update_mode: ScpUpdateMode) {}
 }
 
 pub trait Timeout: Default {
@@ -1302,6 +1331,30 @@ impl<U: Handler, T: Timeout> copa::Perform for Performer<'_, U, T> {
                 };
 
                 handler.clear_line(mode);
+            }
+            ('k', [b' ']) => {
+                // SCP control.
+                let char_path = match next_param_or(0) {
+                    0 => ScpCharPath::Default,
+                    1 => ScpCharPath::LTR,
+                    2 => ScpCharPath::RTL,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                let update_mode = match next_param_or(0) {
+                    0 => ScpUpdateMode::ImplementationDependant,
+                    1 => ScpUpdateMode::DataToPresentation,
+                    2 => ScpUpdateMode::PresentationToData,
+                    _ => {
+                        csi_unhandled!();
+                        return;
+                    }
+                };
+
+                handler.set_scp(char_path, update_mode);
             }
             ('L', []) => handler.insert_blank_lines(next_param_or(1) as usize),
             ('l', []) => {
