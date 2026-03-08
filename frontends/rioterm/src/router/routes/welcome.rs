@@ -1,146 +1,143 @@
 use crate::layout::ContextDimension;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
+use std::sync::Mutex;
+use std::time::Instant;
+
+static START_TIME: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Draw a single logo shape (3/4 circle) with a configurable mouth opening.
+/// `mouth_angle` is the half-angle of the mouth in degrees (0 = closed, 45 = wide open).
+fn draw_logo(
+    sugarloaf: &mut Sugarloaf,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    mouth_angle: f32,
+    depth: f32,
+    color: [f32; 4],
+) {
+    let segments = 60;
+    let mut points = Vec::with_capacity(segments + 3);
+
+    // Arc spans from mouth_angle to (360 - mouth_angle)
+    let arc_span = 360.0 - 2.0 * mouth_angle;
+
+    points.push((cx, cy));
+
+    for i in 0..=segments {
+        let angle = mouth_angle + (arc_span * i as f32 / segments as f32);
+        let radians = angle * std::f32::consts::PI / 180.0;
+        points.push((cx + radius * radians.cos(), cy + radius * radians.sin()));
+    }
+
+    points.push((cx, cy));
+
+    sugarloaf.polygon(&points, depth, color);
+}
 
 #[inline]
 pub fn screen(sugarloaf: &mut Sugarloaf, context_dimension: &ContextDimension) {
-    let blue = [0.1764706, 0.6039216, 1.0, 1.0];
-    let yellow = [0.9882353, 0.7294118, 0.15686275, 1.0];
-    let red = [1.0, 0.07058824, 0.38039216, 1.0];
-    let black = [0.0, 0.0, 0.0, 1.0];
-
     let layout = sugarloaf.window_size();
+    let scale = context_dimension.dimension.scale;
 
-    // Render rectangles directly
+    // Black background
     sugarloaf.rect(
         None,
         0.0,
         0.0,
-        layout.width / context_dimension.dimension.scale,
+        layout.width / scale,
         layout.height,
-        black,
-        0.0,
-        0,
-    );
-    sugarloaf.rect(None, 0.0, 30.0, 15.0, layout.height, blue, 0.0, 0);
-    sugarloaf.rect(
-        None,
-        15.0,
-        context_dimension.margin.top + 60.0,
-        15.0,
-        layout.height,
-        yellow,
-        0.0,
-        0,
-    );
-    sugarloaf.rect(
-        None,
-        30.0,
-        context_dimension.margin.top + 120.0,
-        15.0,
-        layout.height,
-        red,
+        [0.0, 0.0, 0.0, 1.0],
         0.0,
         0,
     );
 
-    // Create transient text elements
-    let heading_idx = sugarloaf.text(None);
-    let action_idx = sugarloaf.text(None);
-    let paragraph_idx = sugarloaf.text(None);
+    let center_x = (layout.width / scale) / 2.0;
+    let center_y = (layout.height / scale) / 2.0;
 
-    // Use proportional text rendering (not monospace grid)
-    sugarloaf.set_transient_use_grid_cell_size(heading_idx, false);
-    sugarloaf.set_transient_use_grid_cell_size(action_idx, false);
-    sugarloaf.set_transient_use_grid_cell_size(paragraph_idx, false);
+    // Compute mouth angle from time
+    let now = Instant::now();
+    let start = {
+        let mut guard = START_TIME.lock().unwrap();
+        *guard.get_or_insert(now)
+    };
+    let elapsed = now.duration_since(start).as_secs_f32();
 
-    sugarloaf.set_transient_text_font_size(heading_idx, 28.0);
-    sugarloaf.set_transient_text_font_size(action_idx, 18.0);
-    sugarloaf.set_transient_text_font_size(paragraph_idx, 16.0);
+    // Every 3 seconds: quick blink (close and reopen over ~0.3s)
+    let cycle = elapsed % 3.0;
+    let mouth_angle = if cycle > 2.7 {
+        // Blink phase: 0.3s total
+        // First half closes (2.7 -> 2.85), second half opens (2.85 -> 3.0)
+        let blink_t = (cycle - 2.7) / 0.3;
+        if blink_t < 0.5 {
+            // Closing: 45° -> 0°
+            45.0 * (1.0 - blink_t * 2.0)
+        } else {
+            // Opening: 0° -> 45°
+            45.0 * (blink_t - 0.5) * 2.0
+        }
+    } else {
+        45.0 // Normal open mouth
+    };
 
-    // Add text content
-    if let Some(heading_state) = sugarloaf.get_transient_text_mut(heading_idx) {
-        heading_state
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let radius = 40.0;
+    let gap = 2.0;
+
+    // Two logos side by side
+    draw_logo(
+        sugarloaf,
+        center_x - radius - gap,
+        center_y,
+        radius,
+        mouth_angle,
+        0.1,
+        white,
+    );
+    draw_logo(
+        sugarloaf,
+        center_x + radius + gap,
+        center_y,
+        radius,
+        mouth_angle,
+        0.1,
+        white,
+    );
+
+    // press enter
+    let confirm_idx = sugarloaf.text(None);
+    sugarloaf.set_transient_use_grid_cell_size(confirm_idx, false);
+    sugarloaf.set_transient_text_font_size(confirm_idx, 14.0);
+
+    if let Some(config_state) = sugarloaf.get_transient_text_mut(confirm_idx) {
+        config_state
             .clear()
-            .add_span("Welcome to Rio Terminal", SpanStyle::default())
+            .add_span("press enter", SpanStyle::default())
             .build();
     }
 
-    if let Some(action_state) = sugarloaf.get_transient_text_mut(action_idx) {
-        action_state
+    sugarloaf.set_transient_position(confirm_idx, 20.0, (layout.height / scale) - 50.0);
+    sugarloaf.set_transient_visibility(confirm_idx, true);
+
+    // config path
+    let config_idx = sugarloaf.text(None);
+    sugarloaf.set_transient_use_grid_cell_size(config_idx, false);
+    sugarloaf.set_transient_text_font_size(config_idx, 14.0);
+
+    if let Some(config_state) = sugarloaf.get_transient_text_mut(config_idx) {
+        let path = rio_backend::config::config_file_path();
+        config_state
             .clear()
             .add_span(
-                "> press enter to continue",
+                &path.display().to_string(),
                 SpanStyle {
-                    color: yellow,
+                    color: [0.5, 0.5, 0.5, 1.0],
                     ..SpanStyle::default()
                 },
             )
             .build();
     }
 
-    #[cfg(target_os = "macos")]
-    let shortcut = "\"Command\" + \",\" (comma)";
-
-    #[cfg(not(target_os = "macos"))]
-    let shortcut = "\"Control\" + \"Shift\" + \",\" (comma)";
-
-    if let Some(paragraph_state) = sugarloaf.get_transient_text_mut(paragraph_idx) {
-        paragraph_state
-            .clear()
-            .add_span(
-                "Your configuration file will be created in",
-                SpanStyle::default(),
-            )
-            .new_line()
-            .add_span(
-                &format!(" {} ", rio_backend::config::config_file_path().display()),
-                SpanStyle {
-                    background_color: Some(yellow),
-                    color: [0., 0., 0., 1.],
-                    ..SpanStyle::default()
-                },
-            )
-            .new_line()
-            .add_span("", SpanStyle::default())
-            .new_line()
-            .add_span("To open settings menu use", SpanStyle::default())
-            .new_line()
-            .add_span(
-                &format!(" {shortcut} "),
-                SpanStyle {
-                    background_color: Some(yellow),
-                    color: [0., 0., 0., 1.],
-                    ..SpanStyle::default()
-                },
-            )
-            .new_line()
-            .add_span("", SpanStyle::default())
-            .new_line()
-            .add_span("", SpanStyle::default())
-            .new_line()
-            .add_span("More info in rioterm.com", SpanStyle::default())
-            .build();
-    }
-
-    // Position the text elements
-    sugarloaf.set_transient_position(
-        heading_idx,
-        70.0,
-        context_dimension.margin.top + 30.0,
-    );
-    sugarloaf.set_transient_visibility(heading_idx, true);
-
-    sugarloaf.set_transient_position(
-        action_idx,
-        70.0,
-        context_dimension.margin.top + 70.0,
-    );
-    sugarloaf.set_transient_visibility(action_idx, true);
-
-    sugarloaf.set_transient_position(
-        paragraph_idx,
-        70.0,
-        context_dimension.margin.top + 140.0,
-    );
-    sugarloaf.set_transient_visibility(paragraph_idx, true);
+    sugarloaf.set_transient_position(config_idx, 20.0, (layout.height / scale) - 30.0);
+    sugarloaf.set_transient_visibility(config_idx, true);
 }
