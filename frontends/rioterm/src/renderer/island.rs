@@ -553,11 +553,15 @@ impl Island {
         let picker_start_x = tab_x + (tab_width - total_swatches_width) / 2.0;
 
         // Check each swatch
+        let swatch_y = picker_y + PICKER_PADDING + PICKER_TOP_PADDING;
+        let swatch_y_end = swatch_y + PICKER_SWATCH_SIZE;
         for (i, color) in PICKER_COLORS.iter().enumerate() {
             let swatch_x =
                 picker_start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
             if mouse_x_unscaled >= swatch_x
                 && mouse_x_unscaled <= swatch_x + PICKER_SWATCH_SIZE
+                && mouse_y_unscaled >= swatch_y
+                && mouse_y_unscaled <= swatch_y_end
             {
                 self.tab_colors.insert(picker_tab, *color);
                 self.apply_rename();
