@@ -19,6 +19,7 @@ struct VertexInput {
     @location(7) border_color: vec4<f32>,      // Border color RGBA
     @location(8) border_style: i32,            // 0 = solid, 1 = dashed
     @location(9) underline_style: i32,         // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
+    @location(10) clip_rect: vec4<f32>,        // [x, y, width, height] in pixels (0,0,0,0 = no clip)
 }
 
 struct VertexOutput {
@@ -33,6 +34,7 @@ struct VertexOutput {
     @location(7) border_color: vec4<f32>,
     @location(8) @interpolate(flat) border_style: i32,
     @location(9) @interpolate(flat) underline_style: i32,
+    @location(10) @interpolate(flat) clip_rect: vec4<f32>,
 }
 
 @vertex
@@ -48,6 +50,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.border_color = input.border_color;
     out.border_style = input.border_style;
     out.underline_style = input.underline_style;
+    out.clip_rect = input.clip_rect;
 
     out.position = globals.transform * vec4<f32>(input.v_pos.xy, 0.0, 1.0);
     return out;
@@ -194,6 +197,15 @@ fn underline_alpha(x_pos: f32, y_pos: f32, rect_height: f32, thickness: f32, sty
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    if (input.clip_rect.z > 0.0) {
+        let px = input.position.x;
+        let py = input.position.y;
+        if (px < input.clip_rect.x || px >= input.clip_rect.x + input.clip_rect.z ||
+            py < input.clip_rect.y || py >= input.clip_rect.y + input.clip_rect.w) {
+            discard;
+        }
+    }
+
     var out: vec4<f32> = input.f_color;
 
     // Handle GPU-rendered underlines

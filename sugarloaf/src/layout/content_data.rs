@@ -103,6 +103,9 @@ pub struct ContentRenderData {
     /// Whether to use monospace grid dimensions for glyph positioning (terminal text)
     /// When false, uses actual glyph advances (rich text)
     pub use_grid_cell_size: bool,
+    /// Clipping bounds [x, y, width, height] in physical pixels.
+    /// When set, glyphs outside these bounds are skipped during rendering.
+    pub bounds: Option<[f32; 4]>,
 }
 
 impl Default for ContentRenderData {
@@ -116,6 +119,7 @@ impl Default for ContentRenderData {
             should_remove: false,
             transient: false,
             use_grid_cell_size: true, // Default to monospace grid for terminal
+            bounds: None,
         }
     }
 }
@@ -133,6 +137,14 @@ impl ContentRenderData {
     pub fn set_hidden(&mut self, hidden: bool) {
         if self.hidden != hidden {
             self.hidden = hidden;
+            self.needs_repaint = true;
+        }
+    }
+
+    /// Set clipping bounds and mark for repaint if changed
+    pub fn set_bounds(&mut self, bounds: Option<[f32; 4]>) {
+        if self.bounds != bounds {
+            self.bounds = bounds;
             self.needs_repaint = true;
         }
     }

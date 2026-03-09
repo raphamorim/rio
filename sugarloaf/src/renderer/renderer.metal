@@ -18,6 +18,7 @@ struct VertexInput {
     float4 border_color [[attribute(7)]];   // Border color RGBA (16 bytes)
     int border_style [[attribute(8)]];      // 0 = solid, 1 = dashed (4 bytes)
     int underline_style [[attribute(9)]];   // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly (4 bytes)
+    float4 clip_rect [[attribute(10)]];    // [x, y, width, height] in pixels (16 bytes)
 };
 
 // Vertex output / Fragment input structure
@@ -33,6 +34,7 @@ struct VertexOutput {
     float4 border_color;
     int border_style [[flat]];
     int underline_style [[flat]];
+    float4 clip_rect [[flat]];
 };
 
 // Vertex shader
@@ -51,6 +53,7 @@ vertex VertexOutput vs_main(
     out.border_color = input.border_color;
     out.border_style = input.border_style;
     out.underline_style = input.underline_style;
+    out.clip_rect = input.clip_rect;
 
     // Transform position - use float4 constructor with z=0.0, w=1.0
     out.position = globals.transform * float4(input.v_pos.xy, 0.0, 1.0);
@@ -204,6 +207,15 @@ fragment float4 fs_main(
     texture2d<float> mask_texture [[texture(1)]],
     sampler font_sampler [[sampler(0)]]
 ) {
+    if (input.clip_rect.z > 0.0) {
+        float px = input.position.x;
+        float py = input.position.y;
+        if (px < input.clip_rect.x || px >= input.clip_rect.x + input.clip_rect.z ||
+            py < input.clip_rect.y || py >= input.clip_rect.y + input.clip_rect.w) {
+            discard_fragment();
+        }
+    }
+
     float4 out = input.f_color;
 
     // Handle GPU-rendered underlines

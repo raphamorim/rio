@@ -215,6 +215,13 @@ impl SugarState {
     }
 
     #[inline]
+    pub fn set_content_bounds(&mut self, id: usize, bounds: Option<[f32; 4]>) {
+        if let Some(content_state) = self.content.states.get_mut(&id) {
+            content_state.render_data.set_bounds(bounds);
+        }
+    }
+
+    #[inline]
     pub fn set_content_hidden(&mut self, id: usize, hidden: bool) {
         if let Some(content_state) = self.content.states.get_mut(&id) {
             content_state.render_data.set_hidden(hidden);
