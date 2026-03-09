@@ -426,13 +426,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         match border.direction {
             BorderDirection::Vertical => {
                 let _ = self.set_panel_size(border.left_or_top, Some(new_a), None);
-                let _ =
-                    self.set_panel_size(border.right_or_bottom, Some(new_b), None);
+                let _ = self.set_panel_size(border.right_or_bottom, Some(new_b), None);
             }
             BorderDirection::Horizontal => {
                 let _ = self.set_panel_size(border.left_or_top, None, Some(new_a));
-                let _ =
-                    self.set_panel_size(border.right_or_bottom, None, Some(new_b));
+                let _ = self.set_panel_size(border.right_or_bottom, None, Some(new_b));
             }
         }
 
@@ -449,27 +447,25 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let border_width = self.border_config.width;
         let color = self.border_config.color;
 
-        self.walk_separators(
-            |dir, center, span, _child_a, _child_b| -> Option<()> {
-                match dir {
-                    BorderDirection::Vertical => {
-                        separators.push(create_border(
-                            color,
-                            [center - border_width / 2.0, span[0]],
-                            [border_width, span[1] - span[0]],
-                        ));
-                    }
-                    BorderDirection::Horizontal => {
-                        separators.push(create_border(
-                            color,
-                            [span[0], center - border_width / 2.0],
-                            [span[1] - span[0], border_width],
-                        ));
-                    }
+        self.walk_separators(|dir, center, span, _child_a, _child_b| -> Option<()> {
+            match dir {
+                BorderDirection::Vertical => {
+                    separators.push(create_border(
+                        color,
+                        [center - border_width / 2.0, span[0]],
+                        [border_width, span[1] - span[0]],
+                    ));
                 }
-                None // continue walking
-            },
-        );
+                BorderDirection::Horizontal => {
+                    separators.push(create_border(
+                        color,
+                        [span[0], center - border_width / 2.0],
+                        [span[1] - span[0], border_width],
+                    ));
+                }
+            }
+            None // continue walking
+        });
 
         separators
     }
@@ -542,9 +538,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         + (left.location.y + left.size.height)
                             .max(right.location.y + right.size.height);
 
-                    if let Some(r) =
-                        visitor(BorderDirection::Vertical, center, [min_y, max_y], left_id, right_id)
-                    {
+                    if let Some(r) = visitor(
+                        BorderDirection::Vertical,
+                        center,
+                        [min_y, max_y],
+                        left_id,
+                        right_id,
+                    ) {
                         return Some(r);
                     }
                 } else {
@@ -562,9 +562,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         + (top.location.x + top.size.width)
                             .max(bottom.location.x + bottom.size.width);
 
-                    if let Some(r) =
-                        visitor(BorderDirection::Horizontal, center, [min_x, max_x], top_id, bottom_id)
-                    {
+                    if let Some(r) = visitor(
+                        BorderDirection::Horizontal,
+                        center,
+                        [min_x, max_x],
+                        top_id,
+                        bottom_id,
+                    ) {
                         return Some(r);
                     }
                 }
@@ -685,14 +689,92 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 
     /// Reset all panels to flexible sizing so they expand to fill available space
+    /// Reset all nodes (panels and containers) to flexible sizing.
     fn reset_panel_styles_to_flexible(&mut self) {
-        let nodes: Vec<NodeId> = self.inner.keys().copied().collect();
-        for node in nodes {
+        let mut stack = vec![self.root_node];
+        while let Some(node) = stack.pop() {
             if let Ok(mut style) = self.tree.style(node).cloned() {
                 style.flex_basis = taffy::Dimension::auto();
                 style.flex_grow = 1.0;
                 style.flex_shrink = 1.0;
                 let _ = self.tree.set_style(node, style);
+            }
+            if let Ok(children) = self.tree.children(node) {
+                for child in children {
+                    stack.push(child);
+                }
+            }
+        }
+    }
+
+    /// Remove containers that have only one child by promoting the child
+    /// to the container's parent. Repeats until no single-child containers remain.
+    fn collapse_single_child_containers(&mut self) {
+        loop {
+            let mut collapsed = false;
+            let mut stack = vec![self.root_node];
+
+            while let Some(node) = stack.pop() {
+                let children = match self.tree.children(node) {
+                    Ok(c) => c,
+                    _ => continue,
+                };
+
+                for &child in &children {
+                    // Only consider non-panel nodes (containers)
+                    if self.inner.contains_key(&child) {
+                        continue;
+                    }
+
+                    let grandchildren = match self.tree.children(child) {
+                        Ok(gc) => gc,
+                        _ => continue,
+                    };
+
+                    if grandchildren.len() == 1 {
+                        // Promote the single grandchild to replace this container,
+                        // inheriting the container's flex sizing so siblings keep
+                        // their proportions.
+                        let grandchild = grandchildren[0];
+                        let child_idx = children.iter().position(|&c| c == child);
+
+                        if let Some(idx) = child_idx {
+                            // Copy container's flex properties to the promoted child
+                            if let Ok(container_style) = self.tree.style(child).cloned() {
+                                if let Ok(mut gc_style) =
+                                    self.tree.style(grandchild).cloned()
+                                {
+                                    gc_style.flex_basis = container_style.flex_basis;
+                                    gc_style.flex_grow = container_style.flex_grow;
+                                    gc_style.flex_shrink = container_style.flex_shrink;
+                                    let _ = self.tree.set_style(grandchild, gc_style);
+                                }
+                            }
+
+                            let _ = self.tree.remove_child(child, grandchild);
+                            let _ = self.tree.remove_child(node, child);
+                            let _ =
+                                self.tree.insert_child_at_index(node, idx, grandchild);
+                            collapsed = true;
+                            break; // Tree changed, restart
+                        }
+                    } else if grandchildren.is_empty() {
+                        // Empty container — remove it
+                        let _ = self.tree.remove_child(node, child);
+                        collapsed = true;
+                        break;
+                    } else {
+                        stack.push(child);
+                    }
+                }
+
+                if collapsed {
+                    break;
+                }
+            }
+
+            if !collapsed {
+                break;
             }
         }
     }
@@ -1230,9 +1312,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Set new current
         self.current = next_current;
 
-        // Reset remaining panels to flexible sizing and recompute layout
+        // Collapse single-child containers left behind by removal
+        self.collapse_single_child_containers();
+
+        // Recompute layout
         if self.panel_count() > 0 {
-            self.reset_panel_styles_to_flexible();
+            // When back to a single panel, reset to flexible so it fills the window
+            if self.panel_count() == 1 {
+                self.reset_panel_styles_to_flexible();
+            }
             self.apply_taffy_layout(sugarloaf);
         }
     }

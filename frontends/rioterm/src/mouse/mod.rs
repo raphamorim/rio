@@ -31,6 +31,7 @@ pub struct Mouse {
     pub inside_text_area: bool,
     pub x: usize,
     pub y: usize,
+    pub on_border: bool,
 }
 
 impl Default for Mouse {
@@ -46,6 +47,7 @@ impl Default for Mouse {
             click_state: ClickState::None,
             square_side: Side::Left,
             inside_text_area: Default::default(),
+            on_border: false,
             accumulated_scroll: AccumulatedScroll::default(),
             x: Default::default(),
             y: Default::default(),

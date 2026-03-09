@@ -939,19 +939,28 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             {
                                 let mx = route.window.screen.mouse.x as f32;
                                 let my = route.window.screen.mouse.y as f32;
-                                let grid = route.window.screen.context_manager.current_grid();
-                                if let Some(border) = grid.find_border_at_position(mx, my) {
+                                let grid =
+                                    route.window.screen.context_manager.current_grid();
+                                if let Some(border) = grid.find_border_at_position(mx, my)
+                                {
                                     let start_pos = match border.direction {
                                         crate::layout::BorderDirection::Vertical => mx,
                                         crate::layout::BorderDirection::Horizontal => my,
                                     };
-                                    let size_a = grid.get_panel_size(border.left_or_top, border.direction);
-                                    let size_b = grid.get_panel_size(border.right_or_bottom, border.direction);
-                                    route.window.screen.resize_state = Some(crate::layout::ResizeState {
-                                        border,
-                                        start_pos,
-                                        original_sizes: (size_a, size_b),
-                                    });
+                                    let size_a = grid.get_panel_size(
+                                        border.left_or_top,
+                                        border.direction,
+                                    );
+                                    let size_b = grid.get_panel_size(
+                                        border.right_or_bottom,
+                                        border.direction,
+                                    );
+                                    route.window.screen.resize_state =
+                                        Some(crate::layout::ResizeState {
+                                            border,
+                                            start_pos,
+                                            original_sizes: (size_a, size_b),
+                                        });
                                     return;
                                 }
                             }
@@ -1118,15 +1127,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     let delta = current_pos - state.start_pos;
                     let border = state.border;
                     let original_sizes = state.original_sizes;
-                    route.window.screen.context_manager.current_grid_mut().resize_border(
-                        &border,
-                        original_sizes,
-                        delta,
-                        &mut route.window.screen.sugarloaf,
-                    );
+                    route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_grid_mut()
+                        .resize_border(
+                            &border,
+                            original_sizes,
+                            delta,
+                            &mut route.window.screen.sugarloaf,
+                        );
                     let cursor = match border.direction {
                         crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
-                        crate::layout::BorderDirection::Horizontal => CursorIcon::RowResize,
+                        crate::layout::BorderDirection::Horizontal => {
+                            CursorIcon::RowResize
+                        }
                     };
                     route.window.winit_window.set_cursor(cursor);
                     route.window.screen.context_manager.request_render();
@@ -1137,15 +1153,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // Check if hovering over a panel border
                 {
                     let grid = route.window.screen.context_manager.current_grid();
-                    if let Some(border) = grid.find_border_at_position(x as f32, y as f32) {
+                    if let Some(border) = grid.find_border_at_position(x as f32, y as f32)
+                    {
                         let cursor = match border.direction {
-                            crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
-                            crate::layout::BorderDirection::Horizontal => CursorIcon::RowResize,
+                            crate::layout::BorderDirection::Vertical => {
+                                CursorIcon::ColResize
+                            }
+                            crate::layout::BorderDirection::Horizontal => {
+                                CursorIcon::RowResize
+                            }
                         };
                         route.window.winit_window.set_cursor(cursor);
+                        route.window.screen.mouse.on_border = true;
                         return;
                     }
                 }
+
+                // Track leaving a border to force cursor reset below
+                let was_on_border = route.window.screen.mouse.on_border;
+                route.window.screen.mouse.on_border = false;
 
                 let lmb_pressed =
                     route.window.screen.mouse.left_button_state == ElementState::Pressed;
@@ -1168,12 +1194,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let square_side = route.window.screen.side_by_pos(x);
 
                 // If the mouse hasn't changed cells, do nothing.
-                // Skip this optimization when splits are active so the cursor
-                // resets properly after leaving a separator.
+                // Force update when transitioning off a border so the cursor resets.
                 if !square_changed
+                    && !was_on_border
                     && route.window.screen.mouse.square_side == square_side
                     && route.window.screen.mouse.inside_text_area == inside_text_area
-                    && !route.window.screen.context_manager.current_grid().should_draw_borders()
                 {
                     return;
                 }
