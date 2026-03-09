@@ -935,11 +935,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         };
 
                         if let MouseButton::Left = button {
-                            if route
-                                .window
-                                .screen
-                                .handle_palette_click()
-                            {
+                            if route.window.screen.handle_palette_click() {
                                 route.request_redraw();
                                 return;
                             }
@@ -1053,6 +1049,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                // Handle command palette hover
+                if route.window.screen.renderer.command_palette.is_enabled() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .command_palette
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                    return;
+                }
 
                 // Check if mouse is over island and set cursor to default
                 use crate::renderer::island::ISLAND_HEIGHT;

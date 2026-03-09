@@ -23,6 +23,7 @@ const SHORTCUT_FONT_SIZE: f32 = 11.0;
 const MAX_VISIBLE_RESULTS: usize = 8;
 
 const SEPARATOR_HEIGHT: f32 = 1.0;
+const RESULTS_MARGIN_TOP: f32 = 4.0;
 const CARET_WIDTH: f32 = 2.0;
 const CARET_BLINK_MS: u128 = 500;
 
@@ -323,7 +324,9 @@ impl CommandPalette {
 
     pub fn get_selected_action(&self) -> Option<PaletteAction> {
         let filtered = self.filtered_commands();
-        filtered.get(self.selected_index).map(|&(_, cmd)| cmd.action)
+        filtered
+            .get(self.selected_index)
+            .map(|&(_, cmd)| cmd.action)
     }
 
     fn filtered_commands(&self) -> Vec<(i32, &Command)> {
@@ -344,7 +347,10 @@ impl CommandPalette {
     fn palette_rect(&self, window_width: f32, scale_factor: f32) -> (f32, f32, f32, f32) {
         let px = (window_width / scale_factor - PALETTE_WIDTH) / 2.0;
         let py = PALETTE_MARGIN_TOP;
-        let h = PALETTE_PADDING + INPUT_HEIGHT + SEPARATOR_HEIGHT
+        let h = PALETTE_PADDING
+            + INPUT_HEIGHT
+            + SEPARATOR_HEIGHT
+            + RESULTS_MARGIN_TOP
             + RESULT_ITEM_HEIGHT * MAX_VISIBLE_RESULTS as f32
             + PALETTE_PADDING;
         (px, py, PALETTE_WIDTH, h)
@@ -368,7 +374,8 @@ impl CommandPalette {
         }
 
         // Results area starts after input + separator
-        let results_y = py + PALETTE_PADDING + INPUT_HEIGHT + SEPARATOR_HEIGHT;
+        let results_y =
+            py + PALETTE_PADDING + INPUT_HEIGHT + SEPARATOR_HEIGHT + RESULTS_MARGIN_TOP;
         if mouse_y < results_y {
             return Ok(None); // Clicked on input area
         }
@@ -383,6 +390,25 @@ impl CommandPalette {
         } else {
             Ok(None)
         }
+    }
+
+    /// Update selection based on mouse position. Returns true if selection changed.
+    pub fn hover(
+        &mut self,
+        mouse_x: f32,
+        mouse_y: f32,
+        window_width: f32,
+        scale_factor: f32,
+    ) -> bool {
+        if let Ok(Some(index)) =
+            self.hit_test(mouse_x, mouse_y, window_width, scale_factor)
+        {
+            if self.selected_index != index {
+                self.selected_index = index;
+                return true;
+            }
+        }
+        false
     }
 
     /// Ensure the text ID pools are allocated.
@@ -468,15 +494,19 @@ impl CommandPalette {
         let input_y = palette_y + PALETTE_PADDING;
         let input_width = palette_width - PALETTE_PADDING * 2.0;
 
-        sugarloaf.rounded_rect(
+        // Input bg: top corners rounded, bottom corners flat (meets separator)
+        sugarloaf.quad(
             None,
             input_x,
             input_y,
             input_width,
             INPUT_HEIGHT,
             INPUT_BG_COLOR,
+            [8.0, 8.0, 0.0, 0.0], // top-left, top-right, bottom-right, bottom-left
+            [0.0; 4],
+            [0.0; 4],
+            0,
             DEPTH_ELEMENT,
-            8.0,
             ORDER,
         );
 
@@ -497,7 +527,13 @@ impl CommandPalette {
             .sel(input_id)
             .clear()
             .new_line()
-            .add_text(display_text, SpanStyle { color: text_color, ..SpanStyle::default() })
+            .add_text(
+                display_text,
+                SpanStyle {
+                    color: text_color,
+                    ..SpanStyle::default()
+                },
+            )
             .build();
 
         let text_x = input_x + INPUT_PADDING_X;
@@ -542,7 +578,7 @@ impl CommandPalette {
             ORDER,
         );
 
-        let results_y = sep_y + SEPARATOR_HEIGHT;
+        let results_y = sep_y + SEPARATOR_HEIGHT + RESULTS_MARGIN_TOP;
         let filtered = self.filtered_commands();
         let visible_count = filtered
             .iter()
@@ -584,7 +620,11 @@ impl CommandPalette {
                 .add_text(
                     cmd.title,
                     SpanStyle {
-                        color: if is_selected { TEXT_COLOR } else { [0.80, 0.80, 0.80, 1.0] },
+                        color: if is_selected {
+                            TEXT_COLOR
+                        } else {
+                            [0.80, 0.80, 0.80, 1.0]
+                        },
                         ..SpanStyle::default()
                     },
                 )

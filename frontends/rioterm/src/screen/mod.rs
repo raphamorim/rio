@@ -2888,16 +2888,22 @@ impl Screen<'_> {
                 let old = self.context_manager.current_index();
                 self.context_manager.switch_to_next();
                 let new = self.context_manager.current_index();
-                self.context_manager
-                    .switch_context_visibility(&mut self.sugarloaf, old, new);
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
             }
             PaletteAction::SelectPrevTab => {
                 self.clear_selection();
                 let old = self.context_manager.current_index();
                 self.context_manager.switch_to_prev();
                 let new = self.context_manager.current_index();
-                self.context_manager
-                    .switch_context_visibility(&mut self.sugarloaf, old, new);
+                self.context_manager.switch_context_visibility(
+                    &mut self.sugarloaf,
+                    old,
+                    new,
+                );
             }
             PaletteAction::SplitRight => self.split_right(),
             PaletteAction::SplitDown => self.split_down(),
@@ -2940,10 +2946,7 @@ impl Screen<'_> {
                 self.copy_selection(ClipboardType::Clipboard);
             }
             PaletteAction::Paste => {
-                let content = self
-                    .clipboard
-                    .borrow_mut()
-                    .get(ClipboardType::Clipboard);
+                let content = self.clipboard.borrow_mut().get(ClipboardType::Clipboard);
                 self.paste(&content, true);
             }
             PaletteAction::SearchForward => {
@@ -2953,8 +2956,7 @@ impl Screen<'_> {
                 self.start_search(Direction::Left);
             }
             PaletteAction::ClearHistory => {
-                let mut terminal =
-                    self.context_manager.current_mut().terminal.lock();
+                let mut terminal = self.context_manager.current_mut().terminal.lock();
                 terminal.clear_saved_history();
             }
             PaletteAction::Quit => {

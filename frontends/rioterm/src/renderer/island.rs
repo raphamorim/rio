@@ -447,8 +447,7 @@ impl Island {
         // Total picker width
         let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
             + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
-        let picker_start_x =
-            tab_x + (tab_width - total_swatches_width) / 2.0;
+        let picker_start_x = tab_x + (tab_width - total_swatches_width) / 2.0;
 
         // Check each swatch
         for (i, color) in PICKER_COLORS.iter().enumerate() {
@@ -468,12 +467,7 @@ impl Island {
     }
 
     /// Render the color picker dropdown below a tab
-    fn render_color_picker(
-        &self,
-        sugarloaf: &mut Sugarloaf,
-        tab_x: f32,
-        tab_width: f32,
-    ) {
+    fn render_color_picker(&self, sugarloaf: &mut Sugarloaf, tab_x: f32, tab_width: f32) {
         // Background
         let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
             + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
@@ -497,8 +491,7 @@ impl Island {
         let start_x = bg_x + PICKER_PADDING;
         let swatch_y = bg_y + PICKER_PADDING;
         for (i, color) in PICKER_COLORS.iter().enumerate() {
-            let sx =
-                start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+            let sx = start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
             sugarloaf.rounded_rect(
                 None,
                 sx,
