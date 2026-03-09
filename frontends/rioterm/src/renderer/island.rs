@@ -8,7 +8,7 @@
 
 use crate::context::{next_rich_text_id, ContextManager};
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
-use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::time::Instant;
 
@@ -31,7 +31,16 @@ const TAB_PADDING_X: f32 = 24.0;
 const PICKER_SWATCH_SIZE: f32 = 18.0;
 const PICKER_SWATCH_GAP: f32 = 4.0;
 const PICKER_PADDING: f32 = 6.0;
-const PICKER_HEIGHT: f32 = PICKER_SWATCH_SIZE + PICKER_PADDING * 2.0;
+const PICKER_INPUT_HEIGHT: f32 = 26.0;
+const PICKER_INPUT_FONT_SIZE: f32 = 12.0;
+const PICKER_INPUT_MARGIN_TOP: f32 = 8.0;
+const PICKER_TOP_PADDING: f32 = 4.0;
+const PICKER_HEIGHT: f32 = PICKER_TOP_PADDING
+    + PICKER_SWATCH_SIZE
+    + PICKER_PADDING * 2.0
+    + PICKER_INPUT_MARGIN_TOP
+    + PICKER_INPUT_HEIGHT
+    + PICKER_PADDING;
 const PICKER_COLORS: [[f32; 4]; 6] = [
     [0.86, 0.26, 0.27, 1.0], // red
     [0.90, 0.57, 0.22, 1.0], // orange
@@ -73,6 +82,14 @@ pub struct Island {
     color_picker_tab: Option<usize>,
     /// Per-tab background colors
     tab_colors: FxHashMap<usize, [f32; 4]>,
+    /// Per-tab custom titles (user overrides)
+    tab_custom_titles: FxHashMap<usize, String>,
+    /// Current rename input text while picker is open
+    rename_input: String,
+    /// Rich text ID for the rename input
+    rename_text_id: Option<usize>,
+    /// Caret blink timer
+    rename_caret_time: Instant,
 }
 
 impl Island {
@@ -97,6 +114,10 @@ impl Island {
             progress_bar_error_color: [1.0, 0.3, 0.3, 1.0],
             color_picker_tab: None,
             tab_colors: FxHashMap::default(),
+            tab_custom_titles: FxHashMap::default(),
+            rename_input: String::new(),
+            rename_text_id: None,
+            rename_caret_time: Instant::now(),
         }
     }
 
@@ -228,6 +249,11 @@ impl Island {
         let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
 
+        // Always hide rename text first — render_color_picker will re-show if needed
+        if let Some(id) = self.rename_text_id {
+            sugarloaf.set_visibility(id, false);
+        }
+
         // Hide tabs if only single tab and hide_if_single is enabled
         if self.hide_if_single && num_tabs == 1 {
             // Hide all existing tab rich texts
@@ -305,7 +331,6 @@ impl Island {
             };
 
             // Update text (always update to handle active state changes)
-            use rio_backend::sugarloaf::SpanStyle;
             let content = sugarloaf.content();
             content
                 .sel(tab_data.text_id)
@@ -321,13 +346,13 @@ impl Island {
                 .build();
             tab_data.last_title = title.clone();
 
-            // Get text dimensions to center it
-            let text_dims = sugarloaf
-                .get_text_dimensions(&tab_data.text_id)
-                .unwrap_or_default();
+            // Position text to measure, then re-center using actual rendered width
+            sugarloaf.set_position(tab_data.text_id, x_position, 0.0);
+            sugarloaf.set_visibility(tab_data.text_id, true);
+            let text_width = sugarloaf.get_text_rendered_width(&tab_data.text_id);
 
             // Position text centered horizontally and vertically in the tab
-            let text_x = x_position + (tab_width - text_dims.width) / 2.0;
+            let text_x = x_position + (tab_width - text_width) / 2.0;
             let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
             sugarloaf.set_position(tab_data.text_id, text_x, text_y);
             sugarloaf.set_visibility(tab_data.text_id, true);
@@ -392,17 +417,94 @@ impl Island {
     }
 
     /// Toggle the color picker for a given tab index
-    pub fn toggle_color_picker(&mut self, tab_index: usize) {
+    pub fn toggle_color_picker(&mut self, tab_index: usize, current_title: &str) {
         if self.color_picker_tab == Some(tab_index) {
+            self.apply_rename();
             self.color_picker_tab = None;
         } else {
             self.color_picker_tab = Some(tab_index);
+            // Initialize rename input with custom title or current displayed title
+            self.rename_input = self
+                .tab_custom_titles
+                .get(&tab_index)
+                .cloned()
+                .unwrap_or_else(|| current_title.to_string());
+            self.rename_caret_time = Instant::now();
         }
     }
 
-    /// Close the color picker
+    /// Close the color picker, applying any pending rename
     pub fn close_color_picker(&mut self) {
+        if self.color_picker_tab.is_some() {
+            self.apply_rename();
+        }
         self.color_picker_tab = None;
+    }
+
+    /// Apply the rename input as a custom title for the current picker tab
+    fn apply_rename(&mut self) {
+        if let Some(tab) = self.color_picker_tab {
+            let trimmed = self.rename_input.trim().to_string();
+            if trimmed.is_empty() {
+                self.tab_custom_titles.remove(&tab);
+            } else {
+                self.tab_custom_titles.insert(tab, trimmed);
+            }
+        }
+    }
+
+    /// Handle keyboard input while the color picker (with rename field) is open.
+    /// Returns true if input was consumed.
+    pub fn handle_rename_input(
+        &mut self,
+        key_event: &rio_window::event::KeyEvent,
+    ) -> bool {
+        use rio_window::event::ElementState;
+        use rio_window::keyboard::{Key, NamedKey};
+
+        if self.color_picker_tab.is_none() {
+            return false;
+        }
+
+        if key_event.state != ElementState::Pressed {
+            return true; // consume release events too
+        }
+
+        match &key_event.logical_key {
+            Key::Named(NamedKey::Escape) => {
+                // Cancel — discard input, close picker
+                self.color_picker_tab = None;
+            }
+            Key::Named(NamedKey::Enter) => {
+                // Confirm — apply rename and close
+                self.apply_rename();
+                self.color_picker_tab = None;
+            }
+            Key::Named(NamedKey::Backspace) => {
+                self.rename_input.pop();
+                self.rename_caret_time = Instant::now();
+            }
+            _ => {
+                if let Some(text) = key_event.text.as_ref() {
+                    let s = text.as_str();
+                    if !s.is_empty() && s.chars().all(|c| !c.is_control()) {
+                        self.rename_input.push_str(s);
+                        self.rename_caret_time = Instant::now();
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    /// Check if the picker needs continuous redraw (caret blink)
+    pub fn needs_rename_redraw(&self) -> bool {
+        self.color_picker_tab.is_some()
+    }
+
+    /// Get the custom title for a tab, if any
+    pub fn get_custom_title(&self, tab_index: usize) -> Option<&str> {
+        self.tab_custom_titles.get(&tab_index).map(|s| s.as_str())
     }
 
     /// Check if a click hits a color swatch in the picker.
@@ -439,7 +541,8 @@ impl Island {
 
         // Check if click is within picker vertical range
         if mouse_y_unscaled < picker_y || mouse_y_unscaled > picker_y + PICKER_HEIGHT {
-            // Click outside picker — close it
+            // Click outside picker — apply rename and close
+            self.apply_rename();
             self.color_picker_tab = None;
             return false;
         }
@@ -457,6 +560,7 @@ impl Island {
                 && mouse_x_unscaled <= swatch_x + PICKER_SWATCH_SIZE
             {
                 self.tab_colors.insert(picker_tab, *color);
+                self.apply_rename();
                 self.color_picker_tab = None;
                 return true;
             }
@@ -467,14 +571,24 @@ impl Island {
     }
 
     /// Render the color picker dropdown below a tab
-    fn render_color_picker(&self, sugarloaf: &mut Sugarloaf, tab_x: f32, tab_width: f32) {
-        // Background
-        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
-            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
-        let bg_width = total_swatches_width + PICKER_PADDING * 2.0;
-        let bg_x = tab_x + (tab_width - bg_width) / 2.0;
+    fn render_color_picker(
+        &mut self,
+        sugarloaf: &mut Sugarloaf,
+        tab_x: f32,
+        tab_width: f32,
+    ) {
+        let padding = PICKER_PADDING;
         let bg_y = ISLAND_HEIGHT;
 
+        // Compute total swatches width to derive the consistent inner content width
+        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
+            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
+        let inner_width = total_swatches_width;
+        let bg_width = inner_width + padding * 2.0;
+        let bg_x = tab_x + (tab_width - bg_width) / 2.0;
+        let content_x = bg_x + padding;
+
+        // Background
         sugarloaf.rounded_rect(
             None,
             bg_x,
@@ -487,11 +601,30 @@ impl Island {
             10,
         );
 
-        // Swatches
-        let start_x = bg_x + PICKER_PADDING;
-        let swatch_y = bg_y + PICKER_PADDING;
+        // Swatches — aligned to content_x
+        let swatch_y = bg_y + padding + PICKER_TOP_PADDING;
+        let picker_tab = self.color_picker_tab.unwrap_or(0);
+        let selected_color = self.tab_colors.get(&picker_tab);
         for (i, color) in PICKER_COLORS.iter().enumerate() {
-            let sx = start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+            let sx = content_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+            let is_selected = selected_color == Some(color);
+
+            // Draw white border behind selected swatch
+            if is_selected {
+                let border = 2.0;
+                sugarloaf.rounded_rect(
+                    None,
+                    sx - border,
+                    swatch_y - border,
+                    PICKER_SWATCH_SIZE + border * 2.0,
+                    PICKER_SWATCH_SIZE + border * 2.0,
+                    [1.0, 1.0, 1.0, 1.0],
+                    1.05,
+                    4.0,
+                    10,
+                );
+            }
+
             sugarloaf.rounded_rect(
                 None,
                 sx,
@@ -503,6 +636,134 @@ impl Island {
                 3.0,
                 10,
             );
+        }
+
+        // Rename text input — same left/right edge as swatches
+        let input_y = swatch_y + PICKER_SWATCH_SIZE + PICKER_INPUT_MARGIN_TOP;
+        let input_x = content_x;
+        let input_width = inner_width;
+
+        // Input background
+        sugarloaf.rounded_rect(
+            None,
+            input_x,
+            input_y,
+            input_width,
+            PICKER_INPUT_HEIGHT,
+            [0.10, 0.10, 0.10, 1.0],
+            1.1,
+            3.0,
+            10,
+        );
+
+        // Ensure rename text ID exists
+        if self.rename_text_id.is_none() {
+            let id = next_rich_text_id();
+            let _ = sugarloaf.text(Some(id));
+            sugarloaf.set_use_grid_cell_size(id, false);
+            sugarloaf.set_text_font_size(&id, PICKER_INPUT_FONT_SIZE);
+            sugarloaf.set_order(id, 10);
+            self.rename_text_id = Some(id);
+        }
+
+        let text_id = self.rename_text_id.unwrap();
+
+        let text_inset = 6.0;
+        let text_x = input_x + text_inset;
+        let max_text_width = input_width - text_inset * 2.0;
+        let text_y = input_y + (PICKER_INPUT_HEIGHT - PICKER_INPUT_FONT_SIZE) / 2.0;
+
+        let text_color = if self.rename_input.is_empty() {
+            [0.45, 0.45, 0.45, 1.0]
+        } else {
+            [0.93, 0.93, 0.93, 1.0]
+        };
+
+        // Determine visible text: trim from the front if it overflows
+        let display_text: String = if self.rename_input.is_empty() {
+            "Tab title...".to_string()
+        } else {
+            // Try full string first, trim chars from front until it fits
+            let input = &self.rename_input;
+            let chars: Vec<char> = input.chars().collect();
+            let mut start = 0;
+
+            // Measure full text
+            let set_and_measure = |text: &str, sugarloaf: &mut Sugarloaf| {
+                let content = sugarloaf.content();
+                content
+                    .sel(text_id)
+                    .clear()
+                    .new_line()
+                    .add_text(
+                        text,
+                        SpanStyle {
+                            color: text_color,
+                            ..SpanStyle::default()
+                        },
+                    )
+                    .build();
+                sugarloaf.set_position(text_id, text_x, text_y);
+                sugarloaf.get_text_rendered_width(&text_id)
+            };
+
+            let full_width = set_and_measure(input, sugarloaf);
+            if full_width > max_text_width {
+                // Binary search for the right start index
+                let mut lo = 0;
+                let mut hi = chars.len();
+                while lo < hi {
+                    let mid = (lo + hi) / 2;
+                    let substr: String = chars[mid..].iter().collect();
+                    let w = set_and_measure(&substr, sugarloaf);
+                    if w > max_text_width {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
+                }
+                start = lo;
+            }
+
+            chars[start..].iter().collect()
+        };
+
+        let content = sugarloaf.content();
+        content
+            .sel(text_id)
+            .clear()
+            .new_line()
+            .add_text(
+                &display_text,
+                SpanStyle {
+                    color: text_color,
+                    ..SpanStyle::default()
+                },
+            )
+            .build();
+
+        sugarloaf.set_position(text_id, text_x, text_y);
+        sugarloaf.set_visibility(text_id, true);
+
+        let rendered_width = sugarloaf.get_text_rendered_width(&text_id);
+
+        // Blinking caret
+        let elapsed = self.rename_caret_time.elapsed().as_millis();
+        let show_caret = (elapsed / 500) % 2 == 0;
+        if show_caret {
+            let caret_x = text_x + rendered_width;
+            if caret_x <= input_x + input_width {
+                sugarloaf.rect(
+                    None,
+                    caret_x,
+                    input_y + 4.0,
+                    1.5,
+                    PICKER_INPUT_HEIGHT - 8.0,
+                    [0.93, 0.93, 0.93, 1.0],
+                    1.2,
+                    10,
+                );
+            }
         }
     }
 
@@ -517,6 +778,11 @@ impl Island {
         context_manager: &ContextManager<EventProxy>,
         tab_index: usize,
     ) -> String {
+        // Custom user-set title takes priority
+        if let Some(custom) = self.tab_custom_titles.get(&tab_index) {
+            return custom.clone();
+        }
+
         if let Some(context_title) = context_manager.titles.titles.get(&tab_index) {
             if !context_title.content.is_empty() {
                 return context_title.content.clone();
