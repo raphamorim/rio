@@ -703,6 +703,12 @@ impl Sugarloaf<'_> {
         self.state.set_content_position(id, x, y);
     }
 
+    /// Set clipping bounds for content (physical pixels: [x, y, width, height])
+    #[inline]
+    pub fn set_bounds(&mut self, id: usize, bounds: Option<[f32; 4]>) {
+        self.state.set_content_bounds(id, bounds);
+    }
+
     /// Set content visibility (any type)
     #[inline]
     pub fn set_visibility(&mut self, id: usize, visible: bool) {

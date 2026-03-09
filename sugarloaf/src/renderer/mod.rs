@@ -194,6 +194,14 @@ impl MetalRenderer {
         attributes.object_at(9).unwrap().set_offset(104);
         attributes.object_at(9).unwrap().set_buffer_index(0);
 
+        // Clip rect (attribute 10) - vec4<f32>
+        attributes
+            .object_at(10)
+            .unwrap()
+            .set_format(MTLVertexFormat::Float4);
+        attributes.object_at(10).unwrap().set_offset(108);
+        attributes.object_at(10).unwrap().set_buffer_index(0);
+
         // Set up buffer layout
         let layouts = vertex_descriptor.layouts();
         layouts
@@ -453,6 +461,9 @@ impl Renderer {
                 continue;
             }
 
+            // Set clip_rect for this content element's bounds
+            self.comp.batches.clip_rect = content_state.render_data.bounds.unwrap_or([0.0; 4]);
+
             match &content_state.data {
                 crate::layout::ContentData::Text(builder_state) => {
                     // Skip if there are no lines to render
@@ -598,6 +609,9 @@ impl Renderer {
                 continue;
             }
 
+            // Set clip_rect for this content element's bounds
+            self.comp.batches.clip_rect = content_state.render_data.bounds.unwrap_or([0.0; 4]);
+
             if let crate::layout::ContentData::Text(builder_state) = &content_state.data {
                 // Skip if there are no lines to render
                 if builder_state.lines.is_empty() {
@@ -625,6 +639,9 @@ impl Renderer {
                 );
             }
         }
+
+        // Reset clip_rect after rendering all content
+        self.comp.batches.clip_rect = [0.0; 4];
 
         self.vertices.clear();
         self.images.process_atlases(context);
@@ -923,9 +940,8 @@ impl Renderer {
                             } else {
                                 for shaped_glyph in cached_glyphs.iter() {
                                     let x = px;
-                                    let y = baseline; // Glyph y should be at baseline position
+                                    let y = baseline;
 
-                                    // Use grid cell size for terminal, actual glyph advance for rich text
                                     if use_grid_cell_size {
                                         px += rte_layout.unwrap().dimensions.width
                                             * char_width;
@@ -1001,10 +1017,9 @@ impl Renderer {
                             } else {
                                 for glyph in &run.glyphs {
                                     let x = px;
-                                    let y = baseline; // Use baseline for consistency with cached path
+                                    let y = baseline;
                                     let advance = glyph.simple_data().1;
 
-                                    // Use grid cell size for terminal, actual glyph advance for rich text
                                     if use_grid_cell_size {
                                         px += rte_layout.unwrap().dimensions.width
                                             * char_width;
@@ -1013,6 +1028,7 @@ impl Renderer {
                                     }
 
                                     let glyph_id = glyph.simple_data().0;
+
                                     glyphs.push(Glyph { id: glyph_id, x, y });
 
                                     // Store for caching
@@ -1693,8 +1709,9 @@ impl WgpuRenderer {
                                 5 => Float32x2,  // rect_size
                                 6 => Float32x4,  // border_widths
                                 7 => Float32x4,  // border_color
-                                8 => Sint32,     // border_style (0=solid, 1=dashed)
-                                9 => Sint32,     // underline_style (0=none, 1=regular, 2=dashed, 3=dotted, 4=curly)
+                                8 => Sint32,     // border_style
+                                9 => Sint32,     // underline_style
+                                10 => Float32x4, // clip_rect
                             ),
                         }],
                     },

@@ -86,6 +86,7 @@ pub struct Screen<'screen> {
     pub clipboard: Rc<RefCell<Clipboard>>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    pub resize_state: Option<crate::layout::ResizeState>,
 }
 
 pub struct ScreenWindowProperties {
@@ -288,6 +289,7 @@ impl Screen<'_> {
             bindings,
             clipboard,
             last_ime_cursor_pos: None,
+            resize_state: None,
         })
     }
 

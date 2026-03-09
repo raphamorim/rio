@@ -40,14 +40,14 @@ pub struct Vertex {
     pub border_color: [f32; 4], // Border color RGBA
     pub border_style: i32,      // 0 = solid, 1 = dashed (for borders)
     pub underline_style: i32, // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
-    pub _padding: [i32; 2],   // Padding for 16-byte alignment
+    pub clip_rect: [f32; 4],  // [x, y, width, height] in physical pixels (0,0,0,0 = no clip)
 }
 
 impl Vertex {
     /// Vertex size in bytes:
-    /// pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4] + border_style + padding[3]
-    /// = 12 + 16 + 8 + 8 + 16 + 8 + 16 + 16 + 4 + 12 = 116 bytes
-    pub const SIZE: usize = 116;
+    /// pos[3] + color[4] + uv[2] + layers[2] + corner_radii[4] + rect_size[2] + border_widths[4] + border_color[4] + border_style + underline_style + clip_rect[4]
+    /// = 12 + 16 + 8 + 8 + 16 + 8 + 16 + 16 + 4 + 4 + 16 = 124 bytes
+    pub const SIZE: usize = 124;
 
     /// Convert vertex to bytes for caching
     #[inline]
@@ -178,7 +178,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         };
         let v1 = Vertex {
             pos: [x2_top, y2_top, depth],
@@ -191,7 +191,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         };
         let v2 = Vertex {
             pos: [x2_bottom, y2_bottom, depth],
@@ -204,7 +204,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         };
         let v3 = Vertex {
             pos: [x1_bottom, y1_bottom, depth],
@@ -217,7 +217,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         };
 
         // Add vertices directly in drawing order (two triangles)
@@ -277,7 +277,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         });
         self.vertices.push(Vertex {
             pos: [x2, y2, depth],
@@ -290,7 +290,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         });
         self.vertices.push(Vertex {
             pos: [x3, y3, depth],
@@ -303,7 +303,7 @@ impl Batch {
             border_color: [0.0; 4],
             border_style: 0,
             underline_style: 0,
-            _padding: [0; 2],
+            clip_rect: [0.0; 4],
         });
 
         true
@@ -387,7 +387,7 @@ impl Batch {
                 border_color: [0.0; 4],
                 border_style: 0,
                 underline_style: 0,
-                _padding: [0; 2],
+                clip_rect: [0.0; 4],
             };
             let v1 = Vertex {
                 pos: [inner_x2, inner_y2, depth],
@@ -400,7 +400,7 @@ impl Batch {
                 border_color: [0.0; 4],
                 border_style: 0,
                 underline_style: 0,
-                _padding: [0; 2],
+                clip_rect: [0.0; 4],
             };
             let v2 = Vertex {
                 pos: [outer_x2, outer_y2, depth],
@@ -413,7 +413,7 @@ impl Batch {
                 border_color: [0.0; 4],
                 border_style: 0,
                 underline_style: 0,
-                _padding: [0; 2],
+                clip_rect: [0.0; 4],
             };
             let v3 = Vertex {
                 pos: [outer_x1, outer_y1, depth],
@@ -426,7 +426,7 @@ impl Batch {
                 border_color: [0.0; 4],
                 border_style: 0,
                 underline_style: 0,
-                _padding: [0; 2],
+                clip_rect: [0.0; 4],
             };
 
             // Add vertices directly in drawing order (two triangles)
@@ -457,6 +457,7 @@ impl Batch {
         image: Option<i32>,
         mask: Option<i32>,
         subpix: bool,
+        clip_rect: [f32; 4],
     ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
@@ -473,6 +474,7 @@ impl Batch {
         let layers = [self.image.unwrap_or(0), self.mask.unwrap_or(0)];
         self.push_rect(
             rect, depth, color, coords, layers, [0.0; 4], [0.0; 4], [0.0; 4], 0, 0,
+            clip_rect,
         );
         true
     }
@@ -492,6 +494,7 @@ impl Batch {
         border_widths: [f32; 4],
         border_color: [f32; 4],
         border_style: i32,
+        clip_rect: [f32; 4],
     ) -> bool {
         if !self.vertices.is_empty() && subpix != self.subpix {
             return false;
@@ -517,6 +520,7 @@ impl Batch {
             border_color,
             border_style,
             0,
+            clip_rect,
         );
         true
     }
@@ -532,6 +536,7 @@ impl Batch {
         color: &[f32; 4],
         underline_style: i32,
         thickness: f32,
+        clip_rect: [f32; 4],
     ) -> bool {
         if !self.vertices.is_empty() && self.subpix {
             return false;
@@ -546,7 +551,6 @@ impl Batch {
         self.image = None;
         self.mask = None;
         let layers = [0, 0];
-        // Pass thickness in corner_radii.x for underlines
         let corner_radii = [thickness, 0.0, 0.0, 0.0];
         self.push_rect(
             rect,
@@ -559,6 +563,7 @@ impl Batch {
             [0.0; 4],
             0,
             underline_style,
+            clip_rect,
         );
         true
     }
@@ -577,6 +582,7 @@ impl Batch {
         border_color: [f32; 4],
         border_style: i32,
         underline_style: i32,
+        clip_rect: [f32; 4],
     ) {
         let x = rect.x;
         let y = rect.y;
@@ -602,7 +608,7 @@ impl Batch {
             border_color,
             border_style,
             underline_style,
-            _padding: [0; 2],
+            clip_rect,
         };
         let v1 = Vertex {
             pos: [x, y + h, depth],
@@ -615,7 +621,7 @@ impl Batch {
             border_color,
             border_style,
             underline_style,
-            _padding: [0; 2],
+            clip_rect,
         };
         let v2 = Vertex {
             pos: [x + w, y + h, depth],
@@ -628,7 +634,7 @@ impl Batch {
             border_color,
             border_style,
             underline_style,
-            _padding: [0; 2],
+            clip_rect,
         };
         let v3 = Vertex {
             pos: [x + w, y, depth],
@@ -641,7 +647,7 @@ impl Batch {
             border_color,
             border_style,
             underline_style,
-            _padding: [0; 2],
+            clip_rect,
         };
 
         // Add vertices directly in the order they'll be drawn
@@ -668,6 +674,9 @@ pub struct BatchManager {
     pool: Vec<Batch>,
     /// Active batches (single list, sorted by draw order)
     active: Vec<Batch>,
+    /// Current clip rect applied to all new vertices [x, y, w, h].
+    /// [0,0,0,0] means no clipping.
+    pub clip_rect: [f32; 4],
 }
 
 impl BatchManager {
@@ -675,6 +684,7 @@ impl BatchManager {
         Self {
             pool: Vec::new(),
             active: Vec::new(),
+            clip_rect: [0.0; 4],
         }
     }
 
@@ -912,21 +922,16 @@ impl BatchManager {
         subpix: bool,
         order: u8,
     ) {
+        let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
             if batch.order == order
-                && batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix)
+                && batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix, cr)
             {
                 return;
             }
         }
         self.alloc_batch(order).rect(
-            rect,
-            depth,
-            color,
-            Some(coords),
-            None,
-            Some(1),
-            subpix,
+            rect, depth, color, Some(coords), None, Some(1), subpix, cr,
         );
     }
 
@@ -939,48 +944,36 @@ impl BatchManager {
         coords: &[f32; 4],
         atlas_layer: i32,
     ) {
+        let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
             if batch.order == 0
                 && batch.rect(
-                    rect,
-                    depth,
-                    color,
-                    Some(coords),
-                    Some(atlas_layer),
-                    None,
-                    false,
+                    rect, depth, color, Some(coords), Some(atlas_layer), None, false, cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(0).rect(
-            rect,
-            depth,
-            color,
-            Some(coords),
-            Some(atlas_layer),
-            None,
-            false,
+            rect, depth, color, Some(coords), Some(atlas_layer), None, false, cr,
         );
     }
 
     #[inline]
     pub fn rect(&mut self, rect: &Rect, depth: f32, color: &[f32; 4], order: u8) {
+        let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
             if batch.order == order
-                && batch.rect(rect, depth, color, None, None, None, false)
+                && batch.rect(rect, depth, color, None, None, None, false, cr)
             {
                 return;
             }
         }
         self.alloc_batch(order)
-            .rect(rect, depth, color, None, None, None, false);
+            .rect(rect, depth, color, None, None, None, false, cr);
     }
 
     /// Add an underline quad with GPU pattern rendering
-    /// underline_style: 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
-    /// thickness: The actual line thickness
     #[inline]
     pub fn underline(
         &mut self,
@@ -991,15 +984,16 @@ impl BatchManager {
         thickness: f32,
         order: u8,
     ) {
+        let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
             if batch.order == order
-                && batch.underline(rect, depth, color, underline_style, thickness)
+                && batch.underline(rect, depth, color, underline_style, thickness, cr)
             {
                 return;
             }
         }
         self.alloc_batch(order)
-            .underline(rect, depth, color, underline_style, thickness);
+            .underline(rect, depth, color, underline_style, thickness, cr);
     }
 
     /// Add a rounded rectangle with uniform corner radius (no border)
@@ -1012,38 +1006,21 @@ impl BatchManager {
         corner_radius: f32,
         order: u8,
     ) {
+        let cr = self.clip_rect;
         let corner_radii = [corner_radius; 4];
         for batch in self.active.iter_mut() {
             if batch.order == order
                 && batch.rounded_rect(
-                    rect,
-                    depth,
-                    color,
-                    None,
-                    None,
-                    None,
-                    false,
-                    corner_radii,
-                    [0.0; 4],
-                    [0.0; 4],
-                    0,
+                    rect, depth, color, None, None, None, false,
+                    corner_radii, [0.0; 4], [0.0; 4], 0, cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(order).rounded_rect(
-            rect,
-            depth,
-            color,
-            None,
-            None,
-            None,
-            false,
-            corner_radii,
-            [0.0; 4],
-            [0.0; 4],
-            0,
+            rect, depth, color, None, None, None, false,
+            corner_radii, [0.0; 4], [0.0; 4], 0, cr,
         );
     }
 
@@ -1061,37 +1038,20 @@ impl BatchManager {
         border_style: i32,
         order: u8,
     ) {
+        let cr = self.clip_rect;
         for batch in self.active.iter_mut() {
             if batch.order == order
                 && batch.rounded_rect(
-                    rect,
-                    depth,
-                    background_color,
-                    None,
-                    None,
-                    None,
-                    false,
-                    corner_radii,
-                    border_widths,
-                    border_color,
-                    border_style,
+                    rect, depth, background_color, None, None, None, false,
+                    corner_radii, border_widths, border_color, border_style, cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(order).rounded_rect(
-            rect,
-            depth,
-            background_color,
-            None,
-            None,
-            None,
-            false,
-            corner_radii,
-            border_widths,
-            border_color,
-            border_style,
+            rect, depth, background_color, None, None, None, false,
+            corner_radii, border_widths, border_color, border_style, cr,
         );
     }
 

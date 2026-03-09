@@ -17,6 +17,33 @@ use taffy::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
+/// Direction of a draggable panel border
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BorderDirection {
+    /// Border between left/right panels (drag horizontally)
+    Vertical,
+    /// Border between top/bottom panels (drag vertically)
+    Horizontal,
+}
+
+/// Describes a draggable border between two panels
+#[derive(Debug, Clone, Copy)]
+pub struct PanelBorder {
+    pub direction: BorderDirection,
+    pub left_or_top: NodeId,
+    pub right_or_bottom: NodeId,
+}
+
+/// Active resize drag state
+#[derive(Debug, Clone, Copy)]
+pub struct ResizeState {
+    pub border: PanelBorder,
+    /// Mouse position at drag start (physical pixels)
+    pub start_pos: f32,
+    /// Original sizes of the two panels at drag start
+    pub original_sizes: (f32, f32),
+}
+
 fn compute(
     width: f32,
     height: f32,
@@ -339,6 +366,158 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         None
     }
 
+    /// Find a draggable border near the given mouse position (physical pixels).
+    /// Returns None if no border is within the hit threshold.
+    pub fn find_border_at_position(&self, x: f32, y: f32) -> Option<PanelBorder> {
+        if self.inner.len() <= 1 {
+            return None;
+        }
+
+        let adj_x = x - self.scaled_margin.left;
+        let adj_y = y - self.scaled_margin.top;
+        let tolerance = 4.0 * self.scale;
+        // The gap between panels includes panel margins (Taffy margin space) + configured gap
+        let panel_margin_h = (self.panel_config.margin.left
+            + self.panel_config.margin.right)
+            * self.scale;
+        let panel_margin_v = (self.panel_config.margin.top
+            + self.panel_config.margin.bottom)
+            * self.scale;
+        let max_h_gap =
+            self.panel_config.column_gap * self.scale + panel_margin_h + 2.0;
+        let max_v_gap =
+            self.panel_config.row_gap * self.scale + panel_margin_v + 2.0;
+
+        let panels: Vec<(NodeId, [f32; 4])> = self
+            .inner
+            .iter()
+            .map(|(&id, item)| (id, item.layout_rect))
+            .collect();
+
+        for i in 0..panels.len() {
+            for j in (i + 1)..panels.len() {
+                let (id_a, rect_a) = panels[i];
+                let (id_b, rect_b) = panels[j];
+
+                // Check vertical border (between left/right panels)
+                {
+                    let (left_id, left_rect, right_id, right_rect) =
+                        if rect_a[0] < rect_b[0] {
+                            (id_a, rect_a, id_b, rect_b)
+                        } else {
+                            (id_b, rect_b, id_a, rect_a)
+                        };
+
+                    let left_right_edge = left_rect[0] + left_rect[2];
+                    let gap = right_rect[0] - left_right_edge;
+
+                    if gap >= 0.0 && gap <= max_h_gap {
+                        // Check vertical overlap
+                        let left_bottom = left_rect[1] + left_rect[3];
+                        let right_bottom = right_rect[1] + right_rect[3];
+                        if left_rect[1] < right_bottom && right_rect[1] < left_bottom
+                        {
+                            let border_x = left_right_edge + gap / 2.0;
+                            let min_y = left_rect[1].min(right_rect[1]);
+                            let max_y = left_bottom.max(right_bottom);
+
+                            if (adj_x - border_x).abs() < tolerance + gap / 2.0
+                                && adj_y >= min_y
+                                && adj_y <= max_y
+                            {
+                                return Some(PanelBorder {
+                                    direction: BorderDirection::Vertical,
+                                    left_or_top: left_id,
+                                    right_or_bottom: right_id,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Check horizontal border (between top/bottom panels)
+                {
+                    let (top_id, top_rect, bottom_id, bottom_rect) =
+                        if rect_a[1] < rect_b[1] {
+                            (id_a, rect_a, id_b, rect_b)
+                        } else {
+                            (id_b, rect_b, id_a, rect_a)
+                        };
+
+                    let top_bottom_edge = top_rect[1] + top_rect[3];
+                    let gap = bottom_rect[1] - top_bottom_edge;
+
+                    if gap >= 0.0 && gap <= max_v_gap {
+                        // Check horizontal overlap
+                        let top_right = top_rect[0] + top_rect[2];
+                        let bottom_right = bottom_rect[0] + bottom_rect[2];
+                        if top_rect[0] < bottom_right && bottom_rect[0] < top_right
+                        {
+                            let border_y = top_bottom_edge + gap / 2.0;
+                            let min_x = top_rect[0].min(bottom_rect[0]);
+                            let max_x = top_right.max(bottom_right);
+
+                            if (adj_y - border_y).abs() < tolerance + gap / 2.0
+                                && adj_x >= min_x
+                                && adj_x <= max_x
+                            {
+                                return Some(PanelBorder {
+                                    direction: BorderDirection::Horizontal,
+                                    left_or_top: top_id,
+                                    right_or_bottom: bottom_id,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Get the current size of a panel along the relevant axis for a border direction
+    pub fn get_panel_size(&self, node: NodeId, direction: BorderDirection) -> f32 {
+        if let Some(item) = self.inner.get(&node) {
+            match direction {
+                BorderDirection::Vertical => item.layout_rect[2],
+                BorderDirection::Horizontal => item.layout_rect[3],
+            }
+        } else {
+            0.0
+        }
+    }
+
+    /// Resize two adjacent panels by moving their shared border.
+    /// `delta` is in physical pixels (positive = right/down).
+    pub fn resize_border(
+        &mut self,
+        border: &PanelBorder,
+        original_sizes: (f32, f32),
+        delta: f32,
+        sugarloaf: &mut Sugarloaf,
+    ) {
+        let min_size = 50.0 * self.scale;
+
+        let new_a = (original_sizes.0 + delta).max(min_size);
+        let new_b = (original_sizes.1 - delta).max(min_size);
+
+        match border.direction {
+            BorderDirection::Vertical => {
+                let _ = self.set_panel_size(border.left_or_top, Some(new_a), None);
+                let _ =
+                    self.set_panel_size(border.right_or_bottom, Some(new_b), None);
+            }
+            BorderDirection::Horizontal => {
+                let _ = self.set_panel_size(border.left_or_top, None, Some(new_a));
+                let _ =
+                    self.set_panel_size(border.right_or_bottom, None, Some(new_b));
+            }
+        }
+
+        self.apply_taffy_layout(sugarloaf);
+    }
+
     /// Get panel borders for rendering. Returns quad objects in physical pixel coordinates.
     /// The caller is responsible for converting to logical coordinates and adding margin.
     /// Active panel uses `border_config.active_color`, inactive panels use `border_config.color`.
@@ -630,6 +809,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         let scale = sugarloaf.ctx.scale();
+        let is_multi_panel = self.inner.len() > 1;
 
         for item in self.inner.values_mut() {
             let [abs_x, abs_y, width, height] = item.layout_rect;
@@ -653,6 +833,18 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // Update position via sugarloaf (handles scaling)
             sugarloaf.set_position(item.val.rich_text_id, x, y);
+
+            // Set clipping bounds for multi-panel text overflow prevention
+            if is_multi_panel {
+                let bounds_x = abs_x + self.scaled_margin.left;
+                let bounds_y = abs_y + self.scaled_margin.top;
+                sugarloaf.set_bounds(
+                    item.val.rich_text_id,
+                    Some([bounds_x, bounds_y, width, height]),
+                );
+            } else {
+                sugarloaf.set_bounds(item.val.rich_text_id, None);
+            }
         }
         true
     }
