@@ -900,14 +900,26 @@ impl BatchManager {
         coords: &[f32; 4],
         subpix: bool,
     ) {
+        self.add_mask_rect_with_order(rect, depth, color, coords, subpix, 0);
+    }
+
+    pub fn add_mask_rect_with_order(
+        &mut self,
+        rect: &Rect,
+        depth: f32,
+        color: &[f32; 4],
+        coords: &[f32; 4],
+        subpix: bool,
+        order: u8,
+    ) {
         for batch in self.active.iter_mut() {
-            if batch.order == 0
+            if batch.order == order
                 && batch.rect(rect, depth, color, Some(coords), None, Some(1), subpix)
             {
                 return;
             }
         }
-        self.alloc_batch(0)
+        self.alloc_batch(order)
             .rect(rect, depth, color, Some(coords), None, Some(1), subpix);
     }
 

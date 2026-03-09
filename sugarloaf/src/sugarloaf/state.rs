@@ -221,6 +221,22 @@ impl SugarState {
         }
     }
 
+    #[inline]
+    pub fn set_content_depth(&mut self, id: usize, depth: f32) {
+        if let Some(content_state) = self.content.states.get_mut(&id) {
+            content_state.render_data.depth = depth;
+            content_state.render_data.needs_repaint = true;
+        }
+    }
+
+    #[inline]
+    pub fn set_content_order(&mut self, id: usize, order: u8) {
+        if let Some(content_state) = self.content.states.get_mut(&id) {
+            content_state.render_data.order = order;
+            content_state.render_data.needs_repaint = true;
+        }
+    }
+
     pub fn set_visual_bell_overlay(
         &mut self,
         overlay: Option<crate::sugarloaf::primitives::Rect>,

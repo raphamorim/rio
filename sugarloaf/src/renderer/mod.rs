@@ -465,6 +465,7 @@ impl Renderer {
                         content_state.render_data.position[1],
                     );
                     let depth = content_state.render_data.depth;
+                    let order = content_state.render_data.order;
 
                     self.draw_layout(
                         &builder_state.lines,
@@ -475,6 +476,7 @@ impl Renderer {
                         Some(&builder_state.layout),
                         graphics,
                         content_state.render_data.use_grid_cell_size,
+                        order,
                     );
                 }
                 crate::layout::ContentData::Rect {
@@ -607,6 +609,7 @@ impl Renderer {
                     content_state.render_data.position[1],
                 );
                 let depth = content_state.render_data.depth;
+                let order = content_state.render_data.order;
 
                 // Use index + large offset to avoid collision with cached text IDs
                 self.draw_layout(
@@ -618,6 +621,7 @@ impl Renderer {
                     Some(&builder_state.layout),
                     graphics,
                     content_state.render_data.use_grid_cell_size,
+                    order,
                 );
             }
         }
@@ -708,6 +712,7 @@ impl Renderer {
         rte_layout: Option<&TextLayout>,
         graphics: &mut Graphics,
         use_grid_cell_size: bool,
+        order: u8,
     ) {
         if lines.is_empty() {
             return;
@@ -982,6 +987,7 @@ impl Renderer {
                                 depth,
                                 &style,
                                 &glyphs,
+                                order,
                             );
                         }
                         CacheResult::Miss => {
@@ -1080,6 +1086,7 @@ impl Renderer {
                                 depth,
                                 &style,
                                 &glyphs,
+                                order,
                             );
                         }
                     }

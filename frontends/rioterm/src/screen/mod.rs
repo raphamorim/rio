@@ -2147,6 +2147,48 @@ impl Screen<'_> {
 
     // return true if the click was handled by the island
     #[inline]
+    pub fn handle_palette_click(&mut self) -> bool {
+        if !self.renderer.command_palette.is_enabled() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.command_palette.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(index)) => {
+                // Clicked a result row — select and execute
+                if let Some(action) = {
+                    // Temporarily set selected index to the clicked row
+                    self.renderer.command_palette.selected_index = index;
+                    self.renderer.command_palette.get_selected_action()
+                } {
+                    self.renderer.command_palette.set_enabled(false);
+                    self.execute_palette_action(action);
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside palette but not on a result (e.g. input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close palette
+                self.renderer.command_palette.set_enabled(false);
+                self.render();
+                true
+            }
+        }
+    }
+
     pub fn handle_island_click(&mut self, window: &rio_window::window::Window) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
@@ -2825,6 +2867,100 @@ impl Screen<'_> {
             close,
         );
         self.sugarloaf.render();
+    }
+
+    pub fn execute_palette_action(
+        &mut self,
+        action: crate::renderer::command_palette::PaletteAction,
+    ) {
+        use crate::renderer::command_palette::PaletteAction;
+        match action {
+            PaletteAction::TabCreate => self.create_tab(),
+            PaletteAction::TabClose => self.close_tab(),
+            PaletteAction::TabCloseUnfocused => {
+                if self.ctx().len() > 1 {
+                    self.context_manager.close_unfocused_tabs();
+                    self.resize_top_or_bottom_line(1);
+                }
+            }
+            PaletteAction::SelectNextTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_next();
+                let new = self.context_manager.current_index();
+                self.context_manager
+                    .switch_context_visibility(&mut self.sugarloaf, old, new);
+            }
+            PaletteAction::SelectPrevTab => {
+                self.clear_selection();
+                let old = self.context_manager.current_index();
+                self.context_manager.switch_to_prev();
+                let new = self.context_manager.current_index();
+                self.context_manager
+                    .switch_context_visibility(&mut self.sugarloaf, old, new);
+            }
+            PaletteAction::SplitRight => self.split_right(),
+            PaletteAction::SplitDown => self.split_down(),
+            PaletteAction::SelectNextSplit => {
+                self.context_manager.select_next_split();
+            }
+            PaletteAction::SelectPrevSplit => {
+                self.context_manager.select_prev_split();
+            }
+            PaletteAction::CloseCurrentSplitOrTab => self.close_split_or_tab(),
+            PaletteAction::ConfigEditor => {
+                self.context_manager.switch_to_settings();
+            }
+            PaletteAction::WindowCreateNew => {
+                self.context_manager.create_new_window();
+            }
+            PaletteAction::IncreaseFontSize => {
+                self.change_font_size(FontSizeAction::Increase);
+            }
+            PaletteAction::DecreaseFontSize => {
+                self.change_font_size(FontSizeAction::Decrease);
+            }
+            PaletteAction::ResetFontSize => {
+                self.change_font_size(FontSizeAction::Reset);
+            }
+            PaletteAction::ToggleViMode => {
+                let context = self.context_manager.current_mut();
+                let mut terminal = context.terminal.lock();
+                terminal.toggle_vi_mode();
+                drop(terminal);
+                context
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+            }
+            PaletteAction::ToggleFullscreen => {
+                self.context_manager.toggle_full_screen();
+            }
+            PaletteAction::Copy => {
+                self.copy_selection(ClipboardType::Clipboard);
+            }
+            PaletteAction::Paste => {
+                let content = self
+                    .clipboard
+                    .borrow_mut()
+                    .get(ClipboardType::Clipboard);
+                self.paste(&content, true);
+            }
+            PaletteAction::SearchForward => {
+                self.start_search(Direction::Right);
+            }
+            PaletteAction::SearchBackward => {
+                self.start_search(Direction::Left);
+            }
+            PaletteAction::ClearHistory => {
+                let mut terminal =
+                    self.context_manager.current_mut().terminal.lock();
+                terminal.clear_saved_history();
+            }
+            PaletteAction::Quit => {
+                self.context_manager.quit();
+            }
+        }
     }
 
     pub fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {

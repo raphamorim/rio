@@ -709,6 +709,18 @@ impl Sugarloaf<'_> {
         self.state.set_content_hidden(id, !visible);
     }
 
+    /// Set content depth for z-ordering
+    #[inline]
+    pub fn set_depth(&mut self, id: usize, depth: f32) {
+        self.state.set_content_depth(id, depth);
+    }
+
+    /// Set content draw order (higher = drawn later = on top)
+    #[inline]
+    pub fn set_order(&mut self, id: usize, order: u8) {
+        self.state.set_content_order(id, order);
+    }
+
     /// Get text layout. Returns None if id is not text
     #[inline]
     pub fn get_text_layout(&self, id: &usize) -> Option<TextLayout> {
@@ -723,6 +735,24 @@ impl Sugarloaf<'_> {
     }
 
     /// Get text dimensions. Returns None if id is not text
+    /// Get the total rendered width of text content by summing glyph advances.
+    /// Returns the width in logical (unscaled) pixels.
+    #[inline]
+    pub fn get_text_rendered_width(&self, id: &usize) -> f32 {
+        if let Some(builder_state) = self.state.content.get_text_by_id(*id) {
+            let scale = self.state.style.scale_factor;
+            let mut total: f32 = 0.0;
+            for line in &builder_state.lines {
+                for run in &line.render_data.runs {
+                    total += run.advance;
+                }
+            }
+            total / scale
+        } else {
+            0.0
+        }
+    }
+
     #[inline]
     pub fn get_text_dimensions(&mut self, id: &usize) -> Option<TextDimensions> {
         if self.state.content.get_text_by_id(*id).is_some() {

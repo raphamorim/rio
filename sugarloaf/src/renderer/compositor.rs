@@ -120,8 +120,9 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: &[Glyph],
+        order: u8,
     ) {
-        self.draw_run_internal(session, rect, depth, style, glyphs);
+        self.draw_run_internal(session, rect, depth, style, glyphs, order);
     }
 
     /// Internal rendering implementation
@@ -133,6 +134,7 @@ impl Compositor {
         depth: f32,
         style: &TextRunStyle,
         glyphs: &[Glyph],
+        order: u8,
     ) {
         let rect = rect.into();
         let underline = self.create_underline_from_decoration(style, &rect);
@@ -258,12 +260,13 @@ impl Compositor {
                                 atlas_layer,
                             );
                         } else {
-                            self.batches.add_mask_rect(
+                            self.batches.add_mask_rect_with_order(
                                 &glyph_rect,
                                 depth,
                                 &color,
                                 &coords,
                                 true,
+                                order,
                             );
                         }
                     }

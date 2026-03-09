@@ -153,10 +153,8 @@ impl Route<'_> {
         // Handle command palette input first (works in all routes)
         if self.window.screen.renderer.command_palette.is_enabled() {
             if key_event.state == ElementState::Pressed {
-                tracing::debug!("Command palette key: {:?}", key_event.logical_key);
                 match &key_event.logical_key {
                     Key::Named(NamedKey::Escape) => {
-                        tracing::debug!("Command palette: Escape pressed");
                         self.window
                             .screen
                             .renderer
@@ -165,7 +163,6 @@ impl Route<'_> {
                         self.window.screen.render();
                     }
                     Key::Named(NamedKey::ArrowUp) => {
-                        tracing::debug!("Command palette: ArrowUp pressed");
                         self.window
                             .screen
                             .renderer
@@ -174,7 +171,14 @@ impl Route<'_> {
                         self.window.screen.render();
                     }
                     Key::Named(NamedKey::ArrowDown) => {
-                        tracing::debug!("Command palette: ArrowDown pressed");
+                        self.window
+                            .screen
+                            .renderer
+                            .command_palette
+                            .move_selection_down();
+                        self.window.screen.render();
+                    }
+                    Key::Named(NamedKey::Tab) => {
                         self.window
                             .screen
                             .renderer
@@ -183,7 +187,6 @@ impl Route<'_> {
                         self.window.screen.render();
                     }
                     Key::Named(NamedKey::Enter) => {
-                        tracing::debug!("Command palette: Enter pressed");
                         if let Some(action) = self
                             .window
                             .screen
@@ -196,13 +199,11 @@ impl Route<'_> {
                                 .renderer
                                 .command_palette
                                 .set_enabled(false);
-                            // TODO: Execute the action
-                            tracing::info!("Command palette action: {}", action);
+                            self.window.screen.execute_palette_action(action);
                         }
                         self.window.screen.render();
                     }
                     Key::Named(NamedKey::Backspace) => {
-                        tracing::debug!("Command palette: Backspace pressed");
                         let current_query =
                             self.window.screen.renderer.command_palette.query.clone();
                         if !current_query.is_empty() {
@@ -217,17 +218,21 @@ impl Route<'_> {
                         }
                     }
                     _ => {
-                        // Handle text input for search
                         if let Some(text) = key_event.text.as_ref() {
-                            tracing::debug!("Command palette: Text input: {}", text);
-                            let current_query =
-                                self.window.screen.renderer.command_palette.query.clone();
-                            self.window
-                                .screen
-                                .renderer
-                                .command_palette
-                                .set_query(format!("{}{}", current_query, text));
-                            self.window.screen.render();
+                            // Filter out control characters
+                            let text_str = text.as_str();
+                            if !text_str.is_empty()
+                                && text_str.chars().all(|c| !c.is_control())
+                            {
+                                let current_query =
+                                    self.window.screen.renderer.command_palette.query.clone();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_query(format!("{}{}", current_query, text_str));
+                                self.window.screen.render();
+                            }
                         }
                     }
                 }

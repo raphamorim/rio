@@ -90,6 +90,8 @@ pub struct ContentRenderData {
     pub position: [f32; 2],
     /// Depth value for z-ordering
     pub depth: f32,
+    /// Draw order for batch sorting (higher = drawn later = on top)
+    pub order: u8,
     /// Whether this content should be hidden during rendering
     pub hidden: bool,
     /// Whether this content needs to be repainted
@@ -108,6 +110,7 @@ impl Default for ContentRenderData {
         Self {
             position: [0.0, 0.0],
             depth: 0.0,
+            order: 0,
             hidden: false,
             needs_repaint: true, // Should paint initially
             should_remove: false,
