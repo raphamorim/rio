@@ -7,19 +7,19 @@ use crate::context::next_rich_text_id;
 use rio_backend::sugarloaf::{SpanStyle, Sugarloaf};
 use std::time::Instant;
 
-// Layout constants
-const PALETTE_WIDTH: f32 = 560.0;
-const PALETTE_CORNER_RADIUS: f32 = 12.0;
+// Layout
+const PALETTE_WIDTH: f32 = 520.0;
+const PALETTE_CORNER_RADIUS: f32 = 10.0;
 const PALETTE_MARGIN_TOP: f32 = 80.0;
-const PALETTE_PADDING: f32 = 8.0;
+const PALETTE_PADDING: f32 = 6.0;
 
-const INPUT_HEIGHT: f32 = 44.0;
-const INPUT_FONT_SIZE: f32 = 16.0;
-const INPUT_PADDING_X: f32 = 14.0;
+const INPUT_HEIGHT: f32 = 36.0;
+const INPUT_FONT_SIZE: f32 = 14.0;
+const INPUT_PADDING_X: f32 = 10.0;
 
-const RESULT_ITEM_HEIGHT: f32 = 36.0;
-const RESULT_FONT_SIZE: f32 = 14.0;
-const SHORTCUT_FONT_SIZE: f32 = 12.0;
+const RESULT_ITEM_HEIGHT: f32 = 28.0;
+const RESULT_FONT_SIZE: f32 = 13.0;
+const SHORTCUT_FONT_SIZE: f32 = 11.0;
 const MAX_VISIBLE_RESULTS: usize = 8;
 
 const SEPARATOR_HEIGHT: f32 = 1.0;
@@ -36,12 +36,10 @@ const DIM_TEXT_COLOR: [f32; 4] = [0.50, 0.50, 0.50, 1.0];
 const SHORTCUT_TEXT_COLOR: [f32; 4] = [0.40, 0.40, 0.45, 1.0];
 const SEPARATOR_COLOR: [f32; 4] = [0.25, 0.25, 0.25, 1.0];
 
-// Depth values (negative = closer to camera)
-// Depth values for layering within the palette
+// Depth / order
 const DEPTH_BACKDROP: f32 = 0.0;
 const DEPTH_BG: f32 = 0.1;
 const DEPTH_ELEMENT: f32 = 0.2;
-// Order must be high enough to render on top of terminal content (order 0)
 const ORDER: u8 = 20;
 
 /// Actions that can be triggered from the command palette.
@@ -443,7 +441,6 @@ impl CommandPalette {
         let (palette_x, palette_y, palette_width, palette_height) =
             self.palette_rect(window_width, scale_factor);
 
-        // --- Backdrop ---
         sugarloaf.rect(
             None,
             0.0,
@@ -455,7 +452,6 @@ impl CommandPalette {
             ORDER,
         );
 
-        // --- Main background ---
         sugarloaf.rounded_rect(
             None,
             palette_x,
@@ -468,7 +464,6 @@ impl CommandPalette {
             ORDER,
         );
 
-        // --- Input field background ---
         let input_x = palette_x + PALETTE_PADDING;
         let input_y = palette_y + PALETTE_PADDING;
         let input_width = palette_width - PALETTE_PADDING * 2.0;
@@ -485,7 +480,6 @@ impl CommandPalette {
             ORDER,
         );
 
-        // --- Input text ---
         let input_id = self.input_text_id.unwrap();
         let display_text = if self.query.is_empty() {
             "Type a command..."
@@ -511,7 +505,6 @@ impl CommandPalette {
         sugarloaf.set_position(input_id, text_x, text_y);
         sugarloaf.set_visibility(input_id, true);
 
-        // --- Blinking caret ---
         let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
         let caret_visible = (elapsed_ms / CARET_BLINK_MS) % 2 == 0;
 
@@ -537,7 +530,6 @@ impl CommandPalette {
             );
         }
 
-        // --- Separator ---
         let sep_y = input_y + INPUT_HEIGHT;
         sugarloaf.rect(
             None,
@@ -550,7 +542,6 @@ impl CommandPalette {
             ORDER,
         );
 
-        // --- Result rows ---
         let results_y = sep_y + SEPARATOR_HEIGHT;
         let filtered = self.filtered_commands();
         let visible_count = filtered
@@ -571,17 +562,6 @@ impl CommandPalette {
 
             // Selection highlight
             if is_selected {
-                // For first row, round top corners; for last visible row, round bottom corners
-                let is_first = display_i == 0;
-                let is_last = display_i == visible_count - 1
-                    || actual_index == filtered.len() - 1;
-                let radius = if is_first && is_last {
-                    6.0
-                } else if is_first || is_last {
-                    6.0
-                } else {
-                    4.0
-                };
                 sugarloaf.rounded_rect(
                     None,
                     input_x,
@@ -590,12 +570,11 @@ impl CommandPalette {
                     RESULT_ITEM_HEIGHT,
                     SELECTED_BG_COLOR,
                     DEPTH_ELEMENT,
-                    radius,
+                    6.0,
                     ORDER,
                 );
             }
 
-            // Title text
             let result_id = self.result_text_ids[display_i];
             let content = sugarloaf.content();
             content
@@ -633,8 +612,7 @@ impl CommandPalette {
                     )
                     .build();
 
-                // Approximate right alignment: estimate char width ~7px for 12pt font
-                let shortcut_width = cmd.shortcut.len() as f32 * 7.0;
+                let shortcut_width = cmd.shortcut.len() as f32 * 6.5;
                 let shortcut_x = input_x + input_width - INPUT_PADDING_X - shortcut_width;
                 let shortcut_y = item_y + (RESULT_ITEM_HEIGHT - SHORTCUT_FONT_SIZE) / 2.0;
                 sugarloaf.set_position(shortcut_id, shortcut_x, shortcut_y);
