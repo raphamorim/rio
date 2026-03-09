@@ -2160,22 +2160,44 @@ impl Screen<'_> {
         let scale_factor = self.sugarloaf.scale_factor();
         let island_height_px = (ISLAND_HEIGHT * scale_factor) as usize;
 
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let num_tabs = self.context_manager.len();
+
+        // Check if the color picker is open and the click hits a swatch
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_color_picker_click(
+                    mouse_x as f32,
+                    mouse_y as f32,
+                    scale_factor,
+                    window_width,
+                    num_tabs,
+                );
+                if consumed {
+                    self.render();
+                    return true;
+                }
+            }
+        }
+
         // Check if click is within island height
         if mouse_y > island_height_px {
+            // Close picker if clicking outside
+            if let Some(ref mut island) = self.renderer.island {
+                if island.is_color_picker_open() {
+                    island.close_color_picker();
+                    self.render();
+                }
+            }
             return false;
         }
 
         // Handle double-click: toggle window maximization
         if let ClickState::DoubleClick = self.mouse.click_state {
-            // Toggle maximization state
             let is_maximized = window.is_maximized();
             window.set_maximized(!is_maximized);
-            return true; // Consume the double-click
+            return true;
         }
-
-        // Calculate tab width and left margin
-        let window_width = self.sugarloaf.window_size().width as f32;
-        let num_tabs = self.context_manager.len();
 
         #[cfg(target_os = "macos")]
         let left_margin = 76.0;
@@ -2186,20 +2208,30 @@ impl Screen<'_> {
         let available_width = (window_width / scale_factor) - margin_right - left_margin;
         let tab_width = available_width / num_tabs as f32;
 
-        // Convert mouse X to unscaled coordinates
         let mouse_x_unscaled = mouse_x as f32 / scale_factor;
 
-        // Check if click is in the left margin (traffic light area)
         if mouse_x_unscaled < left_margin {
-            return true; // Consume click but don't switch tabs
+            return true;
         }
 
-        // Calculate which tab was clicked
         let x_in_tabs = mouse_x_unscaled - left_margin;
         let clicked_tab = (x_in_tabs / tab_width) as usize;
 
-        // Only switch if it's a valid tab index and not already current
-        if clicked_tab < num_tabs && clicked_tab != self.context_manager.current_index() {
+        if clicked_tab >= num_tabs {
+            return true;
+        }
+
+        // Control + click → toggle color picker for that tab
+        if self.modifiers.state().control_key() {
+            if let Some(ref mut island) = self.renderer.island {
+                island.toggle_color_picker(clicked_tab);
+                self.render();
+            }
+            return true;
+        }
+
+        // Normal click → switch tab
+        if clicked_tab != self.context_manager.current_index() {
             self.cancel_search();
             self.clear_selection();
             let old_index = self.context_manager.current_index();
@@ -2214,7 +2246,15 @@ impl Screen<'_> {
             self.render();
         }
 
-        true // Click was in island area, consumed
+        // Close picker on normal click
+        if let Some(ref mut island) = self.renderer.island {
+            if island.is_color_picker_open() {
+                island.close_color_picker();
+                self.render();
+            }
+        }
+
+        true
     }
 
     #[inline]

@@ -9,7 +9,7 @@
 use crate::context::{next_rich_text_id, ContextManager};
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::Sugarloaf;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::time::Instant;
 
 /// Height of the tab bar in pixels
@@ -24,7 +24,22 @@ const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
 const TITLE_FONT_SIZE: f32 = 12.0;
 
 /// Left/right padding inside tab text
+#[allow(dead_code)]
 const TAB_PADDING_X: f32 = 24.0;
+
+/// Color picker constants
+const PICKER_SWATCH_SIZE: f32 = 18.0;
+const PICKER_SWATCH_GAP: f32 = 4.0;
+const PICKER_PADDING: f32 = 6.0;
+const PICKER_HEIGHT: f32 = PICKER_SWATCH_SIZE + PICKER_PADDING * 2.0;
+const PICKER_COLORS: [[f32; 4]; 6] = [
+    [0.86, 0.26, 0.27, 1.0], // red
+    [0.90, 0.57, 0.22, 1.0], // orange
+    [0.85, 0.78, 0.25, 1.0], // yellow
+    [0.34, 0.70, 0.38, 1.0], // green
+    [0.30, 0.55, 0.85, 1.0], // blue
+    [0.68, 0.40, 0.80, 1.0], // purple
+];
 
 /// Right margin after last tab
 const ISLAND_MARGIN_RIGHT: f32 = 8.0;
@@ -43,7 +58,7 @@ pub struct Island {
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     pub border_color: [f32; 4],
-    tab_data: HashMap<usize, TabIslandData>,
+    tab_data: FxHashMap<usize, TabIslandData>,
     /// Current progress bar state
     progress_state: Option<ProgressState>,
     /// Current progress value (0-100)
@@ -54,6 +69,10 @@ pub struct Island {
     pub progress_bar_color: [f32; 4],
     /// Progress bar error color
     pub progress_bar_error_color: [f32; 4],
+    /// Which tab has the color picker open (None = closed)
+    color_picker_tab: Option<usize>,
+    /// Per-tab background colors
+    tab_colors: FxHashMap<usize, [f32; 4]>,
 }
 
 impl Island {
@@ -68,7 +87,7 @@ impl Island {
             inactive_text_color,
             active_text_color,
             border_color,
-            tab_data: HashMap::new(),
+            tab_data: FxHashMap::default(),
             progress_state: None,
             progress_value: None,
             progress_last_update: None,
@@ -76,6 +95,8 @@ impl Island {
             progress_bar_color: [0.3, 0.6, 1.0, 1.0],
             // Default error color (red-ish)
             progress_bar_error_color: [1.0, 0.3, 0.3, 1.0],
+            color_picker_tab: None,
+            tab_colors: FxHashMap::default(),
         }
     }
 
@@ -311,6 +332,20 @@ impl Island {
             sugarloaf.set_position(tab_data.text_id, text_x, text_y);
             sugarloaf.set_visibility(tab_data.text_id, true);
 
+            // Draw tab background color if set
+            if let Some(bg_color) = self.tab_colors.get(&tab_index) {
+                sugarloaf.rect(
+                    None,
+                    x_position,
+                    0.0,
+                    tab_width,
+                    ISLAND_HEIGHT,
+                    *bg_color,
+                    0.05,
+                    0,
+                );
+            }
+
             // Draw vertical left border (separator between tabs)
             // Skip for first tab UNLESS it's active (then draw to separate from traffic lights)
             if tab_index > 0 || (tab_index == 0 && is_active && left_margin > 0.0) {
@@ -344,8 +379,143 @@ impl Island {
             x_position += tab_width;
         }
 
+        // Render color picker if open
+        if let Some(picker_tab) = self.color_picker_tab {
+            if picker_tab < num_tabs {
+                let picker_tab_x = left_margin + picker_tab as f32 * tab_width;
+                self.render_color_picker(sugarloaf, picker_tab_x, tab_width);
+            }
+        }
+
         // Render the progress bar below the island
         self.render_progress_bar(sugarloaf, window_width, scale_factor);
+    }
+
+    /// Toggle the color picker for a given tab index
+    pub fn toggle_color_picker(&mut self, tab_index: usize) {
+        if self.color_picker_tab == Some(tab_index) {
+            self.color_picker_tab = None;
+        } else {
+            self.color_picker_tab = Some(tab_index);
+        }
+    }
+
+    /// Close the color picker
+    pub fn close_color_picker(&mut self) {
+        self.color_picker_tab = None;
+    }
+
+    /// Check if a click hits a color swatch in the picker.
+    /// Returns true if the click was consumed.
+    pub fn handle_color_picker_click(
+        &mut self,
+        mouse_x: f32,
+        mouse_y: f32,
+        scale_factor: f32,
+        window_width: f32,
+        num_tabs: usize,
+    ) -> bool {
+        let picker_tab = match self.color_picker_tab {
+            Some(t) => t,
+            None => return false,
+        };
+
+        let mouse_x_unscaled = mouse_x / scale_factor;
+        let mouse_y_unscaled = mouse_y / scale_factor;
+
+        // Compute the same tab layout as render()
+        #[cfg(target_os = "macos")]
+        let left_margin = ISLAND_MARGIN_LEFT_MACOS;
+        #[cfg(not(target_os = "macos"))]
+        let left_margin = 0.0;
+
+        let available_width =
+            (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
+        let tab_width = available_width / num_tabs as f32;
+        let tab_x = left_margin + picker_tab as f32 * tab_width;
+
+        // Picker is rendered just below the island
+        let picker_y = ISLAND_HEIGHT;
+
+        // Check if click is within picker vertical range
+        if mouse_y_unscaled < picker_y || mouse_y_unscaled > picker_y + PICKER_HEIGHT {
+            // Click outside picker — close it
+            self.color_picker_tab = None;
+            return false;
+        }
+
+        // Total picker width
+        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
+            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
+        let picker_start_x =
+            tab_x + (tab_width - total_swatches_width) / 2.0;
+
+        // Check each swatch
+        for (i, color) in PICKER_COLORS.iter().enumerate() {
+            let swatch_x =
+                picker_start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+            if mouse_x_unscaled >= swatch_x
+                && mouse_x_unscaled <= swatch_x + PICKER_SWATCH_SIZE
+            {
+                self.tab_colors.insert(picker_tab, *color);
+                self.color_picker_tab = None;
+                return true;
+            }
+        }
+
+        // Clicked in picker area but not on a swatch
+        true
+    }
+
+    /// Render the color picker dropdown below a tab
+    fn render_color_picker(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        tab_x: f32,
+        tab_width: f32,
+    ) {
+        // Background
+        let total_swatches_width = PICKER_COLORS.len() as f32 * PICKER_SWATCH_SIZE
+            + (PICKER_COLORS.len() - 1) as f32 * PICKER_SWATCH_GAP;
+        let bg_width = total_swatches_width + PICKER_PADDING * 2.0;
+        let bg_x = tab_x + (tab_width - bg_width) / 2.0;
+        let bg_y = ISLAND_HEIGHT;
+
+        sugarloaf.rounded_rect(
+            None,
+            bg_x,
+            bg_y,
+            bg_width,
+            PICKER_HEIGHT,
+            [0.15, 0.15, 0.15, 1.0],
+            1.0,
+            4.0,
+            10,
+        );
+
+        // Swatches
+        let start_x = bg_x + PICKER_PADDING;
+        let swatch_y = bg_y + PICKER_PADDING;
+        for (i, color) in PICKER_COLORS.iter().enumerate() {
+            let sx =
+                start_x + i as f32 * (PICKER_SWATCH_SIZE + PICKER_SWATCH_GAP);
+            sugarloaf.rounded_rect(
+                None,
+                sx,
+                swatch_y,
+                PICKER_SWATCH_SIZE,
+                PICKER_SWATCH_SIZE,
+                *color,
+                1.1,
+                3.0,
+                10,
+            );
+        }
+    }
+
+    /// Whether the color picker is currently open
+    pub fn is_color_picker_open(&self) -> bool {
+        self.color_picker_tab.is_some()
     }
 
     /// Get the title text for a specific tab index
