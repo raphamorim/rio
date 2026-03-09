@@ -87,22 +87,18 @@ fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Object 
     Object::Rect(Rect::new(position[0], position[1], size[0], size[1], color))
 }
 
-/// Border configuration for split panels
+/// Separator configuration for split panels
 #[derive(Debug, Clone, Copy)]
 pub struct BorderConfig {
     pub width: f32,
-    pub color: [f32; 4],        // RGBA for inactive panels
-    pub active_color: [f32; 4], // RGBA for active panel
-    pub radius: f32,            // Corner radius (0.0 = sharp)
+    pub color: [f32; 4],
 }
 
 impl Default for BorderConfig {
     fn default() -> Self {
         Self {
-            width: 2.0,                         // Default border width
-            color: [0.8, 0.8, 0.8, 1.0],        // Light gray
-            active_color: [0.3, 0.8, 0.9, 1.0], // Cyan-ish for active
-            radius: 0.0,                        // Default sharp corners
+            width: 2.0,
+            color: [0.8, 0.8, 0.8, 1.0],
         }
     }
 }
@@ -181,7 +177,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         context: Context<T>,
         scaled_margin: Margin,
         border_color: [f32; 4],
-        border_active_color: [f32; 4],
+        _border_active_color: [f32; 4],
         panel_config: rio_backend::config::layout::Panel,
     ) -> Self {
         let width = context.dimension.width;
@@ -244,8 +240,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let border_config = BorderConfig {
             width: panel_config.border_width,
             color: border_color,
-            active_color: border_active_color,
-            radius: panel_config.border_radius,
         };
 
         let mut grid = Self {
@@ -375,113 +369,40 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         let adj_x = x - self.scaled_margin.left;
         let adj_y = y - self.scaled_margin.top;
-        let tolerance = 4.0 * self.scale;
-        // The gap between panels includes panel margins (Taffy margin space) + configured gap
-        let panel_margin_h = (self.panel_config.margin.left
-            + self.panel_config.margin.right)
-            * self.scale;
-        let panel_margin_v = (self.panel_config.margin.top
-            + self.panel_config.margin.bottom)
-            * self.scale;
-        let max_h_gap =
-            self.panel_config.column_gap * self.scale + panel_margin_h + 2.0;
-        let max_v_gap =
-            self.panel_config.row_gap * self.scale + panel_margin_v + 2.0;
+        let hit_half = (self.border_config.width / 2.0 + 3.0) * self.scale;
 
-        let panels: Vec<(NodeId, [f32; 4])> = self
-            .inner
-            .iter()
-            .map(|(&id, item)| (id, item.layout_rect))
-            .collect();
-
-        for i in 0..panels.len() {
-            for j in (i + 1)..panels.len() {
-                let (id_a, rect_a) = panels[i];
-                let (id_b, rect_b) = panels[j];
-
-                // Check vertical border (between left/right panels)
-                {
-                    let (left_id, left_rect, right_id, right_rect) =
-                        if rect_a[0] < rect_b[0] {
-                            (id_a, rect_a, id_b, rect_b)
-                        } else {
-                            (id_b, rect_b, id_a, rect_a)
-                        };
-
-                    let left_right_edge = left_rect[0] + left_rect[2];
-                    let gap = right_rect[0] - left_right_edge;
-
-                    if gap >= 0.0 && gap <= max_h_gap {
-                        // Check vertical overlap
-                        let left_bottom = left_rect[1] + left_rect[3];
-                        let right_bottom = right_rect[1] + right_rect[3];
-                        if left_rect[1] < right_bottom && right_rect[1] < left_bottom
-                        {
-                            let border_x = left_right_edge + gap / 2.0;
-                            let min_y = left_rect[1].min(right_rect[1]);
-                            let max_y = left_bottom.max(right_bottom);
-
-                            if (adj_x - border_x).abs() < tolerance + gap / 2.0
-                                && adj_y >= min_y
-                                && adj_y <= max_y
-                            {
-                                return Some(PanelBorder {
-                                    direction: BorderDirection::Vertical,
-                                    left_or_top: left_id,
-                                    right_or_bottom: right_id,
-                                });
-                            }
-                        }
-                    }
+        self.walk_separators(|dir, center, span, child_a, child_b| {
+            let hit = match dir {
+                BorderDirection::Vertical => {
+                    (adj_x - center).abs() < hit_half
+                        && adj_y >= span[0]
+                        && adj_y <= span[1]
                 }
-
-                // Check horizontal border (between top/bottom panels)
-                {
-                    let (top_id, top_rect, bottom_id, bottom_rect) =
-                        if rect_a[1] < rect_b[1] {
-                            (id_a, rect_a, id_b, rect_b)
-                        } else {
-                            (id_b, rect_b, id_a, rect_a)
-                        };
-
-                    let top_bottom_edge = top_rect[1] + top_rect[3];
-                    let gap = bottom_rect[1] - top_bottom_edge;
-
-                    if gap >= 0.0 && gap <= max_v_gap {
-                        // Check horizontal overlap
-                        let top_right = top_rect[0] + top_rect[2];
-                        let bottom_right = bottom_rect[0] + bottom_rect[2];
-                        if top_rect[0] < bottom_right && bottom_rect[0] < top_right
-                        {
-                            let border_y = top_bottom_edge + gap / 2.0;
-                            let min_x = top_rect[0].min(bottom_rect[0]);
-                            let max_x = top_right.max(bottom_right);
-
-                            if (adj_y - border_y).abs() < tolerance + gap / 2.0
-                                && adj_x >= min_x
-                                && adj_x <= max_x
-                            {
-                                return Some(PanelBorder {
-                                    direction: BorderDirection::Horizontal,
-                                    left_or_top: top_id,
-                                    right_or_bottom: bottom_id,
-                                });
-                            }
-                        }
-                    }
+                BorderDirection::Horizontal => {
+                    (adj_y - center).abs() < hit_half
+                        && adj_x >= span[0]
+                        && adj_x <= span[1]
                 }
+            };
+            if hit {
+                Some(PanelBorder {
+                    direction: dir,
+                    left_or_top: child_a,
+                    right_or_bottom: child_b,
+                })
+            } else {
+                None
             }
-        }
-
-        None
+        })
     }
 
-    /// Get the current size of a panel along the relevant axis for a border direction
+    /// Get the current size of a node along the relevant axis for a border direction.
+    /// Works for both panel leaves and container nodes.
     pub fn get_panel_size(&self, node: NodeId, direction: BorderDirection) -> f32 {
-        if let Some(item) = self.inner.get(&node) {
+        if let Ok(layout) = self.tree.layout(node) {
             match direction {
-                BorderDirection::Vertical => item.layout_rect[2],
-                BorderDirection::Horizontal => item.layout_rect[3],
+                BorderDirection::Vertical => layout.size.width,
+                BorderDirection::Horizontal => layout.size.height,
             }
         } else {
             0.0
@@ -518,46 +439,139 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         self.apply_taffy_layout(sugarloaf);
     }
 
-    /// Get panel borders for rendering. Returns quad objects in physical pixel coordinates.
-    /// The caller is responsible for converting to logical coordinates and adding margin.
-    /// Active panel uses `border_config.active_color`, inactive panels use `border_config.color`.
-    /// Uses Quad with rounded corners when `border_config.radius > 0`.
+    /// Get separator lines between adjacent panels for rendering.
     pub fn get_panel_borders(&self) -> Vec<rio_backend::sugarloaf::Object> {
-        use rio_backend::sugarloaf::{Corners, Edges, Object, Quad};
-
         if !self.should_draw_borders() {
             return vec![];
         }
 
-        let mut borders = Vec::with_capacity(self.inner.len());
+        let mut separators = Vec::new();
         let border_width = self.border_config.width;
-        let corner_radius = self.border_config.radius;
-        let inactive_color = self.border_config.color;
-        let active_color = self.border_config.active_color;
+        let color = self.border_config.color;
 
-        for (&context_id, item) in &self.inner {
-            let [x, y, width, height] = item.layout_rect;
-            let border_color = if context_id == self.current {
-                active_color
-            } else {
-                inactive_color
+        self.walk_separators(
+            |dir, center, span, _child_a, _child_b| -> Option<()> {
+                match dir {
+                    BorderDirection::Vertical => {
+                        separators.push(create_border(
+                            color,
+                            [center - border_width / 2.0, span[0]],
+                            [border_width, span[1] - span[0]],
+                        ));
+                    }
+                    BorderDirection::Horizontal => {
+                        separators.push(create_border(
+                            color,
+                            [span[0], center - border_width / 2.0],
+                            [span[1] - span[0], border_width],
+                        ));
+                    }
+                }
+                None // continue walking
+            },
+        );
+
+        separators
+    }
+
+    /// Walk the taffy tree visiting every separator between sibling nodes.
+    ///
+    /// For each separator, calls `visitor(direction, center, [span_min, span_max], child_a, child_b)`.
+    /// - `center`: the main-axis midpoint of the gap (x for vertical, y for horizontal)
+    /// - `span`: the cross-axis extent [min, max]
+    /// - `child_a`/`child_b`: the two sibling NodeIds (left/top, right/bottom)
+    ///
+    /// If the visitor returns `Some(R)`, the walk stops and returns that value.
+    fn walk_separators<R>(
+        &self,
+        mut visitor: impl FnMut(BorderDirection, f32, [f32; 2], NodeId, NodeId) -> Option<R>,
+    ) -> Option<R> {
+        let mut stack: Vec<(NodeId, f32, f32)> = vec![(self.root_node, 0.0, 0.0)];
+
+        while let Some((node, parent_x, parent_y)) = stack.pop() {
+            let children = match self.tree.children(node) {
+                Ok(c) => c,
+                _ => continue,
             };
 
-            // Use a Quad with rounded corners for the panel border
-            // Background is transparent, only the border is visible
-            borders.push(Object::Quad(Quad::new(
-                x,
-                y,
-                width,
-                height,
-                [0.0, 0.0, 0.0, 0.0], // Transparent background
-                Corners::all(corner_radius),
-                Edges::all(border_width),
-                border_color,
-            )));
+            let node_layout = match self.tree.layout(node) {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            let abs_x = parent_x + node_layout.location.x;
+            let abs_y = parent_y + node_layout.location.y;
+
+            for &child in &children {
+                stack.push((child, abs_x, abs_y));
+            }
+
+            if children.len() < 2 {
+                continue;
+            }
+
+            let is_row = match self.tree.style(node) {
+                Ok(s) => matches!(
+                    s.flex_direction,
+                    taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+                ),
+                Err(_) => continue,
+            };
+
+            for i in 0..children.len() - 1 {
+                let la = match self.tree.layout(children[i]) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+                let lb = match self.tree.layout(children[i + 1]) {
+                    Ok(l) => l,
+                    Err(_) => continue,
+                };
+
+                if is_row {
+                    let (left, right, left_id, right_id) =
+                        if la.location.x < lb.location.x {
+                            (la, lb, children[i], children[i + 1])
+                        } else {
+                            (lb, la, children[i + 1], children[i])
+                        };
+                    let left_edge = abs_x + left.location.x + left.size.width;
+                    let right_start = abs_x + right.location.x;
+                    let center = (left_edge + right_start) / 2.0;
+                    let min_y = abs_y + left.location.y.min(right.location.y);
+                    let max_y = abs_y
+                        + (left.location.y + left.size.height)
+                            .max(right.location.y + right.size.height);
+
+                    if let Some(r) =
+                        visitor(BorderDirection::Vertical, center, [min_y, max_y], left_id, right_id)
+                    {
+                        return Some(r);
+                    }
+                } else {
+                    let (top, bottom, top_id, bottom_id) =
+                        if la.location.y < lb.location.y {
+                            (la, lb, children[i], children[i + 1])
+                        } else {
+                            (lb, la, children[i + 1], children[i])
+                        };
+                    let top_edge = abs_y + top.location.y + top.size.height;
+                    let bottom_start = abs_y + bottom.location.y;
+                    let center = (top_edge + bottom_start) / 2.0;
+                    let min_x = abs_x + top.location.x.min(bottom.location.x);
+                    let max_x = abs_x
+                        + (top.location.x + top.size.width)
+                            .max(bottom.location.x + bottom.size.width);
+
+                    if let Some(r) =
+                        visitor(BorderDirection::Horizontal, center, [min_x, max_x], top_id, bottom_id)
+                    {
+                        return Some(r);
+                    }
+                }
+            }
         }
 
-        borders
+        None
     }
 
     #[inline]
