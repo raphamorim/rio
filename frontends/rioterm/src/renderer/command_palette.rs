@@ -29,7 +29,7 @@ const CARET_BLINK_MS: u128 = 500;
 
 // Colors
 const BACKDROP_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 0.35];
-const BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 0.70];
+const BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 0.98];
 const INPUT_BG_COLOR: [f32; 4] = [0.16, 0.16, 0.16, 1.0];
 const SELECTED_BG_COLOR: [f32; 4] = [0.22, 0.22, 0.25, 1.0];
 const TEXT_COLOR: [f32; 4] = [0.93, 0.93, 0.93, 1.0];
