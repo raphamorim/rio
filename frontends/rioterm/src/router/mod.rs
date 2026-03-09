@@ -150,6 +150,17 @@ impl Route<'_> {
     pub fn has_key_wait(&mut self, key_event: &rio_window::event::KeyEvent) -> bool {
         use rio_window::event::ElementState;
 
+        // Handle island color picker / rename input
+        if let Some(ref mut island) = self.window.screen.renderer.island {
+            if island.is_color_picker_open() {
+                let consumed = island.handle_rename_input(key_event);
+                if consumed {
+                    self.window.screen.render();
+                    return true;
+                }
+            }
+        }
+
         // Handle command palette input first (works in all routes)
         if self.window.screen.renderer.command_palette.is_enabled() {
             if key_event.state == ElementState::Pressed {

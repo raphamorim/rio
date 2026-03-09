@@ -1433,9 +1433,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // println!("Time elapsed in render() is: {:?}", duration);
                 // }
 
+                let island_needs_redraw = route
+                    .window
+                    .screen
+                    .renderer
+                    .island
+                    .as_ref()
+                    .is_some_and(|i| i.needs_rename_redraw());
                 if self.config.renderer.strategy.is_game()
                     || route.path == RoutePath::Welcome
                     || route.window.screen.renderer.command_palette.is_enabled()
+                    || island_needs_redraw
                 {
                     route.request_redraw();
                 } else if route
