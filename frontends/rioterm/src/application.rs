@@ -1168,9 +1168,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let square_side = route.window.screen.side_by_pos(x);
 
                 // If the mouse hasn't changed cells, do nothing.
+                // Skip this optimization when splits are active so the cursor
+                // resets properly after leaving a separator.
                 if !square_changed
                     && route.window.screen.mouse.square_side == square_side
                     && route.window.screen.mouse.inside_text_area == inside_text_area
+                    && !route.window.screen.context_manager.current_grid().should_draw_borders()
                 {
                     return;
                 }
