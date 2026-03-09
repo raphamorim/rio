@@ -462,7 +462,8 @@ impl Renderer {
             }
 
             // Set clip_rect for this content element's bounds
-            self.comp.batches.clip_rect = content_state.render_data.bounds.unwrap_or([0.0; 4]);
+            self.comp.batches.clip_rect =
+                content_state.render_data.bounds.unwrap_or([0.0; 4]);
 
             match &content_state.data {
                 crate::layout::ContentData::Text(builder_state) => {
@@ -610,7 +611,8 @@ impl Renderer {
             }
 
             // Set clip_rect for this content element's bounds
-            self.comp.batches.clip_rect = content_state.render_data.bounds.unwrap_or([0.0; 4]);
+            self.comp.batches.clip_rect =
+                content_state.render_data.bounds.unwrap_or([0.0; 4]);
 
             if let crate::layout::ContentData::Text(builder_state) = &content_state.data {
                 // Skip if there are no lines to render

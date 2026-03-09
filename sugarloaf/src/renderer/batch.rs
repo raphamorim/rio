@@ -40,7 +40,7 @@ pub struct Vertex {
     pub border_color: [f32; 4], // Border color RGBA
     pub border_style: i32,      // 0 = solid, 1 = dashed (for borders)
     pub underline_style: i32, // 0 = none, 1 = regular, 2 = dashed, 3 = dotted, 4 = curly
-    pub clip_rect: [f32; 4],  // [x, y, width, height] in physical pixels (0,0,0,0 = no clip)
+    pub clip_rect: [f32; 4], // [x, y, width, height] in physical pixels (0,0,0,0 = no clip)
 }
 
 impl Vertex {
@@ -931,7 +931,14 @@ impl BatchManager {
             }
         }
         self.alloc_batch(order).rect(
-            rect, depth, color, Some(coords), None, Some(1), subpix, cr,
+            rect,
+            depth,
+            color,
+            Some(coords),
+            None,
+            Some(1),
+            subpix,
+            cr,
         );
     }
 
@@ -948,14 +955,28 @@ impl BatchManager {
         for batch in self.active.iter_mut() {
             if batch.order == 0
                 && batch.rect(
-                    rect, depth, color, Some(coords), Some(atlas_layer), None, false, cr,
+                    rect,
+                    depth,
+                    color,
+                    Some(coords),
+                    Some(atlas_layer),
+                    None,
+                    false,
+                    cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(0).rect(
-            rect, depth, color, Some(coords), Some(atlas_layer), None, false, cr,
+            rect,
+            depth,
+            color,
+            Some(coords),
+            Some(atlas_layer),
+            None,
+            false,
+            cr,
         );
     }
 
@@ -992,8 +1013,14 @@ impl BatchManager {
                 return;
             }
         }
-        self.alloc_batch(order)
-            .underline(rect, depth, color, underline_style, thickness, cr);
+        self.alloc_batch(order).underline(
+            rect,
+            depth,
+            color,
+            underline_style,
+            thickness,
+            cr,
+        );
     }
 
     /// Add a rounded rectangle with uniform corner radius (no border)
@@ -1011,16 +1038,36 @@ impl BatchManager {
         for batch in self.active.iter_mut() {
             if batch.order == order
                 && batch.rounded_rect(
-                    rect, depth, color, None, None, None, false,
-                    corner_radii, [0.0; 4], [0.0; 4], 0, cr,
+                    rect,
+                    depth,
+                    color,
+                    None,
+                    None,
+                    None,
+                    false,
+                    corner_radii,
+                    [0.0; 4],
+                    [0.0; 4],
+                    0,
+                    cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(order).rounded_rect(
-            rect, depth, color, None, None, None, false,
-            corner_radii, [0.0; 4], [0.0; 4], 0, cr,
+            rect,
+            depth,
+            color,
+            None,
+            None,
+            None,
+            false,
+            corner_radii,
+            [0.0; 4],
+            [0.0; 4],
+            0,
+            cr,
         );
     }
 
@@ -1042,16 +1089,36 @@ impl BatchManager {
         for batch in self.active.iter_mut() {
             if batch.order == order
                 && batch.rounded_rect(
-                    rect, depth, background_color, None, None, None, false,
-                    corner_radii, border_widths, border_color, border_style, cr,
+                    rect,
+                    depth,
+                    background_color,
+                    None,
+                    None,
+                    None,
+                    false,
+                    corner_radii,
+                    border_widths,
+                    border_color,
+                    border_style,
+                    cr,
                 )
             {
                 return;
             }
         }
         self.alloc_batch(order).rounded_rect(
-            rect, depth, background_color, None, None, None, false,
-            corner_radii, border_widths, border_color, border_style, cr,
+            rect,
+            depth,
+            background_color,
+            None,
+            None,
+            None,
+            false,
+            corner_radii,
+            border_widths,
+            border_color,
+            border_style,
+            cr,
         );
     }
 
