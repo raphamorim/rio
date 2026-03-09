@@ -935,6 +935,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         };
 
                         if let MouseButton::Left = button {
+                            if route
+                                .window
+                                .screen
+                                .handle_palette_click()
+                            {
+                                route.request_redraw();
+                                return;
+                            }
+
                             let handled_by_island = route
                                 .window
                                 .screen
@@ -1410,6 +1419,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.renderer.strategy.is_game()
                     || route.path == RoutePath::Welcome
+                    || route.window.screen.renderer.command_palette.is_enabled()
                 {
                     route.request_redraw();
                 } else if route
