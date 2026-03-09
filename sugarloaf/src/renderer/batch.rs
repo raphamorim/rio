@@ -919,8 +919,15 @@ impl BatchManager {
                 return;
             }
         }
-        self.alloc_batch(order)
-            .rect(rect, depth, color, Some(coords), None, Some(1), subpix);
+        self.alloc_batch(order).rect(
+            rect,
+            depth,
+            color,
+            Some(coords),
+            None,
+            Some(1),
+            subpix,
+        );
     }
 
     #[inline]

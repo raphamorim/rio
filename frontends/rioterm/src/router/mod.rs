@@ -224,8 +224,13 @@ impl Route<'_> {
                             if !text_str.is_empty()
                                 && text_str.chars().all(|c| !c.is_control())
                             {
-                                let current_query =
-                                    self.window.screen.renderer.command_palette.query.clone();
+                                let current_query = self
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .query
+                                    .clone();
                                 self.window
                                     .screen
                                     .renderer
