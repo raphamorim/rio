@@ -786,6 +786,7 @@ impl Sugarloaf<'_> {
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
+        self.renderer.resize(&mut self.ctx);
     }
 
     #[inline]
