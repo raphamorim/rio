@@ -554,7 +554,7 @@ mod tests {
             // With the new coordinate system: cursor_baseline = glyph_baseline + padding_top + ascent
             let padding_top = (line_height - ascent - descent) / 2.0;
             assert!((cursor_baseline_in_line_coords - (expected_glyph_baseline + padding_top + ascent)).abs() < 0.1,
-                   "Cursor baseline should equal glyph baseline + padding_top + ascent. Cursor: {}, Glyph: {}, Padding: {}, Ascent: {}", 
+                   "Cursor baseline should equal glyph baseline + padding_top + ascent. Cursor: {}, Glyph: {}, Padding: {}, Ascent: {}",
                    cursor_baseline_in_line_coords, expected_glyph_baseline, padding_top, ascent);
         }
     }
@@ -603,7 +603,7 @@ mod tests {
 
         // Should be within reasonable range (half the line height)
         assert!(diff < line_height / 2.0,
-               "Drawable character center ({}) should be reasonably close to text baseline ({}). Diff: {}", 
+               "Drawable character center ({}) should be reasonably close to text baseline ({}). Diff: {}",
                expected_center_y, text_baseline, diff);
     }
 
