@@ -283,7 +283,19 @@ impl SugarState {
     }
 
     #[inline]
-    pub fn compute_layout_rescale(&mut self, _scale: f32) {
+    pub fn compute_layout_rescale(&mut self, scale: f32) {
+        self.style.scale_factor = scale;
+
+        // Re-scale all text content with the new scale factor
+        for (_id, content_state) in &mut self.content.states {
+            if let Some(text_state) = content_state.as_text_mut() {
+                text_state.rescale(scale);
+                text_state.layout.dimensions.height = 0.0;
+                text_state.layout.dimensions.width = 0.0;
+            }
+            content_state.render_data.needs_repaint = true;
+        }
+
         self.compute_dimensions();
     }
 }
