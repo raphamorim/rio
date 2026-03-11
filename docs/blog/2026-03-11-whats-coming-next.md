@@ -40,7 +40,7 @@ This is one I'm particularly excited about.
 
 **librio** is Rio's terminal engine extracted as a standalone library, similar in spirit to [libghostty](https://ghostty.org). The idea is simple: other applications should be able to embed a high-quality terminal without reinventing the wheel.
 
-librio handles the rendering pipeline, the grid, input processing, and all the terminal emulation logic, packaged as a library that can be consumed by native applications.
+librio handles the input processing, the grid, and all the terminal emulation logic, packaged as a library that can be consumed by native applications.
 
 ## Super Rio
 
