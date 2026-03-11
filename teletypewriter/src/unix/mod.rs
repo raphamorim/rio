@@ -61,29 +61,21 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
-#[cfg(target_os = "macos")]
-fn default_shell_command(shell: &str) {
+fn default_shell_command(shell: &str, args: &[String]) {
     let command_shell_string = CString::new(shell).unwrap();
     let command_pointer = command_shell_string.as_ptr();
-    let args = CString::new("--login").unwrap();
-    let args_pointer = args.as_ptr();
-    unsafe {
-        libc::execvp(command_pointer, vec![args_pointer].as_ptr());
-    }
-}
 
-#[cfg(not(target_os = "macos"))]
-fn default_shell_command(shell: &str) {
-    let command_shell_string = CString::new(shell).unwrap();
-    let command_pointer = command_shell_string.as_ptr();
-    // let home = std::env::var("HOME").unwrap();
-    // let args = CString::new(home).unwrap();
-    // let args_pointer = args.as_ptr() as *const i8;
+    let args = args
+        .iter()
+        .map(|arg| CString::new(arg.as_str()).unwrap())
+        .collect::<Vec<_>>();
+
+    let args_pointers = std::iter::once(command_pointer)
+        .chain(args.iter().map(|arg| arg.as_ptr()))
+        .chain(std::iter::once(ptr::null()))
+        .collect::<Vec<_>>();
     unsafe {
-        libc::execvp(
-            command_pointer,
-            vec![command_pointer, std::ptr::null()].as_ptr(),
-        );
+        libc::execvp(command_pointer, args_pointers.as_ptr());
     }
 }
 
@@ -621,7 +613,12 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
-pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty, Error> {
+pub fn create_pty_with_fork(
+    shell: &str,
+    args: &[String],
+    columns: u16,
+    rows: u16,
+) -> Result<Pty, Error> {
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -657,7 +654,7 @@ pub fn create_pty_with_fork(shell: &str, columns: u16, rows: u16) -> Result<Pty,
         )
     } {
         0 => {
-            default_shell_command(shell_program);
+            default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"
             )))
