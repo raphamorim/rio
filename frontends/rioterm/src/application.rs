@@ -1254,6 +1254,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .screen
                                 .context_manager
                                 .current_mut()
+                                .renderable_content
+                                .pending_update
+                                .set_ui_damage(rio_backend::event::TerminalDamage::Full);
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_mut()
                                 .ime
                                 .set_preedit(preedit);
                             route.request_redraw();
