@@ -8,11 +8,18 @@ use rio_window::window::Theme;
 pub fn padding_top_from_config(
     navigation: &Navigation,
     padding_y_top: f32,
-    _num_tabs: usize,
+    num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
 ) -> f32 {
     // When navigation is enabled (Tab mode), start content below island
     if navigation.is_enabled() {
+        // On Linux/Windows, if hide_if_single is true and there's only one tab,
+        // the island is hidden so render from 0 + configured margin
+        #[cfg(not(target_os = "macos"))]
+        if navigation.hide_if_single && num_tabs <= 1 {
+            return constants::PADDING_Y + padding_y_top;
+        }
+
         use crate::renderer::island::ISLAND_HEIGHT;
         return ISLAND_HEIGHT + padding_y_top;
     }

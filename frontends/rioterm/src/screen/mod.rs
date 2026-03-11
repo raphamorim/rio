@@ -1367,7 +1367,14 @@ impl Screen<'_> {
         // We resize the current tab ahead to prepare the
         // dimensions to be copied to next tab.
         let num_tabs = self.ctx().len();
+        let old_index = self.context_manager.current_index();
         self.resize_top_or_bottom_line(num_tabs + 1);
+
+        // Update the old tab's rich text positions to reflect the new margin
+        // (on Linux/Windows when hide_if_single transitions from hidden to visible)
+        #[cfg(not(target_os = "macos"))]
+        self.context_manager.contexts_mut()[old_index]
+            .update_dimensions(&mut self.sugarloaf);
 
         // Create rich text with initial position accounting for island
         let current_grid = self.context_manager.current_grid();
@@ -1379,7 +1386,6 @@ impl Screen<'_> {
         let _ = self.sugarloaf.text(Some(rich_text_id));
         self.sugarloaf
             .set_position(rich_text_id, padding_x, padding_y_top);
-        let old_index = self.context_manager.current_index();
         self.context_manager.add_context(redirect, rich_text_id);
         let new_index = self.context_manager.current_index();
         self.context_manager.switch_context_visibility(
@@ -1410,6 +1416,15 @@ impl Screen<'_> {
 
         self.cancel_search();
         if self.ctx().len() <= 1 {
+            // Update the remaining tab's margin and position
+            // (on Linux/Windows when hide_if_single transitions to hidden)
+            #[cfg(not(target_os = "macos"))]
+            {
+                self.resize_top_or_bottom_line(1);
+                self.context_manager.current_grid_mut()
+                    .update_dimensions(&mut self.sugarloaf);
+                self.render();
+            }
             return;
         }
 
