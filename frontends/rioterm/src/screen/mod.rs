@@ -119,12 +119,8 @@ impl Screen<'_> {
             config.window.macos_use_unified_titlebar,
         );
 
-        let padding_y_bottom = padding_bottom_from_config(
-            &config.navigation,
-            config.margin.bottom,
-            1,
-            false,
-        );
+        let padding_y_bottom =
+            padding_bottom_from_config(&config.navigation, config.margin.bottom, 1);
         let sugarloaf_layout =
             RootStyle::new(scale as f32, config.fonts.size, config.line_height);
 
@@ -373,7 +369,6 @@ impl Screen<'_> {
             &config.navigation,
             config.margin.bottom,
             num_tabs,
-            self.search_active(),
         );
 
         if should_update_font_library {
@@ -1421,7 +1416,8 @@ impl Screen<'_> {
             #[cfg(not(target_os = "macos"))]
             {
                 self.resize_top_or_bottom_line(1);
-                self.context_manager.current_grid_mut()
+                self.context_manager
+                    .current_grid_mut()
                     .update_dimensions(&mut self.sugarloaf);
                 self.render();
             }
@@ -1446,7 +1442,6 @@ impl Screen<'_> {
             &self.renderer.navigation,
             self.renderer.margin.bottom,
             num_tabs,
-            self.search_active(),
         );
 
         if previous_margin.top != padding_y_top
@@ -2202,6 +2197,51 @@ impl Screen<'_> {
                 self.renderer.command_palette.set_enabled(false);
                 self.render();
                 true
+            }
+        }
+    }
+
+    #[inline]
+    pub fn handle_search_click(&mut self) -> bool {
+        if !self.renderer.search.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self
+            .renderer
+            .search
+            .hit_test(mouse_x, mouse_y, window_width, scale_factor)
+        {
+            Ok(Some(action)) => {
+                use crate::renderer::search::SearchOverlayAction;
+                match action {
+                    SearchOverlayAction::Next => {
+                        self.advance_search_origin(self.search_state.direction);
+                    }
+                    SearchOverlayAction::Previous => {
+                        let direction = self.search_state.direction.opposite();
+                        self.advance_search_origin(direction);
+                    }
+                    SearchOverlayAction::Close => {
+                        self.cancel_search();
+                        self.resize_top_or_bottom_line(self.ctx().len());
+                    }
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button (input area)
+                true
+            }
+            Err(()) => {
+                // Clicked outside — don't close search, just pass through
+                false
             }
         }
     }
@@ -3011,7 +3051,11 @@ impl Screen<'_> {
                     self.search_state.history.get(history_index).cloned(),
                 );
             }
+        } else {
+            self.renderer.set_active_search(None);
+        }
 
+        if is_search_active {
             // Update search hints in renderable content
             let terminal = self.context_manager.current().terminal.lock();
             let hints = self
@@ -3299,8 +3343,9 @@ impl Screen<'_> {
                     .pending_update
                     .set_terminal_damage(TerminalDamage::Full);
             }
-        } else {
-            // Clear hint state
+        } else if !self.search_active() {
+            // Clear hint state only if search is not active,
+            // since search also uses hint_matches for highlighting
             self.context_manager
                 .current_mut()
                 .renderable_content
