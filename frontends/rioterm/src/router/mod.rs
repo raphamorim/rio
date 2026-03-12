@@ -127,12 +127,17 @@ impl Route<'_> {
         }
 
         self.assistant.set(error.to_owned());
-        self.path = RoutePath::Assistant;
+        self.window
+            .screen
+            .renderer
+            .assistant
+            .set_error(error.to_owned());
     }
 
     #[inline]
     pub fn clear_errors(&mut self) {
         self.assistant.clear();
+        self.window.screen.renderer.assistant.clear();
         self.path = RoutePath::Terminal;
     }
 
@@ -261,13 +266,15 @@ impl Route<'_> {
         }
 
         let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
-        if self.path == RoutePath::Assistant {
-            if self.assistant.is_warning() && is_enter {
+
+        // Handle assistant overlay dismiss
+        if self.window.screen.renderer.assistant.is_active() {
+            if self.window.screen.renderer.assistant.is_warning() && is_enter {
                 self.assistant.clear();
-                self.path = RoutePath::Terminal;
-            } else {
-                return true;
+                self.window.screen.renderer.assistant.clear();
+                self.window.screen.render();
             }
+            return true;
         }
 
         if self.path == RoutePath::ConfirmQuit {

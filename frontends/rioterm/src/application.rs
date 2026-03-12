@@ -965,6 +965,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 }
                             }
 
+                            if route.window.screen.handle_assistant_click() {
+                                route.request_redraw();
+                                return;
+                            }
+
                             if route.window.screen.handle_palette_click() {
                                 route.request_redraw();
                                 return;
@@ -1090,6 +1095,38 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let y = y.clamp(0.0, (layout.height as i32 - 1).into()) as usize;
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+
+                // Handle assistant overlay hover
+                if route.window.screen.renderer.assistant.is_active() {
+                    let scale = route.window.screen.sugarloaf.scale_factor();
+                    let win_w = route.window.screen.sugarloaf.window_size().width as f32;
+                    let mx = x as f32 / scale;
+                    let my = y as f32 / scale;
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .assistant
+                        .hover(mx, my, win_w, scale)
+                    {
+                        route.window.screen.render();
+                        route.request_redraw();
+                    }
+
+                    if route
+                        .window
+                        .screen
+                        .renderer
+                        .assistant
+                        .hovered_button()
+                        .is_some()
+                    {
+                        route.window.winit_window.set_cursor(CursorIcon::Pointer);
+                    } else {
+                        route.window.winit_window.set_cursor(CursorIcon::Default);
+                    }
+                    return;
+                }
 
                 // Handle command palette hover
                 if route.window.screen.renderer.command_palette.is_enabled() {
@@ -1363,7 +1400,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Ime(ime) => {
-                if route.path == RoutePath::Assistant {
+                if route.window.screen.renderer.assistant.is_active() {
                     return;
                 }
 
@@ -1452,7 +1489,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::DroppedFile(path) => {
-                if route.path == RoutePath::Assistant {
+                if route.window.screen.renderer.assistant.is_active() {
                     return;
                 }
 
@@ -1487,13 +1524,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.begin_render();
 
                 match route.path {
-                    RoutePath::Assistant => {
-                        route.window.screen.render_assistant(&route.assistant);
-                    }
                     RoutePath::Welcome => {
                         route.window.screen.render_welcome();
                     }
-                    RoutePath::Terminal => {
+                    RoutePath::Assistant | RoutePath::Terminal => {
                         if let Some(window_update) = route.window.screen.render() {
                             use crate::context::renderable::{
                                 BackgroundState, WindowUpdate,

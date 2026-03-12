@@ -83,7 +83,7 @@
   <key>CFBundleIdentifier</key>
   <string>com.raphaelamorim.rio</string>
   <key>CFBundleGetInfoString</key>
-  <string>Hardware-accelerated GPU terminal emulator. More information: https://raphamorim.io/rio/</string>
+  <string>Hardware-accelerated GPU terminal emulator. More information: https://rioterm.com/</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
