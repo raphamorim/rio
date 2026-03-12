@@ -1,3 +1,4 @@
+pub mod assistant;
 mod char_cache;
 pub mod command_palette;
 mod font_cache;
@@ -52,6 +53,7 @@ pub struct Renderer {
     pub config_blinking_interval: u64,
     ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
+    pub assistant: assistant::AssistantOverlay,
     #[allow(unused)]
     pub option_as_alt: String,
     #[allow(unused)]
@@ -130,6 +132,7 @@ impl Renderer {
             named_colors,
             dynamic_background,
             search: search::SearchOverlay::default(),
+            assistant: assistant::AssistantOverlay::default(),
             font_cache: FontCache::new(),
             font_context: font_context.clone(),
             char_cache: CharCache::new(),
@@ -1119,6 +1122,11 @@ impl Renderer {
                 context_manager,
             );
         }
+
+        self.assistant.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
 
         self.search.render(
             sugarloaf,

@@ -2246,6 +2246,67 @@ impl Screen<'_> {
         }
     }
 
+    #[inline]
+    pub fn handle_assistant_click(&mut self) -> bool {
+        if !self.renderer.assistant.is_active() {
+            return false;
+        }
+
+        let scale_factor = self.sugarloaf.scale_factor();
+        let window_width = self.sugarloaf.window_size().width as f32;
+        let mouse_x = self.mouse.x as f32 / scale_factor;
+        let mouse_y = self.mouse.y as f32 / scale_factor;
+
+        match self.renderer.assistant.hit_test(
+            mouse_x,
+            mouse_y,
+            window_width,
+            scale_factor,
+        ) {
+            Ok(Some(action)) => {
+                use crate::renderer::assistant::AssistantOverlayAction;
+                match action {
+                    AssistantOverlayAction::Close => {
+                        self.renderer.assistant.clear();
+                    }
+                    AssistantOverlayAction::OpenDocs => {
+                        Self::open_docs_url();
+                    }
+                }
+                self.render();
+                true
+            }
+            Ok(None) => {
+                // Clicked inside overlay but not on a button
+                true
+            }
+            Err(()) => {
+                // Clicked outside — close the assistant overlay
+                self.renderer.assistant.clear();
+                self.render();
+                true
+            }
+        }
+    }
+
+    fn open_docs_url() {
+        let url = "https://rioterm.com/docs/config";
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(url).spawn();
+        }
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", "", url])
+                .spawn();
+        }
+    }
+
     pub fn handle_island_click(&mut self, window: &rio_window::window::Window) -> bool {
         // Only handle if navigation is enabled
         if !self.renderer.navigation.is_enabled() {
