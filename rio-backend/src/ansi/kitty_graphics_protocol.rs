@@ -1040,6 +1040,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Option<GraphicData> {
                 pixels,
                 is_opaque,
                 resize,
+                display_width: None,
+                display_height: None,
             })
         }
     }

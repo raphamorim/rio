@@ -42,8 +42,8 @@ impl Graphics {
                     graphic_data.height as u32,
                     graphic_data.pixels,
                 ),
-                width: graphic_data.width as f32,
-                height: graphic_data.height as f32,
+                width: display_w,
+                height: display_h,
             },
         );
     }
@@ -121,6 +121,14 @@ pub struct GraphicData {
 
     /// Render graphic in a different size.
     pub resize: Option<ResizeCommand>,
+
+    /// Display width in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel width.
+    pub display_width: Option<usize>,
+
+    /// Display height in pixels (set when GPU scaling is used instead of CPU resize).
+    /// If None, display at the original pixel height.
+    pub display_height: Option<usize>,
 }
 
 impl GraphicData {
@@ -201,7 +209,73 @@ impl GraphicData {
             pixels,
             is_opaque: false,
             resize: None,
+            display_width: None,
+            display_height: None,
         }
+    }
+
+    /// Compute the display dimensions for this graphic without modifying pixels.
+    /// Returns (display_width, display_height) in pixels. If no resize is needed,
+    /// returns the original dimensions.
+    pub fn compute_display_dimensions(
+        &self,
+        cell_width: usize,
+        cell_height: usize,
+        view_width: usize,
+        view_height: usize,
+    ) -> (usize, usize) {
+        let resize = match self.resize {
+            Some(resize) => resize,
+            None => return (self.width, self.height),
+        };
+
+        if (resize.width == ResizeParameter::Auto
+            && resize.height == ResizeParameter::Auto)
+            || self.height == 0
+            || self.width == 0
+        {
+            return (self.width, self.height);
+        }
+
+        let mut width = match resize.width {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_width,
+            ResizeParameter::WindowPercent(n) => n as usize * view_width / 100,
+        };
+
+        let mut height = match resize.height {
+            ResizeParameter::Auto => 1,
+            ResizeParameter::Pixels(n) => n as usize,
+            ResizeParameter::Cells(n) => n as usize * cell_height,
+            ResizeParameter::WindowPercent(n) => n as usize * view_height / 100,
+        };
+
+        if width == 0 || height == 0 {
+            return (0, 0);
+        }
+
+        if resize.width == ResizeParameter::Auto {
+            width = self.width * height / self.height;
+        }
+
+        if resize.height == ResizeParameter::Auto {
+            height = self.height * width / self.width;
+        }
+
+        width = cmp::min(width, MAX_GRAPHIC_DIMENSIONS[0]);
+        height = cmp::min(height, MAX_GRAPHIC_DIMENSIONS[1]);
+
+        if resize.preserve_aspect_ratio {
+            // Preserve aspect ratio: fit within width x height
+            let scale_w = width as f64 / self.width as f64;
+            let scale_h = height as f64 / self.height as f64;
+            let scale = scale_w.min(scale_h);
+            width = (self.width as f64 * scale) as usize;
+            height = (self.height as f64 * scale) as usize;
+        }
+
+        (width, height)
     }
 
     /// Resize the graphic according to the dimensions in the `resize` field.
@@ -331,6 +405,8 @@ fn check_opaque_region() {
         pixels: vec![255; 10 * 10 * 3],
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     assert!(graphic.is_filled(1, 1, 3, 3));
@@ -354,6 +430,8 @@ fn check_opaque_region() {
         color_type: ColorType::Rgba,
         is_opaque: false,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     assert!(graphic.is_filled(0, 0, 3, 3));

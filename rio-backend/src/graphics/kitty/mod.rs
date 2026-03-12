@@ -391,6 +391,8 @@ fn test_cursor_movement_default() {
             height: ResizeParameter::Cells(2),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -460,6 +462,8 @@ fn test_cursor_movement_no_move() {
             height: ResizeParameter::Cells(2),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -560,6 +564,8 @@ fn test_image_row_occupation_exact_fit() {
             height: ResizeParameter::Cells(2),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -620,6 +626,8 @@ fn test_image_row_occupation_single_row() {
             height: ResizeParameter::Cells(1),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -682,6 +690,8 @@ fn test_image_row_occupation_three_rows() {
             height: ResizeParameter::Cells(3),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -749,6 +759,8 @@ fn test_image_row_occupation_from_middle() {
             height: ResizeParameter::Cells(2),
             preserve_aspect_ratio: true,
         }),
+        display_width: None,
+        display_height: None,
     };
 
     term.store_graphic(graphic);
@@ -833,6 +845,8 @@ fn test_store_graphic() {
         pixels,
         is_opaque: true,
         resize: None,
+        display_width: None,
+        display_height: None,
     };
 
     // Store without displaying
